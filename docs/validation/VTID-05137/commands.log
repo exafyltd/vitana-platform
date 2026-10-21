@@ -1,0 +1,11 @@
+# VTID-05137 — commands run
+# Local npm install was impossible in the building session (registry.npmjs.org
+# blocked by the session's network policy); tsc + Jest run in this PR's CI.
+gh workflow run RUN-MIGRATION.yml --ref claude/affectionate-einstein-fdlxvz -f migration_file=supabase/migrations/20261013180000_vtid_05137_chat_push_coalescing.sql
+#   -> https://github.com/exafyltd/vitana-platform/actions/runs/38375845593 (success)
+# read-only verification (Supabase SQL):
+select pg_get_constraintdef(oid) like '%coalesced%', convalidated from pg_constraint where conname='user_notifications_push_outcome_check';  -- true, true
+select exists(select 1 from pg_indexes where indexname='idx_user_notifications_chat_conv');  -- true
+# baseline measurement that motivated the change (read-only):
+# chat pushes in 14 days: 4,334; sent < 5 min after a previous push for the same conversation: 3,412 (79%)
+cd services/gateway && npx jest test/vtid-05137-chat-push-coalescing.test.ts test/routes/chat-groups-repository.test.ts test/vtid-04962-push-outcome.test.ts test/vtid-04926-chat-group-mentions.test.ts test/vtid-05104-calendar-invite-guard.test.ts   # CI

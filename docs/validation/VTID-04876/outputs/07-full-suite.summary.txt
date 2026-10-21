@@ -1,0 +1,10 @@
+# npx jest --ci (full gateway suite), worktree at a99ddb46
+# The two 'Tests: 1 failed, 200 passed' lines below are console output printed by a test that drives a nested runner, not this run's totals.
+# The run's own totals are the Test Suites/Tests/Snapshots lines and exit=0; no FAIL suite was reported.
+Tests:       1 failed, 200 passed
+Tests:       1 failed, 200 passed
+Test Suites: 1 skipped, 1499 passed, 1499 of 1500 total
+Tests:       29 skipped, 6 todo, 23855 passed, 23890 total
+Snapshots:   126 passed, 126 total
+exit=0
+failing suites:

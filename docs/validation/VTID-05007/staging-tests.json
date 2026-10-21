@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05007",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04452-staging-orb-recall-pinned.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/services/memory/vtid-04784-recall-shadow.test.ts test/services/memory/recall.test.ts",
+      "cwd": "services/gateway",
+      "reason": "prod and staging both pin recall on with the shadow still logging, the pin precedes env_overrides (rollback works), the generated pin mirror is current, and recall/shadow behaviour is unchanged. Staging already served recall before this change; the production flip is verified read-only after PUBLISH (served=recall in the recall-shadow lines)."
+    }
+  ]
+}

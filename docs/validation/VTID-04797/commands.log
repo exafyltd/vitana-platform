@@ -1,0 +1,8 @@
+# VTID-04797 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04797-finding-dedupe-gate.test.ts                   # 10 tests
+npx jest (all suites naming dev-autopilot-synthesis)                   # 230 tests pass
+npx jest (full gateway suite)                                          # 1439 suites, 23095 tests, 0 failed (outputs/jest-full.txt)
+node scripts/ci/dev-autopilot-impact-scan.mjs   (repo root)            # blocker=0 warning=0 info=0
+(read-only) autopilot_recommendations dev_autopilot 60 d: 57 auto_archived on 13 files

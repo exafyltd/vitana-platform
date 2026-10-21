@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05061",
+  "files": [
+    "services/gateway/src/services/dev-autopilot-execute.ts",
+    "services/gateway/test/vtid-05061-reaper-sparring-guard.test.ts",
+    "docs/validation/VTID-05061/**"
+  ]
+}

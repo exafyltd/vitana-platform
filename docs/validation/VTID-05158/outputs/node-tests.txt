@@ -1,0 +1,14 @@
+ok 1 - Aurora-only table absent from Supabase passes and is not reported missing
+ok 2 - Aurora-only table present in the Supabase snapshot fails
+ok 3 - a non-listed declared table missing from Supabase still fails as before
+ok 4 - without an Aurora-only list the store table would be reported as new drift
+ok 5 - aurora_only_tables entries need table, VTID and reason
+ok 6 - the repo baseline lists every table the health store migration declares, and nothing else of VTID-05158
+ok 7 - CLI: passes on a snapshot without the store tables, fails when one appears on Supabase
+ok 8 - the published tables equal the script output (regenerate: node scripts/health/capacity-model.mjs)
+ok 9 - owner-confirmed inputs: S/M/L at 40% connected and the four placement triggers
+ok 10 - headline figures match the sparred plan (Change 4)
+ok 11 - parameters in, tables out: doubling the 5-minute rows doubles that tier only
+# tests 11
+# pass 11
+# fail 0

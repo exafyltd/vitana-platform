@@ -1,0 +1,14 @@
+PASS test/routes/vtid-04525-conversation-hub-phase-a-routes.test.ts
+PASS test/routes/vtid-health.test.ts
+PASS test/routes/vtid-04371-conversation-metrics-routes.test.ts
+PASS test/vtid-04868-plan-sparring-migration.test.ts
+PASS test/plans-spar.test.ts
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/vtid-04868-plan-sparring-session-layer.test.ts
+PASS test/vtid-04868-plan-sparring-service.test.ts
+PASS test/routes/vtid-04868-allocate-plan-hash.test.ts
+PASS test/vtid-04868-plan-sparring-repository.test.ts
+PASS test/vtid-04868-plan-sparring-stage.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.3 s)
+Test Suites: 12 passed, 12 total
+Tests:       191 passed, 191 total

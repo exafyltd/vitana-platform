@@ -1,0 +1,15 @@
+== foundation 4d32db6585297a1d05a7b5927168de8c75bb7708
+   applied patches/0001-0002-erpclaw-lib-db-postgres.patch
+   applied patches/0003-router-module-lookup-postgres.patch
+   applied patches/0004-decimal-sum-numeric-postgres.patch
+   overlay scripts/erpclaw-gl/assets/charts/uae_ifrs.json
+== install home <tmpdir>/home
+== addons 7c1b5ae5701980e97f34cf25fa5943066140f6a3 (module trees staged for install_module_local.py at first DB init)
+   staged erpclaw-growth
+== done
+exit=0
+## grep 0004 marker in vendored tree:
+<tmpdir>/root/scripts/erpclaw-setup/lib/erpclaw_lib/db.py:2
+<tmpdir>/root/scripts/erpclaw-reports/db_query.py:2
+<tmpdir>/root/scripts/erpclaw-gl/db_query.py:1
+action-flags IDENTICAL

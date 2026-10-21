@@ -1,0 +1,20 @@
+# VTID-04225 — commands run (session 2026-09-21)
+# Discovery (read-only)
+grep -ln 'run\.app\|lovable-vitana-vers1' .github/workflows/*.yml            # 46 files
+aws sts get-caller-identity                                                  # claude-code-aws-agent / 472838866351
+aws ecs describe-task-definition --task-definition vitana-gateway --query 'taskDefinition.containerDefinitions[0].{env:environment[].name,sec:secrets[].name}'
+aws ecs describe-task-definition --task-definition vitana-gateway-awsdr --query '...'
+aws secretsmanager list-secrets --query 'SecretList[].Name'                  # no internal/scan token secret exists
+gh (MCP) actions: DEV-AUTOPILOT.yml run 35606658576 failed job logs          # POST failed 404 against gateway-q74ibpv6ia-uc.a.run.app
+gh (MCP) actions: E2E-ORB-MONITOR.yml run 35590147647 jobs                   # hub leg cancelled at 5-min timeout
+# Change
+sed -i 's#https://gateway-q74ibpv6ia-uc.a.run.app#https://preview-aws-gateway.vitanaland.com#g' <5 workflows> e2e/playwright.config.ts e2e/fixtures/test-users.ts scripts/ci/dev-autopilot-scan.mjs
+sed -i 's#https://gateway-staging-q74ibpv6ia-uc.a.run.app#https://preview-aws-gateway.vitanaland.com#g' <5 staging-ops workflows>
+git rm .github/workflows/{34 GCP-only workflows}.yml
+python3 (edit) .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml               # scan token / service token / optional internal token; relocate 2 comment blocks
+# Verification
+cd services/gateway && npm ci
+npx jest test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts <8 pin suites>   # 10 suites / 187 tests green
+npx jest $(grep -rl '.github/workflows' test --include=*.test.ts)            # 27 suites / 308 tests green
+python3 -c 'yaml.safe_load(...)'  # register step run: block 20,656 -> 15,301 chars (guard: 20,000)
+node scripts/ci/validate-pr-locally.cjs --title-file ... --body-file ...     # see outputs/validate-pr-locally.txt

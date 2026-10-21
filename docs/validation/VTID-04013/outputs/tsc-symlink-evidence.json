@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04013",
+  "source_run": "Test Run #4b (VTID-04012), execution 4f7d5ea4-8d9e-4a25-b88c-877144d96890, staging, ECS task 1a2b8b57, task def vitana-autopilot-executor:10",
+  "observed": [
+    { "t": "2026-09-17T20:08:14Z", "step": "agent run_check tsc (turn 8)", "exit_code": 2, "elapsed_ms": 52300, "error": "src/services/automation-handlers/connect-people-repository.ts(30,23): error TS2742: The inferred type of 'fetchPrimaryTenantUsers' cannot be named without a reference to '../../../../../..'" },
+    { "t": "2026-09-17T20:09:18Z", "step": "agent run_check tsc (turn 13)", "exit_code": 2, "error": "same TS2742" },
+    { "t": "2026-09-17T20:10:24Z", "step": "runner:tsc (post-hoc, fix round 0)", "error": "same TS2742; reference path ends in '../../../../../../../../app/n' — the realpath of the node_modules symlink" }
+  ],
+  "local_control": [
+    { "command": "node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json", "exit_code": 0, "note": "same commit, real node_modules install" },
+    { "command": "node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks", "exit_code": 0, "note": "flag is a no-op on a real install" }
+  ],
+  "fix": "runTsc passes --preserveSymlinks (TSC_ARGS) so the symlinked clone resolves node_modules through the link, not its realpath"
+}

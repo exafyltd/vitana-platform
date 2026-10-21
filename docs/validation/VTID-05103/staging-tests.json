@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05103",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "routine runner status refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/routines/runner/status", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "a remaining routine audit endpoint still exists behind its token gate (staging has no ROUTINE_INGEST_TOKEN, so the gate fails closed with 503)", "path": "/api/v1/routines/audits/io-pressure", "expect_status": 503, "expect_content_type": "application/json", "expect_json": { "ok": false, "error": "ROUTINE_INGEST_TOKEN env var not configured" } },
+    { "kind": "existing", "ref": "npx jest test/routine-runner test/routine-audits.test.ts test/loop-catalog.test.ts", "cwd": "services/gateway", "reason": "routine thresholds ported from the specs, exactly-once claim, failure and breach handling, staging/flag switches, the extracted audit and agents-registry functions answer as before, the status route's auth, and the ALERT-* report step. The runner never starts on staging (shared database), so its writes are proven here, not there" }
+  ]
+}

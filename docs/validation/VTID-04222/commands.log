@@ -1,0 +1,35 @@
+# VTID-04222 — commands run to build the registry (2026-09-21, read-only)
+
+# Policy (ACTIVE row, both gateways) -> outputs/routing-policy-v17-2026-09-21.json
+curl -sS https://preview-aws-gateway.vitanaland.com/api/v1/llm/routing-policy -H "Authorization: Bearer <op-token>"
+curl -sS https://gateway.vitanaland.com/api/v1/llm/routing-policy -H "Authorization: Bearer <op-token>"
+#   -> data.policy.version = 17 on both; data.models (22 active), data.providers
+
+# Live task definitions -> outputs/live-task-definitions-2026-09-21.json
+aws ecs describe-task-definition --region eu-central-1 --task-definition vitana-gateway:487
+aws ecs describe-task-definition --region eu-central-1 --task-definition vitana-gateway-awsdr:114
+aws ecs describe-task-definition --region eu-central-1 --task-definition vitana-autopilot-executor:20
+
+# Staging codeintel probe -> outputs/staging-operator-codeintel-check.json
+curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat -H "Authorization: Bearer <op-token>" \
+  -d '{"message":"call dev_repowise get_overview on vitana-platform and report the raw result","threadId":"<uuid>"}'
+#   -> dev_repowise: not_configured
+
+# Root cause of not_configured (VTID-04118 Dockerfile block on node:20-alpine)
+pip download --no-deps --platform musllinux_1_2_x86_64 --only-binary=:all: lancedb -d /tmp/x
+#   -> ERROR: No matching distribution found for lancedb
+pip download --no-deps repowise -d /tmp/x && unzip -p /tmp/x/repowise-*.whl '*/METADATA' | grep -i lancedb
+#   -> Requires-Dist: lancedb<1,>=0.12
+
+# Direct-provider call sites (AC-4)
+grep -n "api.deepseek.com" services/gateway/src/services/architecture-investigator.ts
+#   -> L186-215: fetch('https://api.deepseek.com/chat/completions', ...) with DEEPSEEK_API_KEY
+grep -n "callClaudeText" services/gateway/src/routes/specs.ts
+#   -> SPEC_GEN_MODEL = CLAUDE_SONNET_4_6 via callClaudeText (Bedrock direct)
+
+# Docs-only (AC-5)
+git diff --name-only origin/main...HEAD
+#   -> docs/AGENT-REGISTRY.md
+#   -> docs/validation/VTID-04222/acceptance.md
+#   -> docs/validation/VTID-04222/commands.log
+#   -> docs/validation/VTID-04222/outputs/*.json

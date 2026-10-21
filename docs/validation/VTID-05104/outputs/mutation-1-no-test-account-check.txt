@@ -1,0 +1,111 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05104-calendar-invite-guard.test.ts
+  limits and pure helpers
+    ✓ defaults 30 / 5 / 20 and is overridable by env; bad values fall back (6 ms)
+    ✓ evaluateInviteQuota windows: 24h and 7d (2 ms)
+    ✓ groupAllowsInvite and involvesExcludedAccount (1 ms)
+  checkInviteSend — direct invites
+    ✓ allows a related, in-tenant, unlimited invite (2 ms)
+    ✕ refuses a test/service account as sender and as receiver (both allowlists) (4 ms)
+    ✓ refuses a receiver in another tenant, an unknown receiver, a missing tenant, yourself and the Vitana bot (1 ms)
+    ✓ refuses with no relationship (1 ms)
+    ✓ relationship via dm is enough (1 ms)
+    ✓ relationship via dm_reverse is enough (1 ms)
+    ✓ relationship via group is enough (1 ms)
+    ✓ relationship via follow is enough
+    ✓ relationship via follow_reverse is enough
+    ✓ a prior invite alone is not a relationship (1 ms)
+    ✓ a group the sender is in without the receiver is not a relationship
+    ✓ the 31st invite in a day is refused, the 30th is allowed (1 ms)
+    ✓ the 6th invite to one person in a week is refused, the 5th is allowed (1 ms)
+    ✓ refusals are the same for every rule: one code, one shape, no reason in the result (2 ms)
+  checkInviteSend — group invites
+    ✓ allows a member of a group of 20, refuses 21, refuses a non-member (1 ms)
+    ✓ the group cap is env-adjustable and a group invite counts against the daily quota (1 ms)
+    ✓ refuses both a receiver and a group, or neither
+  checkInviteSend — fails closed
+    ✓ a service_bot_accounts lookup error refuses with the generic code
+    ✓ a notification_test_actors lookup error refuses with the generic code
+    ✓ a app_users lookup error refuses with the generic code
+    ✓ a user_follows lookup error refuses with the generic code (5 ms)
+    ✓ a chat_group_members lookup error refuses with the generic code (1 ms)
+    ✓ a chat_messages lookup error refuses (relationship (a) and quota) (1 ms)
+    ✓ a thrown error refuses (1 ms)
+    ✓ the quota read carries tenant_id, sender_id and a bounded created_at window (1 ms)
+  POST /chat/send with calendar_invite
+    ✓ allowed: inserts the server-built card and pushes a generic body (no title, time or place) (43 ms)
+    ✓ refused (a test account receiver): generic 403, nothing inserted, no push (9 ms)
+    ✓ refused (another tenant): generic 403, nothing inserted, no push (7 ms)
+    ✓ refused (no relationship): generic 403, nothing inserted, no push (7 ms)
+    ✓ refused over the daily limit with the very same body (5 ms)
+    ✓ non-invite messages do not go through the guard (4 ms)
+  POST /chat/groups/:id/send with calendar_invite
+    ✓ allowed in a group of 20: inserts the card, each member gets the generic push in their locale (7 ms)
+    ✓ refused in a group of 21: generic 403, nothing inserted, no push (4 ms)
+    ✕ refused for a test-account sender and over the daily limit (10 ms)
+    ✓ a non-member still gets not_a_member; text messages are unaffected and keep their push (6 ms)
+  voice tool send_calendar_invite_in_chat
+    ✓ stores a v2 card that the respond/GET path accepts, and pushes a generic body (16 ms)
+    ✓ refuses a private entry (health plan) and inserts nothing (1 ms)
+    ✓ refuses a past entry and inserts nothing (1 ms)
+    ✓ refuses a recurring entry and inserts nothing
+    ✓ refuses a cancelled entry and inserts nothing
+    ✓ refuses a recipient the guard refuses (no relationship / test account) with a generic message (1 ms)
+    ✓ the voice quota stays per user: the 6th send is rate limited, whatever the recipient (2 ms)
+    ✓ asks for confirmation without sending, and the unconfirmed stage inserts nothing (1 ms)
+  generic invite push text
+    ✓ exists in DE, EN, ES and SR with the name placeholder and no event detail (1 ms)
+
+  ● checkInviteSend — direct invites › refuses a test/service account as sender and as receiver (both allowlists)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 1
+
+      Object {
+    -   "code": "invite_not_allowed",
+    -   "ok": false,
+    +   "ok": true,
+      }
+
+      203 |     for (const bad of [BOT_ACCOUNT, TEST_ACTOR]) {
+      204 |       db.tables.chat_messages.push({ id: `p${bad}`, tenant_id: TENANT, sender_id: SENDER, receiver_id: bad, message_type: 'text', created_at: iso(-HOUR) });
+    > 205 |       expect(await guard({ receiverId: bad })).toEqual({ ok: false, code: INVITE_REFUSED_CODE });
+          |                                                ^
+      206 |       expect(await guard({ senderId: bad, receiverId: FRIEND })).toEqual({ ok: false, code: INVITE_REFUSED_CODE });
+      207 |     }
+      208 |     expect(await guard({ groupId: GROUP, receiverId: undefined, senderId: TEST_ACTOR })).toEqual({ ok: false, code: INVITE_REFUSED_CODE });
+
+      at Object.<anonymous> (test/vtid-05104-calendar-invite-guard.test.ts:205:48)
+
+  ● POST /chat/groups/:id/send with calendar_invite › refused for a test-account sender and over the daily limit
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 403
+    Received: 201
+
+      438 |     db.tables.notification_test_actors.push({ user_id: SENDER });
+      439 |     db.tables.chat_messages = [];
+    > 440 |     expect((await send({ message_type: 'calendar_invite', content_data: { entry_id: ENTRY } })).status).toBe(403);
+          |                                                                                                         ^
+      441 |   });
+      442 |
+      443 |   it('a non-member still gets not_a_member; text messages are unaffected and keep their push', async () => {
+
+      at Object.<anonymous> (test/vtid-05104-calendar-invite-guard.test.ts:440:105)
+
+Test Suites: 1 failed, 1 total
+Tests:       2 failed, 45 passed, 47 total
+Snapshots:   0 total
+Time:        0.973 s, estimated 1 s
+Ran all test suites matching /test\/vtid-05104-calendar-invite-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

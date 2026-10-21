@@ -1,0 +1,10 @@
+# VTID-04464 commands (2026-09-24)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04464
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04464'
+# read-only exposure measurement
+SELECT source_type, status, count(*) FROM autopilot_recommendations WHERE user_id IS NULL AND status IN ('new','snoozed') GROUP BY 1,2;
+cd services/gateway
+npx jest test/routes/autopilot-recommendations.test.ts test/voice-activate-recommendation-shared.test.ts test/orb-tools/calendar-management-tools.test.ts test/orb-tools/discovery-tools.test.ts test/acceptance-gate.test.ts   # 5 suites, 232 passed
+npx tsc --noEmit -p .   # clean
+npx jest --testPathPattern "(autopilot|orb-tools|calendar|recommendation|continuation|orb/live/characterization)"   # 198 suites, 4393 passed
+git stash push -- services/gateway/src && npx jest <3 affected suites>   # 8 failed / 114 (mutation check)

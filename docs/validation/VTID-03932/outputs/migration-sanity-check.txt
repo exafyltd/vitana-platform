@@ -1,0 +1,8 @@
+open parens: 72 close parens: 72
+dollar-quote count ($$): 2
+CREATE TABLE count: 4
+CREATE POLICY count: 3
+ALTER TABLE count: 6
+CREATE OR REPLACE FUNCTION count: 1
+CREATE TRIGGER count: 1
+semicolons: 42

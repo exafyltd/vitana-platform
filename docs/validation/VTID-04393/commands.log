@@ -1,0 +1,8 @@
+# VTID-04393 — commands run (2026-09-23)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04393
+supabase execute_sql: update vtid_ledger set title/summary, status='in_progress', spec_status='approved' where vtid='VTID-04393'
+npx tsc --noEmit -p .                                                          -> clean
+jest test/orb/live/instruction/vtid-04393-bootstrap-packer.test.ts            -> 12 passed
+jest test/orb test/frontend                                                    -> 1 failed (livekit-first-turn-heavy-context: pinned head-slice sentinel text) -> updated -> green
+jest test/orb/routes/livekit-first-turn-heavy-context.test.ts                  -> 4 passed
+jest (full gateway suite)                                                      -> 1093 suites passed (1 skipped), 17757 tests passed

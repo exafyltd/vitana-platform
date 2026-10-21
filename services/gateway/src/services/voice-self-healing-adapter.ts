@@ -1,0 +1,688 @@
+/**
+ * Voice→SelfHealing Adapter (VTID-01959, PR #2)
+ *
+ * Bridges voice OASIS error events into the existing self-healing pipeline
+ * via the synthetic endpoint convention `voice-error://<class>` (allowlisted
+ * in PR #0). The adapter is fire-and-forget from orb-live.ts hot paths so
+ * voice session handling is never blocked by classification or HTTP work.
+ *
+ * Flow per call:
+ *   1. Filter synthetic probe sessions (metadata.synthetic === true).
+ *   2. Read mode flag (system_config.voice_self_healing_mode):
+ *        - off    → return early (this PR's default)
+ *        - shadow → classify + dedupe + log "would-dispatch", do NOT POST
+ *        - live   → classify + dedupe + POST to /api/v1/self-healing/report
+ *   3. Classify the session (voice-session-classifier).
+ *   4. 5-tuple Supabase dedupe — INSERT ON CONFLICT DO NOTHING on
+ *      (class, normalized_signature, gateway_revision, tenant_scope, hour_bucket).
+ *      Conflict = another instance/session in the same hour already dispatched
+ *      this signature, so skip.
+ *   5. Build ServiceStatus and POST to /report (mode=live only).
+ *
+ * Plan: .claude/plans/the-biggest-issues-and-fizzy-wozniak.md
+ */
+
+import { gatewayBaseUrl } from '../env';
+import {
+  classifyVoiceSession,
+  VoiceClassification,
+} from './voice-session-classifier';
+import { getVoiceSpecHint } from './voice-spec-hints';
+import { lookupSpecMemory } from './voice-spec-memory';
+import { isDispatchAllowed, appendVerdict, evaluateAndQuarantine, resolveRecurrenceAfterFixMs } from './voice-recurrence-sentinel';
+import { emitOasisEvent } from './oasis-event-service';
+import { spawnInvestigator } from './voice-architecture-investigator';
+import { appendShadowLog } from './voice-shadow-mode';
+import { classifyQualityFromSessionStop } from './voice-failure-taxonomy';
+import { isVoiceOutcomeOn, runVoiceOutcomeCheck, VoiceOutcomeSignals } from './jev/gates/voice-outcome-gate';
+
+const SUPABASE_URL = process.env.SUPABASE_URL;
+const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+const GATEWAY_URL = gatewayBaseUrl();
+// Cloud Run sets K_REVISION; fall back to BUILD_INFO for local/dev.
+const GATEWAY_REVISION =
+  process.env.K_REVISION || process.env.BUILD_INFO || 'unknown';
+
+export type SelfHealingMode = 'off' | 'shadow' | 'live';
+
+const MODE_CACHE_TTL_MS = 30_000;
+let cachedMode: SelfHealingMode | null = null;
+let cachedModeAt = 0;
+
+/**
+ * Read `system_config.voice_self_healing_mode`. Default 'off' on any error
+ * (missing config row, Supabase unreachable, malformed value). Cached for
+ * 30s so the hot path doesn't read Supabase per emit.
+ */
+export async function getVoiceSelfHealingMode(force?: boolean): Promise<SelfHealingMode> {
+  const now = Date.now();
+  if (!force && cachedMode && now - cachedModeAt < MODE_CACHE_TTL_MS) {
+    return cachedMode;
+  }
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    cachedMode = 'off';
+    cachedModeAt = now;
+    return 'off';
+  }
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/system_config?key=eq.voice_self_healing_mode&select=value&limit=1`,
+      {
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        },
+      },
+    );
+    if (res.ok) {
+      const rows = (await res.json()) as Array<{ value?: string }>;
+      const v = rows[0]?.value;
+      if (v === 'off' || v === 'shadow' || v === 'live') {
+        cachedMode = v;
+        cachedModeAt = now;
+        return v;
+      }
+    }
+  } catch {
+    /* fall through to default */
+  }
+  cachedMode = 'off';
+  cachedModeAt = now;
+  return 'off';
+}
+
+/** Test helper — invalidate the mode cache. */
+export function _resetModeCacheForTests(): void {
+  cachedMode = null;
+  cachedModeAt = 0;
+}
+
+export interface DispatchOptions {
+  sessionId: string;
+  /** Optional tenant scope for dedupe. Defaults to 'global'. */
+  tenantScope?: string;
+  /**
+   * Session metadata. If `synthetic === true` the dispatch is suppressed
+   * (used by future Synthetic Voice Probe — PR #4).
+   */
+  metadata?: Record<string, unknown>;
+  /**
+   * VTID-01994: session-end metrics for quality classification. Supplied
+   * by the orb-live.ts session-stop hooks. When present, the adapter runs
+   * the quality classifier (no error events required) and routes detected
+   * quality failures to the Architecture Investigator regardless of mode.
+   */
+  sessionMetrics?: {
+    audio_in_chunks?: number;
+    // VTID-VOICE-FWD (Track A): forwarded-only mic count; classifier prefers
+    // this over raw audio_in_chunks for the under-responds ratio.
+    audio_in_forwarded?: number;
+    audio_out_chunks?: number;
+    duration_ms?: number;
+    turn_count?: number;
+    user_turns?: number;
+    model_turns?: number;
+  };
+  /**
+   * VTID-04775: counters and flags for the Jev voice-outcome gate (C1).
+   * Read by an allow-list in buildVoiceOutcomeSignals(); never a transcript.
+   */
+  outcomeSignals?: VoiceOutcomeSignals;
+}
+
+export type DispatchAction =
+  | 'dispatched'
+  | 'shadow_logged'
+  | 'mode_off'
+  | 'synthetic_skipped'
+  | 'dedupe_hit'
+  | 'classifier_no_error'
+  | 'spec_memory_blocked'
+  | 'sentinel_quarantined'
+  | 'sentinel_probation_capped'
+  | 'quality_failure_classified'
+  | 'duplicate_session_report'
+  | 'error';
+
+export interface DispatchResult {
+  action: DispatchAction;
+  class?: string;
+  normalized_signature?: string;
+  detail?: string;
+  http_status?: number;
+}
+
+function hourBucketIso(): string {
+  const d = new Date();
+  d.setUTCMinutes(0, 0, 0);
+  return d.toISOString();
+}
+
+interface DedupeReservation {
+  first: boolean;
+  error?: string;
+}
+
+async function tryReserveDedupe(
+  klass: string,
+  signature: string,
+  tenantScope: string,
+): Promise<DedupeReservation> {
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return { first: false, error: 'no_supabase' };
+  }
+  const row = {
+    class: klass,
+    normalized_signature: signature,
+    gateway_revision: GATEWAY_REVISION,
+    tenant_scope: tenantScope,
+    hour_bucket: hourBucketIso(),
+  };
+  // ON CONFLICT DO NOTHING via Prefer: resolution=ignore-duplicates.
+  // Combined with return=representation, the response body length tells us
+  // whether the row was newly inserted (length 1) or already existed (0).
+  try {
+    const res = await fetch(
+      `${SUPABASE_URL}/rest/v1/voice_healing_dedupe`,
+      {
+        method: 'POST',
+        headers: {
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          'Content-Type': 'application/json',
+          Prefer: 'resolution=ignore-duplicates,return=representation',
+        },
+        body: JSON.stringify(row),
+      },
+    );
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      return { first: false, error: `dedupe_${res.status}_${txt.slice(0, 80)}` };
+    }
+    const inserted = (await res.json()) as Array<unknown>;
+    return { first: Array.isArray(inserted) && inserted.length > 0 };
+  } catch (err: any) {
+    return { first: false, error: `dedupe_fetch: ${err?.message ?? 'unknown'}` };
+  }
+}
+
+interface ServiceStatusPayload {
+  name: string;
+  endpoint: string;
+  status: 'down';
+  http_status: number;
+  response_body: string;
+  response_time_ms: number;
+  error_message: string;
+}
+
+function buildServiceStatus(c: VoiceClassification): ServiceStatusPayload {
+  const evidence = JSON.stringify(c.evidence).slice(0, 4000);
+  const errorMessage =
+    c.evidence.stall_description ||
+    `${c.class} (signature: ${c.normalized_signature}, errors: ${c.evidence.error_count})`;
+  return {
+    name: 'orb-voice-pipeline',
+    endpoint: `voice-error://${c.class}`,
+    status: 'down',
+    http_status: 0,
+    response_body: evidence,
+    response_time_ms: 0,
+    error_message: errorMessage,
+  };
+}
+
+async function postSelfHealingReport(
+  c: VoiceClassification,
+): Promise<{ ok: boolean; status?: number; detail?: string }> {
+  const payload = {
+    timestamp: new Date().toISOString(),
+    total: 1,
+    live: 0,
+    services: [buildServiceStatus(c)],
+  };
+  try {
+    const res = await fetch(`${GATEWAY_URL}/api/v1/self-healing/report`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(payload),
+      signal: AbortSignal.timeout(10_000),
+    });
+    if (!res.ok) {
+      const txt = await res.text().catch(() => '');
+      return { ok: false, status: res.status, detail: txt.slice(0, 200) };
+    }
+    return { ok: true, status: res.status };
+  } catch (err: any) {
+    return { ok: false, detail: err?.message ?? 'unknown' };
+  }
+}
+
+/**
+ * Classify the session and dispatch to self-healing if the (class,
+ * signature) hasn't been dispatched in this hour. Returns a structured
+ * result describing what happened. Does not throw — all internal errors
+ * are surfaced as `action: 'error'`.
+ */
+/**
+ * VTID-01994: Handle a quality failure detected from session-stop metrics.
+ *
+ * Quality failures don't have explicit error events — they're patterns
+ * inferred from audio_in:audio_out ratios, turn counts, durations. The
+ * fix is usually at the prompt or model-config layer, not the pipeline
+ * layer, so we route directly to the Architecture Investigator instead
+ * of the deterministic-spec path.
+ *
+ * Rate limiting:
+ *   - Sentinel quarantine check: if (class, signature) is quarantined,
+ *     skip investigator (record suppressed verdict only).
+ *   - Sentinel auto-quarantines after 5 dispatches/24h via the burst
+ *     threshold, so worst-case investigator spawns are bounded.
+ *
+ * Independent of the mode flag — quality failures always investigate.
+ */
+async function handleQualityFailure(
+  qc: { class: string; normalized_signature: string },
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
+  // Always append a verdict to the history table — Sentinel reads this
+  // for threshold evaluation. Treat quality failures as 'rollback' verdicts
+  // (the model didn't deliver a usable response, equivalent to a fix
+  // that didn't hold).
+  // VTID-04776: recurrence vs the last fix of this signature (feeds the
+  // Sentinel's Persistence threshold) and the tenant the failure was seen in.
+  const recurrence = await resolveRecurrenceAfterFixMs(qc.class, qc.normalized_signature).catch(() => null);
+  await appendVerdict({
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    verdict: 'rollback',
+    vtid: null,
+    recurrence_after_fix_ms: recurrence,
+    tenant_scope: opts.tenantScope || 'global',
+  }).catch(() => { /* best-effort */ });
+
+  // Sentinel gate: if already quarantined, don't spawn another investigator.
+  const decision = await isDispatchAllowed(qc.class, qc.normalized_signature);
+  if (!decision.allowed) {
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-VOICE-HEALING',
+        type: 'voice.healing.dispatch.suppressed',
+        source: 'voice-self-healing-adapter',
+        status: 'warning',
+        message: `Quality failure suppressed by Sentinel: ${qc.class} (${decision.reason})`,
+        payload: {
+          class: qc.class,
+          normalized_signature: qc.normalized_signature,
+          reason: decision.reason,
+          session_id: opts.sessionId,
+          trigger: 'quality_failure',
+        },
+      });
+    } catch { /* best-effort */ }
+    return {
+      action: 'sentinel_quarantined',
+      class: qc.class,
+      normalized_signature: qc.normalized_signature,
+      detail: `quality:${decision.reason}`,
+    };
+  }
+
+  // Evaluate thresholds — may quarantine if rate is too high.
+  const quarantineReason = await evaluateAndQuarantine(qc.class, qc.normalized_signature);
+
+  // Spawn the Architecture Investigator (fire-and-forget so we don't block
+  // the orb-live.ts session-stop hook). Investigator output is a report
+  // only; never auto-executes.
+  spawnInvestigator({
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    trigger_reason: 'quality_failure',
+    notes: `Quality failure detected from session metrics: audio_in=${opts.sessionMetrics?.audio_in_chunks ?? '?'}, audio_out=${opts.sessionMetrics?.audio_out_chunks ?? '?'}, turns=${opts.sessionMetrics?.turn_count ?? '?'}, duration_ms=${opts.sessionMetrics?.duration_ms ?? '?'}.${quarantineReason ? ' (Sentinel just quarantined this signature.)' : ''}`,
+  }).catch((err) => {
+    console.warn('[voice-self-healing-adapter] quality investigator spawn failed:', err?.message ?? err);
+  });
+
+  // Emit a clear telemetry event so it's visible in the panel.
+  try {
+    await emitOasisEvent({
+      vtid: 'VTID-VOICE-HEALING',
+      type: 'voice.healing.dispatched',
+      source: 'voice-self-healing-adapter',
+      status: 'warning',
+      message: `Quality failure detected: ${qc.class}. Investigator spawned (mode-independent).`,
+      payload: {
+        class: qc.class,
+        normalized_signature: qc.normalized_signature,
+        trigger: 'quality_failure',
+        session_id: opts.sessionId,
+        audio_in_chunks: opts.sessionMetrics?.audio_in_chunks,
+        audio_in_forwarded: opts.sessionMetrics?.audio_in_forwarded, // VTID-VOICE-FWD
+        audio_out_chunks: opts.sessionMetrics?.audio_out_chunks,
+        turn_count: opts.sessionMetrics?.turn_count,
+        duration_ms: opts.sessionMetrics?.duration_ms,
+        sentinel_quarantined_now: !!quarantineReason,
+      },
+    });
+  } catch { /* best-effort */ }
+
+  return {
+    action: 'quality_failure_classified',
+    class: qc.class,
+    normalized_signature: qc.normalized_signature,
+    detail: quarantineReason ? `quarantined:${quarantineReason}` : 'investigator_spawned',
+  };
+}
+
+/**
+ * VTID-04626: one voice conversation stops through TWO hooks — the WS
+ * transport (`ws-…` id) and the live session it wraps (`live-…` id) — and
+ * both report the same metrics. Every quality failure was therefore counted
+ * twice, written twice to voice_healing_history and spawned two
+ * investigators (live pairs on 2026-09-16 and 2026-09-22). The ids differ,
+ * so the pair is recognised by its metrics fingerprint within a short window.
+ */
+const QUALITY_FINGERPRINT_TTL_MS = 2 * 60_000;
+const recentQualityFingerprints = new Map<string, number>();
+
+export function qualityMetricsFingerprint(opts: DispatchOptions): string | null {
+  const m = opts.sessionMetrics;
+  if (!m) return null;
+  const ai = m.audio_in_chunks ?? 0;
+  const ao = m.audio_out_chunks ?? 0;
+  if (ai === 0 && ao === 0) return null;
+  return [
+    opts.tenantScope || 'global',
+    ai,
+    m.audio_in_forwarded ?? '',
+    ao,
+    m.turn_count ?? 0,
+  ].join('|');
+}
+
+/** True when the same conversation was already reported in the last 2 min. */
+export function isDuplicateQualityReport(opts: DispatchOptions, now = Date.now()): boolean {
+  const fp = qualityMetricsFingerprint(opts);
+  if (!fp) return false;
+  for (const [k, at] of recentQualityFingerprints) {
+    if (now - at > QUALITY_FINGERPRINT_TTL_MS) recentQualityFingerprints.delete(k);
+  }
+  const seen = recentQualityFingerprints.get(fp);
+  if (seen !== undefined && now - seen <= QUALITY_FINGERPRINT_TTL_MS) return true;
+  recentQualityFingerprints.set(fp, now);
+  return false;
+}
+
+/** Test helper. */
+export function _resetQualityFingerprintsForTests(): void {
+  recentQualityFingerprints.clear();
+}
+
+async function _dispatchVoiceFailureCore(
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
+  if (opts.metadata?.synthetic === true) {
+    return { action: 'synthetic_skipped' };
+  }
+
+  // VTID-01994: Quality classifier — runs BEFORE the mode check so quality
+  // failures (model under-responds, no engagement, low turn progression)
+  // always trigger the Architecture Investigator regardless of mode. Mode
+  // continues to gate the actual /report dispatch path that can change code;
+  // investigator output is read-only and always allowed because the user
+  // explicitly asked for visibility on every broken session.
+  let qualityResult: DispatchResult | null = null;
+  if (opts.sessionMetrics && isDuplicateQualityReport(opts)) {
+    return { action: 'duplicate_session_report' };
+  }
+  if (opts.sessionMetrics) {
+    const qc = classifyQualityFromSessionStop({
+      audio_in_chunks: opts.sessionMetrics.audio_in_chunks ?? 0,
+      // VTID-VOICE-FWD (Track A): pass through when present; classifier falls
+      // back to raw audio_in_chunks when undefined (older callers / events).
+      audio_in_forwarded: opts.sessionMetrics.audio_in_forwarded,
+      audio_out_chunks: opts.sessionMetrics.audio_out_chunks ?? 0,
+      duration_ms: opts.sessionMetrics.duration_ms ?? 0,
+      turn_count: opts.sessionMetrics.turn_count ?? 0,
+      user_turns: opts.sessionMetrics.user_turns,
+      model_turns: opts.sessionMetrics.model_turns,
+    });
+    if (qc) {
+      qualityResult = await handleQualityFailure(qc, opts);
+    }
+  }
+
+  const mode = await getVoiceSelfHealingMode();
+  if (mode === 'off') {
+    return qualityResult ?? { action: 'mode_off' };
+  }
+
+  let classification: VoiceClassification;
+  try {
+    classification = await classifyVoiceSession(opts.sessionId);
+  } catch (err: any) {
+    return { action: 'error', detail: `classify_failed: ${err?.message ?? 'unknown'}` };
+  }
+
+  // Healthy session (no error events, no stall) → don't dispatch. Note we
+  // still dispatch when class is voice.unknown but severity === 'error',
+  // because that means we observed errors we couldn't classify — investigator
+  // needs that signal.
+  if (classification.class === 'voice.unknown' && classification.severity !== 'error') {
+    // VTID-04626: a quality failure on an otherwise error-free session is
+    // what happened — log that, not 'classifier_no_error'.
+    if (qualityResult) return qualityResult;
+    return {
+      action: 'classifier_no_error',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+    };
+  }
+
+
+
+  // VTID-01962 (PR #5): Recurrence Sentinel quarantine check. If the
+  // (class, signature) pair is quarantined, suppress dispatch and emit
+  // voice.healing.dispatch.suppressed. Probation status allows dispatch
+  // but caps daily volume — adapter respects probation_capped.
+  const dispatchDecision = await isDispatchAllowed(
+    classification.class,
+    classification.normalized_signature,
+  );
+  if (!dispatchDecision.allowed) {
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-VOICE-HEALING',
+        type: 'voice.healing.dispatch.suppressed',
+        source: 'voice-self-healing-adapter',
+        status: 'warning',
+        message: `Sentinel ${dispatchDecision.reason} — dispatch suppressed for ${classification.class}`,
+        payload: {
+          class: classification.class,
+          normalized_signature: classification.normalized_signature,
+          reason: dispatchDecision.reason,
+          status: dispatchDecision.status,
+          probation_until: dispatchDecision.probation_until,
+          session_id: opts.sessionId,
+        },
+      });
+    } catch {
+      /* best-effort telemetry */
+    }
+    return {
+      action:
+        dispatchDecision.reason === 'probation_capped'
+          ? 'sentinel_probation_capped'
+          : 'sentinel_quarantined',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+      detail: dispatchDecision.reason,
+    };
+  }
+
+  // VTID-01960 (PR #3): Spec Memory Gate. Only applies when we know which
+  // spec WILL run — i.e., a deterministic hint exists. For Gemini-fallback
+  // classes the spec_hash isn't known until generateAndStoreFixSpec runs,
+  // so the gate is bypassed here (the dedupe/circuit-breaker handles
+  // those). When a hint exists, look up (spec_hash, signature) in the last
+  // 72h: a probe_failed/rollback row OR a stale 'success' row whose
+  // signature is recurring → block dispatch and emit
+  // voice.healing.spec_memory.blocked. Investigator queue (PR #6) will
+  // pick these up.
+  const hint = getVoiceSpecHint(classification.class);
+  if (hint) {
+    const decision = await lookupSpecMemory(
+      hint.spec_hash,
+      classification.normalized_signature,
+      true,
+    );
+    if (decision.block) {
+      try {
+        await emitOasisEvent({
+          vtid: 'VTID-VOICE-HEALING',
+          type: 'voice.healing.spec_memory.blocked',
+          source: 'voice-self-healing-adapter',
+          status: 'warning',
+          message: `Spec Memory Gate blocked dispatch for ${classification.class} (${decision.reason})`,
+          payload: {
+            class: classification.class,
+            normalized_signature: classification.normalized_signature,
+            spec_hash: hint.spec_hash,
+            reason: decision.reason,
+            matched_outcome: decision.matched?.outcome,
+            matched_attempted_at: decision.matched?.attempted_at,
+            matched_vtid: decision.matched?.vtid,
+            session_id: opts.sessionId,
+          },
+        });
+      } catch {
+        /* best-effort telemetry */
+      }
+      // VTID-01963 (PR #6): spawn Architecture Investigator on first repeat
+      // — fire-and-forget; never blocks the dispatch path. The investigator
+      // produces a structured report and emits voice.healing.investigation.completed.
+      spawnInvestigator({
+        class: classification.class,
+        normalized_signature: classification.normalized_signature,
+        trigger_reason: 'spec_memory_blocked',
+        related_spec_hash: hint.spec_hash,
+        notes: `Spec Memory Gate blocked dispatch: ${decision.reason}.`,
+      }).catch((err) =>
+        console.warn(
+          `[voice-self-healing-adapter] investigator spawn failed: ${err?.message ?? err}`,
+        ),
+      );
+
+      return {
+        action: 'spec_memory_blocked',
+        class: classification.class,
+        normalized_signature: classification.normalized_signature,
+        detail: decision.reason,
+      };
+    }
+  }
+
+  const tenantScope = opts.tenantScope || 'global';
+  const dedup = await tryReserveDedupe(
+    classification.class,
+    classification.normalized_signature,
+    tenantScope,
+  );
+  if (!dedup.first) {
+    return {
+      action: 'dedupe_hit',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+      detail: dedup.error,
+    };
+  }
+
+  if (mode === 'shadow') {
+    return {
+      action: 'shadow_logged',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+    };
+  }
+
+  // mode === 'live'
+  const post = await postSelfHealingReport(classification);
+  if (!post.ok) {
+    return {
+      action: 'error',
+      class: classification.class,
+      normalized_signature: classification.normalized_signature,
+      http_status: post.status,
+      detail: `report_${post.status ?? 'fetch'}: ${post.detail ?? ''}`,
+    };
+  }
+  return {
+    action: 'dispatched',
+    class: classification.class,
+    normalized_signature: classification.normalized_signature,
+    http_status: post.status,
+  };
+}
+
+/**
+ * Public dispatch wrapper. Runs the core decision pipeline and then writes
+ * a row to voice_healing_shadow_log (PR #7) for the dashboard's
+ * would-dispatch vs actual-outcome comparison view. The log row is
+ * written for every action — dispatched, mode_off, sentinel_quarantined,
+ * spec_memory_blocked, dedupe_hit, etc. — so ops sees a complete decision
+ * timeline, not just the cases that reached /report.
+ */
+export async function dispatchVoiceFailure(
+  opts: DispatchOptions,
+): Promise<DispatchResult> {
+  const result = await _dispatchVoiceFailureCore(opts);
+
+  // Skip shadow log for synthetic probe sessions — they're not real voice
+  // traffic and would pollute the comparison view.
+  if (result.action === 'synthetic_skipped' || result.action === 'duplicate_session_report') {
+    return result;
+  }
+
+  // Best-effort log; never blocks the caller.
+  const mode = (cachedMode ?? 'off') as 'off' | 'shadow' | 'live';
+  appendShadowLog({
+    mode,
+    action: result.action,
+    class: result.class,
+    normalized_signature: result.normalized_signature,
+    detail: result.detail,
+    session_id: opts.sessionId,
+    tenant_scope: opts.tenantScope,
+  }).catch(() => {
+    /* swallow — logging is best-effort */
+  });
+
+  return result;
+}
+
+/**
+ * Fire-and-forget wrapper for orb-live.ts hot paths. Always returns
+ * synchronously; never throws. Internal errors are logged at warn level.
+ */
+export function dispatchVoiceFailureFireAndForget(opts: DispatchOptions): void {
+  dispatchVoiceFailure(opts)
+    .then((result) => {
+      // VTID-04775 (Jev C1): one outcome row per session, after the rule
+      // classifier answered. Off unless JEV_VOICE_SESSION_OUTCOME_MODE is set;
+      // a repeat stop report for the same session is not asked again.
+      if (!isVoiceOutcomeOn() || result.action === 'duplicate_session_report') return;
+      void runVoiceOutcomeCheck({
+        sessionId: opts.sessionId,
+        metrics: opts.sessionMetrics,
+        signals: opts.outcomeSignals,
+        ruleClass: result.class ?? null,
+        synthetic: opts.metadata?.synthetic === true,
+      });
+    })
+    .catch((err) => {
+      console.warn(
+        '[voice-self-healing-adapter] fire-and-forget dispatch failed:',
+        err?.message ?? err,
+      );
+    });
+}

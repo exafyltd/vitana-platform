@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05089",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05089-wearable-features-bridge.test.ts test/routes/vtid-05089-connector-webhooks-bridge.test.ts test/vtid-05025-commerce-health-boundary.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The wearable -> health_features_daily bridge is off unless WEARABLE_FEATURE_BRIDGE_ENABLED is exactly 'true' and refuses on VITANA_ENV=staging even then, because staging shares the production database and the bridge writes health_features_daily and recomputes the Vitana Index. It never runs on staging, so it is proven by these Jest suites, not by staging traffic. No route is added or changed in shape, and a webhook POST is never sent to staging (it would write to the shared database). find_perfect_product's Index read is removed unconditionally; the commerce-boundary suite proves it."
+    }
+  ]
+}

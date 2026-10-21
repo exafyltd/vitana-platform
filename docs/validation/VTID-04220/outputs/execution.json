@@ -1,0 +1,1 @@
+{ "vtid": "VTID-04220", "title": "Env-aware gateway base URL for the verifying-stage probe and the self-healing probe", "executor": "claude-code-session", "checks": { "tsc": "clean", "jest": "35/35" } }

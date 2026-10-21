@@ -1,0 +1,12 @@
+DEV-AUTOPILOT.yml run #324 (id 35606658576), event=schedule, 2026-09-21T13:36:04Z, conclusion=failure
+[dev-autopilot-scan] walked 2583 files across 6 roots
+[dev-autopilot-scan] signals: todo-scanner-v1=38 large-file-scanner-v1=86 missing-tests-scanner-v1=1020 safety-gap-scanner-v1=8 rls-policy-scanner-v1=36 schema-drift-scanner-v1=239 route-auth-scanner-v1=100 secret-exposure-scanner-v1=8 npm-audit-scanner-v1=51 stale-feature-flag-scanner-v1=16 dead-code-scanner-v1=725 product-gap-scanner-v1=skipped total=2327
+[dev-autopilot-scan] wrote dev-autopilot-signals.json
+[dev-autopilot-scan] POST failed 404:
+<html><head><meta http-equiv="content-type" content="text/html;charset=utf-8"><title>404 Page not found</title></head>
+<body text=#000000 bgcolor=#ffffff><h1>Error: Page not found</h1><h2>The requested URL was not found on this server.</h2></body></html>
+##[error]Process completed with exit code 1.
+env: GATEWAY_URL: https://gateway-q74ibpv6ia-uc.a.run.app   DEV_AUTOPILOT_SCAN_TOKEN: ***   DEV_AUTOPILOT_SCAN_DRY_RUN: false
+Runs #322 (2026-09-20 12:00Z) and #323 (2026-09-20 21:09Z): conclusion=failure, same shape.
+
+E2E-ORB-MONITOR.yml runs #2755/#2756/#2757 (2026-09-21): conclusion=cancelled — job "orb-test (hub, hub-shared, …)" step "Run ORB Widget tests (hub)" ran 10:42:50Z→10:47:30Z and was cancelled at the 5-minute job timeout (HUB_URL = dead host); "Report failure to self-healing" = skipped. mobile/desktop legs passed (they hit vitanaland.com).

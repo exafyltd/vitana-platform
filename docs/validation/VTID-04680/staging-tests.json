@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04680",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "calendar window requires auth (route exists)", "path": "/api/v1/calendar/events/window?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z", "expect_status": 401 },
+    { "kind": "existing", "ref": "npm run test:calendar", "cwd": "services/gateway",
+      "reason": "pins the goal-plan trigger (milestones only, no daily series), the data fix scope (untouched habit/check-in entries, cancel not delete) and the opt-in staff work lens with no deploys; the SQL itself cannot be exercised read-only on staging" }
+  ]
+}

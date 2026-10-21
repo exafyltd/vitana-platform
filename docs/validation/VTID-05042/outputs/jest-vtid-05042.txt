@@ -1,0 +1,28 @@
+PASS test/routes/tenant-admin/content-moderation.test.ts
+    ✓ get /items returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (42 ms)
+    ✓ get /items/stats returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (27 ms)
+    ✓ get /items/item-1 returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (15 ms)
+    ✓ post /items/item-1/approve returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (17 ms)
+    ✓ post /items/item-1/reject returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (20 ms)
+    ✓ post /items/item-1/flag returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (24 ms)
+PASS test/routes/tenant-admin/community-admin.test.ts
+    ✓ GET /memberships is scoped to the URL tenant via eq(tenant_id) (VTID-05042) (13 ms)
+    ✓ exafy_admin GET /live-rooms is also scoped to the URL tenant (VTID-05042) (22 ms)
+    ✓ exafy_admin GET /memberships is also scoped to the URL tenant (VTID-05042) (16 ms)
+    ✓ get /meetups returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (21 ms)
+    ✓ delete /meetups/evt-1 returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (9 ms)
+    ✓ get /groups returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (26 ms)
+    ✓ get /creators returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (7 ms)
+    ✓ get /stats returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (6 ms)
+PASS test/middleware/require-tenant-admin.test.ts
+  requirePlatformScope (VTID-05042)
+PASS test/routes/tenant-admin/overview.test.ts
+    ✓ GET /activity returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (22 ms)
+    ✓ GET /alerts returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (13 ms)
+PASS test/routes/tenant-admin/audit-log.test.ts
+    ✓ GET /access returns auth-topic OASIS events for exafy_admin (VTID-05042: platform-only) (3 ms)
+    ✓ GET /access returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042) (3 ms)
+PASS test/admin-partner-health.test.ts
+  VTID-05042 — tenant admin has no partner-health access
+Test Suites: 6 passed, 6 total
+Tests:       124 passed, 124 total

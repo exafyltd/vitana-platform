@@ -1,0 +1,12 @@
+# VTID-04776 / 04777 / 04778 / 04779 / 04780 — commands run in this session (services/gateway unless noted)
+npx tsc --noEmit -p .                                                          # clean
+npx jest test/vtid-04776-voice-supervisor.test.ts test/routes/voice-supervisor.test.ts \
+  test/routes/orb-livekit.test.ts test/command-hub/vtid-04779-voice-section-rebuild.test.ts \
+  test/orb/latency/vtid-04542-voice-payload-identity.test.ts                   # outputs/jest-voice-supervisor.txt
+npx jest test/command-hub                                                      # 28 suites pass
+npm run test:roles ; npm run test:operator ; npm run test:support              # pass
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts -u         # intentional: session start now writes voice_session_facts (persistence only; model payloads unchanged)
+npx jest (full gateway suite, after merging origin/main)                       # 1425 suites, 22933 tests, 0 failed — outputs/jest-full-gateway.txt
+(root) node scripts/ci/command-hub-ownership-guard.js                          # passes with VTID-04777 in the title
+(root) Playwright render of the six Voice tabs against a static Command Hub with the API mocked, 1400x900 + 390x844
+(root) migration applied to the VITANA project (additive) + 7-day backfill — outputs/migration-applied.txt

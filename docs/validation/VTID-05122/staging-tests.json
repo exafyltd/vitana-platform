@@ -1,0 +1,39 @@
+{
+  "vtid": "VTID-05122",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "spec approve route is mounted and fails closed for an invalid caller (401 JSON, not HTML 404)",
+      "method": "POST",
+      "path": "/api/v1/specs/VTID-00000/approve",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_json": { "ok": false },
+      "reason": "POST only as a rejected probe (the runner sends an invalid bearer); nothing is approved"
+    },
+    {
+      "kind": "http",
+      "name": "Command Hub loads the VTID-05122 app.js",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": ["app.js?v=20261121-vtid-05082"]
+    },
+    {
+      "kind": "http",
+      "name": "served app.js calls the real spec approve route from Active Repairs",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": ["'/api/v1/specs/' + encodeURIComponent(task.vtid) + '/approve'"]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-05122-spec-approve-route.test.ts test/vtid-05048-s4-caller-identity.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pins both approve call sites to the real route, the absence of x-user-* headers, and server-side approver resolution"
+    }
+  ]
+}

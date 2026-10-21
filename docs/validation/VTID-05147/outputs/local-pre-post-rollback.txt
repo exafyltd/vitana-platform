@@ -1,0 +1,49 @@
+pre-apply ran: 11 lines
+         table_name          |    grantee    | sel | ins | upd | del | trunc 
+-----------------------------+---------------+-----+-----+-----+-----+-------
+ public.app_users            | anon          | t   | f   | f   | f   | f
+ public.app_users            | authenticated | t   | t   | t   | t   | f
+ public.app_users            | service_role  | t   | t   | t   | t   | t
+ public.memberships          | anon          | t   | f   | f   | f   | f
+ public.memberships          | authenticated | t   | t   | t   | t   | f
+ public.memberships          | service_role  | t   | t   | t   | t   | t
+ public.role_preferences     | anon          | t   | f   | f   | f   | f
+ public.role_preferences     | authenticated | t   | f   | f   | f   | f
+ public.role_preferences     | service_role  | t   | t   | t   | t   | t
+ public.user_active_roles    | anon          | t   | f   | f   | f   | f
+ public.user_active_roles    | authenticated | t   | f   | f   | f   | f
+ public.user_active_roles    | service_role  | t   | t   | t   | t   | t
+ public.user_permitted_roles | anon          | t   | f   | f   | f   | f
+ public.user_permitted_roles | authenticated | t   | f   | f   | f   | f
+ public.user_permitted_roles | service_role  | t   | t   | t   | t   | t
+ public.user_tenants         | anon          | t   | f   | f   | f   | f
+ public.user_tenants         | authenticated | t   | f   | f   | f   | f
+ public.user_tenants         | service_role  | t   | t   | t   | t   | t
+(18 rows)
+
+      tablename       |          policyname           |  cmd   |      roles      
+----------------------+-------------------------------+--------+-----------------
+ role_preferences     | rp_select_self                | SELECT | {public}
+ user_active_roles    | user_active_roles_select      | SELECT | {public}
+ user_permitted_roles | upr_all_service_role          | ALL    | {service_role}
+ user_permitted_roles | upr_select_own                | SELECT | {authenticated}
+ user_tenants         | admin_read_all_user_tenants   | SELECT | {authenticated}
+ user_tenants         | user_tenants_all_service_role | ALL    | {service_role}
+ user_tenants         | user_tenants_select_own       | SELECT | {authenticated}
+(7 rows)
+
+ anon_exec | auth_exec | me_set_exec | switch_exec | membership_check 
+-----------+-----------+-------------+-------------+------------------
+ f         | t         | t           | t           | t
+(1 row)
+
+          t           | count 
+----------------------+-------
+ user_tenants         |     1
+ role_preferences     |     2
+ user_active_roles    |     1
+ user_permitted_roles |     1
+(4 rows)
+
+t|t|6
+re-apply after rollback ok

@@ -1,0 +1,53 @@
+# Accepted architectural decisions for this repository.
+#
+# Generated and rewritten by repowise; edits survive, comments do not.
+# Commit this file: it is the source of truth, and the index is a copy.
+# Candidates and evidence stay out of it on purpose.
+version: 1
+decisions:
+- id: 4156efe0f4106f90f28a454e558f4b48
+  title: Graphify DOES support Bedrock for community labeling, verified live
+  decision: Wire graphify label --backend bedrock --model eu.anthropic.claude-sonnet-4-6 into the session-start
+    hook, falling back to unlabeled graphify update --no-cluster when no AWS credentials are present.
+  reason: This is the same known-invokable Bedrock inference profile CLAUDE.md's own §2b table already
+    documents — reusing a verified-working identifier instead of guessing a new one.
+  scope:
+  - .claude/hooks/session-start-codeintel-setup.sh
+  currency: active
+  source: cli
+  accepted_at: '2026-09-20T09:31:00.854821'
+  accepted_by: Claude
+  evidence:
+  - accepted by Claude
+- id: 66de0d2a295bac76db04348332c1d91b
+  title: RepoWise MCP server needs explicit settings trust to load
+  decision: 'Add "enableAllProjectMcpServers": true to .claude/settings.json (verified: repowise mcp /home/user/vitana-platform
+    --transport stdio correctly answers an MCP initialize + tools/list handshake with all 10 tools).'
+  reason: Claude Code requires an explicit trust setting before it will auto-load a project-declared .mcp.json
+    server in a non-interactive/remote session.
+  scope:
+  - .claude/settings.json
+  - .mcp.json
+  currency: active
+  source: cli
+  accepted_at: '2026-09-20T09:30:58.946402'
+  accepted_by: Claude
+  evidence:
+  - accepted by Claude
+- id: cbfebc6e1bb6ec48907255ee5960b3fb
+  title: RepoWise has no Bedrock provider — its LLM synthesis is unconfigured in this environment
+  decision: Do not fake a bedrock provider for repowise. Leave get_answer/full_upgrade unconfigured until
+    an operator provisions one of repowise's real supported providers — deepseek is the natural pick since
+    DEEPSEEK_API_KEY is already an AWS Secrets Manager entry this platform provisions for the gateway.
+  reason: CLAUDE.md's own standing rule is Bedrock for THIS codebase's own LLM calls, but that rule cannot
+    extend to a third-party tool (repowise) that never implemented a Bedrock adapter — inventing one would
+    mean silently routing through some other mechanism, which is exactly the kind of unverified behavior
+    this codebase's own §2b/§10a rules exist to prevent.
+  scope:
+  - docs/codeintel
+  currency: active
+  source: cli
+  accepted_at: '2026-09-20T09:30:59.906693'
+  accepted_by: Claude
+  evidence:
+  - accepted by Claude

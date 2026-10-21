@@ -1,0 +1,156 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+(node:4702) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/session/live-session-controller.test.ts
+  A8.2: configureLiveSessionController
+    ✓ throws if a handler runs before configure (54 ms)
+    ✓ throws if configured twice (2 ms)
+    ✓ reset escape hatch allows reconfiguration
+  A8.2: cleanupExpiredSessions
+    ✓ removes sessions whose lastActivity is older than SESSION_TIMEOUT_MS (1 ms)
+    ✓ ends the SSE response on expiry (best-effort, swallows errors) (1 ms)
+    ✓ does not throw when sse.end throws (1 ms)
+  A8.2: cleanupWsSession
+    ✓ is a no-op when the sessionId is unknown (1 ms)
+    ✓ clears keepalive intervals + watchdog and removes both registry entries (2 ms)
+    ✓ skips client WS close when readyState is not OPEN (1 ms)
+    ✓ handles a session that has no liveSession (WS-only entry)
+  VTID-03561: cleanupWsSession emits session.stop
+    ✓ emits vtid.live.session.stop on WS teardown (the regression)
+    ✓ reports the LIVE session id, never the ws-<uuid> socket id
+    ✓ carries the session metrics the cost/quality consumers read (2 ms)
+    ✓ passes the caller-supplied reason through, and defaults to client_disconnect (1 ms)
+    ✓ does NOT double-emit when a stop was already emitted for the session (1 ms)
+    ✓ latches after emitting so a repeat teardown cannot re-emit
+    ✓ completes teardown even when the emit throws (1 ms)
+    ✓ reports null duration/idle for a session torn down before it started (1 ms)
+    ✓ still emits when the session never resolved an identity
+  A8.2: handleLiveStreamEndTurn
+    ✓ 400 when session_id is missing from both query and body (1 ms)
+    ✓ 404 when session is not in liveSessions
+    ✓ 400 when session is not active
+    ✓ falls back to body.session_id when query is empty
+    ✓ calls sendEndOfTurn + responds "End of turn signaled" when upstream WS is open and sendEndOfTurn returns true (5 ms)
+    ✓ responds "acknowledged (no Live API)" when no upstream WS exists (1 ms)
+    ✓ responds "acknowledged (no Live API)" when upstream WS is not in OPEN state (1 ms)
+    ✓ logs ownership mismatch but still processes the request (1 ms)
+  A8.2 anti-regression: orb-live.ts is a consumer of the controller
+    ✓ imports the controller (configure + cleanup helpers + end-turn handler) (1 ms)
+    ✓ calls configureLiveSessionController exactly once at module init (10 ms)
+    ✓ does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore (3 ms)
+    ✓ end-turn route is now a thin delegator (single await call) (1 ms)
+    ✓ /live/session/start route is now a thin delegator (A8.2.1) (1 ms)
+    ✓ /live/session/stop route is now a thin delegator (A8.2-complete) (1 ms)
+    ✓ /live/stream/send route is now a thin delegator (A8.2-complete) (1 ms)
+  A8.2.1: handleLiveSessionStart
+    ✓ returns 403 when validateOrigin rejects (2 ms)
+    ✓ returns 401 AUTH_TOKEN_INVALID when Bearer header present but req.identity unset (1 ms)
+    ✓ creates an anonymous session (no JWT) and stores it in liveSessions with a live-<uuid> session_id (3 ms)
+    ✓ respects client-requested language (1 ms)
+    ✓ emits OASIS vtid.live.session.start with the resolved fields (1 ms)
+    ✓ pins client-supplied conversation_id when present (1 ms)
+    ✓ marks reconnect session with resumedFromHistory when transcript_history provided (1 ms)
+    ✓ stores guided_topic_id and guided_topic_resume on the created session
+    ✓ defaults guided_topic_resume to false when the field is absent (a fresh topic tap, not a resume)
+    ✓ ignores a non-boolean guided_topic_resume (defensive against a malformed/tampered payload) (1 ms)
+    ✓ uses VAD silence override when supplied in valid range (1 ms)
+    ✓ does NOT terminate other sessions when identity is DEV_IDENTITY (275 ms)
+    ✓ terminates existing sessions for a real authenticated user (31 ms)
+    ✓ returns wake_brief field in meta (default null for anonymous; non-null structure when populated) (1 ms)
+    VTID-03107: voice-quota gate
+      ✓ returns 402 with structured paywall body when quota is exhausted (hard_block) (2 ms)
+      ✓ allows the session to start normally when quota is available (40 ms)
+      ✓ skips the quota check entirely for anonymous sessions (no identity) (1 ms)
+  A8.2-complete: handleLiveSessionStop
+    ✓ 400 when session_id missing (1 ms)
+    ✓ 404 when session not found
+    ✓ happy path: closes upstream WS, writes session_ended SSE event, marks inactive, deletes from registry, returns 200 { ok: true } (2 ms)
+    ✓ clears upstream ping + silence keepalive intervals (1 ms)
+    ✓ OASIS payload includes user/tenant from session.identity (2 ms)
+    ✓ ownership mismatch is logged but allowed through (3 ms)
+  A8.2-complete: handleLiveStreamSend
+    ✓ 400 when session_id missing (3 ms)
+    ✓ 404 when session not found
+    ✓ 400 when session not active
+    ✓ drops audio with reason "navigation_dispatched" when navigation is queued (1 ms)
+    ✓ drops audio with reason "model_speaking" while the model is producing audio
+    ✓ drops audio with reason "post_turn_cooldown" within the cooldown window (1 ms)
+    ✓ forwards audio via sendAudioToLiveAPI when upstream WS is open (1 ms)
+    ✓ arms the forwarding watchdog when only the USER has shown life (transport, not response)
+    ✓ skips the forwarding watchdog once the model has responded on this turn (1 ms)
+    ✓ silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE) (1 ms)
+    ✓ handles video frame: increments videoInFrames + writes video_ack via SSE
+    ✓ text path: forwards client_content turn_complete=true via upstream WS
+    ✓ interrupt path with model not speaking: returns was_speaking:false (no-op)
+    ✓ interrupt path with model speaking: ungates mic, sends end-of-turn, clears output buffer, writes interrupted SSE event
+    ✓ falls back to body.session_id when query is empty (1 ms)
+    ✓ 500 on uncaught throw from sendAudioToLiveAPI
+  VTID-03774: shouldInjectWakeBriefOverrideBlock
+    ✓ injects on a non-reconnect open regardless of dedupeKey
+    ✓ withholds injection on a reconnect for a non-guided-topic candidate (unchanged behavior)
+    ✓ still injects on a reconnect when the winning candidate is a guided-topic resume
+    ✓ requires an exact guided_topic: prefix — a lookalike key is not exempted (1 ms)
+    ✓ handles undefined/empty dedupeKey on a reconnect as non-exempt
+
+PASS test/services/assistant-continuation/providers/guided-topic-narration.test.ts
+  guided-topic-narration provider
+    ✓ skips when no inputs are present
+    ✓ skips when no topic was tapped (normal open) (1 ms)
+    ✓ VTID-03677: still LEADS turn-1 with a topic even when isReconnect is true (4 ms)
+    ✓ suppresses when the topic is not live (no seed)
+    ✓ errors (not throws) when the seed read fails (1 ms)
+    ✓ LEADS turn-1 with a valid, bundled candidate when a topic was tapped (1 ms)
+    ✓ VTID-03644: forwards a non-German lang as the seed locale (1 ms)
+    ✓ greets by name when firstName is provided
+    VTID-03650: Polly narration bridge
+      ✓ tries Polly with the resolved content and locale before deciding the turn-1 line (1 ms)
+      ✓ when Polly succeeds: turn-1 line is the SHORT post-narration line, not the raw script (1 ms)
+      ✓ when Polly succeeds: the audio is bundled on the candidate content for the controller to send
+      ✓ VTID-03665: when Polly fails, turn-1 is the SHORT opener line — NEVER the raw script verbatim (1 ms)
+    VTID-03774 (Codex review follow-up): isResume — a reconnect after audio was already delivered
+      ✓ still LEADS turn-1 (candidate still wins) on a resume — the topic context must not be lost
+      ✓ does NOT call Polly synthesis on a resume — nothing new to play
+      ✓ userFacingLine is empty on a resume — no forced re-opener, the model resumes naturally
+      ✓ an empty userFacingLine still passes the framework validator (a resume candidate is not a malformed one) (1 ms)
+      ✓ narrationAudio stays null on a resume (the audio bridge already treats null as nothing-to-send)
+      ✓ the TEACH content (topic/explanation/practice_target) is STILL bundled on a resume — only the spoken line and audio are suppressed
+      ✓ no regression: isResume=false (default/unset) behaves exactly as before — Polly is still attempted (1 ms)
+
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (1 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time (1 ms)
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (1 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared (1 ms)
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session (1 ms)
+  orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)
+    ✓ re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect
+    ✓ sets _isReconnecting = true before starting the reconnect — the health-probe watchdog's own "if (_s._isReconnecting) return;" guard is otherwise inert (1 ms)
+    ✓ resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch
+    ✓ the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step) (1 ms)
+  orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)
+    ✓ restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read
+    ✓ does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)
+    ✓ logs the restore for future diagnosability
+    ✓ logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call (1 ms)
+    ✓ the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement)
+  orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (VTID-03774)
+    ✓ is declared in the initial _s state, defaulting to false (1 ms)
+    ✓ focusGuidedTopic resets it to false on every fresh tap
+    ✓ is flipped true at the same turn-complete point that nulls _s.guidedTopic (1 ms)
+    ✓ _hide() clears it — a real close ends the overlay session
+    ✓ _sessionStart sends guided_topic_resume only when both guidedTopic AND the delivered flag are set (1 ms)
+    ✓ the resume field is nested inside the guidedTopic block, so it can never be sent without guided_topic_id
+
+Test Suites: 3 passed, 3 total
+Tests:       121 passed, 121 total
+Snapshots:   0 total
+Time:        1.533 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

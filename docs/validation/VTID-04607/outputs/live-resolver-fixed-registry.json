@@ -1,0 +1,918 @@
+{
+ "started_at": "2026-09-26T08:57:32.233Z",
+ "registry_url": "http://127.0.0.1:8765/nav-registry.json",
+ "nav_service": {
+  "registry": {
+   "source": "remote",
+   "signature": "c246686816d906f0",
+   "screens": 185,
+   "commit": null
+  },
+  "index": {
+   "signature": "c246686816d906f0",
+   "texts": 9157,
+   "current": true
+  },
+  "building": null,
+  "last_error": null
+ },
+ "resolver": {
+  "summary": {
+   "total": 50,
+   "open": 35,
+   "handoff": 15,
+   "wrong": 0,
+   "none": 0
+  },
+  "results": [
+   {
+    "id": "R01",
+    "lang": "en",
+    "say": "Take me to my wallet",
+    "expect": [
+     "WALLET.OVERVIEW"
+    ],
+    "candidates": [
+     "WALLET.OVERVIEW",
+     "OVERLAY.WALLET_POPUP",
+     "WALLET.BALANCE_OPTIMIZATION",
+     "WALLET.ACTIONS",
+     "WALLET.ACTIVITY"
+    ],
+    "ms": 213,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "WALLET.OVERVIEW",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R02",
+    "lang": "en",
+    "say": "Show me my rewards",
+    "expect": [
+     "WALLET.REWARDS"
+    ],
+    "candidates": [
+     "WALLET.REWARDS",
+     "WALLET.REWARDS_PENDING",
+     "WALLET.REWARDS_REFERRAL",
+     "WALLET.REWARDS_INTELLIGENCE",
+     "SETTINGS.BILLING_INVOICES"
+    ],
+    "ms": 209,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "WALLET.REWARDS",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R03",
+    "lang": "en",
+    "say": "Open my subscriptions",
+    "expect": [
+     "WALLET.SUBSCRIPTIONS"
+    ],
+    "candidates": [
+     "WALLET.SUBSCRIPTIONS",
+     "INBOX.OVERVIEW",
+     "BUSINESS.SERVICES",
+     "SETTINGS.BILLING_PLAN",
+     "COMM.FEED"
+    ],
+    "ms": 204,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "WALLET.SUBSCRIPTIONS",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R04",
+    "lang": "en",
+    "say": "Pop up my wallet quickly, I just want a quick look",
+    "expect": [
+     "OVERLAY.WALLET_POPUP"
+    ],
+    "candidates": [],
+    "ms": 188,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "OVERLAY.WALLET_POPUP",
+    "route": "/wallet?open=wallet",
+    "entry_kind": "overlay",
+    "problems": []
+   },
+   {
+    "id": "R05",
+    "lang": "en",
+    "say": "Open my billing settings",
+    "expect": [
+     "SETTINGS.BILLING"
+    ],
+    "candidates": [],
+    "ms": 216,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.BILLING",
+    "route": "/settings/billing",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R06",
+    "lang": "en",
+    "say": "Open my inbox",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 187,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "INBOX.OVERVIEW",
+    "route": "/inbox",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R07",
+    "lang": "en",
+    "say": "Show me my messages",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "candidates": [
+     "INBOX.OVERVIEW",
+     "INBOX.ARCHIVED",
+     "HOME.NEWS_ALL",
+     "INBOX.INSPIRATION",
+     "DISCOVER.ORDERS"
+    ],
+    "ms": 201,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "INBOX.OVERVIEW",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R08",
+    "lang": "en",
+    "say": "Open my calendar",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 189,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "CALENDAR.OVERVIEW",
+    "route": "/calendar?open=calendar",
+    "entry_kind": "overlay",
+    "problems": []
+   },
+   {
+    "id": "R09",
+    "lang": "en",
+    "say": "Open my reminders",
+    "expect": [
+     "REMINDERS.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 188,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "REMINDERS.OVERVIEW",
+    "route": "/reminders",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R10",
+    "lang": "en",
+    "say": "Go to my profile",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "candidates": [],
+    "ms": 211,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "PROFILE.ME",
+    "route": "/me/profile",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R11",
+    "lang": "en",
+    "say": "Show me my diary",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "candidates": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY",
+     "MEMORY.OVERVIEW",
+     "MEMORY.TIMELINE",
+     "CALENDAR.OVERVIEW"
+    ],
+    "ms": 189,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "MEMORY.DIARY",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R12",
+    "lang": "en",
+    "say": "Open my diary",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "candidates": [],
+    "ms": 206,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "MEMORY.DIARY",
+    "route": "/daily-diary?tab=health",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R13",
+    "lang": "en",
+    "say": "Take me to my memory garden",
+    "expect": [
+     "MEMORY.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 190,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "MEMORY.OVERVIEW",
+    "route": "/memory",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R14",
+    "lang": "en",
+    "say": "Open settings",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 190,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.OVERVIEW",
+    "route": "/settings",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R15",
+    "lang": "en",
+    "say": "Take me to the notification settings",
+    "expect": [
+     "SETTINGS.NOTIFICATIONS"
+    ],
+    "candidates": [],
+    "ms": 190,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.NOTIFICATIONS",
+    "route": "/settings/notifications",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R16",
+    "lang": "en",
+    "say": "Open the settings where I change the app language",
+    "expect": [
+     "SETTINGS.PREFERENCES_LANGUAGE"
+    ],
+    "candidates": [],
+    "ms": 189,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.PREFERENCES_LANGUAGE",
+    "route": "/settings/preferences?section=language",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R17",
+    "lang": "en",
+    "say": "Open the settings for dark mode",
+    "expect": [
+     "SETTINGS.PREFERENCES_APPEARANCE"
+    ],
+    "candidates": [
+     "SETTINGS.PREFERENCES_APPEARANCE",
+     "SETTINGS.OVERVIEW"
+    ],
+    "ms": 186,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "SETTINGS.PREFERENCES_APPEARANCE",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R18",
+    "lang": "en",
+    "say": "Open my privacy settings",
+    "expect": [
+     "SETTINGS.PRIVACY"
+    ],
+    "candidates": [],
+    "ms": 190,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.PRIVACY",
+    "route": "/settings/privacy",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R19",
+    "lang": "en",
+    "say": "Show me my connected apps",
+    "expect": [
+     "SETTINGS.CONNECTED_APPS"
+    ],
+    "candidates": [],
+    "ms": 188,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.CONNECTED_APPS",
+    "route": "/connectors",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R20",
+    "lang": "en",
+    "say": "I need help, take me to support",
+    "expect": [
+     "SETTINGS.SUPPORT",
+     "SETTINGS.SUPPORT_CONTACT"
+    ],
+    "candidates": [
+     "SETTINGS.SUPPORT",
+     "SETTINGS.SUPPORT_CONTACT"
+    ],
+    "ms": 207,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "SETTINGS.SUPPORT",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R21",
+    "lang": "en",
+    "say": "Show me today's events",
+    "expect": [
+     "COMM.EVENTS_TODAY"
+    ],
+    "candidates": [],
+    "ms": 189,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "COMM.EVENTS_TODAY",
+    "route": "/comm/events-meetups?tab=today",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R22",
+    "lang": "en",
+    "say": "Take me to the live rooms",
+    "expect": [
+     "COMM.LIVE_ROOMS",
+     "COMM.LIVE_ROOMS_ALL"
+    ],
+    "candidates": [],
+    "ms": 187,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "COMM.LIVE_ROOMS",
+    "route": "/comm/live-rooms",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R23",
+    "lang": "en",
+    "say": "Show me the groups",
+    "expect": [
+     "COMM.GROUPS"
+    ],
+    "candidates": [],
+    "ms": 206,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "COMM.GROUPS",
+    "route": "/comm/groups",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R24",
+    "lang": "en",
+    "say": "Open the podcasts",
+    "expect": [
+     "COMM.MEDIA_PODCASTS",
+     "HEALTH.EDUCATION_PODCASTS"
+    ],
+    "candidates": [],
+    "ms": 191,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "COMM.MEDIA_PODCASTS",
+    "route": "/comm/media-hub?tab=podcasts",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R25",
+    "lang": "en",
+    "say": "I want to invite a friend to the app",
+    "expect": [
+     "COMM.INVITE"
+    ],
+    "candidates": [],
+    "ms": 208,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "COMM.INVITE",
+    "route": "/invite",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R26",
+    "lang": "en",
+    "say": "Show me my Vitana Index",
+    "expect": [
+     "HEALTH.VITANA_INDEX",
+     "OVERLAY.VITANA_INDEX"
+    ],
+    "candidates": [
+     "OVERLAY.VITANA_INDEX",
+     "HEALTH.VITANA_INDEX",
+     "COMM.TALK_TO_VITANA",
+     "INBOX.INSPIRATION",
+     "HEALTH.EDUCATION"
+    ],
+    "ms": 187,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "OVERLAY.VITANA_INDEX",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R27",
+    "lang": "en",
+    "say": "Open my sleep plan",
+    "expect": [
+     "HEALTH.PLANS_SLEEP"
+    ],
+    "candidates": [],
+    "ms": 208,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "HEALTH.PLANS_SLEEP",
+    "route": "/health/plans?tab=sleep",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R28",
+    "lang": "en",
+    "say": "Show me my workout plans",
+    "expect": [
+     "HEALTH.PLANS_EXERCISE"
+    ],
+    "candidates": [],
+    "ms": 192,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "HEALTH.PLANS_EXERCISE",
+    "route": "/health/plans?tab=exercise",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R29",
+    "lang": "en",
+    "say": "Open my life compass",
+    "expect": [
+     "LIFE_COMPASS.OVERLAY"
+    ],
+    "candidates": [],
+    "ms": 181,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "LIFE_COMPASS.OVERLAY",
+    "route": "/home?open=life_compass",
+    "entry_kind": "overlay",
+    "problems": []
+   },
+   {
+    "id": "R30",
+    "lang": "en",
+    "say": "Open the marketplace",
+    "expect": [
+     "DISCOVER.MARKETPLACE"
+    ],
+    "candidates": [],
+    "ms": 171,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "DISCOVER.MARKETPLACE",
+    "route": "/discover/marketplace",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R31",
+    "lang": "en",
+    "say": "Show me my shopping cart",
+    "expect": [
+     "DISCOVER.CART"
+    ],
+    "candidates": [
+     "DISCOVER.CART",
+     "DISCOVER.ORDERS",
+     "DISCOVER.OVERVIEW",
+     "WALLET.OVERVIEW",
+     "DISCOVER.ORDERS_HISTORY"
+    ],
+    "ms": 211,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "DISCOVER.CART",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R32",
+    "lang": "en",
+    "say": "Show me my orders",
+    "expect": [
+     "DISCOVER.ORDERS",
+     "DISCOVER.ORDERS_ACTIVE"
+    ],
+    "candidates": [],
+    "ms": 200,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "DISCOVER.ORDERS",
+    "route": "/discover/orders",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R33",
+    "lang": "en",
+    "say": "Take me to the supplements",
+    "expect": [
+     "DISCOVER.SUPPLEMENTS"
+    ],
+    "candidates": [
+     "DISCOVER.SUPPLEMENTS",
+     "HEALTH.SUPPLEMENTS",
+     "HEALTH.BIOLOGY_SUPPLEMENTS",
+     "DISCOVER.OVERVIEW"
+    ],
+    "ms": 216,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "DISCOVER.SUPPLEMENTS",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R34",
+    "lang": "en",
+    "say": "Find me doctors and coaches",
+    "expect": [
+     "DISCOVER.DOCTORS_COACHES"
+    ],
+    "candidates": [],
+    "ms": 222,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "DISCOVER.DOCTORS_COACHES",
+    "route": "/discover/doctors-coaches",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R35",
+    "lang": "en",
+    "say": "Open the business hub",
+    "expect": [
+     "BUSINESS.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 198,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "BUSINESS.OVERVIEW",
+    "route": "/business",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R36",
+    "lang": "de",
+    "say": "Öffne meinen Kalender",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 214,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "CALENDAR.OVERVIEW",
+    "route": "/calendar?open=calendar",
+    "entry_kind": "overlay",
+    "problems": []
+   },
+   {
+    "id": "R37",
+    "lang": "de",
+    "say": "Zeig mir mein Profil",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "candidates": [
+     "PROFILE.ME",
+     "PROFILE.PRIVACY",
+     "SETTINGS.OVERVIEW",
+     "SETTINGS.BILLING_INVOICES",
+     "WALLET.BALANCE_MEMBERSHIP"
+    ],
+    "ms": 183,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "PROFILE.ME",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R38",
+    "lang": "de",
+    "say": "Bring mich zu meinen Nachrichten",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "candidates": [
+     "INBOX.OVERVIEW",
+     "INBOX.ARCHIVED",
+     "HOME.NEWS_ALL",
+     "HOME.OVERVIEW",
+     "AUTH.MAXINA_PORTAL"
+    ],
+    "ms": 201,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "INBOX.OVERVIEW",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R39",
+    "lang": "de",
+    "say": "Öffne mein Tagebuch",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "candidates": [],
+    "ms": 172,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "MEMORY.DIARY",
+    "route": "/memory/diary",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R40",
+    "lang": "de",
+    "say": "Zeig mir meine Wallet",
+    "expect": [
+     "WALLET.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 179,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "WALLET.OVERVIEW",
+    "route": "/wallet",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R41",
+    "lang": "de",
+    "say": "Öffne die Einstellungen",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 201,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.OVERVIEW",
+    "route": "/settings",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R42",
+    "lang": "de",
+    "say": "Zeig mir die Veranstaltungen von heute",
+    "expect": [
+     "COMM.EVENTS_TODAY"
+    ],
+    "candidates": [
+     "COMM.EVENTS_TODAY",
+     "BUSINESS.SERVICES_EVENTS",
+     "COMM.EVENTS_HOT",
+     "COMM.EVENTS_UPCOMING",
+     "BUSINESS.SALES_PROMOTIONS"
+    ],
+    "ms": 203,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "COMM.EVENTS_TODAY",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R43",
+    "lang": "de",
+    "say": "Öffne meinen Schlafplan",
+    "expect": [
+     "HEALTH.PLANS_SLEEP"
+    ],
+    "candidates": [],
+    "ms": 201,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "HEALTH.PLANS_SLEEP",
+    "route": "/health/plans?tab=sleep",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R44",
+    "lang": "de",
+    "say": "Bring mich zum Marktplatz",
+    "expect": [
+     "DISCOVER.MARKETPLACE"
+    ],
+    "candidates": [],
+    "ms": 178,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "DISCOVER.MARKETPLACE",
+    "route": "/discover/marketplace",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R45",
+    "lang": "de",
+    "say": "Ich möchte meine Benachrichtigungen einstellen, öffne das bitte",
+    "expect": [
+     "SETTINGS.NOTIFICATIONS"
+    ],
+    "candidates": [
+     "SETTINGS.NOTIFICATIONS",
+     "INBOX.OVERVIEW",
+     "SETTINGS.PREFERENCES",
+     "REMINDERS.OVERVIEW"
+    ],
+    "ms": 205,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "SETTINGS.NOTIFICATIONS",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R46",
+    "lang": "es",
+    "say": "Abre mi calendario",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 186,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "CALENDAR.OVERVIEW",
+    "route": "/calendar?open=calendar",
+    "entry_kind": "overlay",
+    "problems": []
+   },
+   {
+    "id": "R47",
+    "lang": "fr",
+    "say": "Ouvre mes messages",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "candidates": [
+     "INBOX.OVERVIEW",
+     "INBOX.INSPIRATION"
+    ],
+    "ms": 174,
+    "outcome": "handoff",
+    "decision": "ambiguous",
+    "screen_id": "INBOX.OVERVIEW",
+    "route": null,
+    "entry_kind": null,
+    "problems": []
+   },
+   {
+    "id": "R48",
+    "lang": "sr",
+    "say": "Otvori moj profil",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "candidates": [],
+    "ms": 203,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "PROFILE.ME",
+    "route": "/me/profile",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R49",
+    "lang": "pt",
+    "say": "Abre as minhas recompensas",
+    "expect": [
+     "WALLET.REWARDS"
+    ],
+    "candidates": [],
+    "ms": 205,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "WALLET.REWARDS",
+    "route": "/wallet/rewards",
+    "entry_kind": "route",
+    "problems": []
+   },
+   {
+    "id": "R50",
+    "lang": "ar",
+    "say": "افتح الإعدادات",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "candidates": [],
+    "ms": 11,
+    "outcome": "open",
+    "decision": "open",
+    "screen_id": "SETTINGS.OVERVIEW",
+    "route": "/settings",
+    "entry_kind": "route",
+    "problems": []
+   }
+  ]
+ },
+ "finished_at": "2026-09-26T08:57:43.376Z"
+}

@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-04267",
+  "title": "Dev Autopilot spend surfaced in Command Hub",
+  "executor": "claude-code-session",
+  "origin": "operator-console-onramp-took-over-on-failure",
+  "part_of": "VTID-04262 CHANGE LOG task list (kill-switch button VTID-04264, tool-call transcript VTID-04265, Autonomy Pulse visibility VTID-04266, this item, writable config VTID-04268, CRON tables VTID-04269)",
+  "files_changed": [
+    "services/gateway/src/services/dev-autopilot-outcomes.ts",
+    "services/gateway/src/routes/dev-autopilot.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/services/dev-autopilot-outcomes.test.ts",
+    "services/gateway/test/routes/dev-autopilot.test.ts",
+    "services/gateway/test/vtid-04267-dev-autopilot-spend.test.ts",
+    "docs/validation/VTID-04267/acceptance.md",
+    "docs/validation/VTID-04267/commands.log",
+    "docs/validation/VTID-04267/outputs/execution.json"
+  ],
+  "backend_changed": true,
+  "new_routes": ["GET /api/v1/dev-autopilot/spend"],
+  "test_suites_run": [
+    "services/gateway/test/vtid-04267-dev-autopilot-spend.test.ts",
+    "services/gateway/test/services/dev-autopilot-outcomes.test.ts",
+    "services/gateway/test/routes/dev-autopilot.test.ts",
+    "services/gateway/test/command-hub/",
+    "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts",
+    "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts"
+  ],
+  "test_result": "24 suites passed, 475 tests passed, 0 regressions",
+  "tsc_noemit": "clean",
+  "csp_gate": "No CSP pattern hits in added lines.",
+  "deployed": false,
+  "not_verified_live": "The next Dev Autopilot panel load on staging after this deploys is the exercise — confirm the Spend today chip renders a real figure (or an honest dash if no runs have been recorded yet today) instead of erroring or showing nothing."
+}

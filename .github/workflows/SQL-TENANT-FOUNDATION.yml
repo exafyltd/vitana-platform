@@ -1,0 +1,55 @@
+name: SQL-TENANT-FOUNDATION
+run-name: 'tenant foundation migrations against a throwaway Postgres [VTID: VTID-05149] (${{ github.ref_name }})'
+
+# VTID-05149 — runs the three tenant-foundation migrations (default/platform
+# flags, signup default tenant, ci_tenant_isolation_health) and their rollbacks
+# against a disposable Postgres service container: the live signup bodies and
+# M1+M2 write identical rows for the same signups, the default tenant decides
+# instead of the created_at tie, closed/platform/inactive slugs fall back to the
+# default, exactly-one-default invariants, the RPC's exact counts and grants,
+# the drift/order guards and R3 → R2 → R1. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*_vtid_05149_*.sql'
+      - 'docs/validation/VTID-05149/*.sql'
+      - 'scripts/ci/sql-tests/run-tenant-foundation-test.sh'
+      - 'scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql'
+      - '.github/workflows/SQL-TENANT-FOUNDATION.yml'
+  push:
+    paths:
+      - 'supabase/migrations/*_vtid_05149_*.sql'
+      - 'docs/validation/VTID-05149/*.sql'
+      - 'scripts/ci/sql-tests/run-tenant-foundation-test.sh'
+      - 'scripts/ci/sql-tests/vtid-05149-tenant-foundation.test.sql'
+      - '.github/workflows/SQL-TENANT-FOUNDATION.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the tenant foundation test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          bash scripts/ci/sql-tests/run-tenant-foundation-test.sh 2>&1 | tee /tmp/tenant-foundation.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-05149 tenant foundation' /tmp/tenant-foundation.log

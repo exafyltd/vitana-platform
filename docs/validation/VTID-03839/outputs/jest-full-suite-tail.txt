@@ -1,0 +1,42 @@
+$ cd services/gateway && npx jest   (tail)
+PASS test/telemetry.test.ts
+  Gateway Environment
+    ✓ should have test environment configured
+    ✓ should have DATABASE_URL configured
+    ✓ should have SUPABASE_URL configured
+  Gateway Basic Functionality
+    ✓ should perform basic arithmetic
+    ✓ should handle async operations
+    ✓ should validate VTID format (1 ms)
+  Gateway Telemetry Concepts
+    ✓ should structure telemetry event correctly
+    ✓ should validate event timestamps
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (db8bc5cd-7644-4edb-b9c0-4ff267185d34)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (61.838 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (72 ms)
+    ✓ 400 when autopilot_execution_id is missing (6 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (4 ms)
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (4 ms)
+    ✓ returns failed when status=failed (6 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60073 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (4 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 756 passed, 756 of 757 total
+Tests:       29 skipped, 6 todo, 13835 passed, 13870 total
+Snapshots:   44 passed, 44 total
+Time:        62.997 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+FULL SUITE DONE exit=0

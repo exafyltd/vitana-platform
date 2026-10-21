@@ -1,0 +1,91 @@
+VTID-04112 — commands run, in order
+
+1. User challenge in conversation: "Every attempt to build something with
+   Operator failed. Are you aware of that???????" — investigated real
+   failure data rather than restating a prior single-pass verification.
+
+2. Supabase MCP execute_sql against dev_autopilot_executions/
+   dev_autopilot_outcomes/oasis_events (project inmkhvwdcuyhnxkgfvsb):
+   queried the last 3 days of agent-executor findings and their terminal
+   reasons. Result: 26 of 43 runs failed with either
+   "agent hit the N-turn cap without calling finish" or
+   "model answered with text N times in a row without calling finish",
+   across a range of AGENT_MAX_TURNS values (33-120), ruling out turn
+   budget as the actual cause.
+
+3. Queried dev_autopilot_outcomes.metadata->'agent_runs' for one
+   representative failing execution (5d301440-dcea-4668-aac6-f4a6d2f5bc08,
+   VTID-04109): 81 turns, 6,870,421 cumulative input tokens, 186,912
+   output tokens, $1.14 cost, 958,949ms elapsed.
+
+4. Queried oasis_events for that same execution_id, scoped to
+   (metadata->>'turn')::int >= 77 to stay under the tool's token-output
+   limit: found three consecutive dev_autopilot.agent.llm steps whose
+   `message` field read literally "[5d301440] turn N llm: text (0 chars)"
+   — DeepSeek returning an empty completion with no tool call, on 3
+   consecutive turns, matching the loop's own nudge-exhaustion error.
+
+5. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"autopilot-agent"}'
+   -> 200 {"ok":true,"vtid":"VTID-04112","num":4112,"id":"2eb6a941-770f-4b78-a9bd-4cc6782f0479"}
+
+6. Read services/gateway/src/services/autopilot-agent/agent-loop.ts,
+   agent-tools.ts, and services/gateway/src/services/llm-router.ts
+   (deepseekAdapter's request/response shape — confirmed it never reads
+   `reasoning_content`/`finish_reason`, only `content`/`tool_calls`).
+
+7. Edited agent-loop.ts: added `historyCharBudget?: number` to
+   AgentLoopOptions, `HISTORY_CHAR_BUDGET = 120_000` constant,
+   `HISTORY_TRIM_NOTICE` constant, `historyChars()` helper, exported
+   `trimHistoryForBudget()`, and wired it into the `o.callLlm(...)` call
+   site so only the RESENT copy is trimmed, never the stored `history`.
+
+8. Edited run-agent-execution.ts: added `AGENT_HISTORY_CHAR_BUDGET` env
+   constant (default 120000) and passed `historyCharBudget:
+   AGENT_HISTORY_CHAR_BUDGET` into the `runAgentLoop({...})` call inside
+   the fix-round loop.
+
+9. cd services/gateway && npx tsc --noEmit
+   -> exit 0, no output
+
+10. npx jest test/autopilot-agent-loop.test.ts --silent (before new tests
+    written, confirming the 6 pre-existing tests still pass unmodified
+    after the source edit)
+    -> 1 suite, 6 tests, all passing
+
+11. Wrote 7 new tests into test/autopilot-agent-loop.test.ts covering
+    AC-1 through AC-7 (trimHistoryForBudget unit behavior + runAgentLoop
+    wiring).
+
+12. npx jest test/autopilot-agent-loop.test.ts --silent
+    -> 1 suite, 13 tests, 1 failing (a mis-designed test: the tiny custom
+       budget put the big tool result on the LAST message, which the
+       trimmer deliberately never touches)
+
+13. Rewrote the failing test to place the large tool result on an
+    earlier (not-last) message before applying the custom budget.
+
+14. npx jest test/autopilot-agent-loop.test.ts --silent
+    -> 1 suite, 13 tests, all passing
+
+15. npx tsc --noEmit (re-run after test edits)
+    -> exit 0, no output
+
+16. npx jest test/autopilot-agent-loop.test.ts \
+        test/autopilot-agent-scope-validate.test.ts \
+        test/autopilot-agent-tools.test.ts \
+        test/llm-router-agentic.test.ts \
+        test/vtid-04016-agent-check-guard.test.ts \
+        test/vtid-04046-agent-prompt-date.test.ts --silent
+    -> 6 suites, 61 tests, all passing, 0 regressions
+
+17. npx jest test/vtid-04032-cancel-running-execution.test.ts \
+        test/vtid-04029-dev-autopilot-pr-approval.test.ts --silent
+    -> 2 suites, 36 tests, all passing, 0 regressions (both reference
+       run-agent-execution.ts)
+
+18. git status / git log / git fetch origin main: confirmed the
+    previously-checked-out branch's own PR (VTID-04111) had already been
+    merged (squashed) to main; created a fresh branch
+    claude/vtid-04112-agent-history-trim from origin/main and carried the
+    uncommitted changes over via git stash / git stash pop.

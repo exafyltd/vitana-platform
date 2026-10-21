@@ -1,0 +1,1125 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`computeGreetingDecision — current-screen awareness conv_resume on /chat → screen-completion NBA 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": "/chat",
+    "lang": "de",
+    "nba": "complete_chat",
+    "nba_domain": "community",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "current_screen": "chat",
+  "complete_on_current_screen": true,
+  "suggested_next_step": {
+    "kind": "complete_chat",
+    "what": "help the user actually write and send a reply in the open conversation",
+    "why": "The user is ON the chat screen — help them compose and send the message, not navigate to it.",
+    "execute_with_tool": "send_chat_message"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "complete_chat",
+  },
+  "nba": {
+    "band": 115,
+    "capability": "send_chat_message",
+    "detail": "help the user actually write and send a reply in the open conversation",
+    "domain": "community",
+    "key": "complete_chat",
+    "rationale": "The user is ON the chat screen — help them compose and send the message, not navigate to it.",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — current-screen awareness conv_resume on /diary → screen-completion NBA 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": "/diary",
+    "lang": "de",
+    "nba": "complete_diary",
+    "nba_domain": "health",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "current_screen": "diary",
+  "complete_on_current_screen": true,
+  "suggested_next_step": {
+    "kind": "complete_diary",
+    "what": "help the user make today’s diary entry now (a quick note lifts the Vitana Index)",
+    "why": "The user is ON the diary screen — help them capture an entry, not navigate to it.",
+    "execute_with_tool": "save_diary_entry"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "complete_diary",
+  },
+  "nba": {
+    "band": 115,
+    "capability": "save_diary_entry",
+    "detail": "help the user make today’s diary entry now (a quick note lifts the Vitana Index)",
+    "domain": "health",
+    "key": "complete_diary",
+    "rationale": "The user is ON the diary screen — help them capture an entry, not navigate to it.",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — current-screen awareness conv_resume on /matches → screen-completion NBA 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": "/matches",
+    "lang": "de",
+    "nba": "complete_matches",
+    "nba_domain": "community",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "current_screen": "matches",
+  "complete_on_current_screen": true,
+  "suggested_next_step": {
+    "kind": "complete_matches",
+    "what": "pick ONE of the matches and start a joint activity, OR tell the user who one match is, OR suggest an activity that also helps their Vitana Index, OR refine the match criteria, OR add info to the profile for better matches",
+    "why": "The user is ON the matches screen — help them ACT on a specific match (start an activity / learn about a person / refine search / enrich profile), never tell them to \\"open matches\\".",
+    "execute_with_tool": "respond_to_match"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "complete_matches",
+  },
+  "nba": {
+    "band": 115,
+    "capability": "respond_to_match",
+    "detail": "pick ONE of the matches and start a joint activity, OR tell the user who one match is, OR suggest an activity that also helps their Vitana Index, OR refine the match criteria, OR add info to the profile for better matches",
+    "domain": "community",
+    "key": "complete_matches",
+    "rationale": "The user is ON the matches screen — help them ACT on a specific match (start an activity / learn about a person / refine search / enrich profile), never tell them to "open matches".",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — current-screen awareness conv_resume on /vitana-index → screen-completion NBA 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": "/vitana-index",
+    "lang": "de",
+    "nba": "complete_index",
+    "nba_domain": "health",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "current_screen": "index",
+  "complete_on_current_screen": true,
+  "suggested_next_step": {
+    "kind": "complete_index",
+    "what": "propose ONE concrete action on the weakest pillar that will raise the Vitana Index, and offer to set it up",
+    "why": "The user is ON the Index screen — propose a concrete action to raise it, not navigate to it.",
+    "execute_with_tool": "create_index_improvement_plan"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "complete_index",
+  },
+  "nba": {
+    "band": 115,
+    "capability": "create_index_improvement_plan",
+    "detail": "propose ONE concrete action on the weakest pillar that will raise the Vitana Index, and offer to set it up",
+    "domain": "health",
+    "key": "complete_index",
+    "rationale": "The user is ON the Index screen — propose a concrete action to raise it, not navigate to it.",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — current-screen awareness legacy default carries the screenHint for a known route 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 392,
+  },
+  "directive": "The user was here earlier today — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so. The user is currently on the "Mein Tagebuch" screen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — language axis legacy default — lang=de, bucket=long 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 357,
+  },
+  "directive": "The user hasn't been here in 10 days — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been 10 days since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — language axis legacy default — lang=en, bucket=long 1`] = `
+{
+  "diag": {
+    "lang": "en",
+    "prompt_len": 357,
+  },
+  "directive": "The user hasn't been here in 10 days — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been 10 days since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — language axis safe_fast_newday name greeting — lang=de 1`] = `
+{
+  "diag": {
+    "bucket": "today",
+    "lang": "de",
+    "prompt_len": 354,
+    "wake_opener": "safe_fast_newday",
+  },
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "safe_fast_newday",
+}
+`;
+
+exports[`computeGreetingDecision — language axis safe_fast_newday name greeting — lang=en 1`] = `
+{
+  "diag": {
+    "bucket": "today",
+    "lang": "en",
+    "prompt_len": 354,
+    "wake_opener": "safe_fast_newday",
+  },
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "safe_fast_newday",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=first 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 299,
+  },
+  "directive": "Open per the OPENING SHAPE MATRIX in your system instruction. If tenure.stage='day0' (genuinely new user), deliver the FULL INTRODUCTION (mission, capabilities, agency offer). Otherwise treat as a returning user: "Good morning, [Name]." + the Proactive Opener Candidate from your system instruction.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=long 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 353,
+  },
+  "directive": "The user hasn't been here in ~long — this is a NEW-DAY greeting. Use the OPENING SHAPE MATRIX in your system instruction. For motivation_signal=cooling (8-14 days) or absent (>14 days), explicitly acknowledge the absence — e.g. "Hi {Name}, it's been ~long since we last talked. Welcome back." Pause for the user to respond before any productivity nudge.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=recent 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 482,
+  },
+  "directive": "You were just talking to the user ~recent. Continue casually, the way you would with someone you are already mid-conversation with — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=reconnect 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 451,
+  },
+  "directive": "You were JUST talking to the user ~reconnect. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=same_day 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 399,
+  },
+  "directive": "The user was here ~same_day. Continue naturally — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=today 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 332,
+  },
+  "directive": "The user was here ~today — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided). Max TWO short sentences if no candidate; longer if the matrix says so.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=week 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 350,
+  },
+  "directive": "The user was last here ~week — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided — for early-tenure users a 2-3 day absence warrants warmth like "glad you came back").",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) bucket=yesterday 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 269,
+  },
+  "directive": "The user was last here yesterday — this is a NEW-DAY greeting. Open with "Good morning, [Name]." using the user's name from your memory context. Then follow per the OPENING SHAPE MATRIX in your system instruction (use the Proactive Opener Candidate if one is provided).",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — recency bucket axis (legacy ladder) legacy apology branch hands over an INTENT, never a finished sentence (VTID-03556 + VTID-04124) 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 278,
+  },
+  "directive": "The previous session ended before you managed to say anything, so the user is starting over. Open with ONE short spoken phrase in the user's own language: briefly acknowledge the hiccup, then hand the floor straight back to them. Compose that phrase yourself, in your own words.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots legacy default: anonymous intro speech 1`] = `
+{
+  "diag": {
+    "lang": "en",
+    "prompt_len": 82,
+  },
+  "directive": "Please deliver the complete introductory speech as described in your instructions.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots legacy default: authenticated recency-bucket menu 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 454,
+  },
+  "directive": "You were JUST talking to the user earlier today. Pick up mid-conversation, as if you had never stopped — ONE short spoken phrase, a single clause, straight to the substance. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "legacy_default",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 1: safe_fast_newday_overview (briefing due, rich payload) 1`] = `
+{
+  "diag": {
+    "briefing_date": "2026-06-30",
+    "bucket": "today",
+    "directive_budget_bytes": 4096,
+    "directive_full_len": 15039,
+    "directive_reduced": true,
+    "lang": "de",
+    "overview_signals": {
+      "autopilot": "none_yet",
+      "calendar_today": 0,
+      "diary_last_7d": 3,
+      "index": "ok",
+      "journey": false,
+      "life_compass": "set",
+      "matches_unread": 0,
+      "messages_unread": 0,
+      "reminders_today": 0,
+    },
+    "prompt_len": 1096,
+    "wake_opener": "safe_fast_newday_overview",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+Der Nutzer öffnet die Orb am Morgen — erste Sitzung eines neuen Tages. Der Nutzer heißt Dragan — nenne den Namen in der Eröffnung. Begrüße ihn warm und persönlich und webe aus den Daten unten das ein, was sich seit dem letzten Mal WIRKLICH verändert hat — als zusammenhängende Sprache, niemals als Liste, niemals als Vorlesen von Zahlen. Schließe mit EINEM konkreten nächsten Schritt, den du selbst vorschlägst, und einer Bestätigungsfrage, die man mit Ja beantworten kann. Drei bis sechs Sätze, dann aufhören und zuhören.
+
+Daten (nicht vorlesen — daraus sprechen):
+{"vitana_index":{"today":200,"tier":"Early","tier_framing":null,"trend_7d":0,"weakest_pillar":{"name":"nutrition","score":30},"strongest_pillar":null,"balance_label":"balanced","pillars":null,"projected_day_90":null,"projected_day_90_tier":null},"life_compass":{"primary_goal":"longer life","category":null,"target_date":null,"target_value":null,"target_unit":null,"starting_value":null,"days_to_deadline":null,"goal_progress_pct":null},"autopilot":{"state":"none_yet"},"diary_last_7d":3}
+",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "stampBriefingDate": "2026-06-30",
+  },
+  "register": "daily_briefing",
+  "wakeOpener": "safe_fast_newday_overview",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 2: safe_fast_first_time_welcome (never-onboarded, no prior session) 1`] = `
+{
+  "diag": {
+    "is_first_session": true,
+    "lang": "de",
+    "prompt_len": 610,
+    "wake_opener": "safe_fast_first_time_welcome",
+  },
+  "directive": "Open with a short, warm spoken welcome of two or three sentences, as audio. INTENT: The user's name is "Dragan" — address them by it. This is their very first voice conversation. Welcome them warmly to Maxina, introduce yourself as Vitana, their personal longevity assistant, reassure them there is no rush and nothing to figure out alone, and invite them to start Episode 1 of their Audiobook, where you explain step by step how everything works and they only have to listen. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "register": "first_time",
+  "wakeOpener": "safe_fast_first_time_welcome",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 3: conv_resume (same-day reopen, recency register + NBA) 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": null,
+    "lang": "de",
+    "nba": "reply_messages",
+    "nba_domain": "community",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "new_since_last": [
+    "2 unread message(s)"
+  ],
+  "suggested_next_step": {
+    "kind": "reply_messages",
+    "what": "2 unread message(s)",
+    "why": "People are waiting on a reply — responding keeps the community warm.",
+    "execute_with_tool": "send_chat_message"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "reply_messages",
+  },
+  "nba": {
+    "band": 92,
+    "capability": "send_chat_message",
+    "detail": "2 unread message(s)",
+    "domain": "community",
+    "key": "reply_messages",
+    "rationale": "People are waiting on a reply — responding keeps the community warm.",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 4: safe_fast_proactive (pre-fetched proactive line) 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 555,
+    "wake_opener": "safe_fast_proactive",
+  },
+  "directive": "Open the conversation from this prepared lead (written in English for your reference): "Letztes Mal ging es um deinen Schlaf — machen wir da weiter?"
+Compose the wording yourself, entirely in the user's own language for this session — never in English. Keep every concrete fact from the lead (names, titles, numbers) and the same single proposal exactly as given, but do not recite the lead word for word and do not translate it literally. Then stop — do not add a question beyond the proposal already in the lead, and do not split it into multiple turns.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "safe_fast_proactive",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 5: safe_fast_newday (bare localized name greeting on a new day) 1`] = `
+{
+  "diag": {
+    "bucket": "yesterday",
+    "lang": "de",
+    "prompt_len": 354,
+    "wake_opener": "safe_fast_newday",
+  },
+  "directive": "Open with ONE short spoken phrase, as audio. INTENT: The user's name is "Dragan" and it is their first visit today (morning). Greet them warmly by name with a greeting that fits the time of day, as a single short phrase. Compose the wording yourself, in the user's own language, in your own words, choosing fresh wording every time. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "safe_fast_newday",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 6: safe_fast_pending_context (generic short menu) 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "prompt_len": 419,
+    "wake_opener": "safe_fast_pending_context",
+  },
+  "directive": "Open with EXACTLY ONE short spoken phrase, as audio. INTENT: Briefly and warmly acknowledge you're continuing with the user, then lead them to their next step or show them where things stand — propose the move yourself. Compose this sentence yourself, in the user's own language, in your own words, choosing fresh wording every time. Go straight to the substance in a single clause — the user already knows who you are.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "safe_fast_pending_context",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 7: silent_reconnect (native resume opening decision) 1`] = `
+{
+  "diag": {
+    "lang": "de",
+    "opening_source": "native_resume",
+    "prompt_len": 0,
+    "wake_opener": "silent_reconnect",
+  },
+  "directive": null,
+  "effects": {
+    "armWatchdog": false,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "silent_reconnect",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 (wake-brief selected line, used as the turn lead) 1`] = `
+{
+  "diag": {
+    "decision_id": "wb-123",
+    "lang": "de",
+    "prompt_len": 1329,
+    "wake_opener": "override_v2",
+  },
+  "directive": "Open the conversation from this prepared lead: "Heute ist dein 12. Tag — bleiben wir dran."
+The user's name is "Dragan". HARD RULE — your very first words must be a warm, time-of-day-appropriate greeting that addresses them by that name, composed in their own language (never a bare greeting with no name, and never a different name).
+The lead itself is a LEAD, not your whole turn. Deliver the turn in three beats, as ONE continuous piece of speech (the name-based greeting above comes first, then these three beats):
+1. SUBSTANCE — say what is actually going on, not that you are about to. If the lead names something you can already tell them (their messages, their index, their calendar, what changed), tell them the substance of it now, in one or two sentences. Never announce an intention you then do not carry out in this same turn.
+2. NEXT STEP — propose ONE concrete next step yourself. Never ask the user what they want to do, never offer a menu.
+3. CONFIRMATION — close by asking them to confirm that one step, so they can simply say yes.
+Keep every concrete fact from the lead — numbers, names, dates — exactly as given, and invent nothing beyond it. Compose the wording yourself in the user's own language; do not recite the lead word for word and do not reuse phrasing from a previous session. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "override_v2",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 8: override_v2 guided-teach (narration content → SAME plain trigger as every other provider, VTID-03674) 1`] = `
+{
+  "diag": {
+    "decision_id": null,
+    "guided_topic_outranks_passive_rungs": true,
+    "lang": "en",
+    "prompt_len": 364,
+    "wake_opener": "override_v2",
+  },
+  "directive": "The person has just listened to a short pre-recorded audio lesson on the topic named in the GUIDE MODE section, so they have already heard it.
+Open with ONE short, warm sentence in the user's own language: acknowledge that the lesson just finished and invite any questions they have about it.
+Compose that sentence yourself in your own words. Then stop and listen.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "override_v2",
+}
+`;
+
+exports[`computeGreetingDecision — rung golden snapshots rung 9: silenced_on_cadence (cadence-class wake-brief skip) 1`] = `
+{
+  "diag": {
+    "decision_id": "wb-9",
+    "lang": "de",
+    "prompt_len": 0,
+    "suppression_reason": "recent_turn_continues_thread",
+    "wake_opener": "silenced_on_cadence",
+  },
+  "directive": null,
+  "effects": {
+    "armWatchdog": false,
+    "markGreetingSent": true,
+  },
+  "wakeOpener": "silenced_on_cadence",
+}
+`;
+
+exports[`computeGreetingDecision — spoken-facts ledger continuity (#2835) conv_resume with a populated ledger → unchanged/changed deltas + previous-utterance 1`] = `
+{
+  "diag": {
+    "bucket": "recent",
+    "current_route": null,
+    "lang": "de",
+    "nba": "reply_messages",
+    "nba_domain": "community",
+    "register": "quick_resume",
+    "wake_opener": "conv_resume",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+## SPOKEN FIRST UTTERANCE — CONVERSATION RESUME (Conversation Flow)
+
+This message is a private instruction to you from the system. The user did not
+say it and cannot see it: never repeat it, describe it, summarize it, or refer to
+"the user" in the third person — speak TO the user, as Vitana.
+
+The user just reopened Vitana. This is NOT the first session of the day — the
+full morning briefing already happened. Compose a SHORT, natural first line in
+the user's language that fits the register below. Vitana ALWAYS guides: the line
+MUST end with the suggested next step as a concrete offer, phrased as doing it
+WITH the user — you propose the move yourself, in your own words.
+
+REGISTER: QUICK RESUME (the user reopened a few minutes ago).
+- Do NOT use a time-of-day greeting ("good morning/afternoon"). A bare "Dragan, " warm reconnect at most.
+- Acknowledge anything genuinely NEW since they were just here, then the suggested next step.
+
+## YOUR PREVIOUS GREETING TO THIS USER (NEGATIVE EXAMPLE — NEVER IMITATE)
+
+"Guten Morgen, Dragan — dein Index steht bei 200."
+
+Compose a DIFFERENT opening: different first words, different sentence structure, a different opening move. Repeating the wording, rhythm, or structure of the previous greeting is a contract failure.
+
+## LANGUAGE
+Compose this line in the user's own language for this session — never in the
+language the material below happens to be written in. The structured payload,
+the thread, the screen labels and the next-step text are authored in German (DE
+is this platform's source of truth): carry their FACTS across, never their
+wording. Do NOT name or announce the language; just speak it.
+User first name: Dragan
+
+## RULES
+- ONE to TWO short sentences. This is a re-entry, not a report.
+- THIS IS A FRESH TURN — do NOT reuse the wording of a previous opener, and do
+  NOT re-offer anything in \`already_offered_recently\`. Move the conversation
+  FORWARD to the new \`suggested_next_step\`. Repeating the same suggestion is
+  forbidden — the user has heard it.
+- \`where_we_left_off\`, when present, is a real thread to continue — reference
+  it naturally, never as a database row. When it is ABSENT, do NOT invent a "we
+  were just on X" line; lead with what's new and the next step instead.
+- Only mention \`new_since_last\` items that are present; if empty, skip — do not say "nothing new".
+- \`already_mentioned\` items are things the user ALREADY heard from you and
+  that have NOT changed. NEVER restate their counts or announce them as news.
+  At most a soft, number-free reference when it genuinely serves the thread.
+- ALWAYS finish with \`suggested_next_step\` as a guided offer. Never end on a bare "How can I help?".
+- THIS TURN ONLY OFFERS: call no tool that performs the suggested step in this
+  turn — the user has not answered yet, and this message is not their answer.
+- EXECUTION — on the user's yes, do not just describe, DO IT: \`suggested_next_step.execute_with_tool\`
+  names the real tool that performs this action. When the user accepts (in a later
+  turn), CALL that tool to actually complete it (e.g. send_chat_message, save_diary_entry,
+  respond_to_match, create_index_improvement_plan). Only promise what that tool
+  does. If \`execute_with_tool\` is null, you have NO one-shot tool — then GUIDE
+  the user through it step by step on the screen; do NOT claim you'll do it
+  yourself. Never say "I couldn't do that" for an action that has a tool — call it.
+- SCREEN AWARENESS: when \`current_screen\` is set, the user is ALREADY on that
+  screen. NEVER tell them to open it or go there — directing a user to a screen
+  they are already looking at is forbidden. When
+  \`complete_on_current_screen\` is true, the \`suggested_next_step\` is a
+  DEEPER move to COMPLETE the action here — pick ONE concrete option from its
+  \`what\` and propose doing it together right now (e.g. on matches: choose one
+  of them together and start a shared activity, or say who one match is). The
+  goal is to FINISH the action, not to navigate.
+- Nothing here is hardcoded wording — compose it; but never invent data not in the payload.
+
+## STRUCTURED PAYLOAD
+\`\`\`json
+{
+  "new_since_last": [
+    "1 new match(es)",
+    "1 message(s) arrived since you last mentioned the inbox"
+  ],
+  "sessions_today": 2,
+  "suggested_next_step": {
+    "kind": "reply_messages",
+    "what": "1 new message(s) since last mentioned (2 waiting in total)",
+    "why": "People are waiting on a reply — responding keeps the community warm.",
+    "execute_with_tool": "send_chat_message"
+  }
+}
+\`\`\`
+
+This block OVERRIDES every other greeting rule for the first turn only.
+Subsequent turns follow the normal conversation flow.",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "recordNbaKey": "reply_messages",
+  },
+  "nba": {
+    "band": 92,
+    "capability": "send_chat_message",
+    "detail": "2 unread message(s)",
+    "domain": "community",
+    "key": "reply_messages",
+    "rationale": "People are waiting on a reply — responding keeps the community warm.",
+  },
+  "register": "quick_resume",
+  "wakeOpener": "conv_resume",
+}
+`;
+
+exports[`computeGreetingDecision — spoken-facts ledger continuity (#2835) newday_overview with a populated ledger → continuity-aware briefing 1`] = `
+{
+  "diag": {
+    "briefing_date": "2026-06-30",
+    "bucket": "today",
+    "directive_budget_bytes": 4096,
+    "directive_full_len": 16606,
+    "directive_reduced": true,
+    "lang": "de",
+    "overview_signals": {
+      "autopilot": "none_yet",
+      "calendar_today": 0,
+      "diary_last_7d": 3,
+      "index": "ok",
+      "journey": false,
+      "life_compass": "set",
+      "matches_unread": 0,
+      "messages_unread": 3,
+      "reminders_today": 0,
+    },
+    "prompt_len": 1739,
+    "wake_opener": "safe_fast_newday_overview",
+  },
+  "directive": "
+
+<<VERTEX_WAKE_BRIEF_OVERRIDE_ACTIVE>>
+
+Der Nutzer öffnet die Orb am Morgen — erste Sitzung eines neuen Tages. Der Nutzer hat die App heute bereits 1× geöffnet. Der Nutzer heißt Dragan — nenne den Namen in der Eröffnung. Begrüße ihn warm und persönlich und webe aus den Daten unten das ein, was sich seit dem letzten Mal WIRKLICH verändert hat — als zusammenhängende Sprache, niemals als Liste, niemals als Vorlesen von Zahlen. Schließe mit EINEM konkreten nächsten Schritt, den du selbst vorschlägst, und einer Bestätigungsfrage, die man mit Ja beantworten kann. Drei bis sechs Sätze, dann aufhören und zuhören.
+Bereits gesprochene Fakten (unveränderte Zahlen sind KEINE Neuigkeit — nicht wiederholen):
+- messages_unread = 3 (was 2 when last mentioned, +1 since): speak the CHANGE, not the running total — the change is the news.
+- vitana_index = 200: ALREADY TOLD to the user (unchanged since last mentioned). Do NOT restate this number. At most a soft, number-free reference if it serves the conversation.
+- diary_last_7d = 3: ALREADY TOLD to the user (unchanged since last mentioned). Do NOT restate this number. At most a soft, number-free reference if it serves the conversation.
+
+Daten (nicht vorlesen — daraus sprechen):
+{"vitana_index":{"today":200,"tier":"Early","tier_framing":null,"trend_7d":0,"weakest_pillar":{"name":"nutrition","score":30},"strongest_pillar":null,"balance_label":"balanced","pillars":null,"projected_day_90":null,"projected_day_90_tier":null},"life_compass":{"primary_goal":"longer life","category":null,"target_date":null,"target_value":null,"target_unit":null,"starting_value":null,"days_to_deadline":null,"goal_progress_pct":null},"autopilot":{"state":"none_yet"},"messages_unread":3,"diary_last_7d":3}
+",
+  "effects": {
+    "armWatchdog": true,
+    "markGreetingSent": true,
+    "stampBriefingDate": "2026-06-30",
+  },
+  "register": "daily_briefing",
+  "wakeOpener": "safe_fast_newday_overview",
+}
+`;

@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-04950",
+  "kind": "infra",
+  "paths": [
+    ".github/workflows/AWS-PROD-DEPLOY-*.yml",
+    ".github/workflows/CICDL-GATEWAY-CI.yml",
+    ".github/workflows/UNIT.yml",
+    ".github/workflows/PR-GATE.yml",
+    "scripts/ci/pr-gate/**",
+    "services/gateway/test/vtid-04950-prod-deploy-pin-rollback.test.ts",
+    "docs/validation/VTID-04950/**"
+  ],
+  "sparring_record": "docs/validation/VTID-04947/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

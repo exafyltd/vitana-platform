@@ -1,0 +1,9 @@
+$ node probe.cjs (gateway's supabase-js, public key, read-only)
+  risk_mitigations head:true   → status=204 error=null
+  risk_mitigations limit(0)    → status=404 PGRST205
+  oasis_events     limit(0)    → status=200 error=null
+$ select to_regclass('public.risk_mitigations')  → null
+$ npx jest test/vtid-04665-dependency-probe.test.ts   → 26 passed
+$ (old probe restored) same                           → 3 failed, 23 passed
+$ npx jest d48 / d39 / voice-feedback / voice-lab     → 4 suites, 133 passed
+$ npx tsc --noEmit                                    → clean

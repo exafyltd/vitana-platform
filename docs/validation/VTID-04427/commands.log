@@ -1,0 +1,16 @@
+# VTID-04427 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04427; vtid_ledger in_progress / approved.
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+npx jest test/services/conversation/vtid-04427-live-advisor.test.ts test/orb/live/tools/vtid-04426-session-tool-selection.test.ts -> 2 suites passed
+  (first wiring passed get_guidance as an explicit priority argument to enforceToolCatalogBudget; the VTID-04026/04097
+   source contracts pin that call's literal form, so get_guidance moved into FLAG_GATED_PRIORITY_TOOLS instead —
+   same effect, the default priority keeps it and skips it when absent)
+npx jest test/services/conversation test/orb test/command-hub test/frontend test/services/orchestrator -> 316 suites, 5037 passed, 6 todo
+npx jest (full gateway suite) -> 1160 suites passed (1 skipped), 18736 tests passed, 0 failures
+node scripts/generate-command-hub-symbol-index.mjs -> regenerated (822 functions across 11 files)
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of app.js> -> No CSP pattern hits in added lines.
+node scripts/ci/dev-autopilot-impact-scan.mjs -> blocker=0 warning=1 (HARNESS_URL in the evidence-pack harness scripts, pre-existing pattern, not a runtime var)
+docs/validation/VTID-04427/outputs: PORT=18527 node harness-server.js & HARNESS_URL=http://127.0.0.1:18527 node harness-shoot.js
+  -> 1400x900 + 390x844, Live advisor tile rendered from synthetic diags through the REAL summarizer, no overflow, no page errors
+Not run: any live advisor call. The 'advisor' routing stage does not exist (owner decision) and staging ECS cannot place tasks.

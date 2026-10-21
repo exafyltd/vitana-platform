@@ -1,0 +1,16 @@
+$ (services/kiro-runner) npx tsc --noEmit -p . && npx vitest run
+Tests  18 passed (18)
+$ (services/kiro-runner) docker build .   # pinned kiro-cli 2.28.0, sha256 f48ef68d… OK, `kiro-cli --version` = kiro-cli 2.28.0 on bookworm-slim
+$ docker run kiro-runner:test; curl /alive; curl /keys/<uuid>
+{"ok":true,"service":"kiro-runner","kiro_cli_version":"2.28.0","sessions":0}   401 without token; runs as uid 1000 (node); kiro-cli acp --help OK
+$ (scratch, not committed) gateway remote backend <-> real runner server <-> fake kiro-cli
+no key -> not_connected/kiro_key_missing; PUT key -> linked; next turn -> ok "hi"
+$ (services/gateway) npx tsc --noEmit -p .
+(clean)
+$ (services/gateway) npx jest
+Test Suites: 1570 passed (1 failure fixed: regenerated conversation-flag-pins.generated.ts for the new staging pins); Tests: 25038 passed
+$ (services/gateway) npm run test:operator
+Tests: 30 passed
+$ node scratchpad/kiro-key-shots.js   # real app.js Kiro block + styles.css in Chromium
+10 screenshots, horizontal-overflow=false; Link: one PUT (key 37 chars), field cleared, state.kiroKey={loaded,linked,updated_at}; Revoke: confirm, DELETE
+$ kiro-cli 2.28.0 probe (no key): "Error: You are not logged in" + exit; (invalid key): silent, GetProfile failed -> gateway's 30 s initialize timeout reports "Kiro could not start"

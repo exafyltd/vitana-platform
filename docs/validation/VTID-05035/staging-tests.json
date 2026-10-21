@@ -1,0 +1,7 @@
+{"vtid":"VTID-05035","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"admin shipping-fee list is mounted and needs a signed-in exafy_admin (401 JSON, not an HTML 404)","path":"/api/v1/admin/rewards/shipping-fees","expect_status":401,"expect_content_type":"json"},
+{"kind":"http","name":"admin item photo upload is mounted; rejected by the auth gate before any handler runs","method":"POST","path":"/api/v1/admin/rewards/items/image","rejected_probe":true,"expect_status":401,"expect_content_type":"json"},
+{"kind":"http","name":"admin shipping-fee delete is mounted; rejected by the auth gate before any handler runs","method":"DELETE","path":"/api/v1/admin/rewards/shipping-fees/DE/EUR","rejected_probe":true,"expect_status":401,"expect_content_type":"json"},
+{"kind":"existing","ref":"npx jest test/vtid-05035-reward-shop-admin.test.ts test/vtid-04982-rewards-shop.test.ts","cwd":"services/gateway","reason":"Uploading a photo and deleting a fee are writes, and staging shares the production database and storage, so they are proven by the gateway tests (auth gate, magic-byte type check, 1.4 MB cap, bucket/path, storage error, fee list/delete) with storage and the repository mocked, never on staging; the VTID-04982 suite proves the existing shop routes are unchanged."}
+]}

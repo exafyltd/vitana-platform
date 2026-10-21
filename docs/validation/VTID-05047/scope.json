@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05047",
+  "files": [
+    "services/gateway/src/routes/cicd.ts",
+    "services/gateway/src/routes/approvals.ts",
+    "services/gateway/src/routes/execute.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/orb-tools/cicd-pr-tools.ts",
+    "services/openclaw-bridge/src/skills/vitana-cicd.ts",
+    "services/gateway/test/vtid-05047-cicd-routes-auth.test.ts",
+    "services/gateway/test/vtid-05019-cicd-pr-routes-auth.test.ts",
+    "docs/validation/VTID-05047/**"
+  ]
+}

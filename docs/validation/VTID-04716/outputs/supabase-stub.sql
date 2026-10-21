@@ -1,0 +1,12 @@
+create role authenticated; create role service_role; create role anon;
+create extension if not exists pgcrypto;
+create schema auth;
+create function auth.uid() returns uuid language sql stable as $$ select nullif(current_setting('request.jwt.claims', true)::jsonb->>'sub','')::uuid $$;
+grant usage on schema auth to authenticated, service_role, anon;
+grant usage on schema public to authenticated, service_role, anon;
+create table public.tenants(tenant_id uuid primary key, slug text unique);
+create table public.app_users(user_id uuid primary key, tenant_id uuid, email text);
+create table public.user_tenants(id uuid default gen_random_uuid() primary key, tenant_id uuid, user_id uuid, active_role text, is_primary boolean, created_at timestamptz default now(), updated_at timestamptz default now());
+create table public.user_preferences(id uuid primary key default gen_random_uuid(), user_id uuid, stt_language text);
+create index idx_user_preferences_user_id on public.user_preferences(user_id);
+create table public.capacity_state(id uuid primary key default gen_random_uuid(), tenant_id uuid, user_id uuid);

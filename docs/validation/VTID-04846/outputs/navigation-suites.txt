@@ -1,0 +1,15 @@
+PASS test/nav-redirect/nav-redirect-suite.test.ts
+PASS test/navigation/vtid-04846-registry-only.test.ts
+PASS test/nav-golden/nav-golden-registry.test.ts
+PASS test/nav-redirect-flow.test.ts
+PASS test/navigation-catalog.test.ts
+PASS test/navigation/nav-dispatch.test.ts
+PASS test/navigation/vtid-04814-command-hub-navigation.test.ts
+PASS test/nav-golden/nav-golden-baseline.test.ts
+PASS test/nav-redirect/explicit-open-backstop.test.ts
+PASS test/navigation/nav-resolver.test.ts
+PASS test/navigation/nav-ack.test.ts
+PASS test/nav-golden/golden-set.integrity.test.ts
+PASS test/navigation/nav-open-screen-override.test.ts
+PASS test/nav-golden/nav-registry-loo.test.ts (52.166 s)
+Tests:       569 passed, 569 total

@@ -1,0 +1,10 @@
+    ✓ sorts after VTID-04981, which it requires (5 ms)
+    ✓ revokes members from every overload of the four memory functions and keeps the gateway (2 ms)
+    ✓ recreates the profile lookup without email and re-grants anon/authenticated/service_role (2 ms)
+    ✓ checks the end state on apply, by effect (5 ms)
+    ✓ no later migration grants the locked functions to members again or re-adds email to the profile lookup (1 ms)
+    ✓ every gateway caller of the memory functions uses the service-role key (2 ms)
+    ✓ a migration newer than S2 that creates a SECURITY DEFINER function revokes PUBLIC and anon, or says why not (3 ms)
+    ✓ reproduces the live exposure, refuses before VTID-04981, applies twice and passes the SQL assertions (1731 ms)
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total

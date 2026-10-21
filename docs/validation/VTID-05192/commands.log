@@ -1,0 +1,8 @@
+$ node scripts/ci/kiro-steering/guard.cjs . && node --test scripts/ci/kiro-steering/guard.test.cjs
+kiro-steering: OK — # pass 8 / fail 0   (both repos)
+$ diff vitana-platform/.claude/rules/collaboration.md vitana-v1/.claude/rules/collaboration.md
+(no output — identical)
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch claude/hopeful-franklin-x17a3b
+✅ collab handoff — 0 handoff/lane file(s) changed, all valid   (both repos)
+$ PR_TITLE="VTID-05192: …" node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base origin/main --head HEAD
+see outputs/local-checks.txt

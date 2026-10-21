@@ -1,0 +1,23 @@
+{
+  "fixture_id": "synthetic-015-preferences",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 2,
+  "notes": "Capability preference + reminder (preference kind).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Stop showing me crypto recommendations",
+      "expected_tool": "set_capability_preference",
+      "expected_intent": "preference.capability"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Turn off voice notifications after 9pm",
+      "expected_tool": "set_capability_preference",
+      "expected_intent": "preference.capability"
+    }
+  ]
+}

@@ -1,0 +1,21 @@
+{
+  "containerDefinitions": [
+    {
+      "image": "new-image",
+      "secrets": [
+        {
+          "name": "OTHER",
+          "valueFrom": "keep"
+        },
+        {
+          "name": "SUPABASE_JWT_SECRET",
+          "valueFrom": "arn:jwt"
+        },
+        {
+          "name": "AURORA_DATABASE_URL",
+          "valueFrom": "arn:aurora"
+        }
+      ]
+    }
+  ]
+}

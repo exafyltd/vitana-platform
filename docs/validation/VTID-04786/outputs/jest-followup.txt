@@ -1,0 +1,1 @@
+2026-10-01 follow-up: full gateway jest — Test Suites: 1 skipped, 1439 passed; Tests: 23093 passed, 29 skipped, 6 todo

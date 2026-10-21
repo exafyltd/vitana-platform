@@ -1,0 +1,87 @@
+# AC-7 — live verification on staging AFTER the fix (0b24cd8), 2026-09-18 07:14 UTC
+# node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=6 --utterance-pcm=<Polly 'What is my Vitana index today?' 16 kHz PCM>
+# (test account only; voice session start/stop; no community content)
+
+##### VTID-04036 AFTER: waiting for staging to serve 0b24cd8 (12 consecutive samples) 2026-09-18T07:07:39Z #####
+##### STAGING SERVES 0b24cd8, 2026-09-18T07:14:30Z #####
+{"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"0b24cd8ea4b07b68ea0f268f287c050e8db122d1","booted_at":"2026-09-18T07:11:17.018Z","marker":"0b24cd8ea4b0"}
+--- trial 1/6 ---
+  "sessionId": "live-d77a3eb0-25ec-4361-907b-395c14040c88",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vita index today?",
+  "replyTranscriptText": "**Determining Vitana Index**\n\nI've zeroed in on the `get_day_summary` tool. Its documentation clearly indicates it's the right choice, given the user is specifically asking for today's Vitana Index. The query \"What is my vitana index today?\" aligns perfectly with the tool's intended use, so I'm confident in proceeding. I'm ready to call the tool.\n\n\nTvoj Vitana inde
+  "replyFirstAudioAt": 1789715698585,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 1432,
+--- trial 2/6 ---
+  "sessionId": "live-9c3c401b-eeb6-4ea1-86b6-722dd6537541",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Retrieving Vitana Index Data**\n\nI've determined that the `get_day_summary` tool is the correct one to use for fetching the Vitana Index reading, along with all the other necessary daily data the user is seeking. I plan to call this tool now. Once the data is retrieved, I'll need to synthesize the information into a coherent, natural-sounding sentence in Serbian.\n\n\n
+  "replyFirstAudioAt": 1789715739950,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 1856,
+--- trial 3/6 ---
+  "sessionId": "live-571a5476-bc5f-45aa-8cf9-87113b280c3c",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Finding the Vitana Index**\n\nI've homed in on the `get_day_summary` tool as the ideal solution. Its description aligns perfectly with the user's need for their Vitana Index and a broader snapshot of their day. I believe this tool can retrieve and present that information. I'm moving forward with a call to the tool.\n\n\nVaš Vitana indeks je danas 125, što znači da n
+  "replyFirstAudioAt": 1789715783019,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 1220,
+--- trial 4/6 ---
+  "sessionId": "live-e32603f2-e465-43eb-ade8-0e26d0b7435b",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Analyzing the Request**\n\nOkay, I've keyed in on the `get_day_summary` tool. Its description is pretty comprehensive, specifically mentioning the Vitana Index and related daily metrics. I'm focusing now on the trigger for calling this tool; the prompt explicitly states that I should use it *only* when the user directly requests a daily summary. The current user questio
+  "replyFirstAudioAt": 1789715824686,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 2109,
+--- trial 5/6 ---
+  "sessionId": "live-77779b7d-c8a3-4def-8d4b-e3ef503ad79a",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Retrieving Vitana Index Today**\n\nI've decided to use the `get_day_summary` tool to fetch today's Vitana Index, along with the 7-day trend and other daily data, and I'm ready to synthesize a natural language response in Serbian, incorporating the Vitana Index reading and the trend. I didn't need to specify any parameters for the tool.\n\n\nVaš Vitana indeks je danas 1
+  "replyFirstAudioAt": 1789715862568,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 1974,
+--- trial 6/6 ---
+  "sessionId": "live-961ce7ee-9060-4a3c-88eb-b93c5c546e85",
+  "turnsCompleted": 2,
+  "turnCompleted": true,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Retrieving Vitana Index**\n\nI've determined that the `get_day_summary` tool is the best fit for this request. I plan to call this tool without any arguments, which will default to fetching the data for today. Once I receive the information, my next step is crafting a concise and informative response that highlights the current Vitana Index and its 7-day trend, as per t
+  "replyFirstAudioAt": 1789715903523,
+  "replyTurnCompleted": true,
+  "replyLatencyMsFromEndTurn": 1752,
+==================== SUMMARY (authenticated) ====================
+VTID-04036 user turn: utterance sent on 6/6, reply audio on 6, reply turn_complete on 6, errors after utterance: 0
+Trials: 6, session/start OK: 6, SSE 200: 6, Got audio: 6, turn_complete: 6
+##### DONE #####
+
+# oasis_events read-back for the six sessions (07:14–07:21 UTC), per session:
+#   tool_call turn 1 | tool executed | response_sent | model_start_speaking turn 1 | audio_out after greeting -> after reply | close | watchdogs
+# 395c14040c88 | 1 | get_day_summary | true | 1 | 232 -> 569 | 1000 | 0
+# 722dd6537541 | 1 | get_day_summary | true | 1 | 188 -> 534 | 1000 | 0
+# 87113b280c3c | 1 | get_day_summary | true | 1 | 252 -> 674 | 1000 | 0
+# 0e26d0b7435b | 1 | get_day_summary | true | 1 |  92 -> 435 | 1000 | 0
+# e3ef503ad79a | 1 | get_day_summary | true | 1 | 113 -> 440 | 1000 | 0
+# b93c5c546e85 | 1 | get_day_summary | true | 1 | 188 -> 561 | 1000 | 0
+# => 6/6 spoke after the tool response (baseline before the fix: 0/2, watchdog after 20 s); 0 x 1007; first reply audio 1.2–2.1 s after the utterance ended.

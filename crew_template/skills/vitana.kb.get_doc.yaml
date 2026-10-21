@@ -1,0 +1,83 @@
+skill_id: vitana.kb.get_doc
+name: Get Knowledge Base Document
+description: Retrieves a specific document from the Vitana Knowledge Base by ID with optional section filtering
+version: 1.0.0
+category: knowledge_base
+
+provider:
+  type: http
+  method: GET
+  endpoint: ${KB_AGENT_BASE_URL}/api/kb/{doc_id}
+  timeout_ms: 3000
+
+parameters:
+  doc_id:
+    type: string
+    required: true
+    description: The unique identifier for the document to retrieve
+    examples:
+      - foundation_vision
+      - roadmap_2024
+      - technical_architecture
+  
+  sections:
+    type: array
+    items:
+      type: string
+    required: false
+    description: Optional array of section IDs to retrieve
+  
+  format:
+    type: string
+    enum:
+      - markdown
+      - json
+      - plain
+    required: false
+    default: markdown
+    description: Output format for the document content
+  
+  max_words:
+    type: integer
+    required: false
+    minimum: 100
+    maximum: 10000
+    description: Maximum word count to return
+
+response_schema:
+  doc_id:
+    type: string
+  title:
+    type: string
+  content:
+    type: string
+  word_count:
+    type: integer
+  sections_returned:
+    type: array
+
+telemetry:
+  emit_events: true
+  event_types:
+    - kb.skill_invoked
+    - kb.doc_accessed
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - doc_id
+    - sections_requested
+    - word_count
+
+usage:
+  roles:
+    - planner
+    - worker
+  primary_role: planner
+  use_cases:
+    - Targeted documentation retrieval
+    - Specific section access
+    - Context-aware planning
+
+error_handling:
+  retry_attempts: 3
+  retry_backoff_ms: 1000
+  fallback_strategy: return_error_with_suggestions

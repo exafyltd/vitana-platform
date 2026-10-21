@@ -1,0 +1,38 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/vtid-05072-appjs-manifest/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-05072-bundle-manifest.test.ts
+  VTID-05072 case 1: index.html script list equals the manifest bundle
+    √ same files in the same order (ignoring ?v=) (5 ms)
+  VTID-05072 case 2: no top-level function name in two bundle files
+    √ no UNEXPECTED top-level function name is declared in two bundle files (335 ms)
+    √ every known duplicate STILL exists in exactly its allowlisted file set (list can only shrink) (167 ms)
+    √ the escapeHtml duplicate is exactly {app.js, intelligence-panels.js} (203 ms)
+    √ the guard still catches a NEW duplicate (inline-string proof, not a real file) (1 ms)
+  VTID-05072 case 3: extracted files are function declarations only
+    √ every "extracted" bundle file has a Program.body of only FunctionDeclarations (1 ms)
+    √ accepts a body of only function declarations
+    √ rejects a body containing a const
+    √ rejects a body containing an IIFE (1 ms)
+    √ rejects a body containing an expression statement
+  VTID-05072 case 4: extracted/module files are <= 350 KB (app.js exempt)
+    √ every extracted/module bundle file is within the limit; app.js is exempt (2 ms)
+    √ app.js (kind "app") is not subject to the size limit (1 ms)
+  VTID-05072 case 5: generator file list is a superset of the pre-change index
+    √ keeps every file indexed before this change (1 ms)
+    √ adds pipeline-tree.js and kiro-console.js (1 ms)
+    √ the regenerated symbol index also contains pipeline-tree.js and kiro-console.js (2 ms)
+  VTID-05072: helper sanity
+    √ topLevelFunctionNames finds only top-level declarations
+
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        1.458 s, estimated 2 s
+Ran all test suites matching /test\\command-hub\\vtid-05072-bundle-manifest.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

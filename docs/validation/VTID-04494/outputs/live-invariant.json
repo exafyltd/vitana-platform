@@ -1,0 +1,8 @@
+{
+  "project": "inmkhvwdcuyhnxkgfvsb",
+  "checked_at": "2026-09-24T14:40Z",
+  "before": { "duplicate_key_groups": 70, "users": 26, "conflicting_value_groups": 19, "current_rows": 918, "rows_to_supersede": 80 },
+  "after":  { "duplicate_key_groups": 0, "current_rows": 838, "write_fact_has_advisory_lock": true, "write_fact_has_skip_locked": false,
+              "grantees": ["authenticated", "migrate", "postgres", "service_role"] },
+  "local_race_pg16": { "old_existing_row": 2, "old_no_row": 2, "new_existing_row": 1, "new_no_row": 1 }
+}

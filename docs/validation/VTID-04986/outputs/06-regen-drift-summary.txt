@@ -1,0 +1,72 @@
+# Drift a full regen would commit (NOT committed: stopped and reported, see acceptance.md)
+# generator: services/gateway/scripts/regen-screens-catalog.mjs at this branch, VITANA_V1_ROOT=/home/user/vitana-v1 (main @ 42d42b1)
+# validate-dev-frontend-spec.mjs on the regenerated spec: OK (25 modules, 133 screens); --check: in sync; jest test/command-hub: 35 suites / 519 passed
+counts {'total_screens': (117, 133), 'total_entries': (291, 315), 'last_synced': ('2026-04-27', '2026-10-08'), 'role_counts': ({'DEVELOPER': 112, 'COMMUNITY': 89, 'PATIENT': 9, 'PROFESSIONAL': 9, 'STAFF': 9, 'ADMIN': 63}, {'DEVELOPER': 133, 'COMMUNITY': 89, 'PATIENT': 9, 'PROFESSIONAL': 9, 'STAFF': 9, 'ADMIN': 66})}
+
+REMOVED rows (16):
+  DEV-LIVE_METRICS DEVELOPER Overview / Live Metrics /command-hub/overview/live-metrics/
+  DEV-RECENT_EVENTS DEVELOPER Overview / Recent Events /command-hub/overview/recent-events/
+  DEV-ERRORS_VIOLATIONS DEVELOPER Overview / Errors & Violations /command-hub/overview/errors-violations/
+  DEV-RELEASE_FEED DEVELOPER Overview / Release Feed /command-hub/overview/release-feed/
+  DEV-ORB_LIVE DEVELOPER Assistant / ORB Live /command-hub/assistant/orb-live/
+  DEV-AWARENESS_REGISTRY DEVELOPER Assistant / Awareness Registry /command-hub/assistant/awareness-registry/
+  DEV-AWARENESS_TEST DEVELOPER Assistant / Awareness Test /command-hub/assistant/awareness-test/
+  DEV-VOICE_TOOLS DEVELOPER Assistant / Voice Tools /command-hub/assistant/voice-tools/
+  DEV-VOICE_LAB DEVELOPER Diagnostics / Voice LAB /command-hub/diagnostics/voice-lab/
+  ADM-CATALOG ADMIN Navigator / Catalog /admin/navigator
+  ADM-COVERAGE ADMIN Navigator / Coverage /admin/navigator/coverage
+  ADM-HISTORY ADMIN Navigator / History /admin/navigator/history
+  ADM-TEMPLATES ADMIN Notifications / Templates /admin/notifications/templates
+  ADM-SENT ADMIN Notifications / Sent /admin/notifications/sent
+  ADM-SUBSCRIPTIONS ADMIN Notifications / Subscriptions /admin/notifications/subscriptions
+  ADM-PROVIDERS ADMIN Notifications / Providers /admin/notifications/providers
+
+ADDED rows (40):
+  DEV-BILLING_DASHBOARD DEVELOPER Admin / Billing Dashboard /command-hub/admin/billing-dashboard/
+  DEV-BILLING_CODES DEVELOPER Admin / Billing Codes /command-hub/admin/billing-codes/
+  DEV-COMMERCE_OVERVIEW DEVELOPER Commerce / Overview /command-hub/commerce/overview/
+  DEV-PROVIDERS_ONBOARDING DEVELOPER Commerce / Providers Onboarding /command-hub/commerce/providers-onboarding/
+  DEV-COMMISSIONS_REWARDS DEVELOPER Commerce / Commissions Rewards /command-hub/commerce/commissions-rewards/
+  DEV-AFFILIATE_PROGRAMS DEVELOPER Commerce / Affiliate Programs /command-hub/commerce/affiliate-programs/
+  DEV-CHECKLIST DEVELOPER Knowledge Base / Checklist /command-hub/knowledge-base/checklist/
+  DEV-CONVERSATION_CONFIG DEVELOPER Conversation / Config /command-hub/conversation/config/
+  DEV-MONITOR DEVELOPER Conversation / Monitor /command-hub/conversation/monitor/
+  DEV-CONVERSATION_TOOLS DEVELOPER Conversation / Tools /command-hub/conversation/tools/
+  DEV-SIMULATOR DEVELOPER Conversation / Simulator /command-hub/conversation/simulator/
+  DEV-AWARENESS DEVELOPER Conversation / Awareness /command-hub/conversation/awareness/
+  DEV-JOURNEY_CONTEXT DEVELOPER Conversation / Journey Context /command-hub/conversation/journey-context/
+  DEV-TOOL_CATALOG DEVELOPER Conversation / Tool Catalog /command-hub/conversation/tool-catalog/
+  DEV-VOICE_OVERVIEW DEVELOPER Voice / Overview /command-hub/voice/overview/
+  DEV-SEGMENTS DEVELOPER Voice / Segments /command-hub/voice/segments/
+  DEV-VOICE_SESSIONS DEVELOPER Voice / Sessions /command-hub/voice/sessions/
+  DEV-ISSUES_HEALING DEVELOPER Voice / Issues Healing /command-hub/voice/issues-healing/
+  DEV-TEST_BENCH DEVELOPER Voice / Test Bench /command-hub/voice/test-bench/
+  DEV-PROVIDERS DEVELOPER Voice / Providers /command-hub/voice/providers/
+  DEV-LOCALIZATION DEVELOPER Operator / Localization /command-hub/operator/localization/
+  DEV-MISSION_ALIGNMENT DEVELOPER Autopilot / Mission Alignment /command-hub/autopilot/mission-alignment/
+  DEV-ORCHESTRATOR DEVELOPER Autopilot / Orchestrator /command-hub/autopilot/orchestrator/
+  DEV-MANUALS DEVELOPER Docs / Manuals /command-hub/docs/manuals/
+  DEV-ROUTINES_CATALOG DEVELOPER Routines / Catalog /command-hub/routines/catalog/
+  DEV-ROUTINES_HISTORY DEVELOPER Routines / History /command-hub/routines/history/
+  DEV-INBOX DEVELOPER Feedback / Inbox /command-hub/feedback/inbox/
+  DEV-HANDOFFS DEVELOPER Feedback / Handoffs /command-hub/feedback/handoffs/
+  DEV-KPIS DEVELOPER Feedback / Kpis /command-hub/feedback/kpis/
+  DEV-AUDIT DEVELOPER Feedback / Audit /command-hub/feedback/audit/
+  ADM-TICKETS ADMIN Feedback / Tickets /admin/feedback/tickets
+  ADM-SPECIALISTS ADMIN Feedback / Specialists /admin/feedback/specialists
+  ADM-NOTIFICATIONS ADMIN Notifications / Notifications /admin/notifications
+  ADM-NOTIFICATIONS_ACTIVITY ADMIN Notifications / Activity /admin/notifications/activity
+  ADM-OVERVIEW ADMIN Insights / Overview /admin/insights/overview
+  ADM-JOURNEYS ADMIN Insights / Journeys /admin/insights/journeys
+  ADM-FEATURES ADMIN Insights / Features /admin/insights/features
+  ADM-INTERESTS ADMIN Insights / Interests /admin/insights/interests
+  ADM-INSIGHTS_EVENTS ADMIN Insights / Event Explorer /admin/insights/events
+  ADM-BACKOFFICE_DASHBOARD ADMIN Back Office / Dashboard /backoffice/dashboard
+
+CHANGED rows:
+  DEV-MARKETPLACE_SHOPS {'module': ('Admin', 'Commerce'), 'url_path': ('/command-hub/admin/marketplace-shops/', '/command-hub/commerce/marketplace-shops/')}
+  DEV-MARKETPLACE_REVIEW {'module': ('Admin', 'Commerce'), 'url_path': ('/command-hub/admin/marketplace-review/', '/command-hub/commerce/marketplace-review/')}
+  ADM-COMPOSE {'tab': ('Compose', 'Send')}
+
+sidebar_navigation: ['overview', 'admin', 'assistant', 'autonomy', 'operator', 'command-hub', 'governance', 'agents', 'autopilot', 'oasis', 'databases', 'infrastructure', 'security-dev', 'integrations-tools', 'diagnostics', 'models-evaluations', 'testing-qa', 'intelligence-memory-dev', 'docs', 'feedback'] 
+  -> ['overview', 'admin', 'commerce', 'knowledge-base', 'assistant', 'conversation', 'voice', 'autonomy', 'operator', 'command-hub', 'governance', 'agents', 'autopilot', 'oasis', 'databases', 'infrastructure', 'security-dev', 'integrations-tools', 'diagnostics', 'models-evaluations', 'testing-qa', 'intelligence-memory-dev', 'docs', 'routines', 'feedback']

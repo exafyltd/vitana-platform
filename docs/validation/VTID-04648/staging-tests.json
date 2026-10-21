@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-04648",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "screen-load health route answers JSON (the grid the staged check feeds)",
+      "path": "/api/v1/frontend/screen-load/health",
+      "expect_content_type": "application/json",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/scripts/test-catalog-lib.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the change moves two scheduled workflows' browser runs to staging and tightens the catalog's production-browser flag; the catalog tests pin the flag rule against the real workflow files"
+    }
+  ]
+}

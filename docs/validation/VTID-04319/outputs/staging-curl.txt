@@ -1,0 +1,15 @@
+# Staging verification — orchestrator routes (VTID-04319)
+# 2026-09-24T10:30:07Z against https://preview-aws-gateway.vitanaland.com (staging only, unauthenticated GET)
+$ curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+{"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"2d83a0a7405f2b3d0f5d2dc1f0c0f8620ee881ad","booted_at":"2026-09-24T10:22:53.438Z","marker":"2d83a0a7405f"}
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' /api/v1/orchestrator/runs
+401 application/json; charset=utf-8
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' /api/v1/orchestrator/policy
+401 application/json; charset=utf-8
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' /api/v1/orchestrator/policy/shadow
+401 application/json; charset=utf-8
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' /api/v1/orchestrator/budgets
+401 application/json; charset=utf-8
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' /api/v1/orchestrator/delegations
+401 application/json; charset=utf-8
+# Expected: 401 application/json on every route (route mounted, auth required); HTML 404 would mean the route is absent.

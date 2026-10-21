@@ -1,0 +1,7 @@
+cd services/gateway && npx jest test/orb/context/compile-assistant-decision-context.test.ts --verbose   # 9 passed (outputs/jest-targeted.txt)
+# scratch copy (not committed) wrapping the test in it.each(50)
+npx jest test/orb/context/zz-scratch-repeat.test.ts -t "starts all five"   # 50 passed (outputs/repeat50.txt)
+npx jest test/orb --silent &  ; npx jest test/orb/context/zz-scratch-repeat.test.ts -t "starts all five"   # 50 passed under load (outputs/repeat50-under-load.txt)
+# mutation: Promise.all([...]) at src/orb/context/compile-assistant-decision-context.ts:96 replaced by sequential awaits
+npx jest test/orb/context/compile-assistant-decision-context.test.ts -t "starts all five"   # 1 failed: "providers were not started concurrently" (outputs/mutation-sequential.txt); source restored, git diff clean
+npx tsc --noEmit -p .   # clean

@@ -1,0 +1,17 @@
+# VTID-05118 — commands run to produce the evidence (2026-10-12), worktree on origin/main f9c97fd3f
+git fetch origin && git merge --ff-only origin/main
+git ls-tree --name-only origin/main supabase/migrations/ | sort | tail -3      # newest 20261012200000 -> new file 20261012235118 (no collision)
+sha256sum <(awk '/<!-- plan:begin -->/{f=1;next}/<!-- plan:end -->/{f=0}f' docs/validation/VTID-05118/plan-sparring.md)   # -> outputs/plan-body-hash.txt
+cd services/gateway && npx jest test/vtid-05118-welcome-discount-trigger-secret.test.ts   # -> outputs/jest-vtid-05118.txt (8 passed)
+(migration body replaced by the old vitana-v1 20260210141933 definition) npx jest test/vtid-05118-welcome-discount-trigger-secret.test.ts   # -> outputs/jest-vtid-05118-red-old-definition.txt (5 failed, 3 passed); file restored
+cd services/gateway && npx jest test/vtid-04019-no-token-prefixes-in-docs.test.ts   # -> outputs/vtid-04019-docs-credential-scan.txt (1402 passed)
+cd services/gateway && npx tsc --noEmit -p .   # tests are outside tsconfig "include"; 3 pre-existing TS2307 (libphonenumber-js, client-pinpoint-sms-voice-v2 missing from the local node_modules), none in this change
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05118/staging-tests.json'),{vtid:'VTID-05118',service:'gateway'})"   # { ok: true, errors: [] }
+
+# Not run here (orchestrator, after the vitana-v1 edge function is deployed):
+#   read-only: confirm edge secret EMAIL_TRIGGER_SECRET exists (names only)
+#   gh workflow run RUN-MIGRATION.yml -f migration_file=supabase/migrations/20261012235118_vtid_05118_welcome_discount_trigger_secret.sql
+#   read-only post-apply:
+#     SELECT pg_get_functiondef('public.notify_welcome_discount'::regproc) LIKE '%email_trigger_secret%'      -- expect true
+#     SELECT pg_get_functiondef('public.notify_welcome_discount'::regproc) LIKE '%service_role_key%'          -- expect false
+#     SELECT count(*) FROM vault.secrets WHERE name = 'email_trigger_secret'                                  -- expect 1 (name only)

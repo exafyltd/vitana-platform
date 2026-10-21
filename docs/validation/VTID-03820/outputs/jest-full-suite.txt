@@ -1,0 +1,45 @@
+    ✓ strips both inherited values first, so a stale one cannot survive
+    ✓ matches the exact value AWS-PROD-DEPLOY-GATEWAY.yml pins, so staging and prod cannot silently diverge (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/provider-name.test.ts
+  VOICE_PROVIDER_NAMES
+    ✓ contains exactly vertex, livekit, nova_sonic, cascaded (1 ms)
+  parseVoiceProviderName
+    ✓ accepts every canonical provider name
+    ✓ trims whitespace and lowercases before matching (1 ms)
+    ✓ rejects aliases and near-misses (no silent coercion)
+    ✓ rejects non-strings and empties (1 ms)
+  isVoiceProviderName
+    ✓ guards exact members only (no normalization)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/conversation/index-coach-text.test.ts
+  buildIndexSuggestionsText
+    ✓ with items → speakable, enumerated, never raw JSON, anti-fake-fail (1 ms)
+    ✓ with NO items → still positive + actionable, never a fake-fail (9 ms)
+  buildIndexPlanText
+    ✓ names every scheduled activity with its date (transparency)
+    ✓ singular wording for a single action (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 748 passed, 748 of 749 total
+Tests:       29 skipped, 6 todo, 13753 passed, 13788 total
+Snapshots:   44 passed, 44 total
+Time:        62.944 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
+
+NOTE: this file is the tail of the full `npx jest` run for services/gateway,
+matching the same truncation convention as prior VTIDs' jest-full-suite.txt
+in this directory. Full untruncated output was reviewed locally before
+committing this trimmed version.

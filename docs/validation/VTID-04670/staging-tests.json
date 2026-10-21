@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04670",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "supervisor snapshot (now with recommendation_acceptance) exists and requires a login", "path": "/api/v1/dev-autopilot/supervisor", "expect_status": 401 },
+    { "kind": "http", "name": "recommendations health answers JSON", "path": "/api/v1/autopilot/recommendations/health", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04670-recommendation-acceptance.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "A dismiss writes the recommendation and its reason, and the weekly summary writes an OASIS event; staging writes to the production database, so both are proven by the suites (database mocked), not by a staging write" }
+  ]
+}

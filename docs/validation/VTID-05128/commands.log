@@ -1,0 +1,8 @@
+# reproduce the original failure: the old inline step (from origin/main) with a 1,100-result results.json and a stub curl
+bash old-step.sh   # exit 126: "/…/bin/curl: Argument list too long" (outputs/reproduction.txt)
+bash scripts/ci/staging-verify/record-oasis.sh   # same input: exit 0, "✓ recorded staging.verify.failed for gateway @ abc"
+node --test scripts/ci/staging-verify/record-oasis.test.cjs   # 7 pass (outputs/record-oasis-tests.txt)
+node --test scripts/ci/staging-verify/lib.test.cjs            # 38 pass
+cd services/gateway && npx jest test/vtid-04715-staging-verify-deployed-commit.test.ts   # 7 passed
+node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   # UNIT.yml equivalent: 81 pass
+# read-only evidence of the bug: STAGING-VERIFY run 38321374295 attempts 1 and 2, step "Record result in OASIS": "/usr/bin/curl: Argument list too long", exit 126

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04798",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04798-memory-scope-sensitivity.test.ts", "cwd": "services/gateway",
+      "reason": "proving it on staging would mean a work-surface voice session or a member search writing and reading real rows in the shared production database; the gates are covered by unit tests and the migration by a throwaway-Postgres SQL test (SQL-MEMORY-SENSITIVITY.yml)" }
+  ]
+}

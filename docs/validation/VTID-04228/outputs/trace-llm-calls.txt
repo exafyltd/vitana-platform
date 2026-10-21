@@ -1,0 +1,51 @@
+# VTID-04228 — AC-4: planner LLM calls after the scan (read-only Supabase SQL, 15:30 + 15:40 UTC)
+#
+# select metadata->>'stage', metadata->>'provider', metadata->>'model', metadata->>'fallback_used', count(*), min(created_at), max(created_at)
+#   from oasis_events where topic in ('llm.call.completed','llm.call.failed') and created_at > '2026-09-21T15:15:00Z' group by 1,2,3,4;
+#
+# stage    provider  model                                        fallback_used  n   first_at      last_at
+# planner  bedrock   eu.anthropic.claude-opus-4-5-20251101-v1:0   false          41  15:21:43.272  15:25:47.416
+#
+# → every planner call is provider=bedrock, fallback_used=false. Zero rows with provider in (anthropic, vertex).
+# → zero llm.call.failed rows in the window.
+# (llm.call.started: 41 rows, same stage/provider — the 42nd completed row at 15:33:57 is VTID-01208, an
+#  unrelated operator/health probe with 922 in / 4 out tokens, not the autopilot.)
+#
+# Totals: 41 completed calls, avg latency 25,789 ms, 302,556 input tokens, 63,445 output tokens.
+# metadata.env='staging', metadata.service='dev-autopilot-planning', vtid=VTID-DA-FIND-<finding8>.
+# metadata.cost_estimate_usd = 0 on EVERY row  <-- gaps-report.md §5e-3 (no MODEL_COSTS key for the
+#   Bedrock inference-profile id; at Opus list price this scan's planning was roughly $9, reported as $0).
+#
+# Calls per finding (select vtid, count(*) ... group by vtid):
+# VTID-DA-FIND-9e1bdb97  10 calls  (CVE: package.json)                  71,647 in / 16,014 out
+# VTID-DA-FIND-23e083d1   8 calls  (TODO/FIXME codebase-analyzer.ts)     64,173 in / 11,444 out
+# VTID-DA-FIND-efec84e4   8 calls  (Missing auth middleware admin-health) 73,690 in /  9,265 out
+# VTID-DA-FIND-b0aa6815   5 calls  (rollup safety-gap)                    25,575 in /  9,827 out
+# VTID-DA-FIND-e8cb7fae   5 calls  (missing tests admin-aurora-memory)    28,830 in /  7,958 out
+# VTID-DA-FIND-b869c955   3 calls  (Missing RLS policy)                   21,750 in /  6,291 out
+# VTID-DA-FIND-5fbe06e1   1 call
+# VTID-DA-FIND-1b7d874a   1 call
+#
+# Plan rows actually written (dev_autopilot_plan_versions, 9 rows):
+# finding    version  planning_session   created_at    files_referenced
+# 1b7d874a   1        plan_6d658fdf-ac9  15:21:43.434  2
+# b869c955   1        plan_9a2a7ccb-d05  15:21:53.404  2
+# efec84e4   1        plan_6afc18f3-99c  15:22:27.014  2
+# 9e1bdb97   1        plan_ed07f7be-05e  15:23:10.807  2
+# b869c955   2        plan_3a3d59c5-2b5  15:23:53.427  2   (dev_autopilot.plan.version_added — a duplicate generation landed as v2)
+# b0aa6815   1        plan_44fa5188-716  15:23:58.245  3
+# 5fbe06e1   1        plan_d9e332d0-484  15:24:17.738  0
+# e8cb7fae   1        plan_cf850ca5-72b  15:24:26.153  1
+# 23e083d1   1        plan_0e1655de-021  15:24:49.698  2
+#
+# 41 planner calls for 9 plan rows  <-- gaps-report.md §5e-1. Gateway log shows the same finding being
+# planned concurrently by the post-scan eager planner (eagerlyPlanTopK, fire-and-forget, K=5) AND by
+# consecutive lazyPlanTick ticks (30 s) while each generation takes 20-40 s (+ one "lacks test files"
+# retry). lazyPlanTick's in-flight guard reads dev_autopilot_worker_queue, which stayed at 0 rows —
+# planning is inline, so the guard never sees the generation it is meant to dedupe:
+#   [dev-autopilot-planning] plan v1 for efec84e4 lacks test files — auto-retrying once with explicit feedback   (x5, interleaved)
+#   [dev-autopilot-planning] plan v1 for 9e1bdb97 lacks test files — auto-retrying once with explicit feedback   (x5)
+#   [dev-autopilot-execute] lazy-plan tick: generated 1 plan(s) / generated 2 plan(s) / generated 1 plan(s)  (15:24:50, 15:24:52, 15:24:54 — three ticks' worth finishing together)
+#
+# Routing policy confirming the provider (llm_routing_policy v17, active): planner primary
+# bedrock / eu.anthropic.claude-opus-4-5-20251101-v1:0, fallback bedrock / eu.anthropic.claude-sonnet-4-6.

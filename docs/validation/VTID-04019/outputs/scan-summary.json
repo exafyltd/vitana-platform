@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04019",
+  "scanned": { "files": 487, "roots": ["CLAUDE.md", "README.md", "docs/**/*.md"] },
+  "shapes": ["GitHub fine-grained PAT (github_pat_…)", "GitHub classic token (gh[pousr]_…)", "AWS access key id (AKIA/ASIA…)", "OpenAI/Anthropic-style key (sk-…)", "JWT (three base64url segments)"],
+  "hits_after_fix": 0,
+  "removed_from": "CLAUDE.md §16 — two partial GitHub PAT prefixes (platform PAT, vitana-v1 PAT)",
+  "replacement": "pointer to GITHUB_SAFE_MERGE_TOKEN / FRONTEND_DEPLOY_TOKEN in AWS Secrets Manager (deploy workflows), Actions secrets, and the GitHub MCP tools for sessions; leak-handling rule",
+  "owner_follow_up": "rotate both tokens whose prefixes were exposed in main"
+}

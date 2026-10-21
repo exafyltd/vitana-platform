@@ -1,0 +1,48 @@
+[
+ {
+  "name": "desktop",
+  "mode": "signed-in",
+  "scrollable": true,
+  "scrolledY": 567,
+  "approveInView": true,
+  "disabledDuring": true,
+  "approveCalls": 1,
+  "status": "Approved — verification level 1. State: needs_action. All required steps done.",
+  "statusInView": true
+ },
+ {
+  "name": "desktop",
+  "mode": "expired",
+  "list": "Your Command Hub sign-in has expired. Open the Command Hub in this browser to sign in again, then press Refresh. Open the Command Hub",
+  "link": "/command-hub/"
+ },
+ {
+  "name": "desktop",
+  "mode": "missing",
+  "list": "Sign in to the Command Hub in this browser first, then press Refresh. Open the Command Hub",
+  "link": "/command-hub/"
+ },
+ {
+  "name": "mobile",
+  "mode": "signed-in",
+  "scrollable": true,
+  "scrolledY": 1148,
+  "approveInView": true,
+  "disabledDuring": true,
+  "approveCalls": 1,
+  "status": "Approved — verification level 1. State: needs_action. All required steps done.",
+  "statusInView": true
+ },
+ {
+  "name": "mobile",
+  "mode": "expired",
+  "list": "Your Command Hub sign-in has expired. Open the Command Hub in this browser to sign in again, then press Refresh. Open the Command Hub",
+  "link": "/command-hub/"
+ },
+ {
+  "name": "mobile",
+  "mode": "missing",
+  "list": "Sign in to the Command Hub in this browser first, then press Refresh. Open the Command Hub",
+  "link": "/command-hub/"
+ }
+]

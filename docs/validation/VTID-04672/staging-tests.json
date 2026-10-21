@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04672",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway answers on the deployed build", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04020-operator-cloudwatch-logs.test.ts test/vtid-04232-triage-tools.test.ts", "cwd": "services/gateway",
+      "reason": "pins the /vitana/<service> log-group resolution, the legacy and bare-name mapping, and the refusal of every other group before any AWS call" }
+  ]
+}

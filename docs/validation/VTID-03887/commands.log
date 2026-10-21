@@ -1,0 +1,9 @@
+# VTID-03887 — allocation + spec pipeline (preview-aws-gateway)
+curl -X POST .../api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"backoffice-approver-payload"}'   -> VTID-03887 (outputs/alloc.json)
+curl -X PATCH .../api/v1/oasis/tasks/VTID-03887 -d '{"title":"Gateway: approver sees BackOffice command payload","status":"in_progress"}' -> 200
+curl -X POST .../api/v1/specs/VTID-03887/generate|validate|quality-check|approve   -> outputs/spec-*.json (approved)
+# implementation checks
+cd services/gateway && npx jest test/routes/backoffice-commands.test.ts test/routes/backoffice-access.test.ts test/vtid-03848-backoffice-voice-tools.test.ts test/vtid-03848-orchestrator-voice-ceiling.test.ts   # 4 suites, 47 passed
+cd services/gateway && npx jest test/routes/backoffice-commands.test.ts   # outputs/jest-backoffice-commands.txt (24 passed)
+cd services/gateway && npx tsc --noEmit -p .   # outputs/tsc-noemit.txt (exit 0)
+cd services/gateway && npx jest --silent   # outputs/gateway-jest-full-tail.txt

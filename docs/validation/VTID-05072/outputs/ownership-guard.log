@@ -1,0 +1,16 @@
+======================================
+VTID-0302: Command Hub Ownership Guard
+======================================
+
+The system cannot find the path specified.
+The system cannot find the path specified.
+The system cannot find the path specified.
+Warning: Could not get changed files: Command failed: git diff --name-only HEAD~1 HEAD 2>/dev/null
+The system cannot find the path specified.
+
+Branch: kiro/vtid-05072-appjs-manifest
+PR Title: VTID-05072: Command Hub app.js split — Phase 0 (manifest + guards)
+Changed files: 0
+
+No Command Hub frontend files modified.
+Guard check PASSED.

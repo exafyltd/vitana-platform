@@ -1,0 +1,23 @@
+$ npx jest test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+PASS test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+    ✓ reports fallback=true for every language with no native Nova voice (4 ms)
+    ✓ reports fallback=false for languages Nova actually speaks (2 ms)
+    ✓ does NOT change which voice is served — pl and sr work today on tina (1 ms)
+    ✓ preserves the null contract of the underlying resolver (1 ms)
+    ✓ logs the substitution once per language, not once per session (1 ms)
+    ✓ normalises locale tags so ru-RU does not log twice
+    ✓ the call site no longer uses a bare ?? fallback (13 ms)
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+
+$ npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest   # full gateway suite
+Test Suites: 1 skipped, 672 passed, 672 of 673 total
+Tests:       29 skipped, 6 todo, 12928 passed, 12963 total
+Snapshots:   44 passed, 44 total
+
+=== after review fix (session latch) ===
+PASS test/orb/live/voice/nova-sonic-voice-fallback.test.ts
+Tests:       8 passed, 8 total

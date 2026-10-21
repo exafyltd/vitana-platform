@@ -1,0 +1,68 @@
+name: Cron Graduation Recommender
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — daily at 09:00 CET. Scans recent
+# auto-promote events, identifies features that have been at promote for
+# >=5 consecutive days, emits an auto_promote.proposed event to PROD
+# oasis_events with action='graduate_to_prod' (the operator's FCM digest
+# pipeline picks that up).
+
+on:
+  schedule:
+    # 09:00 CET = 08:00 UTC (winter) / 07:00 UTC (summer). We use 08:00 UTC
+    # year-round and accept the DST drift.
+    - cron: '0 8 * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Skip FCM digest emit'
+        required: false
+        default: 'false'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cron-graduation-recommender
+  cancel-in-progress: false
+
+jobs:
+  recommend:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      # VTID-03608: identical root cause and fix as CRON-AUTO-PROMOTER.yml
+      # — this job's WIF identity has been denied
+      # secretmanager.versions.access on STAGING_SUPABASE_URL for every
+      # single run since this workflow's first, 2026-06-13 (~2 months,
+      # 100% failure rate). CLAUDE.md documents that staging and prod
+      # share the SAME Supabase project throughout this codebase
+      # (BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN, VTID-03513), so
+      # STAGING_SUPABASE_URL/KEY were never a genuinely different value
+      # from SUPABASE_URL/SUPABASE_SERVICE_ROLE — just a GCP Secret
+      # Manager hop to the identical credential, and the one hop that was
+      # broken. Use the repo secrets directly instead of chasing a GCP IAM
+      # grant this session can't make.
+      - name: Run graduation recommender
+        working-directory: services/gateway
+        env:
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          STAGING_SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          GRADUATION_DRY_RUN: ${{ inputs.dry_run == 'true' && '1' || '0' }}
+        run: npx tsx scripts/graduation-recommender.ts

@@ -1,0 +1,10 @@
+{
+  "source": "read-only queries, dev_autopilot_executions + oasis_events, 2026-09-24 ~14:50 UTC",
+  "claims_last_3_days": { "production": 356, "staging": 195 },
+  "prod_gateway_commit": "64a53d3872ad136103986e42d9ba2bd731ee04fe",
+  "reverted_after_prod_merge": [
+    { "execution": "593cb4d1", "merged": "45090ec", "event": "Reconciler: 593cb4d1 stuck in deploying with no observed deploy event", "revert_pr": 3585 },
+    { "execution": "5769e66a", "merged": "5414095", "event": "Execution 5769e66a deploy failed", "revert_pr": 3594 }
+  ],
+  "held_not_approved": { "execution": "b3d4f2b3-cbdf-4cc1-86f7-2564ff3ae985", "claimed_env": "production", "claimed_at": "2026-09-24T14:30:42.748Z", "status": "awaiting_approval" }
+}

@@ -1,0 +1,38 @@
+{
+  "vtid": "VTID-04093",
+  "task": "T1b Command Hub cleanup program",
+  "decision": "delete",
+  "reason": "renderMemoryOpsView (VTID-02636) already replaces the gated block with real backend-wired data, already mounted live under the same intelligence-memory-dev nav slot",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/test/command-hub/t2-no-zero-caller-functions.test.ts",
+    "services/gateway/test/command-hub/t1d-dead-functions-removed.test.ts",
+    "services/gateway/test/command-hub/t5b-gcp-static-screens-gated.test.ts",
+    "services/gateway/test/command-hub/t5c-no-fabricated-fallback-rows.test.ts",
+    "services/gateway/test/command-hub/t5d-stale-gcp-labels-fixed.test.ts"
+  ],
+  "files_deleted": [
+    "services/gateway/test/command-hub/memory-garden-placeholder-banner.test.ts"
+  ],
+  "lines_removed_app_js": 2423,
+  "css_rules_removed": 190,
+  "functions_deleted": [
+    "refreshMemoryGarden", "renderMemoryGardenView", "renderMemoryGardenCard",
+    "renderLongevityFocusPanel", "renderLongevitySignal", "renderDiaryEntryModal",
+    "renderCategoryDetailModal", "getCategorySubcategories", "renderUnifiedIntelligencePanel",
+    "escapeHtmlSafe", "renderKnowledgeGraphView", "getKnowledgeGraphIcon",
+    "renderRecallView", "renderInspectorView", "renderEmbeddingsView",
+    "fetchMemoryGardenProgress", "fetchLongevitySummary", "fetchCategoryMemories",
+    "fetchMemoryFacts", "fetchRelationshipGraph", "fetchBehavioralSignals"
+  ],
+  "constants_deleted": ["MEMORY_GARDEN_ICONS", "LONGEVITY_MESSAGES"],
+  "verification": {
+    "node_check": "pass",
+    "tsc_noemit": "pass",
+    "npm_run_build": "pass",
+    "test_suites": "15/15 passing, 242/242 tests",
+    "dead_css_idempotent": true
+  }
+}

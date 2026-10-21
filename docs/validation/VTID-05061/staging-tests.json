@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05061",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "gateway alive after the reaper change",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only liveness probe; the reaper itself is a background tick with no route, proven by the jest refs below"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05061-reaper-sparring-guard.test.ts test/vtid-03818-reaper-terminal-flag.test.ts",
+      "cwd": "services/gateway",
+      "reason": "both sparring-binding filters on the reaper SELECT and PATCH, the per-tick warn, and the unchanged terminal fields"
+    }
+  ]
+}

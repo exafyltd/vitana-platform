@@ -1,0 +1,919 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04674-notification-controls.test.ts
+  isNotificationTypeAllowed
+    ✓ answers the database switch: off → false (9 ms)
+    ✓ passes the automation id as the source key (2 ms)
+    ✓ reuses the answer within the cache window, re-reads after clear (13 ms)
+    ✓ fails open, loudly, when the switch cannot be read (6 ms)
+  isMemberCategoryAllowed
+    ✓ true/false from the database, null when unreadable (5 ms)
+  isInQuietHours
+    ✓ overnight span, in the given timezone (23 ms)
+    ✓ checks the member's local clock, not the server's UTC clock (2 ms)
+    ✓ an unset or "UTC" timezone (the profiles default) means Europe/Berlin (1 ms)
+    ✓ an invalid timezone falls back to UTC, loudly (2 ms)
+    ✓ HH:MM:SS values from Postgres time columns
+    ✓ off, incomplete or an empty window → never quiet
+  decidePushDelivery
+    ✓ admin switch off → not sent, counted as admin_off (1 ms)
+    ✓ member category off → not sent, counted as member_off (2 ms)
+    ✓ push switch off → not sent
+    ✓ quiet hours hold a normal push but not a P0 — in the member's saved timezone (3 ms)
+    ✓ loads the member prefs when not given (2 ms)
+    ✓ everything on → sent (1 ms)
+  setNotificationControl
+    ✓ switching on writes the row, the audit entry and the OASIS event (3 ms)
+    ✓ refuses to switch on a type whose text is English only (1 ms)
+    ✓ switching an English-only type OFF is always allowed (1 ms)
+    ✓ refuses to switch on an automation whose domain writes English only (1 ms)
+    ✓ rejects bad input (1 ms)
+  listNotificationControls
+    ✓ catalog + types seen only in the database, with switch state and category (4 ms)
+    ✓ stats that cannot be read come back as an error, never as zeros (2 ms)
+    ✓ the switch table itself failing is an error (44 ms)
+  catalog
+    ✓ every entry has both languages and a known audience (49 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-pace-notifications status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../vitana-platform/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [i18n] bulkGetUserLocales fallback: TypeError: rows is not iterable
+        at bulkGetUserLocales (/home/user/wt-d8/services/gateway/src/i18n/server-locale.ts:84:23)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at /home/user/wt-d8/services/gateway/src/routes/scheduled-notifications.ts:599:19
+
+      115 |     }
+      116 |   } catch (e) {
+    > 117 |     console.warn('[i18n] bulkGetUserLocales fallback:', e);
+          |             ^
+      118 |     for (const uid of missing) {
+      119 |       if (!out.has(uid)) out.set(uid, GATEWAY_DEFAULT_LOCALE);
+      120 |     }
+
+      at bulkGetUserLocales (src/i18n/server-locale.ts:117:13)
+      at src/routes/scheduled-notifications.ts:599:19
+
+  console.log
+    [Scheduled] daily_pace_check → dispatched=1 skipped={"no_goal":0,"insufficient_actions":0,"muted":0,"already_sent":0,"wrong_hour":1,"invalid_tz":0,"error":0} total_users=2
+
+      at src/routes/scheduled-notifications.ts:712:11
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_pace.dispatched for BOOTSTRAP-DAILY-PACE (b7563c49-a8ed-4542-bead-4222b0ff748f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-pace-notifications status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../vitana-platform/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [i18n] bulkGetUserLocales fallback: TypeError: rows is not iterable
+        at bulkGetUserLocales (/home/user/wt-d8/services/gateway/src/i18n/server-locale.ts:84:23)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at /home/user/wt-d8/services/gateway/src/routes/scheduled-notifications.ts:599:19
+
+      115 |     }
+      116 |   } catch (e) {
+    > 117 |     console.warn('[i18n] bulkGetUserLocales fallback:', e);
+          |             ^
+      118 |     for (const uid of missing) {
+      119 |       if (!out.has(uid)) out.set(uid, GATEWAY_DEFAULT_LOCALE);
+      120 |     }
+
+      at bulkGetUserLocales (src/i18n/server-locale.ts:117:13)
+      at src/routes/scheduled-notifications.ts:599:19
+
+  console.log
+    [Scheduled] daily_pace_check → dispatched=2 skipped={"no_goal":0,"insufficient_actions":0,"muted":0,"already_sent":0,"wrong_hour":0,"invalid_tz":0,"error":0} total_users=2
+
+      at src/routes/scheduled-notifications.ts:712:11
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_pace.dispatched for BOOTSTRAP-DAILY-PACE (c804ec37-603a-415d-b11d-280d647ceb21)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-pace-notifications status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../vitana-platform/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [i18n] bulkGetUserLocales fallback: TypeError: rows is not iterable
+        at bulkGetUserLocales (/home/user/wt-d8/services/gateway/src/i18n/server-locale.ts:84:23)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at /home/user/wt-d8/services/gateway/src/routes/scheduled-notifications.ts:599:19
+
+      115 |     }
+      116 |   } catch (e) {
+    > 117 |     console.warn('[i18n] bulkGetUserLocales fallback:', e);
+          |             ^
+      118 |     for (const uid of missing) {
+      119 |       if (!out.has(uid)) out.set(uid, GATEWAY_DEFAULT_LOCALE);
+      120 |     }
+
+      at bulkGetUserLocales (src/i18n/server-locale.ts:117:13)
+      at src/routes/scheduled-notifications.ts:599:19
+
+  console.log
+    [Scheduled] daily_pace_check → dispatched=1 skipped={"no_goal":0,"insufficient_actions":0,"muted":0,"already_sent":0,"wrong_hour":0,"invalid_tz":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:712:11
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_pace.dispatched for BOOTSTRAP-DAILY-PACE (7279d569-cc54-47c5-950f-b3fd5745f769)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/daily-pace-notifications status=503 reason="internal token not configured" ip=127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../vitana-platform/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../vitana-platform/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../vitana-platform/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../vitana-platform/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.warn
+    [i18n] bulkGetUserLocales fallback: TypeError: rows is not iterable
+        at bulkGetUserLocales (/home/user/wt-d8/services/gateway/src/i18n/server-locale.ts:84:23)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at /home/user/wt-d8/services/gateway/src/routes/scheduled-notifications.ts:599:19
+
+      115 |     }
+      116 |   } catch (e) {
+    > 117 |     console.warn('[i18n] bulkGetUserLocales fallback:', e);
+          |             ^
+      118 |     for (const uid of missing) {
+      119 |       if (!out.has(uid)) out.set(uid, GATEWAY_DEFAULT_LOCALE);
+      120 |     }
+
+      at bulkGetUserLocales (src/i18n/server-locale.ts:117:13)
+      at src/routes/scheduled-notifications.ts:599:19
+
+  console.log
+    [Scheduled] daily_pace_check → dispatched=0 skipped={"no_goal":0,"insufficient_actions":0,"muted":0,"already_sent":1,"wrong_hour":0,"invalid_tz":0,"error":0} total_users=1
+
+      at src/routes/scheduled-notifications.ts:712:11
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_pace.dispatched for BOOTSTRAP-DAILY-PACE (2ec40909-5d18-4e8b-8830-a20c5c33ad68)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/daily-pace-service.test.ts (6.174 s)
+  bucketPace
+    ✓ (7, 10) → on_track / ratio≈0.7 (7 ms)
+    ✓ (4, 10) → slightly_behind / ratio≈0.4
+    ✓ (3, 10) → falling_behind / ratio≈0.3 (1 ms)
+    ✓ (0, 0) → falling_behind / ratio≈0 (1 ms)
+    ✓ (10, 10) → on_track / ratio≈1 (1 ms)
+    ✓ (69, 100) → slightly_behind / ratio≈0.69
+    ✓ (39, 100) → falling_behind / ratio≈0.39 (5 ms)
+    ✓ (12, 10) → on_track / ratio≈1
+  paceToneKeys → tt() resolution
+    ✓ on_track resolves to distinct non-empty DE/EN strings (5 ms)
+    ✓ slightly_behind resolves to distinct non-empty DE/EN strings (1 ms)
+    ✓ falling_behind resolves to distinct non-empty DE/EN strings (3 ms)
+  userLocalDate / userLocalHour
+    ✓ Pacific/Pago_Pago (UTC-11) at 2026-05-29T06:00:00Z → 2026-05-28 (23 ms)
+    ✓ Pacific/Kiritimati (UTC+14) at 2026-05-28T22:00:00Z → 2026-05-29 (1 ms)
+    ✓ Asia/Kathmandu (+5:45) at 2026-05-28T14:00:00Z → local hour 19 (19:45) (2 ms)
+    ✓ Asia/Kathmandu at 2026-05-28T13:00:00Z → local hour 18 (18:45, not 19) (1 ms)
+    ✓ Europe/Berlin DST spring-forward 2026-03-29T01:00:00Z → local hour 03 (1 ms)
+    ✓ Europe/Berlin 2026-03-29T17:00:00Z (post-DST) → local hour 19
+    ✓ Europe/Berlin DST fall-back 2026-10-25 → both 19:00 instances map to local hour 19 once (1 ms)
+  computePaceDecision
+    ✓ returns wrong_hour when local hour ≠ 19 (4 ms)
+    ✓ returns no_goal when no active life_compass row (16 ms)
+    ✓ returns muted when push_enabled=false (2 ms)
+    ✓ returns insufficient_actions when surfaced_7d < 3 (3 ms)
+    ✓ returns already_sent when a daily_pace_check row already exists today (2 ms)
+    ✓ happy path: 5 surfaced, 4 activated → on_track ratio=0.8 (2 ms)
+    ✓ invalid timezone string falls back to Europe/Berlin (does not throw) (3 ms)
+  POST /daily-pace-notifications route
+    ✓ two users, only the 19:00-local user gets dispatched (other → wrong_hour) (4203 ms)
+    ✓ one user with bad tz string is handled per-user (other users unaffected) (160 ms)
+    ✓ double-call within same UTC second: second call sees prior row and skips with already_sent (147 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health/ingestion.test.ts
+  ingestPartnerResult
+    ✓ quarantines when consent is missing, and never writes partner_health_results (8 ms)
+    ✓ quarantines invalid payloads after recording provenance, never projecting into biomarker_results (2 ms)
+    ✓ projects a valid result into lab_reports/biomarker_results, flips status, notifies, and emits result_ready (4 ms)
+    ✓ is idempotent on a duplicate webhook delivery — one write, one notification, one event, ever (2 ms)
+  recordStatusChange
+    ✓ writes a history row, updates the order, emits status_changed, and notifies for a non-terminal status (1 ms)
+    ✓ does not notify for the terminal delivered status (1 ms)
+  quarantineUnmatchedResult
+    ✓ inserts an inbox row with the given reason and emits result_quarantined, never touching partner_health_results (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/frontend/orb-widget-caption-i18n.test.ts
+  orb-widget caption i18n (BOOTSTRAP-ORB-CAPTION-I18N)
+    ✓ _CAPTIONS defines all 10 supported locales for every key (34 ms)
+    ✓ _DISCONNECT_LABELS and _RECOVERY_LABELS define all 10 locales for every reason (31 ms)
+    ✓ _THINKING_QUICK/_PRIMARY/_ALTERNATES entries all carry the full 10-key shape (1 ms)
+    ✓ no _setStatus call site still branches directly on de/en for caption text (2 ms)
+    ✓ _pickLang() is scoped to exactly one caller — the disconnect-alert MP3 clip id (7 ms)
+    ✓ a sample of non-English translations are real translations, not copies of the English text (4 ms)
+    ✓ _CAPTION_LOCALES (the resolver admit-list) includes tr, so _resolveCaptionLocale() actually reaches the tr translations instead of falling through to en (2 ms)
+    ✓ .vtorb-status font-size and min-height are 19px/26px in both the inline style and the injected stylesheet (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/connectors/doctorbox.test.ts
+  doctorbox connector — signature verification
+    ✓ rejects every request when the secret is unset (fail closed, VTID-05031) (3 ms)
+    ✓ rejects an invalid signature when a secret is configured (1 ms)
+    ✓ accepts a valid signature when a secret is configured (1 ms)
+  doctorbox connector — identity resolution
+    ✓ rejects a payload with no external_order_ref (1 ms)
+    ✓ rejects when the partner is not registered (1 ms)
+    ✓ quarantines (never guesses) when no order matches the external_order_ref (1 ms)
+  doctorbox connector — test.status_changed
+    ✓ maps a known raw status and delegates to recordStatusChange (1 ms)
+    ✓ rejects an unmapped raw status rather than guessing
+  doctorbox connector — test.result_ready
+    ✓ delegates through the adapter + ingestPartnerResult (1 ms)
+    ✓ reports a quarantined outcome as valid (the webhook itself was legitimate) (1 ms)
+  doctorbox connector — unknown event
+    ✓ rejects an unrecognized event type (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/ops-pipeline-summary.test.ts
+  GET /api/v1/ops/pipeline-summary — real auth middleware
+    ✓ 401 JSON without an Authorization header; the builder never runs (178 ms)
+  GET /api/v1/ops/pipeline-summary — admin (middleware mocked)
+    ✓ 200 with exactly the builder body for an exafy_admin (49 ms)
+    ✓ a non-admin is refused by the gate and the builder never runs (42 ms)
+    ✓ a second request inside 15 s is served from the cache (35 ms)
+    ✓ ?fresh=1 bypasses the cache (a refresh right after a mutation) and replaces it (63 ms)
+    ✓ the cockpit refresh after activate/dismiss/generate asks for ?fresh=1 (19 ms)
+    ✓ concurrent requests share one builder run (single-flight) (118 ms)
+    ✓ a builder error (500) is passed through and never cached (76 ms)
+    ✓ a throwing builder still answers JSON 500 with a snake_case error code (42 ms)
+  the service-token route is unchanged for machine callers
+    ✓ /pipeline/summary still sits behind requireServiceToken and calls the same builder (1 ms)
+    ✓ the new route calls the same in-process builder, never an HTTP self-call (2 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/pipeline-summary with owner ops-pipeline-summary (1 ms)
+    ✓ the developer domain atlas claims the new route file (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [community-scan] template stats unavailable, retiring nothing: sb.from(...).select(...).eq(...).like is not a function
+
+      85 |     return { retired: selectRetiredTemplates(stats), stats: [...stats.values()] };
+      86 |   } catch (err) {
+    > 87 |     console.warn(`[community-scan] template stats unavailable, retiring nothing: ${(err as Error).message}`);
+         |             ^
+      88 |     return { retired: new Set(), stats: [] };
+      89 |   }
+      90 | }
+
+      at loadRetiredTemplates (src/services/community-autopilot/template-stats.ts:87:13)
+      at runCommunityScan (src/services/community-autopilot/scan-runner.ts:295:67)
+      at Object.<anonymous> (test/vtid-04505-community-autopilot-scan.test.ts:174:17)
+
+  console.warn
+    [community-scan] template stats unavailable, retiring nothing: sb.from(...).select(...).eq(...).like is not a function
+
+      85 |     return { retired: selectRetiredTemplates(stats), stats: [...stats.values()] };
+      86 |   } catch (err) {
+    > 87 |     console.warn(`[community-scan] template stats unavailable, retiring nothing: ${(err as Error).message}`);
+         |             ^
+      88 |     return { retired: new Set(), stats: [] };
+      89 |   }
+      90 | }
+
+      at loadRetiredTemplates (src/services/community-autopilot/template-stats.ts:87:13)
+      at runCommunityScan (src/services/community-autopilot/scan-runner.ts:295:67)
+      at Object.<anonymous> (test/vtid-04505-community-autopilot-scan.test.ts:184:17)
+
+  console.warn
+    [community-scan] template stats unavailable, retiring nothing: sb.from(...).select(...).eq(...).like is not a function
+
+      85 |     return { retired: selectRetiredTemplates(stats), stats: [...stats.values()] };
+      86 |   } catch (err) {
+    > 87 |     console.warn(`[community-scan] template stats unavailable, retiring nothing: ${(err as Error).message}`);
+         |             ^
+      88 |     return { retired: new Set(), stats: [] };
+      89 |   }
+      90 | }
+
+      at loadRetiredTemplates (src/services/community-autopilot/template-stats.ts:87:13)
+      at runCommunityScan (src/services/community-autopilot/scan-runner.ts:295:67)
+      at Object.<anonymous> (test/vtid-04505-community-autopilot-scan.test.ts:196:17)
+
+PASS test/vtid-04505-community-autopilot-scan.test.ts
+  scanners
+    ✓ index: the weakest pillar gets a matching own-data action (3 ms)
+    ✓ index: nothing when every pillar is healthy (1 ms)
+    ✓ diary: opens the diary after 3 quiet days, never drafts it (1 ms)
+    ✓ messages: a reply draft to the person who wrote, only after 12 hours (11 ms)
+    ✓ every candidate carries a registry action kind (67 ms)
+  ranker
+    ✓ caps at 3, one per category (2 ms)
+    ✓ open rows use up slots and their categories (2 ms)
+    ✓ a template rejected twice in 30 days is suppressed (2 ms)
+    ✓ the same target is not proposed again within 14 days (1 ms)
+    ✓ a never-used feature gets the novelty bonus (2 ms)
+  runner
+    ✓ is due only at local 07 and 17 (3 ms)
+    ✓ rows are in the member's language with a typed action and an expiry (3 ms)
+    ✓ writes nothing unless COMMUNITY_AUTOPILOT_SCAN_ENABLED is exactly true (25 ms)
+    ✓ never scans or targets a test/service account (4 ms)
+    ✓ members outside 07/17 local are not scanned by the tick (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/i18n/catalog-coverage.test.ts
+  gateway i18n catalog coverage
+    ✓ ships all 11 registered locales (3 ms)
+    ✓ de has every key DE has (1 ms)
+    ✓ en has every key DE has (3 ms)
+    ✓ es has every key DE has (1 ms)
+    ✓ sr has every key DE has (1 ms)
+    ✓ fr has every key DE has (1 ms)
+    ✓ pt has every key DE has
+    ✓ ru has every key DE has (1 ms)
+    ✓ pl has every key DE has (1 ms)
+    ✓ zh has every key DE has (1 ms)
+    ✓ tr has every key DE has (1 ms)
+    ✓ de has no empty values (1 ms)
+    ✓ en has no empty values (1 ms)
+    ✓ es has no empty values (1 ms)
+    ✓ sr has no empty values (1 ms)
+    ✓ fr has no empty values (1 ms)
+    ✓ pt has no empty values (1 ms)
+    ✓ ru has no empty values (1 ms)
+    ✓ pl has no empty values (1 ms)
+    ✓ zh has no empty values
+    ✓ tr has no empty values
+    ✓ ar is honestly incomplete (registered, not yet translated) and tt() falls back visibly (4 ms)
+  gateway i18n catalog fidelity
+    ✓ de is not a copy of the English catalog (1 ms)
+    ✓ es is not a copy of the English catalog (1 ms)
+    ✓ sr is not a copy of the English catalog (1 ms)
+    ✓ fr is not a copy of the English catalog
+    ✓ pt is not a copy of the English catalog (1 ms)
+    ✓ ru is not a copy of the English catalog
+    ✓ pl is not a copy of the English catalog
+    ✓ zh is not a copy of the English catalog (5 ms)
+    ✓ tr is not a copy of the English catalog (1 ms)
+  gateway i18n placeholder integrity
+    ✓ de preserves every {placeholder} exactly (18 ms)
+    ✓ en preserves every {placeholder} exactly (1 ms)
+    ✓ es preserves every {placeholder} exactly (1 ms)
+    ✓ sr preserves every {placeholder} exactly (1 ms)
+    ✓ fr preserves every {placeholder} exactly (1 ms)
+    ✓ pt preserves every {placeholder} exactly
+    ✓ ru preserves every {placeholder} exactly (2 ms)
+    ✓ pl preserves every {placeholder} exactly (1 ms)
+    ✓ zh preserves every {placeholder} exactly
+    ✓ tr preserves every {placeholder} exactly (1 ms)
+  locale resolution
+    ✓ resolves language words whose spelling does not match their ISO code (1 ms)
+    ✓ resolves BCP-47 tags the frontend language picker writes (1 ms)
+    ✓ distinguishes "unknown" from "German" (strict resolver) (2 ms)
+  tt() fallback chain
+    ✓ returns the locale value when present (5 ms)
+    ✓ substitutes placeholders
+    ✓ leaves unknown placeholders untouched rather than printing undefined (1 ms)
+    ✓ falls back to an unknown locale via German, not a raw key
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-0536] Executing tool: dev_domain_atlas
+
+      at executeTool (src/services/gemini-operator.ts:3704:11)
+
+  console.log
+    [VTID-0536] Tool dev_domain_atlas completed in 4ms: success
+
+      at executeTool (src/services/gemini-operator.ts:4220:11)
+
+  console.log
+    [Notifications] post_like → user=aaaaaaaa… suppressed: admin_disabled
+
+      at notifyUser (src/services/notification-service.ts:744:13)
+
+  console.log
+    [Notifications] orb_suggestion → user=aaaaaaaa… suppressed: admin_disabled (AP-0101)
+
+      at notifyUser (src/services/notification-service.ts:744:13)
+
+  console.log
+    [Notifications] post_like → user=aaaaaaaa… dropped by the notification guard
+
+      at notifyUser (src/services/notification-service.ts:820:15)
+
+  console.log
+    [Notifications] memory_garden_grew → user=aaaaaaaa… inapp=true push=0 appilix=false ch=silent pri=p3 (silent)
+
+      at notifyUser (src/services/notification-service.ts:895:11)
+
+  console.warn
+    [Notifications] push_outcome write failed for n1: repo.setNotificationPushOutcome is not a function
+
+      294 |     if (error) console.warn(`[Notifications] push_outcome write failed for ${notificationId}: ${error.message}`);
+      295 |   } catch (err: any) {
+    > 296 |     console.warn(`[Notifications] push_outcome write failed for ${notificationId}: ${err?.message || err}`);
+          |             ^
+      297 |   }
+      298 | }
+      299 |
+
+      at recordPushOutcome (src/services/notification-service.ts:296:13)
+      at notifyUser (src/services/notification-service.ts:892:11)
+      at Object.<anonymous> (test/vtid-04674-notification-controls-wiring.test.ts:108:15)
+
+  console.log
+    [Notifications] post_like → user=aaaaaaaa… inapp=true push=0 appilix=false ch=push_and_inapp pri=p1
+
+      at notifyUser (src/services/notification-service.ts:895:11)
+
+(node:5797) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-04674-notification-controls-wiring.test.ts
+  ✓ Admin › Notifications (compose/sent/stats) authenticates before the exafy_admin check (1 ms)
+  ✓ tenant-admin role lookup reads the service key the task definitions actually set (1 ms)
+  notifyUser
+    ✓ admin switch off: nothing written, nothing pushed, counted (15 ms)
+    ✓ an automation send is checked against its own switch (1 ms)
+    ✓ member category off: nothing written, counted as member_off (1 ms)
+    ✓ the database guard dropped the row: no push (2 ms)
+    ✓ the legacy per-area columns no longer suppress (categories decide) (1 ms)
+    ✓ switch on: row written as before (3 ms)
+  source contracts
+    ✓ push-dispatch checks the admin switch before pushing a pending row (1 ms)
+    ✓ reminder push waits on the full delivery decision for reminder_due (14 ms)
+    ✓ automation sends carry their automation id
+    ✓ no other code path pushes directly (191 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/journey-checklist-translations.test.ts
+  applyTranslations
+    ✓ overlays a fully-translated topic (2 ms)
+    ✓ falls back to German for missing fields (1 ms)
+    ✓ leaves untranslated topics untouched and is a no-op with no rows (1 ms)
+  curriculum locale surface (VTID-03509)
+    ✓ accepts every release locale as a ChecklistLocale (1 ms)
+    ✓ exposes exactly the release locale set — no more, no less (12 ms)
+    ✓ serves the German source verbatim for a locale with no translation rows (2 ms)
+    ✓ overlays a partially-translated locale without losing the German remainder (6 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/frontend/orb-widget-thinking-messages.test.ts
+  orb-widget thinking-status messages (VTID-03449, VTID-03451)
+    ✓ removes the old technical message arrays and the visible elapsed-time counter (3 ms)
+    ✓ no longer has a single fixed opener — removes _THINKING_OPENER entirely (1 ms)
+    ✓ defines a 6-item quick pool, 7-item primary sequence, and 8-item alternates pool merged into one 21-item pool (15 ms)
+    ✓ every message pair has en/de plus all 8 other BOOTSTRAP-ORB-CAPTION-I18N locales, without forbidden technical wording or formal German register (15 ms)
+    ✓ _buildThinkingQueue fully shuffles the merged pool and guards against repeating the previous first line (1 ms)
+    ✓ _shuffled performs a Fisher-Yates shuffle on a copy, not the original array (1 ms)
+    ✓ _startThinkingProgress shows the first message immediately, then rotates every 4 seconds with no counter suffix (2 ms)
+    ✓ the ready and thinking SSE handlers pick from the shared pool instead of a hardcoded opener (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/partner-health/org-access.test.ts
+  resolveOrgHealthAccess
+    ✓ returns null when the caller has no partner org membership (1 ms)
+    ✓ grants full access for org_admin/staff membership (1 ms)
+    ✓ grants assigned-only access for professional membership (1 ms)
+    ✓ a full-access org membership takes priority over a professional membership on the same partner
+  hasFullPartnerAccess / canActOnOrder / allVisiblePartnerIds
+    ✓ admin scope has full access to everything and no partner_id filter (1 ms)
+    ✓ full-access org partner: any order for that partner is actionable, assignment irrelevant
+    ✓ assigned-only org partner: only the order assigned to this caller is actionable
+    ✓ a partner outside both lists is never actionable
+    ✓ allVisiblePartnerIds unions both lists for org scope
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05005-kiro-dev-tools-mcp.test.ts (7.731 s)
+  the session pass
+    ✓ verifies for its own environment, user and thread until it expires (7 ms)
+    ✓ refuses a forged, tampered, cross-environment or garbage pass; no secret = cannot sign (1 ms)
+  the tool set
+    ✓ is exactly the approved read set, each declared once, with an object schema (4 ms)
+    ✓ holds no write tool (1 ms)
+    ✓ runs a tool as the caller: auth + identity registered for the call only, then removed (2 ms)
+    ✓ a tool past its 100 s budget answers "timed out" instead of hanging the call (2 ms)
+    ✓ refuses unknown tools and callers without a user; a thrown tool is an error result (1 ms)
+  POST /api/v1/operator/kiro/mcp
+    ✓ is off (404) unless KIRO_MCP_ENABLED=true (75 ms)
+    ✓ 401 without or with a bad pass, 503 when the gateway cannot verify, 403 for a non-admin (19 ms)
+    ✓ initialize and tools/list answer as MCP; notifications get 202 (12 ms)
+    ✓ tools/call refuses a write tool and logs a read call to OASIS without its arguments (80 ms)
+    ✓ a batch is capped at 10 messages and charged per message, never fanned out (564 ms)
+    ✓ rate-limits a runaway loop per user (429) (521 ms)
+  wiring (source check)
+    ✓ a Kiro turn may outlast the 30 s request default (tools run inside it) (1 ms)
+    ✓ the gateway sends the pass to the runner in a header, never the URL
+    ✓ the route is mounted before the operator router and claimed by the domain atlas (2 ms)
+    ✓ each environment turns the tools on with its engine and points its runner at its own gateway (2 ms)
+
+PASS test/partner-health-consent.test.ts
+  partner-health-consent — auth
+    ✓ 401 without a user token (6 ms)
+  GET /
+    ✓ 400 without partner_key/scope (3 ms)
+    ✓ 400 on an unrecognized scope (20 ms)
+    ✓ 200 happy path — reports the real granted state (3 ms)
+  POST /grant
+    ✓ 400 without partner_key/scope (6 ms)
+    ✓ 200 happy path — grants via settings_connected_apps (4 ms)
+    ✓ 500 when the grant fails (3 ms)
+  POST /revoke
+    ✓ 400 without partner_key/scope (3 ms)
+    ✓ 200 happy path — idempotent revoke (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/normalize-locale.test.ts
+  normalizeLocale
+    ✓ resolves ISO codes and regional variants (3 ms)
+    ✓ resolves full English language names (the stored fact form) (7 ms)
+    ✓ resolves native language names
+    ✓ is case-insensitive and trims whitespace (1 ms)
+    ✓ falls back to the default locale for empty or unsupported input
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/data/feature-tips.locale-coverage.test.ts
+  FEATURE_TIPS locale coverage
+    ✓ every tip has a title and description for every registered gateway locale (1 ms)
+    ✓ every non-English value is genuinely translated, not a copy of English (1 ms)
+
+PASS test/vtid-04873-narration-language.test.ts
+  narration language (VTID-04873)
+    ✓ covers all ten translation targets of the eleven languages (2 ms)
+    ✓ en: reads its translated script (1 ms)
+    ✓ es: reads its translated script
+    ✓ sr: reads its translated script (1 ms)
+    ✓ fr: reads its translated script (1 ms)
+    ✓ pt: reads its translated script
+    ✓ ru: reads its translated script
+    ✓ pl: reads its translated script (1 ms)
+    ✓ zh: reads its translated script
+    ✓ ar: reads its translated script (1 ms)
+    ✓ tr: reads its translated script
+    ✓ en: never receives the German script, even with no translation row (1 ms)
+    ✓ es: never receives the German script, even with no translation row
+    ✓ sr: never receives the German script, even with no translation row
+    ✓ fr: never receives the German script, even with no translation row (1 ms)
+    ✓ pt: never receives the German script, even with no translation row (1 ms)
+    ✓ ru: never receives the German script, even with no translation row (1 ms)
+    ✓ pl: never receives the German script, even with no translation row
+    ✓ zh: never receives the German script, even with no translation row (1 ms)
+    ✓ ar: never receives the German script, even with no translation row
+    ✓ tr: never receives the German script, even with no translation row
+    ✓ without a translated script, narrates the fully translated explanation (1 ms)
+    ✓ a partly translated explanation is not narration in that language (1 ms)
+    ✓ a whitespace-only script counts as missing
+  the seeder translates the narration script (VTID-04873)
+    ✓ lists vitana_voice_script as a translated field
+    ✓ writes the translated script into the row (1 ms)
+    ✓ uses small batches so ~2,000-character scripts fit one reply
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2180:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2187:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2211:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2236:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2439:11)
+
+(node:5796) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-04560-role-separation-regression.test.ts (18.684 s)
+  resolveAssistantProfile — the screen decides, the token verifies
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (7 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte (1 ms)
+    ✓ work surface commerce serves role /commerce/org from the first byte (1 ms)
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub (1 ms)
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (2 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined (1 ms)
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community
+    ✓ anonymous sessions stay on the member surface with no role
+    ✓ clampRoleToProfile: stored roles never leak across surfaces (1 ms)
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation (1 ms)
+  greeting ladder — a work surface never reaches a member rung
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (4 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (3 ms)
+    ✓ admin surface opens with its own role opener (1 ms)
+    ✓ backoffice surface opens with its own role opener (2 ms)
+    ✓ commerce surface opens with its own role opener (2 ms)
+    ✓ no facts loaded → the opener offers to check, it does not invent (28 ms)
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved) (1 ms)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers (3 ms)
+    ✓ a genuine transport reconnect stays silent on a work surface too
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (2 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing (1 ms)
+  system instruction — each surface carries only its own Vitana
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (41 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (3 ms)
+    ✓ admin: work conduct block, no member content (5 ms)
+    ✓ backoffice: work conduct block, no member content (3 ms)
+    ✓ commerce: work conduct block, no member content (2 ms)
+    ✓ member surface keeps the member Vitana exactly as before (5 ms)
+    ✓ every surface keeps the stop-and-farewell rule (7 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section (1 ms)
+  text path — engineering context only for the console and developer/admin callers
+    ✓ the Operator Console itself (no custom instruction) keeps it (1 ms)
+    ✓ developer caller with a custom instruction keeps it
+    ✓ admin caller with a custom instruction keeps it
+    ✓ infra caller with a custom instruction keeps it (1 ms)
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it
+    ✓ member caller staff never receives it (1 ms)
+    ✓ member caller undefined never receives it
+  source contracts — the wiring cannot silently disappear
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session (1 ms)
+    ✓ work surfaces skip the member brain and the member wake-brief (1 ms)
+    ✓ the old route override and phone-means-community rule are gone (1 ms)
+    ✓ the setup envelope reads role, surface and tools from the profile (2 ms)
+    ✓ every greeting context carries the work-surface fields
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (14 ms)
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (2 ms)
+  VTID-04561 role registry — one declarative answer per role
+    ✓ every Vitana role has an entry
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface (2 ms)
+    ✓ privileged voice tools follow the registry, never a member role (1 ms)
+    ✓ the profile persona comes from the registry
+    ✓ the tool catalog has no hard-coded privileged-role list left (2 ms)
+  VTID-04561 one role truth — both switchers write both tables
+    ✓ set_role_preference (community app) also writes user_active_roles
+    ✓ me_set_active_role (Command Hub) also writes role_preferences (1 ms)
+    ✓ the Command Hub switches into the community app of its own environment (31 ms)
+  VTID-04562 domain atlas — a map that cannot silently fall behind the code
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (13 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (2 ms)
+    ✓ the developer's words find the right domain (1 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool (1 ms)
+  VTID-04562 live system snapshot — facts with a timestamp, never a throw
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (2 ms)
+    ✓ a clean system says so instead of inventing a problem
+    ✓ a failed source renders as unavailable, the rest still renders (3 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one (1 ms)
+  VTID-04562 developer knowledge loader — fails open, never member memory
+    ✓ snapshot, atlas and engineering memory all reach the session (2 ms)
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
+    ✓ the Command Hub loader is registered and the member surface gets nothing (5 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+  VTID-04562 developer knowledge tools
+    ✓ both tools are declared for developers and registered with a handler (12 ms)
+    ✓ a community caller is refused (1 ms)
+    ✓ dev_domain_atlas answers a topic with code, tables and docs (1 ms)
+    ✓ the developer conduct block names both tools (1 ms)
+  VTID-04562 text path — the tool-result turn is gated like the main turn
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (7 ms)
+  VTID-04563 deep dive — read-only tools with guard rails
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (2 ms)
+    ✓ file windows are numbered and bounded (1 ms)
+    ✓ a screen resolves by id, route or title to its App.tsx mount (1 ms)
+    ✓ the executor routes every tool and never throws (18 ms)
+  VTID-04563 deep dive — only developers, on the planner stage, with telemetry
+    ✓ member and admin-surface callers are refused before any model call (1 ms)
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (22 ms)
+    ✓ a loop failure is reported as failed, never as findings (1 ms)
+    ✓ the target is registered for the Command Hub only, read tier (1 ms)
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (2 ms)
+    ✓ a delegation caller carries the served role from the profile (1 ms)
+    ✓ orb-live dispatches dev_deep_dive to the async runner (6 ms)
+  VTID-04564 the Operator Console shares the developer knowledge and deep dive
+    ✓ the console declares the same three developer tools the voice assistant has (3 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away (1 ms)
+    ✓ the console deep dive requires the verified caller on the thread (1 ms)
+  VTID-04565 developer-assistant evaluation set
+    ✓ 60+ questions, every domain covered, every expected tool declared (10 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (2 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential
+  VTID-04565 telemetry — which Vitana served, and how deep dives went
+    ✓ profiles are counted per surface and resolution (2 ms)
+    ✓ the snapshot reports them and reads them in its one events query
+  VTID-04654 admin opener — facts are the insights, and the briefing is not fetched twice
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (4 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings (1 ms)
+    ✓ the admin opener carries the insights as its facts (5 ms)
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (2 ms)
+  VTID-04655 me_set_active_role writes role_preferences for a real Supabase token
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant) (1 ms)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise
+  VTID-04656 the live eval sends thread ids the chat route accepts
+    ✓ the eval script sends a UUID, which is what the route validates (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 18 passed, 18 total
+Tests:       357 passed, 357 total
+Snapshots:   0 total
+Time:        20.129 s
+Ran all test suites matching /test\/vtid-04560-role-separation-regression.test.ts|test\/partner-health-consent.test.ts|test\/partner-health\/ingestion.test.ts|test\/partner-health\/org-access.test.ts|test\/connectors|test\/i18n\/catalog-coverage.test.ts|test\/vtid-04674-notification-controls.test.ts|test\/vtid-04674-notification-controls-wiring.test.ts|test\/daily-pace-service.test.ts|test\/data\/feature-tips.locale-coverage.test.ts|test\/frontend\/orb-widget-caption-i18n.test.ts|test\/frontend\/orb-widget-thinking-messages.test.ts|test\/journey-checklist-translations.test.ts|test\/normalize-locale.test.ts|test\/ops-pipeline-summary.test.ts|test\/vtid-04505-community-autopilot-scan.test.ts|test\/vtid-04873-narration-language.test.ts|test\/vtid-05005-kiro-dev-tools-mcp.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

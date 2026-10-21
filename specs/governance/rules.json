@@ -1,0 +1,503 @@
+{
+  "version": "0.1",
+  "last_updated": "2025-12-03T00:00:00Z",
+  "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8",
+  "categories": [
+    {
+      "code": "MIGRATION",
+      "name": "Migration Governance",
+      "description": "Rules enforcing autonomous, idempotent, CI-only schema migrations"
+    },
+    {
+      "code": "FRONTEND",
+      "name": "Frontend Governance",
+      "description": "Rules enforcing frontend structure, navigation, and security"
+    },
+    {
+      "code": "CICD",
+      "name": "CI/CD Governance",
+      "description": "Rules enforcing CI/CD workflow standards and naming conventions"
+    },
+    {
+      "code": "DB",
+      "name": "Database Governance",
+      "description": "Rules enforcing database security, RLS, and tenant isolation"
+    },
+    {
+      "code": "AGENT",
+      "name": "Agent Governance",
+      "description": "Rules enforcing autonomous agent behavior and operational protocols"
+    },
+    {
+      "code": "API",
+      "name": "API Governance",
+      "description": "Rules enforcing API standards, traceability, and health monitoring"
+    }
+  ],
+  "rules": [
+    {
+      "id": "GOV-MIGRATION-001",
+      "level": "L3",
+      "title": "Idempotent SQL Requirement",
+      "description": "All migrations MUST use idempotent SQL patterns (CREATE TABLE IF NOT EXISTS, DROP POLICY IF EXISTS, CREATE INDEX IF NOT EXISTS, INSERT ... ON CONFLICT DO NOTHING) to allow safe re-runs via CI.",
+      "enforcement": ["backend", "CI", "DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        ".github/workflows/APPLY-MIGRATIONS.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-002",
+      "level": "L3",
+      "title": "CI-Only Migration Execution",
+      "description": "All schema migrations MUST run exclusively through the canonical GitHub Actions workflow (APPLY-MIGRATIONS.yml). No direct SQL execution via Supabase UI, local CLI, or Cloud Shell is allowed.",
+      "enforcement": ["CI", "DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        ".github/workflows/APPLY-MIGRATIONS.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102", "DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-003",
+      "level": "L3",
+      "title": "No Manual SQL",
+      "description": "Manual SQL changes (in Supabase Dashboard, local psql, or Cloud Shell) are prohibited. Any schema modification outside CI MUST be rejected by governance and Validator.",
+      "enforcement": ["CI", "DB", "agents"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-004",
+      "level": "L3",
+      "title": "Mandatory CI Failure on Migration Errors",
+      "description": "The migration workflow MUST fail (non-zero exit) on any SQL error or verification error. Silent failures or partial application of migrations are not allowed.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        ".github/workflows/APPLY-MIGRATIONS.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-005",
+      "level": "L3",
+      "title": "Use Only Existing Secrets",
+      "description": "Migration workflows MUST use only existing, approved secrets (e.g., SUPABASE_DB_URL). Introducing new credentials or ad-hoc connection strings is forbidden.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        ".github/workflows/APPLY-MIGRATIONS.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-006",
+      "level": "L3",
+      "title": "Tenant Isolation Enforcement",
+      "description": "All governance-related schema objects MUST include tenant-aware design (tenant_id and appropriate RLS) to preserve tenant isolation across the Vitana platform.",
+      "enforcement": ["backend", "DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        "supabase/migrations/20251120000000_init_governance.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-MIGRATION-007",
+      "level": "L3",
+      "title": "Timestamp-Ordered Migrations",
+      "description": "All migration files MUST follow the global timestamp naming convention (YYYYMMDDHHMMSS_description.sql), and CI MUST apply them in sorted order to guarantee deterministic schema evolution.",
+      "enforcement": ["CI", "DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000001_add_migration_governance_rules.sql",
+        ".github/workflows/APPLY-MIGRATIONS.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0103"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-FRONTEND-001",
+      "level": "L3",
+      "title": "Frontend Canonical Source",
+      "description": "Only one valid source tree for the Command Hub is allowed: services/gateway/src/frontend/command-hub. Forbidden paths include static/command-hub, public/command-hub, frontend/command-hub, and any variant casing. CI and Validator block violations.",
+      "enforcement": ["frontend", "CI"],
+      "status": "active",
+      "sources": [
+        "services/validators/frontend-canonical-source.js",
+        ".github/workflows/ENFORCE-FRONTEND-CANONICAL-SOURCE.yml",
+        "docs/governance/CEO-HANDOVER-REVISED.md"
+      ],
+      "vtid": ["DEV-CICDL-0205", "GOV-FRONTEND-CANONICAL-SOURCE-0001"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-FRONTEND-002",
+      "level": "L2",
+      "title": "Navigation Canon",
+      "description": "The frontend navigation structure is fixed with exactly 17 modules and 87 screens in a canonical order. This structure MUST match the OASIS spec in specs/dev_screen_inventory_v1.json. Modifications require OASIS spec update first.",
+      "enforcement": ["frontend", "CI"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/frontend/command-hub/navigation-config.js"
+      ],
+      "vtid": ["DEV-CICDL-0205"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-FRONTEND-003",
+      "level": "L2",
+      "title": "CSP Compliance",
+      "description": "All frontend routes MUST set Content-Security-Policy headers. No inline scripts or styles allowed. CSP: default-src 'self'; script-src 'self'; style-src 'self'; connect-src 'self'.",
+      "enforcement": ["frontend", "backend"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/routes/command-hub.ts"
+      ],
+      "vtid": ["DEV-CICDL-0205"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-001",
+      "level": "L2",
+      "title": "Workflow UPPERCASE Naming",
+      "description": "All GitHub Actions workflow files MUST use UPPERCASE names with hyphens (e.g., DEPLOY-GATEWAY.yml, RUN-TESTS.yml). Reusable workflows prefixed with underscore (_) are exempt.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-002",
+      "level": "L2",
+      "title": "Workflow VTID in run-name",
+      "description": "All workflows SHOULD include VTID reference in run-name field for tracking (e.g., run-name: 'Deploy Gateway [VTID: DEV-CICDL-0031] (${{ github.ref_name }})').",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-003",
+      "level": "L2",
+      "title": "File Naming Convention (kebab-case)",
+      "description": "All TypeScript/JavaScript code files MUST use kebab-case naming (e.g., my-service.ts). Exceptions: README, LICENSE, CHANGELOG, Dockerfile, Makefile.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-004",
+      "level": "L2",
+      "title": "Service Manifest Required",
+      "description": "Every service directory (agents, MCP services, gateway, deploy-watcher) MUST contain a manifest.json with required fields: name, and either vtid or vt_layer/vt_module.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/CICDL-CORE-LINT-SERVICES.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-005",
+      "level": "L2",
+      "title": "Top-Level Service Directory Naming",
+      "description": "Top-level service directories MUST use kebab-case. Internal subdirectories may follow language conventions (e.g., Python snake_case).",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/CICDL-CORE-LINT-SERVICES.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-006",
+      "level": "L2",
+      "title": "OpenAPI Spectral Validation",
+      "description": "All OpenAPI specification files in specs/ and packages/openapi/ MUST pass Spectral validation with fail-severity=warn.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-007",
+      "level": "L2",
+      "title": "OpenAPI Version Requirement",
+      "description": "All OpenAPI specs MUST use version 3.0.x or 3.1.x. Older versions are not supported.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-008",
+      "level": "L2",
+      "title": "No Duplicate Operation IDs",
+      "description": "Each OpenAPI operation MUST have a unique operationId within a specification. Duplicate operationIds are not allowed.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/CICDL-CORE-OPENAPI-ENFORCE.yml"
+      ],
+      "vtid": ["DEV-CICDL-0033"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-CICD-009",
+      "level": "L2",
+      "title": "Prisma Schema Check",
+      "description": "Prisma schema MUST pass format --check validation. Schema generation and formatting are verified in CI.",
+      "enforcement": ["CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/OASIS-PERSISTENCE.yml"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-001",
+      "level": "L1",
+      "title": "RLS Enabled on Governance Tables",
+      "description": "Row Level Security MUST be enabled on all governance tables: governance_categories, governance_rules, governance_evaluations, governance_violations, governance_enforcements.",
+      "enforcement": ["DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000000_init_governance.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-002",
+      "level": "L1",
+      "title": "Service Role Write Access",
+      "description": "Write access to governance tables is restricted to service_role only. Backend services use service_role for all write operations.",
+      "enforcement": ["DB", "backend"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000000_init_governance.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-003",
+      "level": "L1",
+      "title": "Authenticated Read Access",
+      "description": "Authenticated users have read-only access to governance tables for transparency.",
+      "enforcement": ["DB"],
+      "status": "active",
+      "sources": [
+        "supabase/migrations/20251120000000_init_governance.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-004",
+      "level": "L1",
+      "title": "OASIS Events Tenant Isolation",
+      "description": "OasisEvent table has RLS enabled with tenant-aware reads. Users can only SELECT events matching their JWT tenant claim.",
+      "enforcement": ["DB"],
+      "status": "active",
+      "sources": [
+        "database/policies/002_oasis_events.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-005",
+      "level": "L1",
+      "title": "OASIS Events Service Insert Only",
+      "description": "Only service_role can INSERT into OasisEvent table. Gateway backend uses service_role for event ingestion.",
+      "enforcement": ["DB", "backend"],
+      "status": "active",
+      "sources": [
+        "database/policies/002_oasis_events.sql"
+      ],
+      "vtid": ["DEV-OASIS-GOV-0102"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-DB-006",
+      "level": "L1",
+      "title": "VtidLedger RLS Policies",
+      "description": "VtidLedger table has RLS enabled. Authenticated users can read all VTIDs, insert new VTIDs, and update only their tenant's VTIDs (or if admin).",
+      "enforcement": ["DB"],
+      "status": "active",
+      "sources": [
+        "database/policies/003_vtid_ledger.sql"
+      ],
+      "vtid": ["DEV-VTID-LEDGER"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-001",
+      "level": "L4",
+      "title": "Claude Operational Protocol (COP)",
+      "description": "Claude operates as Chief Autonomous Execution Officer under CEO/CTO governance. All tasks must honor OASIS as Single Source of Truth and preserve deterministic reproducibility.",
+      "enforcement": ["agents"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-002",
+      "level": "L4",
+      "title": "VTID Required for All Tasks",
+      "description": "Every task executed by Claude or agents MUST include a VTID in its header (e.g., DEV-COMMU-0050). Tasks without VTID are invalid.",
+      "enforcement": ["agents", "CI"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-003",
+      "level": "L4",
+      "title": "No Direct Push to Main",
+      "description": "No direct pushes to main branch unless CEO explicitly orders. All changes must go through a PR with structured body including Summary, Context, Implementation details, Validation evidence, and OASIS event reference.",
+      "enforcement": ["agents", "CI"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-004",
+      "level": "L4",
+      "title": "Command Hierarchy",
+      "description": "Command hierarchy must be respected: CEO (Ultimate authority) > CTO/OASIS (Governance layer) > Claude (Executor) > Gemini/Worker Agents > Validator Agents. Claude never overrides CEO or OASIS directives.",
+      "enforcement": ["agents"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-005",
+      "level": "L4",
+      "title": "Exact-Match Edit Protocol",
+      "description": "Claude must verify exact target snippet exists before modification. If snippet not found: STOP immediately, report mismatch, do not improvise or guess. Escalate to CEO for correction.",
+      "enforcement": ["agents"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-006",
+      "level": "L4",
+      "title": "Telemetry Event Emission",
+      "description": "Every execution must emit a telemetry event to OASIS including: service name, VTID, start/end timestamps, outcome (success/warning/failure), and files touched.",
+      "enforcement": ["agents", "backend"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-AGENT-007",
+      "level": "L4",
+      "title": "Safety and Validation Framework",
+      "description": "Claude must: validate all JSON/YAML schemas before commit, never expose secrets/API keys, treat OASIS/Gateway/Supabase credentials as secure, default to read-only unless explicitly instructed.",
+      "enforcement": ["agents"],
+      "status": "active",
+      "sources": [
+        "docs/GOVERNANCE/CLAUDE_START_PROMPT.md"
+      ],
+      "vtid": ["COP-V1.0"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-API-001",
+      "level": "L2",
+      "title": "VTID Required in API Requests",
+      "description": "API requests requiring traceability MUST include VTID via X-VTID header, body parameter, or query parameter. Middleware enforces this requirement.",
+      "enforcement": ["backend"],
+      "status": "active",
+      "sources": [
+        "services/gateway/src/middleware/require-vtid.ts"
+      ],
+      "vtid": ["DEV-API-GOVERNANCE"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-API-002",
+      "level": "L2",
+      "title": "Health Endpoint Requirement",
+      "description": "All deployed services MUST expose health endpoints (/alive, /healthz, or /health) that return 200 status. CI deployment workflows verify health after deploy.",
+      "enforcement": ["backend", "CI"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/EXEC-DEPLOY.yml",
+        "services/gateway/src/routes/command-hub.ts"
+      ],
+      "vtid": ["DEV-CICDL-DEPLOY"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    },
+    {
+      "id": "GOV-API-003",
+      "level": "L2",
+      "title": "Deployment Version Recording",
+      "description": "All deployments MUST record software version in OASIS via /api/v1/operator/deployments endpoint including: service name, git commit, deploy type, initiator, and environment.",
+      "enforcement": ["CI", "backend"],
+      "status": "active",
+      "sources": [
+        ".github/workflows/EXEC-DEPLOY.yml"
+      ],
+      "vtid": ["VTID-0510"],
+      "commit": "654c542667c45e741bc47cfc85e817ca4f5db9f8"
+    }
+  ]
+}

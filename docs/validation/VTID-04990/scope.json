@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-04990",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/commerce-mcp.ts",
+    "services/gateway/src/services/mcp-client-allowlist.ts",
+    "services/gateway/src/types/cicd.ts",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "integrations/chatgpt-plugin/vitanaland/**",
+    "services/gateway/test/vtid-04980-*.test.ts",
+    "services/gateway/test/vtid-04990-*.test.ts",
+    "docs/validation/VTID-04990/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04910",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04910-partner-terms-draft-text.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the draft text is documentation with no runtime surface; its structure, markers, placeholders and validity as admin content are proven here. Nothing is created, published or accepted."
+    }
+  ]
+}

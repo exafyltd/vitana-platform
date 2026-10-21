@@ -1,0 +1,133 @@
+# 04 — UAE VAT tax templates + calculate-tax (pure calculation, no writes) on net 1000.00 AED
+## 4a standard-rated 5% (sales)
+{
+  "status": "ok",
+  "tax_template_id": "bdb53b6e-00f9-4d5d-a7ca-d50185c7126f",
+  "name": "UAE VAT 5% Standard",
+  "line_count": 1
+}
+{
+  "tax_lines": [
+    {
+      "tax_account_id": "6898dcba-766a-4ccb-90e0-aa27e2916732",
+      "account_name": "Output VAT Payable (5%)",
+      "description": "Output VAT 5%",
+      "rate": "5.00",
+      "amount": "50.00"
+    }
+  ],
+  "total_tax": "50.00",
+  "net_total": "1000.00",
+  "grand_total": "1050.00",
+  "per_item_tax": [
+    {
+      "item_id": "svc-1",
+      "tax_amount": "50.00"
+    }
+  ],
+  "status": "ok"
+}
+## 4b zero-rated 0% (sales, e.g. export of services) — VAT line present at 0, tax total 0
+{
+  "status": "ok",
+  "tax_template_id": "d718f671-11cc-4e22-a02c-c2ada4aa0dd1",
+  "name": "UAE VAT 0% Zero-rated",
+  "line_count": 1
+}
+{
+  "tax_lines": [
+    {
+      "tax_account_id": "6898dcba-766a-4ccb-90e0-aa27e2916732",
+      "account_name": "Output VAT Payable (5%)",
+      "description": "Output VAT 0% (zero-rated)",
+      "rate": "0.00",
+      "amount": "0.00"
+    }
+  ],
+  "total_tax": "0.00",
+  "net_total": "1000.00",
+  "grand_total": "1000.00",
+  "per_item_tax": [
+    {
+      "item_id": "svc-2",
+      "tax_amount": "0.00"
+    }
+  ],
+  "status": "ok"
+}
+## 4c reverse charge (purchase of imported services): output VAT 5% ADD to RCM output account + input VAT 5% DEDUCT to RCM input account => net 0 on the invoice, both legs recorded
+{
+  "status": "ok",
+  "tax_template_id": "bfbf1419-812e-4964-b020-681b522ea37f",
+  "name": "UAE VAT 5% Reverse Charge (imported services)",
+  "line_count": 2
+}
+{
+  "tax_lines": [
+    {
+      "tax_account_id": "df2a4bf7-d2c6-47a8-80f4-e31e7bc88e3a",
+      "account_name": "Output VAT \u2014 Reverse Charge",
+      "description": "RCM output VAT 5%",
+      "rate": "5.00",
+      "amount": "50.00"
+    },
+    {
+      "tax_account_id": "e43dd4cb-b53d-4e50-92d1-8c82394bd863",
+      "account_name": "Input VAT \u2014 Reverse Charge",
+      "description": "RCM input VAT 5% (recoverable)",
+      "rate": "5.00",
+      "amount": "-50.00"
+    }
+  ],
+  "total_tax": "0.00",
+  "net_total": "1000.00",
+  "grand_total": "1000.00",
+  "per_item_tax": [
+    {
+      "item_id": "import-1",
+      "tax_amount": "0.00"
+    }
+  ],
+  "status": "ok"
+}
+## templates stored
+{
+  "templates": [
+    {
+      "id": "d718f671-11cc-4e22-a02c-c2ada4aa0dd1",
+      "name": "UAE VAT 0% Zero-rated",
+      "tax_type": "sales",
+      "is_default": 0,
+      "tax_category_id": null,
+      "company_id": "f1de441f-7cdb-4842-9ce3-8830294b71e5",
+      "created_at": "2026-09-13 07:34:51.122825+00",
+      "updated_at": "2026-09-13 07:34:51.122825+00"
+    },
+    {
+      "id": "bfbf1419-812e-4964-b020-681b522ea37f",
+      "name": "UAE VAT 5% Reverse Charge (imported services)",
+      "tax_type": "purchase",
+      "is_default": 0,
+      "tax_category_id": null,
+      "company_id": "f1de441f-7cdb-4842-9ce3-8830294b71e5",
+      "created_at": "2026-09-13 07:34:51.474999+00",
+      "updated_at": "2026-09-13 07:34:51.474999+00"
+    },
+    {
+      "id": "bdb53b6e-00f9-4d5d-a7ca-d50185c7126f",
+      "name": "UAE VAT 5% Standard",
+      "tax_type": "sales",
+      "is_default": 1,
+      "tax_category_id": null,
+      "company_id": "f1de441f-7cdb-4842-9ce3-8830294b71e5",
+      "created_at": "2026-09-13 07:34:50.78981+00",
+      "updated_at": "2026-09-13 07:34:50.78981+00"
+    }
+  ],
+  "total_count": 3,
+  "limit": 20,
+  "offset": 0,
+  "has_more": false,
+  "status": "ok"
+}
+STD=bdb53b6e-00f9-4d5d-a7ca-d50185c7126f ZR=d718f671-11cc-4e22-a02c-c2ada4aa0dd1 RC=bfbf1419-812e-4964-b020-681b522ea37f

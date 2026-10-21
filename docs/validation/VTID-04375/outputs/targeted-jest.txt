@@ -1,0 +1,36 @@
+    ✓ unknown agent names the available ones (4 ms)
+    ✓ wrong surface, anonymous caller, empty request: nothing runs (2 ms)
+    ✓ targets are listed per surface (1 ms)
+    ✓ a role without authority in the domain is refused (1 ms)
+    ✓ a commit-tier target by voice escalates without running (1 ms)
+    ✓ fast agent: result now (2 ms)
+    ✓ slow agent: working at once, result on a later read (28 ms)
+    ✓ agent failure or throw is reported, never thrown (1 ms)
+    ✓ cancelled job discards the late result and aborts the signal (17 ms)
+    ✓ a backoffice job is invisible from a community session and to another user (12 ms)
+    ✓ registered for command-hub only, dev domain (1 ms)
+    ✓ runs the operator turn with the caller identity and parses the reply (1 ms)
+    ✓ a community member cannot reach the operator
+    ✓ preference wins and is reported as the source (1 ms)
+    ✓ falls back to user_tenants, then none (1 ms)
+    ✓ surface comes from the route, mobile is always vitanaland, explicit wins
+    ✓ unknown channel normalises to web (1 ms)
+    ✓ combines preference, membership and org membership
+    ✓ a failed read leaves that field empty instead of throwing (9 ms)
+    ✓ no tenant: role reads are skipped
+    ✓ normalizeRunQuery bounds the limit and rejects unknown statuses (1 ms)
+    ✓ summarizeRunRows folds per plane, busiest first (1 ms)
+    ✓ /context: 401 anonymous, own context for a member (23 ms)
+    ✓ /runs, /runs/summary, /agents: 403 for a non-admin (16 ms)
+    ✓ /runs reads the unified view with the normalised filters (3 ms)
+    ✓ /runs/summary returns per-plane counts (4 ms)
+    ✓ /policy: 401 anonymous; own ceilings and a dry evaluation for a member (VTID-04325) (13 ms)
+    ✓ /policy/shadow: 403 for a member; window + catalog for an admin (VTID-04362) (5 ms)
+    ✓ /budgets: 403 for a member; spend vs budgets for an admin (VTID-04370) (8 ms)
+    ✓ /delegations: 403 for a member; targets and job counts for an admin (VTID-04375) (5 ms)
+    ✓ /agents returns agent cards; a read error is a 502, not a crash (5 ms)
+    ✓ is additive: no DROP / TRUNCATE / DELETE
+    ✓ ledger tables are service-role only and the view runs as the invoker (1 ms)
+    ✓ the projection covers every existing run plane (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       34 passed, 34 total

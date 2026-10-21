@@ -1,0 +1,44 @@
+== tsc
+tsc exit 0
+== vitest
+(node:3482) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ Test Files  28 passed (28)
+      Tests  182 passed (182)
+   Start at  23:37:18
+   Duration  12.02s (transform 2.54s, setup 3.39s, import 4.67s, tests 4.70s, environment 18.35s)
+
+== eslint changed files
+
+/home/user/vitana-v1/src/pages/admin/members/RolesAccess.tsx
+  74:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+  88:19  error  Unexpected any. Specify a different type  @typescript-eslint/no-explicit-any
+
+✖ 2 problems (2 errors, 0 warnings)
+
+eslint exit 1
+== i18n inventory
+> node scripts/generate-screen-inventory.mjs
+
+[generate-screen-inventory] Wrote /home/user/vitana-v1/docs/SCREEN_INVENTORY.md
+  pages: 299, keys: 4458, namespaces: 44, suspects: 67
+ M docs/SCREEN_INVENTORY.md
+ M src/components/profile/ProfileDrawer.tsx
+ M src/hooks/useRole.tsx
+ M src/hooks/useSmartRouting.tsx
+ M src/i18n/ar/screens.json
+ M src/i18n/de/screens.json
+ M src/i18n/en/screens.json
+ M src/i18n/es/screens.json
+ M src/i18n/fr/screens.json
+ M src/i18n/pl/screens.json
+ M src/i18n/pt/screens.json
+ M src/i18n/ru/screens.json
+ M src/i18n/sr/screens.json
+ M src/i18n/tr/screens.json
+ M src/i18n/zh/screens.json
+ M src/integrations/supabase/types.ts
+ M src/pages/admin/members/Directory.tsx
+ M src/pages/admin/members/RolesAccess.tsx
+?? src/hooks/useRole.hierarchy.test.ts

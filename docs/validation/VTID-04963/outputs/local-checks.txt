@@ -1,0 +1,3 @@
+tsc --noEmit: exit 0
+gate + reminders + audiobook suites: 42/42
+workflow / flag-pin guard suites: 103 suites, 1263/1263 (incl. the 20,000-char run: step limit)

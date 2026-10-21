@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-013-knowledge-search",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Knowledge / web / feature explanation routing.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "What is the Vitana index?",
+      "expected_tool": "search_knowledge",
+      "expected_intent": "goal.knowledge"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "What's the weather in Berlin tomorrow?",
+      "expected_tool": "search_web",
+      "expected_intent": "goal.web_search"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "How does Start Stream work?",
+      "expected_tool": "explain_feature",
+      "expected_intent": "preference.explain_feature"
+    }
+  ]
+}

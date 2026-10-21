@@ -1,0 +1,7 @@
+# VTID-04232 — commands run (2026-09-21)
+git worktree add scratchpad/wt-04232 -b claude/cool-dijkstra-p9s8vx-vtid-04232 origin/claude/cool-dijkstra-p9s8vx-vtid-04231   # stacked on the stage loop
+# New: src/services/self-healing-triage-tools.ts. Edited: src/services/self-healing-triage-service.ts (queryOasisEvents exported + vtid filter, prompt tool lines, stage loop, report telemetry).
+cd services/gateway
+npx tsc --noEmit -p .; echo exit=$?                                    # -> outputs/tsc-noEmit.log
+npx jest test/vtid-04232-triage-tools.test.ts test/dev-autopilot-bridge.test.ts test/self-healing-pre-probe.test.ts test/vtid-03843 test/vtid-04017-fix-mode.test.ts test/vtid-04231   # -> outputs/jest-vtid-04232.log
+# architecture_reports columns (live, read-only): id, incident_topic, vtid, signature, trigger_reason, root_cause, confidence, suggested_fix, alternative_hypotheses, llm_provider, llm_model, evidence_summary, prompt_tokens, completion_tokens, latency_ms, status, reviewed_by, reviewed_at, reviewer_note, created_at

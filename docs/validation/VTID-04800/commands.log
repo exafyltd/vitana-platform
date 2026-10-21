@@ -1,0 +1,9 @@
+# VTID-04800 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04800-ci-failure-routing.test.ts + every suite naming dev-autopilot-watcher   # 359 tests pass
+npx jest test/vtid-04800 test/dev-autopilot-watcher test/vtid-04465-operator-pipeline-regression   # 77 tests (outputs/jest-a6.txt)
+npx jest (full gateway suite)                                          # 1441 suites, 23127 tests, 0 failed (outputs/jest-full.txt)
+# note: the A6 test feeds a fake Jest log ("Tests: 1 failed, 200 passed") as a fixture; it is echoed
+# to the console during the run and was filtered out of the output files — it is not a test result.
+(read-only) oasis_events dev_autopilot.execution.ci_failed 30 d: 42 events; failing checks by name

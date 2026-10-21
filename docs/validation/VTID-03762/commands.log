@@ -1,0 +1,225 @@
+# VTID-03762 — commands actually run.
+
+# User report (verbatim): "when we start a session, Vitana starts talking
+# properly about the subject of that session, or step within the session,
+# but when it ends, the Well done drawer does not open, but Vitana just
+# continues to speak in general, general communication, and you cannot
+# interrupt her, X does not work, or anything, which is completely
+# incorrect. After we listen to Vitana regarding that session, or step, the
+# Well done drawer opens, and that step ... is marked/checked as Done.
+# That's how it should work and that's how it worked before"
+
+# Self-allocated the VTID via direct Supabase RPC (no gateway API reachable
+# from this session), per CLAUDE.md §4.1 procedure 2.
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT * FROM allocate_global_vtid('claude-code', 'gateway', 'guided-journey');"
+#   -> VTID-03762
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "UPDATE vtid_ledger SET title='Add guided-topic teaching-complete signal
+   (My Journey step completion + Well done drawer)', status='in_progress',
+   spec_status='approved' WHERE vtid='VTID-03762';"
+
+# Investigation: launched a read-only Explore agent across both repos
+# (vitana-platform + vitana-v1) to map how "step"/"session" completion is
+# signaled today, whether any tool/turn-count/phrase-detection mechanism
+# marks guided-topic teaching as finished, and what could plausibly make
+# mic/X-close unresponsive. Findings (full report kept in conversation, not
+# duplicated here):
+#
+#  - GuidedJourneyCatalog.tsx opens the "Well done" drawer AT TAP TIME
+#    (handleTopicClick -> setOpenTopic(topic)), mounted underneath the ORB
+#    overlay for the whole session. It has no completion gate of its own —
+#    visibility is purely a function of the ORB overlay's display:none.
+#  - orb-widget.js's old guidedAutoClose (VTID-03292/03294) used to close
+#    the overlay after turn 1 — removed by VTID-03685 because that fired
+#    before real teaching happened. VTID-03685's own comment: "there is no
+#    reliable signal yet for 'the model decided teaching is done' ...
+#    guessing at one here would trade a definite bug for a fragile
+#    heuristic" — a disclosed, still-open gap.
+#  - guided-topic-narration-prompt.ts's GUIDE MODE block has no turn-count
+#    limit or other exit condition, re-injected for the WHOLE session — so
+#    once the model covers the material it free-wheels into ordinary
+#    conversation. Matches the reported symptom.
+#  - Working precedent already exists: Teacher Mode's end_teaching_session
+#    tool (live-tool-catalog.ts / orb-live.ts) — model calls it after its
+#    farewell line, server relays an orb_directive, widget closes overlay.
+#    Never reused for guided topics.
+#  - Topic completion (the checkmark) flows through completePractice() ->
+#    completed_topic_ids, called from the EXISTING practice-drawer buttons
+#    (openPracticeFeature / markPracticeDone) — unrelated to listening
+#    itself. No auto-complete-on-listen mechanism was ever found to have
+#    existed; the drawer's own header comment describes "Start Practice ->
+#    real feature + completion" as a deliberate separate phase (P7).
+
+# Fix: added end_guided_topic_teaching tool mirroring end_teaching_session
+# exactly (live-tool-catalog.ts declaration, orb-live.ts dispatcher case,
+# orb-widget.js directive handling), and instructed all four GUIDE MODE
+# prompt variants (guided-topic-narration-prompt.ts) to call it once the
+# topic is taught and follow-ups answered. Deliberately did NOT add a new
+# DB write — the practice-drawer's existing completion flow is unchanged
+# and becomes reachable again once the overlay actually closes.
+
+# New/extended tests:
+node_modules/.bin/jest test/orb/live/guided-topic-teaching-complete-signal.test.ts \
+  test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+#   -> 29/29 passed (outputs/jest-vtid-03762-suite.txt)
+
+# Mutation verification: backed up each of the 4 changed source files in
+# turn (live-tool-catalog.ts, orb-live.ts, orb-widget.js,
+# guided-topic-narration-prompt.ts), reverted it via `git checkout --`,
+# re-ran the affected test file(s), confirmed EXACTLY that file's own tests
+# failed and nothing else, then restored from the backup copy. All four
+# passed this check.
+
+# Two snapshot fixtures needed a deliberate update (the new tool inserts
+# into the full-catalog snapshot): confirmed the failing diff before
+# updating showed ONLY the new end_guided_topic_teaching block inserted
+# immediately after end_teaching_session, nothing else changed, then ran
+# with -u.
+npx jest test/orb/live/characterization/tool-catalog.characterization.test.ts \
+  test/orb/live/characterization/system-instruction.characterization.test.ts -u
+#   -> 4 snapshots updated, both suites green afterward.
+
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc-check.txt)
+
+npx jest
+#   -> 711/712 suites passed (1 pre-existing skip), 13403/13438 tests
+#      passing, 0 failures (outputs/jest-full-suite.txt)
+
+node --check services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> OK, exit 0 (outputs/node-check.txt)
+
+# Working branch had already merged (VTID-03746, PR #3203) — restarted a
+# fresh branch from origin/main per this repo's own convention for a
+# follow-up change on an already-merged designated branch, carrying the
+# uncommitted working-tree changes forward onto it.
+git fetch origin main
+git checkout -b claude/guided-topic-teaching-complete-vtid-03762 origin/main
+git add services/gateway/src/frontend/command-hub/orb-widget.js \
+        services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts \
+        services/gateway/src/orb/live/tools/live-tool-catalog.ts \
+        services/gateway/src/routes/orb-live.ts \
+        services/gateway/test/orb/live/characterization/__snapshots__/system-instruction.characterization.test.ts.snap \
+        services/gateway/test/orb/live/characterization/__snapshots__/tool-catalog.characterization.test.ts.snap \
+        services/gateway/test/orb/live/guided-topic-teaching-complete-signal.test.ts \
+        services/gateway/test/orb/live/instruction/guided-topic-narration-prompt.test.ts
+git commit -m "Add guided-topic teaching-complete signal for My Journey (VTID-03762)"
+
+# Companion change, same PR: added VTID-03762 to
+# scripts/ci/command-hub-ownership-guard.js's ALLOWED_VTID_PATTERN
+# (VTID-0302's separate Path Ownership Guard, run by
+# COMMAND-HUB-GUARDRAILS.yml, not VALIDATOR-CHECK.yml) -- same pattern as
+# every prior orb-widget.js change (VTID-03746, VTID-03745, VTID-03727, ...).
+
+# Local pre-push replication of VALIDATOR-CHECK.yml's own steps:
+git fetch origin main
+git diff origin/main...HEAD -- 'services/gateway/src/frontend/' \
+  'services/gateway/dist/frontend/' > /tmp/csp_diff_03762.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_03762.txt
+#   -> "No CSP pattern hits in added lines." (outputs/csp-gate.txt)
+
+git diff --name-only origin/main...HEAD > /tmp/changed_files_03762.txt
+node scripts/ci/validator-path-guard.cjs /tmp/changed_files_03762.txt \
+  gateway_backend /tmp/pr_body_profile_only_03762.txt
+#   -> "APPROVED: 8 in-remit file(s) match the gateway_backend allowlist"
+#      (outputs/path-ownership-guard.txt) -- same gateway_backend profile
+#      precedent as VTID-03746/VTID-03745 (command_hub_frontend's Build
+#      Gate requires a dist/ change and dist/ is entirely gitignored, so
+#      it is structurally unsatisfiable for any normal orb-widget.js PR).
+
+# ============================================================
+# FOLLOW-UP (same VTID) — client-side backstop
+# ============================================================
+
+# Live staging retest by the platform owner (verbatim): "nothing fixed,
+# again the same behavior. It finishes talking about the session/step,
+# and then it switches to general Vitana, general greeting: Good
+# afternoon, Jovana1 Glad to have you back, bla bla, and you cannot turn
+# it off.... So, nothing is fixed!"
+
+# Root-caused via live read-only oasis_events query (project
+# inmkhvwdcuyhnxkgfvsb) against a real reported session — zero
+# guided_topic_teaching_ended events despite the guided-topic candidate
+# correctly winning on every reconnect (confirming VTID-03746's re-arm
+# mechanism works). Also observed real Nova connection instability (6
+# upstream_closed + 2 nova_premature_close_retry + 3 upstream_error in a
+# ~90s window) compounding the visible symptom independent of this fix.
+
+# Fix: client-side backstop in orb-widget.js. Extracted the existing
+# poll-then-hide audio-drain logic (Codex's original fix) into a shared
+# _endGuidedTopicTeaching(topicId, reason) helper, used by BOTH the
+# model-driven directive handler and a new 5-minute setInterval armed in
+# focusGuidedTopic(), cleared in _hide() and re-armed on replay.
+
+node --check services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> OK, exit 0 (outputs/node-check-backstop-followup.txt)
+
+npx jest test/orb/live/guided-topic-teaching-complete-signal.test.ts
+#   -> 22/22 passed (outputs/jest-vtid-03762-backstop-followup.txt)
+
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc-check-backstop-followup.txt)
+
+npx jest
+#   -> 711/712 suites passed (1 pre-existing skip), 13411/13446 tests
+#      passing, 0 failures (outputs/jest-full-suite-backstop-followup.txt)
+
+# Mutation verification (backup file, revert one region at a time via
+# manual edit, re-run this file's own suite, confirm exactly the right
+# tests fail, restore from backup, confirm byte-identical + full suite
+# green again):
+#   1. Removed focusGuidedTopic's arming block -> exactly 4 tests failed
+#      (arming, clear-stale-interval, backstop-check-body-read,
+#      shared-helper-check — all of which read that code region).
+#   2. Removed _hide()'s backstop teardown -> exactly 1 test failed
+#      (the _hide()-clears-backstop test).
+#   3. Replaced the backstop's _endGuidedTopicTeaching(...) call with a
+#      direct _hide() call (bypassing the shared helper) -> exactly 2
+#      tests failed (backstop-check "calls the shared teardown" +
+#      shared-helper-check).
+# All three restores confirmed byte-identical to the pre-mutation file
+# via diff, and full suite green again after each.
+
+# Real-browser end-to-end verification (NOT just static assertions) —
+# local Playwright harness, scratch tooling, not part of the committed
+# suite:
+#   /tmp/.../scratchpad/vtid-03727-e2e/run.js, Scenario C
+#   page.clock.install() before page.goto(), then page.clock.runFor()
+#   (NOT fastForward() — that does not reliably cascade the teardown's
+#   own chained setTimeout calls in this harness; found and fixed
+#   during this session, not assumed) to advance through the 5-minute
+#   threshold. C1 (open after opener), C2 (still open well before 5min),
+#   C3 (closed after 5min+ with no directive ever sent) — all PASS.
+#   Screenshot C4-after-backstop-fired.png visually confirms overlay
+#   closed (blank page).
+
+git fetch origin main
+git diff origin/main...HEAD -- 'services/gateway/src/frontend/' \
+  'services/gateway/dist/frontend/' > /tmp/csp_diff_03762_backstop.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_03762_backstop.txt
+#   -> "No CSP pattern hits in added lines." (outputs/csp-gate-backstop-followup.txt)
+
+git diff --name-only origin/main...HEAD > /tmp/changed_files_03762_backstop.txt
+node scripts/ci/validator-path-guard.cjs /tmp/changed_files_03762_backstop.txt \
+  gateway_backend /tmp/pr_body_profile_only_03762_backstop.txt
+#   -> "APPROVED: 2 in-remit file(s) match the gateway_backend allowlist"
+#      (outputs/path-ownership-guard-backstop-followup.txt)
+
+# VTID-03762 was already status='in_progress'/spec_status='approved' in
+# vtid_ledger (reopened after the live-retest failure, prior segment of
+# this session) — reused as-is per this repo's own established pattern
+# for a same-VTID follow-up fix, no new VTID allocated.
+
+# Original branch (claude/guided-topic-teaching-complete-vtid-03762) had
+# already merged (#3205) — restarted a fresh branch from origin/main,
+# same convention as this file's own earlier entry documents, carrying
+# the uncommitted backstop changes forward onto it. Confirmed via
+# `git diff a8079a8 origin/main -- <both touched files>` (empty) that
+# origin/main's tree for these files is byte-identical to the prior
+# merge, so the new branch's diff is purely this follow-up's own change.
+git fetch origin main
+git checkout -b claude/guided-topic-backstop-vtid-03762 origin/main
+git add services/gateway/src/frontend/command-hub/orb-widget.js \
+        services/gateway/test/orb/live/guided-topic-teaching-complete-signal.test.ts
+git commit -m "Add client-side backstop for guided-topic teaching completion (VTID-03762)"

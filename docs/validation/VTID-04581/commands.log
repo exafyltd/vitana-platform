@@ -1,0 +1,9 @@
+## Staging evidence (read-only, 2026-09-25, member session live-66d3f85b)
+[VTID-01952] Identity Lock blocked inline fact write: user_birthday. User must change identity-class facts via Profile/Settings UI.
+memory_facts spouse_birthday: "4. November 1997" (18:27:50) superseded by "4. November 1999" (18:29:09), no question asked
+## Local
+npx jest test/services/vtid-04581-remember-fact-tool.test.ts -> 16 passed
+npx jest test/inline-fact-extractor.test.ts -> 22 passed (2 new)
+npx jest (full gateway) -> 1289 suites, 20687 passed, 0 failed
+npx tsc --noEmit -> clean
+Snapshots regenerated on purpose: tool catalog (remember_fact added, search_memory text shortened to fit the Nova budget), system instruction (MEMORY line), VTID-04542 payload hashes, VTID-04443 replay (one catalog tool moved to find_tool)

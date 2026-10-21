@@ -1,0 +1,17 @@
+{
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "alive", "path": "/alive", "expect_content_type": "application/json" },
+    { "kind": "http", "name": "admin health reports staging", "path": "/api/v1/admin/health", "expect_json": { "env": "staging" } },
+    { "kind": "http", "name": "build-info reports staging", "path": "/api/v1/admin/build-info", "expect_json": { "ok": true, "env": "staging" } },
+    { "kind": "http", "name": "ORB health", "path": "/api/v1/orb/health" },
+    { "kind": "http", "name": "Nova Sonic health", "path": "/api/v1/orb/nova-sonic/health" },
+    { "kind": "http", "name": "autopilot health", "path": "/api/v1/autopilot/health" },
+    { "kind": "http", "name": "VTID ledger health", "path": "/api/v1/vtid/health" },
+    { "kind": "http", "name": "scheduler health", "path": "/api/v1/scheduler/health" },
+    { "kind": "http", "name": "operator health", "path": "/api/v1/operator/health" },
+    { "kind": "http", "name": "OASIS tasks list", "path": "/api/v1/oasis/tasks" },
+    { "kind": "http", "name": "community members requires auth", "path": "/api/v1/community/members", "expect_status": 401 },
+    { "kind": "http", "name": "publish route exists (rejected write probe)", "method": "POST", "path": "/api/v1/operator/publish", "rejected_probe": true, "expect_status": 401 }
+  ]
+}

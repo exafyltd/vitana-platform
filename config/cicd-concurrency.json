@@ -1,0 +1,23 @@
+{
+  "$schema": "./cicd-concurrency.schema.json",
+  "vtid": "VTID-01033",
+  "description": "CICD concurrency control configuration for parallel VTID execution",
+  "concurrency": {
+    "maxParallelMerges": 2,
+    "lockTimeoutMinutes": 15
+  },
+  "criticalPaths": [
+    "services/gateway/src/routes/",
+    ".github/workflows/",
+    "scripts/deploy/",
+    "scripts/ci/"
+  ],
+  "strictPaths": [
+    "config/"
+  ],
+  "lockKeyPrefixes": {
+    "global": "global",
+    "service": "service:",
+    "path": "path:"
+  }
+}

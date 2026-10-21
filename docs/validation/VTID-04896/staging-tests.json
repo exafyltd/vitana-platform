@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04896",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04896-prod-reward-sweep-pin.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the change is a production deploy-workflow pin and a read-only post-deploy check; staging does not run that workflow and is already excluded from paying by VITANA_ENV, so the proof is the workflow itself: the pin, its position before registration, the live-task-definition check before rollback, bash validity and the regenerated flag pins. The production value is verified by the deploy's own check."
+    }
+  ]
+}

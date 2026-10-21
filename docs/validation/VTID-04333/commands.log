@@ -1,0 +1,19 @@
+# VTID-04333 — commands run (services/gateway)
+
+$ npx tsc --noEmit -p tsconfig.json
+# exit 0
+
+$ npx jest dev-autopilot autopilot-agent feedback 04016 04017 04006 04246 04280 04282 04333 tenant-specialists staging- 04037 04230 04262 04258 04237 04227 04314 03850 03820 04225 04215 04018
+# (the pattern set matched the whole gateway suite)
+# Test Suites: 1 failed, 1 skipped, 1085 passed, 1086 of 1087 total
+# Tests:       1 failed, 29 skipped, 6 todo, 17596 passed, 17632 total
+# the one failure: test/vtid-03821-execution-telemetry-vtid.test.ts pinned the
+# exact findingMetaR select string, which this change extends with source_ref;
+# assertion updated to the new string (same invariant).
+
+$ npx jest test/vtid-03821-execution-telemetry-vtid.test.ts test/vtid-04333
+# Test Suites: 6 passed, 6 total
+# Tests:       40 passed, 40 total
+
+# No deploy, no DB write, no request to staging or production.
+# The migration file was not applied to any database.

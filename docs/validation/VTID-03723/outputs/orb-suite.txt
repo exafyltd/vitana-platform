@@ -1,0 +1,10 @@
+    ✓ is fail-open: a rejection in the brain promise does NOT reject the gate (1 ms)
+    ✓ tolerates an undefined brain promise (anonymous/guided never set one)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 201 passed, 201 total
+Tests:       1 skipped, 6 todo, 3713 passed, 3720 total
+Snapshots:   10 passed, 10 total
+Time:        38.769 s
+Ran all test suites matching /orb/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

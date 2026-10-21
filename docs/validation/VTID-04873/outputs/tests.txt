@@ -1,0 +1,192 @@
+    ✓ passes a full valid 90/250 set (16 ms)
+    ✓ fails when a topic has no voice script (2 ms)
+    ✓ fails when a topic has no practice target (2 ms)
+    ✓ fails on wrong per-session card count (3 ms)
+    ✓ fails on a 5-word label (2 ms)
+    ✓ fails when a session>=60 topic is not business-gated (1 ms)
+    ✓ blocks publish on an invalid draft (3 ms)
+    ✓ publishes a valid draft as the current version + snapshot + audit (20 ms)
+    ✓ rollback flips is_current to a prior version (9 ms)
+    ✓ published read returns published snapshot; falls back to draft when none (23 ms)
+    ✓ publish snapshot retains vitanaVoiceScript (so the ORB can narrate) (10 ms)
+    ✓ public read still strips vitanaVoiceScript from the widened snapshot (7 ms)
+    ✓ reads the seed from the PUBLISHED snapshot (Publish = go live) (7 ms)
+    ✓ falls back to the live draft when nothing is published yet (bootstrap) (2 ms)
+    ✓ returns null for a topic that is not in the published snapshot (7 ms)
+    ✓ does not peek at the draft once a version is published (authoritative) (14 ms)
+    ✓ admin topics: 401 without token (35 ms)
+    ✓ admin topics: 403 for non-admin (12 ms)
+    ✓ admin topics: 200 + 250 topics for admin (15 ms)
+    ✓ admin validate: 200 ok=true on full set (7 ms)
+    ✓ admin publish: 422 when draft invalid (15 ms)
+    ✓ admin publish: 200 on valid draft (8 ms)
+    ✓ public read: 401 without token, 200 with (35 ms)
+    ✓ 401 without a token (7 ms)
+    ✓ 400 for a malformed topic id (3 ms)
+    ✓ 404 when the topic is not in the published catalog (3 ms)
+    ✓ 422 when narration is unavailable for the language (5 ms)
+    ✓ 200 audio/mpeg, private cache, in the requested language (4 ms)
+    ✓ VTID-04873: 422 narration_not_translated — German text is never read in another language's voice (3 ms)
+    ✓ an unknown language falls back to German (2 ms)
+    ✓ defaults to supabase when unset or empty (1 ms)
+    ✓ selects aurora on the exact value, case/space tolerant (1 ms)
+    ✓ falls back to supabase on an unrecognised value rather than guessing (1 ms)
+    ✓ is constructible without a Supabase client
+    ✓ reports a missing connection string as config, not as an empty result (10 ms)
+    ✓ rejects a connection string that is not a postgres URL (9 ms)
+    ✓ redacts the password when describing the target (1 ms)
+    ✓ never silently falls back to supabase
+    ✓ keeps naming the remaining risk rather than decaying to "not implemented" (1 ms)
+      ✓ upsertNavCatalogI18n refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ upsertChecklistTranslations refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ explains WHY, so the flag is not set reflexively (1 ms)
+      ✓ does not gate reads behind the write flag (1 ms)
+    ✓ defaults to verifying certificates (1 ms)
+    ✓ only disables verification on an explicit opt-in, and warns (1 ms)
+    ✓ fails loudly when the CA bundle path is set but absent (1 ms)
+      ✓ permits plaintext to 127.0.0.1 (1 ms)
+      ✓ permits plaintext to localhost
+      ✓ permits plaintext to [::1] (1 ms)
+      ✓ REFUSES plaintext to a remote host
+      ✓ still requires TLS for a loopback host without the flag
+    ✓ throws a specific error rather than a null dereference (1 ms)
+    ✓ is stable regardless of object key insertion order
+    ✓ changes when any source field changes (1 ms)
+    ✓ does not collide when content shifts between fields (1 ms)
+    ✓ distinguishes an empty field from a missing one consistently
+    ✓ matches non-ASCII token names — the case \w+ misses (1 ms)
+    ✓ does not swallow an embedded JSON example as one token
+    ✓ passes through an already-correct translation (1 ms)
+    ✓ repairs renamed tokens positionally
+    ✓ refuses to guess when the token COUNT changed (1 ms)
+    ✓ accepts a well-formed translation (6 ms)
+    ✓ keeps an empty source field empty rather than inventing content
+    ✓ rejects the unit when a REQUIRED field is blank (1 ms)
+    ✓ blanks an OPTIONAL missing field so the read path falls back to German
+    ✓ rejects a unit missing entirely from the response (1 ms)
+    ✓ rejects a substantive field echoed back verbatim
+    ✓ allows a SHORT unchanged string — proper nouns survive translation (1 ms)
+    ✓ rejects a unit whose placeholder count changed
+    ✓ repairs a renamed placeholder rather than failing the unit (1 ms)
+    ✓ splits a batch that fails to parse, down to units that succeed (8 ms)
+    ✓ reports a genuine per-unit failure once the batch is a single unit (2 ms)
+    ✓ surfaces a provider failure as a failure rather than an empty success (1 ms)
+    ✓ does NOT split on a provider failure — one refusal must not become fifteen (2 ms)
+    ✓ recovers from a raw newline embedded in a JSON string value (VTID-03701-follow-up)
+    ✓ recovers from an unescaped quote inside a JSON string value (VTID-04845) (1 ms)
+    ✓ ends the value at the real closing quote when another field follows (VTID-04845) (1 ms)
+    ✓ repairs inner quotes in a multi-unit batch without merging units (VTID-04845)
+    ✓ still reports a failure when the JSON is genuinely unparseable, sanitization or not
+    ✓ names no provider and no model — routing belongs to llm_routing_policy (1 ms)
+    ✓ exposes both content surfaces
+    ✓ rejects an unknown surface by name, listing the known ones (2 ms)
+    ✓ never treats German as a translation target (1 ms)
+    ✓ builds a nav_catalog_i18n row with the natural key and stamp
+    ✓ writes NULL rather than empty string for untranslated checklist fields (1 ms)
+    ✓ requires a non-empty label on both surfaces
+    ✓ has files to check (a passing scan over an empty list proves nothing) (1 ms)
+    ✓ aurora-client.ts contacts no provider host
+    ✓ db-i18n-repository.ts contacts no provider host
+    ✓ notify-source-changed.ts contacts no provider host (1 ms)
+    ✓ surfaces.ts contacts no provider host
+    ✓ translator.ts contacts no provider host
+    ✓ throws when AURORA_DATABASE_URL is unset (9 ms)
+    ✓ throws when AURORA_DATABASE_URL is not a postgres(ql):// URL (1 ms)
+    ✓ verifies against the system default trust store when nothing is set (1 ms)
+    ✓ redacts the password in describe()
+    ✓ AURORA_SSL_INSECURE=true skips verification when no CA bundle is set (3 ms)
+    ✓ honours sslmode=disable on a loopback host (2 ms)
+    ✓ refuses sslmode=disable against a non-loopback host, even with a CA bundle set (2 ms)
+    ✓ throws AuroraConfigError when AURORA_CA_BUNDLE_PATH points at a missing file (1 ms)
+    ✓ throws AuroraConfigError when the bundle file contains no PEM certificates (2 ms)
+    ✓ unions the CA bundle certs with tls.rootCertificates, not replacing them (15 ms)
+    ✓ does not throw AuroraConfigError:not-configured when a CA bundle IS set (configured:true path) (1 ms)
+    ✓ overlays a fully-translated topic (1 ms)
+    ✓ falls back to German for missing fields (1 ms)
+    ✓ leaves untranslated topics untouched and is a no-op with no rows
+    ✓ accepts every release locale as a ChecklistLocale
+    ✓ exposes exactly the release locale set — no more, no less (1 ms)
+    ✓ serves the German source verbatim for a locale with no translation rows (1 ms)
+    ✓ overlays a partially-translated locale without losing the German remainder (1 ms)
+      ✓ defaults curriculum_version to v2, orders session then position (3 ms)
+      ✓ applies session/chapterId/status/businessGate/search filters when provided (2 ms)
+      ✓ scopes by topic_id, single row (1 ms)
+      ✓ updates by topic_id and selects the row back
+      ✓ inserts and selects the row back
+      ✓ updates by topic_id and selects the row back (1 ms)
+      ✓ inserts into journey_checklist_audit (1 ms)
+      ✓ scopes by curriculum_version + is_current, single row (1 ms)
+      ✓ scopes by curriculum_version + is_current, single row, snapshot column only (1 ms)
+      ✓ scopes by locale + topic_id list (1 ms)
+    ✓ covers all ten translation targets of the eleven languages (2 ms)
+    ✓ en: reads its translated script (1 ms)
+    ✓ es: reads its translated script
+    ✓ sr: reads its translated script (1 ms)
+    ✓ fr: reads its translated script
+    ✓ pt: reads its translated script (1 ms)
+    ✓ ru: reads its translated script
+    ✓ pl: reads its translated script
+    ✓ zh: reads its translated script
+    ✓ ar: reads its translated script
+    ✓ tr: reads its translated script (1 ms)
+    ✓ en: never receives the German script, even with no translation row
+    ✓ es: never receives the German script, even with no translation row (1 ms)
+    ✓ sr: never receives the German script, even with no translation row
+    ✓ fr: never receives the German script, even with no translation row
+    ✓ pt: never receives the German script, even with no translation row
+    ✓ ru: never receives the German script, even with no translation row
+    ✓ pl: never receives the German script, even with no translation row
+    ✓ zh: never receives the German script, even with no translation row
+    ✓ ar: never receives the German script, even with no translation row (1 ms)
+    ✓ tr: never receives the German script, even with no translation row
+    ✓ without a translated script, narrates the fully translated explanation (1 ms)
+    ✓ a partly translated explanation is not narration in that language
+    ✓ a whitespace-only script counts as missing (1 ms)
+    ✓ lists vitana_voice_script as a translated field
+    ✓ writes the translated script into the row
+    ✓ uses small batches so ~2,000-character scripts fit one reply
+    ✓ matches the string I18N-DB-SEED.yml subscribes to (2 ms)
+    ✓ sends one repository_dispatch to this repo after the window (3 ms)
+    ✓ coalesces a burst of edits into a single dispatch (3 ms)
+    ✓ merges distinct surfaces touched within one window (1 ms)
+    ✓ opens a fresh window after the previous one fired (2 ms)
+    ✓ resolves rather than rejecting when GitHub errors (2 ms)
+    ✓ reports the failure loudly instead of swallowing it (1 ms)
+    ✓ does not dispatch, and says why, when the token is unset
+    ✓ is ON by default — an opt-in flag would reintroduce the manual step (1 ms)
+    ✓ honours DB_I18N_AUTO_PROPAGATE=off (1 ms)
+    ✓ treats any other value as enabled, rather than failing closed (1 ms)
+    ✓ skips when no inputs are present (1 ms)
+    ✓ skips when no topic was tapped (normal open) (1 ms)
+    ✓ VTID-03677: still LEADS turn-1 with a topic even when isReconnect is true (8 ms)
+    ✓ suppresses when the topic is not live (no seed)
+    ✓ errors (not throws) when the seed read fails (1 ms)
+    ✓ LEADS turn-1 with a valid, bundled candidate when a topic was tapped (2 ms)
+    ✓ VTID-03644: forwards a non-German lang as the seed locale
+    ✓ VTID-04873: never pre-renders German narration for a member in another language
+    ✓ VTID-04873: pre-renders when the narration is in the member's language
+    ✓ greets by name when firstName is provided (1 ms)
+      ✓ tries Polly with the resolved content and locale before deciding the turn-1 line
+      ✓ when Polly succeeds: turn-1 line is the SHORT post-narration line, not the raw script (1 ms)
+      ✓ when Polly succeeds: the audio is bundled on the candidate content for the controller to send (1 ms)
+      ✓ VTID-03665: when Polly fails, turn-1 is the SHORT opener line — NEVER the raw script verbatim (1 ms)
+      ✓ still LEADS turn-1 (candidate still wins) on a resume — the topic context must not be lost
+      ✓ does NOT call Polly synthesis on a resume — nothing new to play (1 ms)
+      ✓ userFacingLine is empty on a resume — no forced re-opener, the model resumes naturally
+      ✓ an empty userFacingLine still passes the framework validator (a resume candidate is not a malformed one) (1 ms)
+      ✓ narrationAudio stays null on a resume (the audio bridge already treats null as nothing-to-send)
+      ✓ the TEACH content (topic/explanation/practice_target) is STILL bundled on a resume — only the spoken line and audio are suppressed (1 ms)
+      ✓ no regression: isResume=false (default/unset) behaves exactly as before — Polly is still attempted
+    ✓ renders the authored script as MP3 (3 ms)
+    ✓ joins a long script chunk by chunk into one file (1 ms)
+    ✓ returns null and caches nothing when any chunk fails (1 ms)
+    ✓ returns null for a language Polly has no voice for (sr) (6 ms)
+    ✓ returns null for an empty topic
+    ✓ serves a repeat from the cache without synthesizing (2 ms)
+      ✓ scopes by curriculum_version, newest-published-first (2 ms)
+      ✓ unsets is_current for the curriculum line (1 ms)
+      ✓ inserts the row and selects the version shape back (1 ms)
+      ✓ scopes by id, single row (1 ms)
+      ✓ sets is_current + status=published for the given id (1 ms)
+      ✓ inserts into journey_checklist_audit (1 ms)
+Tests:       22 skipped, 191 passed, 213 total

@@ -1,0 +1,33 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03832-vitana-roles-constant.test.ts
+  VTID-03832 vitana-roles constant
+    ✓ carries all eight roles in ladder order (backoffice between staff and admin) (4 ms)
+    ✓ backoffice is tenant-admin-grantable: NOT in the super-admin-only list (1 ms)
+    ✓ VALID_ROLES is a mutable mirror and admin-navigator re-exports the same set
+    ✓ isVitanaRole guards
+    ✓ no route file still carries its own hard-coded 7-role list (25 ms)
+    ✓ the DB migrations name the same eight roles as the constant (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/nav-catalog-role.test.ts
+  nav_catalog role scoping
+    ✓ every known role normalizes to itself (1 ms)
+    ✓ the role set matches getRoleNavigation cases (+ developer/infra) (1 ms)
+    ✓ missing / unknown / wrong-type input falls back to community
+
+Test Suites: 2 passed, 2 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.765 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03832-vitana-roles-constant.test.ts|test\/nav-catalog-role.test.ts/i.

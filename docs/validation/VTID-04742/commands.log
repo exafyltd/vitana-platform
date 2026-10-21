@@ -1,0 +1,12 @@
+# Read-only evidence (Supabase, oasis_events)
+select ... from oasis_events where topic='orb.live.diag' and metadata->>'stage'='turn_complete'
+  and metadata->>'output_preview' ~ '\m(Sie|Ihnen|Ihr|Ihre|Ihres|Ihrem|Ihren|Ihrer)\M' and created_at > now()-interval '3 days'
+  -> 23 German turns with the formal register, 2026-09-26..29, alongside du in the same sessions
+
+# Local verification (services/gateway)
+npx tsc --noEmit -p .                                                       -> exit 0
+npx jest test/i18n/vtid-04742-voice-register-rule.test.ts                   -> 16 passed
+npx jest test/orb/live/instruction/vtid-04742-guided-register-instruction.test.ts -> 4 passed
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/orb/live/characterization -u
+                                                                            -> snapshots re-recorded; diff = the REGISTER line only
+npx jest --silent                                                           -> 1400 suites passed (1 skipped), 22526 tests passed

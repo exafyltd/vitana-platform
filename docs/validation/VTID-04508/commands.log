@@ -1,0 +1,6 @@
+cd services/gateway && npx tsc --noEmit -p .                        # clean
+npx jest test/vtid-04508-community-invites.test.ts                  # 14 passed
+# mutation: monthly cap disabled -> 1 failed (outputs/mutation-monthly-cap-removed.txt)
+curl https://preview-aws-gateway.vitanaland.com/api/v1/invites/me   # 404 text/html before merge (router is new)
+# Supabase: duplicate check on referrals.referred_id / sharing_links member_invite -> none; migration applied live
+# vitana-v1: npx vitest run src/lib/invite-attribution.test.ts      # 4 passed

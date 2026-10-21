@@ -1,0 +1,45 @@
+  rankNextBestActions — value × timeliness, always grounded
+    ✓ time-sensitive (reminder/autopilot/messages) outrank continuity and community (1 ms)
+    ✓ never invents: a payload with no signals still offers a community-growth nudge, nothing fabricated
+    ✓ diary gap surfaces a health-momentum entry suggestion (1 ms)
+    ✓ SCREEN AWARENESS: on the matches screen, the next step COMPLETES the action, never redirects there (1 ms)
+    ✓ CAPABILITY-GATING: actions carry the real executing tool; gap actions are guide-only (null) (1 ms)
+    ✓ surfaceForRoute maps the key screens; screenCompletionFor deepens + suppresses the redirect (3 ms)
+    ✓ ADVANCES, never repeats: recently-suggested actions are skipped for the next-best fresh one
+
+PASS test/orb/instruction/first-time-welcome.test.ts
+  buildFirstTimeWelcomeLine — first-time onboarding welcome
+    ✓ localizes de and never uses returning-user framing (13 ms)
+    ✓ localizes en and never uses returning-user framing
+    ✓ localizes es and never uses returning-user framing
+    ✓ localizes sr and never uses returning-user framing
+    ✓ DE introduces Vitana, frames the journey, and offers the first session (1 ms)
+    ✓ falls back to EN for unsupported languages (still a first-time welcome, not "welcome back")
+    ✓ omits the name cleanly when none is known
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/session/tool-failure-grace.test.ts
+  isHardToolFailure
+    ✓ true only for success === false (1 ms)
+  graceToolResultForModel
+    ✓ passes a successful result through unchanged (no-op) (1 ms)
+    ✓ reshapes a hard failure into a non-error pivot the model can speak
+    ✓ never emits the words error/bug/system-issue to the model (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 745 passed, 745 of 746 total
+Tests:       29 skipped, 6 todo, 13728 passed, 13763 total
+Snapshots:   44 passed, 44 total
+Time:        64.5 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
+
+NOTE: this file is the tail of the full `npx jest` run for services/gateway,
+matching the same truncation convention as prior VTIDs' jest-full-suite.txt
+in this directory. Full untruncated output was reviewed locally before
+committing this trimmed version.

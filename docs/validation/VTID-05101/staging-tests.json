@@ -1,0 +1,29 @@
+{
+ "vtid": "VTID-05101",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages stay disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-05101-companion-generators.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The new moments (guided_journey_step F1, diary_nudge F3, feature_tip F8, invite_friend F7), the ledger back-off (3 unreplied \u2192 every other day, 7 \u2192 weekly, a reply resets), the paused-member skip and the paged ledger/signal reads only act inside the companion tick, which answers disabled-on-staging (staging shares the production database, rule 48). They are proven in vtid-05101-companion-generators over an in-memory database; the Phase 1/2 suites stay green."
+  }
+ ]
+}

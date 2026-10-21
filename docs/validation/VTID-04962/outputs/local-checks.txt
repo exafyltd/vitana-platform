@@ -1,0 +1,8 @@
+tsc --noEmit: exit 0
+vtid-04962-push-outcome: 17/17
+vtid-04962-push-dispatch-outcome: 10/10
+vtid-04962-push-health + vtid-04663-ops-health-checks: 23/23
+test:support: 85/85
+notification-related suites: 267/267 (20 suites)
+pr-gate scope/sparring/weakening: pass; red-green: pass (35 tests red on base)
+migration: gate lint pass after BEGIN/COMMIT wrap; libpg-query parse OK

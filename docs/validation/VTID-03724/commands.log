@@ -1,0 +1,129 @@
+# VTID-03724 — commands actually run.
+
+# Platform owner directive: stop blind-patching the guided-topic teaching
+# flow; investigate the full VTID-03644->03686 failure chain and the
+# Vertex-era history, find the actual root cause, then fix it.
+
+# Self-allocated the VTID via direct Supabase RPC (gateway not reachable
+# from this session), per CLAUDE.md §4.1 procedure 2.
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT allocate_global_vtid('claude-code', 'gateway', 'guided-topic-vs-newday-overview-priority-and-orb-close-button-regression');"
+#   -> (VTID-03724, 3724, 0780f84a-8116-416a-9a78-31d1210908ab)
+
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "UPDATE vtid_ledger SET title=..., summary=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03724';"
+
+# Forensic evidence gathering -- read-only queries against oasis_events for
+# the exact live staging test session, correlated with the actual source of
+# compute-greeting-decision.ts:
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT created_at, topic, metadata FROM oasis_events WHERE created_at > now() - interval '20 minutes' AND metadata->>'env'='staging' ORDER BY created_at ASC;"
+#   -> Found the smoking gun: orb.livekit.next_action.candidate winner:true
+#      dedupe_key:"guided_topic:T001" at 07:17:58.932 for session
+#      live-3e49a463..., followed ~1.6s later by that SAME session's
+#      greeting_sent reporting wake_opener:"newday_overview" instead.
+
+# Read compute-greeting-decision.ts in full (1058 lines) -- confirmed
+# tryNewDayOverviewRung (rung 7b) sits ABOVE override_v2 (rung 8, the only
+# rung consulting ctx.guidedTopicNarrationContent) on the normal ladder, and
+# does not check for a pending guided-topic tap at all. Safe-fast ladder had
+# zero guided-topic handling.
+
+# Follow-up query, isolating the session's own event stream for
+# code/diagnostic/reason/stage/outcome fields -- confirmed the session ALSO
+# hit a nova_validation content-filter rejection on the (wrongly-routed)
+# newday_overview content, auto-retried, then spoke a long continuous
+# briefing (model_start_speaking + dozens of streaming usage ticks over
+# several seconds) -- the likely correlated factor behind the reported
+# "cannot close" symptom, though not a confirmed second root cause (see
+# acceptance.md "What this does NOT fix").
+
+# Implementation: new shared tryGuidedTopicRung() in
+# compute-greeting-decision.ts, called at the top of computeSafeFastLadder
+# (before dayCloseFast/newdayFast) and in computeNormalLadder (right after
+# silent_reconnect, before dayCloseSync/newdaySync). Rung 8's own inline
+# guided-branch logic left untouched (dead-but-harmless by the time it's
+# reached with a guided topic still pending, since tryGuidedTopicRung would
+# already have fired first in the only case that matters).
+
+cd services/gateway
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc.txt)
+
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 50 passed, 50 total (1 snapshot needed updating -- new
+#      guided_topic_outranks_passive_rungs diag field, non-behavioural)
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u --silent
+#   -> Snapshot updated (verified diff: exactly 1 line added, nothing else)
+
+# Added 7 new regression tests reproducing the exact live collision
+# (newdayOverview payload + guidedTopicNarrationContent both set) plus the
+# day_close/anonymous/silent-reconnect/no-collision edge cases.
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 57 passed, 57 total
+#   -> outputs/targeted-tests.txt
+
+# Mutation verification -- proved the new tests actually catch the
+# regression, not vacuous:
+cp src/services/conversation/compute-greeting-decision.ts /tmp/compute-greeting-decision.ts.bak
+# (disabled both tryGuidedTopicRung() early-return call sites via a scripted
+# text replacement, leaving the function itself intact but unreachable)
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -t "VTID-03724" --silent
+#   -> 3 of 7 failed: exactly the 3 that exercise the fix (normal ladder,
+#      safe-fast ladder, day_close). The other 4 (no-line-yet, anonymous,
+#      silent-reconnect, no-collision) correctly still passed -- they test
+#      paths the fix does not touch.
+cp /tmp/compute-greeting-decision.ts.bak src/services/conversation/compute-greeting-decision.ts
+npx tsc --noEmit
+#   -> clean
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts --silent
+#   -> 57/57 passing again (fix restored)
+
+npx jest test/orb test/services/conversation --silent
+#   -> Test Suites: 194 passed, 194 total
+#   -> Tests: 6 todo, 3599 passed, 3605 total
+#   -> outputs/full-regression.txt
+
+# Rebased onto a fresh branch off origin/main (was previously stashed on the
+# now-merged VTID-03716 branch):
+cd ..
+git stash push -m "VTID-03724 fix" -- services/gateway/src/services/conversation/compute-greeting-decision.ts services/gateway/test/services/conversation/__snapshots__/compute-greeting-decision.golden.test.ts.snap services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+git fetch origin main -q
+git checkout -B claude/guided-topic-priority-vtid-03724 origin/main -q
+git stash pop
+# Noticed origin/main had moved significantly (PR #3173/VTID-03716 already
+# merged by this session's own earlier work, plus VTID-03719/03720/03721/
+# 03722 and BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC from what the merge commit
+# co-author attribution shows is a DIFFERENT, concurrent Claude Code session
+# working the same ORB subsystem). Checked for overlap:
+git show 7bde0ca --stat
+#   -> BOOTSTRAP-ORB-NEWDAY-STAMP-DIAGNOSTIC only touches routes/orb-live.ts
+#      (the stamp WRITE silently failing), not compute-greeting-decision.ts
+#      -- complementary to this fix (a different, real, independent defect
+#      in the SAME once-per-day guard), not a conflict.
+
+# Re-verified clean on the rebased branch:
+cd services/gateway
+npx tsc --noEmit
+#   -> clean
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts --silent
+#   -> 57/57 passing
+npx jest test/orb test/services/conversation --silent
+#   -> Test Suites: 194 passed, 194 total
+#   -> Tests: 6 todo, 3599 passed, 3605 total
+#   -> outputs/full-regression.txt (regenerated)
+
+git add services/gateway/src/services/conversation/compute-greeting-decision.ts \
+        services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts \
+        services/gateway/test/services/conversation/__snapshots__/compute-greeting-decision.golden.test.ts.snap \
+        docs/validation/VTID-03724/
+git commit -m "Fix guided-topic tap losing to newday_overview/day_close on both ladders (VTID-03724)"
+git push -u origin claude/guided-topic-priority-vtid-03724
+
+# --- NOT done from this session yet ---
+# Open the PR (VALIDATOR-CHECK profile: gateway_backend), drive CI green,
+# merge, verify staging deploy, then report back to the platform owner with
+# the confirmed root cause + fix, and the honest "not confirmed" status on
+# the X-button symptom.

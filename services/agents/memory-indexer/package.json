@@ -1,0 +1,9 @@
+{
+  "name": "@vitana/memory-indexer",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "dev": "python main.py",
+    "start": "python main.py"
+  }
+}

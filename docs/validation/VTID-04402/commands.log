@@ -1,0 +1,6 @@
+# VTID-04402..04405 — commands run
+cd services/gateway && npx tsc --noEmit -p .                       # exit 0 (outputs/tsc.txt)
+npx jest test/vtid-04402-connected-apps.test.ts test/vtid-04372-calendar-google-sync.test.ts test/vtid-04401-connected-apps-auth.test.ts   # 3 suites, 64 tests passed
+npx jest                                                            # full gateway: 1128 suites passed (1 skipped), 18230 tests passed
+PORT=8089 NODE_ENV=development SUPABASE_URL=http://127.0.0.1:9 npx tsx src/index.ts   # local boot for the route-mount curl (outputs/local-curl.txt)
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/social-accounts/providers   # read-only: every provider configured:false on staging

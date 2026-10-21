@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-04027",
+  "scope": "gap analysis §4.3 recall side — top-10, category-diverse, bounded",
+  "before": { "rpc_limit": 5, "selection": "raw cosine similarity order", "block_bound": "none" },
+  "after": {
+    "rpc_limit": 20,
+    "selection": "round-robin over categories in similarity order (every category with a hit seated before any second seat), per-category cap 4, up to 10 rows, dedupe by id, output re-sorted by similarity",
+    "block_bound": { "row_title_chars": 160, "row_content_chars": 420, "total_chars": 6000, "drop_order": "worst similarity first" },
+    "header": "unchanged (VTID-03892 consumers assert on 'Relevant engineering memory')"
+  },
+  "module": "services/gateway/src/services/dev-memory-ranking.ts",
+  "wiring": "gemini-operator.ts processWithGemini → recallDevMemory(query, 'vitana-platform', { limit: RECALL_CANDIDATES }) → buildDevMemoryContextBlock → renderDevMemoryBlock(diversifyRecallHits(hits))",
+  "schema_change": false,
+  "oasis_impact": "none"
+}

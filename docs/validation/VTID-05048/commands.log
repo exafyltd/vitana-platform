@@ -1,0 +1,22 @@
+# all commands run from services/gateway unless noted
+$ npx jest test/vtid-05048-s4-caller-identity.test.ts
+Tests: 33 passed, 33 total
+$ (src + workflow reverted via git stash) npx jest test/vtid-05048-s4-caller-identity.test.ts
+Tests: 27 failed, 6 passed, 33 total
+$ npx jest test/vtid-05048-s4-caller-identity.test.ts test/routes/autopilot-prompts.test.ts test/routes/automations-wallet-balance.test.ts test/routes/reminders-snooze.test.ts test/orb-tools/governance-tools.test.ts test/orb-tools/admin-governance-tools.test.ts test/vtid-04510-community-autopilot-automation-proposals.test.ts
+Tests: 167 passed, 167 total   (outputs/changed-tests.txt)
+$ npx jest <61 test files that import any touched module>
+before adapting 3 tests: 3 failed, 1044 passed (old-contract assertions: tenant 'admin'/'developer' setting controls via ORB; reminders-snooze auth mock lacked requireTenant) -> adapted, now green
+$ npm run test:roles
+Tests: 105 passed, 105 total   (outputs/test-roles.txt)
+$ npm run test:support
+Tests: 87 passed, 87 total     (outputs/test-support.txt)
+$ npm run test:operator
+Tests: 38 passed, 38 total     (outputs/test-operator.txt)
+$ npx tsc --noEmit -p .
+0 errors other than 39 x TS2742 in untouched src/services/rewards/*-repository.ts, caused by the worktree's node_modules being a symlink to another checkout (type path "not portable"); none in touched files   (outputs/tsc.txt)
+$ npx eslint <touched files>
+n/a: the gateway has no ESLint config in the repo
+$ npx jest --silent   (full gateway suite)
+Tests: 7 failed, 25 skipped, 6 todo, 25531 passed, 25569 total   (outputs/full-jest.txt)
+the 7 failures are the local-Postgres migration replica tests; same 7 fail on unmodified origin/main here

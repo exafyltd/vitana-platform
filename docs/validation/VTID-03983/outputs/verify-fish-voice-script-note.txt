@@ -1,0 +1,11 @@
+scripts/tts/verify-fish-voice.ts was run (ts-node, real FISH_API_KEY) after
+fixing its pre-existing TS strictness bug (meta typed as unknown, TS18046
+x3). It exited 0, but this sandbox's ts-node child process produces no
+captured stdout for ANY script (confirmed with a trivial `console.log`
+sanity check that also produced zero captured output despite exit 0) —
+an environment/tooling quirk unrelated to Fish Audio or this script's own
+correctness. Equivalent verification was performed directly via curl
+against the same live endpoints the script calls (see
+live-synthesis-sr-free-tier.mp3, live-synthesis-pcm-duration-check.txt,
+milica-voice-metadata-recheck.json in this directory) — same requests,
+same responses, just captured outside the ts-node wrapper.

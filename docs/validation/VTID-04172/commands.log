@@ -1,0 +1,49 @@
+VTID-04172 — commands run, in order
+
+1. While queuing the platform owner's 30-task Command Hub batch
+   (VTID-04136..04162) via curl against POST /api/v1/operator/chat with a
+   real bearer token, task 25's response body's "reply" field contained the
+   model's own internal reasoning ("I don't actually have a real tool
+   execution here...") followed by a fenced ```json block shaped exactly
+   like autopilot_run_task's real arguments, with zero autopilot_run_task
+   entries in the turn's real toolResults array (only dev_read_file).
+
+2. grep -n "forceTool|tool_choice|toolChoice"
+   services/gateway/src/services/gemini-operator.ts
+   -> no matches: the operator router call never forces tool invocation.
+
+3. Read services/gateway/src/routes/operator.ts's runOperatorChatTurn():
+   confirmed the single processWithGemini() call point (line ~381) and
+   downstream usage of geminiResult.reply / geminiResult.toolResults.
+
+4. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-simulated-tool-call-detection"}'
+   -> 200 {"ok":true,"vtid":"VTID-04172","num":4172,"id":"64dc8db5-..."}
+
+5. Supabase MCP execute_sql: UPDATE vtid_ledger SET title/summary,
+   status='in_progress', spec_status='approved' for VTID-04172.
+
+6. Wrote services/gateway/src/services/operator-simulated-tool-call-detector.ts
+   (detectSimulatedToolCallReply — pure fenced-JSON-shape detector).
+
+7. Edited services/gateway/src/routes/operator.ts: geminiResult -> let,
+   added the detect-and-retry-once block after the first processWithGemini
+   call, before any downstream use of geminiResult.
+
+8. cd services/gateway && npx tsc --noEmit -> exit 0, no output.
+
+9. Wrote test/operator-simulated-tool-call-detector.test.ts (9 tests) and
+   test/vtid-04172-operator-simulated-tool-call-retry.test.ts (5 tests,
+   supertest against the real mounted app, processWithGemini mocked).
+
+10. npx jest test/operator-simulated-tool-call-detector.test.ts \
+        test/vtid-04172-operator-simulated-tool-call-retry.test.ts --silent
+    -> 2 suites, 14 tests, all passing.
+
+11. npx jest test/vtid-04028-operator-turn-stream.test.ts \
+        test/vtid-04102-operator-truncated-reply.test.ts \
+        test/operator-chat-oasis.test.ts \
+        test/vtid-03926-operator-chat-userrole.test.ts \
+        test/vtid-03851-execute-task-requires-auth.test.ts \
+        test/vtid-04132-onramp-open-ended-safety-gate.test.ts --silent
+    -> 6 suites, 54 tests, all passing, 0 regressions.

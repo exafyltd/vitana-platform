@@ -1,0 +1,16 @@
+# VTID-04418 — commands run (2026-09-23)
+
+## VTID
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate {source:claude-code,layer:DEV,module:orb-brain-dedupe} -> VTID-04418
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04418'
+
+## Investigation
+Read-only feature diff of createUpstreamLiveMessageHandler vs bindUpstreamSessionHandlers (outputs/handler-diff.md)
+grep finalizeLiveSession( -> six end paths; terminateExistingSessionsForUser had none
+grep paired upstreamPingInterval/silenceKeepaliveInterval clearing -> 3 in orb-live.ts, 2 in live-session-controller.ts
+
+## Gateway
+npx tsc --noEmit -p .                                                              -> clean
+jest test/orb/live/session/vtid-04418-teardown-dedupe.test.ts                     -> 10 passed
+jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts           -> 7 passed
+jest test/orb test/routes test/services/conversation test/scripts test/command-hub -> 404 suites, 6634 passed, 1 skipped, 6 todo

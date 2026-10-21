@@ -1,0 +1,43 @@
+# The KNOWN BUG test run as a plain it() (the .failing marker removed in a temporary copy): it fails ONLY on its final ledger assertion.
+  ● CI failure on an agent PR: the fix continues on the same PR › KNOWN BUG — the VTID of a fix-mode lineage closes as success when the fix lands (today it is closed as failed at the first red CI)
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  3
+    + Received  + 18
+
+    - ObjectContaining {
+    + Object {
+    +   "created_at": "2026-09-24T12:20:57.834Z",
+    +   "id": "6745df12-409a-4b0a-b3fa-6ec68c8e37bf",
+        "is_terminal": true,
+    -   "status": "completed",
+    -   "terminal_outcome": "success",
+    +   "metadata": Object {
+    +     "allocated_by": "operator-execution-onramp",
+    +     "autopilot_execution_id": "44a67a1b-ce59-45b0-9c51-cf44d89f11a2",
+    +     "intake": "open_ended",
+    +     "purpose": "operator-instructed execution (OPERATOR_VTID_SELF_ALLOCATE_ENABLED)",
+    +     "requested_by": "operator-chat:a0000000-0000-4000-8000-000000000042",
+    +     "source": "operator-onramp",
+    +   },
+    +   "spec_status": "approved",
+    +   "status": "failed",
+    +   "summary": "Make greet() include the person's name, e.g. \"Hello, Ada\", and cover it with a test.",
+    +   "terminal_outcome": "failed",
+    +   "title": "Operator: Greet by name",
+    +   "updated_at": "2026-09-24T12:20:57.994Z",
+    +   "vtid": "VTID-04701",
+      }
+
+      767 |     await platform.settle();
+      768 |     expect(platform.execution(child.id).status).toBe('completed');
+    > 769 |     expect(platform.ledger(vtid)).toEqual(expect.objectContaining({ is_terminal: true, terminal_outcome: 'success', status: 'completed' }));
+          |                                   ^
+      770 |   });
+      771 | });
+      772 |
+
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 18 skipped, 19 total

@@ -1,0 +1,69 @@
+VTID-04274 — commands run to build and verify this change
+
+1. Investigated the platform owner's continuity question by querying live
+   Supabase directly rather than assuming. `select status, count(*) from
+   autopilot_recommendations group by status` initially returned a
+   surprising 683 non-terminal rows — investigated further and found the
+   table is shared across several unrelated recommendation engines
+   (source_type in 'community', 'operator_onramp', 'roadmap', 'behavior',
+   'oasis', 'health' — a personalization/proactive-intervention system, not
+   code self-healing). Filtered to `source_type='dev_autopilot'` and
+   confirmed the real Dev Autopilot code-fix backlog is 18 rows, matching
+   an earlier session's own count.
+
+2. Found the live duplicate: `select id, fingerprint, signal_fingerprint,
+   source_ref from autopilot_recommendations where id in ('9e1bdb97...',
+   '7a93bca4...')` — both rows return the identical `signal_fingerprint`
+   `42c32f9e7e689576`, ~21 hours apart, the second created while the first
+   was `status='activated'`.
+
+3. Read src/services/dev-autopilot-synthesis.ts's ingestScan() dedup query
+   — confirmed `status=in.(new,snoozed)` excludes `activated`. Grepped for
+   the same pattern elsewhere: `grep -rn "status=in.(new,snoozed)" src/
+   test/` found a second, identical-shape occurrence in
+   routes/dev-autopilot.ts's `/impact-ingest` handler.
+
+4. Confirmed both flagged TODO/FIXME findings for
+   scripts/ci/dev-autopilot-scan.mjs (5fbe06e1, 8caa3710) are NOT a dedup
+   bug — different line numbers (77 vs 32), legitimately two distinct
+   findings in the same file. Ruled out before concluding the real bug was
+   elsewhere.
+
+5. Allocated VTID-04274, self-registered via allocate_global_vtid.
+
+6. Widened both dedup queries' status filter to
+   `status=in.(new,snoozed,activated)`.
+
+7. Wrote 3 new tests in test/dev-autopilot-synthesis.test.ts (new describe
+   block "ingestScan — dedup lookup covers activated findings
+   (VTID-04274)"): the GET query includes `activated`; an existing
+   `activated` row is bumped (PATCH), not duplicated (0 POSTs); a genuinely
+   new signal (no live match at all) still inserts.
+
+8. Wrote 1 new test in test/routes/dev-autopilot.test.ts asserting the
+   `/impact-ingest` dedup GET query includes `activated` and correctly
+   bumps an existing `activated` row's seen_count.
+
+9. `cd services/gateway && node node_modules/.bin/jest
+   test/dev-autopilot-synthesis.test.ts test/routes/dev-autopilot.test.ts`
+   -> 21/21 and 147/147 passing respectively (168 total, 4 new).
+
+10. Mutation verification, both sites independently: reverted each
+    `status=in.(new,snoozed,activated)` back to `status=in.(new,snoozed)`
+    in turn, re-ran the affected test file -> 1 test correctly failed each
+    time (the exact new assertion pinning the widened filter), restored
+    the fix -> green again both times.
+
+11. `cd services/gateway && npx tsc --noEmit` -> clean, no output.
+
+12. `cd services/gateway && npx jest --silent` (full suite) -> 1059/1060
+    suites (1 pre-existing skip), 17,293/17,328 tests passing (29 skipped,
+    6 todo, both pre-existing), 0 failures, 42/42 snapshots.
+
+13. Closed the two live duplicate rows this bug produced:
+    `update autopilot_recommendations set status='completed', ... where id
+    in ('9e1bdb97...', '7a93bca4...')` — their underlying content was
+    separately fixed under VTID-04272 (PR #3566, merged) and VTID-04261
+    (PR #3570, in flight); this VTID only closes the mechanism.
+
+No AWS mutation was made from this session for this VTID.

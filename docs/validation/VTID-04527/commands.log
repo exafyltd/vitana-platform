@@ -1,0 +1,14 @@
+# VTID-04527 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint); ledger row set in_progress/approved with a real title
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04527"}
+
+# Whitespace-insensitive review of the portal refactor
+git diff -w services/gateway/src/routes/vcaop-portal-my.ts
+# -> only the ConnectionScope plumbing + the FHIR `scope` -> `oauthScope` rename (a TDZ bug the move would otherwise have introduced)
+
+# Syntax check of every changed file (typescript transpileModule with diagnostics) -> outputs/syntax-check.txt
+
+# Jest and full tsc: NOT runnable here (npm registry 403, no node_modules). CI is the first real run of
+# test/partner-onboarding-connections.test.ts, the existing test/routes/vcaop-portal-my.test.ts, and the build.

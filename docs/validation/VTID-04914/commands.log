@@ -1,0 +1,8 @@
+# VTID-04914 commands
+cd services/gateway && npx jest test/vtid-04914-calendar-prod-gates.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts   # 14 passed
+npx jest $(grep -rlE "AWS-(PROD|STAGE)-DEPLOY-GATEWAY|CALENDAR_" test)   # 1434 passed (two "foo" lines are fixture text inside a CI-log parser test)
+npm run test:calendar                                                    # 397 passed
+npx jest <19 suites that scan every workflow file>                        # 246 passed
+node scripts/conversation/generate-flag-pins.mjs                          # regenerated conversation-flag-pins.generated.ts
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"   # {"ok":true,"errors":[]}
+curl -sS https://preview-aws-gateway.vitanaland.com/api/v1/social-accounts/providers   # google configured:false (staging, read-only, 2026-10-06)

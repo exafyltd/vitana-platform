@@ -1,0 +1,6 @@
+Test Suites: 2 passed, 2 total
+Tests:       78 passed, 78 total
+Snapshots:   0 total
+Time:        1.191 s
+Ran all test suites matching /test\/vtid-05047-cicd-routes-auth.test.ts|test\/vtid-05019-cicd-pr-routes-auth.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,7 @@
+# Local gateway from this branch; SUPABASE_URL=http://127.0.0.1:9 (unreachable, nothing live touched)
+$ curl -s -w "\n%{http_code} %{content_type}\n" http://127.0.0.1:8089/api/v1/connected-apps
+{"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorization header. Expected: Bearer <token>"}
+401 application/json; charset=utf-8
+$ curl -s -w "\n%{http_code} %{content_type}\n" -X POST http://127.0.0.1:8089/api/v1/connected-apps/outlook-mail/connect -H 'Authorization: Bearer forged.token.x'
+{"ok":false,"error":"UNAUTHENTICATED","message":"Invalid or expired token"}
+401 application/json; charset=utf-8

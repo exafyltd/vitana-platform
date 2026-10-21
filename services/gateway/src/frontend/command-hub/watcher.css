@@ -1,0 +1,231 @@
+/*
+ * VTID-03463 — Watcher Command Hub panel styles.
+ * External stylesheet, no inline style attributes (CSP: CLAUDE.md NEVER 24/30).
+ */
+
+.w-main {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 1.5rem 1rem 4rem;
+}
+
+.w-section {
+  margin-bottom: 2.5rem;
+}
+
+.w-section h2 {
+  font-size: 1.05rem;
+  margin: 0 0 0.35rem;
+}
+
+.w-loading,
+.w-muted {
+  color: #8b93a7;
+  font-size: 0.875rem;
+}
+
+/* --- health cards --------------------------------------------------- */
+
+.w-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 0.75rem;
+  margin-bottom: 1rem;
+}
+
+.w-card {
+  border: 1px solid #2a3040;
+  border-radius: 8px;
+  padding: 0.65rem 0.75rem;
+  background: #171b26;
+}
+
+.w-card-label {
+  font-size: 0.7rem;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  color: #8b93a7;
+  margin-bottom: 0.2rem;
+}
+
+.w-card-value {
+  font-size: 1.05rem;
+  font-weight: 600;
+  /* Long cursor timestamps and env values must wrap rather than force the
+     page into horizontal scroll on a phone. */
+  overflow-wrap: anywhere;
+}
+
+.w-ok    { border-left: 3px solid #3fb950; }
+.w-warn  { border-left: 3px solid #d29922; }
+.w-neutral { border-left: 3px solid #3d4453; }
+
+/* --- table ----------------------------------------------------------- */
+
+.w-table-wrap {
+  /* Narrow screens: let the table scroll inside its own box rather than
+     pushing the whole page into horizontal scroll. */
+  overflow-x: auto;
+}
+
+.w-table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.w-table th,
+.w-table td {
+  text-align: left;
+  padding: 0.45rem 0.5rem;
+  border-bottom: 1px solid #232936;
+  overflow-wrap: anywhere;
+}
+
+.w-table th {
+  color: #8b93a7;
+  font-weight: 600;
+  font-size: 0.7rem;
+  text-transform: uppercase;
+}
+
+.w-row-error td { background: rgba(210, 153, 34, 0.08); }
+
+/* --- forms ----------------------------------------------------------- */
+
+.w-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.5rem;
+  margin: 0.75rem 0;
+}
+
+.w-label {
+  font-size: 0.75rem;
+  color: #8b93a7;
+}
+
+.w-input {
+  flex: 1 1 220px;
+  min-width: 0;
+  padding: 0.45rem 0.6rem;
+  border-radius: 6px;
+  border: 1px solid #2a3040;
+  background: #12151d;
+  color: #e6e9ef;
+  font-size: 0.85rem;
+}
+
+.w-btn {
+  /* 44px min target — WCAG 2.2 AA pointer-target guidance, and this panel is
+     opened on a phone as often as a desktop. */
+  min-height: 44px;
+  padding: 0.5rem 1.1rem;
+  border-radius: 6px;
+  border: 1px solid #2f6feb;
+  background: #1f4fbf;
+  color: #fff;
+  font-size: 0.85rem;
+  cursor: pointer;
+}
+
+.w-btn:hover { background: #2f6feb; }
+.w-btn:focus-visible { outline: 2px solid #79b8ff; outline-offset: 2px; }
+
+/* --- timeline -------------------------------------------------------- */
+
+.w-steps {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+}
+
+.w-step {
+  border-left: 3px solid #3d4453;
+  padding: 0.5rem 0 0.5rem 0.75rem;
+  margin-bottom: 0.4rem;
+}
+
+.w-outcome-success { border-left-color: #3fb950; }
+.w-outcome-failure { border-left-color: #f85149; }
+.w-outcome-skipped { border-left-color: #8b93a7; }
+.w-outcome-unknown { border-left-color: #3d4453; }
+
+.w-step-head {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  align-items: baseline;
+}
+
+.w-step-name { font-weight: 600; }
+.w-step-outcome,
+.w-step-actor {
+  font-size: 0.72rem;
+  color: #8b93a7;
+}
+
+.w-step-meta {
+  font-size: 0.72rem;
+  color: #8b93a7;
+  margin-top: 0.15rem;
+}
+
+.w-step-msg {
+  font-size: 0.78rem;
+  margin-top: 0.25rem;
+  overflow-wrap: anywhere;
+}
+
+/* --- reminders ------------------------------------------------------- */
+
+.w-reminders {
+  list-style: none;
+  margin: 0 0 0.5rem;
+  padding: 0;
+}
+
+.w-reminder {
+  border: 1px solid #2a3040;
+  border-left-width: 3px;
+  border-radius: 6px;
+  padding: 0.55rem 0.7rem;
+  margin-bottom: 0.4rem;
+}
+
+.w-sev-block_candidate { border-left-color: #f85149; }
+.w-sev-warn { border-left-color: #d29922; }
+.w-sev-info { border-left-color: #3d4453; }
+
+.w-reminder-text { font-size: 0.85rem; overflow-wrap: anywhere; }
+
+.w-reminder-src {
+  font-size: 0.7rem;
+  color: #8b93a7;
+  margin-top: 0.2rem;
+}
+
+.w-warn-note {
+  font-size: 0.78rem;
+  color: #d29922;
+  margin-top: 0.4rem;
+}
+
+.w-error {
+  font-size: 0.85rem;
+  color: #f85149;
+}
+
+@media (max-width: 480px) {
+  .w-main { padding: 1rem 0.75rem 3rem; }
+  .w-form { flex-direction: column; align-items: stretch; }
+  .w-btn { width: 100%; }
+  /* flex-basis resolves against the MAIN axis. Once the form stacks, the
+     `flex: 1 1 220px` above stops meaning "at least 220px wide" and starts
+     meaning "220px TALL" — which rendered the text input and the stage
+     dropdown as ~220px-high boxes on a phone. Reset to auto so they take
+     their natural height. */
+  .w-input { flex: 0 0 auto; }
+}

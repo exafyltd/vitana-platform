@@ -1,0 +1,1670 @@
+/**
+ * CICD Types - VTID-0516 Autonomous Safe-Merge Layer
+ * Type definitions for GitHub PR, Safe-Merge, and Deploy operations
+ */
+
+import { z } from 'zod';
+
+// ==================== Create PR ====================
+export const CreatePrRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  branch: z.string().optional(), // Can be auto-generated if missing
+  title: z.string().min(1, 'PR title is required'),
+  body: z.string().min(1, 'PR body/description is required'),
+  base: z.string().default('main'),
+  head: z.string().min(1, 'Head branch is required'),
+  // VTID-05014: which Vitana repo (allowlisted in the route); default unchanged.
+  repo: z.string().default('exafyltd/vitana-platform'),
+});
+
+export type CreatePrRequest = z.infer<typeof CreatePrRequestSchema>;
+
+export interface CreatePrResponse {
+  ok: boolean;
+  pr_number?: number;
+  pr_url?: string;
+  vtid: string;
+  error?: string;
+  details?: Record<string, unknown>;
+}
+
+// ==================== Safe Merge ====================
+export const SafeMergeRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  repo: z.string().default('exafyltd/vitana-platform'),
+  pr_number: z.number().int().positive('PR number must be a positive integer'),
+  require_checks: z.boolean().default(true),
+  merge_strategy: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+});
+
+export type SafeMergeRequest = z.infer<typeof SafeMergeRequestSchema>;
+
+export interface SafeMergeResponse {
+  ok: boolean;
+  merged?: boolean;
+  branch?: string;
+  repo?: string;
+  vtid: string;
+  reason?: string;
+  details?: {
+    pr_state?: string;
+    base?: string;
+    head?: string;
+    checks?: CheckStatus[];
+    files_touched?: string[];
+    services_impacted?: string[];
+    governance_decision?: 'approved' | 'blocked';
+  };
+  next?: {
+    can_auto_deploy: boolean;
+    service: string;
+    environment: string;
+  };
+}
+
+export interface CheckStatus {
+  name: string;
+  status: 'success' | 'failure' | 'pending' | 'neutral' | 'skipped';
+  conclusion?: string;
+}
+
+// ==================== Deploy Service ====================
+export const DeployServiceRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  service: z.string().min(1, 'Service name is required'),
+  environment: z.enum(['dev'], { errorMap: () => ({ message: "Only 'dev' environment is allowed" }) }),
+  trigger_workflow: z.boolean().default(true),
+});
+
+export type DeployServiceRequest = z.infer<typeof DeployServiceRequestSchema>;
+
+export interface DeployServiceResponse {
+  ok: boolean;
+  status: 'queued' | 'blocked' | 'failed';
+  vtid: string;
+  service?: string;
+  environment?: string;
+  workflow_run_id?: number;
+  workflow_url?: string;
+  error?: string;
+  details?: Record<string, unknown>;
+}
+
+// ==================== PR Details from GitHub ====================
+export interface GitHubPullRequest {
+  number: number;
+  state: 'open' | 'closed' | 'merged';
+  title: string;
+  body: string | null;
+  base: {
+    ref: string;
+    sha: string;
+  };
+  head: {
+    ref: string;
+    sha: string;
+  };
+  mergeable: boolean | null;
+  mergeable_state: string;
+  html_url: string;
+}
+
+export interface GitHubCheckRun {
+  id: number;
+  name: string;
+  status: 'queued' | 'in_progress' | 'completed';
+  conclusion: 'success' | 'failure' | 'neutral' | 'cancelled' | 'skipped' | 'timed_out' | 'action_required' | null;
+}
+
+export interface GitHubCombinedStatus {
+  state: 'success' | 'failure' | 'pending';
+  statuses: Array<{
+    context: string;
+    state: 'success' | 'failure' | 'pending' | 'error';
+    description: string | null;
+  }>;
+}
+
+// ==================== Governance ====================
+export interface GovernanceEvaluation {
+  decision: 'approved' | 'blocked';
+  vtid: string;
+  files_touched: string[];
+  services_impacted: string[];
+  blocked_reasons: string[];
+  timestamp: string;
+}
+
+// ==================== OASIS Events ====================
+export type CicdEventType =
+  // VTID-03462 (Watcher Phase 3): the ONLY event the Watcher emits.
+  // Its observer scans on a timer and deliberately emits nothing — polling is
+  // not progress (CLAUDE.md §6). An auto-mute is different: it permanently
+  // changes what every future planner/executor/worker prompt sees, with no
+  // human in the loop, and "why did the system stop reminding us about X?"
+  // needs an auditable answer.
+  | 'vtid.decision.watcher.lesson_muted'
+  | 'vtid.decision.watcher.backfill'
+  // VTID-04868: Plan Sparring Gate. attached/missing are emitted at VTID
+  // allocation (log mode — shadow, never blocks); break_glass when an exempt
+  // insert is seen; tamper_detected by the hourly read-only reconciler
+  // (trigger disabled, ledger rows without sparring_id, config change).
+  | 'vtid.plan_sparring.attached'
+  | 'vtid.plan_sparring.missing'
+  | 'vtid.plan_sparring.break_glass'
+  | 'vtid.plan_sparring.tamper_detected'
+  // VTID-04892: Vitana Onboarding Assistant. One aggregate event per coach
+  // tick (never one per member per tick), plus a member's real stage changes.
+  | 'onboarding.coach.tick_completed'
+  | 'onboarding.coach.stage_changed'
+  // VTID-05099: Vitana Companion Messages — one aggregate event per tick that decided something.
+  | 'companion.tick.completed'
+  // VTID-05100: a real companion DM delivered / failed (per member — a real
+  // state transition, unlike the shadow tick), and a member's own settings change.
+  | 'companion.message.sent'
+  | 'companion.message.failed'
+  // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — one per real
+  // send or failed send, plus one per tick that decided something.
+  | 'welcome_team.tick.completed'
+  | 'welcome_team.message.sent'
+  | 'welcome_team.message.failed'
+  | 'companion.preferences.updated'
+  // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
+  | 'enrichment_card.dismissed'
+  | 'cicd.github.create_pr.requested'
+  | 'cicd.github.create_pr.succeeded'
+  | 'cicd.github.create_pr.failed'
+  | 'cicd.github.create_pr.skipped_existing' // VTID-01031: PR reuse path
+  | 'cicd.github.find_pr.requested'          // VTID-01031: Find existing PR
+  | 'cicd.github.find_pr.succeeded'          // VTID-01031: Existing PR found
+  | 'cicd.github.safe_merge.requested'
+  | 'cicd.github.safe_merge.evaluated'
+  | 'cicd.github.safe_merge.approved'
+  | 'cicd.github.safe_merge.blocked'
+  | 'cicd.github.safe_merge.executed'
+  | 'cicd.deploy.service.requested'
+  | 'cicd.deploy.service.accepted'
+  | 'cicd.deploy.service.blocked'
+  | 'cicd.deploy.service.succeeded'
+  | 'cicd.deploy.service.failed'
+  | 'cicd.deploy.service.validated'
+  | 'cicd.deploy.version.recorded'  // VTID-0510: Software version recorded
+  // DEV-OASIS-0210: Deploy gateway events for Command Hub UI
+  | 'deploy.gateway.success'
+  | 'deploy.gateway.failed'
+  // VTID-0407: Governance deploy enforcement events
+  | 'governance.deploy.blocked'
+  | 'governance.deploy.allowed'
+  // DEV-OASIS-0210: Governance evaluation events
+  | 'governance.evaluation'
+  // VTID-0536: Gemini Operator Tools Bridge events
+  | 'assistant.turn'
+  // VTID-04582: an Operator Console reply presented a tool call that did not run
+  | 'operator.reply.fabricated_tool_call'
+  // VTID-0150-B: Assistant Core events
+  | 'assistant.session.started'
+  | 'autopilot.intent.created'
+  | 'autopilot.intent.approved'
+  | 'autopilot.intent.rejected'
+  | 'autopilot.intent.executed'
+  | 'governance.evaluate'
+  | 'vtid.created'
+  | 'autopilot.status.requested'
+  | 'autopilot.list.requested'
+  // VTID-0151: Assistant Core v2 Multimodal events
+  | 'assistant.live.started'
+  | 'assistant.live.frame'
+  | 'assistant.live.audio'
+  // VTID-0538: Knowledge Hub events
+  | 'knowledge.search'
+  | 'knowledge.search.success'
+  | 'knowledge.search.error'
+  // VTID-0601: Autonomous Safe Merge & Deploy Control
+  | 'cicd.merge.requested'
+  | 'cicd.merge.success'
+  | 'cicd.merge.failed'
+  | 'cicd.deploy.requested'
+  | 'cicd.deploy.started'
+  | 'cicd.approval.created'
+  | 'cicd.approval.approved'
+  | 'cicd.approval.denied'
+  // VTID-01005: Terminal Lifecycle Events (MANDATORY for governance compliance)
+  | 'vtid.lifecycle.completed'
+  | 'vtid.lifecycle.failed'
+  | 'vtid.lifecycle.execution_approved'
+  // VTID-01018: Operator Action Lifecycle Events (MANDATORY for hard contract)
+  | 'operator.action.started'
+  | 'operator.action.completed'
+  | 'operator.action.failed'
+  // VTID-0135: ORB Voice Conversation Events
+  | 'orb.session.started'
+  | 'orb.turn.received'
+  | 'orb.turn.responded'
+  | 'orb.session.ended'
+  // VTID-01039: ORB Conversation Aggregation
+  | 'orb.session.summary'
+  // DEV-COMHU-0502 — ORB Recovery 1: auth-contract identity resolution telemetry
+  | 'orb.session.identity.resolved'
+  // DEV-COMHU-0503 — ORB Recovery 2+3: close/reopen continuity state transitions
+  | 'orb.session.continuity.persisted'
+  | 'orb.session.continuity.cleared'
+  // DEV-COMHU-0504 — ORB Recovery 4: audio-ready handshake ack
+  | 'orb.session.audio_ready.acked'
+  // VTID-04198 — the client could not PLAY audio the gateway successfully
+  // streamed (iOS AudioContext never left 'suspended'). Server-side
+  // diagnostics show a healthy session in this case, so without these the
+  // user's silence has no signal anywhere. `.recovered` = the tap-to-hear
+  // prompt worked; `.abandoned` = the overlay was torn down still blocked.
+  | 'orb.live.audio_blocked'
+  | 'orb.live.audio_blocked.recovered'
+  | 'orb.live.audio_blocked.abandoned'
+  // VTID-01032: Multi-service deploy selection event
+  | 'cicd.deploy.selection'
+  // VTID-01033: CICD Concurrency Lock Events
+  | 'cicd.lock.acquire.requested'
+  | 'cicd.lock.acquire.succeeded'
+  | 'cicd.lock.acquire.blocked'
+  | 'cicd.lock.released'
+  | 'cicd.lock.expired'
+  // VTID-01063: Route Guard Events
+  | 'governance.route.duplicate.detected'
+  // VTID-01103: Health Compute Engine Events
+  | 'health.compute.features_daily'
+  | 'health.compute.vitana_index'
+  | 'health.recommendations.refresh'
+  | 'health.compute.error'
+  | 'health.compute.baseline_survey'
+  // VTID-01105: Memory Write Events
+  | 'memory.write'
+  | 'memory.read'
+  | 'memory.write.user_message'
+  | 'memory.write.assistant_message'
+  // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step
+  | 'memory.orchestrator.context_built'
+  | 'memory.orchestrator.turn'
+  | 'memory.orchestrator.bypass_detected'
+  // BOOTSTRAP-SOCIAL-MEMORY: social memory intelligence layer
+  | 'memory.social.context_built'
+  // VTID-01106: ORB Memory Bridge Events
+  | 'orb.memory.context_fetched'
+  | 'orb.memory.context_injected'
+  // VTID-01115: Memory Relevance Scoring Events
+  | 'orb.memory.scored_context_fetched'
+  | 'memory.scoring.completed'
+  | 'memory.scoring.excluded'
+  | 'memory.scoring.sensitive_flagged'
+  // VTID-01107: ORB Memory Debug Events
+  | 'orb.memory.debug_requested'
+  | 'orb.memory.debug_snapshot'
+  // VTID-01096: Cross-Domain Personalization Events
+  | 'personalization.snapshot.read'
+  | 'personalization.applied'
+  | 'personalization.audit.written'
+  // VTID-01095: Daily Scheduler Events
+  | 'vtid.daily_recompute.started'
+  | 'vtid.stage.longevity.success'
+  | 'vtid.stage.longevity.failed'
+  | 'vtid.stage.topics.success'
+  | 'vtid.stage.topics.failed'
+  | 'vtid.stage.community_recs.success'
+  | 'vtid.stage.community_recs.failed'
+  | 'vtid.stage.matches.success'
+  | 'vtid.stage.matches.failed'
+  | 'vtid.daily_recompute.completed'  // Terminal success
+  | 'vtid.daily_recompute.failed'     // Terminal failure
+  // VTID-01109: ORB Conversation Persistence Events
+  | 'orb.conversation.restored'
+  | 'orb.conversation.saved'
+  | 'orb.conversation.cleared'
+  // VTID-01086: Memory Garden Events
+  | 'memory.garden.progress.read'
+  | 'memory.garden.ui.refreshed'
+  | 'memory.garden.longevity_panel.read'
+  // VTID-01087: Relationship Graph Memory Events
+  | 'relationship.edge.created'
+  | 'relationship.edge.strengthened'
+  | 'relationship.graph.read'
+  | 'relationship.recommendation.generated'
+  | 'relationship.signal.updated'
+  | 'relationship.node.created'
+  // VTID-01090: Live Rooms + Events as Relationship Nodes
+  | 'live.room.created'
+  | 'live.room.started'
+  | 'live.room.joined'
+  | 'live.room.left'
+  | 'live.room.ended'
+  | 'live.highlight.created'
+  | 'meetup.rsvp.updated'
+  // VTID-01097: Diary Template Events
+  | 'diary.template.shown'
+  | 'diary.template.submitted'
+  | 'memory.garden.extract.triggered'
+  // VTID-01099: Memory Governance Events
+  | 'memory.visibility.updated'
+  | 'memory.locked'
+  | 'memory.unlocked'
+  | 'memory.deleted'
+  | 'memory.export.requested'
+  | 'memory.export.ready'
+  // VTID-01117: Context Window Management Events
+  | 'orb.context.window_selected'
+  // VTID-01118: Cross-Turn State & Continuity Engine Events
+  | 'orb.state.snapshot'
+  // VTID-01120: D28 Emotional & Cognitive Signal Events
+  | 'd28.signal.computed'
+  | 'd28.signal.compute.failed'
+  | 'd28.signal.overridden'
+  // VTID-01124: D40 Life Stage, Goals & Trajectory Awareness Events
+  | 'd40.life_stage.assessed'
+  | 'd40.life_stage.assess.failed'
+  | 'd40.life_stage.overridden'
+  | 'd40.goal.detected'
+  // VTID-01122: Safety Guardrail Events
+  | 'safety.guardrail.evaluated'
+  | 'safety.guardrail.allowed'
+  | 'safety.guardrail.restricted'
+  | 'safety.guardrail.redirected'
+  | 'safety.guardrail.blocked'
+  | 'safety.guardrail.rule.triggered'
+  | 'safety.guardrail.autonomy.denied'
+  // VTID-01123: Response Framing & Delivery Control Events
+  | 'response.framing.computed'
+  | 'response.framing.applied'
+  | 'response.framing.override'
+  // VTID-01127: D33 Availability, Time-Window & Readiness Engine Events
+  | 'd33.availability.computed'
+  | 'd33.availability.override'
+  | 'd33.readiness.risk_flagged'
+  | 'd33.action_depth.applied'
+  | 'd33.guardrail.enforced'
+  // VTID-01128: D34 Environmental, Location & Mobility Context Engine Events
+  | 'd34.context.computed'
+  | 'd34.context.cached'
+  | 'd34.context.override'
+  | 'd34.context.fallback'
+  | 'd34.filter.applied'
+  | 'd34.filter.rejected'
+  | 'd34.error'
+  // VTID-01129: D35 Social Context, Relationship Weighting & Proximity Engine Events
+  | 'd35.context.computed'
+  | 'd35.context.compute.failed'
+  | 'd35.proximity.scored'
+  | 'd35.comfort.updated'
+  | 'd35.action.filtered'
+  | 'd35.boundary.respected'
+  | 'd35.api.request'
+  | 'd35.api.error'
+  // VTID-01130: D36 Financial Sensitivity & Monetization Readiness Events
+  | 'd36.monetization.context.computed'
+  | 'd36.monetization.context.failed'
+  | 'd36.monetization.attempt.recorded'
+  // VTID-01122: D37 Health State, Energy & Capacity Awareness Events
+  | 'd37.capacity.computed'
+  | 'd37.capacity.compute.failed'
+  | 'd37.capacity.overridden'
+  | 'd37.actions.filtered'
+  | 'd37.low_energy.detected'
+  | 'd37.recovery.detected'
+  // VTID-01135: D41 Ethical Boundaries, Personal Limits & Consent Sensitivity Engine Events
+  | 'd41.boundary.set'
+  | 'd41.boundary.checked'
+  | 'd41.consent.granted'
+  | 'd41.consent.denied'
+  | 'd41.consent.revoked'
+  | 'd41.consent.expired'
+  | 'd41.consent.updated'
+  | 'd41.action.blocked'
+  | 'd41.action.restricted'
+  | 'd41.action.allowed'
+  | 'd41.vulnerability.detected'
+  | 'd41.vulnerability.cleared'
+  | 'd41.boundary.rpc_error_default'
+  | 'd41.consent.rpc_error_default'
+  // VTID-01136: D42 Cross-Domain Context Fusion Events
+  | 'd42.priorities.resolved'
+  | 'd42.priorities.failed'
+  // VTID-01141: D47 Proactive Social & Community Alignment Engine Events
+  | 'social_alignment.generated'
+  | 'social_alignment.shown'
+  | 'social_alignment.acted'
+  | 'social_alignment.dismissed'
+  | 'social_alignment.expired'
+  | 'social_alignment.batch_completed'
+  | 'social_alignment.error'
+  // VTID-01144: D50 Positive Trajectory Reinforcement & Momentum Engine Events
+  | 'd50.eligibility.checked'
+  | 'd50.reinforcement.generated'
+  | 'd50.reinforcement.delivered'
+  | 'd50.reinforcement.dismissed'
+  | 'd50.momentum.computed'
+  | 'd50.trajectory.detected'
+  // VTID-01146: Execute VTID Runner Events (One-Button End-to-End Pipeline)
+  | 'vtid.execute.requested'
+  | 'vtid.execute.started'
+  | 'vtid.execute.planner.success'
+  | 'vtid.execute.worker.started'
+  | 'vtid.execute.worker.success'
+  | 'vtid.execute.worker.failed'
+  | 'vtid.execute.validator.started'
+  | 'vtid.execute.validator.success'
+  | 'vtid.execute.validator.failed'
+  | 'vtid.execute.deploy.started'
+  | 'vtid.execute.deploy.success'
+  | 'vtid.execute.deploy.failed'
+  | 'vtid.execute.completed'
+  | 'vtid.execute.failed'
+  // VTID-01150: Runner → Claude Execution Bridge Events
+  | 'vtid.workorder.dispatched'       // Work order sent to Claude
+  | 'vtid.workorder.acknowledged'     // Claude acknowledged work order
+  | 'vtid.evidence.pr_opened'         // Evidence: PR was opened
+  | 'vtid.evidence.commits_pushed'    // Evidence: Commits pushed to branch
+  | 'vtid.evidence.worker_reported'   // Evidence: Worker explicitly reported success
+  | 'vtid.stage.worker.started'       // Worker stage started (no fake success)
+  | 'vtid.stage.validator.started'    // Validator stage started (external validation)
+  // VTID-01142: D48 Context-Aware Opportunity Surfacing Engine Events
+  | 'opportunity.surfaced'
+  | 'opportunity.surfaced.failed'
+  | 'opportunity.dismissed'
+  | 'opportunity.engaged'
+  | 'opportunity.surface.error'
+  // VTID-01149: Unified Task-Creation Intake Events
+  | 'autopilot.intent.task_create_detected'
+  | 'autopilot.task.intake.question_asked'
+  | 'autopilot.task.intake.answer_received'
+  | 'autopilot.task.ready_to_schedule'
+  | 'commandhub.task.scheduled'
+  | 'commandhub.task.schedule_failed'
+  // VTID-01153: Memory Indexer Events
+  | 'orb.memory_indexer.write'
+  | 'orb.memory_indexer.search'
+  | 'orb.memory_indexer.context'
+  // VTID-DEBUG-MEM: Memory Indexer Error Events (for alerting)
+  | 'orb.memory_indexer.error'
+  | 'orb.memory_indexer.context_error'
+  // VTID-01182: Memory System E2E - Spec-mandated error events
+  | 'memory.write.failed'
+  | 'memory.read.failed'
+  | 'memory.indexer.disabled'
+  // VTID-01184: Supabase Semantic Memory Events
+  | 'memory.semantic_search.completed'
+  | 'memory.semantic_search.failed'
+  | 'memory.write.completed'
+  | 'memory.embeddings.updated'
+  | 'memory.reembed.triggered'
+  | 'memory.deprecation_warning'
+  // VTID-01952 Phase 0 — Identity Lock + HIPAA audit chokepoint
+  | 'memory.identity.write_attempted'
+  | 'memory.write.persisted'
+  | 'memory.read.requested'
+  | 'memory.read.completed'
+  | 'embedding.fallback_used'
+  | 'embedding.google_fallback_used'
+  | 'embedding.all_providers_failed'
+  | 'embedding.batch_generated'
+  | 'embedding.pipeline.batch_completed'
+  // VTID-01155: Gemini Live Multimodal + TTS Events
+  | 'vtid.live.session.start'
+  | 'vtid.live.session.stop'
+  | 'vtid.live.audio.in.chunk'
+  | 'vtid.live.video.in.frame'
+  | 'vtid.live.audio.out.chunk'
+  | 'vtid.tts.request'
+  | 'vtid.tts.success'
+  | 'vtid.tts.failure'
+  // VTID-01160: Task Discovery Governance Events
+  | 'governance.violation.oasis_only_task_truth'
+  | 'governance.enforcement.oasis_only_task_truth'
+  | 'governance.validation.task_discovery.passed'
+  | 'governance.validation.task_discovery.blocked'
+  // VTID-01158: ORB Router Fix — Enforce OASIS-Only Task Discovery
+  | 'orb.task_state_query'
+  | 'orb.task_state_query.completed'
+  // VTID-01181: Governance Controls - System Arming Panel Events
+  | 'governance.control.updated'
+  // VTID-01188: Unified Spec Generation Pipeline Events
+  | 'vtid.spec.generate.requested'
+  | 'vtid.spec.generate.completed'
+  | 'vtid.spec.validation.completed'
+  | 'vtid.spec.approved'
+  | 'vtid.execution.activation.blocked'
+  // Spec Quality Agent Events
+  | 'vtid.spec.quality_check.started'
+  | 'vtid.spec.quality_check.passed'
+  | 'vtid.spec.quality_check.failed'
+  // VTID-03902: Operator Planner — closes the gap where Operator-chat tasks
+  // (autopilot_create_task) had no automated path from "scheduled" to a
+  // generated spec. One summary event per sweep that actually processed a
+  // task; a quiet sweep (nothing to plan) emits nothing.
+  | 'operator.planner.sweep_completed'
+  | 'vtid.spec.conflict.detected'
+  | 'vtid.spec.governance_gap.detected'
+  | 'vtid.spec.risk.assessed'
+  | 'vtid.spec.approval.legacy_bypass'
+  // VTID-01208: LLM Telemetry & Routing Policy Events
+  | 'llm.call.started'
+  | 'llm.call.completed'
+  | 'llm.call.failed'
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. One event per
+  // decision call, same shape of purpose as llm.call.* (served traffic with
+  // provider, model, latency, tokens and cost), plus plane/role/tenant so
+  // spend can be split internal vs community (docs/JEV-INTEGRATION-PLAN.md §8.5).
+  | 'jev.decision.completed'
+  | 'jev.decision.failed'
+  | 'jev.decision.fallback'
+  // VTID-03565: an operator preflighting a provider before flipping routing at
+  // it. Deliberately its OWN topic rather than an llm.call.* event: a preflight
+  // is not served traffic, and booking it as llm.call.completed would corrupt
+  // the who-actually-served-this telemetry that VTID-03563 exists to protect.
+  // It is a governance DECISION (§6) — the evidence the "verify Bedrock FIRST,
+  // then flip" ordering rule demands, and the record of who checked what.
+  | 'llm.provider.verified'
+  // VTID-04886: Command Hub Overview Phase 3 — an exafy_admin acked or
+  // snoozed an /ops/attention item (reason + expiry <= 24 h; P1 is never
+  // snoozable). A human decision on the triage surface, not a poll (§6).
+  | 'ops.attention.acked'
+  | 'ops.attention.snoozed'
+  | 'governance.llm_policy.updated'
+  | 'governance.llm_policy.activated'
+  | 'governance.llm_policy.reset'
+  // VTID-01216: Unified Conversation Intelligence Layer Events
+  | 'conversation.turn.received'
+  | 'conversation.turn.completed'
+  // VTID-04353 (WS-0.4): one per finalized ORB live session.
+  | 'conversation.session.finalized'
+  // VTID-04525 (Conversation hub B1): the conversation system changed with a
+  // build — tools, opening providers or flags differ from the last snapshot.
+  | 'conversation.system.snapshot'
+  // VTID-04355 (WS-0.5): every offered action ends in exactly one outcome.
+  | 'conversation.offer.accepted'
+  | 'conversation.offer.declined'
+  | 'conversation.offer.ignored'
+  | 'conversation.retrieval.router_decision'
+  | 'conversation.retrieval.memory.completed'
+  | 'conversation.retrieval.knowledge.completed'
+  | 'conversation.retrieval.web.completed'
+  | 'conversation.context_pack.built'
+  | 'conversation.model.called'
+  | 'conversation.tool.called'
+  | 'conversation.tool.health_check'
+  // VTID-01224: ORB Live API Context Bootstrap & Tool Execution Events
+  | 'orb.live.context.bootstrap'
+  | 'orb.live.context.bootstrap.skipped'
+  | 'orb.live.tool.executed'
+  // VTID-01219: ORB Voice Protection — config/connection failure alerts
+  | 'orb.live.startup.config_missing'
+  | 'orb.live.config_missing'
+  | 'orb.live.connection_failed'
+  // VTID-WATCHDOG: ORB stall detection events
+  | 'orb.live.stall_detected'
+  // VTID-02986: LiveKit (orb-agent) stall detection, namespaced under
+  // vtid.live.* so Voice Lab's /api/v1/voice-lab/live/sessions query
+  // surfaces it next to Vertex's stall events.
+  | 'vtid.live.stall_detected'
+  // VTID-TOOLGUARD: Tool loop guard activation
+  | 'orb.live.tool_loop_guard_activated'
+  // BOOTSTRAP-ORB-HOTFIX-1: pre-greeting latency gauge (time from session-start
+  // request to first greeting audio chunk forwarded to client)
+  | 'orb.live.greeting.delivered'
+  // Phase D (DEV-COMHU voice budget watch): voice instruction budget observability
+  | 'voice.instruction.budget_trimmed'
+  | 'voice.instruction.budget_at_risk'
+  | 'voice.instruction.budget_overflow'
+  // BOOTSTRAP-ADMIN-BB-CC: admin insight lifecycle
+  | 'admin.insight.approved'
+  | 'admin.insight.rejected'
+  | 'admin.insight.snoozed'
+  | 'admin.insight.dismissed'
+  // BOOTSTRAP-ADMIN-EE: proactive briefings + urgent notifications
+  | 'admin.briefing.injected'
+  // VTID-04560/04563: which Vitana serves a session; developer deep dives
+  | 'orb.session.profile.resolved'
+  | 'orb.deep_dive.completed'
+  | 'orb.deep_dive.failed'
+  | 'admin.insight.urgent_notified'
+  // BOOTSTRAP-ADMIN-GG: tenant health index
+  | 'tenant.health.computed'
+  | 'tenant.health.regression_detected'
+  | 'tenant.weekly.review.ready'
+  // BOOTSTRAP-ADMIN-DD: admin voice tool side-effects
+  | 'admin.autopilot.pause_requested'
+  // L1 (VTID-02976): upstream provider selection — pure-selector decisions.
+  // `selected` fires once per `connectToLiveAPI` call; `selection_error` fires
+  // ONLY when a LiveKit request was downgraded (config invalid or pinned_to_vertex_l1).
+  | 'orb.upstream.provider.selected'
+  | 'orb.upstream.provider.selection_error'
+  // L2.1 (VTID-02980): LiveKit internal-canary observability.
+  // `canary.selection_unlocked` fires when the selector returns
+  // `provider='livekit'` via the canary path (all hard gates pass: env/sys
+  // request + creds + canary.enabled + identity allowlisted). In L2.1 the
+  // consumer still pins to Vertex and emits `canary.consumer_pinned_vertex_l21`
+  // to make that pin explicit; L2.2 removes the consumer-side pin + adds
+  // connect_started/succeeded/failed events for the real media path.
+  | 'orb.upstream.canary.selection_unlocked'
+  | 'orb.upstream.canary.consumer_pinned_vertex_l21'
+  // L2.2a (VTID-02982): per-identity active-provider gate.
+  // Fires from `GET /api/v1/orb/active-provider` when a caller would have
+  // routed to LiveKit (creds valid, canary enabled, identity allowlisted)
+  // BUT the backend LiveKit Agent flag is off. The L2.2a safety pin keeps
+  // the caller on Vertex — this event tells operators "you have a canary
+  // user waiting; flip `voice.livekit_agent_enabled` once L2.2b lands."
+  | 'orb.upstream.active_provider.pinned_until_agent_ready'
+  // L2.2b.1 (VTID-02987): backend orb-agent lifecycle observability.
+  // Emitted by the Python `services/agents/orb-agent` worker via
+  // POST /api/v1/oasis/emit. These 5 events form the room-join proof loop
+  // for the canary path. Audio / LLM / tool events are deferred to
+  // subsequent L2.2b.x phases.
+  | 'orb.livekit.agent.starting'
+  | 'orb.livekit.agent.room_join_started'
+  | 'orb.livekit.agent.room_join_succeeded'
+  | 'orb.livekit.agent.room_join_failed'
+  | 'orb.livekit.agent.disconnected'
+  // VTID-04776: the gateway minted a LiveKit session token (tenant, surface,
+  // role, lang — previously only inside the token metadata).
+  | 'orb.livekit.session.minted'
+  // L2.2b.2 (VTID-02990): Gemini-via-Vertex text/model loop — proves the
+  // agent can reach a model from canary room context using Cloud Run's
+  // default service account (ADC, no API key). Emitted by the orb-agent's
+  // text-only self-test path (`ORB_AGENT_TEXT_ONLY=true`). No STT/TTS yet
+  // — that's L2.2b.3. Failure reason (e.g. `genai_sdk_not_installed`,
+  // `vertex_client_init_error`, `vertex_api_error`, `timeout`) is carried
+  // in the payload.
+  | 'orb.livekit.agent.model_request_started'
+  | 'orb.livekit.agent.model_request_succeeded'
+  | 'orb.livekit.agent.model_request_failed'
+  // VTID-03046: per-turn LiveKit-agent latency telemetry. Fires once per
+  // user-then-assistant exchange, with `stt_done_to_speech_created_ms`
+  // (wall-clock wait after the user stops talking) and
+  // `system_instruction_chars` so we can correlate latency with prompt
+  // size. Pure additive — no behavior change to the voice path.
+  | 'orb.livekit.agent.turn.measured'
+  // VTID-03050: STT failure observability. Emitted from session.py when
+  // the SDK's `error` / `metrics_collected` / FallbackAdapter's
+  // `stt_availability_changed` events fire — closes the diagnostic gap
+  // around the cascade STT chain (Google primary + Google mirror +
+  // Deepgram). Pure additive telemetry; no behavior change.
+  | 'livekit.stt.error'
+  | 'livekit.stt.availability_changed'
+  | 'livekit.stt.metrics'
+  // VTID-03075: silent-stall detection. Fires when VAD reports
+  // user_state_changed → "speaking" but no user_input_transcribed
+  // arrives within 3 seconds. Pairs with a `client.alert.show` data
+  // message published to the LiveKit room so the Test Bench shows
+  // "Hold on, reconnecting…" + plays a chime.
+  | 'livekit.stt.silent_stall'
+  // VTID-03078: STT recovery telemetry. Fires when the silent-stall
+  // watchdog attempts an in-place STT swap (build fresh cascade →
+  // session.update_agent with new Agent carrying stt=fresh and the rest
+  // preserved). Outcomes: attempted / succeeded / gave_up. Bounded to
+  // 3 swaps per session; kill switch ORB_STT_RECOVERY_ENABLED=false.
+  | 'livekit.stt.recovery'
+  // VTID-DIAG: Pipeline diagnostics
+  | 'orb.live.diag'
+  // Conversation-flow §11: session-end memory commit (LiveKit parity).
+  | 'orb.live.memory.committed'
+  // VTID-FALLBACK: Chat-TTS fallback events
+  | 'orb.live.fallback_used'
+  | 'orb.live.fallback_error'
+  // VTID-VOICE-HEALING: Autonomous ORB voice self-healing loop events
+  | 'voice.healing.dispatched'
+  | 'voice.healing.dispatch.suppressed'
+  | 'voice.healing.spec_memory.blocked'
+  | 'voice.healing.verdict'
+  | 'voice.healing.rollback.triggered'
+  | 'voice.healing.rollback.failed'
+  | 'voice.healing.investigation.completed'
+  // VTID-04626: operator decisions on the Voice Self-Healing screen
+  | 'voice.healing.mode.changed'
+  | 'voice.healing.report.accepted'
+  | 'voice.healing.report.dismissed'
+  | 'voice.healing.report.decided'
+  | 'voice.healing.quarantine.released'
+  // VTID-NAV-01: Vitana Navigator — voice-driven navigation guide events
+  | 'orb.navigator.consulted'
+  | 'orb.navigator.requested'
+  | 'orb.navigator.blocked'
+  | 'orb.navigator.dispatched'
+  // VTID-04517: the registry resolver's decision for one request (kind, top
+  // candidates, scores) — the telemetry the navigation rebuild is judged on.
+  | 'orb.navigator.resolved'
+  // VTID-04520: the app confirmed what a navigation did (opened/refused/not_found).
+  | 'orb.navigator.acknowledged'
+  // VTID-02781: emitted whenever the Navigator returns `decision: 'ambiguous'`
+  // and the ORB asks the user an either/or clarification. Pairs with a
+  // subsequent orb.navigator.dispatched (or .blocked) on the user's reply —
+  // lets us measure clarification → resolution rate.
+  | 'orb.navigator.disambiguated'
+  // VTID-01975 (PR 1.B-6): view_intent_matches auto-redirected to a
+  // match-detail screen because the top match's score dominated the
+  // runner-up. Lets ops measure how often the disambiguation gap is
+  // wide enough for confident auto-nav vs list-only.
+  | 'orb.intent_matches.auto_nav'
+  // VTID-01270A (PR 1.B-7): search_community auto-redirected to
+  // COMM.GROUP_DETAIL because result was unambiguous (single hit or
+  // exact name match). Lets ops measure auto-nav vs list-only ratio.
+  | 'orb.search_community.auto_nav'
+  // VTID-01270A (PR 1.B-8): search_events auto-redirected to the
+  // OVERLAY.EVENT_DRAWER overlay because the top event dominated the
+  // runner-up by >= 0.15 and there were no live_rooms in the result.
+  | 'orb.search_events.auto_nav'
+  // VTID-01221: Autopilot Recommendation Sync Events
+  | 'autopilot.recommendations.requested'
+  | 'autopilot.recommendations.received'
+  | 'autopilot.recommendations.failed'
+  | 'dev.recommendation.presented'
+  | 'dev.recommendation.selected'
+  | 'dev.fallback.tool_used'
+  // VTID-02934: Autopilot recommendation activation
+  | 'autopilot.recommendation.activated'
+  | 'autopilot.recommendation.activation_bridge_failed' // VTID-04657
+  | 'autopilot.recommendation.quality_reviewed' // VTID-04669
+  | 'autopilot.recommendations.weekly_summary' // VTID-04670
+  // VTID-02935: Mission Alignment warnings — fired when a recommendation
+  // graduates to a VTID without declaring how it serves the Ultimate Goal.
+  // See docs/GOVERNANCE/ULTIMATE-GOAL.md. NOT a hard block — visibility only.
+  // Future: graduation to a block once ≥80% of activations in a 14-day
+  // window carry alignment fields without operator intervention.
+  | 'autopilot.alignment.unclear'
+  | 'autopilot.alignment.served'
+  // VTID-01270: Proactive Match Messenger Events
+  | 'match.proactive.sent'
+  | 'match.proactive.skipped'
+  | 'match.proactive.error'
+  | 'match.proactive.batch.completed'
+  // Self-Healing System Events
+  | 'self-healing.report.received'
+  | 'self-healing.preflight.recovered'
+  | 'self-healing.diagnosis.started'
+  | 'self-healing.diagnosis.completed'
+  | 'self-healing.spec.generated'
+  | 'self-healing.task.injected'
+  | 'self-healing.task.skipped'
+  // PR-A (VTID-02922): bridge into Dev Autopilot execution pipeline + the
+  // four-state contract events from worker-runner / reconciler.
+  | 'self-healing.injection.deduped'
+  | 'self-healing.execution.bridged'
+  | 'self-healing.execution.bridge_failed'
+  | 'self-healing.execution.deferred'
+  | 'self-healing.execution.failed'
+  // PR-J (VTID-02952): close the third terminal-write bypass.
+  // Emitted by autopilot-controller.updateLedgerTerminal when it
+  // refuses to mark a self-healing VTID success because the linked
+  // dev_autopilot_executions row has not reached status='completed'.
+  // (vtid-terminalize.ts emits the same topic via a local fetch helper,
+  // so it didn't need the type-system entry.)
+  | 'self-healing.terminalize.blocked'
+  // PR-L1 (VTID-02954): Test Contract Registry run events. Emitted by
+  // /api/v1/test-contracts/:id/run for every contract execution so the
+  // cockpit can show pass/fail history and Phase 3's failure scanner
+  // can detect regressions from the event stream.
+  | 'test-contract.run.passed'
+  | 'test-contract.run.failed'
+  | 'test-contract.run.dispatched'
+  // PR-L2 (VTID-02957): Missing-Test Scanner. Emitted when the scanner
+  // allocates a VTID for a capability that has no test_contracts row.
+  | 'missing-test.scanner.allocated'
+  // PR-L3 (VTID-02958): Failure Scanner — scheduled-tick lifecycle +
+  // repair allocation + quarantine signals.
+  | 'test-contract.scheduled_run.completed'
+  | 'test-contract.repair.allocated'
+  | 'test-contract.quarantined'
+  // PR-L5 (VTID-02970): Repair pattern memory.
+  | 'repair-pattern.recorded'
+  | 'repair-pattern.quarantine.toggled'
+  | 'self-healing.completed'
+  | 'self-healing.snapshot.pre_fix'
+  | 'self-healing.snapshot.post_fix'
+  | 'self-healing.verification.success'
+  | 'self-healing.blast_radius.detected'
+  | 'self-healing.verification.escalate'
+  | 'self-healing.rollback.started'
+  | 'self-healing.rollback.requested'
+  | 'self-healing.rollback.completed'
+  | 'self-healing.kill_switch.activated'
+  | 'self-healing.kill_switch.deactivated'
+  | 'self-healing.reconciled'
+  | 'self-healing.dispatch.failed'
+  | 'self-healing.dispatch.retried'
+  | 'self-healing.approved'
+  | 'self-healing.rejected'
+  // Control-plane audit events (self-healing hardening, audit P0-1 item 6):
+  // operator-attributable governance/mutation actions.
+  | 'self-healing.autonomy.changed'
+  | 'self-healing.verify.requested'
+  | 'self-healing.rollback.requested_by_operator'
+  | 'autopilot.task.spec.created'
+  // VTID-DEV-ASSIST: Developer Assistant Events
+  | 'dev_assist.spec.generated'
+  | 'dev_assist.spec.approved'
+  | 'dev_assist.approval.approved'
+  | 'dev_assist.approval.rejected'
+  | 'dev_assist.pr.created'
+  | 'dev_assist.pr.merged'
+  | 'dev_assist.deploy.triggered'
+  // Dev Autopilot — self-improving loop (plan: .claude/plans/quirky-jumping-fairy.md)
+  | 'dev_autopilot.scan.started'
+  | 'dev_autopilot.scan.completed'
+  | 'dev_autopilot.scan.failed'
+  | 'dev_autopilot.plan.generated'
+  | 'dev_autopilot.plan.failed'
+  | 'dev_autopilot.plan.fallback_used'
+  | 'dev_autopilot.plan.needs_human'
+  | 'dev_autopilot.plan.version_added'
+  | 'dev_autopilot.finding.rejected'
+  | 'dev_autopilot.finding.snoozed'
+  // VTID-04368: LLM provider outage gate on the autopilot loop
+  | 'dev_autopilot.provider_outage.detected'
+  | 'dev_autopilot.provider_outage.cleared'
+  // VTID-04667: per-scanner / per-rule circuit breaker on autonomous work
+  | 'dev_autopilot.scanner_breaker.opened'
+  | 'dev_autopilot.scanner_breaker.closed'
+  | 'dev_autopilot.finding.completed'
+  | 'dev_autopilot.execution.approved'
+  | 'dev_autopilot.execution.auto_approved'
+  | 'dev_autopilot.execution.bridged'
+  | 'dev_autopilot.execution.reaped'
+  | 'dev_autopilot.execution.cancelled'
+  // VTID-04467: executor task could not be started — requeued or failed.
+  | 'dev_autopilot.execution.dispatch_deferred'
+  | 'dev_autopilot.execution.dispatch_failed'
+  | 'dev_autopilot.execution.running'
+  | 'dev_autopilot.execution.pr_opened'
+  | 'dev_autopilot.execution.ci_running'
+  | 'dev_autopilot.execution.ci_passed'
+  | 'dev_autopilot.execution.branch_updated'
+  | 'dev_autopilot.execution.ci_failed'
+  | 'dev_autopilot.execution.pr_merged'
+  | 'dev_autopilot.execution.auto_merge_declined'
+  | 'dev_autopilot.execution.llm_review_passed'
+  | 'dev_autopilot.execution.llm_review_blocked'
+  // VTID-05146 (Phase C): overlap hold, its release and timeout; review fail-closed.
+  | 'dev_autopilot.execution.held_overlap'
+  | 'dev_autopilot.execution.overlap_released'
+  | 'dev_autopilot.execution.overlap_hold_timeout'
+  | 'dev_autopilot.execution.llm_review_unavailable'
+  | 'dev_autopilot.execution.deployed'
+  | 'dev_autopilot.execution.deploy_failed'
+  | 'dev_autopilot.execution.verification_failed'
+  | 'dev_autopilot.execution.reverted'
+  | 'dev_autopilot.execution.self_heal_injected'
+  | 'dev_autopilot.execution.self_healed'
+  | 'dev_autopilot.execution.escalated'
+  | 'dev_autopilot.execution.completed'
+  | 'dev_autopilot.execution.failed'
+  | 'dev_autopilot.execution.auto_archived'
+  | 'dev_autopilot.execution.pr_closed_reconciled' // VTID-04280
+  | 'dev_autopilot.batch.first_failure'
+  | 'dev_autopilot.kill_switch.activated'
+  | 'dev_autopilot.kill_switch.deactivated'
+  | 'dev_autopilot.config.updated'
+  // VITANA-BRAIN: Unified Brain Events
+  | 'brain.turn.received'
+  | 'brain.turn.processed'
+  | 'brain.turn.error'
+  | 'brain.context.assembled'
+  | 'brain.tool.executed'
+  // PROACTIVE-GUIDE: Phase 0.5 opener + dismissal honor events
+  | 'guide.opener.shown'
+  | 'guide.opener.suppressed_by_pause'
+  | 'guide.opener.no_candidate'
+  | 'guide.dismissal.pause_created'
+  | 'guide.dismissal.pause_cleared'
+  | 'guide.flag.disabled'
+  // COMPANION Phase G — feature-introduction tracking (VTID-01932)
+  | 'guide.feature_introduction.recorded'
+  // COMPANION Phase F — conversation continuity (VTID-01933)
+  | 'guide.session_summary.recorded'
+  // COMPANION Phase E — D43 adaptation applier (VTID-01935)
+  | 'guide.adaptation.applied'
+  // COMPANION Phase C — pattern extractor (VTID-01936)
+  | 'guide.patterns.extracted'
+  // COMPANION Phase H — proactive presence pacer (VTID-01945)
+  | 'guide.presence.touch_recorded'
+  | 'guide.presence.touch_acknowledged'
+  | 'guide.presence.touch_dismissed'
+  // BOOTSTRAP-DYK-TOUR — Did-You-Know 30-usage-day tour
+  | 'guide.did_you_know.offered'
+  | 'guide.did_you_know.accepted'
+  | 'guide.did_you_know.declined'
+  | 'guide.did_you_know.flag_disabled'
+  // V2 — Proactive Initiative Engine
+  | 'guide.initiative.offered'
+  | 'guide.initiative.consented'
+  | 'guide.initiative.executed'
+  | 'guide.initiative.declined'
+  | 'guide.initiative.flag_disabled'
+  // Journey Conversation V2 — single proactive arbiter
+  | 'guide.focus.selected'
+  | 'guide.focus.suppressed'
+  | 'guide.focus.none'
+  // VTID-01900: Longevity News Feed Events
+  | 'news.feed.error'
+  | 'news.feed.cycle_complete'
+  // VTID-02000: Marketplace ingestion events
+  | 'marketplace.ingest.run.started'
+  | 'marketplace.ingest.run.finished'
+  | 'marketplace.ingest.run.failed'
+  // VTID-02000: Marketplace commerce events (reward-system contract — DO NOT RENAME)
+  | 'marketplace.click.outbound'
+  | 'marketplace.order.conversion'
+  | 'marketplace.outcome.reported'
+  | 'marketplace.share.initiated'
+  | 'marketplace.recommendation.accepted'
+  | 'marketplace.preferences.updated'
+  // VTID-02000: Marketplace geo mismatch + limitation safety events
+  | 'marketplace.offer.geo_mismatch'
+  | 'marketplace.limitation.violation'
+  | 'marketplace.limitation.bypass'
+  // VTID-02100: Phase 1 connector / wearable events
+  | 'connector.wearable.auth.completed'
+  | 'connector.wearable.auth.revoked'
+  | 'connector.wearable.sleep.recorded'
+  | 'connector.wearable.activity.recorded'
+  | 'connector.wearable.workout.recorded'
+  | 'connector.wearable.other'
+  | 'wearable.metrics.read'
+  // VTID-05054 (Health Hub D7/D5)
+  | 'health.lab_report.parse_unavailable'
+  | 'connector.webhook_log.purged'
+  // VTID-05030 (Health Hub D1): wearable token storage + vendor revoke
+  | 'connector.wearable.token_storage_unavailable'
+  | 'connector.wearable.vendor_revoke'
+  // VTID-05089 (Health Hub D6a): wearable -> health_features_daily bridge.
+  // Payloads carry keys, dates, providers and counts only, never health values.
+  | 'health.wearable_features.bridged'
+  | 'health.wearable_features.bridge_failed'
+  // VTID-05161 (Health Hub B1): health_sources dual-write and reconciler.
+  // Payloads carry sites, codes and counts only, never member ids or health values.
+  | 'health.sources.dual_write_failed'
+  | 'health.sources.reconcile'
+  // VTID-05174 (Health Hub D5 remainder): account-deletion health residue.
+  // Payloads carry connector ids, statuses and counts only — never tokens,
+  // raw_payload or the member id.
+  | 'health.erasure.vendor_revoke'
+  | 'health.erasure.member_residue'
+  // VTID-02300: Phase 3 outbound action consent events
+  | 'connector.action.requested'
+  | 'connector.action.executed'
+  | 'connector.action.failed'
+  | 'connector.action.denied'
+  | 'connector.action.expired'
+  // VTID-02403: Phase 1 AI Subscription Connect events
+  | 'integration.ai.connected'
+  | 'integration.ai.verify_failed'
+  | 'integration.ai.disconnected'
+  | 'integration.ai.policy.updated'
+  // OAuth WebView fix Phase 5: background OAuth token refresher
+  | 'oauth.token.refresh.succeeded'
+  | 'oauth.token.refresh.failed'
+  | 'oauth.token.refresh.tombstoned'
+  // VTID-01967: Vitana ID voice messaging
+  | 'voice.message.sent'
+  | 'voice.message.rate_limited'
+  | 'voice.message.misroute'
+  | 'voice.message.share_link_sent'
+  | 'voice.chat_message.send_failed'
+  | 'voice.chat_message.send_succeeded'
+  | 'voice.chat_message.missing_session_fallback'
+  | 'vitana_id.confirmed'
+  // VTID-02047: Unified Feedback Pipeline events
+  // VTID-04674: an admin switched a notification type (or one automation's
+  // sends of it) on or off.
+  | 'notification.control.changed'
+  | 'feedback.ticket.created'
+  | 'feedback.ticket.status_changed'
+  | 'feedback.ticket.triaged'
+  | 'feedback.ticket.resolved'
+  | 'feedback.ticket.user_confirmed'
+  // VTID-04333: dispatch + fix outcome, filed under the ticket's own VTID
+  | 'feedback.ticket.dispatched'
+  | 'feedback.ticket.auto_dispatch_blocked'
+  | 'feedback.ticket.fix_failed'
+  | 'feedback.handoff.started'
+  | 'feedback.handoff.completed'
+  // VTID-02632: Phase 8 — Nightly consolidator events
+  | 'memory.consolidator.run.completed'
+  | 'memory.consolidator.loop.failed'
+  | 'memory.index_delta.observed'
+  // VTID-02754: find_community_member voice tool — search-to-profile redirect
+  | 'community.find_member.matched'
+  // BOOTSTRAP-ARCH-INV: Architecture investigator hypothesis events
+  | 'architecture.investigation.started'
+  | 'architecture.investigation.completed'
+  | 'architecture.investigation.failed'
+  // Phase 0 staging build (handoff brief P0.4 + P0.7 + P0.8):
+  // STAGE-DEPLOY workflow, publish/revert API, isolation smokes.
+  // VTID-04643: an exafy admin started a test workflow from the Command Hub Run Tests tab.
+  | 'testing.run.launched'
+  | 'staging.deploy.completed'
+  | 'staging.deploy.failed'
+  | 'staging.metrics.snapshot'
+  | 'staging.revert.completed'
+  // VTID-03177 follow-up: RUN-STAGING-MIGRATION.yml emits these per run.
+  // Allowlist for /api/v1/oasis/emit extended for the `staging.migration.`
+  // prefix in the same PR.
+  | 'staging.migration.completed'
+  | 'staging.migration.failed'
+  // VTID-03204 (Phase 1 W2 acceptance helper): one-off endpoint that flips
+  // tenant_settings.feature_flags.data_export_ok on staging tenants so the
+  // dataset-extraction PII gate can produce real rows. Staging-only by hard
+  // guard.
+  | 'staging.tenant_consent.flipped'
+  // VTID-03241 (Phase 1 W3-E1 PR 4): role-aware context pack — shadow
+  // mode emits this per assistant turn describing what WOULD be allowed/
+  // blocked under the role registry policy. Fire-and-forget; gated by
+  // FEATURE_ROLE_AWARE_CONTEXT_SHADOW_ENV (off in prod by default).
+  | 'assistant.role.context_pack.shadow'
+  | 'production.publish.requested'
+  | 'production.publish.completed'
+  | 'production.publish.failed'
+  | 'production.publish.blocked'
+  | 'production.publish.verification_overridden'
+  | 'production.revert.completed'
+  // Voice-first canary publish (added post-Phase 0). Sequence on a canary run:
+  //   .requested   — operator clicked "Publish canary"; EXEC-DEPLOY dispatched
+  //                  with canary=true.  No traffic shift yet.
+  //   .started     — EXEC-DEPLOY finished; canary revision is at 10%, prior
+  //                  revision at 90%.  Operator is now watching metrics.
+  //   .promoted    — operator clicked "Promote to 100%"; canary revision is
+  //                  now serving 100% traffic.
+  //   .aborted     — operator clicked "Discard canary"; traffic shifted back
+  //                  to the prior revision at 100%, canary revision idle.
+  | 'production.canary.requested'
+  | 'production.canary.started'
+  | 'production.canary.promoted'
+  | 'production.canary.aborted'
+  // Phase 1 W1 (VTID-03177 PROFILE): latency + eval + dataset + fine-tune telemetry.
+  // All emitted with env=staging|production via env-tagging in emitOasisEvent().
+  // Inert in prod until FEATURE_LATENCY_TELEMETRY_ENV is flipped on.
+  | 'voice.latency.measured'        // per-turn phased latency: audio_in_first_byte..audio_out_first_chunk
+  // VTID-04542 (ORB latency P0): persona hand-off timing (request → drain →
+  // reconnect → first audio of the new persona) and the client-side beacon
+  // (ms since tap, posted by the widget to /orb/live/client-latency).
+  | 'voice.latency.handoff'
+  | 'voice.latency.client'
+  | 'screen.latency.measured'       // per-route TTFB / Server-Timing breakdown from gateway
+  // VTID-05062: one in-app navigation from the vitana-v1 RUM nav beacon
+  // (SCREEN_READY ms, nav first|return, first-viewport images re-fetched).
+  | 'screen.nav.measured'
+  // VTID-05062: once-per-UTC-day production screen-load report (budgets +
+  // build check), written by POST /api/v1/frontend/screen-load/daily-report/run.
+  | 'screen.load.daily_report'
+  // VTID-SCREEN-LOAD-01: scheduled Playwright job's per-screen load-time
+  // result — independent of FEATURE_LATENCY_TELEMETRY_ENV, always live so
+  // Command Hub Overview has a signal even while RUM stays staging-only.
+  | 'screen.load.synthetic_test'    // synthetic mobile screen-load-time basic test result
+  | 'eval.shadow.compared'          // shadow harness compared primary vs candidate model on one eval input
+  | 'eval.coverage.report'          // periodic golden-corpus coverage report (replay-runner output)
+  | 'dataset.extraction.completed'  // dataset-extraction cron finished one slice; metadata.rows / .target
+  | 'finetune.training.completed'   // Vertex Custom Training job ended; metadata.job_id / .status / .target
+  | 'auto_promote.proposed'         // auto-promoter chose to bump a staging tier; metadata.from / .to
+  | 'auto_promote.rejected'         // auto-promoter declined to bump; metadata.reason
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE: peer-to-peer classifieds lifecycle events
+  | 'community_marketplace.listing.created'
+  | 'community_marketplace.listing.updated'
+  | 'community_marketplace.listing.status_changed'
+  | 'community_marketplace.listing.auto_escalated'
+  // BOOTSTRAP-COMMUNITY-MARKETPLACE (Chunk 7): admin review-queue decisions
+  | 'community_marketplace.admin.listing_reviewed'
+  | 'community_marketplace.admin.report_resolved'
+  | 'community_marketplace.admin.seller_suspended'
+  | 'community_marketplace.admin.seller_unsuspended'
+  | 'community_marketplace.admin.category_updated'
+  // VTID-03885: Partner Health Test Integration
+  | 'health_test.order_created'
+  | 'health_test.status_changed'
+  | 'health_test.result_ready'
+  | 'health_test.result_quarantined'
+  // VTID-05055: member-confirmed partner links, audited staff reads, partner_key from the order
+  | 'health_test.staff_read'
+  | 'health_test.link_proposed'
+  | 'health_test.link_declined'
+  | 'health_test.partner_key_mismatch'
+  // VTID-03932: Commerce Partner Onboarding — self-service partner org registration
+  | 'partner_org.registered'
+  | 'partner_org.member_invited'
+  | 'partner_org.member_joined'
+  | 'partner_org.activated'
+  | 'partner_org.registry_linked'
+  // VTID-05023: auth -> Aurora bridge (a member provisioned / cleaned up on Aurora)
+  | 'auth_bridge.user.provisioned'
+  | 'auth_bridge.user.deleted'
+  // VTID-04478: Commerce partner onboarding engine
+  | 'partner_org.onboarding_started'
+  | 'partner_org.company_updated'
+  // VTID-04890: a typeless draft gets its business type, once
+  | 'partner_org.partner_type_set'
+  | 'partner_org.terms_accepted'
+  // VTID-04895: partner terms lifecycle
+  | 'partner_terms.draft_saved'
+  | 'partner_terms.version_published'
+  | 'partner_terms.reacceptance_required'
+  | 'partner_org.lifecycle_changed'
+  // VTID-04481: website platform detection during onboarding
+  | 'partner_org.platform_detected'
+  // VTID-04486: automated verification checks (spec §7)
+  | 'partner_org.verification_checked'
+  // VTID-04488: onboarding catalogue step status
+  | 'partner_org.catalogue_step_changed'
+  // VTID-04731: a partner organization imported its catalogue from CSV.
+  | 'partner_org.catalogue_imported'
+  // VTID-04499: onboarding connections and mapping step
+  | 'partner_org.connection_started'
+  | 'partner_org.mapping_step_changed'
+  // VTID-04933: exafy_admin supplier review (approve = verification level 1, request changes, reject, per-offering listing)
+  | 'partner_org.review.approved'
+  | 'partner_org.review.changes_requested'
+  | 'partner_org.review.rejected'
+  | 'partner_org.review.product_kept_offline'
+  | 'partner_org.review.product_listing_allowed'
+  // VTID-04838: a supplier's confirmed AI-setup draft created a business and/or draft products.
+  | 'commerce.ai_setup.applied'
+  | 'commerce.mcp.tool_called'
+  | 'commerce.mcp.delegated_token_blocked'
+  | 'commerce.mcp.client_refused'
+  | 'commerce.mcp.loopback_client_approved'
+  // VTID-05135: TEMPORARY - an unauthenticated probe of /mcp/chatgpt or its discovery documents (remove with auditProbe)
+  | 'commerce.mcp.probe'
+  // VTID-05133: Maxina Community MCP ("Connect your AI")
+  | 'community.mcp.tool_called'
+  | 'community.mcp.client_refused'
+  | 'community.mcp.loopback_client_approved'
+  | 'partner_org.sandbox_submitted'
+  // VTID-04859: a Founding Member saw (and closed) their free-year celebration.
+  | 'billing.founding.celebrated'
+  // VTID-04878: VTNA reward sweep runs
+  | 'rewards.milestone_sweep.completed'
+  | 'rewards.milestone_sweep.failed'
+  // VTID-04982: Rewards shop
+  | 'rewards.shop.redeemed'
+  | 'rewards.shop.shipping_paid'
+  | 'rewards.shop.refunded'
+  | 'rewards.shop.reservation_expired'
+  | 'rewards.shop.order_status_changed'
+  // VTID-04975: Kiro engine in the Command Hub Operator (user id and request/thread id only).
+  | 'operator.kiro.permission_answered'
+  | 'operator.kiro.session_cancelled'
+  | 'operator.kiro.session_closed'
+  // VTID-04984: a Kiro thread's model switched through Kiro (user, thread and model id only).
+  | 'operator.kiro.model_selected'
+  // VTID-04999: a user linked or revoked their own Kiro API key (user id only, never the key).
+  | 'operator.kiro.key_linked'
+  | 'operator.kiro.key_revoked'
+  // VTID-05003: a user's Kiro Power seat ran out of credits (user and thread id only).
+  | 'operator.kiro.credits_exhausted'
+  // VTID-05005: Kiro called one of the Operator's read tools (tool, thread, latency, outcome; never args/results)
+  | 'operator.kiro.tool_called'
+  // VTID-05006: Kiro writes — the call (after its gates), the user's answer, a branch push (no content)
+  | 'operator.kiro.write_tool_called'
+  | 'operator.kiro.write_confirmed'
+  | 'operator.kiro.write_denied'
+  | 'operator.kiro.branch_pushed'
+  // VTID-05064: a thread's parked Kiro workspace (unpushed edits) came back, or was lost (thread id only)
+  | 'operator.kiro.workspace_restored'
+  | 'operator.kiro.parked_workspace_lost'
+  // VTID-05065: a Kiro run (one server-side turn) started, finished, or was interrupted (run id, thread id, status only; never message text)
+  | 'operator.kiro.run_started'
+  | 'operator.kiro.run_finished'
+  | 'operator.kiro.run_interrupted'
+  // VTID-05068: a running Kiro run was taken over by a new gateway task after a deploy (run id, thread id, status only)
+  | 'operator.kiro.run_reattached'
+  // VTID-05067: an image pasted into the Operator Console was stored (media id, thread id, type, size; never the bytes)
+  | 'operator.media.uploaded'
+  // VTID-05150: tenant provisioning (exafy_admin). Payloads carry ids, slug, counts and field
+  // names only — never an invitation token or an email address.
+  | 'tenant.provisioned'
+  | 'tenant.brand_pack.updated'
+  | 'tenant.asset.uploaded';
+
+export interface CicdOasisEvent {
+  vtid: string;
+  type: CicdEventType;
+  source: string;
+  status: 'info' | 'success' | 'warning' | 'error';
+  message: string;
+  payload?: Record<string, unknown>;
+  // VTID-01260: Actor identification and surface tracking
+  actor_id?: string;
+  actor_email?: string;
+  actor_role?: 'user' | 'operator' | 'admin' | 'system' | 'agent';
+  surface?: 'orb' | 'operator' | 'command-hub' | 'cicd' | 'system' | 'api';
+  conversation_turn_id?: string;
+  // VTID-01874: Explicit stage annotation for correct timeline mapping
+  task_stage?: 'PLANNER' | 'WORKER' | 'VALIDATOR' | 'DEPLOY';
+  // VTID-01967: Canonical Vitana ID denormalized for support / audit queries.
+  // Auto-resolved from actor_id if omitted by caller (cached lookup in
+  // emitOasisEvent). Null when the event has no human actor (system/cron).
+  vitana_id?: string | null;
+  // Phase 0 staging build: explicit env tag. When unset, emitOasisEvent
+  // defaults to the running process's VITANA_ENV. Embedded in metadata.env
+  // (no oasis_events schema change required).
+  env?: 'production' | 'staging';
+}
+
+// ==================== Allowed Services for Deploy ====================
+export const ALLOWED_DEPLOY_SERVICES = ['gateway', 'oasis-operator', 'oasis-projector'] as const;
+export type AllowedDeployService = typeof ALLOWED_DEPLOY_SERVICES[number];
+
+// ==================== VTID-0601: Autonomous Safe Merge & Deploy Control ====================
+
+/**
+ * VTID-0601: Approval item representing a pending PR or deploy request
+ */
+export interface ApprovalItem {
+  id: string;
+  type: 'merge' | 'deploy' | 'merge+deploy';
+  vtid: string;
+  pr_number?: number;
+  branch?: string;
+  service?: string;
+  environment?: string;
+  commit_sha?: string;
+  governance_status: 'pass' | 'fail' | 'pending' | 'unknown';
+  ci_status: 'pass' | 'fail' | 'pending' | 'unknown';
+  requester: string;
+  created_at: string;
+  pr_url?: string;
+  pr_title?: string;
+}
+
+/**
+ * VTID-0601: Merge request schema for Command Hub approvals
+ */
+export const CicdMergeRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  pr_number: z.number().int().positive('PR number must be a positive integer'),
+  repo: z.string().default('exafyltd/vitana-platform'),
+});
+
+export type CicdMergeRequest = z.infer<typeof CicdMergeRequestSchema>;
+
+export interface CicdMergeResponse {
+  ok: boolean;
+  merged?: boolean;
+  sha?: string;
+  vtid: string;
+  pr_number: number;
+  error?: string;
+  reason?: string;
+}
+
+/**
+ * VTID-0601: Deploy request schema for Command Hub approvals
+ */
+export const CicdDeployRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  service: z.enum(['gateway', 'oasis-operator', 'oasis-projector'], {
+    errorMap: () => ({ message: "Service must be 'gateway', 'oasis-operator', or 'oasis-projector'" })
+  }),
+  environment: z.enum(['dev'], {
+    errorMap: () => ({ message: "Only 'dev' environment is allowed" })
+  }),
+});
+
+export type CicdDeployRequest = z.infer<typeof CicdDeployRequestSchema>;
+
+export interface CicdDeployResponse {
+  ok: boolean;
+  vtid: string;
+  service: string;
+  environment: string;
+  workflow_url?: string;
+  workflow_run_id?: number;
+  error?: string;
+}
+
+/**
+ * VTID-0601: Approval action request schema
+ * VTID-0602: Added optional vtid and reason fields with passthrough
+ * VTID-0603: Schema accepts vtid/reason; handler reads directly from req.body
+ */
+export const ApprovalActionRequestSchema = z.object({
+  action: z.enum(['merge', 'deploy', 'merge+deploy']).optional(),
+  reason: z.string().optional(),
+  vtid: z.string().optional(),
+}).passthrough();
+
+export type ApprovalActionRequest = z.infer<typeof ApprovalActionRequestSchema>;
+
+// ==================== Governance Rules ====================
+export const BLOCKED_FILE_PATTERNS = [
+  /\.env(\..+)?$/,           // Environment files
+  /secrets?\//i,             // Secrets directories
+  /credentials?/i,           // Credential files
+  /\.key$/,                  // Key files
+  /\.pem$/,                  // PEM certificates
+  /gcp.*\.json$/i,           // GCP service account keys
+  /firebase.*\.json$/i,      // Firebase configs
+] as const;
+
+export const SENSITIVE_PATHS = [
+  'production/',
+  'prod/',
+  '.github/workflows/',      // Workflow modifications need extra review
+] as const;
+
+// ==================== VTID-01018: Operator Action Hard Contract ====================
+// Canonical event payload structure with MANDATORY fields.
+// Backend MUST reject any action if any required field is missing.
+
+/**
+ * VTID-01018: Operator action status - exactly one terminal state required
+ */
+export type OperatorActionStatus = 'started' | 'completed' | 'failed';
+
+/**
+ * VTID-01018: Operator action types for command classification
+ */
+export type OperatorActionType =
+  | 'deploy'
+  | 'chat'
+  | 'upload'
+  | 'task_create'
+  | 'command'
+  | 'repair'
+  | 'session';
+
+/**
+ * VTID-01018: Canonical operator action event payload
+ * ALL fields are MANDATORY unless explicitly marked nullable.
+ * Backend rejects the action if any required field is missing.
+ */
+export interface OperatorActionEventPayload {
+  /** VTID this action relates to (nullable if not task-bound) */
+  vtid: string | null;
+  /** Unique ID for this action execution */
+  operator_action_id: string;
+  /** ID of the operator performing the action */
+  operator_id: string;
+  /** Role of the operator */
+  operator_role: 'operator' | 'admin' | 'system';
+  /** Classification of the action */
+  action_type: OperatorActionType;
+  /** SHA-256 hash of the action payload for verification */
+  action_payload_hash: string;
+  /** Current action status */
+  status: OperatorActionStatus;
+  /** Source of this event - always 'operator' */
+  source: 'operator';
+  /** ISO 8601 timestamp */
+  timestamp: string;
+  /** Action-specific payload data */
+  payload?: Record<string, unknown>;
+}
+
+/**
+ * VTID-01018: Zod schema for hard validation of operator action events
+ */
+export const OperatorActionEventPayloadSchema = z.object({
+  vtid: z.string().nullable(),
+  operator_action_id: z.string().uuid('operator_action_id must be a valid UUID'),
+  operator_id: z.string().min(1, 'operator_id is required'),
+  operator_role: z.enum(['operator', 'admin', 'system']),
+  action_type: z.enum(['deploy', 'chat', 'upload', 'task_create', 'command', 'repair', 'session']),
+  action_payload_hash: z.string().min(64, 'action_payload_hash must be a valid SHA-256 hash').max(64),
+  status: z.enum(['started', 'completed', 'failed']),
+  source: z.literal('operator'),
+  timestamp: z.string().datetime('timestamp must be a valid ISO 8601 datetime'),
+  payload: z.record(z.unknown()).optional(),
+});
+
+// ==================== Autonomous PR+Merge (Claude Worker Integration) ====================
+
+/**
+ * VTID-01032: Deploy target selection reasons
+ * These codes indicate how deploy targets were determined.
+ */
+export type DeployTargetReason =
+  | 'deploy_target_explicit'              // Caller provided deploy.services explicitly
+  | 'deploy_target_detected_single'       // Auto-detected single service from changed files
+  | 'deploy_target_detected_multi'        // Auto-detected multiple services from changed files
+  | 'deploy_target_ambiguous_shared_only' // Only shared paths changed, requires explicit services
+  | 'no_deploy_target';                   // No deployable service found in changed files
+
+/**
+ * VTID-01032: Deploy configuration schema for autonomous PR+merge
+ * Allows explicit service targeting or auto-detection based on changed files.
+ */
+export const DeployConfigSchema = z.object({
+  environment: z.enum(['dev']).default('dev'),
+  services: z.array(z.string().min(1)).optional(),
+});
+
+export type DeployConfig = z.infer<typeof DeployConfigSchema>;
+
+/**
+ * Autonomous PR+Merge Request Schema
+ * Used by Claude workers to request PR creation and merge in a single call.
+ * Gateway handles all GitHub API interactions using GITHUB_SAFE_MERGE_TOKEN.
+ *
+ * VTID-01032: Extended with deploy configuration for multi-service targeting.
+ */
+export const AutonomousPrMergeRequestSchema = z.object({
+  vtid: z.string().min(1, 'VTID is required'),
+  repo: z.string().default('exafyltd/vitana-platform'),
+  head_branch: z.string().min(1, 'Head branch is required'),
+  base_branch: z.string().default('main'),
+  title: z.string().min(1, 'PR title is required'),
+  body: z.string().min(1, 'PR body is required'),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+  automerge: z.boolean().default(true),
+  max_ci_wait_seconds: z.number().int().min(30).max(600).default(300), // 5 min default, max 10 min
+  // VTID-01032: Deploy targeting configuration
+  deploy: DeployConfigSchema.optional(),
+});
+
+export type AutonomousPrMergeRequest = z.infer<typeof AutonomousPrMergeRequestSchema>;
+
+/**
+ * VTID-01032: Deploy selection result included in response
+ */
+export interface DeploySelectionResult {
+  services: string[];
+  environment: string;
+  reason: DeployTargetReason;
+  changed_files_count: number;
+  workflow_triggered: boolean;
+  workflow_url?: string;
+}
+
+export interface AutonomousPrMergeResponse {
+  ok: boolean;
+  vtid: string;
+  pr_number?: number;
+  pr_url?: string;
+  merged?: boolean;
+  merge_sha?: string | null;
+  ci_status?: 'success' | 'failure' | 'pending' | 'timeout';
+  // VTID-01032: Deploy selection result
+  deploy?: DeploySelectionResult;
+  error?: string;
+  // VTID-01031 + VTID-01032: Stable reason codes
+  reason?:
+    | 'validation_failed'           // Request validation failed
+    | 'branch_not_found'            // Head branch doesn't exist on remote
+    | 'pr_created'                  // New PR was created (success path)
+    | 'pr_reused_existing'          // Existing PR was reused (idempotent success path)
+    | 'ci_failed'                   // CI checks failed
+    | 'ci_timeout'                  // CI checks did not complete in time
+    | 'governance_rejected'         // Governance blocked the merge
+    | 'merge_failed'                // Merge operation failed
+    | 'github_api_error'            // GitHub API returned an error
+    | 'deploy_target_ambiguous';    // VTID-01032: Only shared paths changed, requires explicit services
+  details?: Record<string, unknown>;
+}
+
+// ==================== VTID-01168: Approval Auto-Deploy Endpoint ====================
+
+/**
+ * VTID-01168: Simplified Autonomous PR Merge Request Schema
+ * Used by Command Hub Approve button for one-click merge + auto-deploy.
+ *
+ * Payload structure:
+ * {
+ *   "vtid": "VTID-####",
+ *   "pr_number": 380,
+ *   "merge_method": "squash",
+ *   "automerge": true
+ * }
+ */
+export const ApprovalAutoPrMergeRequestSchema = z.object({
+  vtid: z.string()
+    .min(1, 'VTID is required')
+    .regex(/^VTID-\d{4,5}$/, 'VTID must be in format VTID-#### or VTID-#####'),
+  pr_number: z.number().int().positive('PR number must be a positive integer'),
+  merge_method: z.enum(['squash', 'merge', 'rebase']).default('squash'),
+  automerge: z.boolean().default(true),
+});
+
+export type ApprovalAutoPrMergeRequest = z.infer<typeof ApprovalAutoPrMergeRequestSchema>;
+
+/**
+ * VTID-01168: Response for Approval Auto PR Merge
+ * Includes state transitions: MERGED → DEPLOYING tracked via OASIS
+ */
+export interface ApprovalAutoPrMergeResponse {
+  ok: boolean;
+  vtid: string;
+  pr_number: number;
+  pr_url?: string;
+  /** State after merge: 'MERGED' if merge succeeded */
+  state: 'MERGED' | 'DEPLOYING' | 'FAILED';
+  merged: boolean;
+  merge_sha?: string | null;
+  /** Merge commit message in format VTID-####: <PR title> */
+  merge_commit_message?: string;
+  /** Deploy information if auto-deploy triggered */
+  deploy?: {
+    service: string;
+    environment: string;
+    workflow_url?: string;
+  };
+  error?: string;
+  reason?:
+    | 'vtid_missing'              // VTID not provided or invalid format
+    | 'vtid_mismatch'             // VTID doesn't match PR branch/title
+    | 'pr_not_found'              // PR doesn't exist
+    | 'pr_not_open'               // PR is already closed/merged
+    | 'ci_not_passed'             // CI checks haven't passed
+    | 'merge_failed'              // Merge operation failed
+    | 'deploy_triggered'          // Success: merge + deploy triggered
+    | 'merge_only';               // Success: merge only (no deployable service)
+}
+
+/**
+ * VTID-01018: Structured error response for OASIS write failures
+ */
+export interface OasisWriteFailedError {
+  error: 'oasis_write_failed';
+  reason: string;
+  operator_action_id: string;
+  timestamp: string;
+}
+
+/**
+ * VTID-01018: Action execution result
+ */
+export interface OperatorActionResult<T = unknown> {
+  ok: boolean;
+  operator_action_id: string;
+  started_event_id?: string;
+  terminal_event_id?: string;
+  data?: T;
+  oasis_error?: OasisWriteFailedError;
+}
+
+// ==================== VTID-01033: CICD Concurrency Lock Management ====================
+
+/**
+ * VTID-01033: Lock key types for concurrency control
+ */
+export type LockKeyType = 'global' | 'service' | 'path';
+
+/**
+ * VTID-01033: Lock entry representing a held lock
+ */
+export interface CicdLockEntry {
+  /** Full lock key (e.g., "service:gateway", "path:.github/workflows/") */
+  key: string;
+  /** Type of lock */
+  type: LockKeyType;
+  /** VTID holding the lock */
+  held_by: string;
+  /** PR number associated with this lock */
+  pr_number?: number;
+  /** When the lock was acquired */
+  acquired_at: string;
+  /** When the lock will expire (for timeout enforcement) */
+  expires_at: string;
+}
+
+/**
+ * VTID-01033: Lock acquisition request
+ */
+export interface LockAcquisitionRequest {
+  vtid: string;
+  pr_number?: number;
+  /** Services to lock (from deploy targeting) */
+  services: string[];
+  /** Changed paths that require locking */
+  changed_paths: string[];
+}
+
+/**
+ * VTID-01033: Lock acquisition result
+ */
+export interface LockAcquisitionResult {
+  ok: boolean;
+  vtid: string;
+  /** Keys that were successfully acquired */
+  acquired_keys?: string[];
+  /** If blocked, which key caused the block */
+  blocked_by_key?: string;
+  /** If blocked, which VTID holds the blocking lock */
+  blocked_by_vtid?: string;
+  /** Error message if blocked */
+  error?: string;
+}
+
+/**
+ * VTID-01033: Concurrency blocked response for API
+ */
+export interface ConcurrencyBlockedResponse {
+  ok: false;
+  vtid: string;
+  reason: 'concurrency_blocked';
+  error: string;
+  details: {
+    lock_key: string;
+    held_by: string;
+    pr_number?: number;
+    acquired_at?: string;
+    expires_at?: string;
+  };
+}
+
+/**
+ * VTID-01033: Concurrency configuration loaded from config file
+ */
+export interface CicdConcurrencyConfig {
+  concurrency: {
+    maxParallelMerges: number;
+    lockTimeoutMinutes: number;
+  };
+  criticalPaths: string[];
+  strictPaths?: string[];
+  lockKeyPrefixes: {
+    global: string;
+    service: string;
+    path: string;
+  };
+}
+
+/**
+ * VTID-01033: Lock event types for OASIS
+ */
+export type CicdLockEventType =
+  | 'cicd.lock.acquire.requested'
+  | 'cicd.lock.acquire.succeeded'
+  | 'cicd.lock.acquire.blocked'
+  | 'cicd.lock.released'
+  | 'cicd.lock.expired';

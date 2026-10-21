@@ -1,0 +1,5 @@
+{"vtid":"VTID-05012","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats (gate_health, loops) still auth-gated","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-05012-jev-gate-observability.test.ts test/routes/jev-decisions.test.ts","cwd":"services/gateway","reason":"The admin stats body needs an exafy_admin session, and the skip rows are written by Dev Autopilot and BackOffice runs that a read-only staging probe must not cause (the Dev Autopilot kill switch is also armed). Skip rows, dedupe, mode handling, lean scoring, the 48 h silent flag and the endpoint's new fields are proven by these suites; the migration is proven on a local Postgres by scripts/ci/test-vtid-05012-jev-gate-observability.sh and verified read-only on the database after apply."}
+]}

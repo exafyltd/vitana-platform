@@ -1,0 +1,48 @@
+# VTID-03885 — verification commands (run in services/gateway)
+#
+# HONEST STATE: this session's checkout has no node_modules and no npm
+# registry access (`npm install` returns 403 Forbidden), so `npx jest` and
+# `npm run build` could NOT be run here. Nothing below claims otherwise.
+# The real Jest/build run is the CI job on this PR
+# ("Gateway (Jest, ~7.5k tests)", "Gateway Service Tests") — its result is
+# checked in-conversation against the PR's own check runs, not fabricated
+# here.
+
+$ npx tsc --noEmit -p . --ignoreDeprecations 6.0
+# (--ignoreDeprecations bypasses an unrelated pre-existing
+#  moduleResolution=node10 deprecation abort that stops tsc before it
+#  checks anything at all; without it, exit code is 2 with zero file
+#  diagnostics)
+# 11590 diagnostic lines total; 10528 are the missing-node_modules
+# artifact (Cannot find module '@types/node'/'@supabase/supabase-js'/
+# 'express'/'react', Cannot find name 'console'/'process'/'Buffer',
+# Cannot find namespace 'React', jsx-runtime) — confirmed by grepping the
+# SAME error classes against files this PR never touched (e.g.
+# src/validator-core/*.ts), which show the identical errors.
+# see ./outputs/tsc-full-linecount.txt
+
+$ npx tsc --noEmit -p . --ignoreDeprecations 6.0 | grep -iE "partner-health|partner_health|doctorbox|admin-partner"
+# see ./outputs/tsc-partner-health-files.txt — every line is one of the
+# same environmental error classes above; zero real type errors remain in
+# this PR's own files as of this commit (two real ones — a duplicate
+# object key, a missing index signature — were caught by this exact
+# command earlier in the session and are already fixed, see the "fix 2
+# real type errors found by tsc" commit).
+
+$ npx jest                    # NOT RUN — no node_modules in this sandbox
+$ npm run build                # NOT RUN — no node_modules in this sandbox
+
+# What IS verified: every new test file
+# (test/partner-health/ingestion.test.ts,
+#  test/orb-tools/partner-health-test-tools.test.ts,
+#  test/connectors/doctorbox.test.ts,
+#  test/admin-partner-health.test.ts,
+#  test/partner-health-consent.test.ts,
+#  test/services/assistant-continuation/providers/partner-health-result-ready.test.ts)
+# was written by tracing the real handler/route/provider source's exact
+# Supabase query chains and function call signatures by hand, not by
+# running the suite. The golden snapshot updates
+# (system-instruction.characterization.test.ts.snap,
+#  tool-catalog.characterization.test.ts.snap) were derived directly from
+# the real CI failure diff on this PR's own earlier commit (efa14d2),
+# reproduced character-for-character from the job log, not guessed.

@@ -1,0 +1,81 @@
+VTID-03952 — commands.log
+==========================
+
+## Environment constraint (recorded up front, honestly)
+
+$ cd services/gateway && npm ci
+-> fails: 403 Forbidden against https://registry.npmjs.org (org egress
+   policy in this sandboxed session denies the npm registry). No
+   node_modules could be installed, so neither `tsc --noEmit` nor the
+   gateway's vitest/jest suite could be run locally in this session.
+   This is why AC-1/AC-2/AC-3 above are marked as manual-diff-review
+   verified rather than automated-test verified, and why this workflow's
+   own Build Gate step (which runs in CI, not this sandbox) is the first
+   real `npm ci && npm run build` on this diff.
+
+## Investigation (read-only, no writes)
+
+- Delegated two read-only background research agents (frontend + gateway)
+  to trace the full click-to-loaded-screen login sequence, independently.
+  Frontend agent found: MaxinaPortal.tsx's handleSignIn() called
+  switch_to_tenant_by_slug + refreshSession(), then a SECOND effect
+  (setTenantBySlug('maxina')) repeated the same RPC+refresh moments later;
+  4 distinct full-screen loading gates in sequence
+  (AuthGuard -> Index/useSmartRouting -> OnboardingWelcome -> AppLayout);
+  the `profiles` table fetched independently 3+ times with no shared
+  cache. Gateway agent found: `/auth/login` awaits 4 sequential DB reads
+  where none depend on each other's result; `/auth/me` awaits 6-7
+  sequential reads including one whose own comment claims "Parallel
+  fetch" while the code is a plain sequential `await`.
+- Read `services/gateway/src/routes/auth.ts` directly to confirm both
+  findings against the real source (not just the agents' summaries)
+  before editing anything.
+
+## Implementation
+
+- Edited services/gateway/src/routes/auth.ts:
+  - POST /login: wrapped the app_users + users profile reads in
+    `Promise.all`.
+  - POST /login: wrapped the tenant-membership/welcome-notification
+    decision block in a fire-and-forget `void (async () => {...})()
+    .catch(...)` IIFE, moving it off the awaited response path.
+  - GET /me: wrapped the 4 independent reads (app_users profile,
+    profiles.vitana_id_locked/registration_seq, users fallback,
+    user_tenants memberships) in `Promise.all`.
+
+## Merge-conflict handling (recorded because it changed the diff's shape)
+
+- Pushed the branch and opened the PR against an origin/main that (per a
+  shallow git clone in this session hiding the real merge-base) appeared
+  to have already diverged. `git merge origin/main` first failed with
+  "refusing to merge unrelated histories" — resolved with
+  `git fetch --unshallow origin`, after which a real merge-base was found
+  and a normal 3-way merge succeeded.
+- The real origin/main had, in the interim, merged an unrelated PR
+  (VTID-03827, Aurora/Cognito auth cutover) that reintroduced the
+  `services/gateway/src/routes/auth-repository.ts` (`repo.*`) data-access
+  seam this branch's edits were written against in the first place. After
+  the merge, re-applied the exact same three edits (Promise.all wrapping)
+  onto the post-merge file structure — no logic beyond the original
+  parallelization intent was changed.
+- Self-caught and fixed a real mistake here: the first attempt staged the
+  clean post-merge file via `git add` BEFORE re-applying the edits via the
+  Edit tool, then committed the STAGED (pre-edit) content — so the first
+  pushed merge commit silently dropped the fix. Caught this by diffing
+  `git show HEAD:services/gateway/src/routes/auth.ts` against the known
+  fix markers before considering the merge done; a session stop-hook
+  git-status check also flagged the resulting uncommitted working-tree
+  diff. Fixed with a follow-up commit containing the actual re-applied
+  change, verified present in the pushed tree before reporting done.
+
+## Structural verification actually run (real output in outputs/)
+
+$ python3 <bracket-balance checker> services/gateway/src/routes/auth.ts
+-> "balanced OK" (see outputs/bracket-balance-check.txt) — confirms no
+   unmatched/mismatched braces, brackets or parens were introduced by the
+   manual conflict resolution; this is a structural sanity check, not a
+   substitute for `tsc`/tests.
+
+$ grep -n "^<<<<<<<\|^=======\|^>>>>>>>" services/gateway/src/routes/auth.ts
+-> no matches (see outputs/no-conflict-markers.txt) — confirms no leftover
+   git conflict markers survived the manual resolution.

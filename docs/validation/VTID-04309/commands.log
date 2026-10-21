@@ -1,0 +1,11 @@
+# VTID-04309 / VTID-04310 — 2026-09-22
+# live read-only (Supabase MCP): operator_threads turns distribution (144/152 single-turn), ai_personality_config has no dev_orb override
+cd services/gateway
+npx tsc --noEmit                                  # clean
+npx jest test/vtid-04309-command-hub-voice-thread.test.ts test/vtid-04309-thread-messages-route.test.ts \
+  test/vtid-04310-command-hub-voice-operator-delegate.test.ts test/orb/live/tools/surface-gated-catalog.test.ts \
+  test/orb/live/characterization/ test/vtid-03822-operator-chat-threads.test.ts test/vtid-04022-operator-threads.test.ts \
+  test/vtid-03851-execute-task-requires-auth.test.ts     # outputs/jest.txt — 38 suites, 392 tests
+npx jest                                          # full gateway suite: 1077 passed, 1 skipped, 0 failed (after two assertion updates)
+node --check src/frontend/command-hub/app.js src/frontend/command-hub/orb-widget.js
+# screenshots: Playwright (preinstalled Chromium) on a static page with styles.css → outputs/voice-tags-*.png

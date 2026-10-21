@@ -1,0 +1,234 @@
+# =============================================================================
+# Skill: Worker Memory Apply Patch - VTID-01163
+# =============================================================================
+# Applies code changes for memory domain with tenant context validation.
+# =============================================================================
+
+skill_id: worker.memory.apply_patch
+name: Apply Memory Patch
+description: |
+  Applies code changes for memory/database domain work orders. Enforces path
+  restrictions, validates tenant/user context, and checks RPC signatures.
+version: 1.0.0
+category: worker
+domain: memory
+vtid: VTID-01163
+
+provider:
+  type: internal
+  module: services/agents/workforce/subagents/worker-memory
+  function: applyPatch
+  timeout_ms: 120000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  changes:
+    type: array
+    required: true
+    description: List of file changes to apply
+    items:
+      type: object
+      properties:
+        file_path:
+          type: string
+          required: true
+        action:
+          type: string
+          required: true
+          enum:
+            - create
+            - edit
+            - delete
+        content:
+          type: string
+          required: false
+        old_content:
+          type: string
+          required: false
+        new_content:
+          type: string
+          required: false
+
+  change_budget:
+    type: object
+    required: false
+    description: Maximum allowed changes (more restrictive for memory)
+    properties:
+      max_files:
+        type: integer
+        default: 5
+      max_directories:
+        type: integer
+        default: 3
+
+  validate_tenant_context:
+    type: boolean
+    required: false
+    default: true
+    description: Check for tenant_id in queries
+
+  validate_rpc_signatures:
+    type: boolean
+    required: false
+    default: true
+    description: Validate RPC function signatures
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether patch was applied successfully
+
+  files_changed:
+    type: array
+    description: List of files that were modified
+    items:
+      type: string
+
+  files_created:
+    type: array
+    description: List of new files created
+    items:
+      type: string
+
+  migrations_added:
+    type: array
+    description: New migration files created
+    items:
+      type: object
+      properties:
+        file:
+          type: string
+        description:
+          type: string
+
+  rpcs_modified:
+    type: array
+    description: RPC functions that were changed
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+        signature:
+          type: string
+        idempotent:
+          type: boolean
+
+  tenant_context_verified:
+    type: boolean
+    description: Whether tenant context was verified
+
+  tenant_violations:
+    type: array
+    description: Tenant context violations (should be empty for success)
+    items:
+      type: object
+      properties:
+        file:
+          type: string
+        line:
+          type: integer
+        query:
+          type: string
+        issue:
+          type: string
+
+  budget_used:
+    type: object
+    properties:
+      files:
+        type: integer
+      directories:
+        type: integer
+
+  error:
+    type: string
+    description: Error message if patch failed
+
+# ==========================================================================
+# HARD GUARDRAILS (from agent.yaml)
+# ==========================================================================
+guardrails:
+  # Path restrictions
+  allowed_paths:
+    - "supabase/migrations/**"
+    - "supabase/functions/**"
+    - "services/agents/memory-indexer/**"
+    - "services/**/memory/**"
+
+  # Paths always forbidden
+  forbidden_paths:
+    - "services/gateway/src/**"
+    - "services/gateway/dist/**"
+    - ".github/**"
+
+  # Tenant context rules
+  tenant_validation:
+    require_tenant_id: true
+    exempt_tables:
+      - schema_migrations
+      - VtidLedger
+      - oasis_events
+      - service_versions
+
+  # RPC rules
+  rpc_validation:
+    require_input_validation: true
+    require_error_handling: true
+    require_consistent_returns: true
+
+  # Migration rules
+  migration_rules:
+    naming_pattern: "^\\d{14}_vtid_\\d{5}_.*\\.sql$"
+    require_reversible: true
+    forbid_column_drops: true
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_memory.patch_started
+    - vtid.stage.worker_memory.patch_applied
+    - vtid.stage.worker_memory.tenant_violation
+    - vtid.stage.worker_memory.rpc_signature_error
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+
+usage:
+  roles:
+    - worker
+  primary_role: worker
+  use_cases:
+    - Create Supabase migrations
+    - Modify RPC functions
+    - Update vector operations
+    - Add memory indexer logic
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 2000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    PATH_FORBIDDEN:
+      description: Target path is outside allowed memory paths
+      recoverable: false
+
+    TENANT_VIOLATION:
+      description: Query missing tenant_id context
+      recoverable: false
+
+    RPC_SIGNATURE_ERROR:
+      description: RPC function signature is invalid
+      recoverable: false
+
+    BUDGET_EXCEEDED:
+      description: Changes exceed file/directory budget
+      recoverable: false
+
+    MIGRATION_NAMING_ERROR:
+      description: Migration file name doesn't match pattern
+      recoverable: true

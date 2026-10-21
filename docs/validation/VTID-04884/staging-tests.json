@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04884",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04884-voice-diary-episode.test.ts", "cwd": "services/gateway",
+      "reason": "a voice diary write on staging would write as the test user into the production database (rule 31); the episode write is proven against the real tool code" },
+    { "kind": "existing", "ref": "npx jest test/save-diary-entry-shared.test.ts", "cwd": "services/gateway",
+      "reason": "existing save_diary_entry behaviour (Index recompute, coalesce, non-fatal failures) is unchanged" }
+  ]
+}

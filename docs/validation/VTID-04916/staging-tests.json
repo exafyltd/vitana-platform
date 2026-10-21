@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04916",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "share-to-feed is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/calendar/events/00000000-0000-4000-8000-000000000000/share-to-feed", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "calendar window still requires auth", "path": "/api/v1/calendar/events/window?from=2026-10-07T00:00:00Z&to=2026-10-08T00:00:00Z", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04916-calendar-share.test.ts", "cwd": "services/gateway",
+      "reason": "sharing writes a feed post that fans out to the whole tenant, so it is never exercised on staging (staging shares the production Supabase project). This suite proves the rules with the real service over a fake PostgREST: only community events and live room sessions, only the caller's own entry, never cancelled/over/non-public events, one share per event (409 ALREADY_SHARED with the post id), 5 shares a day, the database guards mapped (unique race, duplicate text, hourly post limit, suspension), author taken from the verified JWT only, strict body, and the window's shareable/shared_post_id. The database half runs on a throwaway Postgres in exafyltd/vitana-v1 SQL-EVENT-SHARE-POSTS.yml." }
+  ]
+}

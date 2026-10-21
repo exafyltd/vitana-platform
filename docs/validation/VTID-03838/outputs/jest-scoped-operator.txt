@@ -1,0 +1,4 @@
+$ cd services/gateway && npx jest --testPathPattern "operator|personality|onramp|gemini"
+Test Suites: 10 passed, 10 total
+Tests:       2 skipped, 103 passed, 105 total
+Snapshots:   0 total

@@ -1,0 +1,96 @@
+--- setup ---
+INSERT 0 1
+INSERT 0 2
+INSERT 0 1
+INSERT 0 2
+--- 1. seeded type, no member opt-out: row created ---
+INSERT 0 1
+  t1  
+------
+ PASS
+(1 row)
+
+--- 2. unknown type: blocked, auto-registered OFF, counted ---
+INSERT 0 0
+  t2  
+------
+ PASS
+(1 row)
+
+--- 3. admin switches a live type OFF: blocked ---
+UPDATE 1
+INSERT 0 0
+  t3  
+------
+ PASS
+(1 row)
+
+--- 4. member switched the category off: blocked as member_off ---
+INSERT 0 1
+INSERT 0 0
+  t4  
+------
+ PASS
+(1 row)
+
+--- 5. category members may not switch off: delivered even with an opt-out row ---
+INSERT 0 1
+INSERT 0 1
+INSERT 0 1
+  t5  
+------
+ PASS
+(1 row)
+
+--- 6. automation source: type on, automation not yet switched on → blocked; on → delivered ---
+INSERT 0 1
+INSERT 0 0
+ t6a  
+------
+ PASS
+(1 row)
+
+UPDATE 1
+INSERT 0 1
+ t6b  
+------
+ PASS
+(1 row)
+
+--- 7. row without tenant resolves the primary tenant ---
+INSERT 0 0
+  t7  
+------
+ PASS
+(1 row)
+
+--- 8. stats read model ---
+           type           | sent | blocked_admin | blocked_member 
+--------------------------+------+---------------+----------------
+ community_post_published |    0 |             1 |              0
+ new_chat_message         |    1 |             0 |              1
+ new_daily_matches        |    0 |             2 |              0
+ orb_proactive_message    |    1 |             1 |              0
+ welcome_to_vitana        |    1 |             0 |              0
+(5 rows)
+
+ activity_rows 
+---------------
+             5
+(1 row)
+
+--- 9. member categories: two added, two extended, no duplicates after a second run ---
+  t9  
+------
+ PASS
+(1 row)
+
+--- 10. a member who switches off Posts & reactions no longer gets new-post notifications ---
+UPDATE 1
+INSERT 0 1
+INSERT 0 1
+ t10  
+------
+ PASS
+(1 row)
+

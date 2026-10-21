@@ -1,0 +1,17 @@
+DROP SCHEMA
+CREATE SCHEMA
+CREATE TABLE
+INSERT 0 1
+BEGIN
+INSERT 0 1
+COMMIT
+BEGIN
+INSERT 0 0
+COMMIT
+DO
+UPDATE 1
+BEGIN
+INSERT 0 0
+COMMIT
+psql:docs/validation/VTID-05153/migration-test.sql:33: NOTICE:  VTID-05153 migration test: all assertions passed
+DO

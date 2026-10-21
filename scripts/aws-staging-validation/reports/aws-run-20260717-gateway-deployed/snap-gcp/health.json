@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "env": "staging",
+  "supabase_host": "inmkhvwdcuyhnxkgfvsb.supabase.co",
+  "cloud_run_service": "gateway-staging",
+  "cloud_run_revision": "gateway-staging-00473-ttj",
+  "booted_at": "2026-07-15T11:54:31.324Z"
+}

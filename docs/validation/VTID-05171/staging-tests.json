@@ -1,0 +1,47 @@
+{
+  "vtid": "VTID-05171",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "build-info answers JSON (the runner confirms the verified commit from it)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/learning-prefs is mounted (before /:id) and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/learning-prefs",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/usage-data is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/usage-data",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/usage-data/export is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/usage-data/export",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "GET /api/v1/timeline/routines is mounted and refuses an anonymous caller with JSON 401",
+      "path": "/api/v1/timeline/routines",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05171-companion-wiring.test.ts test/vtid-04560-role-separation-regression.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/vtid-04349-automation-shadow.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Everything else in this change writes or reads a member's own data on the shared production database (the switches, the usage-data delete, the rollup's routines and insight, the ORB tool's read of a member's timeline), so staging probes only the anonymous GETs. The suite proves: the rollup's four routine kinds and thresholds, the learning switches (app_usage off, category off, hidden rows), one insight per day without repeats, the profiler's query filter + pre-migration fallback + week movers, get_my_timeline's facts and its last-resort catalog tier, and the routes' auth, validation, JWT scoping, 409 before the migration and usage-data delete incl. the archive. The SQL test (SQL-COMPANION-WIRING) proves the migration on a throwaway Postgres."
+    }
+  ]
+}

@@ -1,0 +1,50 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ae9b46dc7288c67bf/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/enrichment/completion-resolver.test.ts
+  computeCompletions — each E-check
+    ✓ a member with nothing done has E1–E11 all false (8 ms)
+    ✓ E1 avatar: set → true, empty string → false (1 ms)
+    ✓ E2 bio: trimmed length must be > 50 (2 ms)
+    ✓ E3 post (1 ms)
+    ✓ E4 interests: non-empty slugs → true; [] or blanks → false (1 ms)
+    ✓ E5 location (1 ms)
+    ✓ E6/E7 instagram and facebook independently (1 ms)
+    ✓ E8 calendar, E9 contacts, E10 device token (17 ms)
+    ✓ E11 cover (1 ms)
+  resolveCompletions — through the repository
+    ✓ maps every source to its card and reads only the caller (3 ms)
+    ✓ a member with no profile row and no data has every card incomplete (1 ms)
+    ✓ loadEnrichmentCardState returns the dismissal rows and no boost triggers in Phase 1 (1 ms)
+    ✓ a read error in fetchProfileEnrichmentFields throws EnrichmentDataError naming profiles (14 ms)
+    ✓ a read error in fetchAnyProfilePost throws EnrichmentDataError naming profile_posts (2 ms)
+    ✓ a read error in fetchActiveSocialConnections throws EnrichmentDataError naming social_connections (1 ms)
+    ✓ a read error in fetchEnabledCalendarApp throws EnrichmentDataError naming connected_app_settings (1 ms)
+    ✓ a read error in fetchAnyContact throws EnrichmentDataError naming contacts (1 ms)
+    ✓ a read error in fetchActiveDeviceToken throws EnrichmentDataError naming user_device_tokens (1 ms)
+    ✓ a read error in fetchEnrichmentCardStates throws EnrichmentDataError naming user_enrichment_cards (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/enrichment/completion-resolver-repository.test.ts
+  ✓ profiles: the five enrichment fields of the caller (2 ms)
+  ✓ social_connections: is_active + disconnected_at IS NULL, instagram/facebook, no status column (1 ms)
+  ✓ connected_app_settings: enabled calendar apps only (1 ms)
+  ✓ user_device_tokens: not revoked, token present (1 ms)
+  ✓ profile_posts and contacts: one row is enough (7 ms)
+  ✓ dismissal upsert writes only the caller row and never cooldown_days (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        0.943 s, estimated 1 s
+Ran all test suites matching /test\/services\/enrichment\/completion-resolver/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

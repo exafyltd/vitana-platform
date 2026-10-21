@@ -1,0 +1,13 @@
+PASS test/vtid-04035-operator-ecs-tasks.test.ts
+    ✓ accepts every §1b service by name and the executor family, refusing anything else before an AWS call (15 ms)
+    ✓ defaults and clamps: RUNNING unless STOPPED (case-insensitive), limit default/max, garbage limit → default (2 ms)
+    ✓ reduces ARNs to ids, images to their tail, dates to ISO, clips reasons, and tolerates missing fields (1 ms)
+    ✓ a service lists by serviceName, describes the listed ARNs, sorts newest first and reports truncation from nextToken (7 ms)
+    ✓ a family lists by family, and an empty listing skips DescribeTasks with a note
+    ✓ refuses an unlisted target before any AWS call (1 ms)
+    ✓ is blocked for a non-developer role and kill-switched off by default (45 ms)
+    ✓ requires target and refuses an undocumented one without an AWS call (4 ms)
+    ✓ returns the bounded task list for a developer (2 ms)
+    ✓ surfaces an IAM/AWS failure verbatim instead of an empty result (2 ms)
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total

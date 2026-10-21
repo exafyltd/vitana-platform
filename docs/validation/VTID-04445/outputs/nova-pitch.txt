@@ -1,0 +1,10 @@
+nova-ambre.pcm               median_f0= 198.3Hz frames=472 -> FEMALE
+nova-carlos.pcm              median_f0= 103.9Hz frames=463 -> MALE
+nova-florian.pcm             median_f0= 139.5Hz frames=474 -> MALE
+nova-lennart.pcm             median_f0= 115.9Hz frames=371 -> MALE
+nova-leo.pcm                 median_f0= 106.9Hz frames=414 -> MALE
+nova-lupe.pcm                median_f0= 237.6Hz frames=510 -> FEMALE
+nova-matthew.pcm             median_f0= 110.1Hz frames=430 -> MALE
+nova-tina.pcm                median_f0= 212.4Hz frames=503 -> FEMALE
+nova-amy.pcm                 median_f0= 233.0Hz frames=115 -> FEMALE
+nova-carolina.pcm            median_f0= 260.9Hz frames=137 -> FEMALE

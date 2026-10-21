@@ -1,0 +1,30 @@
+# Read-only live facts (project inmkhvwdcuyhnxkgfvsb), 2026-10-13
+$ SELECT table_name, column_name, data_type ... FROM information_schema.columns WHERE table_name IN ('tenants','tenant_settings')
+tenants: tenant_id uuid, name, created_at, slug (nullable), policy_profile, branding, is_active, updated_at, open_signup
+tenant_settings: tenant_id, profile, branding, feature_flags, integrations, domains, billing, updated_at, updated_by
+$ SELECT slug, name, is_active, open_signup, t.branding, s.branding, s.profile FROM tenants t LEFT JOIN tenant_settings s USING (tenant_id)
+alkalma Alkalma t t {} {} {}
+maxina  Maxina  t t {} {"brand_bg":"#FFF5F8","brand_fg":"#1a1a2e","brand_accent":"#FF7BAC"} {"name":"Maxina","description":"…","support_email":"…"}
+$ SELECT … FROM pg_policies WHERE tablename IN ('tenants','tenant_settings')
+(tenants_read, tenants_select_any_member, tenants_select_authenticated, tenants_cud_exafy_only, tenants_all_service_role; tenant_settings_member_read, service_all) — fixture mirrors these
+$ SELECT rolbypassrls, … FROM pg_roles WHERE rolname='postgres'; to_regprocedure('public.resolve_tenant(text)'), to_regprocedure('public.list_public_tenants()')
+postgres bypassrls=t; tenants/tenant_settings owned by postgres, no FORCE RLS; both functions absent
+
+# Local Postgres harness (fixture → seed refused before registry → registry ×2 → seed ×2 → both rollbacks → re-apply → assertions)
+$ ./scripts/ci/test-vtid-05151-public-tenant-registry.sh
+(see outputs/local-harness.txt) exit 0
+
+# Mutation checks of the harness (migration edited in place, then restored)
+$ (is_platform filter replaced by `AND true`) ./scripts/ci/test-vtid-05151-public-tenant-registry.sh
+ERROR:  platform row filtered from list
+$ (extra non-whitelisted brand key `stripe` added) ./scripts/ci/test-vtid-05151-public-tenant-registry.sh
+ERROR:  maxina entry: live brand + seeded landing
+
+# Jest (services/gateway)
+$ npx jest test/vtid-05151-public-tenant-registry-migration.test.ts test/vtid-05041-definer-lockdown.test.ts
+(see outputs/jest.txt) Tests: 31 passed, 31 total
+
+# Typecheck (services/gateway; tests are excluded by tsconfig)
+$ npx tsc --noEmit -p .
+3 errors, all TS2307 "Cannot find module" (libphonenumber-js, @aws-sdk/client-pinpoint-sms-voice-v2) from the
+locally linked node_modules missing those packages; no src file is touched by this change.

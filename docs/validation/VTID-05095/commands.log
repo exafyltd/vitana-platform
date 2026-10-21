@@ -1,0 +1,13 @@
+cd services/gateway && npm install --package-lock-only --save "@aws-sdk/client-pinpoint-sms-voice-v2@~3.1135.0"   # matches the locked @aws-sdk/core 3.978.0; nothing else bumped
+npx -y pnpm@9.0.0 install --lockfile-only                                     # pnpm-lock: +1 importer, +1 package, +1 snapshot
+npx -y pnpm@9.0.0 install --frozen-lockfile --lockfile-only                   # clean
+npx tsc --noEmit -p .                                                          # clean
+npx jest test/vtid-05095-phone-verification.test.ts                            # 36 pass → outputs/jest-vtid-05095.txt
+npx jest <every suite reading route mounts / catalog / atlas / exclusions> test/vtid-05095-*.test.ts test/vtid-04560-role-separation-regression.test.ts test/vtid-05057-contacts-phone-matching.test.ts   # 52 suites / 1115 pass → outputs/jest.txt
+# local throwaway Postgres 16 (never a shared DB):
+initdb -D /var/tmp/pg05095/data -A trust -U postgres; pg_ctl -o '-p 55433 -k /var/tmp/pg05095' start
+psql -v ON_ERROR_STOP=1 -h /var/tmp/pg05095 -p 55433 -U postgres -f docs/validation/VTID-05095/migration-test.sql   # ALL ASSERTIONS PASSED → outputs/migration-test.txt
+# concurrency: session 1 begin+pg_sleep(2), session 2 begin 0.3 s later, same member
+#   → session 2 waits for the advisory lock; 1 challenge (s2), 2 sends logged
+#   with p_user_hour_max = 1 → session 1 'ok', session 2 'user_hour', 1 send logged
+psql -v ON_ERROR_STOP=1 -h /var/tmp/pg05095 -p 55433 -U postgres -f docs/validation/VTID-05095/rollback.down.sql    # applies cleanly; 0 functions, 0 triggers left

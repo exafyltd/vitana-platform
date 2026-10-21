@@ -1,0 +1,23 @@
+# VTID-05168 commands (stacked on VTID-05167, branch claude/activity-timeline-rebuild-vrtcv4)
+# read-only production reads (Supabase MCP): pg_get_functiondef of health_compute_vitana_index_for_user, both
+#   health_compute_vitana_index overloads, scheduler_vitana_index_compute_daily, vitana_trg_calendar_completion_recompute; ACLs
+PGHOST=/tmp/pgtest-05167 PGPORT=55432 PGUSER=postgres scripts/ci/sql-tests/run-index-movements-test.sh   -> outputs/sql-index-movements.txt
+(mutation: advisory lock removed) run-index-movements-test.sh   -> outputs/sql-red-no-lock.txt; file restored
+throwaway: stand-ins → pre-apply-capture.sql → migration → rollback.sql   -> outputs/rollback-roundtrip.txt
+aurora-restore VTID-05168 blocks after the migration on a throwaway DB   -> outputs/aurora-mirror-check.txt
+cd services/gateway && npx jest test/vtid-05168-index-movements.test.ts   -> outputs/jest-vtid-05168.txt
+guard regex over `git archive origin/main services/gateway/src`   -> outputs/guard-red-main.txt
+npx jest <related suites>   -> outputs/jest-related.txt
+npx tsc --noEmit -p .   -> outputs/tsc.txt
+node scripts/collab/queue.mjs claim life-timeline/p2 --session session_01BRavW51BdMPjaEFJrJV11G
+# No RUN-MIGRATION dispatch, no production write.
+# 2026-10-14 release (owner "publish it now")
+# RUN-MIGRATION run 38533748245 FAILED on production, rolled back atomically (nothing applied — verified read-only):
+#   ERROR 42P13 cannot remove parameter defaults from existing function health_compute_vitana_index(date)
+#   cause: live signature is (p_date date DEFAULT CURRENT_DATE); the migration re-created it without the default,
+#   and the SQL test's stand-in for the live function had no default either, so CI could not see it.
+# fix: migration keeps DEFAULT CURRENT_DATE; the SQL test stand-in now matches the live signature and asserts the default.
+# local PG16, the five live functions rebuilt from repo migrations (md5 of pg_get_functiondef identical to production):
+#   old migration -> ERROR 42P13 (reproduced); fixed migration -> applies; rollback.sql -> all five md5s back to production's
+bash scripts/ci/sql-tests/run-index-movements-test.sh   -> PASS (fixed) / ERROR 42P13 at line 344 (old migration)
+# pre-apply-definitions.sql: production capture, md5 2d462019… (prod collation) / b2dcfb67… with COLLATE "C" == this file

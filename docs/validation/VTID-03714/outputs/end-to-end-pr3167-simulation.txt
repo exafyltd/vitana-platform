@@ -1,0 +1,12 @@
+=== Real PR #3167 (VTID-03711) diff, CSP-surface-scoped ===
+$ git diff origin/main...origin/claude/orb-widget-pcm-rate-vtid-03711 -- services/gateway/src/frontend/ services/gateway/dist/frontend/
+(35 lines, saved in pr-3167-real-diff.txt)
+
+=== Old whole-file scan would have hit (grep against full file content) ===
+$ grep -E '<script|style\s*=|\.style\b' services/gateway/src/frontend/command-hub/orb-widget.js | wc -l
+27 (all pre-existing, none touched by the diff above)
+
+=== New diff-scoped CLI check against the same real diff ===
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/pr3167_csp_diff.txt
+No CSP pattern hits in added lines.
+exit: 0

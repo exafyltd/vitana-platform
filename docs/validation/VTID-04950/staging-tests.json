@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04950",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04950-prod-deploy-pin-rollback.test.ts",
+      "reason": "Production deploy contracts: oasis-operator, oasis-projector, orb-agent, verification-engine and autopilot-executor can be pinned to the approved commit; the four ECS services capture a rollback target and roll back on failure (14 cases, mutation-checked). No gateway runtime code changes.",
+      "cwd": "services/gateway"
+    }
+  ]
+}

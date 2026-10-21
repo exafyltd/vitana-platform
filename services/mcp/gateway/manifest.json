@@ -1,0 +1,46 @@
+{
+  "name": "mcp-gateway",
+  "version": "1.0.0",
+  "type": "service",
+  "description": "MCP Gateway - All Connectors (Wave A + B)",
+  "runtime": "nodejs",
+  "port": 8080,
+  "healthcheck": "/health",
+  "dependencies": {
+    "github-mcp": "required",
+    "supabase-mcp": "required",
+    "perplexity-mcp": "optional",
+    "linear-mcp": "optional",
+    "context7-mcp": "optional",
+    "testsprite-mcp": "optional"
+  },
+  "environment": {
+    "required": [
+      "GITHUB_MCP_TOKEN",
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE_KEY"
+    ],
+    "optional": [
+      "PERPLEXITY_API_KEY",
+      "LINEAR_API_KEY",
+      "CONTEXT7_API_KEY",
+      "TESTSPRITE_API_KEY",
+      "GATEWAY_URL"
+    ]
+  },
+  "deployment": {
+    "platform": "cloud-run",
+    "region": "us-central1",
+    "min_instances": 0,
+    "max_instances": 2,
+    "memory": "512Mi",
+    "cpu": 1
+  },
+  "vtids": [
+    "DEV-AGENT-0200.E",
+    "DEV-AGENT-0200.F",
+    "DEV-AGENT-0200.G",
+    "DEV-AGENT-0201",
+    "DEV-AGENT-0202"
+  ]
+}

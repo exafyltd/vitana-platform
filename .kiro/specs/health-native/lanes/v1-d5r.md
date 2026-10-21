@@ -1,0 +1,27 @@
+---
+lane: v1-d5r
+state: in-review
+next_actor: owner
+vtid: VTID-05175
+depends_on: []
+executor: claude
+reviewer_seat: claude
+paths:
+  - "src/**"
+  - "i18n-source-stamps/**"
+  - "docs/SCREEN_INVENTORY.md"
+  - "docs/validation/**"
+  - "tests/**"
+  - "supabase/functions/**"
+updated: 2026-10-15T18:59Z
+---
+# V1-D5R — account deletion calls member-residue erasure (vitana-v1 #1388)
+
+Tasks: `tasks.md` section "v1-d5r".
+
+vitana-v1 #1388, green. Held until PLAT-D5R (VTID-05174, merged) is live in production (it is in the pending
+gateway Gate 2 for `0b875e982`) and `CONNECTOR_WEBHOOK_LOG_PURGE_ENABLED=true` in production (STATUS follow-up 7).
+
+## Log
+### 2026-10-15T18:59Z · session_01VuZPi9pvHaUverAXRC1WvU · (backfill) → in-review
+Handed over to Kiro with the health-native spec. next_actor: owner.

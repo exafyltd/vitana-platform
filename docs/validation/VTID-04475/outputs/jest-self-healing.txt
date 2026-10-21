@@ -1,0 +1,8 @@
+    ✓ computes autopilot success-rate and failure-stage breakdown (1 ms)
+
+Test Suites: 20 passed, 20 total
+Tests:       207 passed, 207 total
+Snapshots:   0 total
+Time:        4.095 s
+Ran all test suites matching /test\/vtid-04475-self-healing-single-writer.test.ts|test\/ai-bridge.test.ts|test\/autopilot-controller-self-healing-gate.test.ts|test\/dev-autopilot-bridge.test.ts|test\/self-healing-control-plane-auth.test.ts|test\/self-healing-diagnosis-github-fallback.test.ts|test\/self-healing-full-auto-floor.test.ts|test\/self-healing-injector-autopilot-bridge.test.ts|test\/self-healing-metrics.test.ts|test\/self-healing-pre-probe.test.ts|test\/self-healing-reconciler-autopilot-link.test.ts|test\/self-healing-terminalize-gate.test.ts|test\/self-healing-test-path-derivation.test.ts|test\/storage-bridge.test.ts|test\/voice-self-healing-adapter.test.ts|test\/vtid-03842-commands-vs-bridge-catalog.test.ts|test\/vtid-04226-eventbridge-test-contract-schedules.test.ts|test\/vtid-04333-feedback-bridge-ticket-ref.test.ts|test\/vtid-04352-eventbridge-only-filter.test.ts|test\/vtid-04472-ledger-deferred-to-bridge.test.ts|test\/vtid-04475-self-healing-single-writer.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

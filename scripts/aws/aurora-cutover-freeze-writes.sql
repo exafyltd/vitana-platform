@@ -1,0 +1,43 @@
+-- Aurora cutover write-freeze FREEZE script (VTID-04084)
+--
+-- Run this against Supabase (the SOURCE database, not Aurora) at the
+-- START of the 2026-09-20 22:00 CET cutover window, before the final
+-- full-load DMS run. Blocks every write path -- gateway API, any
+-- direct-from-frontend Supabase writes, edge functions, cron jobs --
+-- because it revokes at the database-role level, not the application
+-- level. PostgREST (the API every one of those paths eventually goes
+-- through) authenticates as `authenticator` and then does
+-- `SET ROLE anon|authenticated|service_role` per request based on the
+-- JWT/apikey presented, so revoking write privileges from all three
+-- covers every request shape.
+--
+-- Safe to run as a blanket REVOKE (unlike the restore script, which must
+-- be precise) -- revoking can only ever narrow privileges, never widen
+-- them, so there is no risk of granting something that wasn't already
+-- there. Reads (SELECT) are UNCHANGED -- users can still browse the app
+-- during the freeze, they just can't write.
+--
+-- DMS's own connection (`postgres.inmkhvwdcuyhnxkgfvsb`, the Supabase
+-- superuser-equivalent role) is NOT one of the three roles below and is
+-- therefore UNAFFECTED by this freeze -- the final full-load DMS
+-- read/snapshot proceeds normally while writes are frozen.
+--
+-- To undo: run scripts/aws/aurora-cutover-restore-grants.sql (the exact
+-- pre-freeze grant set, captured live -- NOT a blanket re-grant, which
+-- would widen privileges beyond what existed before the freeze).
+--
+-- Auth-schema writes (session refresh, login) are deliberately left
+-- untouched -- freezing those would break the login flow, and the
+-- concern here is application DATA, not session mechanics. Storage
+-- (file uploads) is also left untouched -- object storage is not part
+-- of this Postgres dump/restore and freezing it would just fail
+-- in-flight uploads with no data-consistency benefit.
+
+REVOKE INSERT, UPDATE, DELETE ON ALL TABLES IN SCHEMA public FROM anon, authenticated, service_role;
+
+-- Verification query -- run this immediately after and confirm the
+-- count is 0 before proceeding to the DMS run:
+-- SELECT count(*) FROM information_schema.role_table_grants
+-- WHERE grantee IN ('anon','authenticated','service_role')
+--   AND table_schema = 'public'
+--   AND privilege_type IN ('INSERT','UPDATE','DELETE');

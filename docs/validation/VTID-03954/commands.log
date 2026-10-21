@@ -1,0 +1,47 @@
+# VTID-03954 — commands run during this change
+
+## Live investigation (before writing any code)
+$ curl -s -o /dev/null -w "HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/health"
+(repeated 4x back-to-back: 3.2s, 3.5s, then two 20s timeouts (HTTP:000) — see PR body / CLAUDE.md changelog for the full comparison against control endpoints /alive and /api/v1/scheduler/health, both consistently <0.7s)
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New/updated tests (the four touched call sites' own suites)
+$ cd services/gateway && npx jest test/routes/autopilot.test.ts test/services/autopilot-loop-store.test.ts test/system-controls.test.ts test/orb-live-session-bootstrap-timeout.test.ts test/autopilot-pipeline.test.ts --silent
+Test Suites: 5 passed, 5 total
+Tests:       250 passed, 250 total
+(full output: outputs/jest-new-tests.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 920 passed, 920 of 921 total
+Tests:       29 skipped, 6 todo, 15131 passed, 15166 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight (VTID-03714 diff-only scan)
+$ git diff origin/main...HEAD -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+No CSP pattern hits in added lines.
+(this PR touches no frontend files at all, so the diff is empty by construction — see outputs/csp-gate.txt)
+
+## Route Mount Evidence Gate — local pre-flight (VTID-03696 added-route check)
+$ git diff origin/main...HEAD -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt
+No route registration added — route-mount evidence not required for this diff.
+(exit 1, confirming the gate is correctly skipped — this PR edits existing handler bodies in routes/autopilot.ts and routes/orb-live.ts, adds no new router.METHOD(...)/app.use(...) registration)
+
+## Path Ownership Guard (gateway_backend profile) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/empty_body.txt
+NOT JUDGED — 1 file(s) outside this gate's remit:
+  CLAUDE.md
+APPROVED: 6 in-remit file(s) match the gateway_backend allowlist
+(exit 0 — CLAUDE.md is repo-root, outside REMIT, correctly reported not judged rather than rejected, per VTID-03696)

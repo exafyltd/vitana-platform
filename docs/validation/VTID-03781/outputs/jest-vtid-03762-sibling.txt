@@ -1,0 +1,119 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-completion-idempotency.test.ts
+  orb-widget guided-topic completion idempotency guard (VTID-03781)
+    ✓ declares the _guidedTopicTeachingEnded state flag, defaulting false (7 ms)
+    ✓ _endGuidedTopicTeaching() checks the guard and returns before any async work if already ended (8 ms)
+    ✓ the guard set happens unconditionally on entry — not nested inside the audio-drain poll (1 ms)
+    ✓ focusGuidedTopic() resets the guard for a fresh tap, so a new teaching session gets its own completion (2 ms)
+    ✓ _hide() does not also reset the guard mid-teaching (only a fresh tap re-arms it) (1 ms)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/guided-topic-teaching-complete-signal.test.ts:46:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/guided-topic-teaching-complete-signal.test.ts:46:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1922:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1929:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1953:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1978:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2172:11)
+
+(node:2239) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/guided-topic-teaching-complete-signal.test.ts
+  VTID-03762: end_guided_topic_teaching tool declaration
+    ✓ is present in the authenticated tool catalog, right after end_teaching_session (8 ms)
+    ✓ is NOT present for an anonymous session (matches every other authenticated-only tool) (1 ms)
+    ✓ takes an optional freeform "reason" parameter, same shape as end_teaching_session (2 ms)
+    ✓ description tells the model to call it AFTER teaching, not before (1 ms)
+  VTID-03762: orb-live.ts dispatcher handles end_guided_topic_teaching
+    ✓ has a case body for end_guided_topic_teaching (1 ms)
+    ✓ emits an orb_directive with directive:'end_guided_topic_teaching' over both SSE and WS (1 ms)
+    ✓ includes the active guided_topic_id in the directive payload (for the client + telemetry) (1 ms)
+    ✓ never throws on a transport write failure — the directive emit is wrapped in try/catch
+    ✓ always returns success:true (best-effort, matching end_teaching_session)
+  VTID-03762: orb-widget.js closes the overlay on the end_guided_topic_teaching directive
+    ✓ handles msg.directive === 'end_guided_topic_teaching' (1 ms)
+    ✓ polls audioPlaying/scheduledSources/audioQueue before hiding, same pattern as the navigate directive (1 ms)
+    ✓ has a hard safety cap so a stuck/misreported audio state cannot wait forever
+    ✓ calls _hide() only after the poll resolves (audio drained or cap hit), not on a blind fixed delay (1 ms)
+    ✓ does NOT set audioPlaying=false as a way to stop new chunks — that flag does not gate the audio handler (1 ms)
+    ✓ fires an optional onGuidedTopicTeachingEnd host callback, without throwing if absent
+    ✓ does not disturb the existing end_teaching_session branch (Teacher Mode unaffected) (1 ms)
+  VTID-03762 follow-up: client-side backstop when the model never calls the tool
+    ✓ declares a generous, documented backstop ceiling (not a short/turn-count heuristic) (1 ms)
+    ✓ a real topic tap arms _guidedTopicOpenedAt and starts the backstop interval (1 ms)
+    ✓ clears any stale backstop interval before arming a new one (Replay re-tap safety)
+    ✓ the backstop check compares elapsed time against GUIDED_TOPIC_BACKSTOP_MS and calls the shared teardown
+    ✓ _hide() clears both _guidedTopicOpenedAt and the backstop interval — a real close ends the backstop too (1 ms)
+    ✓ _endGuidedTopicTeaching is a single shared helper used by both the directive handler and the backstop (12 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 passed, 2 total
+Tests:       27 passed, 27 total
+Snapshots:   0 total
+Time:        3.578 s, estimated 4 s
+Ran all test suites matching /test\/frontend\/orb-widget-guided-topic-completion-idempotency.test.ts|test\/orb\/live\/guided-topic-teaching-complete-signal.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

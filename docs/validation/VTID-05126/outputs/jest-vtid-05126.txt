@@ -1,0 +1,25 @@
+    ✓ every source type, while upcoming (12 ms)
+    ✓ never cancelled, done, ended or a series (2 ms)
+    ✓ an entry with a community event is shared as the event, never as calendar_entry (2 ms)
+    ✓ health sources are sensitive (5 ms)
+  the card others see (VTID-05126)
+    ✓ the snapshot holds only title, times, emoji, status — and the place only on request (2 ms)
+    ✓ the member may rename it (trimmed, capped); an empty name falls back to the entry title (2 ms)
+  sharing an own entry to the feed (VTID-05126)
+    ✓ posts a calendar_entry with the snapshot as the verified caller (3 ms)
+    ✓ an event entry carries no snapshot (the feed reads the live event) (2 ms)
+    ✓ refuses closed entries with their reason and inserts nothing (2 ms)
+  inviting to an own entry (VTID-05126)
+    ✓ any own kind; the card follows the member's title and place choice (2 ms)
+    ✓ still refuses cancelled, done, ended and series (1 ms)
+  "In meinen Kalender" from the feed (VTID-05126)
+    ✓ copies only the card into the viewer's calendar, keyed by the post (2 ms)
+    ✓ a second tap changes nothing (1 ms)
+    ✓ never the author's own post, a private post, an event post, or a cancelled / finished entry (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.796 s, estimated 1 s
+Ran all test suites matching /test\/vtid-05126-calendar-share-any-entry.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

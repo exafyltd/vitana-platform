@@ -1,0 +1,5 @@
+npx tsc --noEmit -p services/gateway                      # clean
+jest test/vtid-04428-post-merge-retry.test.ts             # 11 passed
+jest test/vtid-04280-pipeline-unstick.test.ts test/vtid-04378-ledger-terminalization.test.ts  # green
+jest (68 autopilot/bridge/ledger suites)                  # 899/900, 1 fail: vtid-03895 flush too short for the retry
+jest test/vtid-03895-terminalize-vtid-ledger.test.ts      # 8/8 after widening flush 10 -> 30 microtasks

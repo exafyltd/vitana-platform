@@ -1,0 +1,22 @@
+{
+  "name": "@vitana/kiro-runner",
+  "version": "0.1.0",
+  "private": true,
+  "description": "VTID-04999: private relay that runs kiro-cli acp per Operator session with the seat holder's own Kiro API key",
+  "main": "dist/index.js",
+  "scripts": {
+    "build": "tsc",
+    "start": "node dist/index.js",
+    "test": "vitest run"
+  },
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.700.0",
+    "ws": "^8.18.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.5.12",
+    "typescript": "^5.6.0",
+    "vitest": "^2.1.0"
+  }
+}

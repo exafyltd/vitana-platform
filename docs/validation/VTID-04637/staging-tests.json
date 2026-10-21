@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04637",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "catalog is admin-only", "path": "/api/v1/testing/catalog", "expect_status": 401 },
+    { "kind": "http", "name": "suite detail is admin-only", "path": "/api/v1/testing/catalog/suite?id=platform:gateway:routes", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/routes/testing-catalog.test.ts test/scripts/test-catalog-lib.test.ts", "cwd": "services/gateway",
+      "reason": "pins the catalog generator's classification, the loader and the admin-only routes" }
+  ]
+}

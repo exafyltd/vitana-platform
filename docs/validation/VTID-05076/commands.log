@@ -1,0 +1,6 @@
+# VTID-05076 commands
+git checkout -B claude/amazing-ride-wipu1l origin/main
+node --test scripts/ci/staging-verify/lib.test.cjs   # 34 tests, 0 fail
+# mutation check: drop --first-parent from commitsBetween -> 33 pass, 1 fail (the merge-commit test); restored -> 34 pass
+node --check scripts/ci/staging-verify/run.mjs
+# dry run on real main (c69d521d..bb8b0064): 5 first-parent changes, missing=0, suites VTID-05072, VTID-05074

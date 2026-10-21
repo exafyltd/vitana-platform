@@ -1,0 +1,32 @@
+# VTID-04229 — commands (2026-09-21)
+
+# Build the bundle from the real index artifacts (sandbox: graphify-out/graph.json 51 MB, repowise export 18 MB)
+node scripts/codeintel/build-code-index.mjs --graph graphify-out/graph.json --export .repowise/export/wiki_pages.json \
+  --repo exafyltd/vitana-platform --sha 9545b1904a00111d47b5f8be73b92488b8e74a7e --out code-index-out
+#   -> 1.5 s; nodes 46,800, edges 88,760 (762 duplicates/dangling dropped), relations 16, risk_files 2,736, hotspots 50, dead_code_files 859
+#   -> graph-index.json.gz 1,216,250 B; risk-index.json.gz 407,187 B; manifest.json 410 B
+
+# Smoke the loader + queries against that bundle (tsx, CODE_INDEX_LOCAL_DIR laid out like the bucket)
+#   loadCodeIndex: 244 ms (gunzip + adjacency for 46,800 nodes)
+#   indexQuery("buildCiFailureReason"): 30 ms, 1 seed, 6 nodes touched (container, caller ciWatcherTick, importing test, CHANGE LOG reference)
+#   indexQuery("dev autopilot watcher merge_sha reconciler"): 48 ms, 6 seeds
+#   graphPath(dev-autopilot-watcher.ts -> github-service.ts): 6 ms, 1 hop (imports_from)
+#   getRisk(gemini-operator.ts): 1 ms, 19 importing files, 14 dead-code candidates (no RepoWise page: it is one of the 376 pages the export omits)
+
+# Provision the bucket (dry run first, then apply)
+scripts/aws/setup-code-index-bucket.sh
+scripts/aws/setup-code-index-bucket.sh --apply        # -> outputs/setup-code-index-bucket-apply-2026-09-21.log (exit 2: 3 steps denied, listed verbatim)
+
+# Bootstrap publish of the sandbox-built bundle (the workflow does this on the next merge to main)
+aws s3 cp code-index-out/graph-index.json.gz s3://vitana-code-index/exafyltd/vitana-platform/9545b190…/graph-index.json.gz --content-type application/json --content-encoding gzip
+aws s3 cp code-index-out/risk-index.json.gz  s3://vitana-code-index/exafyltd/vitana-platform/9545b190…/risk-index.json.gz  --content-type application/json --content-encoding gzip
+aws s3 cp code-index-out/manifest.json       s3://vitana-code-index/exafyltd/vitana-platform/9545b190…/manifest.json
+aws s3 cp code-index-out/manifest.json       s3://vitana-code-index/exafyltd/vitana-platform/latest/manifest.json
+aws s3 ls --recursive s3://vitana-code-index/  # -> outputs/s3-listing-2026-09-21.txt
+
+# Tests
+cd services/gateway && npx tsc --noEmit
+npx jest test/vtid-04229-code-index.test.ts test/autopilot-agent-tools.test.ts test/autopilot-agent-loop.test.ts \
+  test/autopilot-agent-scope-validate.test.ts test/vtid-04016-agent-check-guard.test.ts test/vtid-04017-fix-mode.test.ts \
+  test/vtid-04217-fix-mode-merge-conflicts.test.ts test/vtid-04116-operator-codeintel.test.ts test/vtid-04223-agent-memory-context.test.ts \
+  test/vtid-03838-operator-prompt-lists-execute-tool.test.ts test/vtid-04018-operator-bootstrap-pack.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts

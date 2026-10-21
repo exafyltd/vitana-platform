@@ -1,0 +1,1 @@
+node --test scripts/ci/staging-verify/lib.test.cjs: 30 pass

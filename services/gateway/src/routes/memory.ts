@@ -1,0 +1,3171 @@
+/**
+ * VTID-01105: ORB Memory Wiring v1 (Gateway)
+ * VTID-01082: Memory Garden Core + Daily Diary Ingestion (Phase D Foundation)
+ * VTID-01085: Memory Retrieve Router v1 (Unified Memory Access)
+ * VTID-01098: Memory Timeline & Life-Change Causality
+ * VTID-01100: Memory Quality Metrics & Confidence Scoring
+ * VTID-01116: Memory Confidence & Source Trust Engine
+ *
+ * Memory write/read endpoints and auto-write hooks for ORB conversations.
+ * Memory Garden diary and node extraction for personalization.
+ *
+ * Endpoints:
+ * - POST /api/v1/memory/write        - Write a memory item (VTID-01105)
+ * - GET  /api/v1/memory/context      - Fetch memory context (VTID-01105)
+ * - GET  /api/v1/memory/health       - Health check
+ * - POST /api/v1/memory/diary        - Add diary entry (VTID-01082)
+ * - GET  /api/v1/memory/diary        - Get diary entries with date range (VTID-01082)
+ * - POST /api/v1/memory/garden/extract - Extract garden nodes from diary entry (VTID-01082)
+ * - GET  /api/v1/memory/garden/summary - Get garden summary (VTID-01082)
+ * - POST /api/v1/memory/retrieve     - Unified memory retrieval gateway (VTID-01085)
+ * - GET  /api/v1/memory/timeline     - Get timeline (cached or computed) (VTID-01098)
+ * - POST /api/v1/memory/timeline/rebuild - Rebuild timeline snapshot (VTID-01098)
+ * - POST /api/v1/memory/quality/compute - Compute quality metrics (VTID-01100)
+ * - GET  /api/v1/memory/quality         - Get latest quality snapshot (VTID-01100)
+ * - POST /api/v1/memory/confidence/adjust - Adjust confidence score (VTID-01116)
+ * - POST /api/v1/memory/confidence/confirm - Confirm a memory item (VTID-01116)
+ * - POST /api/v1/memory/confidence/correct - Correct a memory item (VTID-01116)
+ * - GET  /api/v1/memory/confidence/history/:id - Get confidence history (VTID-01116)
+ * - GET  /api/v1/memory/context/trusted - Get context with confidence filtering (VTID-01116)
+ * - POST /api/v1/memory/confidence/decay - Apply time decay (VTID-01116)
+ * - GET  /api/v1/memory/source-trust - Get source trust weights (VTID-01116)
+ * - GET  /api/v1/memory/confidence/reasons - Get adjustment reason codes (VTID-01116)
+ *
+ * Internal helpers:
+ * - writeMemoryItem()            - Direct memory write (for ORB auto-write)
+ * - classifyCategory()           - Deterministic category classification
+ *
+ * Dependencies:
+ * - VTID-01102 (context bridge)
+ * - VTID-01104 (memory RPC)
+ * - VTID-01085 (memory retrieve RPC)
+ * - VTID-01098 (timeline RPC)
+ * - VTID-01100 (quality metrics RPC)
+ * - VTID-01116 (confidence trust RPC)
+ */
+
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { randomUUID } from 'crypto';
+import { createUserSupabaseClient } from '../lib/supabase-user';
+import { emitOasisEvent } from '../services/oasis-event-service';
+// VTID-01091: Location extraction from diary entries
+import { processLocationMentionsFromDiary } from './locations';
+// VTID-01977: pattern-matching health-feature extraction from diary text
+import { getSupabase } from '../lib/supabase';
+import { extractHealthFeaturesFromDiary, persistDiaryHealthFeatures } from '../services/diary-health-extractor';
+import * as repo from './memory-repository';
+import { syncDiaryToIndex } from '../services/memory/diary'; // VTID-04390
+
+const router = Router();
+
+// =============================================================================
+// VTID-01105: Constants & Types
+// =============================================================================
+
+/**
+ * Valid category keys for memory items
+ */
+const CATEGORY_KEYS = [
+  'conversation',
+  'health',
+  'relationships',
+  'community',
+  'preferences',
+  'goals',
+  'tasks',
+  'products_services',
+  'events_meetups',
+  'notes',
+  'personal'  // VTID-DEBUG-03: Added for personal identity info
+] as const;
+
+type CategoryKey = typeof CATEGORY_KEYS[number];
+
+/**
+ * Valid source types for memory items
+ */
+const SOURCE_TYPES = ['orb_text', 'orb_voice', 'diary', 'upload', 'system'] as const;
+type SourceType = typeof SOURCE_TYPES[number];
+
+/**
+ * Memory write request schema
+ */
+const MemoryWriteRequestSchema = z.object({
+  category_key: z.enum(CATEGORY_KEYS).optional(),
+  source: z.enum(SOURCE_TYPES),
+  content: z.string().min(1, 'Content is required'),
+  importance: z.number().int().min(1).max(100).default(10),
+  occurred_at: z.string().datetime().optional(),
+  content_json: z.record(z.unknown()).optional().default({})
+});
+
+type MemoryWriteRequest = z.infer<typeof MemoryWriteRequestSchema>;
+
+/**
+ * Memory context query parameters
+ */
+const MemoryContextQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  categories: z.string().optional(), // comma-separated
+  since: z.string().datetime().optional()
+});
+
+// =============================================================================
+// VTID-01082: Diary Entry Schemas
+// =============================================================================
+
+/**
+ * Valid diary entry types
+ */
+const DIARY_ENTRY_TYPES = ['free', 'guided', 'health', 'reflection'] as const;
+type DiaryEntryType = typeof DIARY_ENTRY_TYPES[number];
+
+/**
+ * Diary entry write request schema
+ */
+const DiaryEntryWriteSchema = z.object({
+  entry_date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'entry_date must be YYYY-MM-DD format'),
+  entry_type: z.enum(DIARY_ENTRY_TYPES),
+  raw_text: z.string().min(1, 'raw_text is required'),
+  mood: z.string().optional().nullable(),
+  energy_level: z.number().int().min(1).max(10).optional().nullable(),
+  tags: z.array(z.string()).optional().default([])
+});
+
+type DiaryEntryWriteRequest = z.infer<typeof DiaryEntryWriteSchema>;
+
+/**
+ * Diary entries query parameters
+ */
+const DiaryEntriesQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/).optional(),
+  limit: z.coerce.number().int().min(1).max(200).default(50)
+});
+
+/**
+ * Garden extract request schema
+ */
+const GardenExtractSchema = z.object({
+  diary_entry_id: z.string().uuid('diary_entry_id must be a valid UUID')
+});
+
+/**
+ * Memory item structure (returned from RPC)
+ */
+interface MemoryItem {
+  id: string;
+  category_key: CategoryKey;
+  source: SourceType;
+  content: string;
+  content_json: Record<string, unknown>;
+  importance: number;
+  occurred_at: string;
+  created_at: string;
+}
+
+// =============================================================================
+// VTID-01085: Memory Retrieve Router Constants & Types
+// =============================================================================
+
+/**
+ * Valid intent types for memory retrieve
+ */
+const RETRIEVE_INTENTS = [
+  'health',
+  'longevity',
+  'community',
+  'lifestyle',
+  'planner',
+  'general'
+] as const;
+
+type RetrieveIntent = typeof RETRIEVE_INTENTS[number];
+
+/**
+ * Valid mode types for memory retrieve
+ */
+const RETRIEVE_MODES = ['summary', 'detail'] as const;
+type RetrieveMode = typeof RETRIEVE_MODES[number];
+
+/**
+ * Memory retrieve request schema (VTID-01085)
+ */
+const MemoryRetrieveRequestSchema = z.object({
+  intent: z.enum(RETRIEVE_INTENTS).default('general'),
+  mode: z.enum(RETRIEVE_MODES).default('summary'),
+  query: z.string().nullable().optional(),
+  time_range: z.object({
+    from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional(),
+    to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Must be YYYY-MM-DD format').optional()
+  }).optional(),
+  include: z.object({
+    diary: z.boolean().default(true),
+    garden: z.boolean().default(true),
+    longevity: z.boolean().default(true),
+    community: z.boolean().default(true)
+  }).optional()
+});
+
+type MemoryRetrieveRequest = z.infer<typeof MemoryRetrieveRequestSchema>;
+
+/**
+ * Memory retrieve response structure (VTID-01085)
+ */
+interface MemoryRetrieveResponse {
+  ok: boolean;
+  intent: RetrieveIntent;
+  mode: RetrieveMode;
+  time_range: { from: string; to: string };
+  data: {
+    garden_summary: Record<string, unknown>;
+    longevity_summary: Record<string, unknown>;
+    community_recommendations: unknown[];
+    diary_highlights: unknown[];
+  };
+  meta: {
+    tenant_id: string;
+    user_id: string;
+    active_role: string;
+    redacted: boolean;
+    redactions: Array<{ field: string; reason: string }>;
+    sources: {
+      diary_entries: number;
+      garden_nodes: number;
+      longevity_days: number;
+      community_recs: number;
+    };
+    audit_id: string;
+  };
+}
+
+// =============================================================================
+// VTID-01098: Timeline Constants & Types
+// =============================================================================
+
+/**
+ * Timeline query parameters
+ */
+const TimelineQuerySchema = z.object({
+  from: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'from must be YYYY-MM-DD format'),
+  to: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'to must be YYYY-MM-DD format'),
+  type: z.enum(['health', 'relationships', 'community', 'all']).optional().default('all')
+});
+
+/**
+ * Timeline entry type (matches RPC output)
+ */
+interface TimelineEntry {
+  date: string;
+  type: 'diary' | 'meetup' | 'live' | 'service' | 'relationship' | 'habit';
+  title: string;
+  evidence: {
+    sources: string[];
+    related_topics: string[];
+    related_people: number;
+  };
+  observed_changes: Array<{
+    metric: string;
+    delta: string;
+    window?: string;
+  }>;
+  confidence: number;
+  memory_item_id?: string;
+}
+
+// =============================================================================
+// VTID-01100: Quality Metrics Constants & Types
+// =============================================================================
+
+/**
+ * Confidence band definitions for user-facing display
+ */
+const CONFIDENCE_BANDS = {
+  'Low': { min: 0, max: 39, behavior: 'Minimal personalization, prompts suppressed' },
+  'Medium': { min: 40, max: 69, behavior: 'Conservative recommendations' },
+  'High': { min: 70, max: 85, behavior: 'Full personalization' },
+  'Very High': { min: 86, max: 100, behavior: 'Confident cross-domain suggestions' }
+} as const;
+
+type ConfidenceBand = keyof typeof CONFIDENCE_BANDS;
+
+/**
+ * Quality compute request schema
+ */
+const QualityComputeRequestSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be in YYYY-MM-DD format').optional()
+});
+
+// =============================================================================
+// VTID-01116: Memory Confidence & Source Trust Constants & Types
+// =============================================================================
+
+/**
+ * Source classification types for trust weighting
+ * These map to the memory_source_trust table in the database
+ */
+const SOURCE_CLASSIFICATIONS = [
+  'user_explicit',
+  'user_inferred',
+  'diary',
+  'orb_text',
+  'orb_voice',
+  'upload',
+  'system',
+  'third_party',
+  'derived'
+] as const;
+
+type SourceClassification = typeof SOURCE_CLASSIFICATIONS[number];
+
+/**
+ * Verification levels for memory items
+ */
+const VERIFICATION_LEVELS = [
+  'none',
+  'user_confirmed',
+  'cross_referenced',
+  'professionally_verified',
+  'lab_confirmed'
+] as const;
+
+type VerificationLevel = typeof VERIFICATION_LEVELS[number];
+
+/**
+ * Sensitivity flags for memory items (affects max confidence)
+ */
+const SENSITIVITY_FLAGS = [
+  'medical',
+  'psychological',
+  'financial',
+  'legal',
+  'personal'
+] as const;
+
+type SensitivityFlag = typeof SENSITIVITY_FLAGS[number];
+
+/**
+ * Confidence adjustment reason codes
+ */
+const CONFIDENCE_REASON_CODES = [
+  // Increase reasons
+  'USER_CONFIRMED',
+  'REPETITION_CONSISTENT',
+  'CROSS_REFERENCE_MATCH',
+  'PROFESSIONAL_VERIFIED',
+  'LAB_CONFIRMED',
+  // Decrease reasons
+  'USER_CORRECTED',
+  'CONTRADICTING_EVIDENCE',
+  'TIME_DECAY',
+  'SOURCE_INVALIDATED',
+  'PARTIAL_RETRACTION',
+  // Neutral reasons
+  'INITIAL_CAPTURE',
+  'RECALCULATED',
+  'SENSITIVITY_CAP'
+] as const;
+
+type ConfidenceReasonCode = typeof CONFIDENCE_REASON_CODES[number];
+
+/**
+ * Schema for confidence adjustment request
+ */
+const ConfidenceAdjustRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  reason_code: z.enum(CONFIDENCE_REASON_CODES),
+  context: z.record(z.unknown()).optional().default({})
+});
+
+/**
+ * Schema for memory confirmation request
+ */
+const ConfidenceConfirmRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  confirmation_notes: z.string().optional().nullable()
+});
+
+/**
+ * Schema for memory correction request
+ */
+const ConfidenceCorrectRequestSchema = z.object({
+  memory_item_id: z.string().uuid('memory_item_id must be a valid UUID'),
+  correction_notes: z.string().optional().nullable(),
+  new_content: z.string().optional().nullable()
+});
+
+/**
+ * Schema for trusted context query
+ */
+const TrustedContextQuerySchema = z.object({
+  limit: z.coerce.number().int().min(1).max(100).default(20),
+  min_confidence: z.coerce.number().int().min(0).max(100).default(30),
+  categories: z.string().optional(), // comma-separated
+  since: z.string().datetime().optional(),
+  include_low_confidence: z.coerce.boolean().default(false)
+});
+
+/**
+ * Schema for time decay request
+ */
+const TimeDecayRequestSchema = z.object({
+  decay_threshold_days: z.number().int().min(1).max(365).default(30)
+});
+
+/**
+ * Extended memory item with confidence fields
+ */
+interface MemoryItemWithConfidence extends MemoryItem {
+  source_classification: SourceClassification;
+  confidence_score: number;
+  verification_level: VerificationLevel;
+  sensitivity_flag: SensitivityFlag | null;
+  times_confirmed: number;
+  times_corrected: number;
+  relevance_score?: number;
+  last_confidence_update?: string;
+}
+
+/**
+ * Confidence history entry
+ */
+interface ConfidenceHistoryEntry {
+  id: string;
+  previous_confidence: number;
+  new_confidence: number;
+  delta: number;
+  reason_code: ConfidenceReasonCode;
+  reason_label: string;
+  reason_details: Record<string, unknown>;
+  triggered_by: 'user' | 'system' | 'professional' | 'third_party' | 'time_decay';
+  created_at: string;
+}
+
+/**
+ * Source trust weight definition
+ */
+interface SourceTrustWeight {
+  source_type: SourceClassification;
+  trust_weight: number;
+  max_confidence: number;
+  label: string;
+  description: string;
+  requires_validation: boolean;
+}
+
+/**
+ * Confidence reason definition
+ */
+interface ConfidenceReasonDefinition {
+  reason_code: ConfidenceReasonCode;
+  category: 'increase' | 'decrease' | 'neutral';
+  delta_min: number;
+  delta_max: number;
+  label: string;
+  description: string;
+}
+
+/**
+ * Emit confidence-related OASIS events (VTID-01116)
+ */
+async function emitConfidenceEvent(
+  type: 'memory.confidence.adjusted' | 'memory.confidence.confirmed' | 'memory.confidence.corrected' |
+        'memory.confidence.decayed' | 'memory.confidence.history.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01116',
+    type: type as any,
+    source: 'memory-confidence-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01116] Failed to emit ${type}:`, err.message));
+}
+
+// =============================================================================
+// VTID-01105: Deterministic Category Classification
+// =============================================================================
+
+/**
+ * Deterministic category classification (rules-based v1)
+ * Maps message content → category_key based on keyword matching.
+ * Order matters - first match wins.
+ *
+ * VTID-DEBUG-03: Added 'personal' category for identity info (name, birthday, hometown)
+ * and German keywords for multi-language support.
+ *
+ * @param content - The text content to classify
+ * @returns The classified category key
+ */
+export function classifyCategory(content: string): CategoryKey {
+  const lowerContent = content.toLowerCase();
+
+  // VTID-DEBUG-03: Personal identity keywords (HIGHEST PRIORITY)
+  // This catches name, birthday, hometown, residence info in EN/DE
+  const personalKeywords = [
+    // English name patterns
+    'my name', 'i am called', 'call me', 'i\'m called',
+    // German name patterns
+    'ich heiße', 'ich heisse', 'mein name', 'ich bin der', 'ich bin die',
+    'nenn mich', 'man nennt mich',
+    // Birthday/age patterns (EN)
+    'my birthday', 'born on', 'i was born', 'years old', 'my age',
+    // Birthday/age patterns (DE)
+    'geburtstag', 'geboren', 'jahre alt', 'mein alter',
+    // Hometown/residence patterns (EN)
+    'hometown', 'home town', 'i\'m from', 'i am from', 'i come from',
+    'i live in', 'i reside', 'my residence', 'where i live',
+    // Hometown/residence patterns (DE)
+    'heimatstadt', 'ich komme aus', 'ich wohne', 'wohnort', 'ich lebe in',
+    // Summer/vacation residence
+    'spend summer', 'summer in', 'vacation home',
+    'sommer auf', 'sommer in', 'urlaub',
+    // Company/work identity
+    'my company', 'my firm', 'i work at', 'i own',
+    'meine firma', 'ich arbeite bei'
+  ];
+  for (const keyword of personalKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'personal';
+    }
+  }
+
+  // Health-related keywords (high priority for personal health data)
+  const healthKeywords = [
+    'lab', 'biomarker', 'blood', 'genomics', 'sleep', 'steps', 'hrv',
+    'heart rate', 'diet', 'nutrition', 'hydration', 'workout', 'exercise',
+    'weight', 'bmi', 'glucose', 'insulin', 'cholesterol', 'vitamin',
+    'supplement', 'medication', 'medicine', 'doctor', 'appointment',
+    'symptom', 'pain', 'headache', 'fever', 'tired', 'fatigue', 'energy'
+  ];
+  for (const keyword of healthKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'health';
+    }
+  }
+
+  // Relationships keywords (EN + DE)
+  const relationshipsKeywords = [
+    // English
+    'wife', 'husband', 'partner', 'friend', 'relationship', 'dating',
+    'match', 'family', 'mother', 'father', 'sister', 'brother', 'child',
+    'son', 'daughter', 'parent', 'spouse', 'boyfriend', 'girlfriend',
+    'fiancé', 'fiancee', 'fiance', 'engaged',
+    // German
+    'mutter', 'vater', 'schwester', 'bruder', 'kind', 'sohn', 'tochter',
+    'eltern', 'ehefrau', 'ehemann', 'freund', 'freundin', 'verlobt',
+    'verlobte', 'verlobter', 'familie', 'beziehung'
+  ];
+  for (const keyword of relationshipsKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'relationships';
+    }
+  }
+
+  // Community & Events keywords (check events_meetups first for explicit matches)
+  const eventsMeetupsKeywords = [
+    'meetup', 'event', 'conference', 'workshop', 'webinar', 'seminar',
+    'gathering', 'party', 'celebration', 'anniversary', 'birthday'
+  ];
+  for (const keyword of eventsMeetupsKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'events_meetups';
+    }
+  }
+
+  const communityKeywords = [
+    'group', 'community', 'live room', 'room', 'networking', 'club',
+    'member', 'membership', 'forum', 'discussion', 'team', 'colleague'
+  ];
+  for (const keyword of communityKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'community';
+    }
+  }
+
+  // Products & Services keywords
+  const productsServicesKeywords = [
+    'buy', 'product', 'service', 'recommend', 'affiliate', 'link',
+    'purchase', 'order', 'subscription', 'plan', 'pricing', 'cost',
+    'discount', 'coupon', 'deal', 'offer', 'review', 'rating'
+  ];
+  for (const keyword of productsServicesKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'products_services';
+    }
+  }
+
+  // Tasks keywords (dev/work-related)
+  const tasksKeywords = [
+    'task', 'vtid', 'spec', 'deploy', 'gateway', 'oasis', 'bug', 'fix',
+    'implement', 'feature', 'ticket', 'issue', 'pull request',
+    'merge', 'commit', 'code', 'test', 'debug', 'review'
+  ];
+  for (const keyword of tasksKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'tasks';
+    }
+  }
+  // 'pr' must match as a whole word only — as a substring it would misroute
+  // common words like "prefer", "price", or "espresso" into tasks.
+  if (/\bpr\b/.test(lowerContent)) {
+    return 'tasks';
+  }
+
+  // Goals keywords
+  const goalsKeywords = [
+    'goal', 'plan', 'habit', 'routine', 'objective', 'target', 'milestone',
+    'resolution', 'intention', 'aspiration', 'ambition', 'dream', 'vision',
+    'want to', 'going to', 'will start', 'need to'
+  ];
+  for (const keyword of goalsKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'goals';
+    }
+  }
+
+  // Preferences keywords
+  const preferencesKeywords = [
+    'prefer', 'like', 'love', 'hate', 'dislike', 'favorite', 'favourite',
+    'always', 'never', 'usually', 'typically', 'often', 'setting', 'option'
+  ];
+  for (const keyword of preferencesKeywords) {
+    if (lowerContent.includes(keyword)) {
+      return 'preferences';
+    }
+  }
+
+  // Default to conversation for general chat
+  return 'conversation';
+}
+
+// =============================================================================
+// VTID-01105: Helper Functions
+// =============================================================================
+
+/**
+ * Extract Bearer token from Authorization header.
+ */
+function getBearerToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  return authHeader.slice(7);
+}
+
+/**
+ * Emit a memory-related OASIS event (VTID-01105)
+ */
+async function emitMemoryEvent(
+  type: 'memory.write' | 'memory.read' | 'memory.write.user_message' | 'memory.write.assistant_message' |
+        'memory.retrieve.requested' | 'memory.retrieve.denied' | 'memory.retrieve.completed',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>,
+  vtid: string = 'VTID-01105'
+): Promise<void> {
+  await emitOasisEvent({
+    vtid,
+    type: type as any, // Cast to bypass strict type check (we're extending event types)
+    source: 'memory-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[${vtid}] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * Emit a Memory Garden OASIS event (VTID-01082)
+ * All events include: vtid, user_id, tenant_id, active_role
+ */
+async function emitMemoryGardenEvent(
+  type: 'memory.diary.created' | 'memory.garden.extract.started' | 'memory.garden.node.created' | 'memory.garden.node.updated' | 'memory.garden.summary.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01082',
+    type: type as any,
+    source: 'memory-garden-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01082] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * VTID-01086: Emit a Memory Garden progress OASIS event
+ */
+async function emitGardenEvent(
+  type: 'memory.garden.progress.read' | 'memory.garden.ui.refreshed' | 'memory.garden.longevity_panel.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01086',
+    type: type as any,
+    source: 'memory-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01086] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * VTID-01098: Emit a timeline-related OASIS event
+ */
+async function emitTimelineEvent(
+  type: 'memory.timeline.built' | 'memory.timeline.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01098',
+    type: type as any, // Cast to bypass strict type check (we're extending event types)
+    source: 'memory-timeline-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01098] Failed to emit ${type}:`, err.message));
+}
+
+/**
+ * Emit quality-related OASIS events (VTID-01100)
+ */
+async function emitQualityEvent(
+  type: 'memory.quality.computed' | 'memory.quality.read',
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: 'VTID-01100',
+    type: type as any,
+    source: 'memory-gateway',
+    status,
+    message,
+    payload
+  }).catch(err => console.warn(`[VTID-01100] Failed to emit ${type}:`, err.message));
+}
+
+// =============================================================================
+// VTID-01105: Internal Memory Write Helper (for ORB auto-write)
+// =============================================================================
+
+/**
+ * Internal helper to write a memory item directly.
+ * Used by ORB chat handlers for auto-write functionality.
+ *
+ * @param token - User's Bearer token
+ * @param params - Memory item parameters
+ * @returns Result with ok status and memory item id
+ */
+export async function writeMemoryItem(
+  token: string,
+  params: {
+    source: SourceType;
+    content: string;
+    content_json?: Record<string, unknown>;
+    importance?: number;
+    category_key?: CategoryKey;
+    occurred_at?: string;
+  }
+): Promise<{ ok: boolean; id?: string; category_key?: CategoryKey; occurred_at?: string; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    console.error('[VTID-01105] Missing SUPABASE_URL or SUPABASE_ANON_KEY');
+    return { ok: false, error: 'Gateway misconfigured' };
+  }
+
+  try {
+    // Auto-classify if category not provided
+    const categoryKey = params.category_key || classifyCategory(params.content);
+    const occurredAt = params.occurred_at || new Date().toISOString();
+    const importance = params.importance || 10;
+    const contentJson = params.content_json || {};
+
+    // Create user-context Supabase client
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_write_item RPC
+    const { data, error } = await repo.writeMemoryItemRpc(supabase, {
+      p_category_key: categoryKey,
+      p_source: params.source,
+      p_content: params.content,
+      p_content_json: contentJson,
+      p_importance: importance,
+      p_occurred_at: occurredAt
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist (dependency not ready)
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01105] memory_write_item RPC not found (VTID-01104 not deployed yet)');
+        return { ok: false, error: 'Memory RPC not available (VTID-01104 dependency)' };
+      }
+      console.error('[VTID-01105] memory_write_item RPC error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    const memoryId = data?.id || randomUUID();
+
+    console.log(`[VTID-01105] Memory item written: ${memoryId} (${categoryKey})`);
+
+    return {
+      ok: true,
+      id: memoryId,
+      category_key: categoryKey,
+      occurred_at: occurredAt
+    };
+  } catch (err: any) {
+    console.error('[VTID-01105] writeMemoryItem error:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+// =============================================================================
+// VTID-01105: Routes
+// =============================================================================
+
+/**
+ * POST /write -> POST /api/v1/memory/write
+ *
+ * Write a memory item.
+ */
+router.post('/write', async (req: Request, res: Response) => {
+  console.log('[VTID-01105] POST /memory/write');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = MemoryWriteRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01105] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { source, content, importance, category_key, occurred_at, content_json } = validation.data;
+
+  // Write memory item
+  const result = await writeMemoryItem(token, {
+    source,
+    content,
+    content_json,
+    importance,
+    category_key,
+    occurred_at
+  });
+
+  if (!result.ok) {
+    // Determine error code
+    if (result.error?.includes('dependency') || result.error?.includes('RPC not available')) {
+      return res.status(503).json({
+        ok: false,
+        error: result.error
+      });
+    }
+    return res.status(502).json({
+      ok: false,
+      error: result.error || 'Memory write failed'
+    });
+  }
+
+  // Emit OASIS event
+  await emitMemoryEvent(
+    'memory.write',
+    'success',
+    `Memory item written: ${result.category_key}`,
+    {
+      memory_id: result.id,
+      category_key: result.category_key,
+      source,
+      content_length: content.length,
+      importance
+    }
+  );
+
+  // VTID-01091: Extract location mentions from diary entries
+  let locationExtractionResult = null;
+  if (source === 'diary') {
+    try {
+      locationExtractionResult = await processLocationMentionsFromDiary(
+        token,
+        content,
+        occurred_at
+      );
+      if (locationExtractionResult.locations_created > 0 || locationExtractionResult.visits_created > 0) {
+        console.log(`[VTID-01091] Diary location extraction: ${locationExtractionResult.locations_created} locations, ${locationExtractionResult.visits_created} visits`);
+      }
+    } catch (err: any) {
+      console.warn('[VTID-01091] Diary location extraction failed (non-blocking):', err.message);
+    }
+  }
+
+  return res.status(200).json({
+    ok: true,
+    id: result.id,
+    category_key: result.category_key,
+    occurred_at: result.occurred_at,
+    ...(locationExtractionResult && {
+      location_extraction: {
+        locations_created: locationExtractionResult.locations_created,
+        visits_created: locationExtractionResult.visits_created
+      }
+    })
+  });
+});
+
+/**
+ * GET /context -> GET /api/v1/memory/context
+ *
+ * Fetch memory context for the current user.
+ */
+router.get('/context', async (req: Request, res: Response) => {
+  console.log('[VTID-01105] GET /memory/context');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Parse query parameters
+  const queryValidation = MemoryContextQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { limit, categories, since } = queryValidation.data;
+
+  // Parse categories if provided
+  let categoriesArray: string[] | null = null;
+  if (categories) {
+    categoriesArray = categories.split(',').map(c => c.trim()).filter(c => c.length > 0);
+    // Validate each category
+    for (const cat of categoriesArray) {
+      if (!CATEGORY_KEYS.includes(cat as CategoryKey)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid category: ${cat}. Valid categories: ${CATEGORY_KEYS.join(', ')}`
+        });
+      }
+    }
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_context RPC
+    const { data, error } = await repo.getMemoryContextRpc(supabase, {
+      p_limit: limit,
+      p_categories: categoriesArray,
+      p_since: since || null
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01105] memory_get_context RPC not found (VTID-01104 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Memory RPC not available (VTID-01104 dependency)'
+        });
+      }
+      console.error('[VTID-01105] memory_get_context RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitMemoryEvent(
+      'memory.read',
+      'success',
+      `Memory context fetched: ${(data as MemoryItem[])?.length || 0} items`,
+      {
+        limit,
+        categories: categoriesArray,
+        since,
+        items_returned: (data as MemoryItem[])?.length || 0
+      }
+    );
+
+    console.log(`[VTID-01105] Memory context fetched: ${(data as MemoryItem[])?.length || 0} items`);
+
+    return res.status(200).json({
+      ok: true,
+      items: data || [],
+      query: {
+        limit,
+        categories: categoriesArray,
+        since
+      }
+    });
+  } catch (err: any) {
+    console.error('[VTID-01105] memory_get_context error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01085: Memory Retrieve Router
+// =============================================================================
+
+/**
+ * POST /retrieve -> POST /api/v1/memory/retrieve
+ *
+ * Unified memory retrieval gateway for the assistant (ORB / AI Assistant / Autopilot).
+ * Returns diary entries, Memory Garden summary, longevity signals, and community recommendations.
+ *
+ * Role-aware access control:
+ * - Patient: can retrieve own full memory
+ * - Professional/Staff/Admin: default deny for diary + garden unless explicit grant exists
+ *
+ * OASIS Events:
+ * - memory.retrieve.requested: When retrieval is initiated
+ * - memory.retrieve.denied: If access is denied
+ * - memory.retrieve.completed: When retrieval succeeds
+ */
+router.post('/retrieve', async (req: Request, res: Response) => {
+  console.log('[VTID-01085] POST /memory/retrieve');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = MemoryRetrieveRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01085] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { intent, mode, query, time_range, include } = validation.data;
+
+  // Build payload for RPC
+  const rpcPayload = {
+    intent,
+    mode,
+    query: query || null,
+    time_range: time_range || {},
+    include: include || { diary: true, garden: true, longevity: true, community: true }
+  };
+
+  // Emit 'requested' event
+  await emitMemoryEvent(
+    'memory.retrieve.requested',
+    'info',
+    `Memory retrieve requested: intent=${intent}, mode=${mode}`,
+    {
+      intent,
+      mode,
+      query: query || null,
+      time_range: time_range || null,
+      include: rpcPayload.include
+    },
+    'VTID-01085'
+  );
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_retrieve RPC
+    const { data, error } = await repo.memoryRetrieveRpc(supabase, {
+      p_payload: rpcPayload
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01085] memory_retrieve RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Memory retrieve RPC not available (VTID-01085 migration required)'
+        });
+      }
+      console.error('[VTID-01085] memory_retrieve RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check if access was denied
+    if (data?.meta?.redacted && data.meta.redactions.length > 0) {
+      // Partial denial - some data was redacted
+      await emitMemoryEvent(
+        'memory.retrieve.denied',
+        'warning',
+        `Memory retrieve partially denied: ${data.meta.redactions.length} redactions`,
+        {
+          intent,
+          mode,
+          redactions: data.meta.redactions,
+          audit_id: data.meta.audit_id
+        },
+        'VTID-01085'
+      );
+    }
+
+    // Check if completely denied (decision was 'deny')
+    const totalSources =
+      (data?.meta?.sources?.diary_entries || 0) +
+      (data?.meta?.sources?.garden_nodes || 0) +
+      (data?.meta?.sources?.longevity_days || 0) +
+      (data?.meta?.sources?.community_recs || 0);
+
+    if (totalSources === 0 && data?.meta?.redacted) {
+      await emitMemoryEvent(
+        'memory.retrieve.denied',
+        'error',
+        `Memory retrieve denied: no access grants`,
+        {
+          intent,
+          mode,
+          active_role: data.meta.active_role,
+          redactions: data.meta.redactions,
+          audit_id: data.meta.audit_id
+        },
+        'VTID-01085'
+      );
+
+      return res.status(403).json({
+        ok: false,
+        error: 'ACCESS_DENIED',
+        message: 'No memory access grants for the requested data',
+        redactions: data.meta.redactions,
+        audit_id: data.meta.audit_id
+      });
+    }
+
+    // Success - emit completed event
+    await emitMemoryEvent(
+      'memory.retrieve.completed',
+      'success',
+      `Memory retrieve completed: ${totalSources} total items`,
+      {
+        intent,
+        mode,
+        sources: data.meta.sources,
+        redacted: data.meta.redacted,
+        redactions_count: data.meta.redactions?.length || 0,
+        audit_id: data.meta.audit_id
+      },
+      'VTID-01085'
+    );
+
+    console.log(`[VTID-01085] Memory retrieve completed: ${totalSources} items, audit_id=${data.meta.audit_id}`);
+
+    // Return the response from RPC
+    return res.status(200).json(data);
+
+  } catch (err: any) {
+    console.error('[VTID-01085] memory_retrieve error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01086: Memory Garden Progress Endpoint
+// =============================================================================
+
+/**
+ * GET /garden/progress -> GET /api/v1/memory/garden/progress
+ *
+ * Returns counts and progress per Memory Garden category.
+ * Progress = min(1, count / target_count)
+ */
+router.get('/garden/progress', async (req: Request, res: Response) => {
+  console.log('[VTID-01086] GET /memory/garden/progress');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_garden_progress RPC
+    const { data, error } = await repo.getMemoryGardenProgressRpc(supabase);
+
+    if (error) {
+      // Check if RPC doesn't exist (migration not deployed yet)
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01086] memory_get_garden_progress RPC not found (migration not deployed yet)');
+        // Return placeholder data for development
+        return res.status(200).json({
+          ok: true,
+          totals: { memories: 0 },
+          categories: {
+            personal_identity: { count: 0, progress: 0.00, label: 'Personal Identity' },
+            health_wellness: { count: 0, progress: 0.00, label: 'Health & Wellness' },
+            lifestyle_routines: { count: 0, progress: 0.00, label: 'Lifestyle & Routines' },
+            network_relationships: { count: 0, progress: 0.00, label: 'Network & Relationships' },
+            learning_knowledge: { count: 0, progress: 0.00, label: 'Learning & Knowledge' },
+            business_projects: { count: 0, progress: 0.00, label: 'Business & Projects' },
+            finance_assets: { count: 0, progress: 0.00, label: 'Finance & Assets' },
+            location_environment: { count: 0, progress: 0.00, label: 'Location & Environment' },
+            digital_footprint: { count: 0, progress: 0.00, label: 'Digital Footprint' },
+            values_aspirations: { count: 0, progress: 0.00, label: 'Values & Aspirations' },
+            autopilot_context: { count: 0, progress: 0.00, label: 'Autopilot Context' },
+            future_plans: { count: 0, progress: 0.00, label: 'Future Plans' },
+            uncategorized: { count: 0, progress: 0.00, label: 'Uncategorized' }
+          },
+          _placeholder: true
+        });
+      }
+      console.error('[VTID-01086] memory_get_garden_progress RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Get user context for OASIS event
+    const { data: meData } = await repo.getMeContextRpc(supabase);
+    const tenantId = meData?.tenant_id || null;
+    const userId = meData?.user_id || meData?.id || null;
+    const activeRole = meData?.active_role || null;
+
+    // Emit OASIS event
+    await emitGardenEvent(
+      'memory.garden.progress.read',
+      'success',
+      `Memory Garden progress fetched: ${data?.totals?.memories || 0} total memories`,
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        active_role: activeRole,
+        total_memories: data?.totals?.memories || 0,
+        category_count: Object.keys(data?.categories || {}).length
+      }
+    );
+
+    console.log(`[VTID-01086] Memory Garden progress fetched: ${data?.totals?.memories || 0} memories`);
+
+    return res.status(200).json({
+      ok: data?.ok ?? true,
+      totals: data?.totals || { memories: 0 },
+      categories: data?.categories || {}
+    });
+  } catch (err: any) {
+    console.error('[VTID-01086] memory_get_garden_progress error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01098: Timeline Endpoints
+// =============================================================================
+
+/**
+ * GET /timeline -> GET /api/v1/memory/timeline?from=&to=
+ *
+ * Get timeline for the current user (cached or computed on-the-fly).
+ */
+router.get('/timeline', async (req: Request, res: Response) => {
+  console.log('[VTID-01098] GET /memory/timeline');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate query parameters
+  const queryValidation = TimelineQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { from, to, type } = queryValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Get user ID from token
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user?.id) {
+      console.error('[VTID-01098] Failed to get user:', userError?.message);
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Failed to verify user'
+      });
+    }
+
+    const userId = userData.user.id;
+
+    // Call memory_get_timeline RPC
+    const { data, error } = await repo.getMemoryTimelineRpc(supabase, {
+      p_user_id: userId,
+      p_from: from,
+      p_to: to
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01098] memory_get_timeline RPC not found (VTID-01098 migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Timeline RPC not available (VTID-01098 dependency)'
+        });
+      }
+      console.error('[VTID-01098] memory_get_timeline RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Filter entries by type if specified
+    let entries = (data?.entries || []) as TimelineEntry[];
+    if (type !== 'all') {
+      const typeFilter: Record<string, string[]> = {
+        health: ['habit'],
+        relationships: ['relationship'],
+        community: ['meetup', 'live']
+      };
+      const allowedTypes = typeFilter[type] || [];
+      entries = entries.filter(entry => allowedTypes.includes(entry.type));
+    }
+
+    // Emit OASIS event
+    await emitTimelineEvent(
+      'memory.timeline.read',
+      'success',
+      `Timeline fetched: ${entries.length} entries`,
+      {
+        tenant_id: data?.tenant_id,
+        user_id: userId,
+        window: { from, to },
+        entry_count: entries.length,
+        type_filter: type,
+        cached: data?.cached || false
+      }
+    );
+
+    console.log(`[VTID-01098] Timeline fetched: ${entries.length} entries (cached: ${data?.cached || false})`);
+
+    return res.status(200).json({
+      ok: true,
+      entries,
+      entry_count: entries.length,
+      window: { from, to },
+      cached: data?.cached || false,
+      snapshot_date: data?.snapshot_date
+    });
+  } catch (err: any) {
+    console.error('[VTID-01098] memory_get_timeline error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /timeline/rebuild -> POST /api/v1/memory/timeline/rebuild
+ *
+ * Force rebuild of timeline snapshot.
+ */
+router.post('/timeline/rebuild', async (req: Request, res: Response) => {
+  console.log('[VTID-01098] POST /memory/timeline/rebuild');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body (same as query params for timeline)
+  const bodyValidation = TimelineQuerySchema.safeParse(req.body);
+  if (!bodyValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid request body',
+      details: bodyValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { from, to } = bodyValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Get user ID from token
+    const { data: userData, error: userError } = await supabase.auth.getUser();
+    if (userError || !userData?.user?.id) {
+      console.error('[VTID-01098] Failed to get user:', userError?.message);
+      return res.status(401).json({
+        ok: false,
+        error: 'UNAUTHENTICATED',
+        message: 'Failed to verify user'
+      });
+    }
+
+    const userId = userData.user.id;
+
+    // Call memory_build_timeline RPC (forces rebuild)
+    const { data, error } = await repo.buildMemoryTimelineRpc(supabase, {
+      p_user_id: userId,
+      p_from: from,
+      p_to: to
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01098] memory_build_timeline RPC not found (VTID-01098 migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Timeline RPC not available (VTID-01098 dependency)'
+        });
+      }
+      console.error('[VTID-01098] memory_build_timeline RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitTimelineEvent(
+      'memory.timeline.built',
+      'success',
+      `Timeline rebuilt: ${data?.entries || 0} entries`,
+      {
+        tenant_id: data?.tenant_id,
+        user_id: userId,
+        window: { from, to },
+        entry_count: data?.entries || 0,
+        snapshot_date: data?.snapshot_date
+      }
+    );
+
+    console.log(`[VTID-01098] Timeline rebuilt: ${data?.entries || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      entries: data?.entries || 0,
+      window: { from, to },
+      snapshot_date: data?.snapshot_date,
+      message: 'Timeline rebuilt successfully'
+    });
+  } catch (err: any) {
+    console.error('[VTID-01098] memory_build_timeline error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /health -> GET /api/v1/memory/health
+ *
+ * Health check for memory system.
+ */
+router.get('/health', (_req: Request, res: Response) => {
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
+
+  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+
+  return res.status(200).json({
+    ok: true,
+    status,
+    service: 'memory-gateway',
+    version: '1.3.0',
+    vtids: ['VTID-01105', 'VTID-01082', 'VTID-01085', 'VTID-01086', 'VTID-01098', 'VTID-01100', 'VTID-01116'],
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      write: hasSupabaseUrl && hasSupabaseKey,
+      read: hasSupabaseUrl && hasSupabaseKey,
+      retrieve: hasSupabaseUrl && hasSupabaseKey,
+      auto_classify: true,
+      category_keys: CATEGORY_KEYS,
+      retrieve_intents: RETRIEVE_INTENTS,
+      retrieve_modes: RETRIEVE_MODES,
+      diary: hasSupabaseUrl && hasSupabaseKey,
+      garden: hasSupabaseUrl && hasSupabaseKey,
+      timeline: hasSupabaseUrl && hasSupabaseKey,
+      timeline_rebuild: hasSupabaseUrl && hasSupabaseKey,
+      timeline_types: ['health', 'relationships', 'community', 'all'],
+      quality_metrics: hasSupabaseUrl && hasSupabaseKey,
+      // VTID-01116: Confidence & Trust Engine
+      confidence_scoring: hasSupabaseUrl && hasSupabaseKey,
+      confidence_adjust: hasSupabaseUrl && hasSupabaseKey,
+      confidence_confirm: hasSupabaseUrl && hasSupabaseKey,
+      confidence_correct: hasSupabaseUrl && hasSupabaseKey,
+      confidence_history: hasSupabaseUrl && hasSupabaseKey,
+      trusted_context: hasSupabaseUrl && hasSupabaseKey,
+      source_trust: hasSupabaseUrl && hasSupabaseKey,
+      source_classifications: SOURCE_CLASSIFICATIONS,
+      verification_levels: VERIFICATION_LEVELS,
+      sensitivity_flags: SENSITIVITY_FLAGS,
+      confidence_reason_codes: CONFIDENCE_REASON_CODES
+    },
+    dependencies: {
+      'VTID-01102': 'context_bridge',
+      'VTID-01104': 'memory_rpc',
+      'VTID-01082': 'memory_garden_diary',
+      'VTID-01085': 'memory_retrieve_router',
+      'VTID-01098': 'timeline_rpc',
+      'VTID-01100': 'quality_metrics_rpc',
+      'VTID-01116': 'confidence_trust_engine'
+    }
+  });
+});
+
+// =============================================================================
+// VTID-01082: Diary Entry Routes
+// =============================================================================
+
+/**
+ * POST /diary -> POST /api/v1/memory/diary
+ *
+ * Add a diary entry for the current user.
+ */
+router.post('/diary', async (req: Request, res: Response) => {
+  console.log('[VTID-01082] POST /memory/diary');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = DiaryEntryWriteSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01082] Diary validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { entry_date, entry_type, raw_text, mood, energy_level, tags } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_add_diary_entry RPC
+    const { data, error } = await repo.addMemoryDiaryEntryRpc(supabase, {
+      p_entry_date: entry_date,
+      p_entry_type: entry_type,
+      p_raw_text: raw_text,
+      p_mood: mood || null,
+      p_energy_level: energy_level || null,
+      p_tags: tags || []
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01082] memory_add_diary_entry RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Diary RPC not available (VTID-01082 migration required)'
+        });
+      }
+      console.error('[VTID-01082] memory_add_diary_entry RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check for RPC-level errors
+    if (data && data.ok === false) {
+      console.warn('[VTID-01082] Diary entry RPC returned error:', data.error);
+      return res.status(400).json({
+        ok: false,
+        error: data.error,
+        message: data.message
+      });
+    }
+
+    // VTID-01977: extract health features from diary text and write them to
+    // health_features_daily so the user's Vitana Index reflects the diary
+    // entry on the next compute. Pattern-matching only (no LLM); idempotent
+    // via (tenant_id, user_id, date, feature_key) upsert. Recomputes Index
+    // inline so the header badge moves before the user closes the diary.
+    let diaryFeatureWrites = 0;
+    try {
+      const writes = extractHealthFeaturesFromDiary(raw_text);
+      const admin = getSupabase();
+      const userIdForFeatures = data?.user_id as string | undefined;
+      const tenantIdForFeatures = (data?.tenant_id as string | undefined) ?? '00000000-0000-0000-0000-000000000000';
+      if (admin && userIdForFeatures && writes.length > 0) {
+        const { written } = await persistDiaryHealthFeatures(
+          admin,
+          userIdForFeatures,
+          tenantIdForFeatures,
+          entry_date,
+          writes,
+        );
+        diaryFeatureWrites = written;
+        if (written > 0) {
+          // Recompute Index for today so the diary entry is reflected on the
+          // header badge / profile / Index Detail without waiting for the
+          // nightly job. Best-effort: failures don't fail the diary write.
+          try {
+            await repo.recomputeVitanaIndexForUser(admin, userIdForFeatures, entry_date);
+          } catch (recErr: any) {
+            console.warn(`[VTID-01977] Index recompute failed (non-fatal): ${recErr?.message ?? recErr}`);
+          }
+        }
+      }
+    } catch (extractErr: any) {
+      console.warn(`[VTID-01977] diary health extraction failed (non-fatal): ${extractErr?.message ?? extractErr}`);
+    }
+
+    // Emit OASIS event: memory.diary.created
+    await emitMemoryGardenEvent(
+      'memory.diary.created',
+      'success',
+      `Diary entry created: ${entry_type} for ${entry_date}`,
+      {
+        diary_entry_id: data?.id,
+        entry_date,
+        entry_type,
+        tenant_id: data?.tenant_id,
+        user_id: data?.user_id,
+        active_role: data?.active_role,
+        raw_text_length: raw_text.length,
+        has_mood: !!mood,
+        has_energy_level: energy_level !== null && energy_level !== undefined,
+        tags_count: tags?.length || 0
+      }
+    );
+
+    console.log(`[VTID-01082] Diary entry created: ${data?.id} (${entry_type} for ${entry_date})`);
+
+    return res.status(200).json({
+      ok: true,
+      id: data?.id,
+      entry_date,
+      entry_type,
+      // VTID-01977: how many structured health features the extractor
+      // wrote from this diary entry. 0 means no Index movement; >0 means
+      // health_features_daily got rows and the Index was recomputed.
+      health_features_written: diaryFeatureWrites,
+    });
+  } catch (err: any) {
+    console.error('[VTID-01082] Diary entry error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /diary/sync-index -> POST /api/v1/memory/diary/sync-index (VTID-01983)
+ *
+ * Lightweight companion to POST /diary. Accepts {raw_text, entry_date?} and
+ * runs the deployed VTID-01977 health-feature extractor + persist + Index
+ * recompute pipeline against it — WITHOUT writing to memory_diary_entries.
+ *
+ * Why a separate endpoint: the frontend Diary writers (TextDiaryEditor,
+ * VoiceDiaryRecorder, PhotoDiaryUploader) write to the legacy `diary_entries`
+ * table; many readers (useMemoryTimeline, buildOrbContext, useKnowledgeBase)
+ * still consume that table. Replacing those writes with POST /diary would
+ * orphan the readers. This endpoint lets the frontend keep its existing
+ * write path and add a fire-and-forget call after success so the Index
+ * reflects the diary text.
+ *
+ * Returns: { ok, health_features_written, pillars_after, index_delta }
+ */
+router.post('/diary/sync-index', async (req: Request, res: Response) => {
+  console.log('[VTID-01983] POST /memory/diary/sync-index');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const rawText = typeof req.body?.raw_text === 'string' ? req.body.raw_text : '';
+  const entryDate = typeof req.body?.entry_date === 'string'
+    ? req.body.entry_date
+    : new Date().toISOString().slice(0, 10);
+  if (!rawText.trim()) {
+    return res.status(400).json({ ok: false, error: 'INVALID_RAW_TEXT' });
+  }
+
+  try {
+    // Resolve user from the bearer token using the same anon-client pattern
+    // the rest of this route file uses (createUserSupabaseClient).
+    const userClient = createUserSupabaseClient(token);
+    const { data: userData } = await userClient.auth.getUser();
+    const userId = userData?.user?.id;
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+
+    // Resolve tenant via user_tenants (same fallback as the manual-log endpoint
+    // uses; bypasses the current_tenant_id() JWT-claim path so the sync works
+    // for users whose JWT doesn't carry app_metadata.active_tenant_id).
+    const admin = getSupabase();
+    if (!admin) {
+      return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+    }
+    const { data: tenantRow } = await repo.fetchUserTenantId(admin, userId);
+    const tenantId = (tenantRow?.tenant_id as string | undefined)
+      ?? '00000000-0000-0000-0000-000000000000';
+
+    // VTID-04390: the same sync the unified diary endpoint runs.
+    const sync = await syncDiaryToIndex(admin, userId, tenantId, rawText, entryDate);
+    return res.status(200).json({ ok: true, ...sync });
+  } catch (err: any) {
+    console.error('[VTID-01983] /diary/sync-index error:', err?.message ?? err);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'UNKNOWN' });
+  }
+});
+
+/**
+ * GET /diary -> GET /api/v1/memory/diary?from=&to=
+ *
+ * Get diary entries for the current user with optional date range.
+ */
+router.get('/diary', async (req: Request, res: Response) => {
+  console.log('[VTID-01082] GET /memory/diary');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Parse query parameters
+  const queryValidation = DiaryEntriesQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { from, to, limit } = queryValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_diary_entries RPC
+    const { data, error } = await repo.getMemoryDiaryEntriesRpc(supabase, {
+      p_from: from || null,
+      p_to: to || null,
+      p_limit: limit
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01082] memory_get_diary_entries RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Diary RPC not available (VTID-01082 migration required)'
+        });
+      }
+      console.error('[VTID-01082] memory_get_diary_entries RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check for RPC-level errors
+    if (data && data.ok === false) {
+      console.warn('[VTID-01082] Get diary entries RPC returned error:', data.error);
+      return res.status(400).json({
+        ok: false,
+        error: data.error,
+        message: data.message
+      });
+    }
+
+    console.log(`[VTID-01082] Diary entries fetched: ${data?.count || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      entries: data?.entries || [],
+      count: data?.count || 0,
+      query: { from, to, limit }
+    });
+  } catch (err: any) {
+    console.error('[VTID-01082] Get diary entries error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01082: Memory Garden Routes
+// =============================================================================
+
+/**
+ * POST /garden/extract -> POST /api/v1/memory/garden/extract
+ *
+ * Extract garden nodes from a diary entry (deterministic, idempotent).
+ */
+router.post('/garden/extract', async (req: Request, res: Response) => {
+  console.log('[VTID-01082] POST /memory/garden/extract');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = GardenExtractSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01082] Garden extract validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { diary_entry_id } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  // Emit OASIS event: memory.garden.extract.started
+  await emitMemoryGardenEvent(
+    'memory.garden.extract.started',
+    'info',
+    `Garden extraction started for diary entry: ${diary_entry_id}`,
+    { diary_entry_id }
+  );
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_extract_garden_nodes RPC
+    const { data, error } = await repo.extractMemoryGardenNodesRpc(supabase, {
+      p_diary_entry_id: diary_entry_id
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01082] memory_extract_garden_nodes RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Garden RPC not available (VTID-01082 migration required)'
+        });
+      }
+      console.error('[VTID-01082] memory_extract_garden_nodes RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check for RPC-level errors
+    if (data && data.ok === false) {
+      console.warn('[VTID-01082] Garden extract RPC returned error:', data.error);
+      return res.status(400).json({
+        ok: false,
+        error: data.error,
+        message: data.message
+      });
+    }
+
+    // Emit OASIS events for created/updated nodes
+    const nodesCreated = data?.nodes_created || 0;
+    const nodesUpdated = data?.nodes_updated || 0;
+
+    if (nodesCreated > 0) {
+      await emitMemoryGardenEvent(
+        'memory.garden.node.created',
+        'success',
+        `Created ${nodesCreated} garden node(s) from diary entry`,
+        {
+          diary_entry_id,
+          nodes_created: nodesCreated,
+          extracted_nodes: data?.extracted_nodes
+        }
+      );
+    }
+
+    if (nodesUpdated > 0) {
+      await emitMemoryGardenEvent(
+        'memory.garden.node.updated',
+        'success',
+        `Updated ${nodesUpdated} garden node(s) from diary entry`,
+        {
+          diary_entry_id,
+          nodes_updated: nodesUpdated
+        }
+      );
+    }
+
+    console.log(`[VTID-01082] Garden extraction complete: ${nodesCreated} created, ${nodesUpdated} updated`);
+
+    return res.status(200).json({
+      ok: true,
+      diary_entry_id,
+      nodes_created: nodesCreated,
+      nodes_updated: nodesUpdated,
+      extracted_nodes: data?.extracted_nodes || []
+    });
+  } catch (err: any) {
+    console.error('[VTID-01082] Garden extraction error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /garden/summary -> GET /api/v1/memory/garden/summary
+ *
+ * Get the Memory Garden summary for the current user.
+ * This summary feeds Health, Community, Lifestyle, Business, and Autopilot.
+ */
+router.get('/garden/summary', async (req: Request, res: Response) => {
+  console.log('[VTID-01082] GET /memory/garden/summary');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_garden_summary RPC
+    const { data, error } = await repo.getMemoryGardenSummaryRpc(supabase);
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01082] memory_get_garden_summary RPC not found (migration not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Garden RPC not available (VTID-01082 migration required)'
+        });
+      }
+      console.error('[VTID-01082] memory_get_garden_summary RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Check for RPC-level errors
+    if (data && data.ok === false) {
+      console.warn('[VTID-01082] Garden summary RPC returned error:', data.error);
+      return res.status(400).json({
+        ok: false,
+        error: data.error,
+        message: data.message
+      });
+    }
+
+    // Emit OASIS event: memory.garden.summary.read
+    await emitMemoryGardenEvent(
+      'memory.garden.summary.read',
+      'success',
+      'Garden summary fetched',
+      {
+        habits_count: data?.habits?.length || 0,
+        health_signals_count: data?.health_signals?.length || 0,
+        values_count: data?.values?.length || 0,
+        goals_count: data?.goals?.length || 0,
+        patterns_count: data?.patterns?.length || 0,
+        confidence_score: data?.confidence_score
+      }
+    );
+
+    console.log(`[VTID-01082] Garden summary fetched: confidence=${data?.confidence_score}`);
+
+    // Return the garden summary in the contract format
+    return res.status(200).json({
+      ok: true,
+      habits: data?.habits || [],
+      health_signals: data?.health_signals || [],
+      values: data?.values || [],
+      goals: data?.goals || [],
+      patterns: data?.patterns || [],
+      confidence_score: data?.confidence_score || 0,
+      last_updated: data?.last_updated || new Date().toISOString()
+    });
+  } catch (err: any) {
+    console.error('[VTID-01082] Garden summary error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01100: Quality Metrics Endpoints
+// =============================================================================
+
+/**
+ * POST /quality/compute -> POST /api/v1/memory/quality/compute
+ *
+ * Compute quality metrics for the current user.
+ * Upserts a snapshot for the specified date (default: today).
+ */
+router.post('/quality/compute', async (req: Request, res: Response) => {
+  console.log('[VTID-01100] POST /memory/quality/compute');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = QualityComputeRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01100] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { date } = validation.data;
+  const computeDate = date || new Date().toISOString().split('T')[0];
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_compute_quality RPC
+    const { data, error } = await repo.computeMemoryQualityRpc(supabase, {
+      p_user_id: null, // Use authenticated user
+      p_date: computeDate
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01100] memory_compute_quality RPC not found (VTID-01100 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Quality metrics RPC not available (VTID-01100 dependency)'
+        });
+      }
+      console.error('[VTID-01100] memory_compute_quality RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      snapshot_id?: string;
+      overall_quality_score?: number;
+      confidence_band?: ConfidenceBand;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitQualityEvent(
+      'memory.quality.computed',
+      'success',
+      `Memory quality computed: ${result.overall_quality_score}/100 (${result.confidence_band})`,
+      {
+        snapshot_id: result.snapshot_id,
+        score: result.overall_quality_score,
+        band: result.confidence_band,
+        date: computeDate
+      }
+    );
+
+    console.log(`[VTID-01100] Quality computed: ${result.overall_quality_score}/100 (${result.confidence_band})`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01100] memory_compute_quality error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /quality -> GET /api/v1/memory/quality
+ *
+ * Get the latest quality snapshot for the current user.
+ */
+router.get('/quality', async (req: Request, res: Response) => {
+  console.log('[VTID-01100] GET /memory/quality');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_quality RPC
+    const { data, error } = await repo.getMemoryQualityRpc(supabase, {
+      p_user_id: null // Use authenticated user
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01100] memory_get_quality RPC not found (VTID-01100 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Quality metrics RPC not available (VTID-01100 dependency)'
+        });
+      }
+      console.error('[VTID-01100] memory_get_quality RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      has_snapshot?: boolean;
+      overall_quality_score?: number;
+      confidence_band?: ConfidenceBand;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitQualityEvent(
+      'memory.quality.read',
+      'success',
+      result.has_snapshot
+        ? `Memory quality read: ${result.overall_quality_score}/100 (${result.confidence_band})`
+        : 'Memory quality read: no snapshot available',
+      {
+        has_snapshot: result.has_snapshot,
+        score: result.overall_quality_score || 0,
+        band: result.confidence_band || 'Low'
+      }
+    );
+
+    console.log(`[VTID-01100] Quality read: ${result.has_snapshot ? `${result.overall_quality_score}/100` : 'no snapshot'}`);
+
+    // Add band definitions to response for UI consumption
+    const response = {
+      ...result,
+      band_definitions: CONFIDENCE_BANDS
+    };
+
+    return res.status(200).json(response);
+  } catch (err: any) {
+    console.error('[VTID-01100] memory_get_quality error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// VTID-01116: Memory Confidence & Source Trust Endpoints
+// =============================================================================
+
+/**
+ * POST /confidence/adjust -> POST /api/v1/memory/confidence/adjust
+ *
+ * Adjust confidence for a specific memory item.
+ * Uses deterministic rules based on reason code.
+ */
+router.post('/confidence/adjust', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/adjust');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceAdjustRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, reason_code, context } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_adjust_confidence RPC
+    const { data, error } = await repo.adjustMemoryConfidenceRpc(supabase, {
+      p_memory_item_id: memory_item_id,
+      p_reason_code: reason_code,
+      p_context: context
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_adjust_confidence RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_adjust_confidence RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      reason_code?: string;
+      capped_by?: string;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.adjusted',
+      'success',
+      `Confidence adjusted: ${result.previous_confidence} -> ${result.new_confidence} (${reason_code})`,
+      {
+        memory_item_id,
+        reason_code,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta,
+        capped_by: result.capped_by
+      }
+    );
+
+    console.log(`[VTID-01116] Confidence adjusted: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_adjust_confidence error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/confirm -> POST /api/v1/memory/confidence/confirm
+ *
+ * User confirms a memory item is accurate.
+ * Increases confidence score (with diminishing returns).
+ */
+router.post('/confidence/confirm', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/confirm');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceConfirmRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, confirmation_notes } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_confirm_item RPC
+    const { data, error } = await repo.confirmMemoryItemRpc(supabase, {
+      p_memory_item_id: memory_item_id,
+      p_confirmation_notes: confirmation_notes || null
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_confirm_item RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_confirm_item RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.confirmed',
+      'success',
+      `Memory confirmed: ${result.previous_confidence} -> ${result.new_confidence}`,
+      {
+        memory_item_id,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta
+      }
+    );
+
+    console.log(`[VTID-01116] Memory confirmed: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_confirm_item error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/correct -> POST /api/v1/memory/confidence/correct
+ *
+ * User corrects a memory item.
+ * Permanently reduces trust (corrections have lasting impact).
+ */
+router.post('/confidence/correct', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/correct');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = ConfidenceCorrectRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { memory_item_id, correction_notes, new_content } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_correct_item RPC
+    const { data, error } = await repo.correctMemoryItemRpc(supabase, {
+      p_memory_item_id: memory_item_id,
+      p_correction_notes: correction_notes || null,
+      p_new_content: new_content || null
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_correct_item RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_correct_item RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      previous_confidence?: number;
+      new_confidence?: number;
+      delta?: number;
+      content_updated?: boolean;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.corrected',
+      'warning',
+      `Memory corrected: ${result.previous_confidence} -> ${result.new_confidence}`,
+      {
+        memory_item_id,
+        previous_confidence: result.previous_confidence,
+        new_confidence: result.new_confidence,
+        delta: result.delta,
+        content_updated: result.content_updated || false
+      }
+    );
+
+    console.log(`[VTID-01116] Memory corrected: ${memory_item_id} ${result.previous_confidence} -> ${result.new_confidence}`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_correct_item error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /confidence/history/:id -> GET /api/v1/memory/confidence/history/:id
+ *
+ * Get confidence history for a memory item (for explainability).
+ */
+router.get('/confidence/history/:id', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/confidence/history/:id');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const memoryItemId = req.params.id;
+  if (!memoryItemId || !/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(memoryItemId)) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid memory_item_id format'
+    });
+  }
+
+  // Parse limit from query
+  const limit = Math.min(100, Math.max(1, parseInt(req.query.limit as string) || 50));
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_confidence_history RPC
+    const { data, error } = await repo.getMemoryConfidenceHistoryRpc(supabase, {
+      p_memory_item_id: memoryItemId,
+      p_limit: limit
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_get_confidence_history RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_get_confidence_history RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      memory_item_id?: string;
+      current_state?: Record<string, unknown>;
+      history?: ConfidenceHistoryEntry[];
+      history_count?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.history.read',
+      'success',
+      `Confidence history fetched: ${result.history_count} entries`,
+      {
+        memory_item_id: memoryItemId,
+        history_count: result.history_count
+      }
+    );
+
+    console.log(`[VTID-01116] Confidence history fetched: ${memoryItemId} (${result.history_count} entries)`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_get_confidence_history error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /context/trusted -> GET /api/v1/memory/context/trusted
+ *
+ * Fetch memory context with confidence filtering.
+ * High-confidence items are prioritized (D23 integration).
+ * Low-confidence items are filtered out unless explicitly requested.
+ */
+router.get('/context/trusted', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/context/trusted');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate query parameters
+  const queryValidation = TrustedContextQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { limit, min_confidence, categories, since, include_low_confidence } = queryValidation.data;
+
+  // Parse categories if provided
+  let categoriesArray: string[] | null = null;
+  if (categories) {
+    categoriesArray = categories.split(',').map(c => c.trim()).filter(c => c.length > 0);
+    // Validate each category
+    for (const cat of categoriesArray) {
+      if (!CATEGORY_KEYS.includes(cat as CategoryKey)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Invalid category: ${cat}. Valid categories: ${CATEGORY_KEYS.join(', ')}`
+        });
+      }
+    }
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_get_context_with_confidence RPC
+    const { data, error } = await repo.getMemoryContextWithConfidenceRpc(supabase, {
+      p_limit: limit,
+      p_min_confidence: min_confidence,
+      p_categories: categoriesArray,
+      p_since: since || null,
+      p_include_low_confidence: include_low_confidence
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_get_context_with_confidence RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_get_context_with_confidence RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      items?: MemoryItemWithConfidence[];
+      filters?: Record<string, unknown>;
+      count?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    console.log(`[VTID-01116] Trusted context fetched: ${result.count} items (min_confidence: ${min_confidence})`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_get_context_with_confidence error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /confidence/decay -> POST /api/v1/memory/confidence/decay
+ *
+ * Apply time decay to memories that haven't been confirmed recently.
+ * This is typically called by a scheduled job.
+ */
+router.post('/confidence/decay', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] POST /memory/confidence/decay');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = TimeDecayRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn('[VTID-01116] Validation failed:', validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { decay_threshold_days } = validation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Call memory_apply_time_decay RPC
+    const { data, error } = await repo.applyMemoryTimeDecayRpc(supabase, {
+      p_decay_threshold_days: decay_threshold_days
+    });
+
+    if (error) {
+      // Check if RPC doesn't exist
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_apply_time_decay RPC not found (VTID-01116 not deployed yet)');
+        return res.status(503).json({
+          ok: false,
+          error: 'Confidence RPC not available (VTID-01116 dependency)'
+        });
+      }
+      console.error('[VTID-01116] memory_apply_time_decay RPC error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    const result = data as {
+      ok: boolean;
+      decayed_count?: number;
+      threshold_days?: number;
+      error?: string;
+      message?: string;
+    };
+
+    if (!result.ok) {
+      return res.status(400).json({
+        ok: false,
+        error: result.error,
+        message: result.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitConfidenceEvent(
+      'memory.confidence.decayed',
+      'info',
+      `Time decay applied: ${result.decayed_count} memories affected`,
+      {
+        decayed_count: result.decayed_count,
+        threshold_days: result.threshold_days
+      }
+    );
+
+    console.log(`[VTID-01116] Time decay applied: ${result.decayed_count} memories affected`);
+
+    return res.status(200).json(result);
+  } catch (err: any) {
+    console.error('[VTID-01116] memory_apply_time_decay error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /source-trust -> GET /api/v1/memory/source-trust
+ *
+ * Get source trust weight definitions.
+ * Returns all source types with their trust weights and max confidence caps.
+ */
+router.get('/source-trust', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/source-trust');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Query memory_source_trust table directly
+    const { data, error } = await repo.fetchMemorySourceTrust(supabase);
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_source_trust table not found (VTID-01116 not deployed yet)');
+        // Return hardcoded fallback
+        return res.status(200).json({
+          ok: true,
+          source_trust: [
+            { source_type: 'user_explicit', trust_weight: 100, max_confidence: 95, label: 'User Stated (Explicit)', requires_validation: false },
+            { source_type: 'diary', trust_weight: 90, max_confidence: 90, label: 'Diary Entry', requires_validation: false },
+            { source_type: 'orb_text', trust_weight: 75, max_confidence: 85, label: 'ORB Text Input', requires_validation: false },
+            { source_type: 'user_inferred', trust_weight: 70, max_confidence: 80, label: 'User Inferred (Implicit)', requires_validation: false },
+            { source_type: 'orb_voice', trust_weight: 70, max_confidence: 80, label: 'ORB Voice Input', requires_validation: false },
+            { source_type: 'upload', trust_weight: 60, max_confidence: 75, label: 'User Upload', requires_validation: true },
+            { source_type: 'system', trust_weight: 50, max_confidence: 70, label: 'System Generated', requires_validation: false },
+            { source_type: 'third_party', trust_weight: 40, max_confidence: 65, label: 'Third Party', requires_validation: true },
+            { source_type: 'derived', trust_weight: 30, max_confidence: 60, label: 'Derived/Computed', requires_validation: false }
+          ],
+          _fallback: true
+        });
+      }
+      console.error('[VTID-01116] memory_source_trust query error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    console.log(`[VTID-01116] Source trust weights fetched: ${data?.length || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      source_trust: data || []
+    });
+  } catch (err: any) {
+    console.error('[VTID-01116] source-trust error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /confidence/reasons -> GET /api/v1/memory/confidence/reasons
+ *
+ * Get confidence adjustment reason code definitions.
+ * Returns all reason codes with their delta ranges and descriptions.
+ */
+router.get('/confidence/reasons', async (req: Request, res: Response) => {
+  console.log('[VTID-01116] GET /memory/confidence/reasons');
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Query memory_confidence_reasons table directly
+    const { data, error } = await repo.fetchMemoryConfidenceReasons(supabase);
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('relation') && error.message.includes('does not exist')) {
+        console.warn('[VTID-01116] memory_confidence_reasons table not found (VTID-01116 not deployed yet)');
+        // Return hardcoded fallback
+        return res.status(200).json({
+          ok: true,
+          reasons: [
+            { reason_code: 'USER_CONFIRMED', category: 'increase', delta_min: 5, delta_max: 15, label: 'User Confirmation' },
+            { reason_code: 'REPETITION_CONSISTENT', category: 'increase', delta_min: 3, delta_max: 8, label: 'Repetition Consistency' },
+            { reason_code: 'USER_CORRECTED', category: 'decrease', delta_min: -20, delta_max: -10, label: 'User Correction' },
+            { reason_code: 'CONTRADICTING_EVIDENCE', category: 'decrease', delta_min: -15, delta_max: -5, label: 'Contradicting Evidence' },
+            { reason_code: 'TIME_DECAY', category: 'decrease', delta_min: -5, delta_max: -1, label: 'Time Decay' },
+            { reason_code: 'INITIAL_CAPTURE', category: 'neutral', delta_min: 0, delta_max: 0, label: 'Initial Capture' }
+          ],
+          _fallback: true
+        });
+      }
+      console.error('[VTID-01116] memory_confidence_reasons query error:', error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    console.log(`[VTID-01116] Confidence reasons fetched: ${data?.length || 0} entries`);
+
+    return res.status(200).json({
+      ok: true,
+      reasons: data || []
+    });
+  } catch (err: any) {
+    console.error('[VTID-01116] confidence-reasons error:', err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+export default router;

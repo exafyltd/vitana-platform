@@ -1,0 +1,48 @@
+{
+ "vtid": "VTID-05100",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "companion messages stay disabled on staging (read-only GET, no member data)",
+   "path": "/api/v1/companion/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "companion preferences refuse a call without a valid sign-in (rejected probe, read-only GET)",
+   "path": "/api/v1/companion/preferences",
+   "rejected_probe": true,
+   "expect_status": 401,
+   "expect_json": {
+    "ok": false,
+    "error": "UNAUTHENTICATED"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "changing companion preferences refuses a call without a valid sign-in (rejected probe, no write)",
+   "method": "PATCH",
+   "path": "/api/v1/companion/preferences",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/vtid-05099-companion-messages.test.ts test/vtid-05099-proactive-match-daily-limit.test.ts test/vtid-05100-companion-delivery.test.ts test/vtid-04560-role-separation-regression.test.ts test/i18n/catalog-coverage.test.ts test/chat-vitana-reply.test.ts",
+   "cwd": "services/gateway",
+   "reason": "Every write in this change (the member's preferences row, the Vitana DM, the push, the pacer touch, the ledger finish and the replied mark) lands in the production database that staging shares, so none of it runs on staging (rule 48) and the engine itself answers disabled-on-staging. They are proven in vtid-05100-companion-delivery: preferences GET defaults / own row only / PATCH zod validation / 401; delivery inserts exactly one Vitana DM with metadata.card (numbers only), one pacer touch, exactly one vitana_companion_message push with tt() catalog text, finish sent; a failed insert finishes failed with no push; staff/live stay shadow without COMPANION_SEND_ENABLED=true; staff mode sends only to staff, fails closed; a compose failure in a send mode is no DM; the reply hook calls mark_companion_replied and never breaks the reply. The catalog coverage suite proves the new push keys in every translated locale."
+  }
+ ]
+}

@@ -1,0 +1,28 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Voice Instruction Budget — Command Hub</title>
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20260530-DEV-COMHU-voice-budget" />
+  <link rel="stylesheet" href="/command-hub/voice-budget.css?v=20260530-DEV-COMHU-voice-budget" />
+</head>
+<body>
+  <div class="voice-budget-container">
+    <header class="voice-budget-header">
+      <h1>Voice Instruction Budget</h1>
+      <p class="voice-budget-sub">
+        Users ranked by share of the 12&nbsp;KB Vertex <code>system_instruction</code>
+        bootstrap cap. Red rows are at risk of breaking voice setup.
+      </p>
+      <div class="voice-budget-controls">
+        <label>Min %&nbsp;<input id="vb-minpct" type="number" value="10" min="0" max="500" step="5" /></label>
+        <label>Limit&nbsp;<input id="vb-limit" type="number" value="50" min="1" max="500" step="10" /></label>
+        <button id="vb-refresh" type="button">Refresh</button>
+      </div>
+    </header>
+    <main id="vb-root">Loading…</main>
+  </div>
+  <script src="/command-hub/voice-budget.js?v=20260530-DEV-COMHU-voice-budget"></script>
+</body>
+</html>

@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04914",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/calendar/google",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the Google sync status route is mounted and refuses an unsigned caller; nothing is read or written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04914-calendar-prod-gates.test.ts test/vtid-04338-calendar-default-reminders.test.ts test/vtid-04374-calendar-maintenance.test.ts test/vtid-04372-calendar-google-sync.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the three calendar pins on production and staging, the both-or-neither Google OAuth secret wiring from repository variables (never a dangling secret reference), and the not_configured behaviour without a Google client are proven by running the workflow step's own bash + jq against fixture task definitions. Staging shares the production Supabase project, so nothing is synced, sent or written during verification."
+    }
+  ]
+}

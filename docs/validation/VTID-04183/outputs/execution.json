@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04183",
+  "execution_id": "f9ca86aa-f1b9-46ff-b240-eea2476fb247",
+  "finding_id": "5354bdfe-0d5e-47a0-ab80-088d7ded37c8",
+  "plan_version": 1,
+  "branch": "dev-autopilot/f9ca86aa",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/console-task-19-unpriced-model-cost.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:24:07.636Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

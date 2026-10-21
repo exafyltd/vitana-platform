@@ -1,0 +1,4 @@
+# commands run in the session (no live services, nothing written remotely)
+# npm installs are blocked in this session (registry 403), so jest/tsc could NOT run locally — CI runs them.
+node -e '<regex check of every group push url in chat-groups.ts and messaging-depth-tools.ts>'   # see outputs/local-checks.txt
+node <TypeScript transpileModule syntax check of the changed files>                               # OK

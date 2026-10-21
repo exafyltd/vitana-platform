@@ -1,0 +1,74 @@
+# VTID-03703 — commands actually run.
+
+# Self-allocated the VTID via direct Supabase RPC (gateway not reachable
+# from this session), per CLAUDE.md §4.1 procedure 2.
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT allocate_global_vtid('claude-code', 'gateway', 'orb-live-upstream-provider-selector');"
+#   -> (VTID-03703, 3703, 6437d888-e0d1-42fe-a4d4-29532ef72d9a)
+
+# Set title/summary/status/spec_status on the freshly allocated row
+# (user directly instructed the work in conversation == approval, per
+# CLAUDE.md IF-THEN "task moved to in_progress manually -> explicit consent").
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "UPDATE vtid_ledger SET title=..., summary=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03703';"
+
+# Diagnosis: read the selector and its dedicated test file to confirm the
+# nova_disabled / nova_not_allowlisted branches still returned
+# provider:'vertex' under vertexUnavailable:true (already established
+# earlier in this session via a background Explore-agent trace of live
+# oasis_events for VTID-03688).
+
+# Implementation: rewrote evaluateNovaRequest()/evaluateNovaCanary() in
+# services/gateway/src/orb/live/upstream/upstream-provider-selector.ts,
+# and rewrote the describe block in
+# services/gateway/test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts.
+
+cd services/gateway
+npx jest test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts \
+          test/orb/live/upstream/upstream-provider-selector.test.ts \
+          test/orb/live/upstream/cascaded-voice.test.ts --silent
+#   -> Test Suites: 3 passed, 3 total
+#   -> Tests: 59 passed, 59 total
+
+# Rebased onto a fresh branch off origin/main (the shared session branch had
+# unrelated in-flight VTID-03687 work) to keep this VTID isolated:
+git checkout -b claude/nova-vertex-polly-selector-vtid-03703 origin/main
+git stash pop   # (only my own just-created stash, not the pre-existing one)
+
+# origin/main had moved forward since the branch was last synced (merged
+# VTID-03683 cascade pipeline) — re-verified against the fresh base:
+npm install --no-audit --no-fund
+#   -> added 3 packages (missing @aws-sdk/client-s3, a pre-existing
+#      dependency-drift gap unrelated to this change)
+
+npx tsc --noEmit
+#   -> clean, no output
+
+npx jest test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts \
+          test/orb/live/upstream/upstream-provider-selector.test.ts \
+          test/orb/live/upstream/cascaded-voice.test.ts --silent
+#   -> Test Suites: 3 passed, 3 total
+#   -> Tests: 59 passed, 59 total
+#   -> outputs/targeted-tests.txt
+
+npx jest test/orb --silent
+#   -> Test Suites: 171 passed, 171 total
+#   -> Tests: 6 todo, 3235 passed, 3241 total
+#   -> outputs/full-orb-suite.txt
+
+npx tsc --noEmit
+#   -> outputs/tsc.txt (empty — clean)
+
+# Committed and pushed:
+git add services/gateway/src/orb/live/upstream/upstream-provider-selector.ts \
+        services/gateway/test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts
+git commit -m "ORB voice: never route to a dead Vertex — Nova or the cascade, no exceptions (VTID-03703)"
+git push -u origin claude/nova-vertex-polly-selector-vtid-03703
+
+# --- NOT done from this session ---
+# Live confirmation against real Nova/Vertex/cascade traffic on staging —
+# this cannot happen until the PR merges and AWS-STAGE-DEPLOY-GATEWAY.yml
+# deploys it, per the staging-first CI/CD model (CLAUDE.md §16). Watching
+# orb.upstream.nova.premature_close_fallback / the
+# nova_forced_vertex_unavailable selector reason in oasis_events, and the
+# absence of further upstream-1007 closes, is the next real signal.

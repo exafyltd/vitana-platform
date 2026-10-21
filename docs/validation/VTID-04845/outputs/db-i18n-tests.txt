@@ -1,0 +1,85 @@
+    ✓ defaults to supabase when unset or empty (4 ms)
+    ✓ selects aurora on the exact value, case/space tolerant
+    ✓ falls back to supabase on an unrecognised value rather than guessing (1 ms)
+    ✓ is constructible without a Supabase client
+    ✓ reports a missing connection string as config, not as an empty result (9 ms)
+    ✓ rejects a connection string that is not a postgres URL (16 ms)
+    ✓ redacts the password when describing the target (1 ms)
+    ✓ never silently falls back to supabase (1 ms)
+    ✓ keeps naming the remaining risk rather than decaying to "not implemented"
+      ✓ upsertNavCatalogI18n refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ upsertChecklistTranslations refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ explains WHY, so the flag is not set reflexively (1 ms)
+      ✓ does not gate reads behind the write flag
+    ✓ defaults to verifying certificates
+    ✓ only disables verification on an explicit opt-in, and warns (1 ms)
+    ✓ fails loudly when the CA bundle path is set but absent (1 ms)
+      ✓ permits plaintext to 127.0.0.1
+      ✓ permits plaintext to localhost
+      ✓ permits plaintext to [::1] (1 ms)
+      ✓ REFUSES plaintext to a remote host
+      ✓ still requires TLS for a loopback host without the flag (1 ms)
+    ✓ throws a specific error rather than a null dereference
+    ✓ is stable regardless of object key insertion order
+    ✓ changes when any source field changes (1 ms)
+    ✓ does not collide when content shifts between fields
+    ✓ distinguishes an empty field from a missing one consistently
+    ✓ matches non-ASCII token names — the case \w+ misses
+    ✓ does not swallow an embedded JSON example as one token
+    ✓ passes through an already-correct translation
+    ✓ repairs renamed tokens positionally
+    ✓ refuses to guess when the token COUNT changed (1 ms)
+    ✓ accepts a well-formed translation
+    ✓ keeps an empty source field empty rather than inventing content (1 ms)
+    ✓ rejects the unit when a REQUIRED field is blank
+    ✓ blanks an OPTIONAL missing field so the read path falls back to German
+    ✓ rejects a unit missing entirely from the response
+    ✓ rejects a substantive field echoed back verbatim
+    ✓ allows a SHORT unchanged string — proper nouns survive translation
+    ✓ rejects a unit whose placeholder count changed (1 ms)
+    ✓ repairs a renamed placeholder rather than failing the unit
+    ✓ splits a batch that fails to parse, down to units that succeed (12 ms)
+    ✓ reports a genuine per-unit failure once the batch is a single unit (2 ms)
+    ✓ surfaces a provider failure as a failure rather than an empty success (1 ms)
+    ✓ does NOT split on a provider failure — one refusal must not become fifteen (7 ms)
+    ✓ recovers from a raw newline embedded in a JSON string value (VTID-03701-follow-up) (1 ms)
+    ✓ recovers from an unescaped quote inside a JSON string value (VTID-04845) (1 ms)
+    ✓ ends the value at the real closing quote when another field follows (VTID-04845) (1 ms)
+    ✓ repairs inner quotes in a multi-unit batch without merging units (VTID-04845) (1 ms)
+    ✓ still reports a failure when the JSON is genuinely unparseable, sanitization or not
+    ✓ names no provider and no model — routing belongs to llm_routing_policy (1 ms)
+    ✓ exposes both content surfaces (1 ms)
+    ✓ rejects an unknown surface by name, listing the known ones (2 ms)
+    ✓ never treats German as a translation target
+    ✓ builds a nav_catalog_i18n row with the natural key and stamp (1 ms)
+    ✓ writes NULL rather than empty string for untranslated checklist fields (1 ms)
+    ✓ requires a non-empty label on both surfaces (1 ms)
+    ✓ has files to check (a passing scan over an empty list proves nothing)
+    ✓ aurora-client.ts contacts no provider host (1 ms)
+    ✓ db-i18n-repository.ts contacts no provider host (1 ms)
+    ✓ notify-source-changed.ts contacts no provider host (1 ms)
+    ✓ surfaces.ts contacts no provider host (1 ms)
+    ✓ translator.ts contacts no provider host (1 ms)
+    ✓ throws when AURORA_DATABASE_URL is unset (8 ms)
+    ✓ throws when AURORA_DATABASE_URL is not a postgres(ql):// URL (1 ms)
+    ✓ verifies against the system default trust store when nothing is set (2 ms)
+    ✓ redacts the password in describe() (1 ms)
+    ✓ AURORA_SSL_INSECURE=true skips verification when no CA bundle is set (4 ms)
+    ✓ honours sslmode=disable on a loopback host (2 ms)
+    ✓ refuses sslmode=disable against a non-loopback host, even with a CA bundle set (2 ms)
+    ✓ throws AuroraConfigError when AURORA_CA_BUNDLE_PATH points at a missing file (1 ms)
+    ✓ throws AuroraConfigError when the bundle file contains no PEM certificates (2 ms)
+    ✓ unions the CA bundle certs with tls.rootCertificates, not replacing them (12 ms)
+    ✓ does not throw AuroraConfigError:not-configured when a CA bundle IS set (configured:true path) (2 ms)
+    ✓ matches the string I18N-DB-SEED.yml subscribes to (3 ms)
+    ✓ sends one repository_dispatch to this repo after the window (5 ms)
+    ✓ coalesces a burst of edits into a single dispatch (7 ms)
+    ✓ merges distinct surfaces touched within one window (1 ms)
+    ✓ opens a fresh window after the previous one fired (1 ms)
+    ✓ resolves rather than rejecting when GitHub errors (1 ms)
+    ✓ reports the failure loudly instead of swallowing it
+    ✓ does not dispatch, and says why, when the token is unset (1 ms)
+    ✓ is ON by default — an opt-in flag would reintroduce the manual step (1 ms)
+    ✓ honours DB_I18N_AUTO_PROPAGATE=off (1 ms)
+    ✓ treats any other value as enabled, rather than failing closed (1 ms)
+Tests:       22 skipped, 84 passed, 106 total

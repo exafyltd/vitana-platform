@@ -1,0 +1,10 @@
+# VTID-04820 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_PARTNER_ONBOARDING_TRIAGE_MODE "04820 E10"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04820 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-e10.txt
+npx jest $(grep -rl partner-onboarding test)                            # partner onboarding suites (outputs/jest-partner-onboarding.txt)
+# Fixed during the build: business decisions are tenant-scoped (decide() denies tenant_required); the check now
+# runs under the submitting user's active tenant from the JWT and is skipped without one.
+# Evidence: production has 0 partner organizations yet (plan §10.3 E); the gate is ready for the first submits.
+npx jest (full gateway suite, merged with origin/main f423d2b)          # 1462 suites, 23467 passed, 0 failed (outputs/jest-full.txt)

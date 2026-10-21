@@ -1,0 +1,24 @@
+# VTID-05001 — commands run (2026-10-08, Claude Code session, cwd services/gateway unless noted)
+
+# Evidence (read-only, production oasis_events via Supabase MCP)
+select metadata->>'transport', count(*), ... from oasis_events where topic='vtid.live.session.stop' and metadata->>'env'='production' and created_at > '2026-10-07 09:50' group by 1;
+  -> websocket sessions by real members after the prod kill switch (ws_stop_session, 0 turns)
+select created_at, metadata from oasis_events where topic='orb.session.continuity.persisted' ...;
+  -> metadata carries only reason="hide"
+
+# Implementation checks
+node --check src/frontend/command-hub/orb-widget.js                          # syntax ok
+npx jest test/orb/vtid-05001-orb-hide-reasons.test.ts test/orb/live/ws-transport-default.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts
+  -> outputs/jest-targeted.txt (32 passed)
+npx jest test/frontend test/orb
+  -> outputs/jest-widget-orb.txt (317 suites passed, 4868 tests passed, 6 todo)
+npx tsc --noEmit -p .                                                          # clean
+
+# Mutation check of the AST guard (reverted afterwards)
+sed -i "s/_hide('fab_toggle');/_hide();/" src/frontend/command-hub/orb-widget.js
+npx jest test/orb/vtid-05001-orb-hide-reasons.test.ts
+  -> FAILS: "line 4934: _hide called without a string-literal reason"
+(file restored from backup; suite green again)
+
+# Staging, read-only, before merge
+curl -s https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/transport  # {"ok":true,"transport":"ws"}

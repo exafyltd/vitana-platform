@@ -1,0 +1,6 @@
+    ✕ a plain member sending ?role=admin gets their own community lineup, never everyone's (8 ms)
+    ✕ a plain member sending ?role=developer without the role granted is narrowed to community (7 ms)
+    ✕ a plain member with no hint does not get the legacy all-system RPC view (12 ms)
+    ✕ a role without a lineup yet (professional) gets an empty list, not someone else's (6 ms)
+    ✕ a plain member cannot take the Dev Autopilot activation path with ?role=developer (4 ms)
+Tests:       5 failed, 75 passed, 80 total

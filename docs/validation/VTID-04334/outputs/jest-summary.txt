@@ -1,0 +1,75 @@
+PASS test/vtid-04029-dev-autopilot-pr-approval.test.ts
+PASS test/routes/command-hub-static-cache-headers.test.ts (11.008 s)
+PASS test/vtid-04028-operator-turn-stream.test.ts (11.079 s)
+PASS test/vtid-04031-operator-turn-cost.test.ts
+PASS test/vtid-04032-cancel-running-execution.test.ts
+PASS test/scripts/find-dead-css-classes.test.ts (11.27 s)
+PASS test/dev-autopilot-synthesis.test.ts
+PASS test/scripts/generate-command-hub-symbol-index.test.ts
+PASS test/command-hub/vtid-04334-feedback-pipeline-links.test.ts
+PASS test/vtid-03946-operator-cross-repo-search.test.ts
+PASS test/vtid-04217-fix-mode-merge-conflicts.test.ts
+PASS test/command-hub-backup-file-denylist.test.ts
+PASS test/vtid-04309-command-hub-voice-thread.test.ts
+PASS test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+PASS test/autopilot-agent-loop.test.ts
+PASS test/orb/context/b0c-journey-context-panel.test.ts
+PASS test/command-hub/t1d-dead-functions-removed.test.ts
+PASS test/scripts/validate-pr-locally.test.ts
+PASS test/command-hub/t10-r4-modal-focus-management.test.ts
+PASS test/command-hub/t5c-no-fabricated-fallback-rows.test.ts
+PASS test/scripts/validator-path-guard.test.ts
+PASS test/command-hub/t5b-gcp-static-screens-gated.test.ts
+PASS test/vtid-03949-operator-sessions-sidebar-rename.test.ts
+PASS test/vtid-03925-pipeline-summary-loop-fix.test.ts
+PASS test/command-hub/dead-code-workflows-removed.test.ts
+PASS test/command-hub/dead-code-execution-card-removed.test.ts
+PASS test/command-hub/vtid-04260-autopilot-runs-dev-autopilot-backend.test.ts
+PASS test/command-hub/escape-html.test.ts
+PASS test/scripts/command-hub-ownership-guard.test.ts
+PASS test/vtid-04267-dev-autopilot-spend.test.ts
+PASS test/services/journey-stage/b4-walls.test.ts
+PASS test/vtid-04266-autonomy-pulse-awaiting-approval.test.ts
+PASS test/vtid-04269-engine-config-cron-notice.test.ts
+PASS test/command-hub/t2-no-zero-caller-functions.test.ts (6.076 s)
+PASS test/vtid-04265-live-steps-transcript.test.ts
+PASS test/vtid-04268-command-hub-config-panel-wiring.test.ts
+PASS test/vtid-03966-operator-rename-dual-instance-focus.test.ts
+PASS test/command-hub/t10-r3-keyboard-clickable-rows.test.ts
+PASS test/vtid-03823-tasks-board-hygiene.test.ts
+PASS test/services/capability-awareness/b0e3-panel-structural.test.ts
+PASS test/vtid-04264-kill-switch-button.test.ts
+PASS test/vtid-04142-operator-sessions-empty-state.test.ts
+PASS test/services/continuity/b2-walls.test.ts
+PASS test/vtid-04259-session-timeout.test.ts
+PASS test/services/wake-timeline/r0-walls.test.ts
+PASS test/services/greeting-decay/b1-walls.test.ts
+PASS test/command-hub/vtid-04147-service-health-aria-live.test.ts
+PASS test/vtid-04033-operator-execution-follow.test.ts
+PASS test/vtid-03822-operator-chat-threads.test.ts
+PASS test/vtid-04136-single-format-relative-time.test.ts
+PASS test/services/concept-mastery/b3-walls.test.ts
+PASS test/services/dev-autopilot/context-loader.test.ts
+PASS test/command-hub/vtid-04148-autopilot-live-status-aria-live.test.ts
+PASS test/command-hub/t5d-stale-gcp-labels-fixed.test.ts
+PASS test/command-hub/t10-r2-aria-labels-and-input-labels.test.ts
+PASS test/console-task-17-cost-badge-tooltip.test.ts
+PASS test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts
+PASS test/vtid-03947-message-copy-timestamp.test.ts
+PASS test/command-hub/t10-r1-toast-aria-live.test.ts
+PASS test/vtid-04106-operator-chat-stick-to-bottom.test.ts
+PASS test/command-hub/stale-provider-defaults-fixed.test.ts
+PASS test/services/capability-awareness/b0e4-walls.test.ts
+PASS test/vtid-03852-llm-provider-badge.test.ts
+PASS test/vtid-03960-operator-thread-menu.test.ts
+PASS test/vtid-03819-related-task-chip.test.ts
+PASS test/vtid-03818-complete-completed-drift.test.ts
+PASS test/vtid-04104-operator-follow-persist.test.ts
+PASS test/command-hub/t6-dead-cloudflare-redirect-removed.test.ts
+PASS test/vtid-03944-operator-popup-flicker-pollers.test.ts
+PASS test/command-hub/t12-health-registry-backend-fed.test.ts
+PASS test/vtid-03917-overview-poll-no-full-rerender.test.ts
+Test Suites: 71 passed, 71 total
+Tests:       926 passed, 926 total
+Snapshots:   0 total
+Time:        20.174 s, estimated 34 s

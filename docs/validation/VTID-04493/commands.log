@@ -1,0 +1,12 @@
+# VTID-04493 commands (2026-09-24)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04493
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04493'
+SELECT conname FROM pg_constraint WHERE conrelid='public.orb_session_state'::regclass   # no key CHECK -> new key needs no migration
+cd services/gateway && npx tsc --noEmit -p .                                  # clean
+npx jest test/voice-activate-recommendation-shared.test.ts test/vtid-04493-community-autopilot-voice-tools.test.ts  # 19 passed
+npx jest test/orb/live/characterization -u                                   # 4 snapshots updated (description + positions only)
+npx jest --testPathPattern "(autopilot|orb-tools|calendar|recommendation|continuation|orb/|orchestrator|voice|tool-catalog|parity)"  # 430 suites, 7699 passed after -u
+node scripts/orb-tools-lift-scanner.mjs                                       # no drift
+cd voice-pipeline-spec && npm ci && npm run validate-spec && npm run extract:ts && npm run extract:py && npm run diff   # spec OK; no drift for the 3 tools
+python3 -c "import ast; ast.parse(open('services/agents/orb-agent/src/orb_agent/tools.py').read())"  # ok
+git stash push -- services/gateway/src && npx jest <2 new suites>             # 10 failed / 19 (mutation check)

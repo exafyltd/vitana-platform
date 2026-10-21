@@ -1,0 +1,9 @@
+# VTID-04657 — commands run in this session
+node node_modules/.bin/jest test/zz-repro-activate.test.ts        # before fix: ACTIVATED -> {"ok":false,"error":"finding status is 'activated' — only 'new' findings can be approved"}; control status=new -> ok:true
+node node_modules/.bin/jest test/vtid-04657-activate-reaches-execution.test.ts   # 12/12 pass
+# mutation: allowActivatedStatus: false in bridgeActivationToExecution -> 3 failed / 8 passed
+npx tsc --noEmit                                                   # clean
+node node_modules/.bin/jest test/command-hub                       # 352/352 pass
+node node_modules/.bin/jest test/vtid-04111 test/vtid-04108 test/routes/autopilot-recommendations test/vtid-04333 test/vtid-04308 test/self-healing-injector-autopilot-bridge test/vtid-04456 test/vtid-04465 test/dev-autopilot-finding-completion
+python3 -c "pglast.parser.parse_plpgsql_json(<migration>)"          # PL/pgSQL parses
+# live read-only queries: oasis_events (autopilot.recommendation.activated), autopilot_recommendations, dev_autopilot_executions, pg_proc md5

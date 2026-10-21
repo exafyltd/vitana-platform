@@ -1,0 +1,12 @@
+# VTID-04499 — read-only check against the live project (2026-09-24), before writing the route.
+
+SELECT table_name, column_name, data_type, is_nullable FROM information_schema.columns
+ WHERE table_schema='public' AND table_name IN ('partner_tenant','integration_manifest');
+
+integration_manifest: id text, partner_tenant_id text, connector_id text, provider_id text,
+                      connection_type text, risk_level text, status text, created_at, updated_at
+partner_tenant:       id text, tenant_id text, name text, status text, jurisdiction text NULL,
+                      created_at, updated_at, owner_user_id text NULL, owner_email text NULL,
+                      partner_organization_id uuid NULL      <- VTID-04471 Prisma migration 0007 is live
+
+Every column the connections route inserts, filters or orders by exists.

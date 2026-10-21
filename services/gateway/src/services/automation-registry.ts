@@ -1,0 +1,1418 @@
+/**
+ * Automation Registry — Static definitions of all AP-XXXX automations
+ *
+ * VTID: VTID-01250 (Autopilot Automations Engine)
+ *
+ * This is the code-level registry. The canonical documentation lives in
+ * docs/autopilot-automations/. Each entry maps an AP-XXXX ID to its
+ * trigger configuration and handler function name.
+ *
+ * Only automations with status IMPLEMENTED or LIVE have handlers.
+ * PLANNED automations are registered for tracking but skip execution.
+ */
+
+import { AutomationDefinition } from '../types/automations';
+
+// =============================================================================
+// Role targeting constants for readability
+// =============================================================================
+/**
+ * Role model:
+ *   community   — Primary user. Socializes, creates businesses/shops/services, buys, books.
+ *                  This is the default onboarding role for the first 6 months.
+ *   patient     — Person receiving medical care from a professional (doctor).
+ *   professional— Medical doctor in hospital/clinic. Uploads reports, manages clinical relationships.
+ *                  Regulated role — ONLY appears in health/medical automation contexts.
+ *   staff       — Back-office employees at hospital, lab, enterprise. Operational role.
+ *   admin       — Platform administrator.
+ *   developer   — Internal platform developer.
+ */
+
+/** Community-facing: all member-facing roles (community, patient, professional) */
+const MEMBER_ROLES = ['community', 'patient', 'professional'] as const;
+/** Patient-only: health intelligence automations requiring health data */
+const PATIENT_ROLES = ['patient'] as const;
+/** Medical professional: doctor/clinician — ONLY for medical/health contexts */
+const MEDICAL_ROLES = ['professional'] as const;
+/** Creator roles: community users who create businesses, shops, services, live rooms */
+const CREATOR_ROLES = ['community'] as const;
+/** Consumer roles: patient + community (buy, book, discover) */
+const CONSUMER_ROLES = ['community', 'patient'] as const;
+/** Clinical: both sides of the medical relationship */
+const CLINICAL_ROLES = ['patient', 'professional'] as const;
+/** Operations: staff + admin for platform ops */
+const OPS_ROLES = ['staff', 'admin'] as const;
+/** Everyone: runs for all roles without filtering */
+const ALL_ROLES = 'all' as const;
+
+// =============================================================================
+// AP-0100: Connect People
+// =============================================================================
+const CONNECT_PEOPLE: AutomationDefinition[] = [
+  {
+    id: 'AP-0101', name: 'Daily Match Delivery', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyMatchDelivery',
+  },
+  {
+    id: 'AP-0102', name: '"Someone Shares Your Interest" Nudge', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 }, // every 6h
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSharedInterestNudge',
+  },
+  {
+    id: 'AP-0103', name: 'Mutual Accept Auto-Introduction', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.state.accepted' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMutualAcceptIntroduction',
+    requires: ['AP-0101'],
+  },
+  {
+    id: 'AP-0104', name: 'First Conversation Starter', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 120 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runFirstConversationStarter',
+    requires: ['AP-0103'],
+  },
+  {
+    id: 'AP-0105', name: 'Group Recommendation Push', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' }, // Monday 10am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupRecommendationPush',
+  },
+  {
+    id: 'AP-0106', name: '"People You Know Are Here" Social Proof', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.group.viewed' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runPeopleYouKnowSocialProof',
+  },
+  {
+    id: 'AP-0107', name: 'Proactive Social Alignment Suggestions', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 9 * * 1' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialAlignmentSuggestions',
+  },
+  {
+    id: 'AP-0108', name: 'Match Quality Learning Loop', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.submitted' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMatchQualityLoop',
+  },
+  {
+    id: 'AP-0109', name: 'Proactive Match Batch Delivery', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 60 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runProactiveMatchBatch',
+  },
+  {
+    id: 'AP-0110', name: 'Opportunity Surfacing with Social Layer', domain: 'connect-people',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'opportunity.detected' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOpportunitySocialLayer',
+  },
+];
+
+// =============================================================================
+// AP-0200: Community & Groups
+// =============================================================================
+const COMMUNITY_GROUPS: AutomationDefinition[] = [
+  {
+    id: 'AP-0201', name: 'Auto-Create Group from Interest Cluster', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoCreateGroupFromInterestCluster',
+  },
+  {
+    id: 'AP-0202', name: 'Group Invite Follow-Up', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupInviteFollowUp',
+  },
+  {
+    id: 'AP-0203', name: 'New Member Welcome in Group', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'community.member.joined' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runNewMemberWelcome',
+  },
+  {
+    id: 'AP-0204', name: 'Auto-Suggest Meetup from Group Activity', domain: 'community-groups',
+    // No gateway-side hook exists for the originally-specified
+    // community.chat.activity_spike event (group chat writes go straight
+    // from frontend to Supabase) — implemented as a heartbeat scan instead.
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 180 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoSuggestMeetupFromGroupActivity',
+  },
+  {
+    id: 'AP-0205', name: 'Group Health Monitor', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...OPS_ROLES],
+    handler: 'runGroupHealthMonitor',
+  },
+  {
+    id: 'AP-0206', name: 'Cross-Group Introduction', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 }, // weekly
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runCrossGroupIntroduction',
+  },
+  {
+    id: 'AP-0207', name: 'Meetup RSVP Encouragement', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 60 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMeetupRsvpEncouragement',
+  },
+  {
+    id: 'AP-0208', name: 'Post-Meetup Connection Prompt', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'meetup.ended' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runPostMeetupConnect',
+  },
+  {
+    id: 'AP-0209', name: 'Group Creation from Match Cluster', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupCreationFromMatchCluster',
+  },
+  {
+    id: 'AP-0210', name: 'Community Digest for Group Creators', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 18 * * 0' }, // Sunday 6pm
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runCommunityCreatorDigest',
+  },
+  {
+    id: 'AP-0211', name: '"Revive Your Group" Re-Ignition', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily dormant-group scan
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runReviveYourGroup',
+    requires: ['AP-0205', 'AP-0503'],
+  },
+  {
+    id: 'AP-0212', name: '"Welcome Squad" New-Member Activation', domain: 'community-groups',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'community.member.joined' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWelcomeSquad',
+    requires: ['AP-0203', 'AP-0103'],
+  },
+];
+
+// =============================================================================
+// AP-0300: Events & Live Rooms
+// =============================================================================
+const EVENTS_LIVE_ROOMS: AutomationDefinition[] = [
+  {
+    id: 'AP-0301', name: 'Auto-Schedule Daily.co Room', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'meetup.created.online' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoScheduleDailyRoom',
+  },
+  {
+    id: 'AP-0302', name: 'Graduated Meetup Reminders', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 15 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGraduatedReminders',
+  },
+  {
+    id: 'AP-0303', name: '"Go Together" Event Match', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.daily.event' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGoTogetherMatch',
+  },
+  {
+    // No gateway code dispatches 'meetup.ended' — converted to a heartbeat
+    // scan of recently-ended global_community_events (see code comment).
+    id: 'AP-0304', name: 'Post-Event Feedback & Connect', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 60 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runPostEventFeedback',
+  },
+  {
+    id: 'AP-0305', name: 'Trending Events Weekly Digest', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 18 * * 0' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runTrendingEventsDigest',
+  },
+  {
+    id: 'AP-0306', name: 'Event Series Auto-Suggestion', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runEventSeriesAutoSuggestion',
+  },
+  {
+    id: 'AP-0307', name: 'Live Room from Trending Chat Topic', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 240 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runLiveRoomFromTrendingChatTopic',
+  },
+  {
+    // No gateway code dispatches 'meetup.ended' — converted to a heartbeat
+    // scan of recently-ended global_community_events, deliberately offset
+    // from AP-0304's window (see code comment: no attended-vs-no-show
+    // signal exists live, so the two are differentiated by timing/tone).
+    id: 'AP-0308', name: 'No-Show Follow-Up', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 120 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runNoShowFollowUp',
+  },
+  {
+    id: 'AP-0309', name: '"Host Night" Concierge', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily upcoming-event concierge scan
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runHostNightConcierge',
+    requires: ['AP-0301', 'AP-0302', 'AP-0403', 'AP-0405'],
+  },
+  {
+    id: 'AP-0310', name: '"Go Together +1" Group Outing Builder', domain: 'events-live-rooms',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.daily.event' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runGroupOutingBuilder',
+    requires: ['AP-0303'],
+  },
+];
+
+// =============================================================================
+// AP-0400: Sharing & Growth
+// =============================================================================
+const SHARING_GROWTH: AutomationDefinition[] = [
+  {
+    id: 'AP-0401', name: 'WhatsApp Event Share Link', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'generateWhatsAppEventLink',
+  },
+  {
+    id: 'AP-0402', name: 'WhatsApp Group Invite', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'generateWhatsAppGroupInvite',
+  },
+  {
+    id: 'AP-0403', name: 'Social Media Event Card Generator', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialMediaEventCardGenerator',
+  },
+  {
+    id: 'AP-0404', name: '"Invite a Friend" After Positive Experience', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.like' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runInviteAfterPositive',
+  },
+  {
+    id: 'AP-0405', name: 'Referral Tracking & Reward', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.referral' },
+    targetRoles: ALL_ROLES,
+    handler: 'runReferralReward',
+  },
+  {
+    id: 'AP-0406', name: 'Auto-Post Community Highlights', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 14 * * 5' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoPostCommunityHighlights',
+  },
+  {
+    id: 'AP-0407', name: 'User Profile Share Card', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES, 'professional'],
+    handler: 'runUserProfileShareCard',
+  },
+  {
+    id: 'AP-0408', name: 'Event Countdown Share Prompt', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runEventCountdownSharePrompt',
+  },
+  {
+    id: 'AP-0409', name: '"Your Week on Vitana" Shareable Recap', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 9 * * 0' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWeeklyRecapShare',
+  },
+  {
+    id: 'AP-0410', name: 'Viral Loop: Shared Event → New User Onboarding', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.shared_link' },
+    targetRoles: ALL_ROLES,
+    handler: 'runViralLoopOnboarding',
+  },
+  {
+    id: 'AP-0411', name: '"Bring Your Circle" Smart Invite Wave', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.like' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runBringYourCircleInviteWave',
+    requires: ['AP-0404', 'AP-0405', 'AP-0708'],
+  },
+  {
+    id: 'AP-0412', name: '"Progress to Story" Shareable Win', domain: 'sharing-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.milestone.reached' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runProgressToStoryShare',
+    requires: ['AP-0407', 'AP-0509', 'AP-0410'],
+  },
+];
+
+// =============================================================================
+// AP-0500: Engagement Loops
+// =============================================================================
+const ENGAGEMENT_LOOPS: AutomationDefinition[] = [
+  {
+    id: 'AP-0501', name: 'Morning Briefing with Social Context', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 7 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMorningBriefing',
+  },
+  {
+    id: 'AP-0502', name: 'Weekly Community Digest', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 18 * * 0' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWeeklyCommunityDigest',
+  },
+  {
+    id: 'AP-0503', name: 'Re-Engagement for Dormant Users', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDormantUserReEngagement',
+  },
+  {
+    id: 'AP-0504', name: 'Milestone Celebrations', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.milestone.reached' },
+    targetRoles: ALL_ROLES,
+    handler: 'runMilestoneCelebration',
+  },
+  {
+    id: 'AP-0505', name: 'Diary Reminder with Social Twist', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 21 * * *' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runDiaryReminderSocial',
+  },
+  {
+    id: 'AP-0506', name: 'Weekly Reflection with Connection Insights', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 20 * * 5' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWeeklyReflection',
+  },
+  {
+    id: 'AP-0507', name: 'Conversation Continuity Nudge', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runConversationContinuityNudge',
+  },
+  {
+    // Stays PLANNED: no profile_views table exists live and nothing
+    // dispatches a 'profile.viewed' event (same situation as AP-1206) — a
+    // handler here would be dead code with no trigger path.
+    id: 'AP-0508', name: '"Someone Viewed Your Profile" Notification', domain: 'engagement-loops',
+    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'profile.viewed' },
+    targetRoles: [...MEMBER_ROLES, 'professional'],
+  },
+  {
+    id: 'AP-0509', name: 'Milestone Detection Scanner', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 }, // every 6h
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMilestoneScanner',
+  },
+  {
+    // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: pairs with `upcoming_event_today`
+    // (channel='push' in TYPE_META). Fires once per user per day for their
+    // first calendar_events entry of the day.
+    id: 'AP-0510', name: 'Upcoming Events Today Push', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runUpcomingEventsToday',
+  },
+  {
+    id: 'AP-0511', name: '"Friends Challenge" Social Streak', domain: 'engagement-loops',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 }, // daily shared-goal scan
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runFriendsChallengeSocialStreak',
+    requires: ['AP-0405', 'AP-0708'],
+  },
+];
+
+// =============================================================================
+// AP-0600: Health & Wellness
+// =============================================================================
+const HEALTH_WELLNESS: AutomationDefinition[] = [
+  {
+    id: 'AP-0601', name: 'PHI Redaction Gate', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.data.incoming' },
+    targetRoles: [...CLINICAL_ROLES],
+    handler: 'runPhiRedactionGate',
+  },
+  {
+    id: 'AP-0602', name: 'Health Report Summarization', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 15 },
+    targetRoles: [...CLINICAL_ROLES],
+    handler: 'runHealthReportSummarization',
+  },
+  {
+    id: 'AP-0603', name: 'Consent Check Before Health Operations', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.operation.requested' },
+    targetRoles: [...CLINICAL_ROLES],
+    handler: 'runConsentCheck',
+  },
+  {
+    id: 'AP-0604', name: 'Wellness Check-In Prompt', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 3' }, // Wednesday 10am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWellnessCheckIn',
+  },
+  {
+    id: 'AP-0605', name: 'Community Wellness Event Suggestion', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runCommunityWellnessEventSuggestion',
+  },
+  {
+    id: 'AP-0606', name: 'Health Data Export Reminder', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 1 */3 *' }, // quarterly
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runHealthDataExportReminder',
+  },
+  {
+    id: 'AP-0607', name: 'Lab Report Ingestion & Biomarker Extraction', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.lab_report.uploaded' },
+    targetRoles: [...CLINICAL_ROLES],
+    handler: 'runLabReportIngestion',
+  },
+  {
+    id: 'AP-0608', name: 'Biomarker Trend Analysis', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.biomarkers.stored' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runBiomarkerTrendAnalysis',
+    requires: ['AP-0607'],
+  },
+  {
+    id: 'AP-0609', name: 'Quality-of-Life Recommendation Engine', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.daily.recomputed' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runQualityOfLifeRecommendations',
+  },
+  {
+    id: 'AP-0610', name: 'Wearable Data Anomaly Detection', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.wearable.ingested' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runWearableAnomalyDetection',
+  },
+  {
+    id: 'AP-0611', name: 'Vitana Index Weekly Report', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * 1' }, // Monday 8am
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runVitanaIndexWeeklyReport',
+  },
+  {
+    id: 'AP-0612', name: 'Professional Referral Suggestion', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.biomarker.critical' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runProfessionalReferral',
+    requires: ['AP-0608'],
+  },
+  {
+    id: 'AP-0613', name: 'Health Capacity Awareness for Autopilot', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runHealthCapacityGate',
+  },
+  {
+    // Stays PLANNED: 'health.lab_report.first' is never dispatched (same gap
+    // as AP-0607's 'health.lab_report.uploaded' — the lab-upload flow never
+    // calls dispatchEvent) and "first report" detection needs state this
+    // domain doesn't track yet.
+    id: 'AP-0614', name: 'Health Goal Setting Assistant', domain: 'health-wellness',
+    status: 'PLANNED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.lab_report.first' },
+    targetRoles: [...PATIENT_ROLES],
+  },
+  {
+    id: 'AP-0615', name: 'Health-Aware Product Recommendations', domain: 'health-wellness',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.recommendations.generated' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runHealthAwareProductRecs',
+    requires: ['AP-0609'],
+  },
+];
+
+// =============================================================================
+// AP-0700: Payments, Wallet & VTNA
+// =============================================================================
+const PAYMENTS_WALLET: AutomationDefinition[] = [
+  {
+    id: 'AP-0701', name: 'Payment Failure Detection & Retry', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 15 },
+    targetRoles: ALL_ROLES,
+    handler: 'runPaymentFailureRetry',
+  },
+  {
+    id: 'AP-0702', name: 'Subscription Created Audit', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'stripe.subscription.created' },
+    targetRoles: ALL_ROLES,
+    handler: 'runSubscriptionAudit',
+  },
+  {
+    // Stays PLANNED: nothing dispatches 'user.plan_limit.approaching' and no
+    // plan-limit-tracking concept exists live to build a heartbeat
+    // substitute against — same missing-trigger situation as AP-0508/1206.
+    id: 'AP-0703', name: 'Plan Upgrade Suggestion', domain: 'payments-wallet-vtn',
+    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.plan_limit.approaching' },
+    targetRoles: [...CONSUMER_ROLES, 'professional'],
+  },
+  {
+    id: 'AP-0704', name: 'Subscription Expiry Warning', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: ALL_ROLES,
+    handler: 'runSubscriptionExpiryWarning',
+  },
+  {
+    id: 'AP-0705', name: 'Payment Method Update Reminder', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'stripe.payment.failed' },
+    targetRoles: ALL_ROLES,
+    handler: 'runPaymentMethodReminder',
+  },
+  {
+    id: 'AP-0706', name: 'Creator Stripe Connect Onboarding', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'catalog.listing.first' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runCreatorStripeOnboarding',
+  },
+  {
+    id: 'AP-0707', name: 'Creator Payout Monitoring', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'stripe.connect.payout' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runCreatorPayoutMonitor',
+  },
+  {
+    id: 'AP-0708', name: 'Wallet Credit Rewards for Engagement', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.reward_eligible' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runWalletCreditReward',
+  },
+  {
+    // Stays PLANNED: a token-launch automation is a one-time tokenomics/
+    // treasury operation outside this session's scope — not a schema-drift
+    // gap closable by fixing table/column names.
+    id: 'AP-0709', name: 'Vitana Token (VTNA) Launch Automation', domain: 'payments-wallet-vtn',
+    status: 'PLANNED', priority: 'P0', triggerType: 'manual',
+    targetRoles: ALL_ROLES,
+  },
+  {
+    id: 'AP-0710', name: 'Monetization Readiness Scoring', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.monetization.check' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runMonetizationReadinessCheck',
+  },
+  {
+    id: 'AP-0711', name: 'Weekly Earnings Report for Creators', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runCreatorWeeklyEarnings',
+  },
+  {
+    id: 'AP-0712', name: 'Spending Insights for Users', domain: 'payments-wallet-vtn',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 1 * *' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runSpendingInsights',
+  },
+];
+
+// =============================================================================
+// AP-0800: Personalization Engines
+// =============================================================================
+const PERSONALIZATION: AutomationDefinition[] = [
+  {
+    // Converted event -> heartbeat: nothing dispatches a social-suggestion
+    // event to react to (see handler file comment).
+    id: 'AP-0801', name: 'Social Comfort-Aware Suggestions', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialComfortAwareSuggestions',
+  },
+  {
+    // Converted event -> heartbeat: same missing-trigger situation.
+    id: 'AP-0802', name: 'Taste-Aligned Event Recommendations', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runTasteAlignedEventRecommendations',
+  },
+  {
+    id: 'AP-0803', name: 'Opportunity Surfacing Automation', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOpportunitySurfacingAutomation',
+  },
+  {
+    // Converted event -> heartbeat: no lifecycle_stage-transition event
+    // exists to react to.
+    id: 'AP-0804', name: 'Life-Stage Aware Communication', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 10080 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runLifeStageAwareCommunication',
+  },
+  {
+    id: 'AP-0805', name: 'Overload Detection & Throttle', domain: 'personalization-engines',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runOverloadDetectionThrottle',
+  },
+];
+
+// =============================================================================
+// AP-0900: Memory & Intelligence
+// =============================================================================
+const MEMORY_INTEL: AutomationDefinition[] = [
+  {
+    id: 'AP-0901', name: 'Memory-Informed Matching', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'match.feedback.like' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMemoryInformedMatching',
+  },
+  {
+    // Audit-only: the real extraction pipeline (inline-fact-extractor.ts via
+    // extraction-dedup-manager deduplicatedExtract)
+    // already runs outside the registry per session end; no
+    // 'orb.session.ended' event is dispatched to trigger this today.
+    id: 'AP-0902', name: 'Fact Extraction from Conversations', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'orb.session.ended' },
+    targetRoles: ALL_ROLES,
+    handler: 'runFactExtractionAudit',
+  },
+  {
+    // Retired (BOOTSTRAP-MEMORY-DAILY-LEARNING): its decay double-decayed
+    // the rows Loop 13 (nightly consolidator) already maintains, on a
+    // conflicting formula. Loop 13 is the single decay mechanism.
+    id: 'AP-0903', name: 'Relationship Graph Maintenance', domain: 'memory-intelligence',
+    status: 'DEPRECATED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 4 * * 0' },
+    targetRoles: [...MEMBER_ROLES],
+  },
+  {
+    id: 'AP-0904', name: 'Semantic Memory Search for Autopilot Context', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runSemanticMemoryContextForAutopilot',
+  },
+  {
+    id: 'AP-0905', name: 'Knowledge Base Context for Suggestions', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'automation.pre_execute' },
+    targetRoles: ALL_ROLES,
+    handler: 'runKnowledgeBaseContextForSuggestions',
+  },
+  {
+    // Wires guide/pattern-extractor (VTID-01936) — previously fully built
+    // but caller-less. Nightly, before the profiler's morning reads.
+    id: 'AP-0906', name: 'Routine Pattern Extraction', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '30 3 * * *' }, // daily 3:30am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRoutinePatternExtraction',
+  },
+  {
+    // "I learned something new about you today" — the standalone half of the
+    // shared felt-learning detector; the greeting ledger (6th signal) wins
+    // for users who opened a session, this catches the rest. Evening slot so
+    // the day's conversations have been extracted.
+    //
+    // Hourly (not a single daily 18:10 UTC fire): a fixed UTC time sends the
+    // push at the wrong local hour for anyone not near UTC (e.g. ~2am for
+    // UTC+8) — flagged in PR #2969 review. runDailyLearningDigest now
+    // resolves each user's real timezone and only notifies during their own
+    // local 18:xx hour (mirrors daily-pace-service.ts's getUserTimezone/
+    // userLocalHour pattern), so the hourly sweep is what actually delivers
+    // "evening" correctly across timezones — same reasoning as
+    // daily-pace-notifications.
+    id: 'AP-0907', name: 'Daily Learning Digest', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '10 * * * *' }, // hourly at :10
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningDigest',
+  },
+  {
+    // Turns AP-0906's user_routines into user_preference_* memory_facts
+    // (provenance behavior_inferred) so preferences grow from behavior, not
+    // just conversation. Runs after AP-0906's 3:30am extraction.
+    id: 'AP-0908', name: 'Behavior-Derived Preference Inference', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '40 4 * * *' }, // daily 4:40am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runBehaviorPreferenceInference',
+  },
+  {
+    // The relationship graph as a DERIVED INDEX: nightly projection of
+    // person-facts + mutual follows into relationship_nodes/edges (the only
+    // creation path since Cognee's Phase 8 retirement). Loop 13 decays.
+    id: 'AP-0909', name: 'Relationship Graph Projection', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '50 3 * * *' }, // daily 3:50am, after AP-0906
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runRelationshipGraphProjection',
+  },
+  {
+    // Drains the fact-embedding backlog (96% of live facts were unembedded,
+    // blinding tier-2 semantic retrieval). Hourly, 100/run, cheap no-op when
+    // the backlog is empty; new writes embed inline in the extractor.
+    //
+    // VTID-04786: a heartbeat job, not a cron. Its only trigger was the GCP
+    // Cloud Scheduler; the EventBridge replacement for the memory block was
+    // never applied, so it last ran 2026-07-06 and coverage sat at 4%. The
+    // in-process heartbeat loop (the VTID-04320 reminders precedent) fires it
+    // every 30 min; dedupeAcrossInstances keeps several gateway tasks from
+    // each running it. POST /automations/cron/AP-0910 still works.
+    id: 'AP-0910', name: 'Memory Embedding Backfill', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30, dedupeAcrossInstances: true },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runMemoryEmbeddingBackfill',
+  },
+  {
+    // Narrative profile synthesis — one LLM pass per active user connecting
+    // facts/routines/goal/Index into a compact "who is this person"
+    // paragraph for the ORB bootstrap.
+    //
+    // Hourly with a small per-run batch + time budget (not a single daily
+    // 5:05am fire processing up to 100 users): flagged in PR #2969 review —
+    // a synchronous HTTP cron request serially running up to 100 LLM calls
+    // cannot reliably finish inside Cloud Scheduler's --attempt-deadline=
+    // 300s, so a large eligible pool made this job silently never complete
+    // (and never retry successfully, since the retry hits the same wall).
+    // runUserModelSynthesis now caps itself to a safe batch (25 users) and
+    // aborts early on a 4-minute time budget; unprocessed users are picked
+    // up on the next hourly pass — mirrors AP-0910's proven hourly small-
+    // batch backlog-draining pattern. synthesizeUserModel's own inputs-hash
+    // skip makes already-synthesized users a cheap no-op, so the batch
+    // naturally rotates to whoever's stale.
+    id: 'AP-0911', name: 'User Model Synthesis', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '35 * * * *' }, // hourly at :35
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runUserModelSynthesis',
+  },
+  {
+    // Deterministic health-correlation insights (pillar trends, diary
+    // lapses) written as health_insight_* memory facts — the "sees
+    // contextual influence" beat, grounded in real Index/diary data.
+    // Before synthesis (5:05) so narratives can weave fresh insights.
+    id: 'AP-0912', name: 'Health Correlation Insights', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '55 4 * * *' }, // daily 4:55am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runHealthCorrelationInsights',
+  },
+  {
+    // Mirrors each user's own community-feed posts (profile_posts, any
+    // origin) into memory_items so Vitana can reference them by name
+    // ("the post you wrote about X") instead of never mentioning them.
+    // Hourly with a 65-min lookback; dedup makes overlap safe.
+    id: 'AP-0913', name: 'Own Post Memory Capture', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '15 * * * *' }, // hourly at :15
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOwnPostMemoryCapture',
+  },
+  {
+    // VTID-04391: one daily_learning episode per active user per local day
+    // (diary + session summaries + new facts, condensed by the memory
+    // stage). Hourly; each user is processed in their own local 22:xx hour,
+    // at most once per date (unique index), 25 users / 4 minutes per run.
+    id: 'AP-0914', name: 'Daily Learning Episode', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '45 * * * *' }, // hourly at :45
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDailyLearningEpisodes',
+  },
+  {
+    // VTID-04444 (WS-4.2): the nightly consolidator's loop 10 — themes per
+    // user from the last 30 days of diary entries, stored as
+    // diary_themes_v1 and read by AP-0911's profile synthesis. Daily before
+    // the synthesis hours; a no-op unless CONSOLIDATOR_DIARY_ROLLUP_ENABLED
+    // is exactly 'true'.
+    id: 'AP-0915', name: 'Diary Theme Rollup', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '25 4 * * *' }, // daily 4:25am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runDiaryThemeRollup',
+  },
+  {
+    // VTID-05171 (Life Timeline P5): the stored-but-silent activity (every
+    // screen visit) becomes routines the companion reads — screen_habit,
+    // active_hours, feature_affinity, pillar_rhythm — plus at most one
+    // "Vitana noticed" Index insight per member per day. Respects the
+    // member's timeline_learning_prefs. AP-0906 is unchanged.
+    id: 'AP-0916', name: 'Timeline Habit Rollup', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '15 4 * * *' }, // daily 4:15am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runTimelineHabitRollup',
+  },
+];
+
+// =============================================================================
+// AP-1000: Platform Operations
+// =============================================================================
+const PLATFORM_OPS: AutomationDefinition[] = [
+  {
+    id: 'AP-1001', name: 'VTID Lifecycle Automation', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'vtid.state.changed' },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runVtidLifecycle',
+  },
+  {
+    id: 'AP-1002', name: 'Governance Flag Monitoring', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'governance.flag.changed' },
+    targetRoles: [...OPS_ROLES],
+    handler: 'runGovernanceFlagCheck',
+  },
+  {
+    // CI writes deploy.<service>.success/failed directly into oasis_events
+    // (service='ci_cd'), bypassing dispatchEvent — nothing calls dispatchEvent
+    // for this topic yet (see handler file comment for the wiring needed).
+    id: 'AP-1003', name: 'Post-Deploy Health Check', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'deploy.gateway.failed' },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runPostDeployHealthCheck',
+  },
+  {
+    id: 'AP-1004', name: 'Service Error Rate Alert', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30 },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runServiceErrorRateAlert',
+  },
+  {
+    // migration.applied is a brand-new topic nothing dispatches yet — a
+    // migration-running workflow needs to POST it with
+    // { expected_name, expected_tables } (see handler file comment).
+    id: 'AP-1005', name: 'Database Migration Verification', domain: 'platform-operations',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'migration.applied' },
+    targetRoles: [...OPS_ROLES, 'developer'],
+    handler: 'runDatabaseMigrationVerification',
+  },
+];
+
+// =============================================================================
+// AP-1100: Business Hub & Marketplace
+// =============================================================================
+const BUSINESS_MARKETPLACE: AutomationDefinition[] = [
+  {
+    id: 'AP-1101', name: 'Service Listing Publication & Distribution', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'catalog.service.created' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runServiceListingDistribution',
+  },
+  {
+    id: 'AP-1102', name: 'Product Listing & AI-Picks Matching', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'catalog.product.created' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runProductAiPicksMatching',
+  },
+  {
+    id: 'AP-1103', name: 'Discover Section Personalization', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runDiscoverPersonalization',
+  },
+  {
+    id: 'AP-1104', name: 'Client-Service Matching', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.service.search' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runClientServiceMatching',
+  },
+  {
+    id: 'AP-1105', name: 'Post-Service Outcome Tracking', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES, 'professional'],
+    handler: 'runPostServiceOutcomeTracking',
+  },
+  {
+    id: 'AP-1106', name: 'Shop Setup Wizard', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.business.started' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runShopSetupWizard',
+  },
+  {
+    id: 'AP-1107', name: 'Product Review Follow-Up', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runProductReviewFollowUp',
+  },
+  {
+    id: 'AP-1108', name: 'Creator Analytics & Growth Tips', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runCreatorAnalyticsGrowthTips',
+  },
+  {
+    id: 'AP-1109', name: 'Seasonal & Trending Recommendations for Creators', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 1 * *' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runSeasonalTrendingRecommendations',
+  },
+  {
+    id: 'AP-1110', name: 'Cross-Sell Service to Product Buyers', domain: 'business-hub-marketplace',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.product.purchased' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runCrossSellServiceToProductBuyers',
+  },
+];
+
+// =============================================================================
+// AP-1200: Live Rooms Commerce
+// =============================================================================
+const LIVE_ROOMS_COMMERCE: AutomationDefinition[] = [
+  {
+    id: 'AP-1201', name: 'Paid Live Room Setup', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'catalog.service.live_room' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runPaidLiveRoomSetup',
+  },
+  {
+    id: 'AP-1202', name: 'Live Room Booking & Payment Flow', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'live_room.booking.requested' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runLiveRoomBookingPayment',
+  },
+  {
+    id: 'AP-1203', name: 'Live Room Upsell from Free Content', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runLiveRoomFreeToUpSell',
+  },
+  {
+    id: 'AP-1204', name: 'Group Session Auto-Fill', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runGroupSessionAutoFill',
+  },
+  {
+    id: 'AP-1205', name: 'Post-Session Revenue Report', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'live_room.session.ended' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runPostSessionRevenueReport',
+  },
+  {
+    // Handler is written (runSessionHighlightClipsForMarketing) but status
+    // stays PLANNED: nothing dispatches 'live_room.highlights.ready' and no
+    // video-clip pipeline exists — wiring the handler to a never-fired event
+    // wouldn't make this actually run. See handler file comment.
+    id: 'AP-1206', name: 'Session Highlight Clips for Marketing', domain: 'live-rooms-commerce',
+    status: 'PLANNED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'live_room.highlights.ready' },
+    targetRoles: [...CREATOR_ROLES],
+  },
+  {
+    id: 'AP-1207', name: 'Recurring Session Auto-Scheduling', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runRecurringSessionAutoSchedule',
+  },
+  {
+    id: 'AP-1208', name: 'Consultation Matching', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'health.professional_referral' },
+    targetRoles: [...PATIENT_ROLES],
+    handler: 'runConsultationMatching',
+  },
+  {
+    id: 'AP-1209', name: 'Free Trial Session for New Creators', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runFreeTrialSessionSuggestion',
+  },
+  {
+    id: 'AP-1210', name: 'Live Room Revenue Optimization Tips', domain: 'live-rooms-commerce',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 1 * *' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runLiveRoomRevenueOptimizationTips',
+  },
+];
+
+// =============================================================================
+// AP-1300: Onboarding & Viral Growth
+// =============================================================================
+const ONBOARDING_GROWTH: AutomationDefinition[] = [
+  {
+    id: 'AP-1301', name: 'ORB-Guided Conversational Onboarding', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.completed' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runOrbGuidedOnboarding',
+  },
+  {
+    id: 'AP-1302', name: 'Starter Pack Delivery', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.completed' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runStarterPackDelivery',
+    requires: ['AP-1301'],
+  },
+  {
+    id: 'AP-1303', name: 'Contact Book Sync & Bulk Invite', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runContactBookSyncAndInvite',
+  },
+  {
+    id: 'AP-1304', name: '"X Joined Vitana!" Social Proof Notifications', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P0', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.signup.completed' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialProofNotification',
+  },
+  {
+    id: 'AP-1305', name: 'Social Account Connect', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'manual',
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialAccountConnect',
+  },
+  {
+    id: 'AP-1306', name: 'Auto-Share to Social Accounts', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.milestone.reached' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoShareToSocial',
+  },
+  {
+    id: 'AP-1307', name: 'Contact Activity Feed Digest', domain: 'onboarding-growth',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 360 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runContactActivityDigest',
+  },
+];
+
+// =============================================================================
+// AP-1400: Event & Meetup Initiative
+// =============================================================================
+const EVENT_MEETUP_INITIATIVE: AutomationDefinition[] = [
+  {
+    id: 'AP-1401', name: 'Smart Event Creation', domain: 'event-meetup-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSmartEventCreation',
+  },
+  {
+    id: 'AP-1402', name: 'Calendar Availability Check', domain: 'event-meetup-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'event',
+    triggerConfig: { eventTopic: 'event.suggestion.created' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runCalendarAvailabilityCheck',
+  },
+  {
+    // Converted event -> heartbeat: nothing dispatches 'event.created' (the
+    // frontend writes global_community_events directly — same gap as
+    // AP-0204/AP-1401's heartbeat conversions).
+    id: 'AP-1403', name: 'Auto-Invitation Sender', domain: 'event-meetup-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 30 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runAutoInvitationSender',
+  },
+  {
+    id: 'AP-1404', name: 'Event Discovery Recommendation', domain: 'event-meetup-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 9 * * *' },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runEventDiscoveryRecommendation',
+  },
+  {
+    id: 'AP-1405', name: 'Social Meetup Organizer', domain: 'event-meetup-initiative',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runSocialMeetupOrganizer',
+  },
+];
+
+// =============================================================================
+// AP-1500: Business Opportunity
+// =============================================================================
+const BUSINESS_OPPORTUNITY: AutomationDefinition[] = [
+  {
+    id: 'AP-1501', name: 'Marketplace Gap Detection', domain: 'business-opportunity',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runMarketplaceGapDetection',
+  },
+  {
+    id: 'AP-1502', name: 'Revenue Opportunity Alert', domain: 'business-opportunity',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runRevenueOpportunityAlert',
+  },
+  {
+    id: 'AP-1503', name: 'Service Demand Matching', domain: 'business-opportunity',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 11 * * 3' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runServiceDemandMatching',
+  },
+  {
+    // Shares 'user.business.started' with AP-1106 — neither is dispatched
+    // yet (see handler file comment); real logic ready once wired.
+    id: 'AP-1504', name: 'Business Setup Coach', domain: 'business-opportunity',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'event',
+    triggerConfig: { eventTopic: 'user.business.started' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runBusinessSetupCoach',
+  },
+  {
+    id: 'AP-1505', name: 'Income Growth Tips', domain: 'business-opportunity',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 10 * * 1' },
+    targetRoles: [...CREATOR_ROLES],
+    handler: 'runIncomeGrowthTips',
+  },
+];
+
+// =============================================================================
+// AP-1600: Health Action Initiative
+// =============================================================================
+const HEALTH_ACTION_INITIATIVE: AutomationDefinition[] = [
+  {
+    id: 'AP-1601', name: 'Lab Test Kit Ordering', domain: 'health-action-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runLabTestKitOrdering',
+  },
+  {
+    id: 'AP-1602', name: 'Health Screening Scheduler', domain: 'health-action-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 1 * *' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runHealthScreeningScheduler',
+  },
+  {
+    id: 'AP-1603', name: 'Motivational Health Nudge', domain: 'health-action-initiative',
+    status: 'IMPLEMENTED', priority: 'P1', triggerType: 'cron',
+    triggerConfig: { cronExpression: '0 8 * * *' },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runMotivationalHealthNudge',
+  },
+  {
+    id: 'AP-1604', name: 'Exercise Initiation', domain: 'health-action-initiative',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runExerciseInitiation',
+  },
+  {
+    id: 'AP-1605', name: 'Supplement Reorder Reminder', domain: 'health-action-initiative',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'heartbeat',
+    triggerConfig: { intervalMinutes: 1440 },
+    targetRoles: [...CONSUMER_ROLES],
+    handler: 'runSupplementReorderReminder',
+  },
+];
+
+// =============================================================================
+// Full Registry
+// =============================================================================
+export const AUTOMATION_REGISTRY: AutomationDefinition[] = [
+  ...CONNECT_PEOPLE,
+  ...COMMUNITY_GROUPS,
+  ...EVENTS_LIVE_ROOMS,
+  ...SHARING_GROWTH,
+  ...ENGAGEMENT_LOOPS,
+  ...HEALTH_WELLNESS,
+  ...PAYMENTS_WALLET,
+  ...PERSONALIZATION,
+  ...MEMORY_INTEL,
+  ...PLATFORM_OPS,
+  ...BUSINESS_MARKETPLACE,
+  ...LIVE_ROOMS_COMMERCE,
+  ...ONBOARDING_GROWTH,
+  ...EVENT_MEETUP_INITIATIVE,
+  ...BUSINESS_OPPORTUNITY,
+  ...HEALTH_ACTION_INITIATIVE,
+];
+
+// ── Lookup helpers ──────────────────────────────────────────
+
+export function getAutomation(id: string): AutomationDefinition | undefined {
+  return AUTOMATION_REGISTRY.find(a => a.id === id);
+}
+
+export function getAutomationsByDomain(domain: string): AutomationDefinition[] {
+  return AUTOMATION_REGISTRY.filter(a => a.domain === domain);
+}
+
+export function getExecutableAutomations(): AutomationDefinition[] {
+  return AUTOMATION_REGISTRY.filter(a => a.handler && (a.status === 'IMPLEMENTED' || a.status === 'LIVE'));
+}
+
+export function getCronAutomations(): AutomationDefinition[] {
+  return getExecutableAutomations().filter(a => a.triggerType === 'cron');
+}
+
+export function getHeartbeatAutomations(): AutomationDefinition[] {
+  return getExecutableAutomations().filter(a => a.triggerType === 'heartbeat');
+}
+
+export function getEventAutomations(eventTopic: string): AutomationDefinition[] {
+  return getExecutableAutomations().filter(
+    a => a.triggerType === 'event' && a.triggerConfig?.eventTopic === eventTopic
+  );
+}
+
+/**
+ * Check if an automation targets a specific role.
+ * Returns true if targetRoles is 'all' or the role array includes the given role.
+ */
+export function automationTargetsRole(def: AutomationDefinition, role: string): boolean {
+  if (def.targetRoles === 'all') return true;
+  return def.targetRoles.includes(role as any);
+}
+
+/**
+ * Get all automations that target a specific user role.
+ */
+export function getAutomationsByRole(role: string): AutomationDefinition[] {
+  return AUTOMATION_REGISTRY.filter(a => automationTargetsRole(a, role));
+}
+
+/**
+ * Get executable automations filtered by role.
+ */
+export function getExecutableAutomationsForRole(role: string): AutomationDefinition[] {
+  return getExecutableAutomations().filter(a => automationTargetsRole(a, role));
+}
+
+export function getRegistrySummary() {
+  const byDomain: Record<string, { total: number; executable: number; planned: number }> = {};
+  const byRole: Record<string, number> = {};
+
+  for (const a of AUTOMATION_REGISTRY) {
+    if (!byDomain[a.domain]) byDomain[a.domain] = { total: 0, executable: 0, planned: 0 };
+    byDomain[a.domain].total++;
+    if (a.handler) byDomain[a.domain].executable++;
+    if (a.status === 'PLANNED') byDomain[a.domain].planned++;
+
+    // Count per-role targeting
+    if (a.targetRoles === 'all') {
+      for (const r of ['patient', 'professional', 'staff', 'admin', 'developer', 'community']) {
+        byRole[r] = (byRole[r] || 0) + 1;
+      }
+    } else {
+      for (const r of a.targetRoles) {
+        byRole[r] = (byRole[r] || 0) + 1;
+      }
+    }
+  }
+
+  return {
+    total: AUTOMATION_REGISTRY.length,
+    executable: getExecutableAutomations().length,
+    planned: AUTOMATION_REGISTRY.filter(a => a.status === 'PLANNED').length,
+    domains: byDomain,
+    roles: byRole,
+  };
+}

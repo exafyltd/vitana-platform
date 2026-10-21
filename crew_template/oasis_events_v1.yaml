@@ -1,0 +1,14 @@
+events:
+  ingest_endpoint: /events/ingest
+  table: oasis_events_v1
+  rls: true
+  columns:
+    rid: text
+    tenant: text
+    task_type: text
+    assignee_ai: text
+    status: text
+    notes: text
+    git_sha: text
+    metadata: jsonb
+    schema_version: 1

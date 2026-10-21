@@ -1,0 +1,18 @@
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 8
+# pass 8
+# fail 0
+$ node --test scripts/collab/queue.test.mjs
+# tests 14
+# pass 14
+# fail 0
+$ gate.mjs scope
+✅ **scope** — 8 changed file(s), all inside the scope of VTID-05192
+$ gate.mjs sparring
+✅ **sparring record** — present and approved for VTID-05192
+$ gate.mjs weakening
+✅ **test weakening** — 0 changed test file(s), none weakened without a declaration
+$ diff collaboration.md (platform vs v1)
+identical

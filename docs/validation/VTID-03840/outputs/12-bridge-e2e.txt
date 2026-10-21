@@ -1,0 +1,37 @@
+# 12 — erp-bridge end-to-end against the REAL patched ERPClaw checkout + local PG16 (uvicorn app.main:build)
+## /alive:
+{"ok":true,"service":"erp-bridge","catalog":"v1","env":"test","erpclaw_pin":"4d32db658529","addons_pin":"7c1b5ae57019","uptime_s":0}
+## /ready:
+{"ok":true,"tenants":2}
+## no token -> 401: 401
+## catalog size: 164 actions; pin 4d32db658529
+## READ list-companies (company_id injected by bridge, not in request):
+ ok True status executed argv ['list-companies', '--limit', '5'] companies ['Vitanaland Spike LLC'] ms 181
+## DRAFT add-lead (CRM module action through the foundation router, patch 0003):
+ ok True argv ['add-lead', '--company-id', 'f1de441f-7cdb-4842-9ce3-8830294b71e5', '--email', 'bridge@example.invalid', '--lead-name', 'Bridge Lead', '--source', 'referral'] lead LEAD-2026-00002 5027a893-50bf-481a-903d-6fd1a8e04c4a
+## REPLAY same key+payload -> replayed=true, no second lead:
+ replayed True lead LEAD-2026-00002
+## leads named 'Bridge Lead' in DB: 1
+## same key, different payload -> 409:
+{"detail":{"error":"idempotency_conflict","reason":"idempotency_key reused with a different request"}}
+## smuggled flag db_path -> 422, no run:
+{"detail":"parameter 'db_path' is not admitted"}
+## never-exposed post-gl-entries -> 403:
+{"detail":"action 'post-gl-entries' is not allowlisted"}
+## DRAFT add-journal-entry:
+ journal_entry_id=f335019d-bc69-40ff-b0b7-22b6fd77d02e
+## COMMIT submit-journal-entry WITHOUT confirmation -> 403 confirmation_required:
+{"detail":{"error":"confirmation_required","tier":"commit","action":"submit-journal-entry"}}
+## COMMIT submit-journal-entry WITH confirmation -> bridge appends --user-confirmed, GL posts:
+ ok True argv ['submit-journal-entry', '--company-id', 'f1de441f-7cdb-4842-9ce3-8830294b71e5', '--journal-entry-id', 'f335019d-bc69-40ff-b0b7-22b6fd77d02e', '--user-confirmed'] status ok
+ gl rows for JE: 2
+## HIGH cancel-journal-entry: maker==checker -> 403; voice -> 403; proper maker-checker -> executes:
+{"detail":{"error":"maker_checker_violation","action":"cancel-journal-entry"}}
+{"detail":{"error":"voice_cannot_confirm_high_risk","action":"cancel-journal-entry"}}
+ ok True argv ['cancel-journal-entry', '--company-id', 'f1de441f-7cdb-4842-9ce3-8830294b71e5', '--journal-entry-id', 'f335019d-bc69-40ff-b0b7-22b6fd77d02e', '--user-confirmed'] result {"status": "ok", "reversed": true, "journal_entry_id": "f335019d-bc69-40ff-b0b7-22b6fd77d02e"}
+ JE status now: cancelled
+## receipt replay endpoint:
+ status executed action submit-journal-entry tier commit replayed True
+## receipts persisted in the tenant DB: 5 rows; statuses: executed
+## unknown tenant -> 404: 404
+## server log has no DB URL / password text: 0 occurrences

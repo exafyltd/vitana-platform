@@ -1,0 +1,992 @@
+/**
+ * Memory & Intelligence Handlers — AP-0900 series
+ *
+ * VTID: VTID-01250
+ * Automations built on the live memory_facts/relationship_nodes/relationship_edges
+ * stack (VTID-01192/VTID-01087, documented in CLAUDE.md section 14).
+ */
+
+import { AutomationContext } from '../../types/automations';
+import { registerHandler } from '../automation-executor';
+import { tt } from '../../i18n/catalog';
+import { getUserLocale, bulkGetUserLocales } from '../../i18n/server-locale';
+import {
+  detectNewFacts,
+  markLearningSurfaced,
+  readLearningSurfacedAt,
+} from '../conversation/new-facts-detector';
+import { SIGNAL_GREETING_FACTS, parseFacts } from '../conversation/greeting-facts-ledger';
+import { getUserTimezone, userLocalHour } from '../daily-pace-service';
+import * as repo from './memory-intelligence-repository';
+import { rememberFact } from '../memory/remember'; // VTID-04364
+
+// ── AP-0901: Memory-Informed Matching ───────────────────────
+// On a positive match reaction, look up the user's most recent self-facts
+// (memory_facts, entity='self') to personalize the "why this match" nudge.
+async function runMemoryInformedMatching(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { user_id: userId, match_id: matchId } = payload || {};
+  if (!userId || !matchId) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+
+  const { data: match } = await repo.fetchDailyMatchById(supabase, matchId);
+  if (!match) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { data: facts } = await repo.fetchRecentSelfFactValues(supabase, tenantId, userId, 3);
+
+  if (!facts?.length) return { usersAffected: 0, actionsTaken: 0 };
+
+  // BOOTSTRAP-MEMORY-DAILY-LEARNING (3d): the copy leads with "I remembered
+  // you mentioned X" — the stored fact is announced as learning, not used as
+  // silent background justification. Localized via the gateway catalog
+  // (CLAUDE.md 13b) instead of the previous hardcoded English.
+  const trait = facts[0].fact_value;
+  const lc = await getUserLocale(supabase, userId);
+  ctx.notify(userId, 'orb_suggestion', {
+    title: tt('notif.memory_match.title', lc),
+    body: tt('notif.memory_match.body', lc, { trait }),
+    data: { url: '/matches', match_id: matchId },
+  });
+
+  return { usersAffected: 1, actionsTaken: 1 };
+}
+
+// ── AP-0902: Fact Extraction from Conversations ─────────────
+// The real extraction pipeline (cognee-extractor-client.ts extractAsync +
+// persistExtractionResults) already runs async per-session outside the
+// automations registry. This handler is a lightweight audit: confirm a
+// session that ended actually produced memory_facts, and flag silent
+// extraction failures for ops.
+async function runFactExtractionAudit(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { user_id: userId, session_id: sessionId } = payload || {};
+  if (!userId) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+  const tenMinutesAgo = new Date(Date.now() - 10 * 60 * 1000).toISOString();
+
+  const { count: factCount } = await repo.countRecentFactsForUser(supabase, tenantId, userId, tenMinutesAgo);
+
+  if ((factCount || 0) > 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  ctx.log(`No memory_facts extracted for user ${userId.slice(0, 8)}… in the last 10min after session ${sessionId || 'unknown'} ended`);
+  await ctx.emitEvent('autopilot.memory.extraction_silent', { user_id: userId, session_id: sessionId });
+
+  return { usersAffected: 0, actionsTaken: 1 };
+}
+
+// ── AP-0903: RETIRED (BOOTSTRAP-MEMORY-DAILY-LEARNING) ──────
+// Its edge decay double-decayed the same relationship_edges rows the
+// nightly consolidator's Loop 13 already maintains, on a conflicting
+// formula (flat −10 @ 90d vs. Loop 13's 5%-toward-mid @ 30d). Loop 13
+// is the single decay mechanism now; AP-0909 below owns graph CREATION.
+
+// ── AP-0904: Semantic Memory Search for Autopilot Context ───
+// Fired before another automation executes (same 'automation.pre_execute'
+// topic AP-0613 uses); stashes the user's top self-facts onto
+// ctx.run.metadata for the calling automation to read, so downstream
+// notification copy can be memory-aware without its own memory_facts query.
+const CONTEXT_FACTS_LIMIT = 5;
+
+async function runSemanticMemoryContextForAutopilot(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const userId = payload?.user_id;
+  if (!userId) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase, tenantId } = ctx;
+
+  const { data: facts } = await repo.fetchRecentActiveFacts(supabase, tenantId, userId, CONTEXT_FACTS_LIMIT);
+
+  ctx.run.metadata = {
+    ...ctx.run.metadata,
+    memory_context_facts: (facts || []).map((f: any) => ({ key: f.fact_key, value: f.fact_value })),
+  };
+
+  return { usersAffected: 1, actionsTaken: 0 };
+}
+
+// ── AP-0905: Knowledge Base Context for Suggestions ─────────
+// knowledge_docs (tags array) is the live knowledge hub table. Given a set
+// of topic tags, surfaces the most relevant doc and stashes it on
+// ctx.run.metadata the same way AP-0904 stashes memory facts.
+async function runKnowledgeBaseContextForSuggestions(ctx: AutomationContext) {
+  const payload = ctx.run.metadata as any;
+  const { topic_tags: topicTags } = payload || {};
+  if (!Array.isArray(topicTags) || topicTags.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  const { supabase } = ctx;
+
+  const { data: docs } = await repo.fetchKnowledgeDocByTags(supabase, topicTags, 1);
+
+  if (!docs?.length) return { usersAffected: 0, actionsTaken: 0 };
+
+  ctx.run.metadata = {
+    ...ctx.run.metadata,
+    knowledge_context_doc: docs[0],
+  };
+
+  return { usersAffected: 0, actionsTaken: 1 };
+}
+
+// ── AP-0906: Routine Pattern Extraction ─────────────────────
+// Wires the previously caller-less guide/pattern-extractor (VTID-01936):
+// for every user with calendar activity in the extractor's 30-day window,
+// derive time-of-day / day-of-week / category-affinity routines into
+// user_routines. The UserContextProfiler and guide awareness-context
+// already read that table, so extracted routines flow straight into the
+// ORB voice profile and the brain's routine-weaving.
+const ROUTINE_EXTRACT_LOOKBACK_DAYS = 30;
+const ROUTINE_EXTRACT_MAX_USERS_PER_RUN = 200;
+const ROUTINE_EXTRACT_EVENT_SCAN_LIMIT = 5000;
+
+async function runRoutinePatternExtraction(ctx: AutomationContext) {
+  const { supabase } = ctx;
+  const sinceIso = new Date(Date.now() - ROUTINE_EXTRACT_LOOKBACK_DAYS * 86_400_000).toISOString();
+
+  const { data: rows, error } = await repo.fetchCalendarEventUserIdsSince(supabase, sinceIso, ROUTINE_EXTRACT_EVENT_SCAN_LIMIT);
+
+  if (error) {
+    ctx.log(`calendar_events scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  const userIds = [...new Set((rows || []).map((r: any) => r.user_id).filter(Boolean))].slice(
+    0,
+    ROUTINE_EXTRACT_MAX_USERS_PER_RUN,
+  );
+
+  const { extractPatternsForUser } = await import('../guide/pattern-extractor');
+
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  for (const userId of userIds) {
+    try {
+      const result = await extractPatternsForUser(userId as string);
+      if (result.routines_written > 0) {
+        usersAffected++;
+        actionsTaken += result.routines_written;
+      }
+    } catch (err: any) {
+      ctx.log(`pattern extraction failed for ${String(userId).slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.routines_extracted', {
+    users_scanned: userIds.length,
+    users_with_routines: usersAffected,
+    routines_written: actionsTaken,
+  });
+
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0907: Daily Learning Digest ──────────────────────────
+// The standalone half of the shared felt-learning detector (3a): for users
+// who gained memory_facts in the last 24h but did NOT get the moment in a
+// session today (greeting-ledger `facts_learned` spoken today, or already
+// notified today), send one "I learned something new about you" push with
+// a deep link into the Memory Garden. Silent when nothing new — no filler.
+const LEARNING_DIGEST_WINDOW_MS = 24 * 3600 * 1000;
+const LEARNING_DIGEST_MAX_USERS_PER_RUN = 500;
+// BOOTSTRAP-MEMORY-DAILY-LEARNING (PR #2969 review): this automation now
+// runs hourly (registry cron '10 * * * *') instead of once daily at a fixed
+// 18:10 UTC — a fixed UTC fire delivered this "evening" push at the wrong
+// local time for anyone not near UTC (e.g. ~2am for UTC+8). Each user is
+// only notified during their OWN local evening hour, resolved the same way
+// daily-pace-service.ts already does for daily-pace-notifications.
+const LEARNING_DIGEST_LOCAL_HOUR = 18;
+
+async function runDailyLearningDigest(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const nowMs = Date.now();
+  const nowUtc = new Date(nowMs);
+  const nowIso = nowUtc.toISOString();
+  const today = nowIso.slice(0, 10);
+  const sinceIso = new Date(nowMs - LEARNING_DIGEST_WINDOW_MS).toISOString();
+
+  // One query shrinks the fan-out to users who actually learned something.
+  const { data: factRows, error } = await repo.fetchUserIdsWithRecentFacts(supabase, tenantId, sinceIso, 5000);
+  if (error) {
+    ctx.log(`memory_facts scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const userIds = [...new Set((factRows || []).map((r: any) => r.user_id).filter(Boolean))].slice(
+    0,
+    LEARNING_DIGEST_MAX_USERS_PER_RUN,
+  ) as string[];
+  if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  const locales = await bulkGetUserLocales(supabase, userIds);
+
+  let usersAffected = 0;
+  for (const userId of userIds) {
+    try {
+      // Local-evening gate: only fire during this user's own local 18:xx
+      // hour. The hourly cron sweeps every UTC hour, so every timezone
+      // (including fractional offsets like Asia/Kathmandu) gets exactly
+      // one matching tick per day — same reasoning daily-pace-service.ts
+      // documents for its 19:xx gate.
+      const tz = await getUserTimezone(supabase, userId, tenantId);
+      if (userLocalHour(nowUtc, tz) !== LEARNING_DIGEST_LOCAL_HOUR) continue;
+
+      // Guard 1: greeting already surfaced learning in a session today (3e wins).
+      const { data: ledgerRow } = await repo.fetchAssistantStateSignal(supabase, tenantId, userId, SIGNAL_GREETING_FACTS);
+      const spokenAt = ledgerRow
+        ? parseFacts((ledgerRow as { value: unknown }).value).facts_learned?.spoken_at
+        : undefined;
+      if (spokenAt && spokenAt.slice(0, 10) === today) continue;
+
+      // Guard 2: this digest already fired today.
+      const surfacedAt = await readLearningSurfacedAt(supabase, tenantId, userId);
+      if (surfacedAt && surfacedAt.slice(0, 10) === today) continue;
+
+      const result = await detectNewFacts({ supabase, userId, tenantId, sinceIso, nowMs });
+      if (result.count === 0) continue;
+
+      const lc = locales.get(userId);
+      ctx.notify(userId, 'orb_suggestion', {
+        title: tt('notif.daily_learning.title', lc),
+        body: tt('notif.daily_learning.body', lc, { count: result.count }),
+        data: { url: '/memory' },
+      });
+      await markLearningSurfaced(supabase, tenantId, userId, result.count, nowIso);
+      usersAffected++;
+    } catch (err: any) {
+      ctx.log(`learning digest failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.learning_digest_sent', {
+    users_scanned: userIds.length,
+    users_notified: usersAffected,
+  });
+  return { usersAffected, actionsTaken: usersAffected };
+}
+
+// ── AP-0908: Behavior-Derived Preference Inference ──────────
+// Phase 2 of the felt-learning plan: turn observed behavior (the routines
+// AP-0906 extracts into user_routines) into user_preference_* memory_facts
+// via the write_fact RPC — provenance 'behavior_inferred', confidence 0.55
+// (below the 0.80 of explicit statements, above the 0.55 retrieval floor so
+// the fixed fetchPreferences() picks them up). The Memory Garden visibly
+// grows from behavior, not just conversation. Idempotent: identical values
+// are skipped so re-runs cause no supersession churn.
+const BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE = 0.6;
+const BEHAVIOR_PREF_CONFIDENCE = 0.55;
+const BEHAVIOR_PREF_MAX_USERS_PER_RUN = 500;
+
+const ROUTINE_KIND_TO_PREF: Record<string, { factKey: string; metaField: string }> = {
+  time_of_day_preference: { factKey: 'user_preference_active_time', metaField: 'time_of_day' },
+  day_of_week_rhythm: { factKey: 'user_preference_active_day', metaField: 'day_of_week' },
+  category_affinity: { factKey: 'user_preference_activity_focus', metaField: 'tag' },
+};
+
+async function runBehaviorPreferenceInference(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+
+  const { data: routines, error } = await repo.fetchHighConfidenceRoutines(supabase, BEHAVIOR_PREF_MIN_ROUTINE_CONFIDENCE, 3000);
+  if (error) {
+    ctx.log(`user_routines scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  // Highest-confidence routine per (user, kind) wins — rows are ordered desc.
+  const derived = new Map<string, Map<string, string>>(); // userId → factKey → value
+  for (const r of (routines || []) as Array<{ user_id: string; routine_kind: string; metadata: any }>) {
+    const mapping = ROUTINE_KIND_TO_PREF[r.routine_kind];
+    if (!mapping || !r.user_id) continue;
+    const value = String(r.metadata?.[mapping.metaField] ?? '').trim();
+    if (!value) continue;
+    if (!derived.has(r.user_id)) derived.set(r.user_id, new Map());
+    const userFacts = derived.get(r.user_id)!;
+    if (!userFacts.has(mapping.factKey)) userFacts.set(mapping.factKey, value);
+  }
+  const userIds = [...derived.keys()].slice(0, BEHAVIOR_PREF_MAX_USERS_PER_RUN);
+  if (userIds.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Skip identical current facts — no daily supersession churn.
+  const { data: existingRows, error: existingRowsErr } = await repo.fetchExistingPreferenceFacts(supabase, tenantId, userIds);
+  if (existingRowsErr) {
+    console.error(`[memory-intelligence] fetchExistingPreferenceFacts failed, every fact will be rewritten this run instead of skipping unchanged ones: ${existingRowsErr.message}`);
+  }
+  const existing = new Map<string, string>();
+  for (const row of (existingRows || []) as Array<{ user_id: string; fact_key: string; fact_value: string }>) {
+    existing.set(`${row.user_id}:${row.fact_key}`, row.fact_value);
+  }
+
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  for (const userId of userIds) {
+    let wroteAny = false;
+    for (const [factKey, value] of derived.get(userId)!) {
+      if (existing.get(`${userId}:${factKey}`) === value) continue;
+      const written = await rememberFact(
+        {
+          tenant_id: tenantId,
+          user_id: userId,
+          fact_key: factKey,
+          fact_value: value,
+          entity: 'self',
+          fact_value_type: 'text',
+          provenance_source: 'behavior_inferred',
+          provenance_confidence: BEHAVIOR_PREF_CONFIDENCE,
+          actor: 'memory-intelligence',
+        },
+        { client: supabase },
+      );
+      const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
+      if (rpcErr) {
+        ctx.log(`write_fact ${factKey} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
+        continue;
+      }
+      wroteAny = true;
+      actionsTaken++;
+    }
+    if (wroteAny) usersAffected++;
+  }
+
+  await ctx.emitEvent('autopilot.memory.behavior_preferences_written', {
+    users_scanned: userIds.length,
+    users_with_new_preferences: usersAffected,
+    facts_written: actionsTaken,
+  });
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0909: Relationship Graph Projection ──────────────────
+// The graph is a DERIVED INDEX over memory_facts + app social events —
+// never a second extraction write-path (that dual-write drift is why
+// Cognee was retired in Phase 8). Nightly, idempotent, fully rebuildable:
+//
+//   1. Person-facts (spouse_name, friend_name_*, child_name, …) →
+//      relationship_nodes (node_type 'person', owner-scoped in metadata)
+//      + a person→node edge carrying the relation as edge_type.
+//   2. Mutual follows → person↔person 'connected' edges — exactly the
+//      shape AP-0801's social-comfort gate already counts.
+//
+// Loop 13 (nightly consolidator) stays the ONLY strength-decay mechanism.
+// Column names follow the LIVE relationship_edges schema (source_type/
+// source_id/target_type/target_id/edge_type/last_interaction_at), which
+// diverged from the VTID-01087 migration file — verified 2026-07-06.
+const GRAPH_PROJECT_MAX_FACTS_PER_RUN = 1000;
+const GRAPH_PROJECT_MAX_FOLLOWS = 5000;
+const GRAPH_PROJECT_MAX_NAME_LEN = 60;
+
+const PERSON_FACT_RELATIONS: Array<{ pattern: RegExp; relation: string }> = [
+  { pattern: /^(spouse|husband|wife)_name/, relation: 'spouse' },
+  { pattern: /^(fiancee|fiance)_name/, relation: 'fiancee' },
+  { pattern: /^partner_name/, relation: 'partner' },
+  { pattern: /^(mother|father|parent)_name/, relation: 'parent' },
+  { pattern: /^(child|son|daughter)_name/, relation: 'child' },
+  { pattern: /^grandchild_name/, relation: 'grandchild' },
+  { pattern: /^(sister|brother|sibling)_name/, relation: 'sibling' },
+  { pattern: /^(user_)?friend_name/, relation: 'friend' },
+  { pattern: /^colleague_name/, relation: 'colleague' },
+];
+
+function relationForFactKey(factKey: string): string | null {
+  for (const { pattern, relation } of PERSON_FACT_RELATIONS) {
+    if (pattern.test(factKey)) return relation;
+  }
+  return null;
+}
+
+async function runRelationshipGraphProjection(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const nowIso = new Date().toISOString();
+  let nodesCreated = 0;
+  let edgesCreated = 0;
+  const usersTouched = new Set<string>();
+
+  // ---- 1. Disclosed persons from memory_facts ----
+  const { data: facts, error: factsErr } = await repo.fetchNameFactsForGraphProjection(supabase, tenantId, GRAPH_PROJECT_MAX_FACTS_PER_RUN);
+  if (factsErr) {
+    ctx.log(`person-fact scan failed: ${factsErr.message}`);
+  }
+
+  for (const fact of (facts || []) as Array<{ user_id: string; fact_key: string; fact_value: string; extracted_at: string }>) {
+    try {
+      const relation = relationForFactKey(fact.fact_key || '');
+      const name = String(fact.fact_value || '').trim();
+      if (!relation || !fact.user_id || !name || name.length > GRAPH_PROJECT_MAX_NAME_LEN) continue;
+
+      // Node: one 'person' node per (owner, name) — owner-scoped so two
+      // users' "Maria" never merge.
+      const { data: existingNode, error: existingNodeErr } = await repo.fetchExistingPersonNode(supabase, tenantId, name, fact.user_id);
+      if (existingNodeErr) {
+        ctx.log(`existing-node lookup failed for ${fact.fact_key}, skipping to avoid a duplicate person node: ${existingNodeErr.message}`);
+        continue;
+      }
+      let nodeId = (existingNode as { id?: string } | null)?.id ?? null;
+      if (!nodeId) {
+        const { data: inserted, error: insErr } = await repo.insertPersonNode(supabase, {
+          tenant_id: tenantId,
+          node_type: 'person',
+          title: name,
+          domain: 'community',
+          metadata: {
+            owner_user_id: fact.user_id,
+            relation,
+            fact_key: fact.fact_key,
+            origin: 'memory_facts_projection',
+          },
+        });
+        if (insErr || !inserted) {
+          ctx.log(`node insert failed for ${fact.fact_key}: ${insErr?.message}`);
+          continue;
+        }
+        nodeId = (inserted as { id: string }).id;
+        nodesCreated++;
+      }
+
+      // Edge: user →(suggested)→ person node. Live CHECK constraints limit
+      // edge_type to community values and target_type to entity kinds —
+      // verified on staging 2026-07-06, where relation-typed edges were
+      // rejected. 'suggested' (NOT 'connected') is deliberate: consumers of
+      // person/connected edges treat target_id as an APP USER id (AP-1403
+      // notifies it; AP-0801 counts it as social comfort) — a disclosed
+      // person's target_id is a relationship_nodes UUID, so it must never
+      // enter the connected set. The REAL relation (spouse/friend/…)
+      // travels in metadata.relation; last_interaction_at tracks the fact's
+      // recency so Loop 13's decay stays honest.
+      const { data: existingEdge, error: existingEdgeErr } = await repo.fetchExistingSuggestedEdge(supabase, tenantId, fact.user_id, nodeId);
+      if (existingEdgeErr) {
+        ctx.log(`existing-edge lookup failed for ${fact.fact_key}, skipping to avoid a duplicate suggested edge: ${existingEdgeErr.message}`);
+        continue;
+      }
+      if (existingEdge) {
+        await repo.updateEdgeLastInteraction(supabase, (existingEdge as { id: string }).id, fact.extracted_at || nowIso, nowIso);
+      } else {
+        const { error: edgeErr } = await repo.insertRelationshipEdge(supabase, {
+          tenant_id: tenantId,
+          source_type: 'person',
+          source_id: fact.user_id,
+          target_type: 'person',
+          target_id: nodeId,
+          edge_type: 'suggested',
+          strength: 10,
+          last_interaction_at: fact.extracted_at || nowIso,
+          metadata: { origin: 'memory_facts_projection', relation, fact_key: fact.fact_key },
+        });
+        if (edgeErr) {
+          ctx.log(`edge insert failed for ${fact.fact_key}: ${edgeErr.message}`);
+          continue;
+        }
+        edgesCreated++;
+      }
+      usersTouched.add(fact.user_id);
+    } catch (err: any) {
+      ctx.log(`projection failed for fact ${fact.fact_key}: ${err?.message}`);
+    }
+  }
+
+  // ---- 2. Mutual follows → person↔person 'connected' edges ----
+  const { data: follows, error: followErr } = await repo.fetchFollowPairs(supabase, GRAPH_PROJECT_MAX_FOLLOWS);
+  if (followErr) {
+    ctx.log(`user_follows scan failed: ${followErr.message}`);
+  } else {
+    const pairs = new Set(
+      ((follows || []) as Array<{ follower_id: string; following_id: string }>).map(
+        (f) => `${f.follower_id}>${f.following_id}`,
+      ),
+    );
+    for (const pair of pairs) {
+      const [a, b] = pair.split('>');
+      if (!a || !b || a === b || !pairs.has(`${b}>${a}`)) continue;
+      if (a > b) continue; // handle each mutual pair once; write both directions below
+      for (const [src, tgt] of [[a, b], [b, a]] as Array<[string, string]>) {
+        try {
+          const { data: existing, error: existingErr } = await repo.fetchExistingConnectedEdge(supabase, tenantId, src, tgt);
+          if (existingErr) {
+            ctx.log(`existing-connected-edge lookup failed for ${src}->${tgt}, skipping to avoid a duplicate edge: ${existingErr.message}`);
+            continue;
+          }
+          if (existing) continue;
+          const { error: edgeErr } = await repo.insertRelationshipEdge(supabase, {
+            tenant_id: tenantId,
+            source_type: 'person',
+            source_id: src,
+            target_type: 'person',
+            target_id: tgt,
+            edge_type: 'connected',
+            strength: 10,
+            last_interaction_at: nowIso,
+            metadata: { origin: 'mutual_follow_projection' },
+          });
+          if (edgeErr) {
+            ctx.log(`connected-edge insert failed: ${edgeErr.message}`);
+            continue;
+          }
+          edgesCreated++;
+          usersTouched.add(src);
+        } catch (err: any) {
+          ctx.log(`follow projection failed: ${err?.message}`);
+        }
+      }
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.graph_projected', {
+    nodes_created: nodesCreated,
+    edges_created: edgesCreated,
+    users_touched: usersTouched.size,
+  });
+  return { usersAffected: usersTouched.size, actionsTaken: nodesCreated + edgesCreated };
+}
+
+// ── AP-0910: Memory Embedding Backfill ──────────────────────
+// VTID-04342: drains BOTH canonical memory stores — memory_facts (current
+// facts) and memory_items (episodes) — with the single memory embedder,
+// Amazon Titan Text Embeddings V2 (1024-dim, memory-embedding.ts). Until
+// VTID-04342 this called OpenAI → Gemini, neither of which has a key on AWS,
+// so nothing had been embedded since 2026-04-28 and semantic recall fell back
+// to recency. Hourly, bounded, and a cheap no-op once the backlog is empty; a
+// row whose embedding fails stays NULL and is retried on the next run.
+// VTID-04786: 200 per store per 30-min heartbeat run (~800 rows/h) drains
+// the July-September backlog in hours; Titan concurrency is 5, ~20 s a run.
+const EMBED_BACKFILL_BATCH = 200;
+
+async function runMemoryEmbeddingBackfill(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const { embedMemoryTexts, toPgVector } = await import('../memory-embedding');
+  const nowIso = new Date().toISOString();
+
+  const embedAndStore = async (
+    rows: Array<{ id: string; text: string }>,
+    store: (id: string, patch: { embedding: string; embedding_model: string; embedding_updated_at: string }) => Promise<{ error: { message: string } | null }>,
+    label: string,
+  ): Promise<{ embedded: number; failed: number }> => {
+    if (rows.length === 0) return { embedded: 0, failed: 0 };
+    const batch = await embedMemoryTexts(rows.map((r) => r.text));
+    if (!batch.ok || !batch.embeddings) {
+      ctx.log(`${label}: batch embedding failed: ${batch.error}`);
+      return { embedded: 0, failed: rows.length };
+    }
+    let embedded = 0;
+    for (let i = 0; i < rows.length; i++) {
+      const vec = batch.embeddings[i];
+      if (!Array.isArray(vec)) continue;
+      const { error: upErr } = await store(rows[i].id, {
+        embedding: toPgVector(vec),
+        embedding_model: batch.model || 'amazon.titan-embed-text-v2:0',
+        embedding_updated_at: nowIso,
+      });
+      if (upErr) {
+        ctx.log(`${label}: embedding store failed for ${rows[i].id}: ${upErr.message}`);
+        continue;
+      }
+      embedded++;
+    }
+    return { embedded, failed: rows.length - embedded };
+  };
+
+  const { data: factRows, error: factErr } = await repo.fetchFactsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
+  if (factErr) ctx.log(`fact backlog scan failed: ${factErr.message}`);
+  const facts = await embedAndStore(
+    ((factRows ?? []) as Array<{ id: string; fact_key: string; fact_value: string }>).map((r) => ({
+      id: r.id,
+      text: `${r.fact_key}: ${r.fact_value}`,
+    })),
+    (id, patch) => repo.updateFactEmbedding(supabase, id, patch) as any,
+    'memory_facts',
+  );
+
+  const { data: itemRows, error: itemErr } = await repo.fetchMemoryItemsMissingEmbedding(supabase, tenantId, EMBED_BACKFILL_BATCH);
+  if (itemErr) ctx.log(`memory_items backlog scan failed: ${itemErr.message}`);
+  const items = await embedAndStore(
+    ((itemRows ?? []) as Array<{ id: string; content: string | null }>)
+      .filter((r) => (r.content ?? '').trim().length > 0)
+      .map((r) => ({ id: r.id, text: r.content as string })),
+    (id, patch) => repo.updateMemoryItemEmbedding(supabase, id, patch) as any,
+    'memory_items',
+  );
+
+  const embedded = facts.embedded + items.embedded;
+  if (embedded > 0 || facts.failed + items.failed > 0) {
+    await ctx.emitEvent('autopilot.memory.embeddings_backfilled', {
+      model: 'amazon.titan-embed-text-v2:0',
+      facts_embedded: facts.embedded,
+      facts_failed: facts.failed,
+      items_embedded: items.embedded,
+      items_failed: items.failed,
+    });
+  }
+  return { usersAffected: 0, actionsTaken: embedded };
+}
+
+// ── AP-0911: User Model Synthesis ───────────────────────────
+// Narrative profile per active user (see user-model-synthesis.ts): one LLM
+// pass connects facts + routines + goal + Vitana Index into a compact "who
+// is this person" paragraph the ORB bootstrap injects at zero latency cost.
+// Skips users with <3 facts and unchanged inputs.
+//
+// BOOTSTRAP-MEMORY-DAILY-LEARNING (PR #2969 review): previously ran once
+// daily processing up to 100 users serially through an LLM call each, inside
+// a single synchronous HTTP cron request. Cloud Scheduler's
+// --attempt-deadline=300s (and the gateway's own request wall) can cut that
+// connection before executeAutomation ever records completion — and since
+// the job only ran once a day, a large eligible pool meant it could
+// silently never finish (the retry hits the identical wall). Now hourly
+// (registry cron '35 * * * *') with a smaller per-run batch AND a hard time
+// budget that aborts the loop with whatever's done so far — unprocessed
+// users simply get picked up on the next hourly pass. synthesizeUserModel's
+// own inputs-hash skip makes already-synthesized, unchanged users a cheap
+// no-op, so the batch naturally rotates to whoever is actually stale —
+// mirrors AP-0910's proven hourly small-batch backlog-draining pattern.
+const SYNTHESIS_MAX_USERS_PER_RUN = 25;
+const SYNTHESIS_TIME_BUDGET_MS = 4 * 60 * 1000; // 4 min — safely under the 300s Cloud Scheduler deadline
+
+async function runUserModelSynthesis(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const runStartMs = Date.now();
+
+  const { data: factRows, error } = await repo.fetchAllActiveFactUserIds(supabase, tenantId, 10000);
+  if (error) {
+    ctx.log(`fact scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const counts = new Map<string, number>();
+  for (const r of (factRows || []) as Array<{ user_id: string }>) {
+    if (r.user_id) counts.set(r.user_id, (counts.get(r.user_id) || 0) + 1);
+  }
+  const userIds = [...counts.entries()]
+    .filter(([, n]) => n >= 3)
+    .sort((a, b) => b[1] - a[1])
+    .slice(0, SYNTHESIS_MAX_USERS_PER_RUN)
+    .map(([id]) => id);
+
+  const { synthesizeUserModel } = await import('../user-model-synthesis');
+  let written = 0;
+  let processed = 0;
+  for (const userId of userIds) {
+    if (Date.now() - runStartMs > SYNTHESIS_TIME_BUDGET_MS) {
+      ctx.log(
+        `time budget exceeded after ${processed}/${userIds.length} users — remaining picked up next hourly run`,
+      );
+      break;
+    }
+    processed++;
+    try {
+      const result = await synthesizeUserModel(supabase, tenantId, userId);
+      if (result.written) written++;
+    } catch (err: any) {
+      ctx.log(`synthesis failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.profiles_synthesized', {
+    users_scanned: userIds.length,
+    users_processed: processed,
+    narratives_written: written,
+  });
+  return { usersAffected: written, actionsTaken: written };
+}
+
+// ── AP-0912: Health Correlation Insights ────────────────────
+// The "sees contextual influence" differentiator, made concrete with
+// DETERMINISTIC rules (no LLM → no hallucinated health claims). Each rule
+// writes a health_insight_* memory fact (provenance system_observed) via
+// write_fact — auto-superseded when the picture changes, and surfaced to
+// the user through the same felt-learning detector as every other fact.
+//   R1: a pillar moved ≥ INSIGHT_PILLAR_DELTA over ~7 days → trend insight.
+//   R2: diary went silent after a consistent streak → lapse insight.
+const INSIGHT_PILLAR_DELTA = 10;
+const INSIGHT_MAX_USERS_PER_RUN = 200;
+const PILLAR_COLUMNS = ['score_sleep', 'score_nutrition', 'score_exercise', 'score_hydration', 'score_mental'] as const;
+
+async function runHealthCorrelationInsights(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const now = Date.now();
+  const since14d = new Date(now - 14 * 86_400_000).toISOString().slice(0, 10);
+
+  const { data: scoreRows, error } = await repo.fetchRecentIndexScores(supabase, tenantId, since14d, 10000);
+  if (error) {
+    ctx.log(`index scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  const byUser = new Map<string, Array<Record<string, any>>>();
+  for (const row of (scoreRows || []) as Array<Record<string, any>>) {
+    if (!row.user_id) continue;
+    if (!byUser.has(row.user_id)) byUser.set(row.user_id, []);
+    byUser.get(row.user_id)!.push(row);
+  }
+
+  const writeInsight = async (userId: string, key: string, value: string) => {
+    const written = await rememberFact(
+      {
+        tenant_id: tenantId,
+        user_id: userId,
+        fact_key: key,
+        fact_value: value,
+        entity: 'self',
+        fact_value_type: 'text',
+        provenance_source: 'system_observed',
+        provenance_confidence: 0.9,
+        actor: 'memory-intelligence',
+      },
+      { client: supabase },
+    );
+    const rpcErr = written.ok ? null : { message: written.error ?? 'write_fact failed' };
+    if (rpcErr) {
+      ctx.log(`insight write ${key} failed for ${userId.slice(0, 8)}…: ${rpcErr.message}`);
+      return false;
+    }
+    return true;
+  };
+
+  let usersAffected = 0;
+  let actionsTaken = 0;
+  const userIds = [...byUser.keys()].slice(0, INSIGHT_MAX_USERS_PER_RUN);
+
+  for (const userId of userIds) {
+    const rows = byUser.get(userId)!;
+    if (rows.length < 4) continue; // too little signal for a defensible trend
+    let wroteAny = false;
+
+    // R1 — pillar trend: first vs last reading in the window.
+    const first = rows[0];
+    const last = rows[rows.length - 1];
+    for (const col of PILLAR_COLUMNS) {
+      const a = Number(first[col]);
+      const b = Number(last[col]);
+      if (!Number.isFinite(a) || !Number.isFinite(b)) continue;
+      const delta = b - a;
+      if (Math.abs(delta) < INSIGHT_PILLAR_DELTA) continue;
+      const pillar = col.replace('score_', '');
+      const direction = delta > 0 ? 'improved' : 'declined';
+      const ok = await writeInsight(
+        userId,
+        `health_insight_${pillar}_trend`,
+        `${pillar} pillar ${direction} by ${Math.abs(Math.round(delta))} points over the last two weeks`,
+      );
+      if (ok) {
+        wroteAny = true;
+        actionsTaken++;
+      }
+    }
+
+    if (wroteAny) usersAffected++;
+  }
+
+  // R2 — diary lapse: entries in the previous week but none in the last one.
+  const since7dIso = new Date(now - 7 * 86_400_000).toISOString();
+  const since14dIso = new Date(now - 14 * 86_400_000).toISOString();
+  const { data: diaryRows } = await repo.fetchRecentDiaryEntries(supabase, since14dIso, 5000);
+  const diaryByUser = new Map<string, { recent: number; prior: number }>();
+  for (const row of (diaryRows || []) as Array<{ user_id: string; created_at: string }>) {
+    if (!row.user_id) continue;
+    const bucket = diaryByUser.get(row.user_id) || { recent: 0, prior: 0 };
+    if (row.created_at >= since7dIso) bucket.recent++;
+    else bucket.prior++;
+    diaryByUser.set(row.user_id, bucket);
+  }
+  for (const [userId, bucket] of diaryByUser) {
+    if (bucket.prior >= 3 && bucket.recent === 0) {
+      const ok = await writeInsight(
+        userId,
+        'health_insight_diary_lapse',
+        `stopped diary entries this week after ${bucket.prior} entries the week before`,
+      );
+      if (ok) {
+        actionsTaken++;
+        usersAffected++;
+      }
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.health_insights_written', {
+    users_with_insights: usersAffected,
+    insights_written: actionsTaken,
+  });
+  return { usersAffected, actionsTaken };
+}
+
+// ── AP-0913: Own Post Memory Capture ────────────────────────
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: the community feed (profile_posts) never
+// fed the assistant's memory at all — nothing mirrored a user's own post
+// content anywhere Vitana could retrieve it, so it could never say "the
+// post you wrote about X" (confirmed: zero references to profile_posts in
+// cognee-extractor-client.ts or any prior AP-090x handler). This covers
+// posts from EVERY origin (app UI, voice's create_community_post), not
+// just voice-created ones, since it reads profile_posts directly rather
+// than hooking one write path. Mirrors into memory_items — not
+// memory_facts — because a feed of posts is naturally many-valued
+// (unlike a rolling single fact) and memory_items' existing EPISODIC
+// fallback ladder (mem-broker.ts) already retrieves by recency/importance
+// with no further plumbing needed.
+// Hourly with a 65-min lookback (5-min overlap over the cron cadence)
+// gives every post at least one capture opportunity even under drift;
+// the content_json->>post_id dedup check makes re-scanning the overlap
+// safe (no duplicate rows).
+const OWN_POST_CAPTURE_WINDOW_MS = 65 * 60 * 1000;
+const OWN_POST_CAPTURE_MAX_PER_RUN = 300;
+
+async function runOwnPostMemoryCapture(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const sinceIso = new Date(Date.now() - OWN_POST_CAPTURE_WINDOW_MS).toISOString();
+
+  const { data: posts, error } = await repo.fetchRecentPostsForCapture(supabase, sinceIso, OWN_POST_CAPTURE_MAX_PER_RUN);
+  if (error) {
+    ctx.log(`profile_posts scan failed: ${error.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+
+  const candidates = (posts || []).filter(
+    (p: any) => p.user_id && typeof p.content === 'string' && p.content.trim(),
+  ) as Array<{ id: string; user_id: string; content: string; created_at: string }>;
+  if (candidates.length === 0) return { usersAffected: 0, actionsTaken: 0 };
+
+  // Dedup against posts already mirrored (overlap window re-scans them).
+  const postIds = candidates.map((p) => p.id);
+  const { data: existingRows } = await repo.fetchMirroredPostIds(supabase, tenantId, postIds);
+  const alreadyMirrored = new Set(
+    ((existingRows || []) as Array<{ content_json: any }>)
+      .map((r) => r.content_json?.post_id)
+      .filter(Boolean),
+  );
+
+  const { writeMemoryItemWithIdentity } = await import('../orb-memory-bridge');
+
+  const affectedUsers = new Set<string>();
+  let actionsTaken = 0;
+  for (const post of candidates) {
+    if (alreadyMirrored.has(post.id)) continue;
+    try {
+      const result = await writeMemoryItemWithIdentity(
+        { user_id: post.user_id, tenant_id: tenantId },
+        {
+          source: 'system',
+          content: post.content,
+          content_json: { kind: 'community_post', post_id: post.id },
+          occurred_at: post.created_at,
+          importance: 40,
+          skipFiltering: true,
+        },
+      );
+      if (result.ok && !result.skipped) {
+        actionsTaken++;
+        affectedUsers.add(post.user_id);
+      } else if (!result.ok) {
+        ctx.log(`post→memory mirror failed for post ${post.id}: ${result.error}`);
+      }
+    } catch (err: any) {
+      ctx.log(`post→memory mirror threw for post ${post.id}: ${err?.message}`);
+    }
+  }
+
+  await ctx.emitEvent('autopilot.memory.own_posts_captured', {
+    posts_scanned: candidates.length,
+    posts_mirrored: actionsTaken,
+  });
+  return { usersAffected: affectedUsers.size, actionsTaken };
+}
+
+// ── AP-0914: Daily Learning Episode (VTID-04391) ─────────────
+// One `daily_learning` memory_items episode per active user per local day,
+// written in the user's own evening (DAILY_LEARNING_LOCAL_HOUR). Small batch
+// + time budget, the AP-0911 pattern: users not reached this run are picked
+// up on the next hourly pass within the same local hour or skipped for the
+// day (the digest is a convenience, not a record).
+const DAILY_LEARNING_BATCH = 25;
+const DAILY_LEARNING_BUDGET_MS = 4 * 60 * 1000;
+
+async function runDailyLearningEpisodes(ctx: AutomationContext) {
+  const { supabase, tenantId } = ctx;
+  const now = new Date();
+  const started = Date.now();
+  const dl = await import('../memory/daily-learning');
+  let candidates: string[] = [];
+  try {
+    candidates = await dl.findActiveUsers(supabase, tenantId, now);
+  } catch (err: any) {
+    ctx.log(`daily learning candidate scan failed: ${err?.message}`);
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const counts: Record<string, number> = {};
+  let processed = 0;
+  let written = 0;
+  for (const userId of candidates) {
+    if (processed >= DAILY_LEARNING_BATCH || Date.now() - started > DAILY_LEARNING_BUDGET_MS) break;
+    try {
+      const tz = await getUserTimezone(supabase, userId, tenantId);
+      if (userLocalHour(now, tz) !== dl.DAILY_LEARNING_LOCAL_HOUR) continue;
+      const date = dl.localDate(now, tz);
+      if (await dl.hasDailyLearning(supabase, userId, date)) continue;
+      processed++;
+      const identity = { tenant_id: tenantId, user_id: userId };
+      const items = await dl.gatherDay(supabase, identity, date, tz, now);
+      const locale = await getUserLocale(supabase, userId);
+      const out = await dl.writeDailyLearning(supabase, identity, date, items, {
+        locale,
+        shadow: ctx.deliveryMode === 'shadow',
+      });
+      counts[out.status] = (counts[out.status] ?? 0) + 1;
+      if (out.status === 'written') written++;
+    } catch (err: any) {
+      counts.error = (counts.error ?? 0) + 1;
+      ctx.log(`daily learning failed for ${userId.slice(0, 8)}…: ${err?.message}`);
+    }
+  }
+  await ctx.emitEvent('autopilot.memory.daily_learning_written', {
+    candidates: candidates.length,
+    processed,
+    written,
+    outcomes: counts,
+  });
+  return { usersAffected: written, actionsTaken: written };
+}
+
+// ── AP-0915: Diary Theme Rollup (VTID-04444, WS-4.2) ─────────
+// The nightly consolidator's loop 10, scheduled per tenant. Same rollup, same
+// flag: nothing runs unless CONSOLIDATOR_DIARY_ROLLUP_ENABLED is exactly
+// 'true'. 25 model calls / 4 minutes per run; users whose entries did not
+// change since the last rollup cost no call.
+async function runDiaryThemeRollupHandler(ctx: AutomationContext) {
+  const rollup = await import('../memory/diary-theme-rollup');
+  if (!rollup.isDiaryRollupEnabled()) {
+    ctx.log('diary theme rollup disabled (CONSOLIDATOR_DIARY_ROLLUP_ENABLED is not "true")');
+    return { usersAffected: 0, actionsTaken: 0 };
+  }
+  const r = await rollup.runDiaryThemeRollup(ctx.supabase, { tenantId: ctx.tenantId });
+  for (const note of r.notes) ctx.log(note);
+  await ctx.emitEvent('autopilot.memory.diary_themes_rolled_up', {
+    candidates: r.candidates,
+    processed: r.processed,
+    written: r.written,
+    model_calls: r.model_calls,
+    errors: r.errors,
+    outcomes: r.outcomes,
+  });
+  return { usersAffected: r.written, actionsTaken: r.written };
+}
+
+// ── AP-0916: Timeline Habit Rollup (VTID-05171, Life Timeline P5) ─────────
+// Silent activity → user_routines (screen_habit, active_hours,
+// feature_affinity, pillar_rhythm) + ≤1 "Vitana noticed" insight per member
+// per day. Honors timeline_learning_prefs; no model calls.
+async function runTimelineHabitRollupHandler(ctx: AutomationContext) {
+  const { runTimelineHabitRollup } = await import('../timeline/habit-rollup');
+  const r = await runTimelineHabitRollup(ctx.supabase, { log: ctx.log });
+  await ctx.emitEvent('autopilot.memory.timeline_habits_rolled_up', { ...r });
+  return { usersAffected: r.users_scanned, actionsTaken: r.routines_written + r.insights_written };
+}
+
+export function registerMemoryIntelligenceHandlers(): void {
+  registerHandler('runTimelineHabitRollup', runTimelineHabitRollupHandler);
+  registerHandler('runDiaryThemeRollup', runDiaryThemeRollupHandler);
+  registerHandler('runDailyLearningEpisodes', runDailyLearningEpisodes);
+  registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);
+  registerHandler('runFactExtractionAudit', runFactExtractionAudit);
+  registerHandler('runRelationshipGraphProjection', runRelationshipGraphProjection);
+  registerHandler('runSemanticMemoryContextForAutopilot', runSemanticMemoryContextForAutopilot);
+  registerHandler('runKnowledgeBaseContextForSuggestions', runKnowledgeBaseContextForSuggestions);
+  registerHandler('runRoutinePatternExtraction', runRoutinePatternExtraction);
+  registerHandler('runDailyLearningDigest', runDailyLearningDigest);
+  registerHandler('runBehaviorPreferenceInference', runBehaviorPreferenceInference);
+  registerHandler('runMemoryEmbeddingBackfill', runMemoryEmbeddingBackfill);
+  registerHandler('runUserModelSynthesis', runUserModelSynthesis);
+  registerHandler('runHealthCorrelationInsights', runHealthCorrelationInsights);
+  registerHandler('runOwnPostMemoryCapture', runOwnPostMemoryCapture);
+}

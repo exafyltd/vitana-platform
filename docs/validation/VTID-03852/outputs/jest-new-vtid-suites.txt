@@ -1,0 +1,147 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03854-planning-stub-gate.test.ts
+  isPlanningStubEnabled (VTID-03854)
+    ✓ defaults to false when unset (2 ms)
+    ✓ is false for values that are not any casing of the word "true" (1 ms)
+    ✓ is true only for the exact string "true" (case-insensitive) (1 ms)
+  runPlanningSession source wiring (VTID-03854, source check)
+    ✓ never reads ANTHROPIC_API_KEY as a module-level constant
+    ✓ gates the stub plan on isPlanningStubEnabled(), not ANTHROPIC_API_KEY (1 ms)
+    ✓ the isPlanningStubEnabled() gate is followed by a real buildStubPlan return, before any routed call (1 ms)
+    ✓ the worker-binary-missing fallback retry no longer requires ANTHROPIC_API_KEY
+    ✓ callMessagesApi was renamed to callRoutedLlm (no longer implies a hardcoded Anthropic-direct call) (1 ms)
+    ✓ a genuine call failure still returns a real {ok:false,error} — unchanged
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03852-llm-provider-badge.test.ts
+  LLM provider/model transparency badge (VTID-03852)
+    ✓ renderDevAutopilotExecutionCard reads metadata.llm_on_ramp_override (2 ms)
+    ✓ uses a CSS class rather than a scripted inline-style assignment (CSP governance gate surface) (3 ms)
+    ✓ the Autopilot Overview dashboard card also renders the badge (second, independent renderer) (1 ms)
+    ✓ the badge never hides the case where no override is set — always renders something (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [dev-autopilot-llm-review] diff fetch failed for PR #42 — skipping review (fail-open): Error: GitHub 500
+        at Object.<anonymous> (/home/user/vitana-platform/services/gateway/test/vtid-03853-llm-merge-review.test.ts:150:38)
+        at Promise.then.completed (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/utils.js:298:28)
+        at new Promise (<anonymous>)
+        at callAsyncCircusFn (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/utils.js:231:10)
+        at _callCircusTest (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/run.js:316:40)
+        at _runTest (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/run.js:252:3)
+        at _runTestsForDescribeBlock (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/run.js:126:9)
+        at _runTestsForDescribeBlock (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/run.js:121:9)
+        at run (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/run.js:71:3)
+        at runAndTransformResultsToJestFormat (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapterInit.js:122:21)
+        at jestAdapter (/home/user/vitana-platform/services/gateway/node_modules/jest-circus/build/legacy-code-todo-rewrite/jestAdapter.js:79:19)
+        at runTestInternal (/home/user/vitana-platform/services/gateway/node_modules/jest-runner/build/runTest.js:367:16)
+        at runTest (/home/user/vitana-platform/services/gateway/node_modules/jest-runner/build/runTest.js:444:34)
+
+      138 |     files = await githubService.getPrFiles(params.repo, params.prNumber);
+      139 |   } catch (err) {
+    > 140 |     console.warn(`${LOG_PREFIX} diff fetch failed for PR #${params.prNumber} — skipping review (fail-open):`, err);
+          |             ^
+      141 |     return { ok: false, passed: true, summary: 'diff fetch failed — review skipped, not blocking', error: String(err) };
+      142 |   }
+      143 |   if (!files || files.length === 0) {
+
+      at runLlmMergeReview (src/services/dev-autopilot-llm-review.ts:140:13)
+      at Object.<anonymous> (test/vtid-03853-llm-merge-review.test.ts:151:20)
+
+  console.warn
+    [dev-autopilot-llm-review] review call failed for PR #42 — skipping review (fail-open): no provider configured
+
+      156 |   });
+      157 |   if (!r.ok || !r.text) {
+    > 158 |     console.warn(`${LOG_PREFIX} review call failed for PR #${params.prNumber} — skipping review (fail-open): ${r.error}`);
+          |             ^
+      159 |     return { ok: false, passed: true, summary: 'review call failed — skipped, not blocking', error: r.error };
+      160 |   }
+      161 |
+
+      at runLlmMergeReview (src/services/dev-autopilot-llm-review.ts:158:13)
+      at Object.<anonymous> (test/vtid-03853-llm-merge-review.test.ts:160:20)
+
+  console.warn
+    [dev-autopilot-llm-review] unparseable review response for PR #42 — skipping review (fail-open): I refuse to answer in JSON.
+
+      162 |   const verdict = parseReviewVerdict(r.text);
+      163 |   if (!verdict) {
+    > 164 |     console.warn(`${LOG_PREFIX} unparseable review response for PR #${params.prNumber} — skipping review (fail-open): ${r.text.slice(0, 200)}`);
+          |             ^
+      165 |     return { ok: false, passed: true, summary: 'unparseable review response — skipped, not blocking', error: 'unparseable_verdict' };
+      166 |   }
+      167 |
+
+      at runLlmMergeReview (src/services/dev-autopilot-llm-review.ts:164:13)
+      at Object.<anonymous> (test/vtid-03853-llm-merge-review.test.ts:169:20)
+
+PASS test/vtid-03853-llm-merge-review.test.ts
+  isLlmMergeReviewEnabled (VTID-03853)
+    ✓ defaults to false (off) when unset (1 ms)
+    ✓ is true only for the exact string "true" (1 ms)
+  parseReviewVerdict
+    ✓ parses a clean pass verdict (1 ms)
+    ✓ parses a block verdict with reasons
+    ✓ extracts JSON even when the model wraps it in prose or a markdown fence
+    ✓ returns null for unparseable text
+    ✓ returns null for a JSON object with neither a pass nor block verdict
+    ✓ treats a non-array reasons field as empty rather than throwing (1 ms)
+  buildDiffBundle
+    ✓ includes each file patch under a diff fence
+    ✓ notes a file with no patch (binary/too large) instead of omitting it silently (1 ms)
+    ✓ caps total diff size rather than sending an unbounded prompt
+  buildReviewPrompt
+    ✓ includes the vtid, the diff, and instructs strict JSON-only output
+  runLlmMergeReview
+    ✓ passes cleanly when the model returns a pass verdict (2 ms)
+    ✓ blocks on a real block verdict, surfacing the model reasons
+    ✓ fails open (does not block) when the diff fetch throws (17 ms)
+    ✓ fails open when the router call itself fails (2 ms)
+    ✓ fails open when the response cannot be parsed as a verdict (1 ms)
+    ✓ skips the call entirely and passes when the PR has no files
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03852-dead-anthropic-code-removed.test.ts
+  dev-autopilot-execute.ts dead Anthropic-direct code removed (VTID-03852)
+    ✓ no longer declares ANTHROPIC_API_KEY/ANTHROPIC_BASE as module-level constants (1 ms)
+    ✓ callMessagesApi was renamed to callRoutedLlm (1 ms)
+    ✓ callRoutedLlm still dispatches through callViaRouter, not a raw fetch to api.anthropic.com
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03853-watcher-review-wiring.test.ts
+  ciWatcherTick LLM review wiring (VTID-03853, source check)
+    ✓ imports the review gate from dev-autopilot-llm-review
+    ✓ the review gate sits after the risk-class gate and before mergePullRequest (1 ms)
+    ✓ a blocked review transitions merging -> failed and bridges to self-healing, same shape as the risk-class decline
+    ✓ emits an OASIS event for both the passed and blocked outcomes (1 ms)
+
+Test Suites: 5 passed, 5 total
+Tests:       38 passed, 38 total
+Snapshots:   0 total
+Time:        0.771 s, estimated 1 s
+Ran all test suites matching /vtid-0385/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,14 @@
+# VTID-04916 commands
+cd services/gateway && npx jest test/vtid-04916-calendar-share.test.ts                      # 19 passed (outputs/jest-share.txt)
+cd services/gateway && UPDATE_CALENDAR_GOLDEN=1 npm run test:calendar && npm run test:calendar   # 21 suites, 417 passed (outputs/jest-calendar-suite.txt)
+cd services/gateway && npx jest test/vtid-04674                                               # 2 suites, 38 passed
+cd services/gateway && npx tsc --noEmit -p .                                                   # clean
+# vitana-v1 migration on a local throwaway Postgres 16 under /var/tmp, port 55432 — never Supabase
+PGHOST=/var/tmp/pgtest-calendar PGPORT=55432 PGUSER=postgres vitana-v1/scripts/sql-tests/run-event-share-posts-test.sh   # PASS (outputs/sql-test.txt)
+# mutation 1: 24 h dedupe clause removed -> "dedup: 3 from Ana + Ana once (got 9)"
+# mutation 2: client-attach guard disabled -> "client attach rejected (got )"
+# mutation 3: plain-post text changed     -> "plain post text unchanged (en)"
+# read-only (Supabase MCP execute_sql, SELECT only, 2026-10-07): live notify_community_on_public_post body
+#   (the no-event branch is copied from it verbatim), profile_posts triggers and columns, auth.role() body
+#   (found: PostgREST 12 sets only request.jwt.claims -> guard reads both), RLS SELECT policies on
+#   global_community_events / live_room_sessions / live_rooms (members can read the card's event).

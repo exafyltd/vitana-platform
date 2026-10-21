@@ -1,0 +1,5 @@
+$ npx tsc --noEmit -p services/gateway            # exit 0
+$ npx jest test/vtid-04447-conversation-identity.test.ts test/missing-test-scanner.test.ts
+Tests: 38 passed, 38 total
+# mutation: drop requireAuth + binder from POST /turn
+Tests: 2 failed, 15 passed, 17 total   (route wiring tests go red), then restored

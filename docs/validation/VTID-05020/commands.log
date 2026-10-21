@@ -1,0 +1,6 @@
+$ python3 -I -c '<sha256 of plan body>'
+2ab79356101f263fc60200018f1fa3e3d60fc1684d7d81d8a1199aacaf736cf9
+$ git diff --name-only origin/main...HEAD
+docs/programs/health-hub/HEALTH-HUB-PLAN.md
+docs/programs/health-hub/STATUS.md
+docs/validation/VTID-05020/plan-sparring.md

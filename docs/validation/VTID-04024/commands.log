@@ -1,0 +1,10 @@
+# VTID-04024 — commands run (Claude Code session, 2026-09-17)
+curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info          -> git_commit 2545dcc… env=staging (W4a live)
+POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat (read-only question, exafy_admin session, no tool call)
+                                                                                 -> http=200 t=5.95s; meta.provider=deepseek model=deepseek-flash tool_calls=0
+                                                                                 -> reply carried staging=2545dcc7acef / prod=7ba9a8eebad1 build-info and "VTID-04019" as the newest change-log row
+                                                                                 -> open PRs: "(unavailable: Open pull requests timed out after 2500ms)"  <- the defect
+npx tsc --noEmit -p services/gateway/tsconfig.json                                -> exit 0
+npx jest test/vtid-04024-bootstrap-pack-open-prs.test.ts test/vtid-04018-operator-bootstrap-pack.test.ts \
+         test/vtid-03835-github-service-read-access.test.ts                       -> 3 suites, 32 tests passing (9 new)
+NOT run here: the post-deploy staging turn (the next operator turn after this merges is the exercise).

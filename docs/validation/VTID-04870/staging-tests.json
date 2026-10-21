@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04870",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/services/memory/vtid-04870-recall-stream-latency.test.ts", "cwd": "services/gateway",
+      "reason": "the line is written inside a voice session's memory read; on staging the evidence is the stream_ms field on the [VTID-04452] orb recall lines in CloudWatch (read-only)" },
+    { "kind": "existing", "ref": "npx jest test/services/memory-broker-episodic-fallback.test.ts", "cwd": "services/gateway",
+      "reason": "the episodic fetch limit is a query parameter inside the broker; proven against the mocked client" }
+  ]
+}

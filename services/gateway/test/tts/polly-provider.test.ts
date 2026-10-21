@@ -1,0 +1,217 @@
+/**
+ * VTID-03495 — Amazon Polly TTS provider tests.
+ *
+ * Focus is on the three places Polly diverges from Cloud TTS in ways a
+ * "did we get bytes back" test would not catch:
+ *   1. Serbian must return null, never English audio.
+ *   2. PCM sample rate must be reported as 16kHz, never assumed 24kHz.
+ *   3. Speaking rate must become SSML prosody, with the text XML-escaped.
+ */
+
+import {
+  resolvePollyVoice,
+  buildPollyInput,
+  escapeSsml,
+  normalizeLang,
+  POLLY_UNSUPPORTED_LANGS,
+  POLLY_PCM_SAMPLE_RATE_HZ,
+  getPollyRegion,
+} from '../../src/services/tts/polly';
+import {
+  getTtsProvider,
+  getPcmSampleRateHz,
+  isPollyStrict,
+  GOOGLE_PCM_SAMPLE_RATE_HZ,
+} from '../../src/services/tts/tts-provider';
+
+describe('VTID-03495 Polly voice resolution', () => {
+  it('returns null for Serbian rather than silently substituting another language', () => {
+    // The whole point: fluent audio in the WRONG language is worse than none,
+    // because nothing downstream can tell it went wrong.
+    expect(resolvePollyVoice('sr')).toBeNull();
+    expect(resolvePollyVoice('sr-RS')).toBeNull();
+    expect(POLLY_UNSUPPORTED_LANGS.has('sr')).toBe(true);
+  });
+
+  it('resolves the supported languages with an explicit engine', () => {
+    for (const lang of ['en', 'de', 'fr', 'es', 'ar', 'zh', 'ru', 'pt', 'pl', 'tr']) {
+      const v = resolvePollyVoice(lang);
+      expect(v).not.toBeNull();
+      // CLAUDE.md: "IF TTS is used → THEN specify model_name explicitly."
+      expect(v!.engine).toBeTruthy();
+      expect(v!.voiceId).toBeTruthy();
+      expect(v!.languageCode).toBeTruthy();
+    }
+  });
+
+  it('pins Russian to the standard engine (Polly has no neural Russian voice)', () => {
+    expect(resolvePollyVoice('ru')!.engine).toBe('standard');
+  });
+
+  // VTID-03719 — Turkish had NO entry here and NO entry in
+  // POLLY_UNSUPPORTED_LANGS: the exact undeclared gap the pt/pl comment
+  // above warns about. Found via a real staging run of the audio-timing test
+  // program, which would have silently tested mislabeled English audio for
+  // 'tr' had this not been fixed first. Burcu (neural), not Filiz
+  // (standard) — verified live via `aws polly describe-voices
+  // --language-code tr-TR` (both exist) and a real `synthesize-speech
+  // --engine neural --voice-id Burcu` call (real PCM bytes back).
+  it('resolves Turkish to the neural Burcu voice, not the standard-only Filiz', () => {
+    const v = resolvePollyVoice('tr')!;
+    expect(v.voiceId).toBe('Burcu');
+    expect(v.engine).toBe('neural');
+    expect(v.languageCode).toBe('tr-TR');
+  });
+
+  // VTID-03578 — every RELEASE locale must resolve to a voice or be an
+  // explicitly-declared gap. This is the assertion that would have caught
+  // pt/pl taking the English fallback: iterating the voice table can only
+  // tell you what IS there, never what the platform ships and is missing.
+  it('covers every release locale, with sr the one declared gap', () => {
+    // VTID-03644: ar added (9-language activation prep). Polly already had a
+    // voice for it (see the resolution test above) — this list just needed
+    // to catch up to GATEWAY_LOCALES.
+    // VTID-03719: tr added — ga in the frontend's LanguageContext.tsx
+    // (VTID-03701 promotion) and now resolvable here too.
+    const RELEASE_LOCALES = ['de', 'en', 'es', 'sr', 'fr', 'pt', 'pl', 'ru', 'zh', 'ar', 'tr'];
+    const missing = RELEASE_LOCALES.filter(
+      (l) => resolvePollyVoice(l) === null && !POLLY_UNSUPPORTED_LANGS.has(l),
+    );
+    expect(missing).toEqual([]);
+    // And the declared gap is exactly sr — not a growing amnesty list.
+    expect([...POLLY_UNSUPPORTED_LANGS]).toEqual(['sr']);
+  });
+
+  it('speaks Brazilian Portuguese, not European, for pt', () => {
+    // The catalog is pt-BR (VTID-03576). Polly's pt-PT voice would read
+    // Brazilian text in the European variant — fluent, and wrong.
+    expect(resolvePollyVoice('pt')!.languageCode).toBe('pt-BR');
+    expect(resolvePollyVoice('pt-BR')!.languageCode).toBe('pt-BR');
+  });
+
+  it('returns null for a language outside the table instead of English audio', () => {
+    // VTID-03578: this previously returned Joanna/en-US. The module's own
+    // header calls wrong-language audio worse than no audio, and the old
+    // fallback quietly did exactly that for every unlisted language — which
+    // is how pt and pl shipped speaking English.
+    expect(resolvePollyVoice('ja')).toBeNull();
+    expect(resolvePollyVoice('nl')).toBeNull();
+  });
+
+  it('normalizes locale tags down to a base language', () => {
+    expect(normalizeLang('de-DE')).toBe('de');
+    expect(normalizeLang('en_US')).toBe('en');
+    expect(normalizeLang('')).toBe('en');
+  });
+});
+
+describe('VTID-03495 speaking-rate → SSML', () => {
+  it('sends plain text at rate 1.0 (no SSML, no escaping surface)', () => {
+    const out = buildPollyInput('Guten Morgen', 1);
+    expect(out.textType).toBe('text');
+    expect(out.text).toBe('Guten Morgen');
+  });
+
+  it('wraps in prosody SSML for a non-default rate', () => {
+    const out = buildPollyInput('Guten Morgen', 1.15);
+    expect(out.textType).toBe('ssml');
+    expect(out.text).toContain('<prosody rate="115%">');
+    expect(out.text).toContain('</speak>');
+  });
+
+  it('XML-escapes text when building SSML so ampersands cannot break the payload', () => {
+    const out = buildPollyInput('Fish & Chips <b>', 1.5);
+    expect(out.textType).toBe('ssml');
+    expect(out.text).toContain('Fish &amp; Chips &lt;b&gt;');
+    // Raw '&' followed by a space would make Polly reject the whole request.
+    expect(out.text).not.toMatch(/&(?!amp;|lt;|gt;|quot;|apos;)/);
+  });
+
+  it('treats a non-finite or non-positive rate as 1.0 rather than emitting garbage SSML', () => {
+    expect(buildPollyInput('x', NaN).textType).toBe('text');
+    expect(buildPollyInput('x', 0).textType).toBe('text');
+    expect(buildPollyInput('x', -2).textType).toBe('text');
+  });
+
+  it('escapeSsml covers all five XML entities', () => {
+    expect(escapeSsml(`&<>"'`)).toBe('&amp;&lt;&gt;&quot;&apos;');
+  });
+});
+
+describe('VTID-03495 PCM sample rate', () => {
+  const original = process.env.TTS_PROVIDER;
+  afterEach(() => {
+    if (original === undefined) delete process.env.TTS_PROVIDER;
+    else process.env.TTS_PROVIDER = original;
+  });
+
+  it('Polly PCM is 16kHz — NOT the 24kHz Cloud TTS uses', () => {
+    // Playing 16kHz samples at 24kHz is a 1.5x speed-up: obvious to a
+    // listener, invisible to any assertion that only checks for bytes.
+    expect(POLLY_PCM_SAMPLE_RATE_HZ).toBe(16_000);
+    expect(GOOGLE_PCM_SAMPLE_RATE_HZ).toBe(24_000);
+    expect(POLLY_PCM_SAMPLE_RATE_HZ).not.toBe(GOOGLE_PCM_SAMPLE_RATE_HZ);
+  });
+
+  it('reports the PCM rate of whichever provider is active', () => {
+    process.env.TTS_PROVIDER = 'polly';
+    expect(getPcmSampleRateHz()).toBe(16_000);
+    process.env.TTS_PROVIDER = 'google';
+    expect(getPcmSampleRateHz()).toBe(24_000);
+  });
+});
+
+describe('VTID-03495 provider gating', () => {
+  const originalProvider = process.env.TTS_PROVIDER;
+  const originalStrict = process.env.TTS_POLLY_STRICT;
+  afterEach(() => {
+    if (originalProvider === undefined) delete process.env.TTS_PROVIDER;
+    else process.env.TTS_PROVIDER = originalProvider;
+    if (originalStrict === undefined) delete process.env.TTS_POLLY_STRICT;
+    else process.env.TTS_POLLY_STRICT = originalStrict;
+  });
+
+  it('defaults to google when TTS_PROVIDER is unset — deploying this code flips nothing', () => {
+    delete process.env.TTS_PROVIDER;
+    expect(getTtsProvider()).toBe('google');
+  });
+
+  it('falls back to google (loudly) on an unrecognised value rather than failing closed', () => {
+    process.env.TTS_PROVIDER = 'azure';
+    expect(getTtsProvider()).toBe('google');
+  });
+
+  it('selects polly only on the exact opt-in value, case-insensitively', () => {
+    process.env.TTS_PROVIDER = 'POLLY';
+    expect(getTtsProvider()).toBe('polly');
+  });
+
+  it('strict mode is off unless explicitly set to true', () => {
+    delete process.env.TTS_POLLY_STRICT;
+    expect(isPollyStrict()).toBe(false);
+    process.env.TTS_POLLY_STRICT = 'true';
+    expect(isPollyStrict()).toBe(true);
+  });
+});
+
+describe('VTID-03495 region resolution', () => {
+  const originals = { p: process.env.AWS_POLLY_REGION, r: process.env.AWS_REGION };
+  afterEach(() => {
+    if (originals.p === undefined) delete process.env.AWS_POLLY_REGION;
+    else process.env.AWS_POLLY_REGION = originals.p;
+    if (originals.r === undefined) delete process.env.AWS_REGION;
+    else process.env.AWS_REGION = originals.r;
+  });
+
+  it('defaults to eu-central-1, the only region with Vitana AWS infrastructure', () => {
+    delete process.env.AWS_POLLY_REGION;
+    delete process.env.AWS_REGION;
+    expect(getPollyRegion()).toBe('eu-central-1');
+  });
+
+  it('prefers the explicit override over the generic AWS region', () => {
+    process.env.AWS_REGION = 'us-east-1';
+    process.env.AWS_POLLY_REGION = 'eu-west-1';
+    expect(getPollyRegion()).toBe('eu-west-1');
+  });
+});

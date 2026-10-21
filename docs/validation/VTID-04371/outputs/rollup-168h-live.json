@@ -1,0 +1,453 @@
+{
+ "_note": "VTID-04371: conversation_metrics_hourly, last 168 h, read-only 2026-09-23 ~14:15 UTC, collapsed per (metric, dimension): counts summed, p50/p90/avg sample-weighted. Collapsed onto one hour so the real summarizer yields the same window totals.",
+ "rows": [
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "context_wait_timeouts",
+   "dimension": "",
+   "value": 162.0,
+   "sample_count": 177,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "context_wait_timeouts",
+   "dimension": "transport:sse",
+   "value": 132.0,
+   "sample_count": 147,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "context_wait_timeouts",
+   "dimension": "transport:websocket",
+   "value": 30.0,
+   "sample_count": 30,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_recovery",
+   "dimension": "",
+   "value": 29.0,
+   "sample_count": 29,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "",
+   "value": 330.0,
+   "sample_count": 330,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:conv_resume",
+   "value": 71.0,
+   "sample_count": 71,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:day_close",
+   "value": 12.0,
+   "sample_count": 12,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:legacy_default",
+   "value": 110.0,
+   "sample_count": 110,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:newday_overview",
+   "value": 52.0,
+   "sample_count": 52,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:override_v2",
+   "value": 9.0,
+   "sample_count": 9,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:safe_fast_first_time_welcome",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:safe_fast_newday_overview",
+   "value": 18.0,
+   "sample_count": 18,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:safe_fast_pending_context",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_greeting_sent",
+   "dimension": "opener:safe_fast_proactive",
+   "value": 56.0,
+   "sample_count": 56,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_model_start_speaking",
+   "dimension": "",
+   "value": 292.0,
+   "sample_count": 292,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_nova_premature_close_retry",
+   "dimension": "",
+   "value": 28.0,
+   "sample_count": 28,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_reconnect_triggered",
+   "dimension": "",
+   "value": 3.0,
+   "sample_count": 3,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_tool_failed",
+   "dimension": "",
+   "value": 13.0,
+   "sample_count": 13,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_tool_failed",
+   "dimension": "tool:get_index_improvement_suggestions",
+   "value": 2.0,
+   "sample_count": 2,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_tool_failed",
+   "dimension": "tool:get_schedule",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_tool_failed",
+   "dimension": "tool:navigate_to_screen",
+   "value": 5.0,
+   "sample_count": 5,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_tool_failed",
+   "dimension": "tool:search_knowledge",
+   "value": 5.0,
+   "sample_count": 5,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_closed",
+   "dimension": "",
+   "value": 250.0,
+   "sample_count": 250,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_error",
+   "dimension": "",
+   "value": 84.0,
+   "sample_count": 84,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_error",
+   "dimension": "code:cascade_llm_empty",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_error",
+   "dimension": "code:cascade_tts_failed",
+   "value": 5.0,
+   "sample_count": 5,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_error",
+   "dimension": "code:nova_validation",
+   "value": 77.0,
+   "sample_count": 77,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_upstream_error",
+   "dimension": "code:transcribe_stream_error",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "diag_watchdog_fired",
+   "dimension": "",
+   "value": 38.0,
+   "sample_count": 38,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "facts_extracted",
+   "dimension": "",
+   "value": 362.0,
+   "sample_count": 147,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p50",
+   "dimension": "",
+   "value": 3875.8,
+   "sample_count": 204,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p50",
+   "dimension": "transport:sse",
+   "value": 3255.0,
+   "sample_count": 163,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p50",
+   "dimension": "transport:websocket",
+   "value": 6859.2,
+   "sample_count": 41,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p90",
+   "dimension": "",
+   "value": 5432.7,
+   "sample_count": 204,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p90",
+   "dimension": "transport:sse",
+   "value": 4096.5,
+   "sample_count": 163,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "first_audio_ms_p90",
+   "dimension": "transport:websocket",
+   "value": 9323.9,
+   "sample_count": 41,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "opener_repeat_24h",
+   "dimension": "",
+   "value": 256.0,
+   "sample_count": 330,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "session_duration_ms_p50",
+   "dimension": "",
+   "value": 63151.3,
+   "sample_count": 167,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "session_duration_ms_p90",
+   "dimension": "",
+   "value": 129427.6,
+   "sample_count": 167,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "session_stop_duplicates",
+   "dimension": "",
+   "value": 15.0,
+   "sample_count": 219,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "",
+   "value": 477.0,
+   "sample_count": 477,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:de",
+   "value": 187.0,
+   "sample_count": 187,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:en",
+   "value": 94.0,
+   "sample_count": 94,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:es",
+   "value": 2.0,
+   "sample_count": 2,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:fr",
+   "value": 3.0,
+   "sample_count": 3,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:ru",
+   "value": 6.0,
+   "sample_count": 6,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_started",
+   "dimension": "lang:sr",
+   "value": 185.0,
+   "sample_count": 185,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "sessions_stopped",
+   "dimension": "",
+   "value": 219.0,
+   "sample_count": 219,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "silent_sessions",
+   "dimension": "",
+   "value": 73.0,
+   "sample_count": 219,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "",
+   "value": 38.0,
+   "sample_count": 38,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "reason:audio_stall",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "reason:forwarding_no_ack",
+   "value": 2.0,
+   "sample_count": 2,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "reason:greeting_timeout",
+   "value": 31.0,
+   "sample_count": 31,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "reason:response_timeout",
+   "value": 3.0,
+   "sample_count": 3,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "stall_detected",
+   "dimension": "reason:text_stall",
+   "value": 1.0,
+   "sample_count": 1,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  },
+  {
+   "hour_start": "2026-09-23T13:00:00.000Z",
+   "metric": "user_turns_avg",
+   "dimension": "",
+   "value": 0.5,
+   "sample_count": 157,
+   "computed_at": "2026-09-23T14:13:36.479Z"
+  }
+ ]
+}

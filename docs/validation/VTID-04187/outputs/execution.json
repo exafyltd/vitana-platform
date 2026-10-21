@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04187",
+  "execution_id": "a588c340-6699-4162-913c-0ced19c84b71",
+  "finding_id": "ffe34539-6efb-432b-94a6-cede6e06f5e1",
+  "plan_version": 1,
+  "branch": "dev-autopilot/a588c340",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/console-task-23-thread-marker-ttl-expiry.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:31:41.063Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

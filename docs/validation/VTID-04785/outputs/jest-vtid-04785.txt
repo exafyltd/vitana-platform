@@ -1,0 +1,21 @@
+PASS test/vtid-04785-session-end-telemetry.test.ts
+  VTID-04785: SSE disconnect emits vtid.live.session.stop + facts end
+    ✓ emits exactly one stop with transport sse and reason sse_disconnect (the regression) (20 ms)
+    ✓ records the voice_session_facts end for the same session and reason (3 ms)
+    ✓ latches stopEventEmitted so a repeat close cannot double-book (3 ms)
+    ✓ does NOT emit when POST /live/session/stop already reported the end (1 ms)
+    ✓ keys the stop by the LIVE session id when it differs from the route id (1 ms)
+    ✓ never throws from the socket close callback, even when the emit throws (2 ms)
+    ✓ reports null duration/idle for a session closed before it finished starting (2 ms)
+    ✓ ignores a missing session (2 ms)
+  VTID-04785: wiring — every live-session delete is preceded by a stop
+    ✓ GET /live/stream req.on('close') calls emitSseDisconnectStop before deleting the session (2 ms)
+    ✓ orb-live.ts: each liveSessions.delete( has a stop emit within the preceding 120 lines (24 ms)
+    ✓ live-session-controller.ts: each liveSessions.delete( has a stop emit within the preceding 120 lines (3 ms)
+  VTID-04785: OASIS NOT NULL columns are filled, not silently rejected
+    ✓ orb.upstream.provider.selected shape without source/status/message lands with defaults (52 ms)
+    ✓ uses the payload status when the caller put it there (connect_succeeded/failed shape) (1 ms)
+    ✓ leaves complete callers byte-identical (1 ms)
+    ✓ the provider.selected call site now passes all three fields explicitly (2 ms)
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total

@@ -1,0 +1,178 @@
+# AWS-STAGE-DEPLOY-ERP-BRIDGE — build erp-bridge from services/erp-bridge/,
+# push to ECR, roll the AWS STAGING ECS service (VTID-03840).
+#
+# Staging-first (CLAUDE.md §16): auto-deploys on push to main when the
+# service tree changes. There is deliberately NO prod twin in this VTID —
+# production for the bridge is a later, owner-approved step, and the brief
+# forbids touching AWS-PROD-DEPLOY-*.yml.
+#
+# The ECS service `vitana-erp-bridge`, ECR repo `vitana/erp-bridge`, the
+# per-tenant ERPClaw Postgres, and the two Secrets Manager entries below do
+# NOT exist yet — they cannot be provisioned from a Claude Code session and
+# need an operator with AWS admin rights (see services/erp-bridge/README.md
+# "Provisioning"). Until then the preflight step fails loudly by design; it
+# never silently deploys somewhere else.
+#
+# Required repository secrets (same static staging keys the gateway staging
+# workflow uses — documented follow-up: move to OIDC):
+#   AWS_STAGING_ACCESS_KEY_ID / AWS_STAGING_SECRET_ACCESS_KEY
+# Required Secrets Manager entries (eu-central-1):
+#   vitana/erp-bridge/staging/bridge-token   -> ERP_BRIDGE_TOKEN
+#   vitana/erp-bridge/staging/tenants        -> ERP_TENANTS (JSON, see README)
+
+name: AWS Stage Deploy ERP Bridge (ECS)
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/erp-bridge/**'
+      - '.github/workflows/AWS-STAGE-DEPLOY-ERP-BRIDGE.yml'
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this AWS staging erp-bridge deploy'
+        required: true
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the erp-bridge image'
+        required: false
+        default: 'vitana/erp-bridge'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name (staging only)'
+        required: false
+        default: 'vitana-erp-bridge'
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-stage-deploy-erp-bridge
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.11'
+      - name: Install + unit tests (no ERPClaw checkout, no network beyond pip)
+        working-directory: services/erp-bridge
+        run: |
+          pip install -q -r requirements.txt
+          python -m pytest -q tests
+
+  build-push-deploy:
+    needs: test
+    runs-on: ubuntu-latest
+    env:
+      TARGET_AWS_REGION: ${{ inputs.aws_region || 'eu-central-1' }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository || 'vitana/erp-bridge' }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster || 'Vitana-ECS-Cluster' }}
+      ECS_SERVICE: ${{ inputs.ecs_service || 'vitana-erp-bridge' }}
+      DEPLOY_REASON: ${{ inputs.reason || 'auto-deploy on push to main' }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata
+        id: commit
+        run: |
+          echo "sha=$GITHUB_SHA" >> "$GITHUB_OUTPUT"
+          echo "short=$(git rev-parse --short=12 HEAD)" >> "$GITHUB_OUTPUT"
+
+      - name: Configure AWS credentials
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — staging-only target, ECR repo, ECS service, secrets
+        run: |
+          set -e
+          case "${{ env.ECS_SERVICE }}" in
+            *awsdr*|*prod*) echo "::error::Refusing: '${{ env.ECS_SERVICE }}' looks like a production service. This workflow deploys STAGING only."; exit 1 ;;
+          esac
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found — provision it first (services/erp-bridge/README.md)."; exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in '${{ env.ECS_CLUSTER }}' — provision it first."; exit 1
+          fi
+          for NAME in vitana/erp-bridge/staging/bridge-token vitana/erp-bridge/staging/tenants; do
+            ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>/dev/null || true)
+            if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+              echo "::error::Secret '$NAME' missing in Secrets Manager. Refusing to register a task definition that cannot start."; exit 1
+            fi
+          done
+
+      - name: Build and push image
+        id: build
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-${{ steps.commit.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest" services/erp-bridge
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:staging-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+
+      - name: Register task-definition revision + roll the service
+        run: |
+          set -e
+          IMAGE="${{ steps.build.outputs.image }}"
+          SEC_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text)
+          SEC_TENANTS=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/tenants --query ARN --output text)
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SEC_TOKEN "$SEC_TOKEN" --arg SEC_TENANTS "$SEC_TENANTS" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment =
+                    ( ( .containerDefinitions[0].environment // [] )
+                      | [ .[] | select(.name | IN("ERP_BRIDGE_ENV","ERP_BRIDGE_MODULE_ALLOWLIST") | not) ]
+                      + [ {name:"ERP_BRIDGE_ENV", value:"staging"},
+                          {name:"ERP_BRIDGE_MODULE_ALLOWLIST", value:"erpclaw-growth"} ] )
+                | .containerDefinitions[0].secrets =
+                    ( ( .containerDefinitions[0].secrets // [] )
+                      | [ .[] | select(.name | IN("ERP_BRIDGE_TOKEN","ERP_TENANTS") | not) ]
+                      + [ {name:"ERP_BRIDGE_TOKEN", valueFrom:$SEC_TOKEN},
+                          {name:"ERP_TENANTS",      valueFrom:$SEC_TENANTS} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — the rolled task reports the pinned ERPClaw commit
+        run: |
+          set -e
+          # The bridge is private (no ALB rule); smoke via ECS exec-less path:
+          # confirm the running task's image tag is ours. A /alive curl needs
+          # the gateway-side client (VTID-F) or a bastion — recorded gap.
+          RUNNING=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].deployments[?status==`PRIMARY`].taskDefinition' --output text)
+          IMG=$(aws ecs describe-task-definition --task-definition "$RUNNING" --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          echo "PRIMARY deployment image: $IMG"
+          [ "$IMG" = "${{ steps.build.outputs.image }}" ] || { echo "::error::PRIMARY deployment is not the image just built"; exit 1; }
+          echo "- Reason: ${{ env.DEPLOY_REASON }}"

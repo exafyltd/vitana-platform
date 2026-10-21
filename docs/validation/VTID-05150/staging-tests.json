@@ -1,0 +1,67 @@
+{
+  "vtid": "VTID-05150",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "readiness route exists and refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/2e7528b8-472a-4356-88da-0280d4639cce/readiness",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "UNAUTHENTICATED",
+      "reason": "new GET /:id/readiness is mounted (JSON 401, not an HTML 404); read-only"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "provision refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "INVALID_TOKEN",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is provisioned — staging writes to production data"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "brand pack PATCH refuses an invalid caller",
+      "method": "PATCH",
+      "path": "/api/v1/admin/tenants/2e7528b8-472a-4356-88da-0280d4639cce",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "PATCH only as a rejected probe (invalid bearer); nothing is written"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "asset upload refuses an invalid caller",
+      "method": "PUT",
+      "path": "/api/v1/admin/tenants/2e7528b8-472a-4356-88da-0280d4639cce/assets/logo",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "PUT only as a rejected probe (invalid bearer); nothing is stored"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "tenant list still refuses an anonymous caller (unchanged)",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "existing GET / unchanged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05150-admin-tenants-provisioning.test.ts test/vtid-05150-provision-tenant-sql.test.ts test/vtid-05150-reserved-slugs.test.ts test/routes/admin-tenants.test.ts test/routes/tenant-admin/settings.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the four new routes (auth, validation, legacy read-only, readiness, asset types), the migrations' static pins + SQL harness, the reserved-slug list, the unchanged GET shapes and the tenant-admin feature_flags merge"
+    }
+  ]
+}

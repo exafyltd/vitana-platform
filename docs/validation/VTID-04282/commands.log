@@ -1,0 +1,32 @@
+# VTID-04280 / VTID-04281 / VTID-04282 — commands run in this session (2026-09-22)
+
+## Read-only live investigation (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select status, source_type, count(*) from autopilot_recommendations ...        # 9 dev_autopilot 'new', 99 operator_onramp 'new'
+select ... from dev_autopilot_runs order by started_at desc limit 15            # gap 2026-08-11 -> 2026-09-21; run cf77d23c stuck 'ingesting'
+select ... plans/execs per open finding                                          # 5 planless, 3 blocked by closed PRs #3544/#3547/#3548
+top-12 lazy-plan candidates by impact                                            # all 12 already planned -> starvation
+select max(started_at) from automation_runs                                     # 2026-08-15 19:00:30 — community engine dead
+failure reasons (5 days)                                                         # 54x "agent hit the 120-turn cap"
+origin split (7 days)                                                            # 118 operator_onramp, 17 dev_autopilot (0 succeeded)
+GitHub Actions DEV-AUTOPILOT.yml runs                                            # scheduled runs failed 09-16..09-21; delayed 2-5 h
+
+## Build / test
+cd services/gateway
+npx tsc --noEmit -p .                                                            # clean
+node --check src/frontend/command-hub/app.js                                    # clean
+npx jest test/vtid-04280-pipeline-unstick.test.ts                               # 14/14
+npx jest test/vtid-04281-dev-autopilot-supervisor.test.ts                       # 15/15
+npx jest test/command-hub test/vtid-0428* <autopilot suites>                    # 83 suites / 1,838 tests passed
+git diff --cached -U0 origin/main -- services/gateway/src/frontend/command-hub \
+  | node scripts/ci/validator-path-guard.cjs --csp-added-lines                  # "No CSP pattern hits in added lines."
+
+## Supervisor snapshot from live rows (no live writes)
+npx tsx gen-supervisor.tmp.ts   # real buildSupervisorSnapshot() over rows read above -> outputs/supervisor-snapshot-from-live-rows.json
+
+## Visual verification (local harness, nothing live)
+node docs/validation/VTID-04282/outputs/harness-server.js &
+node docs/validation/VTID-04282/outputs/harness-shoot.js                       # 6 tabs x 2 viewports, 0 page errors, 0 overflow, tile click Live->Scanners
+
+## Route baseline (pre-merge, staging)
+curl .../api/v1/dev-autopilot/supervisor   -> 404 text/html   (not deployed yet)
+curl .../api/v1/dev-autopilot/spend        -> 401 application/json (router + gate live)

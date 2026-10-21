@@ -1,0 +1,7 @@
+# VTID-04915 commands (platform part)
+initdb + pg_ctl (local throwaway Postgres 16 under /var/tmp, port 55432)    # never Supabase
+PGHOST=/var/tmp/pgtest-calendar PGPORT=55432 PGUSER=postgres scripts/ci/sql-tests/run-community-event-calendar-test.sh   # PASS vtid-04915 community event calendar
+# mutation check 1: UPDATE no longer sets title -> "host, attendee and legacy row all moved (got 0)"
+# mutation check 2: DELETE branch returns before cancelling -> "all entries cancelled on delete"
+cd services/gateway && npx jest test/vtid-04915-community-event-calendar-migration.test.ts   # passed
+# read-only (Supabase MCP execute_sql, SELECT only): global_community_events columns; future events = 0, total = 123 (2026-10-06)

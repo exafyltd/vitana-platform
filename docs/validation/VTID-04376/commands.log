@@ -1,0 +1,7 @@
+cd services/gateway
+npx tsc --noEmit -p .                     # clean
+npx jest vtid-04376 vtid-04377 vtid-04378 vtid-04379 vtid-04380 vtid-04381
+npx jest dev-autopilot autopilot supervisor   # 64 suites
+npx jest deepseek 03579 llm operator          # 58 suites
+npx jest test/services/autopilot-verification test/console-task-03 staging-deploy-workflow-bash-syntax
+npx jest                                      # full suite, see outputs/full-suite.txt

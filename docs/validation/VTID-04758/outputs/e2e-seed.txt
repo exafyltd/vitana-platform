@@ -1,0 +1,23 @@
+# AC-7 — seed from the workflow's own packaging step (extracted verbatim from CODEINTEL-INDEX.yml)
+# CI-equivalent build: full clone at e36e486a, repowise init --no-prose -y --no-claude-md --no-agents (682 s), re-stamp, export, build-code-index.mjs, package
+# Session: fresh clone at e36e486a + one ordinary doc commit; hook-equivalent (detached worker), CODE_INDEX_LOCAL_DIR=<bucket layout>
+hook-equivalent returned after 0s
+seeded index queryable after 7s (3942 pages)
+codeintel: vitana-platform: indexing started at HEAD ecabd11e
+codeintel: exafyltd/vitana-platform: seeded RepoWise from CI index @ e36e486a (repowise 0.54.0)
+config fingerprint unchanged
+codeintel: vitana-platform: ready in 340s (repowise=true via ci-seed, 3942 pages; graphify=true)
+1 changed · 1 added
+Pages to regenerate: 1
+Elapsed 3m 28s 
+## status
+{"updated_at":"2026-10-01T12:30:11Z","state":"ready","repo":"<scratch>/sess2/vitana-platform","head":"ecabd11e8f36cc0fad7c878e44cb456e11e8e7e0","repowise":{"ok":true,"source":"ci-seed","pages":3942},"graphify":{"ok":true},"seconds":340}
+tracked changes in the clone after the run: 0
+## MCP (repowise mcp over stdio, while the worker was still running)
+initialize: ok (4.3s)
+tools/list: 10 tools: get_answer, get_change_risk, get_context, get_dead_code, get_health, get_overview, get_risk, get_symbol, get_why, search_codebase
+get_overview: ok (1.6s, 15654 chars) :: {   "title": "Repository Overview: src",   "content_md": "# Repository Overview: src\n\n**Files:** 6702 | **Lines:** 1582777 | **Monorepo:** 16 packages | **Import cycles:** 15",   "code_health": {     "average_health": 8.31,     "band": "good",     "hotspot_health": 3.83,     "worst_performer_path": "services/gateway/src/services/orb-tools-shared.ts",     "worst_performer_scor
+search_codebase: ok (0.7s, 4876 chars) :: {   "results": [     {       "title": "File: services/gateway/src/services/guided-journey/journey-index-award.ts",       "page_type": "file_page",       "snippet": "# services/gateway/src/services/guided-journey/journey-index-award.ts\n\n## Overview\n\nGuided Journey — Vitana Index award for listening to a session\n(BOOTSTRAP-GUIDED-JOURNEY-POPUP).\nListening to a Guid",   
+get_context: ok (0.1s, 14195 chars) :: {   "targets": {     "services/gateway/src/services/codeintel-index.ts": {       "type": "file",       "path": "services/gateway/src/services/codeintel-index.ts",       "parent_page": {         "title": "Services Overview",         "target_path": "services/gateway/src/services",         "section": "13.13"       },       "docs": {         "title": "File: services/gateway/src/serv
+## seed size
+repowise-index.tar.gz 114882979 bytes (parse cache excluded)

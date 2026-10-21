@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04715",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the workflow change", "path": "/alive" },
+    { "kind": "http", "name": "staging health still reports env=staging", "path": "/api/v1/admin/health", "expect_json": { "env": "staging" } },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04715-staging-verify-deployed-commit.test.ts test/vtid-04709-staging-deploy-pinned-commit.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins the deployed-commit hand-off between the staging deploy and STAGING-VERIFY, and the pin it serves"
+    }
+  ]
+}

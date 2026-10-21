@@ -1,0 +1,20 @@
+# VTID-03840: erp-bridge — private HTTP facade over the vendored ERPClaw CLI.
+# Python 3.11+. Pinned; bump deliberately.
+
+# Service
+fastapi==0.115.6
+uvicorn[standard]==0.34.0
+pydantic==2.10.4
+
+# ERPClaw runtime deps for the PostgreSQL dialect (measured in the
+# VTID-03840 spike: pypika + psycopg2 for the CLI, cryptography for
+# credentials, typing_extensions for migration 035 — the last one is NOT
+# declared upstream and breaks `migrate` when missing).
+pypika==0.48.9
+psycopg2-binary==2.9.10
+cryptography==44.0.0
+typing_extensions==4.12.2
+
+# Tests
+pytest==8.3.4
+httpx==0.28.1

@@ -1,0 +1,94 @@
+# VTID-03704 — commands actually run.
+
+# --- Diagnosis -------------------------------------------------------------
+
+# Confirmed pt/pl reach Nova despite the language gate, by reading the gate
+# itself rather than inferring it: upstream-provider-selector.ts skips the
+# language check when vertexUnavailable is true (VTID-03649 tradeoff).
+sed -n '370,470p' services/gateway/src/orb/live/upstream/upstream-provider-selector.ts
+
+# Confirmed the persona split was the pre/post-login voice difference.
+git show origin/main:services/gateway/src/orb/live/voice/nova-sonic-voice.ts \
+  | sed -n '/NOVA_VOICES/,/} as const/p'
+#   -> en/de { feminine: tina, masculine: lennart }
+#      fr    { feminine: ambre, masculine: florian }
+#      es    { feminine: lupe,  masculine: carlos  }
+#      pt    { feminine: carolina, masculine: leo   }
+#   MASCULINE_PERSONAS = devon, atlas -> anonymous (no persona) != signed-in.
+
+# Confirmed `carolina` is a real, verified pt-BR voice before relying on it —
+# VTID-03672 had validated both ids against a real bidirectional stream
+# (Bedrock accepts them; a deliberately bogus id returns `Received invalid id`).
+
+# Checked whether the cascade gate is actually wired, rather than assuming a
+# built feature is a live one.
+grep -rn "isCascadeEnabled\|isCascadeLanguageSupported\|evaluateCascadeEligibility" src/
+#   -> tryCascadeRescue() returns null unless ORB_CASCADED_VOICE_ENABLED === 'true'.
+#      With it unset, a non-Nova language falls through to
+#      nova_forced_vertex_unavailable and STILL transits Nova.
+#      => removing pt from the routing list must not empty its voice entry.
+
+# Confirmed no caller treats resolveNovaSonicVoice()'s null as a routing
+# signal, so decoupling it from the routing list is safe.
+grep -rn "resolveNovaSonicVoice\b" src/ test/ | grep -v "nova-sonic-voice.ts:"
+
+# --- Verification ----------------------------------------------------------
+
+cd services/gateway
+
+npx tsc --noEmit
+#   -> clean, exit 0                       (outputs/tsc.txt, empty)
+
+npx jest test/orb/live/voice/ test/orb/routes/session-start-voice-telemetry.test.ts
+#   -> 6 suites, 58/58 tests passing        (outputs/voice-suite.txt)
+
+npx jest test/orb/
+#   -> 126/126 suites, 1724/1730 passing    (outputs/full-orb-suite.txt)
+#      (6 pre-existing todo, 0 failures)
+
+# Mutation check — prove the AC-4 guard fails when the defect is reintroduced,
+# rather than trusting that a green suite means it is covered.
+#   remove `pt: 'carolina'` from NOVA_VOICES, re-run, restore.
+#   -> 4 failed / 50 passed under mutation; 54/54 restored
+#                                           (outputs/mutation-check.txt)
+
+# --- CI gates, dry-run locally before pushing ------------------------------
+
+# Acceptance Mapping Gate, replicated locally BEFORE pushing — it requires a
+# TEST:/CURL:/UI: token within 12 lines of each AC- heading. First run caught
+# three unmapped ACs (AC-1 and AC-4 had prose ahead of their TEST: lines;
+# AC-6 had no test at all). AC-6's gap was real, not formatting: the
+# session-start telemetry change had no coverage. Added
+# test/orb/routes/session-start-voice-telemetry.test.ts rather than
+# reformatting around the hole.
+
+# Path ownership: every changed file is under services/gateway/{src,test}/,
+# both in the gateway_backend allowlist.
+git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/body_probe.txt
+#   -> APPROVED: 9 in-remit file(s) match the gateway_backend allowlist
+
+# Route-mount evidence: the orb-live.ts change adds telemetry fields to an
+# existing event payload, not a route.
+git diff origin/main...HEAD -- services/gateway/src/routes/ \
+    services/gateway/src/index.ts services/gateway/src/app.ts > /tmp/route_diff.txt
+node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt
+#   -> "No route registration added — route-mount evidence not required."
+
+# --- NOT run, and why ------------------------------------------------------
+
+# No AWS verification of the live task definition, the IAM grant, or a real
+# Polly/Transcribe call:
+which aws
+#   -> aws: command not found
+
+# No live OASIS event captured for AC-6. Generating one means writing to the
+# production Supabase project, which CLAUDE.md forbids absolutely and for
+# which no host is exempt. First live confirmation is the next staging session.
+
+# VTID governance: continuing under the VTID-03704 identity allocated earlier
+# in this session. Re-verified this session still has no AWS CLI and no
+# gateway endpoint reachable for a PATCH; the ledger row was set to
+# status='in_progress' / spec_status='approved' at allocation time, per
+# CLAUDE.md §4.1 (the user's direct in-conversation instruction IS the
+# approval).

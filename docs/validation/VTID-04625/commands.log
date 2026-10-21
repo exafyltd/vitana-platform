@@ -1,0 +1,4 @@
+oasis_events 09:34-09:39 status=error: voice.latency.measured x3 (VTID-03177), assistant.turn x1 (VTID-0536) -> verification_failed bf918337 -> revert #3741 merged
+npx jest (20 suites incl. watcher, baseline, operator regression, new suite) -> 326 passed
+mutation: watcher without minExcess -> revert-case scenario fails
+npx tsc --noEmit -> clean

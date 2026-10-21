@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04056",
+  "execution_id": "d93d5bce-f5fc-4e06-a631-7795c4781eca",
+  "finding_id": "76df060e-99af-4dc3-b947-1e7782bf36c9",
+  "plan_version": 1,
+  "branch": "dev-autopilot/d93d5bce",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/index.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/middleware/command-hub-backup-denylist.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/command-hub-backup-file-denylist.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-18T11:28:31.874Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

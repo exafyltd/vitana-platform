@@ -1,0 +1,16 @@
+# VTID-05098 commands (branch claude/vitanaland-loop-engineering-30pws3 restarted from origin/main 79321d56)
+git rm routines/{orb-audio-smoke,push-pipeline-probe,migration-backlog,cloud-run-frontend-health,self-healing-triage}.md
+# claude.ai triggers: update_trigger enabled=false x5 (September generation) — see acceptance.md; the 15 April-generation triggers refuse agent updates (owner action)
+cd services/gateway
+node scripts/regen-screens-catalog.mjs && node scripts/regen-screens-catalog.mjs --check      # ✓ in sync (314 entries)
+node scripts/generate-command-hub-symbol-index.mjs && node scripts/generate-command-hub-symbol-index.mjs --check   # ✓ in sync
+BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts   # 10134 texts, 0 to embed (6 dropped)
+npx jest test/loop-catalog.test.ts test/autonomy-pulse.test.ts      # 44 pass
+npx jest test/routine-audits.test.ts test/command-hub/vtid-05098-simplify.test.ts   # 20 pass
+npx jest test/command-hub test/navigation test/nav-golden test/nav-redirect test/vtid-04560-role-separation-regression.test.ts test/vtid-04986-screen-inventory-in-sync.test.ts test/vtid-05080-regen-screens-catalog-check.test.ts test/vtid-05077-planner-fallback-and-thinking.test.ts test/autonomy-pulse.test.ts test/autonomy-trace.test.ts test/loop-catalog.test.ts test/routes/autonomy-loops.test.ts test/routine-audits.test.ts   # 65 suites, 1176 pass, 1 skipped
+npx tsc --noEmit        # clean (after installing locked deps missing from the local node_modules)
+npm run build && node ../../scripts/ci/command-hub-golden-fingerprint.js   # PASSED
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff>        # no CSP pattern hits
+node -e lintMigration/validateScope/evaluateSparringRecord               # clean
+node -e staging-verify validateManifest VTID-05098 + VTID-05084         # ok
+npx jest --silent   # full gateway suite: 1648 suites passed (2 skipped), 26565 tests

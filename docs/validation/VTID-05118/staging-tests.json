@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05118",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "name": "welcome-discount trigger migration uses the email trigger secret",
+      "ref": "npx jest test/vtid-05118-welcome-discount-trigger-secret.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The change is one Supabase database function (no gateway route, no gateway behaviour). There is one shared Supabase project, so no staging database exists to probe and no write or POST is sent anywhere. This suite pins the migration (vault email_trigger_secret, X-Trigger-Secret header, NULL guard, outer WHEN OTHERS, no missing vault names, no secret). After RUN-MIGRATION.yml the apply is verified read-only: pg_get_functiondef contains email_trigger_secret and not service_role_key, and vault.secrets has one email_trigger_secret row (name only)."
+    }
+  ]
+}

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04767",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/docs/vtid-04767-memory-plan.test.ts", "cwd": "services/gateway",
+      "reason": "documentation only; nothing runs differently on staging" }
+  ]
+}

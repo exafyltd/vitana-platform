@@ -1,0 +1,351 @@
+/**
+ * VTID-03276 — Guided Journey HTTP surface (P1).
+ *
+ *   GET  /api/v1/journey/state   → full durable JourneyState (creates row lazily)
+ *   GET  /api/v1/journey/mode    → { mode } only
+ *   POST /api/v1/journey/mode    → { mode: 'guided' | 'full' } applies the
+ *                                  lossless switch rules, returns the new state
+ *
+ *   GET  /api/v1/journey/audiobook/topics/:topicId/audio → topic narration MP3
+ *                                  (VTID-04761, Audiobook listening mode)
+ *   POST /api/v1/journey/audiobook/reminder → { time: 'HH:MM', tz } | { time: null }
+ *                                  (VTID-04763, daily episode reminder)
+ *
+ * Mode is PRODUCT/UX state. These routes never read or write subscription or
+ * feature-permission state. Per-topic progress + practice-completion writes land
+ * with the catalog (P5/P7).
+ */
+
+import { Router, Response } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { getSupabase } from '../lib/supabase';
+import {
+  getJourneyState,
+  setJourneyMode,
+  completePractice,
+  recordListenedSession,
+  setAudiobookReminder,
+  parseReminderPref,
+} from '../services/guided-journey/guided-journey-state';
+import { recordSessionListen } from '../services/guided-journey/journey-index-award';
+import { syncAudiobookCalendarEntry } from '../services/guided-journey/audiobook-calendar';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import type { JourneyMode } from '../types/guided-journey';
+import { getOrbTopicSeed } from '../services/guided-journey/checklist-service';
+import { synthesizeAudiobookTopicMp3 } from '../services/guided-journey/audiobook-episode-audio';
+import { GATEWAY_LOCALES, type GatewayLocale } from '../i18n/catalog';
+import { writeTimelineRow } from '../services/timeline-projector';
+
+const router = Router();
+
+const VTID = 'VTID-03276';
+
+const VALID_MODES: readonly JourneyMode[] = ['guided', 'full'];
+
+router.get('/state', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
+  }
+  try {
+    const state = await getJourneyState(client, userId);
+    return res.json({ ok: true, state, vtid: VTID });
+  } catch (err: any) {
+    console.error(`[${VTID}] get journey state failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'state_failed', vtid: VTID });
+  }
+});
+
+router.get('/mode', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
+  }
+  try {
+    const state = await getJourneyState(client, userId);
+    return res.json({ ok: true, mode: state.mode, vtid: VTID });
+  } catch (err: any) {
+    console.error(`[${VTID}] get journey mode failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'mode_failed', vtid: VTID });
+  }
+});
+
+router.post('/mode', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: VTID });
+  }
+  const mode = req.body?.mode as unknown;
+  if (typeof mode !== 'string' || !VALID_MODES.includes(mode as JourneyMode)) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'invalid_mode', detail: "mode must be 'guided' or 'full'", vtid: VTID });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: VTID });
+  }
+  try {
+    const state = await setJourneyMode(client, userId, mode as JourneyMode);
+    return res.json({ ok: true, state, vtid: VTID });
+  } catch (err: any) {
+    console.error(`[${VTID}] set journey mode failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'set_mode_failed', vtid: VTID });
+  }
+});
+
+// VTID-03282 (P7) — record a completed guided-practice action for a topic.
+// POST /api/v1/journey/practice-complete  { topicId } → updated JourneyState.
+router.post('/practice-complete', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'VTID-03282' });
+  }
+  const topicId = req.body?.topicId as unknown;
+  if (typeof topicId !== 'string' || !topicId.trim()) {
+    return res
+      .status(400)
+      .json({ ok: false, error: 'invalid_topic_id', detail: 'topicId is required', vtid: 'VTID-03282' });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'VTID-03282' });
+  }
+  try {
+    const state = await completePractice(client, userId, topicId);
+    return res.json({ ok: true, state, vtid: 'VTID-03282' });
+  } catch (err: any) {
+    console.error(`[VTID-03282] practice-complete failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'practice_complete_failed', vtid: 'VTID-03282' });
+  }
+});
+
+// BOOTSTRAP-GUIDED-JOURNEY-POPUP — the user listened to a guided session.
+// Fired when the user taps a session/topic and Vitana narrates it. Does TWO
+// things, in priority order:
+//   1) DURABLE PROGRESS (primary): advance `current_session` so the "Sitzung N"
+//      ring reads from the account, not per-browser localStorage. This is the
+//      fix for the ring resetting and for staging/production showing different
+//      numbers for the same user — both now read the same server-side marker.
+//   2) +2 VITANA INDEX AWARD (best-effort): idempotent per topic; replays never
+//      double-award. Wrapped so a failure here (e.g. the awards ledger table not
+//      yet provisioned) can NEVER fail the durable progress write above.
+// POST /api/v1/journey/session-listened  { session, topicId? }
+//   → { ok, awarded, points, current_session }.
+router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
+  }
+  const session = Number(req.body?.session);
+  const topicId = typeof req.body?.topicId === 'string' ? req.body.topicId.trim() : '';
+  if (!Number.isInteger(session) || session <= 0) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_session',
+      detail: 'session (positive integer) is required',
+      vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
+    });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
+  }
+
+  // 1) Durable progress — must succeed. A failure here is a real error.
+  let state;
+  try {
+    // VTID-04763: the member's local calendar day, for the daily episode goal.
+    const localDate = typeof req.body?.localDate === 'string' ? req.body.localDate : null;
+    state = await recordListenedSession(client, userId, session, undefined, localDate);
+  } catch (err: any) {
+    console.error(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] session-listened persist failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'session_listened_failed', vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP' });
+  }
+
+  // 2) +2 Vitana Index award — best-effort, keyed by topic. Never blocks or
+  //    fails the durable progress write. Logged (not silenced) on failure.
+  let awarded = false;
+  let points = 0;
+  let totalBonus = 0;
+  if (topicId) {
+    try {
+      const result = await recordSessionListen(client, userId, topicId);
+      awarded = result.awarded;
+      points = result.points;
+      totalBonus = result.totalBonus;
+      if (result.awarded) {
+        // Mirror the calendar path's `index.recomputed` event so the +2 surfaces
+        // in the user's Index movement history. emitOasisEvent never throws.
+        void emitOasisEvent({
+          vtid: 'SYSTEM',
+          type: 'index.recomputed' as any,
+          source: 'guided-journey-api',
+          actor_id: userId,
+          surface: 'api',
+          status: 'info',
+          message: `Vitana Index +${result.points} for listening to a guided session (${topicId})`,
+          payload: {
+            user_id: userId,
+            topic_id: topicId,
+            delta_total: result.points,
+            total_bonus: result.totalBonus,
+            reason: 'guided_session_listen',
+          },
+        });
+        // VTID-05168: the +2 is its own labelled contribution on the timeline
+        // (catalog journey.session.listened, cross-pillar). It is added on read,
+        // never written to vitana_index_scores, so it is never folded into a
+        // recorded movement it did not cause.
+        void writeTimelineRow({
+          user_id: userId,
+          activity_type: 'journey.session.listened',
+          activity_data: { topic: topicId },
+          dedupe_key: `journey-listen:${topicId}:${new Date().toISOString().slice(0, 10)}`,
+          source: 'projector:guided_journey',
+        }).catch(() => undefined);
+      }
+    } catch (err: any) {
+      console.warn(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] index award skipped (non-fatal): ${err?.message}`);
+    }
+  }
+
+  return res.json({
+    ok: true,
+    awarded,
+    points,
+    total_bonus: totalBonus,
+    current_session: state.currentSession,
+    vtid: 'BOOTSTRAP-GUIDED-JOURNEY-POPUP',
+  });
+});
+
+// VTID-04763 — the member's daily Audiobook reminder ("your episode for
+// today"), at a local time they pick. Body: { time: 'HH:MM', tz: '<IANA>' } to
+// set, { time: null } to switch it off.
+router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: 'VTID-04763' });
+  }
+  const off = req.body?.time === null || req.body?.time === 'off';
+  const pref = off ? null : parseReminderPref(req.body);
+  if (!off && !pref) {
+    return res.status(400).json({
+      ok: false,
+      error: 'invalid_reminder',
+      detail: "time must be 'HH:MM' (24h) and tz a valid IANA time zone, or time null to switch off",
+      vtid: 'VTID-04763',
+    });
+  }
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: 'VTID-04763' });
+  }
+  try {
+    const state = await setAudiobookReminder(client, userId, pref);
+    // VTID-04917: the reminder shows in the member's calendar (one daily
+    // entry, no calendar push of its own). Never fails the reminder.
+    const calendar = await syncAudiobookCalendarEntry(userId, pref);
+    // A member opting in to / out of a daily push is a real state transition.
+    void emitOasisEvent({
+      vtid: 'VTID-04763',
+      type: (pref ? 'journey.audiobook.reminder.set' : 'journey.audiobook.reminder.cleared') as any,
+      source: 'guided-journey-api',
+      actor_id: userId,
+      surface: 'api',
+      status: 'info',
+      message: pref
+        ? `Audiobook daily reminder set for ${pref.time} (${pref.tz})`
+        : 'Audiobook daily reminder switched off',
+      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null, calendar },
+    });
+    return res.json({ ok: true, state, vtid: 'VTID-04763' });
+  } catch (err: any) {
+    console.error(`[VTID-04763] audiobook reminder update failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'reminder_update_failed', vtid: 'VTID-04763' });
+  }
+});
+
+// VTID-04761 — Audiobook listening mode. The narration of ONE published topic
+// as MP3, read in the Vitana voice (Audiobook voice table, VTID-05026), for the My Journey player (plain
+// <audio>, no live voice session, no microphone).
+// GET /api/v1/journey/audiobook/topics/:topicId/audio?lang=de
+//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no voice
+//   may read the language — sr with its Google switch off — or the Google
+//   render failed or hit the daily cap, VTID-05026; the player offers Vitana
+//   live instead, never another voice)
+//   | 422 narration_not_translated (VTID-04873: this topic has no narration in
+//   the requested language yet — never read the German text in another
+//   language's voice).
+const AUDIOBOOK_VTID = 'VTID-04761';
+const TOPIC_ID_RE = /^T\d{3,4}$/;
+
+router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'unauthenticated', vtid: AUDIOBOOK_VTID });
+  }
+  const topicId = String(req.params.topicId || '');
+  if (!TOPIC_ID_RE.test(topicId)) {
+    return res.status(400).json({ ok: false, error: 'invalid_topic_id', vtid: AUDIOBOOK_VTID });
+  }
+  const rawLang = typeof req.query.lang === 'string' ? req.query.lang.toLowerCase().slice(0, 2) : 'de';
+  const lang: GatewayLocale = (GATEWAY_LOCALES as readonly string[]).includes(rawLang)
+    ? (rawLang as GatewayLocale)
+    : 'de';
+  const client = getSupabase();
+  if (!client) {
+    return res.status(500).json({ ok: false, error: 'supabase_not_configured', vtid: AUDIOBOOK_VTID });
+  }
+  try {
+    const seed = await getOrbTopicSeed(client, topicId, 'v2', lang);
+    if (!seed) {
+      return res.status(404).json({ ok: false, error: 'topic_not_live', vtid: AUDIOBOOK_VTID });
+    }
+    if (seed.narrationLocale !== lang) {
+      return res.status(422).json({ ok: false, error: 'narration_not_translated', lang, vtid: AUDIOBOOK_VTID });
+    }
+    const audio = await synthesizeAudiobookTopicMp3(
+      {
+        topic_id: seed.topicId,
+        topic_title: seed.displayLabel,
+        voice_script: seed.vitanaVoiceScript,
+        explanation: seed.explanation,
+        practice_target: seed.guidedPracticeTarget,
+        source: seed.source,
+        narrationAudio: null,
+      },
+      lang,
+    );
+    if (!audio) {
+      return res.status(422).json({ ok: false, error: 'narration_unavailable', lang, vtid: AUDIOBOOK_VTID });
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('Content-Length', String(audio.mp3.length));
+    // Per-user auth on the request, identical bytes for everyone: let the
+    // member's own browser keep it, never a shared cache.
+    res.setHeader('Cache-Control', 'private, max-age=86400');
+    res.setHeader('X-Audiobook-Cache', audio.cached ? 'hit' : 'miss');
+    // VTID-05026: who read the episode (`google` for ru/sr when their switch
+    // is on, `polly` otherwise), so staging verification can prove it.
+    res.setHeader('X-Audiobook-Voice-Provider', audio.provider);
+    // VTID-04873: the language the narrated text is written in. Always equal
+    // to `lang` here; exposed so staging verification can prove it.
+    res.setHeader('X-Audiobook-Narration-Locale', seed.narrationLocale);
+    return res.status(200).end(audio.mp3);
+  } catch (err: any) {
+    console.error(`[${AUDIOBOOK_VTID}] audiobook audio failed for ${topicId}/${lang}: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'audiobook_audio_failed', vtid: AUDIOBOOK_VTID });
+  }
+});
+
+export default router;

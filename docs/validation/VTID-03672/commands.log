@@ -1,0 +1,25 @@
+# VTID-03672 — commands run, in order. 2026-08-18.
+
+# 1. Establish the discriminator before trusting any result: a bogus voice
+#    must be rejected, or "accepted" means nothing.
+node scripts/verify-nova-language.mjs --lang pt --voice notarealvoice   # exit 1
+
+# 2. Control — a language already in the gate. This failed TWICE on protocol
+#    before it passed, and those failures are the reusable part (see
+#    outputs/protocol-findings.txt).
+node scripts/verify-nova-language.mjs --lang de --voice tina            # exit 0 PARTIAL
+
+# 3. The language under test, both personas.
+node scripts/verify-nova-language.mjs --lang pt --voice carolina        # exit 0 PARTIAL
+node scripts/verify-nova-language.mjs --lang pt --voice leo             # exit 0 PARTIAL
+
+# 4. Types and tests.
+npx tsc --noEmit                                                        # exit 0
+npx jest test/orb/live/voice/nova-sonic-voice.test.ts                    # 9 passed
+npx jest test/orb                                                        # 3083 passed
+
+# 5. Mutation-verify the gate change actually drives the new test.
+#    (remove 'pt' from NOVA_SONIC_SUPPORTED_LANGUAGES)
+npx jest test/orb/live/voice/nova-sonic-voice.test.ts                    # 1 failed
+#    (restore)
+npx jest test/orb/live/voice/nova-sonic-voice.test.ts                    # 9 passed

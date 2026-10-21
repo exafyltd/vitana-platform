@@ -1,0 +1,7 @@
+$ curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+    https://preview-aws-gateway.vitanaland.com/api/v1/partner-orgs/mine
+401 application/json; charset=utf-8
+
+$ curl -s -o /dev/null -w "%{http_code} %{content_type}\n" \
+    https://preview-aws.vitanaland.com/commerce
+200 text/html

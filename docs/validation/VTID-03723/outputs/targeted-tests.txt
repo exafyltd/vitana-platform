@@ -1,0 +1,162 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+  VTID-03683: cascade language eligibility
+    ✓ REFUSES every language Nova speaks natively (14 ms)
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (8 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified (3 ms)
+    ✓ derives coverage from Polly rather than restating it (2 ms)
+    ✓ normalises locale tags and refuses unknown languages (2 ms)
+  VTID-03683: activation gate is off by default
+    ✓ is off unless the value is exactly "true" (1 ms)
+  VTID-03683: selector routes Nova-blocked languages to the cascade
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path (1 ms)
+    ✓ with the flag on and the language covered, it routes to the cascade (1 ms)
+    ✓ with the flag on but the language NOT covered (sr), it does not divert (3 ms)
+    ✓ VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to
+    ✓ never diverts a session whose language Nova DOES support
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+(node:3627) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/services/voice-lab/nova-sonic-test-runner.test.ts (12.645 s)
+  runNovaSonicTestSuite
+    ✓ offline tier passes on a clean environment; live probe skips by default (130 ms)
+    ✓ live probe requested but Nova disabled → typed SKIP, no stream opened (4 ms)
+    ✓ config issues surface as a failed readiness check (5 ms)
+    ✓ records recent runs (ring buffer) (2 ms)
+  probeLiveClient — second-turn completion is required, never a silent pass
+    ✓ both turns complete → pass, with the second turn timed separately (3 ms)
+    ✓ stream closes after turn 1 → FAIL, not a pass with second_turn_ms=-1 (1 ms)
+    ✓ stream errors after turn 1 → FAIL with the error code surfaced (2 ms)
+    ✓ sendTextTurn refuses the second turn (stream not open) → FAIL, return value not ignored (2 ms)
+    ✓ no second turn requested → single-turn behavior unchanged (still passes) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/nova-global-promotion.test.ts
+  VTID-03501 globalEnabled parsing
+    ✓ defaults to false — deploying this code promotes nobody (15 ms)
+    ✓ requires the exact string "true" (2 ms)
+  VTID-03501 identity gate
+    ✓ still allows NOBODY when global is off and allowlists are empty (1 ms)
+    ✓ allows EVERY identity when global is on (1 ms)
+    ✓ leaves allowlist semantics untouched, so turning global off restores the exact prior population (1 ms)
+  VTID-03501 selector labelling
+    ✓ a globally-promoted session reports nova_global_enabled and canary=false
+    ✓ an allowlisted session still reports nova_canary_allowlisted and canary=true (1 ms)
+    ✓ global promotion does NOT bypass the other hard gates (VTID-03723: the gate now forces Nova, not Vertex — there is nowhere else to send it) (2 ms)
+    ✓ global promotion cannot resurrect a disabled Nova, but a disabled Nova is still forced through rather than pinned to Vertex (VTID-03723) (1 ms)
+  VTID-03501 health payload
+    ✓ reports global_enabled so the canary counts cannot mislead (2 ms)
+    ✓ reports global_enabled=false by default (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/upstream-provider-selector.test.ts
+  L1 selectUpstreamProvider — pure selection policy (VTID-03723: no Vertex)
+    ✓ 1. default (no signal anywhere) → nova_sonic (forced), never vertex (3 ms)
+    ✓ 2. ORB_LIVE_PROVIDER=vertex → forced to nova_sonic, not vertex
+    ✓ 3. ORB_LIVE_PROVIDER=livekit + creds present, canary off → forced to nova_sonic, livekitReady=true preserved (2 ms)
+    ✓ 4. ORB_LIVE_PROVIDER=livekit + creds missing → forced to nova_sonic, error names missing fields
+    ✓ 5. voice.active_provider=vertex (env unset) → forced through Nova canary evaluation, never vertex (the literal reported bug)
+    ✓ 6. voice.active_provider=livekit (env unset) + creds → forced to nova_sonic, livekitReady=true (1 ms)
+    ✓ 7. voice.active_provider=livekit (env unset) + creds missing → forced to nova_sonic (1 ms)
+    ✓ 8. env override still beats system_config (env=vertex vs sys=livekit) — both now resolve off Vertex
+    ✓ 9. unknown/garbage env value keeps provider_invalid reason, but forces off Vertex (BOOTSTRAP-NOVA-SONIC-VOICE / VTID-03723) (2 ms)
+    ✓ 9b. unknown env value forces off Vertex regardless of system_config
+    ✓ 10. whitespace + uppercase env values normalize, and still never resolve to vertex (1 ms)
+    ✓ selector NEVER throws on malformed input (1 ms)
+    ✓ selector NEVER selects provider=livekit in L1 (the L1 pin, canary OFF) — and never vertex either (2 ms)
+  L2.1 selectUpstreamProvider — canary gate (VTID-03723: degraded paths no longer land on Vertex)
+    ✓ C1. canary disabled + livekit env + creds → forced to nova_sonic (L1 pin no longer lands on Vertex) (1 ms)
+    ✓ C2. canary enabled + identity matches allowlist (tenant) → provider=livekit (unchanged) (1 ms)
+    ✓ C3. canary enabled + identity matches allowlist (user) → provider=livekit (unchanged)
+    ✓ C4. canary enabled + identity NOT in allowlist → forced to nova_sonic, canary flag stays true (2 ms)
+    ✓ C5. canary enabled + no identity at all → forced to nova_sonic, canary flag stays true (1 ms)
+    ✓ C6. canary enabled + livekit creds INVALID → forced to nova_sonic, canary flag false (config invalidity beats canary) (1 ms)
+    ✓ C7. canary enabled + no LiveKit request anywhere → forced to nova_sonic, NOT canary (1 ms)
+    ✓ C8. system_config=livekit + canary allowlist match → canary_selected_livekit (unchanged) (1 ms)
+    ✓ C9. env=vertex still never reaches the LiveKit canary — but no longer lands on Vertex either
+    ✓ C10. canary enabled but empty allowlist → forced to nova_sonic, canary flag true (1 ms)
+    ✓ C11. canary still NEVER throws on malformed canary input
+  Nova 2 Sonic selection (BOOTSTRAP-NOVA-SONIC-VOICE / VTID-03723)
+    ✓ 1. ORB_LIVE_PROVIDER=vertex no longer routes to Vertex — forced to Nova even with a healthy Nova canary available
+    ✓ 2. explicit nova_sonic selects Nova only when every gate passes (unchanged) (2 ms)
+    ✓ 3. enabled allowlisted canary lifts a shared vertex DB flag (unchanged) (2 ms)
+    ✓ 3b. canary also lifts the pure default (no signals at all) (unchanged) (121 ms)
+    ✓ 4. every previously-vertex-degrading gate now forces through to Nova instead of pinning to Vertex (2 ms)
+    ✓ 4b. failed canary gates now force through to Nova instead of silently falling through to a vertex reason (1 ms)
+    ✓ 5. LiveKit selection behavior is unchanged by the Nova context
+    ✓ 6. unknown provider strings keep provider_invalid but no longer pin to Vertex
+    ✓ system_config nova_sonic routes through the same explicit gate (unchanged) (1 ms)
+  VTID-03723: Vertex is never a destination, and the cascade rescues Nova-unsupported languages
+    ✓ reproduces the exact reported staging configuration: active_provider=vertex + a Polish/Portuguese session → cascade, never Nova speaking English, never Vertex (1 ms)
+    ✓ the same configuration WITHOUT the cascade enabled forces Nova rather than falling back to Vertex
+    ✓ invariant: across a broad matrix of contexts, provider is never vertex (1 ms)
+    ✓ mutation guard: a hand-built decision confirms the test suite would catch a reintroduced vertex return
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/vertex-unavailable-forces-nova.test.ts
+  vertexUnavailable is now irrelevant — unsupported language always forces Nova, never Vertex
+    ✓ vertexUnavailable=undefined: unsupported language forces Nova with a distinct reason (3 ms)
+    ✓ vertexUnavailable=false: unsupported language forces Nova with a distinct reason
+    ✓ vertexUnavailable=true: unsupported language forces Nova with a distinct reason (1 ms)
+  vertexUnavailable is now irrelevant — unsupported runtime always forces Nova, never Vertex
+    ✓ vertexUnavailable=undefined: gcp-cloud-run runtime forces Nova with a distinct reason (1 ms)
+    ✓ vertexUnavailable=false: gcp-cloud-run runtime forces Nova with a distinct reason (1 ms)
+    ✓ vertexUnavailable=true: gcp-cloud-run runtime forces Nova with a distinct reason (1 ms)
+  vertexUnavailable is now irrelevant — the default (no-request) path also always forces Nova
+    ✓ vertexUnavailable=undefined: default path with unsupported language forces Nova, reports canary=false (1 ms)
+    ✓ vertexUnavailable=false: default path with unsupported language forces Nova, reports canary=false (2 ms)
+    ✓ vertexUnavailable=true: default path with unsupported language forces Nova, reports canary=false (1 ms)
+  VTID-03703/03723: EVERY gate forces through to Nova, none excepted, regardless of vertexUnavailable
+    ✓ vertexUnavailable=undefined: Nova disabled, explicit request → forced onto Nova, never Vertex (1 ms)
+    ✓ vertexUnavailable=false: Nova disabled, explicit request → forced onto Nova, never Vertex (32 ms)
+    ✓ vertexUnavailable=true: Nova disabled, explicit request → forced onto Nova, never Vertex
+    ✓ vertexUnavailable=undefined: Nova disabled, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ vertexUnavailable=false: Nova disabled, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ vertexUnavailable=true: Nova disabled, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ Nova disabled, language a cascade already covers, vertexUnavailable=true: routes to the cascade, not a blind forced Nova
+    ✓ vertexUnavailable=undefined: Nova disabled, no nova context at all → forced onto Nova blind, never Vertex (1 ms)
+    ✓ vertexUnavailable=false: Nova disabled, no nova context at all → forced onto Nova blind, never Vertex
+    ✓ vertexUnavailable=true: Nova disabled, no nova context at all → forced onto Nova blind, never Vertex (1 ms)
+    ✓ vertexUnavailable=undefined: identity not allowlisted, explicit request → forced onto Nova — a dead Vertex outranks canary policy (1 ms)
+    ✓ vertexUnavailable=false: identity not allowlisted, explicit request → forced onto Nova — a dead Vertex outranks canary policy (1 ms)
+    ✓ vertexUnavailable=true: identity not allowlisted, explicit request → forced onto Nova — a dead Vertex outranks canary policy
+    ✓ vertexUnavailable=undefined: identity not allowlisted, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ vertexUnavailable=false: identity not allowlisted, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ vertexUnavailable=true: identity not allowlisted, default (no-request) path → forced onto Nova, never falls through to Vertex
+    ✓ vertexUnavailable=undefined: all gates pass normally → happy-path reason is unaffected (1 ms)
+    ✓ vertexUnavailable=false: all gates pass normally → happy-path reason is unaffected
+    ✓ vertexUnavailable=true: all gates pass normally → happy-path reason is unaffected
+    ✓ vertexUnavailable=undefined: ORB_LIVE_PROVIDER=vertex — the former emergency-rollback escape hatch — is ALSO forced off Vertex now (1 ms)
+    ✓ vertexUnavailable=false: ORB_LIVE_PROVIDER=vertex — the former emergency-rollback escape hatch — is ALSO forced off Vertex now (1 ms)
+    ✓ vertexUnavailable=true: ORB_LIVE_PROVIDER=vertex — the former emergency-rollback escape hatch — is ALSO forced off Vertex now
+
+Test Suites: 5 passed, 5 total
+Tests:       99 passed, 99 total
+Snapshots:   0 total
+Time:        21.066 s
+Ran all test suites matching /upstream-provider-selector|vertex-unavailable-forces-nova|nova-global-promotion|cascaded-voice|nova-sonic-test-runner/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

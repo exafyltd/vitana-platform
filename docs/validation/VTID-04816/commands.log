@@ -1,0 +1,8 @@
+# VTID-04816 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_OPERATOR_ROUTE_MODE "04816 A10"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04816 test/vtid-04465-operator-pipeline-regression test/vtid-04560-role-separation-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-a10.txt
+npx jest $(grep -rlE "routes/operator" test)                            # operator route suites (outputs/jest-operator-route.txt)
+# Evidence: the operator tool catalog is ~60 tools (executeTool in gemini-operator.ts), all sent on every turn.
+npx jest (full gateway suite, merged with origin/main 8bd85d7)          # 1455 suites, 23331 passed, 0 failed (outputs/jest-full.txt)

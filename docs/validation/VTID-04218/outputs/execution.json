@@ -1,0 +1,7 @@
+{
+  "vtid": "VTID-04218",
+  "title": "Dev Autopilot pipeline resilience: record before merge; stamp merge_sha on reconcile",
+  "executor": "claude-code-session",
+  "incident": "2026-09-21 12:03-13:16 UTC Aurora write-freeze: 11 PRs merged on GitHub with no state recorded; 11 rows reconciled to deploying without merge_sha",
+  "checks": { "tsc": "clean", "jest_new_suite": "11/11", "jest_sibling_suites": "80/80" }
+}

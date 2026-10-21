@@ -1,0 +1,11 @@
+    ✕ 1. dispatches by name and delegates with the caller, tenant and skipReplenish (69 ms)
+    ✕ 2. already-activated is idempotent (1 ms)
+    ✕ 3. canonical 403 "Recommendation belongs to another user" → recommendation_belongs_to_another_user (3 ms)
+    ✕ 3. canonical 403 "Not a community recommendation" → not_a_community_recommendation (1 ms)
+    ✕ 3. canonical 404 "Recommendation not found" → recommendation_not_found (1 ms)
+    ✕ 3. canonical 400 "Cannot activate recommendation in status: rejected" → recommendation_not_activatable:rejected (1 ms)
+    ✕ 3. canonical 401 "Authentication required" → not_signed_in (1 ms)
+    ✕ 6. empty id resolves the pending offer and consumes it only after success (1 ms)
+    ✕ AC-1: both tools are on the shared registry (every transport) (2 ms)
+    ✕ policy: activation of the member's own item is a self commit (voice may confirm it) (4 ms)
+Tests:       10 failed, 9 passed, 19 total

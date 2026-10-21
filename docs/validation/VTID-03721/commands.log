@@ -1,0 +1,111 @@
+# VTID-03721 — commands actually run.
+
+# --- Why this exists -------------------------------------------------------
+
+# Searched for ANY endpoint reporting cascade state. There is none:
+grep -rn "cascaded" services/gateway/src/routes/*.ts | grep -E "router\.(get|post)"
+#   -> (no output)
+
+# Session telemetry names no upstream provider either. Full event trail for a
+# real pl staging session (read-only Supabase):
+#   orb.session.identity.resolved -> env staging
+#   vtid.live.session.start       -> lang pl, voice "Despina"
+#   orb.live.diag                 -> greeting_sent / model_start_speaking /
+#                                    turn_complete / upstream_closed
+#   NO provider field anywhere.
+#
+# And nova_voice, added for exactly this, never lands:
+#   SELECT count(*) FILTER (WHERE metadata ? 'nova_voice') ... -> 0 of 90 in 24h
+#   (task #35: VTID-03704 wired it to routes/orb-live.ts:16518, but the emit
+#   that fires is live-session-controller.ts:2001)
+
+# So "is the cascade on?" required AWS console access. I answered it wrong
+# more than once by inferring from merged code instead.
+
+# --- Import-cycle check BEFORE writing --------------------------------------
+
+grep -n "^import" services/gateway/src/orb/live/upstream/cascaded-config.ts
+#   -> cascaded-config imports nova-sonic-config
+grep -c "cascaded-config" services/gateway/src/orb/live/upstream/nova-sonic-config.ts
+#   -> 0   (reverse import does NOT exist)
+grep -c "cascaded-config" services/gateway/src/orb/live/config.ts
+#   -> 0   (SUPPORTED_LIVE_LANGUAGES is safe to import)
+#
+# => buildCascadeHealthPayload belongs in cascaded-config.ts. Putting it in
+#    nova-sonic-config.ts would have created a cycle.
+
+# --- Fix + verification -----------------------------------------------------
+
+cd services/gateway
+
+npx jest test/orb/live/upstream/cascade-health-payload.test.ts
+#   -> FIRST RUN: 1 failed / 15 passed.
+#      My own test listed ' true ' as OFF while a sibling test asserted the
+#      trim makes it ON. isCascadeEnabled() trims, so the CODE was right and
+#      the test list was wrong. Corrected the list, kept the trim test.
+#   -> 16/16                                  (outputs/targeted-tests.txt)
+
+npx jest test/orb/
+#   -> 1755 passing, 6 pre-existing todo      (outputs/orb-suite.txt)
+
+npx tsc --noEmit
+#   -> clean, exit 0                          (outputs/tsc.txt, empty)
+
+# --- What this makes possible -----------------------------------------------
+
+# After deploy, one curl replaces every inference in this whole chain:
+#   curl -s .../api/v1/orb/nova-sonic/health | jq .cascade
+#     { "enabled": …, "vertex_live_unavailable": …, "effective": …,
+#       "transcribe_region": …, "languages": { "pl": "cascade:pl-PL", … } }
+
+# --- NOT done, and why ------------------------------------------------------
+
+which aws
+#   -> aws: command not found
+# The endpoint is the workaround for that, not a replacement for it: it reports
+# what the RUNNING CONTAINER sees, which is the question that actually matters
+# and the one the task definition alone cannot answer.
+
+# --- CI follow-up: the impact scan blocked, and the RULE was the problem -----
+
+# `scan` failed with:
+#   blocker · conversation-flow-change-needs-test · services/gateway/src/routes/orb-livekit.ts
+#   "changes conversation-flow code but adds/updates no conversation-flow test"
+#
+# I HAD added tests. Checked the rule's own regex rather than assuming:
+node -e "const RE=/^services\/gateway\/test\/.*(conversation|...|tool).*\.(test|spec)\.(ts|tsx)$/i; ..."
+#   -> false  services/gateway/test/routes/orb-livekit.test.ts
+#   -> false  services/gateway/test/orb/live/upstream/cascade-health-payload.test.ts
+#
+# The rule lists routes/orb-live.ts and routes/orb-livekit.ts as flow SOURCE but
+# its FLOW_TEST_RE matched none of the keywords in those routes' OWN canonical
+# test files. So it flagged a source file and then refused to accept a real test
+# of that same file, in the place it is already tested.
+#
+# Two dishonest ways out were available and both rejected:
+#   - rename a test file until it hits a keyword
+#   - claim `flow-test-exempt` (documented for "comment / log / rename") for a
+#     change that alters an HTTP response body — not behaviour-free
+# Both launder a guess into a green check (VTID-03696's own conclusion).
+
+# Fix: added `orb-live` to FLOW_TEST_RE (covers orb-livekit by substring).
+# Confirmed the gate did NOT become a rubber stamp:
+#   accepts test/routes/orb-livekit.test.ts        -> true
+#   accepts test/routes/orb-live.test.ts           -> true
+#   accepts test/orb/conversation-flow.contract    -> true   (unchanged)
+#   rejects test/routes/wallet.test.ts             -> false  (still discriminates)
+#   rejects services/gateway/src/routes/orb-livekit.ts -> false
+
+# Verified editing an EXISTING rule does not trip new-impact-rule-needs-seed-migration
+# (that fires on status === 'A').
+
+# 4 supertest cases added to test/routes/orb-livekit.test.ts hitting the REAL
+# route, incl. the enabled-but-not-effective state and a leak check.  -> 89/89
+
+# 6 tests pinning the rule's satisfiability, reading FLOW_TEST_RE out of the
+# rule source so they cannot drift from what CI runs. Mutation-verified:
+#   removing `|orb-live` -> 3 failed / 3 passed; restored -> 6/6
+
+npx tsc --noEmit                                          # clean
+npx jest test/orb/ test/routes/orb-livekit.test.ts test/scripts/
+#   -> 1906 passing, 6 pre-existing todo

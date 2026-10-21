@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04063",
+  "execution_id": "81d3ad42-2ee4-4bb5-add6-be86b917a85d",
+  "finding_id": "5741765e-417f-4228-9e4a-d4f7bdf0dbaf",
+  "plan_version": 1,
+  "branch": "dev-autopilot/81d3ad42",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/t1d-dead-functions-removed.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-18T12:27:31.628Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

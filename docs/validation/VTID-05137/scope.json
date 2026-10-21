@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05137",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/chat-push-coalescer.ts",
+    "services/gateway/src/services/notification-service.ts",
+    "services/gateway/src/routes/chat.ts",
+    "services/gateway/src/routes/chat-groups.ts",
+    "services/gateway/src/routes/chat-groups-repository.ts",
+    "services/gateway/test/routes/chat-groups-repository.test.ts",
+    "services/gateway/src/services/orb-tools-shared.ts",
+    "services/gateway/src/services/orb-tools/messaging-depth-tools.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/test/vtid-05137-chat-push-coalescing.test.ts",
+    "supabase/migrations/20261013180000_vtid_05137_chat_push_coalescing.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05137/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

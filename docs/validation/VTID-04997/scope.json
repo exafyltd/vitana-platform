@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04997",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261010100000_vtid_04997_test_results_in_calendar.sql",
+    "scripts/ci/sql-tests/*test-results-in-calendar*",
+    ".github/workflows/SQL-TEST-RESULTS-IN-CALENDAR.yml",
+    "services/gateway/src/types/calendar.ts",
+    "services/gateway/src/services/calendar-service.ts",
+    "services/gateway/test/vtid-04997-*.test.ts",
+    "services/gateway/test/vtid-04994-subscription-dates-in-calendar-migration.test.ts",
+    "services/gateway/test/vtid-04995-calendar-conflicts.test.ts",
+    "services/gateway/test/vtid-04996-calendar-find-a-time.test.ts",
+    "services/gateway/test/calendar/__golden__/calendar-logic.json",
+    "services/gateway/test/calendar/manifest.json",
+    "services/gateway/package.json",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04997/**"
+  ],
+  "weakens_tests": [
+    "services/gateway/test/vtid-04994-subscription-dates-in-calendar-migration.test.ts: the source-type check now asserts only this migration's own type; completeness against the gateway list stays pinned by vtid-04331 (same change VTID-04994 made to the 04978 pin)"
+  ],
+  "red_green_exempt": []
+}

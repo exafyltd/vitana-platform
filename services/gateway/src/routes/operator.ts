@@ -1,0 +1,3312 @@
+/**
+ * Operator Routes - VTID-0509 + VTID-0510 + VTID-0525 + VTID-0531 + VTID-0532 + VTID-0536 + VTID-01018
+ *
+ * VTID-0509: Operator Console API (chat, heartbeat, history, upload, session)
+ * VTID-0510: Software Version Tracking (deployments)
+ * VTID-0525: Operator Command Hub (NL -> Schema -> Deploy Orchestrator)
+ * VTID-0531: Operator Chat → OASIS Integration & Thread/VTID Hardening
+ * VTID-0532: Operator Task Extractor + VTID/Planner Handoff
+ * VTID-0536: Gemini Operator Tools Bridge (autopilot.create_task, get_status, list_recent_tasks)
+ * VTID-01018: Operator → OASIS Reliability (Hard Contract Lock)
+ *             - Mandatory operator.action.started/completed/failed lifecycle
+ *             - Canonical payload validation with hard rejection
+ *             - Atomicity: started must persist before terminal event
+ *             - Failure enforcement: OASIS write failure = action failure
+ *
+ * Final API endpoints (after mounting at /api/v1/operator):
+ * - POST /api/v1/operator/chat - Operator chat with AI (+ task extraction VTID-0532 + tools VTID-0536)
+ * - GET  /api/v1/operator/chat/:threadId - Get chat thread history (VTID-0531)
+ * - POST /api/v1/operator/command - Natural language command (VTID-0525)
+ * - POST /api/v1/operator/deploy - Deploy orchestrator (VTID-0525)
+ * - GET  /api/v1/operator/health - Health check
+ * - GET  /api/v1/operator/heartbeat - Heartbeat snapshot
+ * - GET  /api/v1/operator/history - Operator history
+ * - POST /api/v1/operator/heartbeat/session - Start/stop heartbeat
+ * - POST /api/v1/operator/upload - File upload
+ * - GET  /api/v1/operator/deployments - Deployment history (VTID-0510)
+ * - POST /api/v1/operator/deployments - Record deployment (VTID-0510)
+ * - GET  /api/v1/operator/deployments/health - Deployments health (VTID-0510)
+ */
+
+import { Router, Request, Response, NextFunction } from 'express';
+import { z } from 'zod';
+import { randomUUID } from 'crypto';
+import { processMessage } from '../services/ai-orchestrator';
+import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
+// VTID-0536: Gemini Operator Tools Bridge
+import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
+import { ensureOperatorThread, getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel, type KiroHistoryMessage } from '../services/kiro/kiro-turn';
+import { getSupabase, supa } from '../services/dev-autopilot-execute'; // VTID-05060
+import { answerPermission } from '../services/kiro/permission-broker';
+import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
+import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
+import { kiroRepoReadiness } from '../services/kiro/kiro-repo-readiness';
+import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state';
+
+// VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
+registerKiroBackendFromEnv();
+import type { KiroTurnEvent, KiroTurnEventSink } from '../services/kiro/kiro-events';
+import { startKiroRun, setKiroRunExecutor, answerPersistedPermission, LEGACY_KIRO_FRAME_TYPES, type KiroRunExecutorInput } from '../services/kiro/kiro-runs';
+// VTID-05067: images pasted into the console (operator_media + private bucket operator-media).
+import { getOperatorMedia, readOperatorMediaBase64, loadOperatorMediaForUser, OPERATOR_MEDIA_LIMITS } from '../services/operator-media';
+import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
+import { writeDevMemory } from '../services/dev-agent-memory';
+// VTID-03851: verified-caller marker for autopilot_execute_task (set or
+// cleared on EVERY /chat request — threadId is client-supplied).
+import { setThreadAuth, clearThreadAuth } from '../services/operator-execute-authz';
+// VTID-04172: catches a real, observed failure mode — the model narrates a
+// tool call as fenced JSON instead of actually invoking it — and retries
+// once with a stronger instruction rather than silently returning the
+// hallucinated call as if it were real.
+import { detectSimulatedToolCallReply } from '../services/operator-simulated-tool-call-detector';
+import {
+  ingestOperatorEvent,
+  getTasksSummary,
+  getRecentEvents,
+  getCicdHealth,
+  getOperatorHistory,
+  ingestChatMessageEvent,
+  validateVtidExists,
+  getChatThreadHistory,
+  createOperatorTask,
+  CreatedTask
+} from '../services/operator-service';
+// VTID-01149: Unified Task-Creation Intake
+import {
+  detectTaskCreationIntent,
+  hasActiveIntake,
+  getIntakeState,
+  startIntake,
+  processIntakeAnswer,
+  getNextQuestion,
+  completeIntakeAndSchedule,
+  looksLikeAnswer,
+  generateIntakeStartMessage,
+  INTAKE_QUESTIONS
+} from '../services/task-intake-service';
+import { OperatorChatMessageSchema, OperatorChatRole, OperatorChatMode } from '../types/operator-chat';
+import { getDeploymentHistory, getNextSWV, insertSoftwareVersion, SoftwareVersion } from '../lib/versioning';
+// Phase 0 staging build (P0.4): VTID allocator + Cloud Run Admin + admin auth.
+import { allocateVtid } from '../services/operator-service';
+import { describeService, listRevisions, updateTrafficToRevision, shortRevisionName } from '../services/cloud-run-admin';
+import {
+  describeAwsStagingGateway,
+  describeAwsProdGateway,
+  toRevisionRow,
+} from '../services/aws-gateway-admin';
+// Note: deployOrchestrator + emitOasisEvent are imported mid-file (lines ~590).
+import { requireAdminAuth, optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import {
+  OPERATOR_MACHINE_AUTH_HEADER,
+  resolveOperatorMachineIdentity,
+} from '../services/operator-machine-auth';
+// VTID-0525-B: naturalLanguageService disabled for MVP - using simple command matching
+// import { naturalLanguageService } from '../services/natural-language-service';
+import {
+  OperatorCommandRequestSchema,
+  OperatorDeployRequestSchema,
+  OperatorCommandResponse,
+  OperatorDeployResponse,
+  // VTID-0525-B: Schemas unused in MVP
+  // ALLOWED_COMMAND_SERVICES,
+} from '../types/operator-command';
+import cicdEvents from '../services/oasis-event-service';
+// VTID-01018: Hard contract enforcement for operator actions
+import { executeWithOasisContract, OperatorActionContext } from '../services/operator-action-contract';
+import { OperatorActionResult, OasisWriteFailedError } from '../types/cicd';
+
+const router = Router();
+
+/**
+ * VTID-04133 — resolves the machine credential ONLY when optionalAuth found
+ * no real identity, so a human JWT always wins and this can never override
+ * one. A wrong/absent machine token is a silent no-op (req.identity stays
+ * whatever optionalAuth left it), matching optionalAuth's own "never reject"
+ * contract — the actual refusal still happens downstream in
+ * isExecuteTaskAuthorized(), same as an anonymous browser request today.
+ */
+function operatorMachineAuth(req: Request, _res: Response, next: NextFunction): void {
+  const authedReq = req as AuthenticatedRequest;
+  if (!authedReq.identity) {
+    const machineIdentity = resolveOperatorMachineIdentity(req.headers[OPERATOR_MACHINE_AUTH_HEADER]);
+    if (machineIdentity) {
+      authedReq.identity = machineIdentity as unknown as AuthenticatedRequest['identity'];
+    }
+  }
+  next();
+}
+
+// VTID-01018: Helper to extract operator ID from request (default to 'system' for now)
+function getOperatorId(req: Request): string {
+  // TODO: Extract from auth headers when authentication is implemented
+  return (req.headers['x-operator-id'] as string) || 'system';
+}
+
+// VTID-01018: Helper to extract operator role from request
+function getOperatorRole(req: Request): 'operator' | 'admin' | 'system' {
+  const role = req.headers['x-operator-role'] as string;
+  if (role === 'admin' || role === 'operator') return role;
+  return 'system';
+}
+
+// VTID-03928: tool names whose SUCCESSFUL result represents a real decision
+// or outcome worth remembering across sessions — not every tool call (a
+// codebase search or a status read is not a decision), and not a failed
+// call (nothing to remember from an attempt that didn't happen).
+const SIGNIFICANT_OUTCOME_TOOLS = new Set([
+  'dev_merge_pr',
+  'dev_deploy_service',
+  'dev_approve_spec',
+  'dev_approve_item',
+  'autopilot_create_task',
+]);
+
+// VTID-03928: dev_agent_memory's recall (VTID-03892) already runs correctly
+// on every Operator turn, including a brand-new thread's first message —
+// that IS the "understand relevance, don't read everything" mechanism the
+// platform owner asked for, and it already works (verified against staging,
+// VTID-03926). The actual gap: writeDevMemory() was never called anywhere
+// in the live Operator path, so every one of the 26 existing rows is a
+// one-time changelog backfill — nothing was feeding it as real work
+// happened. This closes that gap: after a real outcome (a task created, a
+// PR merged, a spec approved, a service deployed), auto-write a compact
+// summary so the NEXT session's recall actually has real history to find,
+// not just a historical snapshot. Fire-and-forget and fail-open, matching
+// recallDevMemory's own convention — a memory-write failure must never
+// block or fail the user-facing chat response.
+async function recordSessionOutcomeMemory(params: {
+  threadId: string;
+  vtid?: string;
+  toolResults?: Array<{ name: string; response: Record<string, unknown> }>;
+  finalCreatedTask?: CreatedTask;
+}): Promise<void> {
+  try {
+    const { threadId, vtid, toolResults, finalCreatedTask } = params;
+    const entries: Array<{ title: string; content: string; vtid?: string }> = [];
+
+    if (finalCreatedTask && !finalCreatedTask.duplicate) {
+      entries.push({
+        title: `Operator created task ${finalCreatedTask.vtid}: ${finalCreatedTask.title}`,
+        content: `Created via Operator Console thread ${threadId} (mode: ${finalCreatedTask.mode}).`,
+        vtid: finalCreatedTask.vtid,
+      });
+    }
+
+    for (const tr of toolResults || []) {
+      if (!SIGNIFICANT_OUTCOME_TOOLS.has(tr.name) || tr.response?.ok !== true) continue;
+      const r = tr.response;
+      const outcomeVtid = (typeof r.vtid === 'string' ? r.vtid : undefined) || vtid;
+      entries.push({
+        title: `Operator ran ${tr.name}${outcomeVtid ? ` for ${outcomeVtid}` : ''}`,
+        content: `Thread ${threadId} — ${tr.name} succeeded. Result: ${JSON.stringify(r).slice(0, 500)}`,
+        vtid: outcomeVtid,
+      });
+    }
+
+    for (const entry of entries) {
+      const written = await writeDevMemory({
+        repo: 'vitana-platform',
+        category: 'task_outcome',
+        title: entry.title.slice(0, 200),
+        content: entry.content,
+        vtid: entry.vtid,
+        importance: 50,
+        source: 'session',
+        tags: ['operator-console', 'auto-recorded'],
+      });
+      if (!written.ok) {
+        console.warn(`[VTID-03928] writeDevMemory failed, continuing: ${written.error}`);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[VTID-03928] recordSessionOutcomeMemory threw, continuing: ${err?.message}`);
+  }
+}
+
+// ==================== VTID-0509 Schemas ====================
+
+// VTID-0531: Use extended schema from types/operator-chat.ts (OperatorChatMessageSchema)
+// which adds threadId, vtid, role, mode, metadata to the original ChatMessageSchema
+
+const HeartbeatSessionSchema = z.object({
+  status: z.enum(['live', 'standby'])
+});
+
+const FileUploadSchema = z.object({
+  name: z.string().min(1, "File name is required"),
+  kind: z.enum(['image', 'video', 'file']),
+  content_type: z.string().optional(),
+  data: z.string().optional() // Base64 encoded data (optional for stub)
+});
+
+// ==================== VTID-0509 Routes ====================
+// Routes defined WITHOUT /operator prefix since router is mounted at /api/v1/operator
+
+/**
+ * POST /chat → /api/v1/operator/chat
+ * VTID-0531: Extended with threadId, vtid, role, mode support and unified OASIS event logging
+ * VTID-0532: Added task detection and automatic VTID/Task creation
+ */
+// VTID-03851: optionalAuth verifies a bearer token when one is present and
+// attaches req.identity; it never rejects, so the chat route's existing
+// anonymous behaviour is unchanged — only autopilot_execute_task reads the
+// resulting marker and refuses without a verified exafy_admin.
+/**
+ * VTID-04028: the operator chat turn, shared by POST /chat (one JSON reply)
+ * and POST /chat/stream (the same turn as Server-Sent Events with a live
+ * tool-call transcript). Returns the HTTP status + body /chat has always
+ * sent; the stream route wraps that body in its final `reply` frame so a
+ * client can consume either endpoint with one result shape.
+ */
+interface OperatorChatTurnOutcome {
+  status: number;
+  body: Record<string, unknown>;
+}
+
+/** VTID-05060: the newest operator.kiro.model_selected pick by this user for this thread, or null. */
+export async function latestKiroModelPick(threadId: string, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const s = getSupabase();
+  if (!s) return null;
+  const q = `/rest/v1/oasis_events?type=eq.operator.kiro.model_selected&actor_id=eq.${encodeURIComponent(userId)}`
+    + `&payload->>thread_id=eq.${encodeURIComponent(threadId)}&select=payload&order=created_at.desc&limit=1`;
+  const r = await supa<Array<{ payload?: { model_id?: unknown } }>>(s, q);
+  const id = r.ok && r.data && r.data[0] ? r.data[0].payload?.model_id : null;
+  return typeof id === 'string' && id ? id : null;
+}
+
+/**
+ * VTID-04975: one operator chat turn answered by Kiro. Same reply shape as the
+ * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
+ * conversation lives in the Kiro session) and the reply is logged to OASIS.
+ * The user's message was already logged by the caller.
+ *
+ * VTID-05065: the turn now runs as a server-side RUN (services/kiro/kiro-runs.ts):
+ * this starts one (or queues it behind the thread's current run) and waits for it,
+ * forwarding the run's events as the same frames the console has always received.
+ * The reply body is the one executeKiroChatTurn returns, unchanged. A client that
+ * disconnects stops the frames, not the run.
+ */
+async function runKiroChatTurn(a: {
+  requestId: string; threadId: string; createdAt: string; message: string;
+  attachments: Array<{ oasis_ref: string; kind: string }>; mode: string;
+  media?: Array<{ media_id: string; mime_type: string }>;
+  conversation_id?: string; validatedVtid: string | undefined; userId: string | null;
+  isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
+}): Promise<OperatorChatTurnOutcome> {
+  if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
+  const emit = a.emit;
+  const started = await startKiroRun({
+    threadId: a.threadId,
+    userId: a.userId,
+    message: a.message,
+    turn: { requestId: a.requestId, createdAt: a.createdAt, attachments: a.attachments, media: a.media, mode: a.mode, conversation_id: a.conversation_id, validatedVtid: a.validatedVtid, channel: a.channel },
+    // Only the frame types the console has always received; run.status and answers are run-route only.
+    listener: emit ? (ev) => { if (LEGACY_KIRO_FRAME_TYPES.has(ev.type)) emit({ type: ev.type, ...ev.payload } as KiroTurnEvent); } : undefined,
+  });
+  if (!started.ok) return { status: started.error === 'queue_full' ? 409 : 503, body: { ok: false, error: started.error } };
+  return started.done;
+}
+
+/**
+ * VTID-05065: the Kiro chat turn itself (formerly the body of runKiroChatTurn), run by
+ * kiro-runs.ts for every run — the old /chat path and the run routes share it.
+ */
+async function executeKiroChatTurn(a: KiroRunExecutorInput): Promise<OperatorChatTurnOutcome> {
+  // VTID-05018: if Kiro has to open a new session for this thread, it gets the thread's earlier
+  // turns (this user's thread only; the current message is recorded after the turn).
+  const loadHistory = async (): Promise<KiroHistoryMessage[]> => {
+    const r = await listOperatorThreadMessages(a.threadId, { userId: a.userId, limit: 60 });
+    if (!r.ok) return [];
+    return r.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => {
+        // VTID-05064: how an assistant turn ended and whether it left unpushed edits.
+        const meta = (m.meta ?? {}) as Record<string, unknown>;
+        const stop = typeof meta.stop_reason === 'string' ? meta.stop_reason : null;
+        const dirty = Array.isArray(meta.kiro_workspace_dirty) ? (meta.kiro_workspace_dirty as unknown[]).filter((x): x is string => typeof x === 'string') : null;
+        return { role: m.role as 'user' | 'assistant', content: String(m.content ?? ''), ...(stop ? { stopReason: stop } : {}), ...(dirty ? { workspaceDirty: dirty } : {}) };
+      });
+  };
+  // VTID-05060: the developer's own last pick in Kiro's drop-down for this thread, from the
+  // operator.kiro.model_selected event the model route already records (owner's own, newest).
+  const loadModelPick = (): Promise<string | null> => latestKiroModelPick(a.threadId, a.userId);
+  // VTID-05067: the run's images, read from storage only if Kiro accepts image input.
+  const media = a.media ?? [];
+  const loadImages = async () => {
+    const out: Array<{ mimeType: string; data: string }> = [];
+    for (const m of media) {
+      const row = await getOperatorMedia(m.media_id);
+      const img = row && row.user_id === a.userId ? await readOperatorMediaBase64(row) : null;
+      if (img) out.push(img);
+    }
+    return out;
+  };
+  // VTID-05068: onReattach / resume let a run survive a gateway deploy (kiro-runs.ts).
+  const result = await runKiroTurn({ onReattach: a.onReattach, resume: a.resume, threadId: a.threadId, userId: a.userId, message: a.message, imageCount: media.length, loadImages, emit: a.emit, loadHistory, loadModelPick });
+  // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
+  if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
+    await emitOasisEvent({
+      vtid: 'VTID-05003',
+      type: 'operator.kiro.credits_exhausted',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: 'Kiro credits used up for this user; new Operator threads default to the Operator',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId, source: result.meta.credit_source ?? null },
+    }).catch(() => {});
+  }
+
+  // VTID-05064: the thread's parked workspace came back, or its unpushed edits are gone.
+  if (result.meta.kiro_workspace === 'restored' || result.meta.kiro_workspace === 'lost') {
+    const lost = result.meta.kiro_workspace === 'lost';
+    await emitOasisEvent({
+      vtid: 'VTID-05064',
+      type: lost ? 'operator.kiro.parked_workspace_lost' : 'operator.kiro.workspace_restored',
+      source: 'gateway-operator',
+      status: lost ? 'warning' : 'info',
+      message: lost ? 'Unpushed Kiro edits of this thread were lost (runner restarted or retention expired)' : 'Kiro reopened this thread\'s workspace with its unpushed edits',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId },
+    }).catch(() => {});
+  }
+
+  if (isOperatorThreadsEnabled()) {
+    recordOperatorTurn({
+      threadId: a.threadId,
+      identity: { user_id: a.userId, role: 'admin' },
+      userText: a.message,
+      reply: result.reply,
+      tools: result.toolResults.map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+      engine: 'kiro',
+      meta: {
+        conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null,
+        // VTID-05064: kept so a later session can tell a cut-off reply and lost unpushed edits.
+        ...(result.meta.stop_reason ? { stop_reason: result.meta.stop_reason } : {}),
+        ...(result.meta.kiro_workspace ? { kiro_workspace: result.meta.kiro_workspace } : {}),
+        ...(Array.isArray(result.meta.kiro_workspace_dirty) ? { kiro_workspace_dirty: result.meta.kiro_workspace_dirty } : {}),
+        ...(a.channel ? { channel: a.channel } : {}),
+      },
+    }).catch((err) => console.warn('[VTID-04975] kiro thread record failed:', err instanceof Error ? err.message : err));
+  }
+
+  const assistantEvent = await ingestChatMessageEvent({
+    threadId: a.threadId,
+    vtid: a.validatedVtid,
+    role: 'assistant',
+    mode: a.mode as OperatorChatMode,
+    message: result.reply,
+    metadata: { request_id: a.requestId, ...result.meta, ...(result.toolResults.length ? { toolCalls: result.toolResults.map((tr) => tr.name) } : {}) },
+  });
+
+  return {
+    status: 200,
+    body: {
+      ok: true,
+      reply: result.reply,
+      attachments: a.attachments,
+      oasis_ref: `OASIS-CHAT-${a.requestId.slice(0, 8).toUpperCase()}`,
+      meta: result.meta,
+      threadId: a.threadId,
+      messageId: assistantEvent.eventId || randomUUID(),
+      createdAt: a.createdAt,
+      ...(result.toolResults.length ? { toolResults: result.toolResults } : {}),
+    },
+  };
+}
+
+// VTID-05065: every Kiro run executes the one chat-turn implementation above.
+setKiroRunExecutor(executeKiroChatTurn);
+
+export async function runOperatorChatTurn(
+  req: Request,
+  // VTID-04310: `channel` tags the recorded thread messages (e.g.
+  // 'voice_delegate' when the Command Hub voice assistant hands a request
+  // to the Operator) so the console can show where the turn came from.
+  opts: { onEvent?: OperatorTurnEventSink; threadId?: string; channel?: string } = {},
+): Promise<OperatorChatTurnOutcome> {
+  const requestId = randomUUID();
+  console.log(`[Operator Chat] Request ${requestId} started`);
+
+  try {
+    // VTID-0531: Use extended schema with threadId, vtid, role, mode
+    const validation = OperatorChatMessageSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.warn(`[Operator Chat] Validation failed:`, validation.error.errors);
+      return {
+        status: 400,
+        body: {
+          ok: false,
+          error: 'Validation failed',
+          details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+        },
+      };
+    }
+
+    const { message, attachments, role, mode, metadata, conversation_id, context } = validation.data;
+
+    // VTID-0531: Normalize threadId - generate if missing
+    // VTID-04028: the stream route pre-computes it so its `turn.started`
+    // frame can carry the same id the turn is recorded under.
+    const threadId = opts.threadId || validation.data.threadId || randomUUID();
+    const createdAt = new Date().toISOString();
+
+    // VTID-03851: record what THIS request proved about its caller. The
+    // threadId comes from the client, so an unauthenticated request must
+    // clear any marker a previous (admin) request left on the same thread.
+    // impact-allow-no-oasis: pre-existing handler — VTID-0531 already
+    // persists the user and assistant turns as OASIS chat events further
+    // down (assistantEventResult / oasis_ref). VTID-03851 only added
+    // optionalAuth on the registration line; no new state mutation here.
+    const callerIdentity = (req as AuthenticatedRequest).identity;
+    // VTID-05067: images attached by media id must be the caller's own, at most 4 per message.
+    const mediaIds = [...new Set(attachments.map((a) => a.media_id).filter((x): x is string => typeof x === 'string'))];
+    if (mediaIds.length > OPERATOR_MEDIA_LIMITS.maxPerMessage) {
+      return { status: 400, body: { ok: false, error: 'too_many_attachments', max: OPERATOR_MEDIA_LIMITS.maxPerMessage } };
+    }
+    const mediaRows = mediaIds.length > 0 ? await loadOperatorMediaForUser(mediaIds, callerIdentity?.user_id ?? null) : { ok: true as const, media: [] };
+    if (!mediaRows.ok) return { status: 400, body: { ok: false, error: mediaRows.error === 'too_many' ? 'too_many_attachments' : 'invalid_attachment' } };
+    if (callerIdentity?.user_id) {
+      setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
+    } else {
+      clearThreadAuth(threadId);
+    }
+
+    // VTID-0531: Validate VTID if provided (warn but don't fail)
+    let validatedVtid: string | undefined = validation.data.vtid;
+    if (validatedVtid) {
+      const vtidExists = await validateVtidExists(validatedVtid);
+      if (!vtidExists) {
+        console.warn(`[Operator Chat] VTID validation failed for ${validatedVtid}, continuing without VTID link`);
+        // Don't clear vtid - still include in payload but vtid column will be null
+      }
+    }
+
+    // =========================================================================
+    // VTID-01149: Unified Task-Creation Intake Mode
+    // Check for active intake session OR detect task creation intent
+    // Uses the same logic as ORB for consistency (Section 2)
+    // =========================================================================
+
+    const rawMessage = message ?? '';
+
+    // VTID-01149: Intake flow DISABLED — in-memory state lost on deploy/restart/scale.
+    // Task creation handled by Gemini autopilot_create_task tool or /task command.
+    // Re-enable with persistent storage (Redis/DB) for intake state.
+    /* INTAKE FLOW DISABLED
+    if (hasActiveIntake(threadId)) {
+      ... intake Q&A handling removed to fix tsc strict null errors ...
+      ... see git history for full implementation ...
+    }
+    END INTAKE FLOW */
+
+    // Check if this message indicates task creation intent and start intake
+    // Only if not already in intake mode
+    // Skip if explicit /task command (that goes through legacy flow for backwards compatibility)
+    const isSlashTask = rawMessage.trim().toLowerCase().startsWith('/task ');
+
+    // VTID-01149: Intake detection DISABLED — Gemini handles task creation via autopilot_create_task tool
+    // Re-enable with persistent storage (Redis/DB) for intake state.
+    /* INTAKE DETECTION DISABLED
+    if (!isSlashTask && !hasActiveIntake(threadId) && detectTaskCreationIntent(rawMessage)) {
+      ... intake start + first question removed to fix tsc strict null errors ...
+      ... see git history for full implementation ...
+    }
+    END INTAKE DETECTION */
+
+    // VTID-0532: Task detection logic (legacy path for /task command)
+    // A message is treated as a task request if:
+    // - mode === 'task', OR
+    // - message starts with '/task ' (case-insensitive, leading spaces allowed)
+    // Note: rawMessage and isSlashTask already defined above in VTID-01149 section
+    const isTaskRequest = mode === 'task' || isSlashTask;
+
+    // VTID-0532: Extract raw description for task
+    let rawDescription = '';
+    if (isTaskRequest) {
+      if (isSlashTask) {
+        // "/task Add a Governance History tab..." -> "Add a Governance History tab..."
+        rawDescription = rawMessage.trim().slice(5).trim();
+      } else {
+        // mode === 'task' and no /task prefix - use full message
+        rawDescription = rawMessage;
+      }
+    }
+
+    // VTID-0531: Log operator message with unified event type
+    const operatorEventResult = await ingestChatMessageEvent({
+      threadId,
+      vtid: validatedVtid,
+      role: role as OperatorChatRole,
+      mode: mode as OperatorChatMode,
+      message: message,
+      attachmentsCount: attachments.length,
+      metadata
+    });
+
+    const operatorMessageId = operatorEventResult.eventId || requestId;
+
+    // VTID-0532: Create VTID + Task if this is a task request
+    let createdTask: CreatedTask | undefined;
+    if (isTaskRequest) {
+      console.log(`[VTID-0532] Task request detected (mode=${mode}, isSlashTask=${isSlashTask})`);
+      createdTask = await createOperatorTask({
+        rawDescription,
+        sourceThreadId: threadId,
+        sourceMessageId: operatorMessageId
+      });
+
+      if (createdTask?.duplicate) {
+        console.log(`[VTID-03819] Similar task already exists: ${createdTask.vtid} - "${createdTask.title}" — no new task created`);
+      } else if (createdTask) {
+        console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      } else {
+        console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+      }
+    }
+
+    // VTID-0536: Use Gemini Operator Tools Bridge for AI processing
+    // This enables function calling for autopilot.create_task, get_status, and list_recent_tasks
+    // Falls back to local routing if Gemini API is not configured
+    // VTID-01027: Pass conversation history for session memory
+    console.log(`[VTID-01027] Processing with conversation_id: ${conversation_id}, context messages: ${context?.length || 0}`);
+    // VTID-03926: processWithGemini()/getRouterToolDefinitions() have accepted
+    // a userRole param since VTID-DEV-ASSIST specifically to gate every
+    // dev_* tool (dev_search_codebase, dev_read_file, dev_db_query, PR/deploy
+    // tools) to developer/admin callers — but this route never resolved or
+    // passed one, so getRouterToolDefinitions(undefined) filtered out every
+    // dev_* tool for every caller, including an authenticated exafy_admin
+    // session. callerIdentity is already resolved above (line ~164) from the
+    // verified JWT (optionalAuth), not a client-supplied header — mirror that
+    // trust level here rather than the spoofable x-operator-role header
+    // getOperatorRole() reads elsewhere in this file.
+    const geminiUserRole = callerIdentity?.exafy_admin === true ? 'admin' : undefined;
+    // VTID-04975: an existing thread keeps the engine it was created with; the
+    // request's `engine` only picks it for a NEW thread. A Kiro thread leaves
+    // here — everything below is the unchanged LLM path.
+    const threadEngine = (await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm';
+    // VTID-05064: the thread exists server-side from the moment the message is sent, so a
+    // reload while the first turn runs still lists it. Awaited (one upsert) so the row is there
+    // before the turn; never throws.
+    if (isOperatorThreadsEnabled()) {
+      await ensureOperatorThread({ threadId, identity: { user_id: callerIdentity?.user_id || null, role: geminiUserRole || null }, userText: message, engine: threadEngine === 'kiro' ? 'kiro' : undefined });
+    }
+    if (threadEngine === 'kiro') {
+      return runKiroChatTurn({
+        requestId, threadId, createdAt, message, attachments, mode, conversation_id,
+        media: mediaRows.media.map((m) => ({ media_id: m.id, mime_type: m.mime_type })),
+        validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',
+        channel: opts.channel,
+        // Kiro events are additive frame types; the stream route writes `type` as the frame name.
+        emit: opts.onEvent as unknown as KiroTurnEventSink | undefined,
+      });
+    }
+    // VTID-04022: server-side thread summary feeds the memory recall. Fail-open
+    // — a missing table / Supabase error yields null and the turn proceeds
+    // exactly as before.
+    const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
+    // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
+    const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
+    // VTID-05067: the pasted images go to the model as image blocks (the router's `images`, VTID-03496).
+    const turnImages: Array<{ mimeType: string; base64: string }> = [];
+    for (const m of mediaRows.media) {
+      const img = await readOperatorMediaBase64(m);
+      if (img) turnImages.push({ mimeType: img.mimeType, base64: img.data });
+    }
+    let geminiResult = await processWithGemini({
+      images: turnImages.length > 0 ? turnImages : undefined,
+      text: message,
+      threadId,
+      attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
+      context: {
+        vtid: validatedVtid || 'VTID-0536',
+        request_id: requestId,
+        mode: mode
+      },
+      // VTID-01027: Conversation history for context
+      conversationHistory: context || [],
+      conversationId: conversation_id,
+      // VTID-03926: authorize dev_* tools for a verified exafy_admin caller
+      userRole: geminiUserRole,
+      // VTID-04022
+      threadSummary,
+      // VTID-04028: live tool transcript for the stream route (undefined for /chat)
+      onEvent: opts.onEvent,
+    });
+
+    // VTID-04172: the model can narrate a tool call as fenced JSON instead
+    // of actually invoking it (observed live: DeepSeek talked itself out of
+    // calling autopilot_run_task mid-generation and wrote its intended
+    // arguments as markdown instead). Detect it and retry ONCE with an
+    // explicit reminder that real tool-calling is available and must be
+    // used — never a second silent hallucination, and never more than one
+    // retry (a genuinely confused model gets the honest simulated reply
+    // back rather than looping).
+    const executedToolNames = (geminiResult.toolResults || []).map((tr) => tr.name);
+    const simulatedCall = detectSimulatedToolCallReply(geminiResult.reply || '', executedToolNames);
+    if (simulatedCall.detected) {
+      console.warn(
+        `[VTID-04172] simulated tool call detected on thread ${threadId} (${simulatedCall.toolName}): ${simulatedCall.reason} — retrying once`,
+      );
+      const retryText =
+        `${message}\n\n` +
+        `[System reminder: your previous reply for this exact request described a ` +
+        `${simulatedCall.toolName} call as JSON text instead of actually invoking the ` +
+        `${simulatedCall.toolName} tool via real function-calling. You DO have real ` +
+        `tool-calling available right now — call ${simulatedCall.toolName} for real this ` +
+        `time, do not narrate or describe the call in your reply text.]`;
+      try {
+        const retryResult = await processWithGemini({
+          images: turnImages.length > 0 ? turnImages : undefined,
+          text: retryText,
+          threadId,
+          attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
+          context: { vtid: validatedVtid || 'VTID-0536', request_id: requestId, mode: mode },
+          conversationHistory: context || [],
+          conversationId: conversation_id,
+          userRole: geminiUserRole,
+          threadSummary,
+          onEvent: opts.onEvent,
+        });
+        geminiResult = retryResult;
+      } catch (retryErr: any) {
+        console.warn(`[VTID-04172] retry itself threw, keeping the original (simulated) reply: ${retryErr?.message}`);
+      }
+    }
+    if (routeCheck) void recordOperatorRouteOutcome(routeCheck, (geminiResult.toolResults || []).map((tr) => tr.name));
+
+    // VTID-04025: durable facts from this turn (decisions, gotchas,
+    // preferences …) → dev_agent_memory, extracted by the memory stage.
+    // Fire and forget, fail-open; trivial turns are skipped before any
+    // model call. Independent of the thread store below.
+    if (isTurnMemoryEnabled()) {
+      extractAndRecordTurnMemory({
+        threadId,
+        userText: message,
+        reply: geminiResult.reply,
+        tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+        summary: threadSummary,
+        vtidHint: validatedVtid || undefined,
+      }).catch((err) => console.warn('[VTID-04025] turn memory failed:', err instanceof Error ? err.message : err));
+    }
+
+    // VTID-04022: record the turn server-side (thread + user/tool/assistant
+    // messages) and, on the cadence, rewrite the rolling summary. Fire and
+    // forget — never on the reply's critical path, never throws.
+    if (isOperatorThreadsEnabled()) {
+      recordOperatorTurn({
+        threadId,
+        identity: { user_id: callerIdentity?.user_id || null, role: geminiUserRole || null },
+        userText: message,
+        reply: geminiResult.reply,
+        tools: (geminiResult.toolResults || []).map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
+        meta: { conversation_id: conversation_id || null, request_id: requestId, provider: geminiResult.meta?.provider ?? null, model: geminiResult.meta?.model ?? null, ...(opts.channel ? { channel: opts.channel } : {}) },
+      })
+        .then((r) => (r.recorded ? maybeSummarizeThread(threadId, r.turns) : false))
+        .catch((err) => console.warn('[VTID-04022] operator thread record failed:', err instanceof Error ? err.message : err));
+    }
+
+    // VTID-0536: Check if Gemini created a task via tools (in addition to explicit /task command)
+    let geminiCreatedTask: CreatedTask | undefined;
+    if (geminiResult.toolResults) {
+      const createTaskResult = geminiResult.toolResults.find(
+        tr => tr.name === 'autopilot_create_task' && tr.response.ok
+      );
+      if (createTaskResult && createTaskResult.response.vtid) {
+        geminiCreatedTask = {
+          vtid: createTaskResult.response.vtid as string,
+          title: createTaskResult.response.title as string || 'Untitled',
+          mode: 'plan-only'
+        };
+      }
+    }
+
+    // Use the task created by explicit /task command or by Gemini tools
+    const finalCreatedTask = createdTask || geminiCreatedTask;
+
+    // VTID-0531: Log assistant response with unified event type
+    const assistantEventResult = await ingestChatMessageEvent({
+      threadId,
+      vtid: validatedVtid,
+      role: 'assistant',
+      mode: mode as OperatorChatMode,
+      message: geminiResult.reply,
+      metadata: {
+        request_id: requestId,
+        ...(geminiResult.meta || {}),
+        // VTID-0532 + VTID-0536: Include created task reference if task was created
+        ...(finalCreatedTask ? { createdTaskVtid: finalCreatedTask.vtid } : {}),
+        // VTID-0536: Include tool calls info if any
+        ...(geminiResult.toolResults ? { toolCalls: geminiResult.toolResults.map(tr => tr.name) } : {})
+      }
+    });
+
+    const assistantMessageId = assistantEventResult.eventId || randomUUID();
+
+    console.log(`[Operator Chat] Request ${requestId} completed successfully (thread: ${threadId})`);
+
+    // VTID-0531 + VTID-0532 + VTID-0536: Extended response with threadId, messageId, createdAt, and optional createdTask
+    const response: Record<string, unknown> = {
+      ok: true,
+      reply: geminiResult.reply,
+      attachments: attachments,
+      oasis_ref: `OASIS-CHAT-${requestId.slice(0, 8).toUpperCase()}`,
+      meta: geminiResult.meta || {},
+      // VTID-0531: Extended fields
+      threadId,
+      messageId: assistantMessageId,  // ID of the assistant response event
+      createdAt
+    };
+
+    // VTID-0532 + VTID-0536: Add createdTask when a task was created (explicit or via tools)
+    if (finalCreatedTask) {
+      response.createdTask = finalCreatedTask;
+    }
+
+    // VTID-0536: Include tool results if any tools were called
+    if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
+      response.toolResults = geminiResult.toolResults;
+    }
+
+    // VTID-03928: fire-and-forget — must never delay or fail the chat response.
+    recordSessionOutcomeMemory({
+      threadId,
+      vtid: validatedVtid,
+      toolResults: geminiResult.toolResults,
+      finalCreatedTask,
+    }).catch((err) => console.warn(`[VTID-03928] recordSessionOutcomeMemory rejected: ${err?.message}`));
+
+    return { status: 200, body: response };
+
+  } catch (error: any) {
+    console.warn(`[Operator Chat] Error:`, error);
+
+    // Log error event using legacy method (for backwards compatibility)
+    await ingestOperatorEvent({
+      vtid: 'VTID-0509',
+      type: 'operator.chat.error',
+      status: 'error',
+      message: `Chat error: ${error.message}`,
+      payload: { request_id: requestId, error: error.message }
+    }).catch(() => {}); // Don't fail if logging fails
+
+    return {
+      status: 500,
+      body: {
+        ok: false,
+        error: 'Internal server error',
+        details: error.message
+      },
+    };
+  }
+}
+
+router.post('/chat', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+  // calls emitOasisEvent() internally for the real state transitions this
+  // turn produces — the impact scanner's line-level pattern can't see
+  // through the function-call boundary from this handler body.
+  const outcome = await runOperatorChatTurn(req);
+  return res.status(outcome.status).json(outcome.body);
+});
+
+/**
+ * POST /chat/stream → /api/v1/operator/chat/stream
+ * VTID-04028 (gap analysis §4.6): the SAME operator turn as POST /chat —
+ * identical validation, caller authz marker, OASIS chat events, thread
+ * record, turn memory — delivered as Server-Sent Events so the Command Hub
+ * shows the tool-call transcript while the turn runs:
+ *
+ *   event: turn.started  data: { threadId, request_id }
+ *   event: model.turn    data: { stage, provider, model, tool_calls, duration_ms }
+ *   event: tool.call     data: { index, name, args }
+ *   event: tool.result   data: { index, name, ok, duration_ms, error?, excerpt }
+ *   event: reply         data: <exactly the JSON body POST /chat returns>
+ *   event: error         data: { status, ...body }   (instead of `reply`)
+ *   event: done          data: { threadId }
+ *
+ * A validation failure is answered as plain 400 JSON before any header is
+ * written, so a client can treat the two endpoints identically on bad
+ * input. Request bodies cannot be sent through EventSource, so the client
+ * reads the fetch() body as a stream (see app.js). A disconnected client
+ * stops the frames, not the turn — the turn still records and replies for
+ * the thread exactly as /chat would.
+ */
+export const OPERATOR_STREAM_HEARTBEAT_MS = 15_000;
+
+function writeSseFrame(res: Response, event: string, data: unknown): void {
+  if (res.writableEnded) return;
+  res.write(`event: ${event}\ndata: ${JSON.stringify(data)}\n\n`);
+}
+
+router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Request, res: Response) => {
+  const validation = OperatorChatMessageSchema.safeParse(req.body);
+  if (!validation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+  const threadId = validation.data.threadId || randomUUID();
+
+  res.setHeader('Content-Type', 'text/event-stream');
+  res.setHeader('Cache-Control', 'no-cache');
+  res.setHeader('Connection', 'keep-alive');
+  res.setHeader('X-Accel-Buffering', 'no');
+  res.flushHeaders?.();
+
+  // Client-gone detection on the RESPONSE, not the request: on Node ≥ 16
+  // IncomingMessage emits 'close' as soon as the (JSON) request body has
+  // been consumed, which is before the turn even starts — `req.on('close')`
+  // would silence every frame after turn.started. `res` 'close' fires when
+  // the connection goes away, and also after our own end(), which
+  // writableEnded distinguishes.
+  let closed = false;
+  res.on('close', () => { if (!res.writableEnded) closed = true; });
+  const heartbeat = setInterval(() => {
+    if (!closed && !res.writableEnded) res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+  }, OPERATOR_STREAM_HEARTBEAT_MS);
+  heartbeat.unref?.();
+
+  writeSseFrame(res, 'turn.started', { threadId, started_at: new Date().toISOString() });
+
+  try {
+    // impact-allow-no-oasis: runOperatorChatTurn() (defined above) already
+    // calls emitOasisEvent() internally for the real state transitions this
+    // turn produces — the impact scanner's line-level pattern can't see
+    // through the function-call boundary from this handler body.
+    const outcome = await runOperatorChatTurn(req, {
+      threadId,
+      onEvent: (event) => {
+        if (closed) return;
+        const { type, ...data } = event;
+        writeSseFrame(res, type, data);
+      },
+    });
+    if (!closed) {
+      if (outcome.status === 200) writeSseFrame(res, 'reply', outcome.body);
+      else writeSseFrame(res, 'error', { status: outcome.status, ...outcome.body });
+    }
+  } catch (error: any) {
+    // runOperatorChatTurn catches its own errors; this guards the frame writes.
+    if (!closed) writeSseFrame(res, 'error', { status: 500, ok: false, error: 'Internal server error', details: error?.message });
+  } finally {
+    clearInterval(heartbeat);
+    if (!closed) writeSseFrame(res, 'done', { threadId });
+    if (!res.writableEnded) res.end();
+  }
+});
+
+// ==================== Kiro engine (VTID-04975) ====================
+// All exafy_admin only. A session is addressed by its thread id; only the
+// user who owns it may cancel/close it or answer its permission cards.
+
+/** GET /kiro/status — is the engine switched on, and how many sessions are open. */
+router.get('/kiro/status', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const enabled = isKiroEngineEnabled();
+  const runnerConfigured = runnerConfig() !== null;
+  const userId = req.identity?.user_id ?? null;
+  // VTID-05003: the signed-in user's own key and credits decide the default engine for new threads.
+  const keyLinked: boolean | 'unknown' = enabled && runnerConfigured && userId ? await kiroKeyLinked(userId) : 'unknown';
+  const credits = getKiroCredits(userId);
+  return res.json({
+    ok: true, enabled, runner_configured: runnerConfigured, open_sessions: openKiroSessionCount(),
+    key_linked: keyLinked, credits,
+    default_engine: kiroDefaultEngine({ enabled, runnerConfigured, keyLinked, credits }),
+  });
+});
+
+/** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
+router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ allow: z.boolean() }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  let r: { ok: true } | { ok: false; error: 'not_found' | 'forbidden' } = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  // VTID-05065: the card may wait in a run on another gateway task — answer it on the run record.
+  if (!r.ok && r.error === 'not_found') r = await answerPersistedPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.permission_answered',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `Kiro tool permission ${parsed.data.allow ? 'allowed' : 'denied'}`,
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { request_id: req.params.requestId, allow: parsed.data.allow },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+/** POST /kiro/sessions/:threadId/cancel — stop the running turn; the session stays open. */
+router.post('/kiro/sessions/:threadId/cancel', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const r = cancelKiroTurn(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_cancelled',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro turn cancelled by its owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+/** GET /kiro/sessions/:threadId/models — the models Kiro offers for this session (VTID-04984). */
+router.get('/kiro/sessions/:threadId/models', requireAdminAuth, (req: AuthenticatedRequest, res: Response) => {
+  const r = listKiroModels(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  return res.json({ ok: true, models: r.models, current_model: r.current });
+});
+
+/** POST /kiro/sessions/:threadId/model { model_id } — switch the model through Kiro (VTID-04984). */
+router.post('/kiro/sessions/:threadId/model', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const parsed = z.object({ model_id: z.string().min(1).max(200) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
+  const r = await setKiroModel(req.params.threadId, req.identity?.user_id ?? null, parsed.data.model_id);
+  if (!r.ok) {
+    const status = r.error === 'forbidden' ? 403 : r.error === 'not_found' ? 404 : 400;
+    return res.status(status).json({ ok: false, error: r.error, ...(r.message ? { message: r.message } : {}) });
+  }
+  await emitOasisEvent({
+    vtid: 'VTID-04984',
+    type: 'operator.kiro.model_selected',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro model switched by the session owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId, model_id: r.current },
+  }).catch(() => {});
+  return res.json({ ok: true, models: r.models, current_model: r.current });
+});
+
+/** DELETE /kiro/sessions/:threadId — close the session and its kiro-cli process. */
+router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const r = closeKiroSession(req.params.threadId, req.identity?.user_id ?? null);
+  if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04975',
+    type: 'operator.kiro.session_closed',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro session closed by its owner',
+    actor_id: req.identity?.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { thread_id: req.params.threadId },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+// ==================== Kiro write confirmations (VTID-05006) ====================
+// The Allow/Deny cards for writes a Kiro session asked the Operator's tools to do.
+// The caller's own rows only (user id from the identity, never the request).
+
+// VTID-05014: read-only — can the gateway's token for each repo Kiro writes to read it,
+// and what does GitHub report as that token's permissions. No writes, no token values.
+router.get('/kiro/repos', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ ok: true, repos: await kiroRepoReadiness() });
+});
+
+router.get('/kiro/confirmations', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const threadId = typeof req.query.thread_id === 'string' ? req.query.thread_id.slice(0, 200) : '';
+  if (!threadId) return res.status(400).json({ ok: false, error: 'thread_id required' });
+  const pending = await confirmationStore().pending(caller, threadId);
+  return res.json({ ok: true, pending });
+});
+
+router.post('/kiro/confirmations/:id', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const decision = req.body?.decision;
+  if (decision !== 'allow' && decision !== 'deny') return res.status(400).json({ ok: false, error: 'decision must be allow or deny' });
+  const ok = await decideConfirmation(String(req.params.id), caller, decision);
+  // Not pending any more (answered, expired, or not the caller's): nothing changes.
+  if (!ok) return res.status(409).json({ ok: false, error: 'not_pending' });
+  await emitOasisEvent({
+    vtid: 'VTID-05006',
+    type: decision === 'allow' ? 'operator.kiro.write_confirmed' : 'operator.kiro.write_denied',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `Kiro write ${decision === 'allow' ? 'allowed' : 'denied'} by the user`,
+    actor_id: caller,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { confirmation_id: String(req.params.id) },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
+// ==================== Kiro API key (VTID-04999) ====================
+// Each user links their OWN key: the user id is only ever the signed-in
+// identity, never a body or URL value. The key is forwarded to the runner,
+// which keeps it in Secrets Manager; it is never logged, stored or returned here.
+
+/** GET /kiro/key — is the caller's Kiro API key linked, and since when. */
+router.get('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await kiroKeyRequest('GET', userId);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  return res.json(r);
+});
+
+/** PUT /kiro/key { key } — link or replace the caller's Kiro API key. */
+router.put('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const parsed = z.object({ key: z.string().min(1).max(4096).regex(/^\S+$/) }).safeParse(req.body);
+  if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_KEY' });
+  const r = await kiroKeyRequest('PUT', userId, parsed.data.key);
+  clearKiroKeyCache(userId);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04999',
+    type: 'operator.kiro.key_linked',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro API key linked by its owner',
+    actor_id: userId,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { updated_at: r.updated_at },
+  }).catch(() => {});
+  return res.json(r);
+});
+
+/** DELETE /kiro/key — revoke the caller's Kiro API key now; their open Kiro sessions end. */
+router.delete('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const userId = req.identity?.user_id;
+  if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const r = await kiroKeyRequest('DELETE', userId);
+  clearKiroKeyCache(userId);
+  if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
+  await emitOasisEvent({
+    vtid: 'VTID-04999',
+    type: 'operator.kiro.key_revoked',
+    source: 'gateway-operator',
+    status: 'info',
+    message: 'Kiro API key revoked by its owner',
+    actor_id: userId,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {},
+  }).catch(() => {});
+  return res.json(r);
+});
+
+/**
+ * GET /threads → /api/v1/operator/threads
+ * VTID-04409: the caller's own server-side Operator threads (newest
+ * activity first, summary clipped), so the console can list and reopen a
+ * thread started on another device or by voice. exafy_admin only.
+ */
+router.get('/threads', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const limit = Number.parseInt(String(req.query.limit ?? ''), 10);
+  const r = await listOperatorThreads({ userId: req.identity?.user_id ?? null, limit: Number.isFinite(limit) ? limit : undefined });
+  if (!r.ok) {
+    return res.status(r.error === 'disabled' ? 200 : 503).json({ ok: r.error === 'disabled', error: r.error, threads: [] });
+  }
+  return res.json({ ok: true, threads: r.threads });
+});
+
+/**
+ * GET /threads/:threadId/messages → /api/v1/operator/threads/:threadId/messages
+ * VTID-04309: the server-side thread transcript (operator_threads /
+ * operator_messages), so turns recorded outside the browser — Command Hub
+ * voice turns — appear in the Operator Console. exafy_admin only; a thread
+ * owned by someone else reads as 404. `?since=<iso>` returns newer messages.
+ */
+router.get('/threads/:threadId/messages', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const { threadId } = req.params;
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(threadId)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_THREAD_ID' });
+  }
+  const since = typeof req.query.since === 'string' && !Number.isNaN(Date.parse(req.query.since)) ? req.query.since : null;
+  const r = await listOperatorThreadMessages(threadId.toLowerCase(), { userId: req.identity?.user_id ?? null, sinceIso: since });
+  if (!r.ok) {
+    const status = r.error === 'not_found' ? 404 : r.error === 'disabled' ? 200 : 503;
+    return res.status(status).json({ ok: r.error === 'disabled', error: r.error, messages: [] });
+  }
+  return res.json({ ok: true, messages: r.messages });
+});
+
+/**
+ * GET /chat/:threadId → /api/v1/operator/chat/:threadId
+ * VTID-0531: Thread history read endpoint
+ */
+router.get('/chat/:threadId', async (req: Request, res: Response) => {
+  console.log('[Operator Chat History] Request received');
+
+  try {
+    const { threadId } = req.params;
+
+    // Validate threadId format (UUID)
+    const UUID_REGEX = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+    if (!UUID_REGEX.test(threadId)) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Invalid threadId format',
+        details: 'threadId must be a valid UUID'
+      });
+    }
+
+    const messages = await getChatThreadHistory(threadId);
+
+    console.log(`[Operator Chat History] Returning ${messages.length} messages for thread ${threadId}`);
+
+    return res.status(200).json({
+      ok: true,
+      data: messages
+    });
+
+  } catch (error: any) {
+    console.warn('[Operator Chat History] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to fetch chat thread history',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /health → /api/v1/operator/health
+ */
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  return res.status(200).json(await withDependencyHealth([{ table: 'vtid_ledger' }, { table: 'oasis_events' }], {
+    ok: true,
+    service: 'operator-api',
+    timestamp: new Date().toISOString(),
+    status: 'healthy',
+    vtid: 'VTID-0509'
+  }));
+});
+
+/**
+ * GET /heartbeat → /api/v1/operator/heartbeat
+ * VTID-01004: Heartbeat events are now diagnostics-only (not persisted to OASIS)
+ */
+router.get('/heartbeat', async (_req: Request, res: Response) => {
+  console.log('[Operator Heartbeat] Snapshot requested');
+
+  try {
+    // VTID-01004: Heartbeat event is logged for diagnostics only
+    // The ingestOperatorEvent function will block this from OASIS ingestion
+    await ingestOperatorEvent({
+      vtid: 'VTID-0509',
+      type: 'operator.heartbeat.snapshot',
+      status: 'info',
+      message: 'Heartbeat snapshot requested',
+      payload: {}
+    });
+
+    // Aggregate data from OASIS/CICD
+    const [tasksSummary, recentEvents, cicdHealth] = await Promise.all([
+      getTasksSummary(),
+      getRecentEvents(10),
+      getCicdHealth()
+    ]);
+
+    const snapshot = {
+      ok: true,
+      heartbeat: {
+        status: 'ok',
+        timestamp: new Date().toISOString(),
+        vtid: 'VTID-0509'
+      },
+      tasks_summary: tasksSummary,
+      recent_events: recentEvents,
+      cicd_health: cicdHealth
+    };
+
+    console.log('[Operator Heartbeat] Snapshot generated:', {
+      tasks_total: snapshot.tasks_summary.total,
+      events_count: snapshot.recent_events.length
+    });
+
+    return res.status(200).json(snapshot);
+
+  } catch (error: any) {
+    console.warn('[Operator Heartbeat] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to generate heartbeat snapshot',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * GET /history → /api/v1/operator/history
+ */
+router.get('/history', async (req: Request, res: Response) => {
+  console.log('[Operator History] Request received');
+
+  try {
+    const limit = parseInt(req.query.limit as string) || 50;
+    const history = await getOperatorHistory(limit);
+
+    console.log(`[Operator History] Returning ${history.length} events`);
+
+    return res.status(200).json({
+      ok: true,
+      history: history,
+      pagination: {
+        limit: limit,
+        count: history.length
+      }
+    });
+
+  } catch (error: any) {
+    console.warn('[Operator History] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to fetch operator history',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * POST /heartbeat/session → /api/v1/operator/heartbeat/session
+ * VTID-01004: Heartbeat session events are diagnostics-only (not persisted to OASIS)
+ */
+router.post('/heartbeat/session', async (req: Request, res: Response) => {
+  console.log('[Operator Session] Request received');
+
+  try {
+    const validation = HeartbeatSessionSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Validation failed',
+        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      });
+    }
+
+    const { status } = validation.data;
+    const sessionId = randomUUID();
+
+    // VTID-01004: Heartbeat session event is logged for diagnostics only
+    // The ingestOperatorEvent function will block this from OASIS ingestion
+    const eventType = status === 'live'
+      ? 'operator.heartbeat.started'
+      : 'operator.heartbeat.stopped';
+
+    await ingestOperatorEvent({
+      vtid: 'VTID-0509',
+      type: eventType,
+      status: 'info',
+      message: `Heartbeat session ${status}`,
+      payload: { session_id: sessionId, status }
+    });
+
+    console.log(`[Operator Session] Session ${sessionId} set to ${status}`);
+
+    return res.status(200).json({
+      ok: true,
+      session_id: sessionId,
+      status: status,
+      timestamp: new Date().toISOString()
+    });
+
+  } catch (error: any) {
+    console.warn('[Operator Session] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to update heartbeat session',
+      details: error.message
+    });
+  }
+});
+
+/**
+ * POST /upload → /api/v1/operator/upload
+ */
+router.post('/upload', async (req: Request, res: Response) => {
+  console.log('[Operator Upload] Request received');
+
+  try {
+    const validation = FileUploadSchema.safeParse(req.body);
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: 'Validation failed',
+        details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+      });
+    }
+
+    const { name, kind, content_type } = validation.data;
+    const fileId = randomUUID();
+    const oasisRef = `OASIS-FILE-${fileId.slice(0, 8).toUpperCase()}`;
+
+    // Log upload event
+    await ingestOperatorEvent({
+      vtid: 'VTID-0509',
+      type: 'operator.upload',
+      status: 'success',
+      message: `File uploaded: ${name}`,
+      payload: {
+        file_id: fileId,
+        oasis_ref: oasisRef,
+        name: name,
+        kind: kind,
+        content_type: content_type || 'application/octet-stream'
+      }
+    });
+
+    console.log(`[Operator Upload] File ${fileId} uploaded: ${name} (${kind})`);
+
+    return res.status(200).json({
+      ok: true,
+      file_id: fileId,
+      oasis_ref: oasisRef,
+      name: name,
+      kind: kind,
+      content_type: content_type || 'application/octet-stream'
+    });
+
+  } catch (error: any) {
+    console.warn('[Operator Upload] Error:', error);
+    return res.status(500).json({
+      ok: false,
+      error: 'Failed to upload file',
+      details: error.message
+    });
+  }
+});
+
+// ==================== VTID-0525 Routes ====================
+// VTID-0525-B: Operator Command Hub - Simplified MVP
+// Simple command matching for deploy commands using existing CICD infrastructure
+
+import deployOrchestrator from '../services/deploy-orchestrator';
+import { triggerWorkflow, getWorkflowRuns } from '../services/github-service';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { evaluatePublishGate, OVERRIDE_REASON_MIN } from '../services/testing/publish-gate';
+import { withDependencyHealth } from '../services/dependency-probe';
+// VTID-0525-B: DeployCommandSchema and TaskCommandSchema unused in MVP
+// import { DeployCommandSchema, TaskCommandSchema } from '../types/operator-command';
+
+/**
+ * POST /deploy → /api/v1/operator/deploy
+ * Deploy orchestrator: uses the shared deploy service (same as Publish modal).
+ * This is the single orchestrator that executes deployment workflows.
+ * VTID-01018: Updated with hard OASIS contract enforcement.
+ */
+router.post('/deploy', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[VTID-01018] Operator Deploy ${requestId} started`);
+
+  try {
+    const validation = OperatorDeployRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.warn(`[VTID-01018] Deploy validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: req.body?.vtid || 'UNKNOWN',
+        service: req.body?.service || 'UNKNOWN',
+        environment: req.body?.environment || 'dev',
+        error: 'Validation failed',
+      } as OperatorDeployResponse);
+    }
+
+    const { vtid, service, environment, source } = validation.data;
+    const operatorId = getOperatorId(req);
+    const operatorRole = getOperatorRole(req);
+
+    // VTID-01018: Execute deploy with hard OASIS contract
+    const actionContext: OperatorActionContext = {
+      vtid,
+      operatorId,
+      operatorRole,
+      actionType: 'deploy',
+      actionPayload: {
+        service,
+        environment,
+        source,
+        request_id: requestId,
+      },
+    };
+
+    const result = await executeWithOasisContract(actionContext, async () => {
+      // Use the shared deploy orchestrator (same implementation as Publish modal)
+      const deployResult = await deployOrchestrator.executeDeploy({
+        vtid,
+        service,
+        environment,
+        source,
+      });
+
+      if (!deployResult.ok) {
+        throw new Error(deployResult.error || 'Deploy execution failed');
+      }
+
+      return deployResult;
+    });
+
+    if (!result.ok) {
+      // VTID-01018: Return structured error with OASIS failure details
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        service,
+        environment,
+        error: result.oasis_error?.reason || 'Deploy failed with OASIS contract violation',
+        operator_action_id: result.operator_action_id,
+      } as OperatorDeployResponse);
+    }
+
+    const deployData = result.data as { workflow_run_id?: number; workflow_url?: string };
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      service,
+      environment,
+      workflow_run_id: deployData.workflow_run_id,
+      workflow_url: deployData.workflow_url,
+      operator_action_id: result.operator_action_id,
+    } as OperatorDeployResponse);
+
+  } catch (error: any) {
+    console.error(`[VTID-01018] Unhandled deploy error:`, error);
+    return res.status(500).json({
+      ok: false,
+      vtid: req.body?.vtid || 'UNKNOWN',
+      service: req.body?.service || 'UNKNOWN',
+      environment: 'dev',
+      error: error.message,
+    } as OperatorDeployResponse);
+  }
+});
+
+/**
+ * POST /command → /api/v1/operator/command
+ *
+ * VTID-0525-B: Simplified MVP command parser.
+ * VTID-01018: Updated with hard OASIS contract enforcement.
+ *
+ * - Simple deterministic matching (no NL parsing for now)
+ * - Only supports explicit deploy commands: "deploy gateway to dev", "deploy oasis-operator to dev"
+ * - Uses placeholder VTID instead of auto-creating in vtid_ledger
+ * - Uses existing CICD bridge (same as Publish modal)
+ * - MANDATORY: All actions emit started + terminal OASIS events
+ */
+router.post('/command', async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  console.log(`[VTID-01018] Operator Command ${requestId} started`);
+
+  try {
+    const validation = OperatorCommandRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      console.warn(`[VTID-01018] Validation failed:`, validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        vtid: 'UNKNOWN',
+        reply: 'Invalid request: ' + validation.error.errors.map(e => e.message).join(', '),
+        error: 'Validation failed',
+      } as OperatorCommandResponse);
+    }
+
+    const { message, environment } = validation.data;
+    const normalized = message.trim().toLowerCase();
+    const operatorId = getOperatorId(req);
+    const operatorRole = getOperatorRole(req);
+
+    // VTID-0525-B: Generate a simple placeholder VTID
+    const timestamp = Date.now().toString(36).toUpperCase();
+    const vtid = `OASIS-CMD-${timestamp}`;
+    console.log(`[VTID-01018] Using placeholder VTID: ${vtid}`);
+
+    // VTID-01018: Helper to execute deploy with hard contract
+    const executeDeployWithContract = async (service: 'gateway' | 'oasis-operator' | 'oasis-projector'): Promise<OperatorCommandResponse> => {
+      const actionContext: OperatorActionContext = {
+        vtid,
+        operatorId,
+        operatorRole,
+        actionType: 'deploy',
+        actionPayload: {
+          service,
+          environment: 'dev',
+          message,
+          request_id: requestId,
+        },
+      };
+
+      const result = await executeWithOasisContract(actionContext, async () => {
+        // Execute deploy using the shared orchestrator
+        const deployResult = await deployOrchestrator.executeDeploy({
+          vtid,
+          service,
+          environment: 'dev',
+          source: 'operator.console.chat',
+        });
+
+        if (!deployResult.ok) {
+          throw new Error(deployResult.error || 'Deploy execution failed');
+        }
+
+        return deployResult;
+      });
+
+      if (!result.ok) {
+        // VTID-01018: OASIS write failed OR action failed - return structured error
+        const errorResponse: OperatorCommandResponse = {
+          ok: false,
+          vtid,
+          reply: result.oasis_error
+            ? `Deploy blocked: OASIS event write failed - ${result.oasis_error.reason}`
+            : `Deploy failed for ${service}: unknown error`,
+          error: result.oasis_error?.reason || 'oasis_write_failed',
+          operator_action_id: result.operator_action_id,
+        };
+        return errorResponse;
+      }
+
+      const deployData = result.data as { workflow_url?: string };
+      return {
+        ok: true,
+        vtid,
+        reply: `Deploy requested: ${service} to dev. CI/CD pipeline started. ${deployData.workflow_url ? `Workflow: ${deployData.workflow_url}` : ''}`,
+        command: { action: 'deploy' as const, service, environment: 'dev' as const, vtid, branch: 'main', dry_run: false },
+        workflow_url: deployData.workflow_url,
+        operator_action_id: result.operator_action_id,
+      };
+    };
+
+    // VTID-0525-B: Simple deterministic command matching (MVP)
+    // Check for deploy gateway command
+    if (normalized === 'deploy gateway to dev' || normalized.startsWith('deploy gateway')) {
+      console.log(`[VTID-01018] Matched: deploy gateway`);
+      const response = await executeDeployWithContract('gateway');
+      return res.status(response.ok ? 200 : 500).json(response);
+    }
+
+    // Check for deploy oasis-operator command
+    if (normalized === 'deploy oasis-operator to dev' || normalized.startsWith('deploy oasis-operator')) {
+      console.log(`[VTID-01018] Matched: deploy oasis-operator`);
+      const response = await executeDeployWithContract('oasis-operator');
+      return res.status(response.ok ? 200 : 500).json(response);
+    }
+
+    // Check for deploy oasis-projector command
+    if (normalized === 'deploy oasis-projector to dev' || normalized.startsWith('deploy oasis-projector')) {
+      console.log(`[VTID-01018] Matched: deploy oasis-projector`);
+      const response = await executeDeployWithContract('oasis-projector');
+      return res.status(response.ok ? 200 : 500).json(response);
+    }
+
+    // VTID-01018: Unrecognized command - emit failed action event
+    console.log(`[VTID-01018] Unrecognized command: "${message}"`);
+
+    const actionContext: OperatorActionContext = {
+      vtid,
+      operatorId,
+      operatorRole,
+      actionType: 'command',
+      actionPayload: { message, request_id: requestId },
+    };
+
+    const result = await executeWithOasisContract(actionContext, async () => {
+      throw new Error('Command not recognized');
+    });
+
+    return res.status(200).json({
+      ok: false,
+      vtid,
+      reply: 'I currently only understand commands like "Deploy gateway to dev". Natural language commands will be added in a future update.',
+      error: 'Command not recognized',
+      operator_action_id: result.operator_action_id,
+    } as OperatorCommandResponse);
+
+  } catch (error: any) {
+    console.error(`[VTID-01018] Unhandled error:`, error);
+    return res.status(500).json({
+      ok: false,
+      vtid: 'UNKNOWN',
+      reply: `Operator command failed due to an internal error.`,
+      error: error.message,
+    } as OperatorCommandResponse);
+  }
+});
+
+// ==================== VTID-0510 Routes ====================
+
+/**
+ * GET /deployments → /api/v1/operator/deployments
+ */
+// Phase 0 staging build (P0.4): 30s in-process cache of active Cloud Run
+// revision per service so the CLOCK dropdown's `is_active` field doesn't burn
+// a Cloud Run Admin API call per row.
+const ACTIVE_REV_CACHE: Map<string, { activeRevision: string | null; expiresAt: number }> = new Map();
+const ACTIVE_REV_TTL_MS = 30_000;
+
+async function getActiveRevisionCached(service: string): Promise<string | null> {
+  const cached = ACTIVE_REV_CACHE.get(service);
+  if (cached && cached.expiresAt > Date.now()) return cached.activeRevision;
+  try {
+    const summary = await describeService(service);
+    const active = summary.activeRevision;
+    ACTIVE_REV_CACHE.set(service, { activeRevision: active, expiresAt: Date.now() + ACTIVE_REV_TTL_MS });
+    return active;
+  } catch (err) {
+    console.warn(`[Operator] active-revision lookup failed for ${service}: ${err instanceof Error ? err.message : 'unknown'}`);
+    return null;
+  }
+}
+
+/**
+ * Compute the display label the CLOCK history view shows in its "deploy type"
+ * column. Derives a richer label from the storage-side (deploy_type, environment,
+ * source_revision) triple — no DB schema change needed.
+ *
+ *   environment=staging,    deploy_type=normal,   source=null  → "staging-deploy"
+ *   environment=production, deploy_type=normal,   source!=null → "staging-publish"
+ *   environment=production, deploy_type=normal,   source=null  → "deploy"
+ *   *,                       deploy_type=rollback              → "revert"
+ */
+function displayDeployType(row: SoftwareVersion): string {
+  if (row.deploy_type === 'rollback') return 'revert';
+  if (row.environment === 'staging' || row.environment === 'staging-supabase') return 'staging-deploy';
+  if (row.source_revision) return 'staging-publish';
+  return 'deploy';
+}
+
+const REVERT_AGE_LIMIT_MS = 90 * 24 * 60 * 60 * 1000;
+
+router.get('/deployments', async (req: Request, res: Response) => {
+  try {
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const serviceFilter = (req.query.service as string | undefined)?.trim();
+    const envFilter = (req.query.environment as string | undefined)?.trim();
+
+    const result = await getDeploymentHistory(limit);
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Database query failed',
+        detail: result.error,
+      });
+    }
+
+    let rows = result.deployments || [];
+    if (serviceFilter) rows = rows.filter(r => r.service === serviceFilter);
+    if (envFilter) rows = rows.filter(r => r.environment === envFilter);
+
+    // Active-revision cache lookup is done once per distinct service to keep
+    // this endpoint O(unique-services) Cloud Run calls instead of O(rows).
+    const distinctServices = Array.from(new Set(rows.map(r => r.service)));
+    const activeByService = new Map<string, string | null>();
+    await Promise.all(
+      distinctServices.map(async svc => {
+        activeByService.set(svc, await getActiveRevisionCached(svc));
+      })
+    );
+
+    const nowMs = Date.now();
+
+    const deployments = rows.map((d) => {
+      const createdMs = d.created_at ? Date.parse(d.created_at) : nowMs;
+      const ageMs = nowMs - createdMs;
+      const cloudRev = d.cloud_run_revision ?? null;
+      const activeShort = activeByService.get(d.service)
+        ? shortRevisionName(activeByService.get(d.service) as string)
+        : null;
+      const isActive = !!(cloudRev && activeShort && cloudRev === activeShort);
+
+      return {
+        swv_id: d.swv_id,
+        created_at: d.created_at,
+        git_commit: d.git_commit,
+        status: d.status,
+        initiator: d.initiator,
+        initiator_id: d.initiator_id ?? null,
+        deploy_type: d.deploy_type,
+        // Phase 0 staging build: derived display label.
+        display_deploy_type: displayDeployType(d),
+        service: d.service,
+        environment: d.environment,
+        cloud_run_revision: cloudRev,
+        source_revision: d.source_revision ?? null,
+        is_active: isActive,
+        revert_eligible:
+          d.status === 'success' &&
+          !!cloudRev &&
+          ageMs < REVERT_AGE_LIMIT_MS &&
+          !isActive, // can't revert to the row that IS active
+      };
+    });
+
+    return res.status(200).json(deployments);
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[Operator] Error fetching deployments: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage,
+    });
+  }
+});
+
+/**
+ * POST /deployments → /api/v1/operator/deployments
+ */
+router.post('/deployments', async (req: Request, res: Response) => {
+  try {
+    const { service, git_commit, deploy_type, initiator, environment, cloud_run_revision } = req.body;
+
+    // Validate required fields
+    if (!service || typeof service !== 'string') {
+      return res.status(400).json({ ok: false, error: 'service is required' });
+    }
+    if (!git_commit || typeof git_commit !== 'string') {
+      return res.status(400).json({ ok: false, error: 'git_commit is required' });
+    }
+    if (!deploy_type || !['normal', 'rollback'].includes(deploy_type)) {
+      return res.status(400).json({ ok: false, error: 'deploy_type must be "normal" or "rollback"' });
+    }
+    if (!initiator || !['user', 'agent'].includes(initiator)) {
+      return res.status(400).json({ ok: false, error: 'initiator must be "user" or "agent"' });
+    }
+
+    // Get next SWV ID
+    const swv_id = await getNextSWV();
+
+    // Insert the deployment record
+    const result = await insertSoftwareVersion({
+      swv_id,
+      service,
+      git_commit,
+      deploy_type,
+      initiator,
+      status: 'success',
+      environment: environment || 'dev-sandbox',
+      // BOOTSTRAP-PHASE0-UX: persist the Cloud Run revision name so the
+      // CLOCK dropdown can flag the LIVE row. EXEC-DEPLOY now sends this.
+      cloud_run_revision: typeof cloud_run_revision === 'string' && cloud_run_revision.length > 0 ? cloud_run_revision : null,
+    });
+
+    if (!result.ok) {
+      return res.status(502).json({
+        ok: false,
+        error: 'Failed to record deployment',
+        detail: result.error,
+      });
+    }
+
+    // This fires when the workflow's post-deploy step confirms the rollout
+    // actually landed — unlike the /publish-time invalidation (which runs
+    // the instant the workflow is dispatched, while prod still serves the
+    // old revision), this is the point where /deployments is guaranteed to
+    // return the NEW active revision if read right now. Without this, a
+    // /deployments read during the rollout window can repopulate
+    // ACTIVE_REV_CACHE with the still-old revision and hold it there for
+    // the full TTL, so even the confirmed post-publish refresh can show
+    // stale data.
+    ACTIVE_REV_CACHE.delete(service);
+
+    console.log(`[Operator] Deployment recorded: ${swv_id} for ${service}`);
+
+    return res.status(201).json({
+      ok: true,
+      swv_id: result.swv_id,
+      service,
+      git_commit,
+      deploy_type,
+      initiator,
+      environment: environment || 'dev-sandbox',
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[Operator] Error recording deployment: ${errorMessage}`);
+    return res.status(500).json({
+      ok: false,
+      error: 'Internal server error',
+      detail: errorMessage,
+    });
+  }
+});
+
+/**
+ * GET /deployments/health → /api/v1/operator/deployments/health
+ */
+router.get('/deployments/health', (_req: Request, res: Response) => {
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_SERVICE_ROLE;
+
+  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+
+  return res.status(200).json({
+    ok: true,
+    status,
+    service: 'operator-deployments',
+    version: '1.0.0',
+    vtid: 'VTID-0510',
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      database_connection: hasSupabaseUrl && hasSupabaseKey,
+      version_tracking: true,
+    },
+  });
+});
+
+// ==================== VTID-0541: OASIS Repair Endpoints ====================
+
+/**
+ * POST /repair/vtid-0540 → /api/v1/operator/repair/vtid-0540
+ * VTID-0541 D1: Retroactively register VTID-0540 in OASIS
+ * This endpoint implements the repair script logic directly
+ */
+router.post('/repair/vtid-0540', async (req: Request, res: Response) => {
+  console.log('[VTID-0541] Repair endpoint called for VTID-0540');
+
+  const SUPABASE_URL = process.env.SUPABASE_URL;
+  const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!SUPABASE_URL || !SUPABASE_SERVICE_ROLE) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Supabase not configured',
+      message: 'Cannot perform repair without database connection'
+    });
+  }
+
+  try {
+    const timestamp = new Date().toISOString();
+    const results: { step: string; success: boolean; message: string }[] = [];
+
+    // Step 1: Check if VTID-0540 already exists
+    const checkResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/vtid_ledger?vtid=eq.VTID-0540&select=vtid&limit=1`,
+      {
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`
+        }
+      }
+    );
+
+    if (!checkResp.ok) {
+      throw new Error(`Failed to check VTID-0540 existence: ${checkResp.status}`);
+    }
+
+    const existingData = await checkResp.json() as any[];
+    const vtidExists = existingData.length > 0;
+
+    if (vtidExists) {
+      results.push({ step: 'check_vtid', success: true, message: 'VTID-0540 already exists in ledger' });
+    } else {
+      // Step 2: Create VTID-0540 entry
+      const vtid0540Entry = {
+        vtid: 'VTID-0540',
+        title: 'Gemini Vertex ADC Health Gate Fix',
+        summary: 'Updated assistant routes health check to verify Vertex AI configuration. Retroactively registered by VTID-0541.',
+        layer: 'DEV',
+        module: 'GW',
+        status: 'deployed',
+        metadata: { repair_vtid: 'VTID-0541', note: 'Retroactively registered' }
+      };
+
+      const insertResp = await fetch(`${SUPABASE_URL}/rest/v1/vtid_ledger`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: SUPABASE_SERVICE_ROLE,
+          Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+          Prefer: 'return=minimal'
+        },
+        body: JSON.stringify(vtid0540Entry)
+      });
+
+      if (insertResp.ok) {
+        results.push({ step: 'create_vtid', success: true, message: 'VTID-0540 created in ledger' });
+      } else {
+        const text = await insertResp.text();
+        results.push({ step: 'create_vtid', success: false, message: `Failed to create VTID: ${text}` });
+      }
+    }
+
+    // Step 3: Create deploy success event
+    const deployEvent = {
+      id: randomUUID(),
+      vtid: 'VTID-0540',
+      topic: 'deploy.service.success',
+      service: 'gateway',
+      role: 'CICD',
+      model: 'exec-deploy',
+      status: 'success',
+      message: 'VTID-0540: Gemini Vertex ADC Health Gate Fix deployed successfully',
+      metadata: {
+        service: 'gateway',
+        environment: 'dev',
+        repair_vtid: 'VTID-0541',
+        note: 'Deployment event retroactively created by VTID-0541'
+      },
+      created_at: '2025-12-15T10:05:00.000Z'
+    };
+
+    const eventResp = await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(deployEvent)
+    });
+
+    if (eventResp.ok) {
+      results.push({ step: 'create_event', success: true, message: 'Deploy success event created' });
+    } else {
+      results.push({ step: 'create_event', success: false, message: 'Event may already exist' });
+    }
+
+    // Step 4: Emit repair completion event
+    const repairEvent = {
+      id: randomUUID(),
+      vtid: 'VTID-0541',
+      topic: 'repair.vtid.completed',
+      service: 'gateway',
+      role: 'SYSTEM',
+      model: 'repair-endpoint',
+      status: 'success',
+      message: 'VTID-0541: VTID-0540 retroactively registered via repair endpoint',
+      metadata: {
+        target_vtid: 'VTID-0540',
+        results
+      },
+      created_at: timestamp
+    };
+
+    await fetch(`${SUPABASE_URL}/rest/v1/oasis_events`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: SUPABASE_SERVICE_ROLE,
+        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
+        Prefer: 'return=minimal'
+      },
+      body: JSON.stringify(repairEvent)
+    });
+
+    console.log('[VTID-0541] Repair completed:', results);
+
+    return res.status(200).json({
+      ok: true,
+      vtid: 'VTID-0541',
+      target: 'VTID-0540',
+      message: 'VTID-0540 retroactively registered in OASIS',
+      results,
+      timestamp
+    });
+
+  } catch (error: any) {
+    console.error('[VTID-0541] Repair failed:', error);
+    return res.status(500).json({
+      ok: false,
+      error: error.message,
+      message: 'Repair operation failed'
+    });
+  }
+});
+
+// ====================================================================
+// Phase 0 staging build (handoff brief P0.4): publish / revert / revisions
+// ====================================================================
+//
+// Three new admin-gated endpoints power the PUBLISH and CLOCK buttons in the
+// Command Hub top bar:
+//
+//   GET  /api/v1/operator/revisions?service=gateway[-staging]
+//        — list recent Cloud Run revisions for the CLOCK history view.
+//
+//   POST /api/v1/operator/publish
+//        — promote the current `gateway-staging` active revision to `gateway`
+//          (production) via EXEC-DEPLOY.yml. Records source_revision in the
+//          software_versions row so the CLOCK history view can render
+//          "staging-publish" against the new prod revision.
+//
+//   POST /api/v1/operator/revert  { service, target_revision }
+//        — route 100% of traffic to a past revision via Cloud Run
+//          updateService(traffic). Records a deploy_type=rollback row.
+//
+// All three require an admin JWT (exafy_admin role). The Cloud Run Admin
+// API calls run with the gateway's service account ADC — the one-time IAM
+// grant (`roles/run.developer`) is documented in the handoff brief.
+// --------------------------------------------------------------------
+
+/**
+ * GET /revisions → /api/v1/operator/revisions?service=<svc>&limit=<n>
+ *
+ * Returns Cloud Run revisions for `service` newest-first. Defaults to
+ * `gateway` if service param omitted. CLOCK dropdown uses this to render the
+ * "all past revisions" tab alongside the software_versions tab.
+ */
+router.get('/revisions', requireAdminAuth, async (req: Request, res: Response) => {
+  try {
+    const service = ((req.query.service as string | undefined) || 'gateway').trim();
+    const limit = Math.min(parseInt((req.query.limit as string) || '50', 10), 100);
+
+    if (!['gateway', 'gateway-staging', 'community-app', 'community-app-staging'].includes(service)) {
+      return res.status(400).json({ ok: false, error: 'unsupported_service', service });
+    }
+
+    // VTID-03420: post-cutover (VTID-03419) the canonical gateway is AWS ECS,
+    // which has no Cloud Run revisions and no GCP credentials. When targeting
+    // AWS, back the two gateway rows with live build-info from the AWS stacks
+    // instead — same row shape, so the publish popover works unchanged.
+    if (PUBLISH_TARGET_CLOUD === 'aws' && (service === 'gateway' || service === 'gateway-staging')) {
+      const summary = service === 'gateway-staging'
+        ? await describeAwsStagingGateway()
+        : await describeAwsProdGateway();
+      return res.status(200).json({ ok: true, service, revisions: [toRevisionRow(summary)] });
+    }
+
+    const revisions = await listRevisions(service, limit);
+    return res.status(200).json({ ok: true, service, revisions });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.warn(`[Operator] /revisions failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+// Bake-time guard is OPT-IN. Publish is meant to be instant ("30s, any time"),
+// so the default is 0 (disabled): staging can be promoted to prod the moment it
+// is live. Set STAGING_PUBLISH_BAKE_SECONDS to a positive number of seconds to
+// re-enable a soak period before staging→prod promotion (e.g. for a freeze).
+const STAGING_PUBLISH_BAKE_MS = (() => {
+  const raw = parseInt(process.env.STAGING_PUBLISH_BAKE_SECONDS || '0', 10);
+  return Number.isFinite(raw) && raw >= 0 ? raw * 1000 : 0;
+})();
+
+// VTID-03420: which cloud the PUBLISH button promotes. Post-VTID-03419 the
+// canonical gateway hostname is served by AWS ECS, so the AWS stacks set this
+// to 'aws' (task-def env var). Default 'gcp' keeps the pre-cutover behavior
+// byte-identical everywhere the var is not set.
+const PUBLISH_TARGET_CLOUD: 'aws' | 'gcp' =
+  process.env.PUBLISH_TARGET_CLOUD === 'aws' ? 'aws' : 'gcp';
+
+/**
+ * POST /publish → /api/v1/operator/publish
+ *
+ * Body: { confirm_short_sha?: string }  (recommended; not strictly required —
+ * the UI's type-to-confirm flow gates the click, the server does its own checks)
+ *
+ * Flow:
+ *   1. requireAdminAuth — admin JWT present + exafy_admin role on identity.
+ *   2. Resolve gateway-staging's currently-serving revision (Cloud Run Admin).
+ *   3. Read the commit SHA from the revision's env (GIT_COMMIT_SHA) and/or
+ *      from software_versions by cloud_run_revision. Fail if neither yields a
+ *      SHA — without it the audit trail breaks.
+ *   4. Bake-time guard (OPT-IN, default OFF): if STAGING_PUBLISH_BAKE_SECONDS is
+ *      set >0, refuse when the staging revision is younger than that many seconds.
+ *      Default is 0 → no soak; publish is instant the moment staging is live.
+ *   5. Allocate a VTID via the canonical allocator (EXEC-DEPLOY gate needs it
+ *      in vtid_ledger).
+ *   6. Call deployOrchestrator.executeDeploy({ service:'gateway',
+ *      environment:'production', source:'api' }) — this dispatches EXEC-DEPLOY
+ *      (GCP, canonical production).
+ *   7a. Best-effort: cross-dispatch vitana-v1's DEPLOY.yml to promote the
+ *       frontend alongside gateway (requires FRONTEND_DEPLOY_TOKEN).
+ *   7b. Best-effort, gated by AWS_DUAL_PUBLISH_ENABLED (default off): also
+ *       dispatch AWS-PROD-DEPLOY-GATEWAY.yml (VTID-03398) to ship the same
+ *       commit to AWS Production (DR) — additive DR capacity per CLAUDE.md
+ *       §1b, GCP remains canonical. Failure here never fails the publish.
+ *   8. Insert software_versions row with source_revision=<staging revision short
+ *      name>, initiator_id=<admin uuid>, deploy_type='normal'. cloud_run_revision
+ *      stays NULL — EXEC-DEPLOY's post-deploy step backfills it.
+ *   9. Emit production.publish.requested + production.publish.completed events
+ *      (payload includes frontend_promote + aws_promote outcomes).
+ */
+/**
+ * VTID-03420: AWS variant of POST /publish — promotes AWS staging
+ * (`vitana-gateway`) to AWS production (`vitana-gateway-awsdr`) by
+ * dispatching AWS-PROD-DEPLOY-GATEWAY.yml in promote-staging mode, pinned
+ * to the exact commit staging serves at click time (expected_commit).
+ *
+ * Mirrors the GCP flow step-for-step (resolve staging → bake guard → VTID
+ * → requested event → dispatch → best-effort secondary legs → SWV row →
+ * completed event) and returns the same response shape, so the Command Hub
+ * popover works unchanged. Runs only when PUBLISH_TARGET_CLOUD=aws.
+ */
+async function publishAwsFlow(
+  req: Request,
+  res: Response,
+  identity: { user_id: string },
+  requestId: string,
+): Promise<Response> {
+  // ECS rolling deploys have no Cloud-Run-style traffic splitting — refuse
+  // canary explicitly rather than silently doing a full rollout.
+  if (req.body?.mode === 'canary') {
+    return res.status(400).json({
+      ok: false,
+      error: 'canary_unsupported_on_aws',
+      detail: 'Canary publish uses Cloud Run traffic splitting; the AWS ECS target only supports full rolling promotion. Re-publish with mode=full.',
+    });
+  }
+
+  // Step 2 (AWS): resolve what AWS staging is actually SERVING (build-info
+  // over HTTP — never ECS status fields; see aws-gateway-admin.ts header).
+  let staging;
+  try {
+    staging = await describeAwsStagingGateway();
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : 'unknown';
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PUBLISH',
+      type: 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `publish(aws): cannot resolve AWS staging gateway (${msg})`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, stage: 'describe_staging', platform: 'aws-ecs' },
+    });
+    return res.status(502).json({ ok: false, error: 'staging_unreachable', detail: msg });
+  }
+
+  const stagingCommit = staging.commitSha;
+  if (!stagingCommit) {
+    return res.status(409).json({
+      ok: false,
+      error: 'staging_commit_unknown',
+      detail: `AWS staging build-info reports no git_commit. AWS-STAGE-DEPLOY-GATEWAY stamps GIT_COMMIT_SHA on every deploy — a missing commit means an ungoverned build is serving staging.`,
+    });
+  }
+  const stagingRevShort = staging.marker || stagingCommit.slice(0, 12);
+
+  // Step 3b (VTID-04646): STAGING-VERIFY gate. Only a passing run for this
+  // exact commit clears it; otherwise an exafy admin must write down why they
+  // publish anyway (body.override_reason, >= 10 chars), which is recorded.
+  const gate = await evaluatePublishGate({ commit: stagingCommit, service: 'gateway', overrideReason: req.body?.override_reason });
+  if (!gate.allowed) {
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PUBLISH',
+      type: 'production.publish.blocked',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `publish(aws) refused: ${gate.reason}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_commit: stagingCommit, platform: 'aws-ecs', staging_verify: gate.verification, reason: gate.reason },
+    });
+    return res.status(409).json({
+      ok: false,
+      error: 'staging_not_verified',
+      detail: `${gate.reason} Publish anyway only with a written reason (override_reason, at least ${OVERRIDE_REASON_MIN} characters); it is recorded.`,
+      source_commit: stagingCommit,
+      staging_verify: gate.verification,
+      override_allowed: true,
+    });
+  }
+
+  // Step 4 (AWS): bake-time guard against the serving container's boot time.
+  const ageMs = staging.bootedAt
+    ? Date.now() - Date.parse(staging.bootedAt)
+    : STAGING_PUBLISH_BAKE_MS; // unknown age — same treat-as-old-enough fallback as GCP
+  if (STAGING_PUBLISH_BAKE_MS > 0 && ageMs < STAGING_PUBLISH_BAKE_MS) {
+    const remainingSec = Math.ceil((STAGING_PUBLISH_BAKE_MS - ageMs) / 1000);
+    return res.status(409).json({
+      ok: false,
+      error: 'bake_time_not_met',
+      detail: `AWS staging build ${stagingRevShort} is only ${Math.floor(ageMs / 1000)}s old; needs ${STAGING_PUBLISH_BAKE_MS / 1000}s. Wait ${remainingSec}s, or set STAGING_PUBLISH_BAKE_SECONDS=0 to override.`,
+    });
+  }
+
+  // Step 5: allocate the per-publish VTID (same allocator as the GCP path).
+  const allocation = await allocateVtid('publish.api', 'INFRA', 'GATEWAY');
+  if (!allocation.ok || !allocation.vtid) {
+    return res.status(503).json({
+      ok: false,
+      error: 'vtid_allocation_failed',
+      detail: allocation.message || allocation.error || 'unknown',
+    });
+  }
+  const vtid = allocation.vtid;
+
+  // Step 6: publish-requested event before dispatching.
+  await emitOasisEvent({
+    vtid,
+    type: 'production.publish.requested',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `publish(aws): vitana-gateway ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → vitana-gateway-awsdr`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      promote_mode: 'aws-image-promote',
+      platform: 'aws-ecs',
+      staging_age_seconds: Math.floor(ageMs / 1000),
+      confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
+      staging_verify_gate: gate.status,
+      staging_verify: gate.verification,
+      override_reason: gate.override_reason,
+    },
+  });
+
+  // VTID-04646: an overridden gate gets its own event, so a publish that
+  // skipped verification is findable without reading every requested event.
+  if (gate.status === 'overridden') {
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.verification_overridden',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `publish(aws) of ${stagingCommit.slice(0, 7)} without a passing STAGING-VERIFY: ${gate.override_reason}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_commit: stagingCommit, gate_reason: gate.reason, override_reason: gate.override_reason, staging_verify: gate.verification },
+    });
+  }
+
+  // Step 7: dispatch the promotion. promote-staging + expected_commit means
+  // the workflow ships the EXACT ECR image staging runs and fails (before
+  // touching the service) if staging moved between click and run.
+  let workflowUrl: string | null = null;
+  let workflowRunId: number | null = null;
+  try {
+    await triggerWorkflow('exafyltd/vitana-platform', 'AWS-PROD-DEPLOY-GATEWAY.yml', 'main', {
+      reason: `Command Hub PUBLISH (${vtid}): promote AWS staging ${stagingCommit.slice(0, 7)} by ${identity.user_id}`,
+      deploy_mode: 'promote-staging',
+      expected_commit: stagingCommit,
+    });
+    try {
+      const runs = await getWorkflowRuns('exafyltd/vitana-platform', 'AWS-PROD-DEPLOY-GATEWAY.yml');
+      workflowUrl = runs.workflow_runs[0]?.html_url ?? null;
+      workflowRunId = runs.workflow_runs[0]?.id ?? null;
+    } catch {
+      // URL lookup is cosmetic — the dispatch above already succeeded.
+    }
+  } catch (e) {
+    const detail = e instanceof Error ? e.message : 'aws_dispatch_failed';
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `publish(aws): AWS-PROD-DEPLOY-GATEWAY dispatch failed — ${detail}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, source_revision: stagingRevShort, source_commit: stagingCommit, deploy_error: detail },
+    });
+    return res.status(500).json({ ok: false, vtid, error: 'deploy_dispatch_failed', detail });
+  }
+
+  // Step 7b: best-effort FRONTEND promote — AWS twin. Rebuilds vitana-v1
+  // main with the prod gateway URL baked (there is no AWS frontend staging
+  // artifact to promote; mirrors the GCP flow's rebuild-from-commit leg).
+  let frontendPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+    ok: false,
+    detail: 'not_attempted',
+  };
+  try {
+    const FRONTEND_REPO = process.env.FRONTEND_DEPLOY_REPO || 'exafyltd/vitana-v1';
+    const FRONTEND_TOKEN = process.env.FRONTEND_DEPLOY_TOKEN;
+    if (!FRONTEND_TOKEN) {
+      frontendPromote = {
+        ok: false,
+        detail: 'FRONTEND_DEPLOY_TOKEN not set — frontend NOT promoted. Dispatch AWS-PROD-DEPLOY-FRONTEND.yml manually, or set the secret to enable one-button-both.',
+      };
+    } else {
+      await triggerWorkflow(
+        FRONTEND_REPO,
+        'AWS-PROD-DEPLOY-FRONTEND.yml',
+        'main',
+        { reason: `publish-both via Command Hub (${vtid}, gateway ${stagingCommit.slice(0, 7)})` },
+        FRONTEND_TOKEN,
+      );
+      frontendPromote = { ok: true, source_commit: null };
+    }
+  } catch (e) {
+    frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
+  }
+
+  // Step 7c: best-effort GCP mirror — exact inverse of the old AWS leg.
+  // GCP Cloud Run is now the standing rollback target (VTID-03419 §8); a
+  // publish can keep it fresh by shipping the same commit through the
+  // governed EXEC-DEPLOY path. Gated (default off) for the same reason
+  // AWS_DUAL_PUBLISH_ENABLED was: cross-cloud prod deploys stay deliberate.
+  let gcpPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+    ok: false,
+    detail: 'not_attempted',
+  };
+  if (process.env.GCP_DUAL_PUBLISH_ENABLED === 'true') {
+    try {
+      const gcpResult = await deployOrchestrator.executeDeploy({
+        vtid,
+        service: 'gateway',
+        environment: 'production',
+        source: 'api',
+        canary: false,
+        // No prebuilt GCP image to reuse from here — EXEC-DEPLOY builds this
+        // exact commit from source (its documented fallback path).
+        commitSha: stagingCommit,
+      });
+      gcpPromote = gcpResult.ok
+        ? { ok: true, source_commit: stagingCommit }
+        : { ok: false, detail: gcpResult.error || 'gcp_deploy_failed' };
+    } catch (e) {
+      gcpPromote = { ok: false, detail: e instanceof Error ? e.message : 'gcp_dispatch_failed' };
+    }
+  } else {
+    gcpPromote = { ok: false, detail: 'GCP_DUAL_PUBLISH_ENABLED not set to true — GCP rollback target NOT refreshed.' };
+  }
+
+  // Step 8: record the publish in software_versions (same optimistic model
+  // as the GCP path; the workflow's own best-effort emission records the
+  // deploy outcome under service vitana-gateway-aws-dr).
+  const swvId = await getNextSWV();
+  await insertSoftwareVersion({
+    swv_id: swvId,
+    service: 'gateway',
+    git_commit: stagingCommit,
+    deploy_type: 'normal',
+    initiator: 'user',
+    status: 'success',
+    environment: 'production',
+    cloud_run_revision: null,
+    source_revision: stagingRevShort,
+    initiator_id: identity.user_id,
+  });
+  // See the GCP flow's identical invalidation above — same staleness bug,
+  // same fix, regardless of which cloud PUBLISH_TARGET_CLOUD points at.
+  ACTIVE_REV_CACHE.delete('gateway');
+
+  await emitOasisEvent({
+    vtid,
+    type: 'production.publish.completed',
+    source: 'gateway-operator',
+    status: 'success',
+    message: `publish(aws): ${stagingRevShort} promotion dispatched; AWS-PROD-DEPLOY-GATEWAY ${workflowUrl ?? 'dispatched'}`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      vtid,
+      swv_id: swvId,
+      mode: 'full',
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      workflow_run_id: workflowRunId,
+      workflow_url: workflowUrl,
+      frontend_promote: frontendPromote,
+      gcp_promote: gcpPromote,
+    },
+  });
+
+  return res.status(200).json({
+    ok: true,
+    vtid,
+    swv_id: swvId,
+    source_revision: stagingRevShort,
+    source_commit: stagingCommit,
+    workflow_run_id: workflowRunId,
+    workflow_url: workflowUrl,
+    frontend_promote: frontendPromote,
+    // Field name kept for popover/event consumers: on the AWS target the
+    // "aws" leg IS the primary promotion.
+    aws_promote: { ok: true, source_commit: stagingCommit },
+    gcp_promote: gcpPromote,
+  });
+}
+
+router.post('/publish', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  try {
+    // VTID-03420: post-cutover the canonical gateway is AWS ECS — promote
+    // AWS staging → AWS prod instead of the GCP pair. Selected per-stack via
+    // task-def env, so GCP-hosted gateways keep the original flow untouched.
+    if (PUBLISH_TARGET_CLOUD === 'aws') {
+      return await publishAwsFlow(req, res, identity, requestId);
+    }
+
+    // Step 2: resolve staging service state.
+    let stagingSummary;
+    try {
+      stagingSummary = await describeService('gateway-staging');
+    } catch (err) {
+      const msg = err instanceof Error ? err.message : 'unknown';
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-PUBLISH',
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `publish: cannot describe gateway-staging (${msg})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, stage: 'describe_staging' },
+      });
+      return res.status(502).json({ ok: false, error: 'staging_unreachable', detail: msg });
+    }
+
+    if (!stagingSummary.activeRevision) {
+      return res.status(409).json({ ok: false, error: 'staging_has_no_active_revision' });
+    }
+
+    const stagingRevShort = stagingSummary.activeRevisionShort!;
+    const stagingCommit = stagingSummary.activeRevisionCommit;
+    if (!stagingCommit) {
+      // Fall back: look up software_versions by cloud_run_revision = stagingRevShort.
+      // For Phase 0 a missing SHA is recoverable but flag-worthy; we still
+      // refuse to ship without one so the audit trail is complete.
+      return res.status(409).json({
+        ok: false,
+        error: 'staging_commit_unknown',
+        detail: `Active staging revision ${stagingRevShort} has no GIT_COMMIT_SHA env var. STAGE-DEPLOY must set this on the revision before publish can proceed.`,
+      });
+    }
+
+    // Step 4: bake-time guard. Also resolve the prebuilt image the staging
+    // revision is already running, so the promote can REUSE it and skip the
+    // from-source rebuild (~30s vs minutes — see Step 7).
+    let ageMs = 0;
+    let stagingImage: string | null = null;
+    try {
+      const rev = (await listRevisions('gateway-staging', 5)).find(r => r.shortName === stagingRevShort);
+      if (rev?.createdAt) ageMs = Date.now() - Date.parse(rev.createdAt);
+      stagingImage = rev?.image || null;
+    } catch {
+      ageMs = STAGING_PUBLISH_BAKE_MS; // can't read age — treat as old enough; we already verified active rev
+    }
+    if (STAGING_PUBLISH_BAKE_MS > 0 && ageMs < STAGING_PUBLISH_BAKE_MS) {
+      const remainingSec = Math.ceil((STAGING_PUBLISH_BAKE_MS - ageMs) / 1000);
+      return res.status(409).json({
+        ok: false,
+        error: 'bake_time_not_met',
+        detail: `Staging revision ${stagingRevShort} is only ${Math.floor(ageMs / 1000)}s old; needs ${STAGING_PUBLISH_BAKE_MS / 1000}s. Wait ${remainingSec}s, or set STAGING_PUBLISH_BAKE_SECONDS=0 to override.`,
+      });
+    }
+
+    // Step 5: allocate VTID. EXEC-DEPLOY's hard gate requires the ledger row.
+    const allocation = await allocateVtid('publish.api', 'INFRA', 'GATEWAY');
+    if (!allocation.ok || !allocation.vtid) {
+      return res.status(503).json({
+        ok: false,
+        error: 'vtid_allocation_failed',
+        detail: allocation.message || allocation.error || 'unknown',
+      });
+    }
+    const vtid = allocation.vtid;
+
+    // Step 6: publish-requested event before dispatching.
+    await emitOasisEvent({
+      vtid,
+      type: 'production.publish.requested',
+      source: 'gateway-operator',
+      status: 'info',
+      message: `publish: gateway-staging ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → gateway`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        source_revision: stagingRevShort,
+        source_commit: stagingCommit,
+        source_image: stagingImage,
+        promote_mode: stagingImage ? 'image-reuse' : 'source-rebuild',
+        staging_age_seconds: Math.floor(ageMs / 1000),
+        confirm_short_sha: typeof req.body?.confirm_short_sha === 'string' ? req.body.confirm_short_sha : null,
+      },
+    });
+
+    // Voice-first canary mode: defaults to TRUE (recommended for voice).
+    // body.mode='full' opts out of canary for low-risk shipments where the
+    // operator wants 100% immediately. Body shape:
+    //   { confirm_short_sha?: string, mode?: 'canary'|'full' }
+    // One-button publish: default to a single 100% promote. Canary is opt-in
+    // only when the caller explicitly asks for mode='canary'.
+    const mode: 'canary' | 'full' = (req.body?.mode === 'canary') ? 'canary' : 'full';
+    const isCanary = mode === 'canary';
+
+    // Step 7: dispatch the production deploy (EXEC-DEPLOY.yml).
+    const deployResult = await deployOrchestrator.executeDeploy({
+      vtid,
+      service: 'gateway',
+      environment: 'production',
+      source: 'api',
+      canary: isCanary,
+      // Ship the EXACT staging commit we resolved + displayed (no main-HEAD drift).
+      commitSha: stagingCommit,
+      // Promote the prebuilt image the staging revision is already running so
+      // prod skips the rebuild (~30s). If we couldn't resolve it, EXEC-DEPLOY
+      // falls back to a from-source build of commitSha (still correct, slower).
+      image: stagingImage || undefined,
+    });
+
+    if (!deployResult.ok) {
+      await emitOasisEvent({
+        vtid,
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `publish: EXEC-DEPLOY dispatch failed — ${deployResult.error || 'unknown'}`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: {
+          request_id: requestId,
+          mode,
+          source_revision: stagingRevShort,
+          source_commit: stagingCommit,
+          deploy_error: deployResult.error,
+          governance_blocked: deployResult.blocked,
+          governance_violations: deployResult.violations,
+        },
+      });
+      return res.status(500).json({
+        ok: false,
+        vtid,
+        error: 'deploy_dispatch_failed',
+        detail: deployResult.error,
+        blocked: deployResult.blocked,
+        violations: deployResult.violations,
+      });
+    }
+
+    // Step 7b: One-button-both (workstream C) — also promote the FRONTEND.
+    // The community app is a separate Cloud Run service in exafyltd/vitana-v1.
+    // It must be REBUILT from the tested commit with prod .env (its staging image
+    // bakes staging URLs and must never be image-promoted), so we cross-repo
+    // dispatch vitana-v1's DEPLOY.yml with the staging commit SHA.
+    //
+    // Best-effort: the gateway deploy already succeeded; a frontend failure (or a
+    // missing cross-repo token) is surfaced separately and does NOT fail publish.
+    let frontendPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+      ok: false,
+      detail: 'not_attempted',
+    };
+    try {
+      const FRONTEND_REPO = process.env.FRONTEND_DEPLOY_REPO || 'exafyltd/vitana-v1';
+      // PAT (or fine-grained token) with `actions:write` on vitana-v1. The default
+      // platform token (GITHUB_SAFE_MERGE_TOKEN) does not span repos.
+      const FRONTEND_TOKEN = process.env.FRONTEND_DEPLOY_TOKEN;
+      if (!FRONTEND_TOKEN) {
+        frontendPromote = {
+          ok: false,
+          detail: 'FRONTEND_DEPLOY_TOKEN not set — frontend NOT promoted. Run vitana-v1 DEPLOY.yml manually, or set the secret to enable one-button-both.',
+        };
+      } else {
+        // Resolve the commit currently serving on community-app-staging so we
+        // ship the exact tested frontend bits (empty → vitana-v1 main HEAD).
+        let feCommit: string | null = null;
+        try {
+          const feStaging = await describeService('community-app-staging');
+          feCommit = feStaging.activeRevisionCommit;
+        } catch {
+          feCommit = null;
+        }
+        await triggerWorkflow(
+          FRONTEND_REPO,
+          'DEPLOY.yml',
+          'main',
+          {
+            reason: `publish-both via Command Hub (gateway ${stagingCommit.slice(0, 7)}); frontend ${feCommit ? feCommit.slice(0, 7) : 'main HEAD'}`,
+            commit_sha: feCommit || '',
+          },
+          FRONTEND_TOKEN,
+        );
+        frontendPromote = { ok: true, source_commit: feCommit };
+      }
+    } catch (e) {
+      frontendPromote = { ok: false, detail: e instanceof Error ? e.message : 'frontend_dispatch_failed' };
+    }
+
+    // Step 7c: AWS Production (DR) dual-publish (VTID-03398) — also ship the
+    // SAME commit to vitana-gateway-awsdr on AWS, alongside the GCP publish
+    // above. Best-effort, same shape as the frontend promote: a failure here
+    // does NOT fail the overall publish (GCP is still canonical; AWS is
+    // additive DR capacity per CLAUDE.md §1b, not the other way around).
+    //
+    // Gated behind AWS_DUAL_PUBLISH_ENABLED (default off) rather than firing
+    // unconditionally: AWS-PROD-DEPLOY-GATEWAY.yml was deliberately built
+    // workflow_dispatch-only with a required human-entered `reason` so AWS
+    // prod deploys stay a deliberate action, not an automatic side effect of
+    // every GCP publish. Flip the env var on only once that tradeoff has
+    // been explicitly accepted.
+    let awsPromote: { ok: boolean; detail?: string; source_commit?: string | null } = {
+      ok: false,
+      detail: 'not_attempted',
+    };
+    if (process.env.AWS_DUAL_PUBLISH_ENABLED === 'true') {
+      try {
+        await triggerWorkflow(
+          'exafyltd/vitana-platform',
+          'AWS-PROD-DEPLOY-GATEWAY.yml',
+          'main',
+          {
+            reason: `dual-publish via Command Hub (${vtid}, gateway ${stagingCommit.slice(0, 7)})`,
+          },
+        );
+        awsPromote = { ok: true, source_commit: stagingCommit };
+      } catch (e) {
+        awsPromote = { ok: false, detail: e instanceof Error ? e.message : 'aws_dispatch_failed' };
+      }
+    } else {
+      awsPromote = { ok: false, detail: 'AWS_DUAL_PUBLISH_ENABLED not set to true — AWS DR NOT promoted.' };
+    }
+
+    // Step 8: record the publish row in software_versions. cloud_run_revision
+    // stays null — STAGE/EXEC-DEPLOY post-deploy step (P0.7) is responsible
+    // for backfilling it once the new prod revision is healthy.
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service: 'gateway',
+      git_commit: stagingCommit,
+      deploy_type: 'normal',
+      initiator: 'user',
+      status: 'success', // optimistic — true success is the EXEC-DEPLOY post-deploy event
+      environment: 'production',
+      cloud_run_revision: null,
+      source_revision: stagingRevShort,
+      initiator_id: identity.user_id,
+    });
+    // Publish just changed which revision is active; a stale ACTIVE_REV_CACHE
+    // entry would otherwise show the old "Currently Live" row for up to
+    // ACTIVE_REV_TTL_MS on the next /deployments read (same reason /revert,
+    // /revert-both, /promote, and /abort-canary all invalidate it).
+    ACTIVE_REV_CACHE.delete('gateway');
+
+    // Emit different terminal events depending on mode.
+    // Canary mode: the deploy DOES NOT promote to 100%; emit .requested only.
+    //              Operator promotes later via /operator/promote, which emits
+    //              production.canary.promoted (or .aborted on discard).
+    // Full mode:   same behavior as before — emit production.publish.completed.
+    const terminalType = isCanary ? 'production.canary.requested' : 'production.publish.completed';
+    const terminalMessage = isCanary
+      ? `canary publish requested: ${stagingRevShort} (${stagingCommit.slice(0, 7)}) → 10/90 split scheduled; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`
+      : `publish: ${stagingRevShort} promoted; EXEC-DEPLOY ${deployResult.workflow_url ?? 'dispatched'}`;
+    await emitOasisEvent({
+      vtid,
+      type: terminalType,
+      source: 'gateway-operator',
+      status: 'success',
+      message: terminalMessage,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        vtid,
+        swv_id: swvId,
+        mode,
+        source_revision: stagingRevShort,
+        source_commit: stagingCommit,
+        workflow_run_id: deployResult.workflow_run_id,
+        workflow_url: deployResult.workflow_url,
+        frontend_promote: frontendPromote,
+        aws_promote: awsPromote,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      vtid,
+      swv_id: swvId,
+      source_revision: stagingRevShort,
+      source_commit: stagingCommit,
+      workflow_run_id: deployResult.workflow_run_id,
+      workflow_url: deployResult.workflow_url,
+      frontend_promote: frontendPromote,
+      aws_promote: awsPromote,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /publish failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+/**
+ * POST /revert → /api/v1/operator/revert
+ *
+ * Body: { service: 'gateway' | 'gateway-staging', target_revision: string,
+ *         confirm_short_sha?: string }
+ *
+ * Flow:
+ *   1. requireAdminAuth.
+ *   2. Validate `service` is one of the two Cloud Run services we manage.
+ *   3. Validate target_revision exists in the recent revisions list and is
+ *      not the currently-active one.
+ *   4. Refuse if target_revision is older than 90 days (revert age limit).
+ *   5. Call Cloud Run updateService(traffic) → 100% to target.
+ *   6. Insert software_versions row with deploy_type='rollback',
+ *      cloud_run_revision=<target>, initiator_id=<admin uuid>.
+ *   7. Emit production.revert.completed or staging.revert.completed.
+ */
+// ====================================================================
+// Shared revert core + both-repos revert (one-click clock revert).
+//
+// The Command Hub clock-revert reverts BOTH the backend (gateway) and the
+// frontend (community-app) together, so a "go back to the previous version"
+// click restores the whole product, not just the API. Both are fast Cloud Run
+// traffic shifts to an existing revision (no rebuild). The gateway service
+// account must hold roles/run.developer on the community-app services for the
+// frontend half; absent that, the frontend result reports shift_failed with the
+// IAM detail and the backend revert still stands (we surface partials, never
+// hide them).
+// ====================================================================
+
+type RevertStatus =
+  | 'reverted'
+  | 'already_active'
+  | 'not_found'
+  | 'too_old'
+  | 'shift_failed'
+  | 'no_target'
+  | 'resolve_failed';
+
+interface RevertOutcome {
+  status: RevertStatus;
+  ok: boolean; // true only for 'reverted'
+  service: string;
+  target_revision?: string;
+  target_commit?: string | null;
+  operation_name?: string;
+  swv_id?: string;
+  detail?: string;
+}
+
+/** Cloud Run service pairing: backend ↔ frontend, per environment. */
+const REVERT_SIBLING: Record<string, string> = {
+  gateway: 'community-app',
+  'community-app': 'gateway',
+  'gateway-staging': 'community-app-staging',
+  'community-app-staging': 'gateway-staging',
+};
+
+function isBackendService(service: string): boolean {
+  return service === 'gateway' || service === 'gateway-staging';
+}
+
+function revertOutcomeToHttp(o: RevertOutcome): number {
+  switch (o.status) {
+    case 'reverted': return 200;
+    case 'not_found': return 404;
+    case 'already_active': return 409;
+    case 'too_old': return 409;
+    case 'shift_failed': return 502;
+    default: return 500;
+  }
+}
+
+/**
+ * Validate a target revision, shift 100% traffic to it, record a `rollback`
+ * software_versions row, and emit the terminal OASIS event. Used by both
+ * POST /revert (single service) and POST /revert-both (gateway + community-app
+ * together). Returns a structured outcome; callers decide HTTP status and
+ * partial-failure handling. Works for any of the four managed Cloud Run
+ * services — environment (production/staging) is derived from the `-staging`
+ * suffix.
+ */
+async function revertOneService(
+  service: string,
+  targetRevisionRaw: string,
+  identity: { user_id: string },
+  requestId: string,
+): Promise<RevertOutcome> {
+  const targetShort = shortRevisionName(targetRevisionRaw);
+  const isStaging = service.endsWith('-staging');
+  const environment = isStaging ? 'staging' : 'production';
+
+  const revisions = await listRevisions(service, 100);
+  const target = revisions.find(r => r.shortName === targetShort);
+  if (!target) {
+    return {
+      status: 'not_found', ok: false, service, target_revision: targetShort,
+      detail: `revision ${targetShort} not found in last 100 revisions of ${service}`,
+    };
+  }
+  if (target.isActive) {
+    return {
+      status: 'already_active', ok: false, service, target_revision: targetShort,
+      target_commit: target.commitSha, detail: `${service} is already serving ${targetShort}`,
+    };
+  }
+  const ageMs = target.createdAt ? Date.now() - Date.parse(target.createdAt) : 0;
+  if (ageMs > REVERT_AGE_LIMIT_MS) {
+    return {
+      status: 'too_old', ok: false, service, target_revision: targetShort,
+      detail: `revision ${targetShort} is ${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old; >90d. Re-deploy that commit instead.`,
+    };
+  }
+
+  const result = await updateTrafficToRevision(service, targetShort);
+  if (!result.ok) {
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-REVERT',
+      type: isStaging ? 'staging.deploy.failed' : 'production.publish.failed',
+      source: 'gateway-operator',
+      status: 'error',
+      message: `revert: ${service} → ${targetShort} traffic-shift failed (${result.error})`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { request_id: requestId, service, target_revision: targetShort, error: result.error },
+    });
+    return {
+      status: 'shift_failed', ok: false, service, target_revision: targetShort,
+      target_commit: target.commitSha, detail: result.error,
+    };
+  }
+
+  ACTIVE_REV_CACHE.delete(service); // invalidate cache so next /deployments shows new active
+  const swvId = await getNextSWV();
+  await insertSoftwareVersion({
+    swv_id: swvId,
+    service,
+    git_commit: target.commitSha || '(unknown)',
+    deploy_type: 'rollback',
+    initiator: 'user',
+    status: 'success',
+    environment,
+    cloud_run_revision: targetShort,
+    source_revision: null,
+    initiator_id: identity.user_id,
+  });
+
+  await emitOasisEvent({
+    vtid: 'BOOTSTRAP-REVERT',
+    type: isStaging ? 'staging.revert.completed' : 'production.revert.completed',
+    source: 'gateway-operator',
+    status: 'success',
+    message: `revert: ${service} now serving ${targetShort}`,
+    actor_id: identity.user_id,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: {
+      request_id: requestId,
+      service,
+      target_revision: targetShort,
+      target_commit: target.commitSha,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    },
+  });
+
+  return {
+    status: 'reverted', ok: true, service, target_revision: targetShort,
+    target_commit: target.commitSha, operation_name: result.operationName, swv_id: swvId,
+  };
+}
+
+/**
+ * POST /api/v1/operator/revert-both → /api/v1/operator/revert-both
+ *
+ * One-click "go back to the previous version" across BOTH repos. Reverts the
+ * anchor service (the clicked clock row) to `target_revision`, then reverts its
+ * paired sibling to the revision that sibling was serving at the anchor's deploy
+ * time (`target_created_at`), falling back to the sibling's immediately-previous
+ * revision when no timestamp is supplied. Anchor success drives the HTTP status;
+ * the sibling result is always reported alongside (skips/failures included).
+ */
+router.post('/revert-both', requireAdminAuth, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: the state-transition events (production/staging.
+  // revert.completed) are emitted inside revertOneService() for each service
+  // this handler reverts, not in the handler body.
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || '').toString().trim();
+  const targetRevisionRaw = (req.body?.target_revision || '').toString().trim();
+  const anchorCreatedAt = (req.body?.target_created_at || '').toString().trim();
+
+  const sibling = REVERT_SIBLING[service];
+  if (!sibling) {
+    return res.status(400).json({
+      ok: false, error: 'invalid_service',
+      detail: 'service must be gateway, gateway-staging, community-app, or community-app-staging',
+    });
+  }
+  if (!targetRevisionRaw) {
+    return res.status(400).json({ ok: false, error: 'missing_target_revision' });
+  }
+
+  try {
+    // 1. Revert the anchor (the service whose clock row was clicked).
+    const anchor = await revertOneService(service, targetRevisionRaw, identity, requestId);
+
+    // 2. Resolve + revert the sibling. Time-correlate to the anchor deploy when
+    //    we have its timestamp; otherwise step the sibling back one revision.
+    let siblingOutcome: RevertOutcome;
+    try {
+      const sibRevs = await listRevisions(sibling, 100);
+      const sorted = sibRevs.slice().sort((a, b) =>
+        Date.parse(b.createdAt || '0') - Date.parse(a.createdAt || '0'));
+      const active = sorted.find(r => r.isActive) || null;
+      const notActive = (shortName: string) => !active || active.shortName !== shortName;
+
+      let chosen = undefined as (typeof sorted)[number] | undefined;
+      const anchorMs = anchorCreatedAt ? Date.parse(anchorCreatedAt) : NaN;
+      if (!Number.isNaN(anchorMs)) {
+        chosen = sorted.find(r => {
+          const t = Date.parse(r.createdAt || '0');
+          return !Number.isNaN(t) && t <= anchorMs && notActive(r.shortName);
+        });
+      }
+      if (!chosen) {
+        chosen = sorted.find(r => notActive(r.shortName)); // immediately-previous
+      }
+
+      if (!chosen) {
+        siblingOutcome = {
+          status: 'no_target', ok: false, service: sibling,
+          detail: `${sibling} has no earlier revision to revert to.`,
+        };
+      } else if (active && chosen.shortName === active.shortName) {
+        siblingOutcome = {
+          status: 'already_active', ok: false, service: sibling,
+          target_revision: chosen.shortName, target_commit: chosen.commitSha,
+          detail: `${sibling} already serving ${chosen.shortName}`,
+        };
+      } else {
+        siblingOutcome = await revertOneService(sibling, chosen.shortName, identity, requestId);
+      }
+    } catch (sibErr) {
+      siblingOutcome = {
+        status: 'resolve_failed', ok: false, service: sibling,
+        detail: sibErr instanceof Error ? sibErr.message : 'unknown',
+      };
+    }
+
+    // 3. Respond. backend/frontend convenience aliases + raw anchor/sibling.
+    const backend = isBackendService(service) ? anchor : siblingOutcome;
+    const frontend = isBackendService(service) ? siblingOutcome : anchor;
+    const siblingSettled = siblingOutcome.ok || siblingOutcome.status === 'already_active';
+
+    return res.status(anchor.ok ? 200 : revertOutcomeToHttp(anchor)).json({
+      ok: anchor.ok,
+      both_ok: anchor.ok && siblingSettled,
+      backend,
+      frontend,
+      anchor,
+      sibling: siblingOutcome,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /revert-both failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+router.post('/revert', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || '').toString().trim();
+  const targetRevisionRaw = (req.body?.target_revision || '').toString().trim();
+
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service', detail: 'service must be "gateway" or "gateway-staging"' });
+  }
+  if (!targetRevisionRaw) {
+    return res.status(400).json({ ok: false, error: 'missing_target_revision' });
+  }
+  const targetShort = shortRevisionName(targetRevisionRaw);
+
+  try {
+    // Step 3 + 4: validate revision exists, isn't currently active, isn't expired.
+    const revisions = await listRevisions(service, 100);
+    const target = revisions.find(r => r.shortName === targetShort);
+    if (!target) {
+      return res.status(404).json({ ok: false, error: 'target_revision_not_found', detail: `revision ${targetShort} not found in last 100 revisions of ${service}` });
+    }
+    if (target.isActive) {
+      return res.status(409).json({ ok: false, error: 'target_already_active' });
+    }
+    const ageMs = target.createdAt ? Date.now() - Date.parse(target.createdAt) : 0;
+    if (ageMs > REVERT_AGE_LIMIT_MS) {
+      return res.status(409).json({ ok: false, error: 'target_revision_too_old', detail: `revision ${targetShort} is ${Math.floor(ageMs / (24 * 60 * 60 * 1000))} days old; >90d. Re-deploy that commit instead.` });
+    }
+
+    // Step 5: traffic shift.
+    const result = await updateTrafficToRevision(service, targetShort);
+    if (!result.ok) {
+      const isProd = service === 'gateway';
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-REVERT',
+        type: isProd ? 'production.publish.failed' : 'staging.deploy.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `revert: ${service} → ${targetShort} traffic-shift failed (${result.error})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, service, target_revision: targetShort, error: result.error },
+      });
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    // Step 6: record rollback row.
+    ACTIVE_REV_CACHE.delete(service); // invalidate cache so next /deployments shows new active
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: target.commitSha || '(unknown)',
+      deploy_type: 'rollback',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: targetShort,
+      source_revision: null,
+      initiator_id: identity.user_id,
+    });
+
+    // Step 7: terminal event (topic depends on which stack).
+    const topic = service === 'gateway' ? 'production.revert.completed' : 'staging.revert.completed';
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-REVERT',
+      type: topic,
+      source: 'gateway-operator',
+      status: 'success',
+      message: `revert: ${service} now serving ${targetShort}`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        target_revision: targetShort,
+        target_commit: target.commitSha,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      target_revision: targetShort,
+      target_commit: target.commitSha,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /revert failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+// ====================================================================
+// Voice-first canary endpoints (post-Phase 0 UX).  See docs/STAGING.md
+// §"Canary publish" for the operator playbook.
+//
+//   POST /api/v1/operator/promote     — shift the canary revision to 100%
+//   POST /api/v1/operator/abort-canary — drop the canary back to 0%, restore
+//                                         the prior revision to 100%
+//
+// Both are admin-only.  Both inspect the current Cloud Run traffic split to
+// resolve which revision is the canary (the one with the lower non-zero
+// percent) vs the stable revision (the one with the higher percent).
+// ====================================================================
+
+router.post('/promote', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || 'gateway').toString().trim();
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service' });
+  }
+
+  try {
+    const summary = await describeService(service);
+    if (summary.trafficSplit.length < 2) {
+      return res.status(409).json({
+        ok: false,
+        error: 'no_canary_active',
+        detail: `No canary split detected on ${service}. Traffic is already on a single revision.`,
+      });
+    }
+    // Canary = lowest non-zero percent. Stable = highest.
+    const sorted = [...summary.trafficSplit].sort((a, b) => a.percent - b.percent);
+    const canary = sorted[0];
+    const canaryShort = shortRevisionName(canary.revision);
+
+    const result = await updateTrafficToRevision(service, canaryShort);
+    if (!result.ok) {
+      await emitOasisEvent({
+        vtid: 'BOOTSTRAP-PROMOTE',
+        type: 'production.publish.failed',
+        source: 'gateway-operator',
+        status: 'error',
+        message: `promote: traffic-shift failed (${result.error})`,
+        actor_id: identity.user_id,
+        actor_role: 'admin',
+        surface: 'command-hub',
+        payload: { request_id: requestId, service, canary_revision: canaryShort, error: result.error },
+      });
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    ACTIVE_REV_CACHE.delete(service);
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: '(canary-promote)',
+      deploy_type: 'normal',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: canaryShort,
+      source_revision: null,
+      initiator_id: identity.user_id,
+    });
+
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-PROMOTE',
+      type: 'production.canary.promoted',
+      source: 'gateway-operator',
+      status: 'success',
+      message: `canary promoted: ${service} now serving ${canaryShort} at 100%`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        canary_revision: canaryShort,
+        previous_split: summary.trafficSplit,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      promoted_revision: canaryShort,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /promote failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+router.post('/abort-canary', requireAdminAuth, async (req: Request, res: Response) => {
+  const requestId = randomUUID();
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const service = (req.body?.service || 'gateway').toString().trim();
+  if (service !== 'gateway' && service !== 'gateway-staging') {
+    return res.status(400).json({ ok: false, error: 'invalid_service' });
+  }
+
+  try {
+    const summary = await describeService(service);
+    if (summary.trafficSplit.length < 2) {
+      return res.status(409).json({
+        ok: false,
+        error: 'no_canary_active',
+        detail: `No canary split detected on ${service}.`,
+      });
+    }
+    // Stable = highest percent. Send that to 100%, dropping the canary.
+    const sorted = [...summary.trafficSplit].sort((a, b) => b.percent - a.percent);
+    const stable = sorted[0];
+    const canary = sorted[sorted.length - 1];
+    const stableShort = shortRevisionName(stable.revision);
+    const canaryShort = shortRevisionName(canary.revision);
+
+    const result = await updateTrafficToRevision(service, stableShort);
+    if (!result.ok) {
+      return res.status(502).json({ ok: false, error: 'traffic_shift_failed', detail: result.error });
+    }
+
+    ACTIVE_REV_CACHE.delete(service);
+    const swvId = await getNextSWV();
+    await insertSoftwareVersion({
+      swv_id: swvId,
+      service,
+      git_commit: '(canary-abort)',
+      deploy_type: 'rollback',
+      initiator: 'user',
+      status: 'success',
+      environment: service === 'gateway' ? 'production' : 'staging',
+      cloud_run_revision: stableShort,
+      source_revision: canaryShort,
+      initiator_id: identity.user_id,
+    });
+
+    await emitOasisEvent({
+      vtid: 'BOOTSTRAP-ABORT',
+      type: 'production.canary.aborted',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: `canary discarded: ${service} restored to ${stableShort} (canary ${canaryShort} idled)`,
+      actor_id: identity.user_id,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: {
+        request_id: requestId,
+        service,
+        canary_revision: canaryShort,
+        stable_revision: stableShort,
+        previous_split: summary.trafficSplit,
+        operation_name: result.operationName,
+        swv_id: swvId,
+      },
+    });
+
+    return res.status(200).json({
+      ok: true,
+      service,
+      stable_revision: stableShort,
+      canary_revision_idled: canaryShort,
+      operation_name: result.operationName,
+      swv_id: swvId,
+    });
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[Operator] /abort-canary failed: ${errorMessage}`);
+    return res.status(500).json({ ok: false, error: 'internal_error', detail: errorMessage });
+  }
+});
+
+export default router;

@@ -1,0 +1,4 @@
+TSC=0
+    ✓ the ✕ (unicode) close button on the AI assistant drawer has an aria-label (1 ms)
+Test Suites: 1 skipped, 1287 passed, 1287 of 1288 total
+Tests:       29 skipped, 6 todo, 20653 passed, 20688 total

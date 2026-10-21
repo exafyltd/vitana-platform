@@ -1,0 +1,12 @@
+$ node scripts/ci/pr-gate/gate.mjs scope --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+✅ **scope** — 23 changed file(s), all inside the scope of VTID-05144
+exit=0
+$ node scripts/ci/pr-gate/gate.mjs sparring --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+✅ **sparring record** — present and approved for VTID-05144
+exit=0
+$ node scripts/ci/pr-gate/gate.mjs weakening --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+✅ **test weakening** — 6 changed test file(s), none weakened without a declaration
+exit=0
+$ node scripts/ci/pr-gate/gate.mjs red-green --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+✅ **red→green** — 5 test(s) fail on the base commit and the full suite passes on head (2 file(s))
+exit=0

@@ -1,0 +1,15 @@
+    ✓ AWS-PROD-DEPLOY-OASIS-OPERATOR.yml checks out the pinned commit and verifies it (4 ms)
+    ✓ AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml checks out the pinned commit and verifies it (1 ms)
+    ✓ AWS-PROD-DEPLOY-ORB-AGENT.yml checks out the pinned commit and verifies it (1 ms)
+    ✓ AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml checks out the pinned commit and verifies it
+    ✓ AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml checks out the pinned commit and verifies it (1 ms)
+    ✓ AWS-PROD-DEPLOY-OASIS-OPERATOR.yml captures a rollback target before building and refuses to deploy without one (1 ms)
+    ✓ AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml captures a rollback target before building and refuses to deploy without one
+    ✓ AWS-PROD-DEPLOY-ORB-AGENT.yml captures a rollback target before building and refuses to deploy without one (4 ms)
+    ✓ AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml captures a rollback target before building and refuses to deploy without one (1 ms)
+    ✓ AWS-PROD-DEPLOY-OASIS-OPERATOR.yml rolls back on failure to the captured task definition, behind the kill switch (1 ms)
+    ✓ AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml rolls back on failure to the captured task definition, behind the kill switch
+    ✓ AWS-PROD-DEPLOY-ORB-AGENT.yml rolls back on failure to the captured task definition, behind the kill switch
+    ✓ AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml rolls back on failure to the captured task definition, behind the kill switch (1 ms)
+    ✓ the gateway keeps its own rollback (VTID-04647) (1 ms)
+Tests:       14 passed, 14 total

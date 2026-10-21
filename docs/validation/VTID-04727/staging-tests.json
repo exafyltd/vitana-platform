@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04727",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "complete refuses an unauthenticated caller (staging runs enforce)", "method": "POST", "path": "/api/v1/oasis/tasks/VTID-00000/complete", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "task edit refuses an unauthenticated caller", "method": "PATCH", "path": "/api/v1/oasis/tasks/VTID-00000", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "task delete refuses an unauthenticated caller", "method": "DELETE", "path": "/api/v1/oasis/tasks/VTID-00000", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "task reads stay open", "path": "/api/v1/oasis/tasks/VTID-04727", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04727-ledger-write-auth.test.ts", "cwd": "services/gateway", "reason": "the service-token and admin-JWT paths, the log mode and the allocate/create gate need an authenticated write, which a read-only staging suite cannot make; the probes above only target a VTID that does not exist, so a missing gate could never write" }
+  ]
+}

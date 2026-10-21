@@ -1,0 +1,20 @@
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session sess-still-here-1 — mic audio ungated (cooldown 300ms)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2149:11)
+  console.log
+    [VTID-01219] Turn complete for session sess-still-here-1 (turn 2, isGreeting=false, consecutiveModelTurns=1)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2183:11)
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session sess-still-here-1: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=0) — widget will transition to listening
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2656:13)
+(node:915) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/session/still-here-complaint-backstop.test.ts
+  VTID-03824: still-here-complaint backstop fires through the real handler wiring
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 5 passed, 5 total
+Tests:       93 passed, 93 total
+Snapshots:   0 total
+Time:        3.258 s, estimated 7 s
+Ran all test suites matching /test\/orb\/live\/upstream\/vertex-live-client.test.ts|test\/orb\/live\/upstream\/gemini-api-key-live-client.test.ts|test\/orb\/live\/session\/upstream-provider-parity.test.ts|test\/orb\/live\/vertex-function-response-id.test.ts|test\/orb\/live\/session\/still-here-complaint-backstop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

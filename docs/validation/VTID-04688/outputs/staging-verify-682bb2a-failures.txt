@@ -1,0 +1,2 @@
+18540:[staging-verify] FAIL VTID-04661 › served app.js draws every group — body does not contain "function orderedHealthGroups(items, preferred)"
+18541:[staging-verify] FAIL VTID-04661 › served app.js classifies ok:false and 401 — body does not contain "function classifyHealthProbe(httpStatus, body)"

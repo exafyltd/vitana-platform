@@ -1,0 +1,20 @@
+# Verification run after this session's follow-up round: restored the
+# ORB_SAFE_FAST_GREETING staging flag (was dead everywhere, not
+# staging-only as originally documented) and shipped day_close's
+# Nova-aware reduced-content retry (VTID-03629's open TODO).
+# Run from services/gateway (NOT the repo root — the root jest config picks up
+# every workspace and reports false failures).
+
+$ npx tsc --noEmit
+(no output — exit 0)
+
+$ npx jest --silent
+Test Suites: 1 skipped, 678 passed, 678 of 679 total
+Tests:       29 skipped, 6 todo, 12991 passed, 13026 total
+Snapshots:   44 passed, 44 total
+
+The 1 skipped suite is pre-existing and unrelated to this change.
+
+New this round:
+  test/orb/nova-day-close-reduced-retry.test.ts        (new, 8 tests)
+  test/services/conversation/day-close.test.ts         (extended, +14 tests)

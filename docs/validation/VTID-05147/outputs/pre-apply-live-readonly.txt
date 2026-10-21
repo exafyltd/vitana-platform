@@ -1,0 +1,11 @@
+pre-apply-checks.sql against production (read-only SELECTs only), 2026-10-13 ~15:50 UTC:
+
+Section 2 (STOP conditions 2a–2d): 0 rows.
+
+Section 1 (counts):
+role_preferences   alkalma admin 1, community 2, developer 1; maxina community 229, developer 1
+user_active_roles  community 3, developer 1
+user_tenants       alkalma community 4; maxina community 236, developer 1
+
+(The plan's 2026-10-13 snapshot listed role_preferences developer 1 and user_active_roles 4 community;
+the extra developer rows belong to exafy admins — STOP 2c/2d exclude exafy and returned 0 rows.)

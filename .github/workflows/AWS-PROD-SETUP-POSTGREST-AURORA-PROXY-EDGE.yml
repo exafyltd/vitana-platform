@@ -1,0 +1,398 @@
+# AWS-PROD-SETUP-POSTGREST-AURORA-PROXY-EDGE — put the PRODUCTION
+# PostgREST-Aurora proxy (`vitana-postgrest-aurora-proxy-prod`, deployed by
+# AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml) behind vitana-alb-prod at
+# https://<host> (default data.vitanaland.com). VTID-05023, plan parts 1c + 2;
+# sparring findings F6 (no hand-run aws changes, rule 17) and F11 (Cloudflare
+# WAF/bot challenges on the data host).
+#
+# Supersedes the hand-run draft scripts/aws/setup-postgrest-aurora-proxy-public.sh.
+#
+# PART-0 GATE: the public host must stay dark until the privilege-parity check
+# (Aurora anon/authenticated/service_role grants == Supabase's) has passed.
+# `parity_report` is the S3 URI of that check's JSON report; this workflow
+# refuses unless the report says `"status": "PASS"` and its `generated_at` is
+# less than 24 h old.
+#
+# Idempotent, in order:
+#   1. target group vitana-tg-pgproxy-prod (ip, HTTP 8080, health /alive,
+#      deregistration delay 60 s);
+#   2. attach it to the prod ECS service (container `proxy`, port 8080,
+#      health-check grace 60 s) and wait until every target is healthy;
+#   3. host-header rule, priority 8 (< 10, CLAUDE.md §1b) on the 443 listener;
+#   4. Cloudflare proxied CNAME <host> -> the ALB;
+#   5. Cloudflare custom-rule SKIP for <host> (managed WAF, rate limiting,
+#      super bot fight mode, browser integrity / security level), so API
+#      clients are never handed an HTML challenge. If the API call is not
+#      possible with the token's permissions or the zone's plan, the exact
+#      manual steps are printed and the job summary carries a warning;
+#   6. verification through the public URL: /alive == 200,
+#      /auth/v1/health == 404 (the public server block never proxies auth),
+#      /rest/v1/ with the anon key == 200 + JSON.
+#
+# Current member traffic is unaffected: no client points at the host until the
+# app's VITE_DATA_API_URL is set (plan part 3).
+#
+# workflow_dispatch ONLY, required `reason`. Nothing here ever prints a secret:
+# the anon key is masked and passed to curl from a 0600 header file.
+#
+# Required repository secrets: AWS_PROD_ROLE_ARN (OIDC), CLOUDFLARE_API_TOKEN
+# (Zone DNS edit + Zone WAF edit on vitanaland.com).
+
+name: AWS Prod Setup PostgREST-Aurora Proxy Edge (ALB + Cloudflare)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this PRODUCTION edge change — required'
+        required: true
+      host:
+        description: 'Public host name (must be a vitanaland.com subdomain)'
+        required: false
+        default: 'data.vitanaland.com'
+      parity_report:
+        description: 'S3 URI of the privilege-parity JSON report (status PASS, generated_at < 24h) — the part-0 gate'
+        required: true
+
+permissions:
+  contents: read
+  id-token: write # aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-setup-postgrest-aurora-proxy-edge
+  cancel-in-progress: false
+
+jobs:
+  edge:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      AWS_REGION: eu-central-1
+      AWS_ACCOUNT_ID: '472838866351'
+      AWS_PAGER: ''
+      ECS_CLUSTER: Vitana-ECS-Cluster
+      ECS_SERVICE: vitana-postgrest-aurora-proxy-prod
+      PROXY_CONTAINER: proxy
+      TG_NAME: vitana-tg-pgproxy-prod
+      VPC_ID: vpc-05958f035e596fe64
+      LISTENER_ARN: arn:aws:elasticloadbalancing:eu-central-1:472838866351:listener/app/vitana-alb-prod/3d60b7c377e63d95/48eba68d49c39439
+      RULE_PRIORITY: '8'
+      ALB_DNS: vitana-alb-prod-1579322953.eu-central-1.elb.amazonaws.com
+      CF_ZONE: 859c786db63e634e0ee36065e8a06e20
+      CF_RULE_REF: vitana_pgproxy_data_host_skip
+      SECRET_JWT: vitana/supabase/prod/jwt-secret
+      SECRET_ANON: vitana/supabase/prod/anon-key
+      DEPLOY_REASON: ${{ inputs.reason }}
+      HOST: ${{ inputs.host }}
+      PARITY_REPORT: ${{ inputs.parity_report }}
+    steps:
+      - name: Validate inputs and prod-only target
+        run: |
+          set -euo pipefail
+          if [ -z "${DEPLOY_REASON// /}" ]; then echo "::error::reason is required"; exit 1; fi
+          if ! echo "$HOST" | grep -qE '^[a-z0-9]([a-z0-9-]*[a-z0-9])?\.vitanaland\.com$'; then
+            echo "::error::host must be a single-label vitanaland.com subdomain, got '$HOST'"; exit 1
+          fi
+          case "$HOST" in
+            gateway.vitanaland.com|www.vitanaland.com|dr-*|preview-*)
+              echo "::error::Refusing: '$HOST' is (or looks like) an existing service host"; exit 1 ;;
+          esac
+          if ! echo "$PARITY_REPORT" | grep -qE '^s3://[a-z0-9.-]+/.+\.json$'; then
+            echo "::error::parity_report must be an s3://bucket/key.json URI, got '$PARITY_REPORT'"; exit 1
+          fi
+          case "$ECS_SERVICE" in *-prod) ;; *) echo "::error::Refusing: service '$ECS_SERVICE' does not end in -prod"; exit 1 ;; esac
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      - name: Account/region guard (472838866351 / eu-central-1)
+        run: |
+          set -euo pipefail
+          ACCT=$(aws sts get-caller-identity --query Account --output text)
+          [ "$ACCT" = "$AWS_ACCOUNT_ID" ] || { echo "::error::Assumed role is in account $ACCT, expected $AWS_ACCOUNT_ID"; exit 1; }
+
+      - name: Part-0 gate — privilege-parity report is PASS and < 24 h old
+        run: |
+          set -euo pipefail
+          DIR=$(mktemp -d)
+          aws s3 cp --only-show-errors "$PARITY_REPORT" "$DIR/parity.json"
+          if ! jq -e . "$DIR/parity.json" >/dev/null 2>&1; then
+            echo "::error::$PARITY_REPORT is not valid JSON"; exit 1
+          fi
+          STATUS=$(jq -r '.status // empty' "$DIR/parity.json")
+          GEN=$(jq -r '.generated_at // empty' "$DIR/parity.json")
+          echo "Parity report: status=$STATUS generated_at=$GEN"
+          if [ "$STATUS" != PASS ]; then
+            echo "::error::Privilege-parity report status is '$STATUS', not PASS — the public host stays dark (plan part 0)"; exit 1
+          fi
+          GEN_EPOCH=$(date -u -d "$GEN" +%s 2>/dev/null || true)
+          if [ -z "$GEN_EPOCH" ]; then
+            echo "::error::generated_at '$GEN' is not a parseable timestamp"; exit 1
+          fi
+          NOW=$(date -u +%s)
+          AGE=$((NOW - GEN_EPOCH))
+          if [ "$AGE" -lt -300 ]; then
+            echo "::error::generated_at is in the future ($GEN)"; exit 1
+          fi
+          if [ "$AGE" -gt 86400 ]; then
+            echo "::error::Privilege-parity report is $((AGE / 3600)) h old (limit 24 h) — re-run the parity check"; exit 1
+          fi
+          echo "Part-0 gate passed (report age $((AGE / 60)) min)"
+          rm -rf "$DIR"
+
+      - name: Preflight — prod service healthy and on the production JWT secret
+        id: pre
+        run: |
+          set -euo pipefail
+          read -r STATUS TD RUNNING <<< "$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            --query 'services[0].[status,taskDefinition,runningCount]' --output text)"
+          if [ "$STATUS" != ACTIVE ]; then
+            echo "::error::$ECS_SERVICE is '$STATUS' — run AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml first"; exit 1
+          fi
+          if [ "$RUNNING" -lt 2 ]; then
+            echo "::error::$ECS_SERVICE runs $RUNNING tasks (need >= 2)"; exit 1
+          fi
+          # JWT-secret equality (plan part 2), by reference — no secret value is read here.
+          JWT_ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_JWT" --query ARN --output text)
+          TD_JWT=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query "taskDefinition.containerDefinitions[?name=='postgrest'].secrets[] | [?name=='PGRST_JWT_SECRET'].valueFrom | [0]" --output text)
+          if [ "$TD_JWT" != "$JWT_ARN" ] && [ "$TD_JWT" != "$SECRET_JWT" ]; then
+            echo "::error::Live task definition's PGRST_JWT_SECRET is not $SECRET_JWT — signed-in requests would be rejected"; exit 1
+          fi
+          echo "Service ACTIVE, $RUNNING tasks, PGRST_JWT_SECRET -> $SECRET_JWT"
+
+      - name: 1/6 Target group vitana-tg-pgproxy-prod
+        id: tg
+        run: |
+          set -euo pipefail
+          TG=$(aws elbv2 describe-target-groups --names "$TG_NAME" --query 'TargetGroups[0].TargetGroupArn' --output text 2>/dev/null || true)
+          if [ -z "$TG" ] || [ "$TG" = None ]; then
+            TG=$(aws elbv2 create-target-group --name "$TG_NAME" --protocol HTTP --port 8080 \
+              --vpc-id "$VPC_ID" --target-type ip --health-check-protocol HTTP --health-check-path /alive \
+              --health-check-interval-seconds 15 --healthy-threshold-count 2 --unhealthy-threshold-count 3 \
+              --matcher HttpCode=200 --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production \
+              --query 'TargetGroups[0].TargetGroupArn' --output text)
+            echo "Created $TG"
+          else
+            read -r T_TYPE T_PORT T_VPC T_PATH <<< "$(aws elbv2 describe-target-groups --target-group-arns "$TG" \
+              --query 'TargetGroups[0].[TargetType,Port,VpcId,HealthCheckPath]' --output text)"
+            if [ "$T_TYPE" != ip ] || [ "$T_PORT" != 8080 ] || [ "$T_VPC" != "$VPC_ID" ]; then
+              echo "::error::Existing $TG_NAME is $T_TYPE:$T_PORT in $T_VPC — expected ip:8080 in $VPC_ID; fix by hand-review, not overwrite"; exit 1
+            fi
+            if [ "$T_PATH" != /alive ]; then
+              aws elbv2 modify-target-group --target-group-arn "$TG" --health-check-path /alive >/dev/null
+              echo "Health-check path reset to /alive (was $T_PATH)"
+            fi
+            echo "Exists $TG"
+          fi
+          aws elbv2 modify-target-group-attributes --target-group-arn "$TG" \
+            --attributes Key=deregistration_delay.timeout_seconds,Value=60 >/dev/null
+          echo "arn=$TG" >> "$GITHUB_OUTPUT"
+
+      - name: 2/6 Attach the target group to the prod service
+        env:
+          TG: ${{ steps.tg.outputs.arn }}
+        run: |
+          set -euo pipefail
+          LBS=$(aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" --query 'services[0].loadBalancers' --output json)
+          if echo "$LBS" | jq -e --arg TG "$TG" 'any(.[]; .targetGroupArn == $TG)' >/dev/null; then
+            echo "Already attached"
+          else
+            if [ "$(echo "$LBS" | jq length)" != 0 ]; then
+              echo "::error::$ECS_SERVICE already has other load balancers: $LBS — refusing to replace them"; exit 1
+            fi
+            aws ecs update-service --cluster "$ECS_CLUSTER" --service "$ECS_SERVICE" \
+              --load-balancers "targetGroupArn=$TG,containerName=$PROXY_CONTAINER,containerPort=8080" \
+              --health-check-grace-period-seconds 60 --query 'service.serviceArn' --output text
+            echo "Attached; waiting for the new deployment"
+          fi
+          aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" \
+            || aws ecs wait services-stable --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE"
+          for i in $(seq 1 20); do
+            STATES=$(aws elbv2 describe-target-health --target-group-arn "$TG" \
+              --query 'TargetHealthDescriptions[].TargetHealth.State' --output text)
+            HEALTHY=$(echo "$STATES" | tr '\t' '\n' | grep -c '^healthy$' || true)
+            OTHER=$(echo "$STATES" | tr '\t' '\n' | grep -vc '^healthy$' || true)
+            echo "Attempt $i: healthy=$HEALTHY other=$OTHER ($STATES)"
+            if [ "$HEALTHY" -ge 2 ] && [ "$OTHER" = 0 ]; then echo "All targets healthy"; exit 0; fi
+            sleep 15
+          done
+          echo "::error::Target group never reached >= 2 healthy targets"; exit 1
+
+      - name: 3/6 Host-header rule (priority 8) on the 443 listener
+        env:
+          TG: ${{ steps.tg.outputs.arn }}
+        run: |
+          set -euo pipefail
+          RULES=$(aws elbv2 describe-rules --listener-arn "$LISTENER_ARN" --output json)
+          MINE=$(echo "$RULES" | jq -r --arg H "$HOST" '
+            [.Rules[] | select(any(.Conditions[]?; .Field == "host-header" and ((.HostHeaderConfig.Values // .Values // []) | index($H))))] ')
+          COUNT=$(echo "$MINE" | jq length)
+          if [ "$COUNT" -gt 1 ]; then
+            echo "::error::$COUNT rules already match host $HOST — resolve by review"; exit 1
+          elif [ "$COUNT" = 1 ]; then
+            FWD=$(echo "$MINE" | jq -r '.[0].Actions[] | select(.Type == "forward") | (.TargetGroupArn // .ForwardConfig.TargetGroups[0].TargetGroupArn)')
+            PRIO=$(echo "$MINE" | jq -r '.[0].Priority')
+            if [ "$FWD" != "$TG" ]; then
+              echo "::error::Existing rule for $HOST (priority $PRIO) forwards to $FWD, not $TG — refusing to overwrite"; exit 1
+            fi
+            echo "Rule exists (priority $PRIO) -> $TG"
+          else
+            TAKEN=$(echo "$RULES" | jq -r --arg P "$RULE_PRIORITY" '[.Rules[] | select(.Priority == $P)] | length')
+            if [ "$TAKEN" != 0 ]; then
+              echo "::error::Priority $RULE_PRIORITY is taken by another rule on the listener — pick a free priority < 10 by review"; exit 1
+            fi
+            aws elbv2 create-rule --listener-arn "$LISTENER_ARN" --priority "$RULE_PRIORITY" \
+              --conditions "Field=host-header,HostHeaderConfig={Values=[$HOST]}" \
+              --actions "Type=forward,TargetGroupArn=$TG" \
+              --tags Key=vtid,Value=VTID-05023 Key=environment,Value=production \
+              --query 'Rules[0].RuleArn' --output text
+            echo "Created rule $HOST -> $TG at priority $RULE_PRIORITY"
+          fi
+
+      - name: 4/6 Cloudflare proxied CNAME
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -euo pipefail
+          [ -n "${CF_TOKEN:-}" ] || { echo "::error::CLOUDFLARE_API_TOKEN secret is not set"; exit 1; }
+          API="https://api.cloudflare.com/client/v4/zones/$CF_ZONE/dns_records"
+          AUTH=(-H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json")
+          RESP=$(curl -sS --fail-with-body "${AUTH[@]}" "$API?name=$HOST")
+          echo "$RESP" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare lookup failed: $(echo "$RESP" | jq -c .errors)"; exit 1; }
+          N=$(echo "$RESP" | jq '.result | length')
+          if [ "$N" = 0 ]; then
+            BODY=$(jq -nc --arg n "$HOST" --arg c "$ALB_DNS" \
+              '{type:"CNAME", name:$n, content:$c, proxied:true, ttl:1, comment:"VTID-05023 PostgREST-Aurora proxy (prod)"}')
+            OUT=$(curl -sS --fail-with-body -X POST "${AUTH[@]}" "$API" -d "$BODY")
+            echo "$OUT" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare create failed: $(echo "$OUT" | jq -c .errors)"; exit 1; }
+            echo "Created CNAME $HOST -> $ALB_DNS (proxied)"
+          elif [ "$N" = 1 ]; then
+            read -r TYPE CONTENT PROXIED ID <<< "$(echo "$RESP" | jq -r '.result[0] | [.type, .content, (.proxied|tostring), .id] | @tsv')"
+            if [ "$TYPE" != CNAME ] || [ "$CONTENT" != "$ALB_DNS" ]; then
+              echo "::error::$HOST already exists as $TYPE -> $CONTENT — refusing to overwrite a record this workflow did not create"; exit 1
+            fi
+            if [ "$PROXIED" != true ]; then
+              OUT=$(curl -sS --fail-with-body -X PATCH "${AUTH[@]}" "$API/$ID" -d '{"proxied":true}')
+              echo "$OUT" | jq -e '.success == true' >/dev/null || { echo "::error::Cloudflare patch failed: $(echo "$OUT" | jq -c .errors)"; exit 1; }
+              echo "Turned proxying on for $HOST"
+            else
+              echo "CNAME exists: $HOST -> $ALB_DNS (proxied)"
+            fi
+          else
+            echo "::error::$N DNS records named $HOST — resolve by review"; exit 1
+          fi
+
+      - name: 5/6 Cloudflare — skip WAF / bot / rate-limit challenges for the data host
+        id: cfskip
+        env:
+          CF_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+        run: |
+          set -uo pipefail
+          API="https://api.cloudflare.com/client/v4/zones/$CF_ZONE/rulesets"
+          AUTH=(-H "Authorization: Bearer $CF_TOKEN" -H "Content-Type: application/json")
+          EXPR="(http.host eq \"$HOST\")"
+          RULE=$(jq -nc --arg e "$EXPR" --arg ref "$CF_RULE_REF" --arg h "$HOST" '{
+            ref: $ref, enabled: true, expression: $e, action: "skip",
+            description: ("VTID-05023: API host " + $h + " - no browser challenges (PostgREST-Aurora proxy)"),
+            action_parameters: {
+              ruleset: "current",
+              phases: ["http_ratelimit", "http_request_firewall_managed", "http_request_sbfm"],
+              products: ["bic", "hot", "securityLevel", "uaBlock", "zoneLockdown"]
+            },
+            logging: { enabled: true },
+            position: { before: "" }
+          }')
+
+          manual() {
+            echo "::warning::Cloudflare skip rule for $HOST was NOT applied automatically ($1). Apply it by hand before any client uses the host."
+            {
+              echo "### :warning: Manual Cloudflare step required — WAF/bot skip for \`$HOST\`"
+              echo "Reason: $1"
+              echo ""
+              echo "Cloudflare dashboard -> vitanaland.com -> Security -> WAF -> Custom rules -> Create rule:"
+              echo "1. Name: \`VTID-05023 data host skip\`"
+              echo "2. Expression: \`$EXPR\`"
+              echo "3. Action: **Skip** -> tick *All remaining custom rules*, *All rate limiting rules*, *All managed rules*, *All Super Bot Fight Mode rules*, and *Browser Integrity Check*, *Security Level*, *User Agent Blocking*, *Zone Lockdown*, *Hotlink Protection*; *Log matching requests* on."
+              echo "4. Place it **first** in the custom-rules list and deploy."
+              echo "5. If the zone uses the free-plan *Bot Fight Mode* (Security -> Bots), it cannot be skipped per host: turn it off or move to Super Bot Fight Mode, otherwise API calls may be challenged."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "applied=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          }
+
+          ENTRY=$(curl -sS "${AUTH[@]}" "$API/phases/http_request_firewall_custom/entrypoint")
+          if echo "$ENTRY" | jq -e '.success == true' >/dev/null 2>&1; then
+            RS_ID=$(echo "$ENTRY" | jq -r '.result.id')
+            if echo "$ENTRY" | jq -e --arg ref "$CF_RULE_REF" 'any(.result.rules[]?; .ref == $ref)' >/dev/null; then
+              echo "Skip rule $CF_RULE_REF already present in ruleset $RS_ID"
+              echo "applied=true" >> "$GITHUB_OUTPUT"
+              exit 0
+            fi
+            OUT=$(curl -sS -X POST "${AUTH[@]}" "$API/$RS_ID/rules" -d "$RULE")
+          elif echo "$ENTRY" | jq -e 'any(.errors[]?; .code == 10003)' >/dev/null 2>&1 \
+               || echo "$ENTRY" | jq -e '.errors[]? | select(.message | test("not found"; "i"))' >/dev/null 2>&1; then
+            # No custom-rules entrypoint yet: create it holding only this rule.
+            BODY=$(jq -nc --argjson r "$RULE" '{rules: [ $r | del(.position) ]}')
+            OUT=$(curl -sS -X PUT "${AUTH[@]}" "$API/phases/http_request_firewall_custom/entrypoint" -d "$BODY")
+          else
+            manual "reading the custom-rules entrypoint failed: $(echo "$ENTRY" | jq -c '.errors // "no JSON response"' 2>/dev/null || echo 'no JSON response')"
+          fi
+          if echo "$OUT" | jq -e '.success == true' >/dev/null 2>&1; then
+            echo "Skip rule $CF_RULE_REF applied for $HOST"
+            echo "applied=true" >> "$GITHUB_OUTPUT"
+          else
+            manual "Rulesets API rejected the rule: $(echo "$OUT" | jq -c '.errors // "no JSON response"' 2>/dev/null || echo 'no JSON response')"
+          fi
+
+      - name: 6/6 Verify through https://<host>
+        run: |
+          set -euo pipefail
+          URL="https://$HOST"
+          for i in $(seq 1 40); do
+            CODE=$(curl -s -o /dev/null -m 10 -w '%{http_code}' "$URL/alive" || true)
+            [ "$CODE" = 200 ] && break
+            echo "Attempt $i: /alive -> $CODE (DNS/edge may still be propagating)"; sleep 15
+          done
+          FAIL=0
+          CODE=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$URL/alive" || true)
+          if [ "$CODE" = 200 ]; then echo "PASS /alive -> 200"; else echo "::error::/alive -> $CODE (want 200)"; FAIL=1; fi
+
+          CODE=$(curl -s -o /dev/null -m 15 -w '%{http_code}' "$URL/auth/v1/health" || true)
+          if [ "$CODE" = 404 ]; then echo "PASS /auth/v1/health -> 404 (public block does not proxy auth)"; else echo "::error::/auth/v1/health -> $CODE (want 404 — the public server block must not reach Supabase auth)"; FAIL=1; fi
+
+          # Anon key: read, masked, handed to curl from a 0600 file — never on a command line or in the log.
+          umask 077
+          HDR=$(mktemp)
+          trap 'rm -f "$HDR"' EXIT
+          ANON=$(aws secretsmanager get-secret-value --secret-id "$SECRET_ANON" --query SecretString --output text)
+          echo "::add-mask::$ANON"
+          printf 'apikey: %s\nAuthorization: Bearer %s\n' "$ANON" "$ANON" > "$HDR"
+          unset ANON
+          read -r CODE CTYPE <<< "$(curl -s -o /dev/null -m 20 -H @"$HDR" -w '%{http_code} %{content_type}' "$URL/rest/v1/" || true)"
+          # PostgREST v12 answers the root with application/openapi+json; both count as JSON.
+          if [ "$CODE" = 200 ] && echo "$CTYPE" | grep -qiE '^application/(openapi\+)?json'; then
+            echo "PASS /rest/v1/ (anon) -> $CODE $CTYPE"
+          else
+            echo "::error::/rest/v1/ (anon) -> $CODE $CTYPE (want 200 + JSON; text/html means the edge or the wrong server block answered)"; FAIL=1
+          fi
+          exit "$FAIL"
+
+      - name: Summary
+        if: always()
+        env:
+          TG: ${{ steps.tg.outputs.arn }}
+          CF_SKIP: ${{ steps.cfskip.outputs.applied }}
+          JOB_STATUS: ${{ job.status }}
+        run: |
+          {
+            echo "## PostgREST-Aurora proxy edge — $HOST ($JOB_STATUS)"
+            echo "- Service: \`$ECS_SERVICE\` · target group: \`${TG:-n/a}\` · listener rule priority $RULE_PRIORITY"
+            echo "- Cloudflare: proxied CNAME -> \`$ALB_DNS\`; WAF/bot skip rule applied automatically: ${CF_SKIP:-not reached}"
+            echo "- Part-0 parity report: \`$PARITY_REPORT\`"
+            echo "- Reason: $DEPLOY_REASON"
+            echo "- No client points at this host until the app's VITE_DATA_API_URL is set (plan part 3)."
+          } >> "$GITHUB_STEP_SUMMARY"

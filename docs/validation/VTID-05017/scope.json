@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05017",
+  "files": [
+    "services/gateway/Dockerfile",
+    "services/gateway/Dockerfile.job",
+    "services/gateway/Dockerfile.auto-logger",
+    "services/kiro-runner/Dockerfile",
+    "services/gateway/test/vtid-05017-base-images-ecr-public.test.ts",
+    "docs/validation/VTID-05017/**"
+  ]
+}

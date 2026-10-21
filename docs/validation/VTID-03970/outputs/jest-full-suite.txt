@@ -1,0 +1,153 @@
+=== Full gateway jest suite (VTID-03970) — summary + representative output ===
+(Full raw output was ~1.28MB; trimmed to the tail + summary, matching this repo's own docs/validation/VTID-03965 convention. Full run: 0 failures.)
+
+      ✓ is true only when BOTH flags are set (1 ms)
+      ✓ is false when the cascade flag is on but Vertex is not marked dead (1 ms)
+      ✓ is false when the cascade flag is absent
+    the flag is exact-string, and the payload must say so honestly
+      ✓ treats "TRUE" as OFF, matching isCascadeEnabled() (1 ms)
+      ✓ treats "True" as OFF, matching isCascadeEnabled()
+      ✓ treats "1" as OFF, matching isCascadeEnabled()
+      ✓ treats "yes" as OFF, matching isCascadeEnabled()
+      ✓ treats "on" as OFF, matching isCascadeEnabled() (1 ms)
+      ✓ treats "" as OFF, matching isCascadeEnabled()
+      ✓ accepts the exact string with surrounding whitespace trimmed
+    per-language verdicts come from the real routing functions
+      ✓ reports the languages the cascade rescues, with their Transcribe codes (1 ms)
+      ✓ reports Serbian as refused, naming Polly as the real blocker
+      ✓ reports Nova-native languages as refused for that reason (1 ms)
+
+PASS test/routes/orb-livekit.test.ts
+  orb-livekit routes
+    GET /orb/active-provider
+      ✓ unauthenticated caller with no config row defaults to vertex (5 ms)
+      ✓ global=livekit but canary disabled → effective stays vertex (canary_disabled) (2 ms)
+      ✓ global=livekit + missing LiveKit creds → livekit_config_invalid regardless of canary (2 ms)
+      ✓ canary-eligible caller but backend agent not ready → pinned_until_agent_ready + OASIS emitted (4 ms)
+      ✓ all gates pass → effectiveProvider=livekit, no pinned OASIS event (2 ms)
+      ✓ returns 500 when an internal lookup throws (2 ms)
+    POST /orb/active-provider
+      ✓ 400 on an invalid provider value (6 ms)
+      ✓ 403 when caller is authenticated but not exafy_admin (2 ms)
+      ✓ 401 unauthenticated (2 ms)
+      ✓ admin flips vertex → livekit: writes system_config, audits, emits OASIS (3 ms)
+      ✓ 429 when a flip is attempted inside the 1-hour cooldown window (2 ms)
+      ✓ idempotent no-op flip (same provider) skips the cooldown gate and returns ok (2 ms)
+      ✓ 500 when the system_config upsert fails (10 ms)
+      ✓ 500 when supabase is unavailable (4 ms)
+      ✓ 409 nova_global_flip_locked when NOVA_SONIC_ALLOW_GLOBAL_FLIP is not set (2 ms)
+      ✓ 409 nova_not_ready when unlocked but Nova runtime is not configured (3 ms)
+      ✓ permits a nova_sonic flip when unlocked AND the runtime reports ready (2 ms)
+    GET /orb/nova-sonic/health
+      ✓ reports disabled + not ready when NOVA_SONIC_ENABLED is unset (3 ms)
+      ✓ surfaces a typed issue for an invalid region override without leaking secrets (2 ms)
+      cascade block (VTID-03721)
+        ✓ reports effective=true only when BOTH gates are set (3 ms)
+        ✓ reports enabled=true but effective=false when Vertex is not marked dead (2 ms)
+        ✓ reports the per-language routing verdict Polish and Portuguese get (3 ms)
+        ✓ leaks nothing through the new block on this public route (3 ms)
+    POST /orb/livekit/token
+      ✓ 503 provider_standby when active_provider is not livekit (3 ms)
+      ✓ 500 livekit_misconfigured when active=livekit but env vars are missing (3 ms)
+      ✓ mints a token for an authenticated user with correct grants + metadata (7 ms)
+      ✓ mints an anonymous token with no user_jwt and an anon- identity (4 ms)
+      ✓ coerces an admin caller on a mobile user-agent down to the community role (3 ms)
+      ✓ defaults lang to "en" and agent_id to "vitana" when omitted (2 ms)
+      ✓ forwards the real client IP from x-forwarded-for, not the agent egress IP (2 ms)
+      ✓ drops a loopback client IP rather than embedding it (2 ms)
+    GET /orb/livekit/health
+      ✓ reports agent unreachable when ORB_AGENT_URL is unset (3 ms)
+      ✓ reports agent reachable when the probe responds 200 (2 ms)
+      ✓ failure mode: agent probe network error → reachable=false, never 500s the whole health check (2 ms)
+      ✓ failure mode: agent probe returns non-2xx → reachable=false (2 ms)
+      ✓ surfaces which STT/TTS/LLM providers have API keys configured (2 ms)
+    GET /orb/livekit/sessions/health
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 403 non-admin (2 ms)
+      ✓ 503 when supabase is unavailable (2 ms)
+      ✓ computes active/expired/stuck counts for an admin caller (3 ms)
+      ✓ honors ?stale_minutes= override (3 ms)
+      ✓ degrades gracefully (not 500) when the migration has not landed yet (8 ms)
+      ✓ 500 when the query throws synchronously (2 ms)
+    GET /orb/context-bootstrap
+      ✓ anonymous request resolves lang from Accept-Language and renders a system instruction (5 ms)
+      ✓ ?lang= query param wins over the Accept-Language header (3 ms)
+      ✓ falls back to the stored preferred_language fact when no query lang is given (authenticated) (4 ms)
+      ✓ greeting_only=true returns the fast-path payload with slow fields empty (3 ms)
+      ✓ greeting_only=true for an authenticated user resolves first_name from display_name (3 ms)
+      ✓ greeting_only=true falls back to memory_facts.user_name when display_name is null (2 ms)
+      ✓ full path for an authenticated user assembles identity facts + Vitana Index + Life Compass into bootstrap_context (3 ms)
+      ✓ L1 in-memory cache hit on a repeat call skips the DB batch entirely (5 ms)
+      ✓ L2 shared-cache hit re-populates L1 and returns cache_layer=l2_supabase (2 ms)
+      ✓ specialist persona (devon) uses the persona system_prompt instead of buildLiveSystemInstruction (3 ms)
+      ✓ specialist persona with no system_prompt on file falls back to the Vitana builder (3 ms)
+      ✓ failure mode: decision-context compile throwing degrades gracefully (no 500, decision_context null) (3 ms)
+      ✓ failure mode: wake-brief decision throwing degrades gracefully (wake_brief_decision null, still 200) (3 ms)
+      ✓ failure mode: buildLiveSystemInstruction throwing still returns 200 with system_instruction null (2 ms)
+      ✓ re-renders with the LiveKit first-turn suppression block when a wake-brief candidate has a spoken line (3 ms)
+      ✓ does NOT apply the first-turn suppression override on a reconnect (2 ms)
+      ✓ echoes current_route and comma-separated recent_routes back in the response (2 ms)
+      ✓ does not crash and degrades to the anonymous-style path when supabase is entirely unavailable (3 ms)
+    GET /voice-providers
+      ✓ returns an empty list when supabase is unavailable (1 ms)
+      ✓ degrades gracefully with a note when the migration has not landed (2 ms)
+      ✓ returns enabled providers (1 ms)
+    POST /voice-providers/:id/test
+      ✓ 404 for an unknown provider id (2 ms)
+      ✓ ok=false with a typed detail when the required API key env var is missing (2 ms)
+      ✓ ok=true when the key is configured and the HEAD probe succeeds (11 ms)
+      ✓ failure mode: network error on the probe → ok=false with a network detail (2 ms)
+      ✓ azure providers use an env-only check (no network probe) (1 ms)
+      ✓ google_stt has no required env key and probes directly (1 ms)
+    GET /agents/:id/voice-config
+      ✓ 401 unauthenticated (2 ms)
+      ✓ returns null config when supabase is unavailable (3 ms)
+      ✓ returns the stored config for the agent (3 ms)
+    PUT /agents/:id/voice-config
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 400 on an invalid transport value (3 ms)
+      ✓ 400 when a referenced provider is unknown or disabled (2 ms)
+      ✓ 500 when supabase is unavailable (2 ms)
+      ✓ upserts a valid config and emits an OASIS event (3 ms)
+      ✓ 500 when the upsert fails (2 ms)
+    POST /agents/:id/voice-config/test-session
+      ✓ 401 unauthenticated (2 ms)
+      ✓ 500 livekit_misconfigured when env vars are missing (3 ms)
+      ✓ mints a short-TTL ephemeral token carrying the proposed (unsaved) config (2 ms)
+      ✓ defaults lang to "en" when the proposed config omits it (3 ms)
+    POST /orb/session/commit-memory
+      ✓ 401 unauthenticated (1 ms)
+      ✓ commits and emits an info-status OASIS event when the transcript is long enough (3 ms)
+      ✓ reports committed=false with a warning-status OASIS event for a too-short transcript (3 ms)
+      ✓ defaults session_id to a userId-derived value when omitted (2 ms)
+      ✓ failure mode: commitSessionMemory throwing returns 500 commit_failed, never crashes (2 ms)
+      ✓ treats a missing/non-string transcript as empty rather than throwing (2 ms)
+
+PASS test/orb/live/upstream/staging-cascade-flag-pinned.test.ts
+  VTID-03720: staging pins ORB_CASCADED_VOICE_ENABLED
+    ✓ upserts the flag as the exact string "true" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ keeps the flag it is useless without
+    ✓ keeps Polly strict, so a TTS gap fails loudly instead of reaching for dead Google
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.237 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (8 ms)
+    ✓ 400 when autopilot_execution_id is missing (3 ms)
+    ✓ 401 when worker_id is missing (18 ms)
+    ✓ 401 when worker is NOT in worker_registry (3 ms)
+    ✓ 403 when worker does not hold the claim (2 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (2 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (6 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (2 ms)
+    ✓ returns failed when status=failed (3 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60049 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (9 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 930 passed, 930 of 931 total
+Tests:       29 skipped, 6 todo, 15259 passed, 15294 total
+Snapshots:   44 passed, 44 total
+Time:        103.262 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

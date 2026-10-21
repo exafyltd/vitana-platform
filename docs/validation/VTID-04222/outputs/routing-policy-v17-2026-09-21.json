@@ -1,0 +1,326 @@
+{
+ "policy_row": {
+  "id": "a012acff-8360-4db2-b74d-403261a60761",
+  "environment": "DEV",
+  "version": 17,
+  "is_active": true,
+  "created_at": "2026-09-11T20:41:01.806907+00:00"
+ },
+ "stages": {
+  "memory": {
+   "primary_model": "eu.anthropic.claude-sonnet-4-6",
+   "fallback_model": "deepseek-chat",
+   "primary_provider": "bedrock",
+   "fallback_provider": "deepseek"
+  },
+  "triage": {
+   "primary_model": "eu.anthropic.claude-sonnet-4-6",
+   "fallback_model": "deepseek-chat",
+   "primary_provider": "bedrock",
+   "fallback_provider": "deepseek"
+  },
+  "vision": {
+   "primary_model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+   "fallback_model": "eu.anthropic.claude-sonnet-4-6",
+   "primary_provider": "bedrock",
+   "fallback_provider": "bedrock"
+  },
+  "worker": {
+   "primary_model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+   "fallback_model": "eu.anthropic.claude-sonnet-4-6",
+   "primary_provider": "bedrock",
+   "fallback_provider": "bedrock"
+  },
+  "planner": {
+   "primary_model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+   "fallback_model": "eu.anthropic.claude-sonnet-4-6",
+   "primary_provider": "bedrock",
+   "fallback_provider": "bedrock"
+  },
+  "operator": {
+   "primary_model": "deepseek-flash",
+   "fallback_model": "eu.anthropic.claude-sonnet-4-6",
+   "primary_provider": "deepseek",
+   "fallback_provider": "bedrock"
+  },
+  "validator": {
+   "primary_model": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+   "fallback_model": "eu.anthropic.claude-sonnet-4-6",
+   "primary_provider": "bedrock",
+   "fallback_provider": "bedrock"
+  },
+  "classifier": {
+   "primary_model": "eu.anthropic.claude-sonnet-4-6",
+   "fallback_model": "deepseek-chat",
+   "primary_provider": "bedrock",
+   "fallback_provider": "deepseek"
+  }
+ },
+ "active_models": [
+  {
+   "provider": "anthropic",
+   "model_id": "claude-3-5-sonnet-20241022",
+   "stages": [
+    "planner",
+    "validator",
+    "memory"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "model_id": "claude-3-haiku-20240307",
+   "stages": [
+    "worker",
+    "memory"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "model_id": "claude-3-opus-20240229",
+   "stages": [
+    "planner",
+    "validator"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "model_id": "claude-haiku-4-5",
+   "stages": [
+    "classifier",
+    "memory",
+    "worker"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "model_id": "claude-opus-4-7",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision"
+   ]
+  },
+  {
+   "provider": "anthropic",
+   "model_id": "claude-sonnet-4-6",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "bedrock",
+   "model_id": "eu.anthropic.claude-opus-4-5-20251101-v1:0",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "vision"
+   ]
+  },
+  {
+   "provider": "bedrock",
+   "model_id": "eu.anthropic.claude-sonnet-4-5-20250929-v1:0",
+   "stages": [
+    "operator"
+   ]
+  },
+  {
+   "provider": "bedrock",
+   "model_id": "eu.anthropic.claude-sonnet-4-6",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "claude_subscription",
+   "model_id": "claude-opus-4-7",
+   "stages": [
+    "planner",
+    "worker"
+   ]
+  },
+  {
+   "provider": "deepseek",
+   "model_id": "deepseek-chat",
+   "stages": [
+    "classifier",
+    "memory",
+    "worker",
+    "triage"
+   ]
+  },
+  {
+   "provider": "deepseek",
+   "model_id": "deepseek-flash",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "deepseek",
+   "model_id": "deepseek-reasoner",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "openai",
+   "model_id": "gpt-4o",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "openai",
+   "model_id": "gpt-4o-mini",
+   "stages": [
+    "classifier",
+    "worker"
+   ]
+  },
+  {
+   "provider": "openai",
+   "model_id": "gpt-5",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-1.5-flash",
+   "stages": [
+    "worker"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-1.5-pro",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "memory"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-2.5-flash",
+   "stages": [
+    "worker",
+    "classifier",
+    "memory"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-2.5-pro",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-3.1-pro",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "vision",
+    "classifier"
+   ]
+  },
+  {
+   "provider": "vertex",
+   "model_id": "gemini-3.1-pro-preview",
+   "stages": [
+    "planner",
+    "worker",
+    "validator",
+    "operator",
+    "memory",
+    "triage",
+    "classifier"
+   ]
+  }
+ ],
+ "providers": [
+  {
+   "key": "anthropic",
+   "active": true
+  },
+  {
+   "key": "bedrock",
+   "active": true
+  },
+  {
+   "key": "claude_subscription",
+   "active": true
+  },
+  {
+   "key": "deepseek",
+   "active": true
+  },
+  {
+   "key": "openai",
+   "active": true
+  },
+  {
+   "key": "vertex",
+   "active": true
+  }
+ ]
+}

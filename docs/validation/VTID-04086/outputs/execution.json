@@ -1,0 +1,52 @@
+{
+  "vtid": "VTID-04086",
+  "task": "T11 — dead CSS removal in styles.css (Command Hub cleanup program)",
+  "profile": "gateway_backend",
+  "generator": "services/gateway/scripts/find-dead-css-classes.mjs",
+  "target_file": "services/gateway/src/frontend/command-hub/styles.css",
+  "result": {
+    "css_classes_referenced": "~3xxx (exact count printed by --check/--fix run, see commands.log)",
+    "dead_candidates_before_dynamic_exclusion": 633,
+    "dead_candidates_after_dynamic_exclusion": 606,
+    "rules_removed": 550,
+    "lines_before": 20337,
+    "lines_after_approx": 18105,
+    "remaining_non_auto_removable_candidates": 189,
+    "check_after_fix": "in sync (0 removable rules found)"
+  },
+  "verification": {
+    "new_suite": {
+      "file": "services/gateway/test/scripts/find-dead-css-classes.test.ts",
+      "suites": 1,
+      "tests": 10,
+      "status": "pass"
+    },
+    "tsc_noemit": "clean",
+    "npm_build": "clean",
+    "regression_sweep_command_hub_and_scripts": {
+      "suites": 19,
+      "tests": 291,
+      "status": "pass"
+    },
+    "regression_sweep_styles_css_referencing_suites": {
+      "suites": 14,
+      "tests": 242,
+      "status": "pass"
+    }
+  },
+  "manual_spot_checks": [
+    "header-bar",
+    "header-title",
+    "multimodal-controls",
+    "mm-btn",
+    "header-button"
+  ],
+  "safety_checks": [
+    "round-trip parse+serialize losslessness (cosmetic-only diff)",
+    "pre-existing brace-count quirk unchanged pre/post-fix",
+    "idempotency confirmed via --check after --fix"
+  ],
+  "not_done": [
+    "the 189 remaining dead-class candidates that share a rule with a live class or use a compound/descendant selector are deliberately left untouched"
+  ]
+}

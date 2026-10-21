@@ -1,0 +1,82 @@
+=== npx jest (full suite) ===
+    ✓ surfaces the Step-2 actionable split and non-actionable reasons (1 ms)
+    ✓ averages triage confidence per outcome (calibration sanity check) (1 ms)
+    ✓ computes autopilot success-rate and failure-stage breakdown
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/context-pack-oasis-boundary.test.ts
+  VTID-03158 CPB-7/8/9 OASIS + vtid-ledger boundary — anti-regression
+    no direct references to OASIS / ledger / autopilot tables
+      ✓ does not mention "vtid_ledger" (1 ms)
+      ✓ does not mention "oasis_events"
+      ✓ does not mention "autopilot_recommendations"
+    positive contract — typed readers are the only path
+      ✓ imports getActiveVTIDs from vtid-ledger-reader (1 ms)
+      ✓ imports getDeveloperOasisContext from oasis-context-reader
+      ✓ imports getCommunityOasisContext from oasis-context-reader
+      ✓ developer branch calls getDeveloperOasisContext with the tenantId (1 ms)
+      ✓ community branch calls getCommunityOasisContext with the user_id
+
+PASS test/user-journey-service.test.ts
+  ensureUserJourneyRow
+    ✓ defaults to is_first_session=true (the /me signup seeding path) (2 ms)
+    ✓ seeds is_first_session=false when explicitly requested (session-start backfill) (1 ms)
+    ✓ is idempotent: a duplicate (existing row) resolves false, never throws (15 ms)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (0ce58247-527f-412d-8f05-33cae3c43897)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.751 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (28 ms)
+    ✓ 400 when autopilot_execution_id is missing (8 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (3 ms)
+    ✓ 403 when worker does not hold the claim (3 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (2 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (5 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60085 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (5 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 633 passed, 633 total
+Tests:       7 skipped, 6 todo, 12314 passed, 12327 total
+Snapshots:   44 passed, 44 total
+Time:        61.983 s, estimated 62 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+=== npx tsc --noEmit ===
+EXIT=0
+
+=== npm run build ===
+
+> @vitana/gateway@1.0.1 prebuild
+> rm -rf dist
+
+
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+
+
+> @vitana/gateway@1.0.1 copy-frontend
+> mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/
+
+
+> @vitana/gateway@1.0.1 copy-data
+> mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/
+

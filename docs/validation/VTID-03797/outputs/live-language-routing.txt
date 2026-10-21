@@ -1,0 +1,33 @@
+VTID-03797 — live per-language ORB voice routing, measured 2026-08-29T09:54:36Z
+Source: GET /api/v1/orb/nova-sonic/health (public, secret-free, read-only)
+
+=== preview-aws-gateway.vitanaland.com ===
+enabled= True vertex_live_unavailable= True effective= True
+nova_supported_languages= ['en', 'de', 'fr', 'es']
+   ar -> cascade:ar-AE
+   de -> no:nova_supports_natively
+   en -> no:nova_supports_natively
+   es -> no:nova_supports_natively
+   fr -> no:nova_supports_natively
+   pl -> cascade:pl-PL
+   pt -> cascade:pt-BR
+   ru -> cascade:ru-RU
+   sr -> no:no_polly_voice
+   tr -> cascade:tr-TR
+   zh -> cascade:zh-CN
+
+=== gateway.vitanaland.com ===
+enabled= False vertex_live_unavailable= True effective= False
+nova_supported_languages= ['en', 'de', 'fr', 'es']
+   ar -> cascade:ar-AE
+   de -> no:nova_supports_natively
+   en -> no:nova_supports_natively
+   es -> no:nova_supports_natively
+   fr -> no:nova_supports_natively
+   pl -> cascade:pl-PL
+   pt -> cascade:pt-BR
+   ru -> cascade:ru-RU
+   sr -> no:no_polly_voice
+   tr -> cascade:tr-TR
+   zh -> cascade:zh-CN
+

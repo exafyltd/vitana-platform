@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04897",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "staging already serves Commerce MCP: the protected-resource metadata answers (read-only, no sign-in)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04897-prod-commerce-mcp-pin.test.ts test/commerce-mcp.test.ts test/vtid-04896-prod-reward-sweep-pin.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the production pin and its order (after the sweep-off pin, before registration), the flag semantics, the endpoint's own behaviour (metadata, 401 challenge, scopes, token checks, tools) and that the sweep stays off; production is checked read-only after the env-only deploy"
+    }
+  ]
+}

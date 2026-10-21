@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05169",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05167/plan-sparring.md",
+  "paths": [
+    "services/gateway/src/routes/timeline.ts",
+    "services/gateway/src/services/timeline/timeline-reader.ts",
+    "services/gateway/src/services/timeline/timeline-repository.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/test/routes/vtid-05169-timeline.test.ts",
+    ".kiro/specs/life-timeline/**",
+    "docs/validation/VTID-05169/**"
+  ]
+}

@@ -1,0 +1,10 @@
+# VTID-05171 commands (stacked on VTID-05169, branch claude/activity-timeline-rebuild-vrtcv4)
+# read-only production read (Supabase MCP): pg_constraint of user_routines (routine_kind check = 5 kinds)
+cd services/gateway && npx jest test/vtid-05171-companion-wiring.test.ts   -> outputs/jest-vtid-05171.txt
+PGHOST=/tmp/pgtest-05167 PGPORT=55432 PGUSER=postgres scripts/ci/sql-tests/run-companion-wiring-test.sh   -> outputs/sql-companion-wiring.txt
+(mutation: owner policy USING (true)) run-companion-wiring-test.sh   -> outputs/sql-red-open-policy.txt; file restored
+npx jest <related suites: roles, eventbridge, automation-shadow, catalogs, budgets, profiler, timeline>   -> outputs/jest-related.txt
+npx jest (full gateway)   -> outputs/jest-full.txt
+npx tsc --noEmit -p .   -> outputs/tsc.txt
+node scripts/collab/queue.mjs claim life-timeline/p5 --session session_01BRavW51BdMPjaEFJrJV11G
+# No RUN-MIGRATION dispatch, no production write.

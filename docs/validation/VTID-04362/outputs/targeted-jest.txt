@@ -1,0 +1,51 @@
+    ✓ community and patient commit their own community and health actions only (7 ms)
+    ✓ professional and staff draft in their own domain
+    ✓ admin commits admin, developer commits dev, infra commits ops
+    ✓ unknown or missing role has no authority
+    ✓ every role in the table only names known domains (4 ms)
+    ✓ voice caps at draft: a commit the role allows escalates to chat/web (1 ms)
+    ✓ chat and web commit (1 ms)
+    ✓ above the role ceiling is a deny on every channel (1 ms)
+    ✓ an unknown channel is treated as web by the context resolver, read here
+    ✓ commit-level role escalates to maker-checker, never allow (4 ms)
+    ✓ below commit, high is denied
+    ✓ exafy_admin is not an input and cannot bypass
+    ✓ commerce comes from org role, not platform role (1 ms)
+    ✓ backoffice defaults to read and follows the ERP grant tier when given
+    ✓ defaults are marked not enforced (shadow)
+    ✓ preference wins and is reported as the source (5 ms)
+    ✓ falls back to user_tenants, then none (1 ms)
+    ✓ surface comes from the route, mobile is always vitanaland, explicit wins (1 ms)
+    ✓ unknown channel normalises to web
+    ✓ combines preference, membership and org membership (1 ms)
+    ✓ a failed read leaves that field empty instead of throwing (9 ms)
+    ✓ no tenant: role reads are skipped (1 ms)
+    ✓ normalizeRunQuery bounds the limit and rejects unknown statuses
+    ✓ summarizeRunRows folds per plane, busiest first (5 ms)
+    ✓ /context: 401 anonymous, own context for a member (20 ms)
+    ✓ /runs, /runs/summary, /agents: 403 for a non-admin (9 ms)
+    ✓ /runs reads the unified view with the normalised filters (3 ms)
+    ✓ /runs/summary returns per-plane counts (4 ms)
+    ✓ /policy: 401 anonymous; own ceilings and a dry evaluation for a member (VTID-04325) (12 ms)
+    ✓ /policy/shadow: 403 for a member; window + catalog for an admin (VTID-04362) (6 ms)
+    ✓ /agents returns agent cards; a read error is a 502, not a crash (4 ms)
+    ✓ is additive: no DROP / TRUNCATE / DELETE
+    ✓ ledger tables are service-role only and the view runs as the invoker (1 ms)
+    ✓ the projection covers every existing run plane (1 ms)
+    ✓ every ORB tool classifies without the default rule (7 ms)
+    ✓ domains follow the prefix; high is explicit (2 ms)
+    ✓ summary counts every tool once (1 ms)
+    ✓ a self commit is allowed by voice when the role may commit
+    ✓ a non-self commit by voice escalates to chat/web (1 ms)
+    ✓ professional defaults stop at draft, so create_service is a shadow deny (finding for review) (1 ms)
+    ✓ a community member cannot touch dev tools; a developer read is allowed
+    ✓ high risk queues for maker-checker, never allows directly
+    ✓ anonymous may only read community (1 ms)
+    ✓ aggregates by role|tool|decision and rings only non-allow (1 ms)
+    ✓ a null role is recorded as anonymous (1 ms)
+    ✓ stays bounded (11 ms)
+    ✓ never throws on bad input
+    ✓ records a decision and still runs the handler — the shadow never blocks (57 ms)
+    ✓ an unknown tool is not recorded
+Test Suites: 3 passed, 3 total
+Tests:       49 passed, 49 total

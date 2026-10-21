@@ -1,0 +1,35 @@
+{
+  "fixture_id": "synthetic-017-multiturn-realistic",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Realistic mixed session: greeting (no tool) → memory → calendar → communication.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Hey Vitana, good morning"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Log that I slept eight hours",
+      "expected_tool": "log_sleep",
+      "expected_intent": "memory.log_sleep"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Add a yoga class Thursday at 6pm",
+      "expected_tool": "create_calendar_event",
+      "expected_intent": "calendar.create"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "Tell my sister I booked the yoga class",
+      "expected_tool": "send_chat_message",
+      "expected_intent": "communication.send_message"
+    }
+  ]
+}

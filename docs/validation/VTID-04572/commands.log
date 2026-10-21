@@ -1,0 +1,6 @@
+## Staging evidence (read-only)
+CloudWatch /vitana/gateway since 17:00Z: 20+ lines "[VTID-01952] identity-guardrail: app_users select error: column app_users.first_name does not exist"
+information_schema: app_users has no first_name/last_name/date_of_birth/gender/city/country; profiles has all of them
+## Local
+npx jest test/services/vtid-04572-identity-guardrail-block.test.ts test/services/guide -> 21 suites, 144 passed
+npx tsc --noEmit -> clean

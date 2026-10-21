@@ -1,0 +1,7 @@
+$ git stash push -- src && npx jest test/vtid-05025-commerce-health-boundary.test.ts
+    ✕ does not query the wearable rollup when include_wearable is omitted
+    ✕ never serves a wearable-loaded context to a caller that did not opt in
+    ✕ invalidateUserHealthContext() drops every option variant for the user
+    ✕ returns null for a context whose only signal is low sleep / low HRV wearable data
+    ✕ services/context-pack-builder.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+Tests:       5 failed, 34 passed, 39 total

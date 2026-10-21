@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-05147",
+  "kind": "fix",
+  "paths": [
+    "supabase/migrations/20261013233000_vtid_05147_s_m_membership_role_lockdown.sql",
+    "supabase/tests/vtid_05147_*.sql",
+    "scripts/ci/test-vtid-05147-s-m-lockdown.sh",
+    "services/gateway/src/lib/permitted-roles.ts",
+    "services/gateway/src/services/jev/jev-caller.ts",
+    "services/gateway/src/middleware/require-tenant-admin.ts",
+    "services/gateway/src/middleware/require-tenant-admin-repository.ts",
+    "services/gateway/src/routes/admin-users.ts",
+    "services/gateway/src/routes/orb-live.ts",
+    "services/gateway/src/routes/orb-tool.ts",
+    "services/gateway/src/orb/live/session/live-session-controller.ts",
+    "services/gateway/test/vtid-05147-*.test.ts",
+    "services/gateway/test/middleware/require-tenant-admin.test.ts",
+    "services/gateway/test/routes/orb-live.test.ts",
+    "services/gateway/test/routes/admin-notification-controls.test.ts",
+    "services/gateway/test/routes/tenant-admin/*.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/multitenancy/MIGRATION-QUEUE.md",
+    "docs/validation/VTID-05147/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

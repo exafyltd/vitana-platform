@@ -1,0 +1,49 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+(node:25281) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (5.019 s)
+  Golden path: an operator request becomes a merged, deployed, verified change
+    ✓ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (643 ms)
+  Safety: only a verified exafy_admin (or the machine credential) can queue an execution
+    ✓ an anonymous console request is refused before any VTID, finding or execution exists (84 ms)
+    ✓ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (137 ms)
+    ✓ an anonymous request that reuses an admin's thread does not inherit the admin marker (131 ms)
+    ✓ a wrong machine token is not a credential (86 ms)
+    ✓ a verified exafy_admin JWT queues the same execution the machine credential does (95 ms)
+  Safety: an LLM provider outage stops the loop instead of feeding it
+    ✓ both providers failing on the first call fails the execution with the outage error (142 ms)
+    ✓ after one outage failure the next tick claims at most one execution (a probe) (291 ms)
+    ✓ three outage failures in a row: the next tick claims nothing — no retry storm (307 ms)
+  Safety: a run that exhausts the turn cap is snoozed, not re-approved
+    ✓ auto-approve → agent reads until the cap → failure → the next auto-approve pass snoozes the finding (225 ms)
+  CI failure on an agent PR: the fix continues on the same PR
+    ✓ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (369 ms)
+    ✓ VTID-04472 — the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI) (362 ms)
+  Safety: an execution claimed by one environment is left alone by the other
+    ✓ staging's CI watcher ignores a production-claimed PR; production's merges it (115 ms)
+    ✓ a legacy row with no claim stamp stays visible to every environment (79 ms)
+    ✓ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (85 ms)
+    ✓ the production gateway does not claim a queued execution; staging does (186 ms)
+    ✓ production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact) (39 ms)
+  Safety: cancelling a running execution stops it — nothing pushed, nothing retried
+    ✓ the operator cancels from the console mid-run; the agent stops at its next boundary (220 ms)
+  Safety: a prior PR the bridge closed unmerged does not block the finding's retry
+    ✓ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (143 ms)
+  Safety: the kill switch stops claiming and the watchers
+    ✓ an armed kill switch: a queued execution is not claimed and a green PR is not merged (157 ms)
+  Contract: the emulated one-in-flight-execution index matches the migration
+    ✓ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (62 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        5.354 s
+Ran all test suites matching /test\/vtid-04465-operator-pipeline-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

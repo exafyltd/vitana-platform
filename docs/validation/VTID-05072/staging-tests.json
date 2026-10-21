@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05072",
+  "service": "gateway",
+  "note": "Read-only. Phase 0 changes no served file (modules.json is not served and no ?v= changed), so proving /command-hub/ returns 200 is sufficient. The guard test (vtid-05072-bundle-manifest.test.ts case 1) already pins that every manifest script appears in index.html.",
+  "tests": [
+    { "kind": "http", "name": "Command Hub index is served", "path": "/command-hub/", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/command-hub/vtid-05072-bundle-manifest.test.ts", "cwd": "services/gateway", "reason": "guard test case 1 pins that every manifest bundle file is referenced in index.html's script tags with versioned URLs" }
+  ]
+}

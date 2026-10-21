@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05167",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "build-info answers JSON (the runner confirms the verified commit from it)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05167-timeline-catalog.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The change is that the projector stops writing internal ORB telemetry (orb.livekit.next_action.*, orb.navigator.*, …) to user_activity_log. On staging that is a write path into the shared production database triggered only by an authenticated voice session, which a read-only suite cannot open. The suite pins the catalog, its parity with the migration seed and the Vitana Index pillars, and that neither projectOasisEventToTimeline nor writeTimelineRow ever posts a system type. The migration is proven by SQL-ACTIVITY-TIERS.yml on a throwaway Postgres and is applied to the live database only via RUN-MIGRATION.yml after Gate 2."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/realtime/generic-cursor-relay.test.ts test/vtid-04785-session-end-telemetry.test.ts test/vtid-04886-ops-attention-acks-timeline.test.ts test/vtid-05041-definer-lockdown.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Neighbouring suites that read user_activity_log, mock the projector, or guard SECURITY DEFINER grants in new migrations; they must stay green with the new catalog guard and the two new definer functions."
+    }
+  ]
+}

@@ -1,0 +1,681 @@
+/**
+ * VTID-01216: Conversation API Client
+ *
+ * Internal client for ORB and Operator to use the unified conversation API.
+ * This provides a consistent interface for both surfaces to access the
+ * same conversation intelligence layer.
+ *
+ * Usage:
+ * - Import processConversationTurn in ORB or Operator routes
+ * - Pass the request parameters and get a unified response
+ *
+ * Both ORB and Operator should migrate to use this client
+ * instead of directly calling Gemini or separate LLM paths.
+ */
+
+import { randomUUID } from 'crypto';
+import { emitOasisEvent } from './oasis-event-service';
+import {
+  ConversationTurnRequest,
+  ConversationTurnResponse,
+  ConversationChannel,
+  ContextPack,
+  ToolCall,
+} from '../types/conversation';
+import { computeRetrievalRouterDecision, logRetrievalRouterDecision } from './retrieval-router';
+import { extractLanguageFromContextPack, buildLanguageDirective } from './context-pack-builder';
+// BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: mandatory pre-answer memory step.
+// Owns buildContextPack + goals + preferences + do-not-repeat and returns the
+// sentinel-wrapped USER MEMORY CONTEXT block. No LLM call without it.
+import {
+  buildAssistantMemoryContext,
+  assertMemoryContextInjected,
+  emitMemoryTurnTelemetry,
+  AssistantMemoryContext,
+} from './memory-orchestrator';
+import { processWithGemini, setThreadIdentity } from './gemini-operator';
+import { getGeminiToolDefinitions, logToolExecution } from './tool-registry';
+import { classifyCategory } from '../routes/memory';
+import { getPersonalityConfigSync } from './ai-personality-service';
+import { writeMemoryItemWithIdentity } from './orb-memory-bridge';
+import { deduplicatedExtract } from './extraction-dedup-manager';
+
+/** Reply sent when the model call fails (VTID-04540: never extracted from). */
+const TURN_ERROR_REPLY = 'I apologize, but I encountered an error processing your request. Please try again.';
+import { isUnifiedConversationEnabled } from './system-controls-service';
+// VTID-01952 Phase 0 — Identity-mutation intent intercept (Maria → Kemal fix)
+import { handleIdentityIntent } from './identity-intent-handler';
+
+// =============================================================================
+// Thread Management
+// =============================================================================
+
+interface ConversationThread {
+  thread_id: string;
+  tenant_id: string;
+  user_id: string;
+  channel: ConversationChannel;
+  turn_count: number;
+  started_at: string;
+  last_activity: string;
+  conversation_id?: string;
+}
+
+// In-memory thread store (should be replaced with persistent storage in production)
+const threads = new Map<string, ConversationThread>();
+
+/**
+ * Get or create a conversation thread
+ */
+function getOrCreateThread(
+  thread_id: string | undefined,
+  tenant_id: string,
+  user_id: string,
+  channel: ConversationChannel
+): ConversationThread {
+  const id = thread_id || randomUUID();
+
+  if (threads.has(id)) {
+    const thread = threads.get(id)!;
+    thread.last_activity = new Date().toISOString();
+    return thread;
+  }
+
+  const newThread: ConversationThread = {
+    thread_id: id,
+    tenant_id,
+    user_id,
+    channel,
+    turn_count: 0,
+    started_at: new Date().toISOString(),
+    last_activity: new Date().toISOString(),
+  };
+
+  threads.set(id, newThread);
+  return newThread;
+}
+
+// =============================================================================
+// Main Conversation Processing Function
+// =============================================================================
+
+export interface ProcessConversationTurnInput {
+  /** Channel (ORB or Operator) */
+  channel: ConversationChannel;
+
+  /** Tenant ID */
+  tenant_id: string;
+
+  /** User ID */
+  user_id: string;
+
+  /** User's role */
+  role: string;
+
+  /** Thread ID (optional - will create if not provided) */
+  thread_id?: string;
+
+  /** User's message text */
+  message: string;
+
+  /** Message type */
+  message_type?: 'text' | 'voice_transcript';
+
+  /** UI context (optional) */
+  ui_context?: {
+    surface: ConversationChannel;
+    screen?: string;
+    selection?: string;
+    metadata?: Record<string, unknown>;
+  };
+
+  /** VTID link (optional) */
+  vtid?: string;
+
+  /** Display name for context (optional) */
+  display_name?: string;
+
+  /** Conversation history (optional - for context) */
+  conversation_history?: Array<{
+    role: 'user' | 'assistant';
+    content: string;
+  }>;
+}
+
+export interface ProcessConversationTurnResult {
+  ok: boolean;
+
+  /** The assistant's reply */
+  reply: string;
+
+  /** Thread ID for continuation */
+  thread_id: string;
+
+  /** Turn number */
+  turn_number: number;
+
+  /** Context pack (for Operator visibility) */
+  context_pack?: ContextPack;
+
+  /** Tool calls made */
+  tool_calls: ToolCall[];
+
+  /** Response metadata */
+  meta: {
+    channel: ConversationChannel;
+    model_used: string;
+    latency_ms: number;
+    tokens_used?: {
+      prompt: number;
+      completion: number;
+      total: number;
+    };
+  };
+
+  /** OASIS reference */
+  oasis_ref: string;
+
+  /** Error message if ok=false */
+  error?: string;
+}
+
+/**
+ * Process a conversation turn using the unified intelligence layer.
+ *
+ * This is the main entry point for ORB and Operator to use the shared
+ * conversation brain. Both surfaces should call this function instead
+ * of directly calling Gemini or other LLM providers.
+ */
+export async function processConversationTurn(
+  input: ProcessConversationTurnInput
+): Promise<ProcessConversationTurnResult> {
+  const requestId = randomUUID();
+  const startTime = Date.now();
+
+  console.log(`[VTID-01216] Processing turn ${requestId} via ${input.channel}`);
+
+  try {
+    // Log turn received
+    await emitOasisEvent({
+      vtid: input.vtid || 'VTID-01216',
+      type: 'conversation.turn.received',
+      source: `conversation-${input.channel}`,
+      status: 'info',
+      message: `Turn received: ${input.message.substring(0, 50)}...`,
+      payload: {
+        request_id: requestId,
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        channel: input.channel,
+        role: input.role,
+        message_length: input.message.length,
+      },
+    }).catch(() => {});
+
+    // Get or create thread
+    const thread = getOrCreateThread(input.thread_id, input.tenant_id, input.user_id, input.channel);
+    thread.turn_count++;
+
+    // ---------------------------------------------------------------
+    // VTID-01952 Phase 0 — Identity-mutation intent intercept.
+    // If the user explicitly asks to change their name, DOB, gender,
+    // email, etc., short-circuit BEFORE running the LLM. Return the
+    // sanctioned refusal-and-redirect message + redirect_target metadata
+    // for the frontend to fire the deep-link event.
+    // The brain prompt Guardrail B already prevents drift in the LLM
+    // turn itself; this intercept makes the redirect explicit + cheap.
+    // ---------------------------------------------------------------
+    const identityIntent = await handleIdentityIntent({
+      utterance: input.message,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      // user_locale not always available here — defaults to 'en' inside the handler
+      source: 'conversation-client',
+      conversation_turn_id: thread.thread_id,
+    });
+    if (identityIntent.handled) {
+      console.log(
+        `[VTID-01952] Identity-mutation intent intercepted: fact_key=${identityIntent.detected_fact_key}, ` +
+        `pattern="${identityIntent.detected_pattern}", confidence=${identityIntent.detected_confidence}`
+      );
+      return {
+        ok: true,
+        reply: identityIntent.message,
+        thread_id: thread.thread_id,
+        turn_number: thread.turn_count,
+        tool_calls: [
+          {
+            // Surface the redirect_target as a "tool call" the frontend can
+            // interpret; this mirrors the G3 set_goal → vitana:open-life-compass
+            // pattern. The frontend listens for this and dispatches the
+            // matching CustomEvent on the window.
+            id: requestId,
+            name: 'request_identity_redirect',
+            args: {
+              event: identityIntent.redirect_target.event,
+              section: identityIntent.redirect_target.payload.section,
+              field: identityIntent.redirect_target.payload.field ?? null,
+              fact_key: identityIntent.detected_fact_key,
+            },
+            duration_ms: 0,
+            result: { ok: true, redirect_target: identityIntent.redirect_target },
+            success: true,
+          },
+        ],
+        meta: {
+          channel: input.channel,
+          model_used: 'identity-intent-handler',
+          latency_ms: Date.now() - startTime,
+        },
+        oasis_ref: requestId,
+      };
+    }
+    // ---------------------------------------------------------------
+
+    // Step 1: Compute retrieval router decision
+    const routerDecision = computeRetrievalRouterDecision(input.message, { channel: input.channel });
+
+    // Log router decision
+    await logRetrievalRouterDecision(routerDecision, {
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      thread_id: thread.thread_id,
+      channel: input.channel,
+      query: input.message,
+    });
+
+    // Step 2+3: MANDATORY memory orchestrator — builds the context pack
+    // (memory garden forced on) + goals + preferences + do-not-repeat and
+    // returns the sentinel-wrapped USER MEMORY CONTEXT block.
+    const memoryContext: AssistantMemoryContext = await buildAssistantMemoryContext({
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
+      channel: input.channel,
+      message: input.message,
+      ui_context: input.ui_context,
+      thread_id: thread.thread_id,
+      turn_number: thread.turn_count,
+      conversation_start: thread.started_at,
+      display_name: input.display_name,
+      user_timezone: input.ui_context?.metadata?.timezone as string | undefined,
+      session_id: thread.thread_id,
+      router_decision: routerDecision,
+      vtid: input.vtid,
+    });
+    const contextPack = memoryContext.context_pack;
+    const contextForLLM = memoryContext.memory_prompt_block;
+
+    // VTID-01950 (Phase H.5) — Text-chat awareness inheritance.
+    // Same awareness block the ORB voice brain receives, flag-gated so
+    // text and voice have identical situational awareness.
+    const chatAwarenessEnabled =
+      (process.env.PRESENCE_CHAT_AWARENESS_ENABLED ?? 'true').toLowerCase() === 'true';
+    let awarenessBlock = '';
+    if (chatAwarenessEnabled) {
+      try {
+        const { getAwarenessContext } = await import('./guide/awareness-context');
+        const { formatAwarenessForPrompt } = await import('./guide/awareness-prompt');
+        // VTID-01990 + VTID-02019: thread the user's timezone (if the surface
+        // supplied one via ui_context.metadata.timezone) into awareness so
+        // session bucketing is local-day correct AND HH:MM renders in the
+        // user's local time. When the surface passes nothing, awareness
+        // resolves to Europe/Berlin (system default for our launch market).
+        const userTz = input.ui_context?.metadata?.timezone as string | undefined;
+        const awareness = await getAwarenessContext(input.user_id, input.tenant_id, userTz);
+        awarenessBlock = formatAwarenessForPrompt(awareness, { compact: true });
+      } catch (e: any) {
+        console.warn('[conversation-client] awareness inject failed:', e?.message);
+      }
+    }
+
+    // Step 4: Build system instruction (with language preference from context pack)
+    const systemInstruction = buildSystemInstruction(input.channel, input.role, contextForLLM, contextPack, awarenessBlock);
+
+    // Step 5: Get tool definitions
+    const toolDefs = getGeminiToolDefinitions(input.role);
+
+    // VTID-CHAT-SEND: Register the user's identity for this thread BEFORE the
+    // LLM runs, so identity-bound tools the executor dispatches (send_chat_message,
+    // resolve_recipient, get_user_matches, recall_conversation_at_time) can act
+    // on the user's behalf. The text-DM brain previously never set this, so
+    // those tools silently failed with "User context not available" — which is
+    // why asking Vitana to message someone fell back to an events search.
+    setThreadIdentity(thread.thread_id, {
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      role: input.role,
+    });
+
+    // Step 6: Call LLM — hard gate: no answer without the memory block.
+    assertMemoryContextInjected(systemInstruction, {
+      channel: input.channel,
+      user_id: input.user_id,
+      tenant_id: input.tenant_id,
+      thread_id: thread.thread_id,
+      caller: 'conversation-client.processConversationTurn',
+    });
+
+    const llmStartTime = Date.now();
+    let reply = '';
+    let toolCalls: ToolCall[] = [];
+    let modelUsed = 'unknown';
+
+    try {
+      const geminiResult = await processWithGemini({
+        text: input.message,
+        systemInstruction,
+        conversationHistory: input.conversation_history?.map(h => ({
+          role: h.role as 'user' | 'assistant',
+          content: h.content,
+        })) || [],
+        threadId: thread.thread_id,
+      });
+
+      reply = geminiResult.reply;
+      // VTID-04540: report the model the router actually served, not a label.
+      modelUsed = servedModelLabel(geminiResult.meta) ?? modelUsed;
+
+      // Process tool calls
+      if (geminiResult.toolResults && geminiResult.toolResults.length > 0) {
+        for (const toolResult of geminiResult.toolResults) {
+          const toolCall: ToolCall = {
+            id: randomUUID(),
+            name: toolResult.name,
+            args: toolResult.response as Record<string, unknown>,
+            duration_ms: 0,
+            result: toolResult.response,
+            success: true,
+          };
+          toolCalls.push(toolCall);
+
+          // Log tool execution
+          await logToolExecution(
+            toolCall.name,
+            toolCall.args,
+            toolCall.result,
+            toolCall.success,
+            toolCall.duration_ms,
+            { tenant_id: input.tenant_id, user_id: input.user_id, thread_id: thread.thread_id, channel: input.channel }
+          );
+        }
+      }
+
+      // Log model called
+      await emitOasisEvent({
+        vtid: input.vtid || 'VTID-01216',
+        type: 'conversation.model.called',
+        source: `conversation-${input.channel}`,
+        status: 'success',
+        message: 'LLM response generated',
+        payload: {
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          thread_id: thread.thread_id,
+          channel: input.channel,
+          model: modelUsed,
+          latency_ms: Date.now() - llmStartTime,
+          tool_calls_count: toolCalls.length,
+        },
+      }).catch(() => {});
+
+    } catch (llmError: any) {
+      console.error(`[VTID-01216] LLM error:`, llmError.message);
+
+      await emitOasisEvent({
+        vtid: input.vtid || 'VTID-01216',
+        type: 'conversation.model.called',
+        source: `conversation-${input.channel}`,
+        status: 'error',
+        message: `LLM call failed: ${llmError.message}`,
+        payload: {
+          tenant_id: input.tenant_id,
+          user_id: input.user_id,
+          thread_id: thread.thread_id,
+          channel: input.channel,
+          error: llmError.message,
+        },
+      }).catch(() => {});
+
+      reply = TURN_ERROR_REPLY;
+    }
+
+    // Per-turn memory proof event (feeds the Memory Alive/Dead admin card).
+    // Fire-and-forget — includes assistant_used_memory heuristic on the reply.
+    emitMemoryTurnTelemetry(memoryContext, {
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      channel: input.channel,
+      thread_id: thread.thread_id,
+      reply,
+      model_used: modelUsed,
+      vtid: input.vtid,
+    });
+
+    // Step 7: Auto-write USER message only to memory (not assistant reply)
+    // VTID-01225-CLEANUP: Previously stored combined user+assistant — caused pollution.
+    try {
+      const category = classifyCategory(input.message);
+      await writeMemoryItemWithIdentity(
+        { user_id: input.user_id, tenant_id: input.tenant_id, active_role: conversationChannelRole(input.channel) },
+        {
+          content: input.message,
+          source: input.channel === 'orb' ? 'orb_text' : 'orb_text',
+          category_key: category || 'conversation',
+          importance: 10,
+          content_json: {
+            direction: 'user',
+            channel: input.channel,
+          },
+        }
+      );
+    } catch (memoryError: any) {
+      console.warn(`[VTID-01216] Memory write failed:`, memoryError.message);
+    }
+
+    // VTID-04540: learn facts from this turn. The brain path returns through
+    // here, and nothing else extracted facts from a typed turn: a typed thread
+    // has no session end to catch up at, so every turn is extracted (force
+    // skips the voice-oriented "3 new turns / 60 s" throttle, which dropped the
+    // first two turns of every thread). write_fact skips unchanged values.
+    // Typed turns only: a voice transcript routed here keeps the voice
+    // pipeline's own extraction cadence (session-end commit + throttle).
+    if (input.message_type !== 'voice_transcript') extractTypedTurnFacts({
+      message: input.message,
+      reply,
+      tenant_id: input.tenant_id,
+      user_id: input.user_id,
+      thread_id: thread.thread_id,
+      turn_count: thread.turn_count,
+      channel: input.channel,
+    });
+
+    // Log turn completed
+    await emitOasisEvent({
+      vtid: input.vtid || 'VTID-01216',
+      type: 'conversation.turn.completed',
+      source: `conversation-${input.channel}`,
+      status: 'success',
+      message: 'Turn completed successfully',
+      payload: {
+        request_id: requestId,
+        tenant_id: input.tenant_id,
+        user_id: input.user_id,
+        thread_id: thread.thread_id,
+        channel: input.channel,
+        turn_number: thread.turn_count,
+        total_latency_ms: Date.now() - startTime,
+        memory_hits: contextPack.memory_hits.length,
+        knowledge_hits: contextPack.knowledge_hits.length,
+        web_hits: contextPack.web_hits.length,
+        tool_calls: toolCalls.length,
+      },
+    }).catch(() => {});
+
+    console.log(`[VTID-01216] Turn ${requestId} completed in ${Date.now() - startTime}ms`);
+
+    return {
+      ok: true,
+      reply,
+      thread_id: thread.thread_id,
+      turn_number: thread.turn_count,
+      context_pack: input.channel === 'operator' ? contextPack : undefined,
+      tool_calls: toolCalls,
+      meta: {
+        channel: input.channel,
+        model_used: modelUsed,
+        latency_ms: Date.now() - startTime,
+      },
+      oasis_ref: `OASIS-CONV-${requestId.slice(0, 8).toUpperCase()}`,
+    };
+
+  } catch (error: any) {
+    console.error(`[VTID-01216] Turn ${requestId} failed:`, error.message);
+
+    await emitOasisEvent({
+      vtid: input.vtid || 'VTID-01216',
+      type: 'conversation.turn.completed',
+      source: `conversation-${input.channel}`,
+      status: 'error',
+      message: `Turn failed: ${error.message}`,
+      payload: {
+        request_id: requestId,
+        error: error.message,
+        latency_ms: Date.now() - startTime,
+      },
+    }).catch(() => {});
+
+    return {
+      ok: false,
+      reply: 'An error occurred while processing your request.',
+      thread_id: input.thread_id || randomUUID(),
+      turn_number: 0,
+      tool_calls: [],
+      meta: {
+        channel: input.channel,
+        model_used: 'unknown',
+        latency_ms: Date.now() - startTime,
+      },
+      oasis_ref: `OASIS-CONV-${requestId.slice(0, 8).toUpperCase()}`,
+      error: error.message,
+    };
+  }
+}
+
+/**
+ * Build the system instruction for the LLM
+ */
+function buildSystemInstruction(
+  channel: ConversationChannel,
+  role: string,
+  contextForLLM: string,
+  contextPack?: ContextPack,
+  awarenessBlock?: string,
+): string {
+  // Load unified_conversation personality config
+  const ucConfig = getPersonalityConfigSync('unified_conversation') as Record<string, any>;
+
+  const baseInstruction = channel === 'orb'
+    ? (ucConfig.orb_instruction || `You are Vitana, an intelligent voice assistant. Keep responses concise and conversational for voice interaction.`)
+    : (ucConfig.operator_instruction || `You are Vitana, an intelligent assistant for the Operator Console. You can be more detailed and use formatting when helpful.`);
+
+  // Extract language preference from context pack if available
+  const preferredLanguage = contextPack ? extractLanguageFromContextPack(contextPack) : null;
+  const languageDirective = buildLanguageDirective(preferredLanguage);
+
+  return `${baseInstruction}
+${languageDirective}
+${awarenessBlock ? `\n${awarenessBlock}\n` : ''}
+${contextForLLM}
+
+Current conversation channel: ${channel}
+User's role: ${role}
+
+Instructions:
+${ucConfig.common_instructions || '- Use the memory context to personalize responses\n- Use knowledge context for Vitana-specific questions\n- Be helpful and accurate'}
+- ${channel === 'orb' ? (ucConfig.instructions_orb || 'Keep responses brief and natural for voice') : (ucConfig.instructions_operator || 'You can use markdown formatting and be more detailed')}
+
+Sending messages to other members:
+- You CAN send a direct chat message to another community member on the user's behalf using the send_chat_message tool. When the user asks to message someone ("send Maria a message saying ...", "schick Mariia eine Nachricht: ..."), do this:
+  1. If the name is ambiguous, call resolve_recipient first to disambiguate.
+  2. Call send_chat_message with recipient_label set to the name the user used (full name preferred) and body set to the exact message text — WITHOUT confirmed set. This only returns a preview; it does NOT send anything yet.
+  3. Read the preview's recipient and exact message text back to the user and ask them to confirm ("Soll ich die Nachricht an <name> senden: '<text>'?").
+  4. Only when the user confirms (e.g. "yes, send it" / "ja, versende es"), call send_chat_message again with the SAME recipient_label and body PLUS confirmed: true. This second call is what actually delivers the message — the tool enforces this two-call handshake server-side, so skipping straight to confirmed:true or never sending it at all both fail silently from the user's perspective.
+  5. Never narrate this contract (tool names, "confirmed", "resolve_recipient") to the user — it is internal. Speak only in natural language.
+- NEVER claim a message was sent unless a send_chat_message call with confirmed:true returned ok. If it returns an error, tell the user honestly and offer to try again — do NOT silently switch to a different action like searching for events.
+
+Sharing Links:
+- Event search results include a "Link:" field with a URL like https://vitanaland.com/e/{slug}. When the user asks about an event or asks for a link, you MUST copy this exact URL into your response on its own line. NEVER say "the link is on its way" or "I'll send the link" — paste the actual URL.
+- Example:
+  🎉 City by Bike Tour in Lyon
+  https://vitanaland.com/e/city-by-bike
+- NEVER fabricate links. Only use URLs that appear in tool results or event data.
+- For person matches, respect privacy — never reveal more identity than what the match data provides.`;
+}
+
+// Re-export isUnifiedConversationEnabled from system-controls-service
+// This uses DB-backed governance controls instead of env vars (VTID-01216)
+export { isUnifiedConversationEnabled } from './system-controls-service';
+
+// =============================================================================
+// VTID-04540: fact extraction + served-model label for typed turns
+// =============================================================================
+
+/**
+ * "provider/model" of the call that wrote the reply, or null when the meta has
+ * none. A tool-assisted turn reports its final call in reply_provider /
+ * reply_model; a direct turn only has provider / model.
+ */
+export function servedModelLabel(meta: Record<string, unknown> | undefined): string | null {
+  const pick = (a: unknown, b: unknown) =>
+    (typeof a === 'string' && a ? a : null) ?? (typeof b === 'string' && b ? b : null);
+  const model = pick(meta?.reply_model, meta?.model);
+  const provider = pick(meta?.reply_provider, meta?.provider);
+  if (!model) return null;
+  return provider ? `${provider}/${model}` : model;
+}
+
+/**
+ * Fire-and-forget fact extraction for one typed turn. Never throws, never
+ * blocks the reply. Skips the canned error reply so a failed turn cannot
+ * teach Vitana anything.
+ */
+/**
+ * VTID-04798: the role a text channel serves. The Operator Console and the
+ * developer assistant are Command Hub work, so their turns are developer
+ * memory, not the member's personal memory; the ORB text channel is personal.
+ */
+export function conversationChannelRole(channel: ConversationChannel | string | null | undefined): string | null {
+  return channel === 'operator' || channel === 'developer_assistant' ? 'developer' : null;
+}
+
+export function extractTypedTurnFacts(args: {
+  message: string;
+  reply: string;
+  tenant_id: string;
+  user_id: string;
+  thread_id: string;
+  turn_count?: number;
+  channel?: ConversationChannel;
+}): { extracted: boolean; skip_reason?: string } {
+  try {
+    if (!args.message?.trim()) return { extracted: false, skip_reason: 'empty_message' };
+    if (args.reply === TURN_ERROR_REPLY) return { extracted: false, skip_reason: 'error_reply' };
+    const result = deduplicatedExtract({
+      conversationText: `User: ${args.message}\nAssistant: ${args.reply}`,
+      tenant_id: args.tenant_id,
+      user_id: args.user_id,
+      session_id: args.thread_id,
+      turn_count: args.turn_count,
+      force: true,
+      served_role: conversationChannelRole(args.channel),
+    });
+    if (!result.extracted) {
+      console.debug(`[VTID-04540] typed-turn extraction skipped: ${result.skip_reason}`);
+    }
+    return result;
+  } catch (err: any) {
+    console.warn(`[VTID-04540] typed-turn extraction failed (non-blocking): ${err?.message}`);
+    return { extracted: false, skip_reason: 'error' };
+  }
+}

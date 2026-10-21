@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-04763",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "daily reminder route exists and rejects anonymous writes",
+      "method": "POST",
+      "path": "/api/v1/journey/audiobook/reminder",
+      "rejected_probe": true,
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "audiobook metrics are admin-only",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/analytics/audiobook",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "name": "daily goal, reminder, dispatch, metrics",
+      "ref": "npx jest test/vtid-04763-audiobook-daily.test.ts test/vtid-04763-audiobook-reminder-route.test.ts test/guided-journey-state.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins the per-day listen record, reminder validation and same-day guarantee, the dispatch tick through the delivery gate with localized text and a plain-path link, the claim SQL guarantees (executed in PGlite, docs/validation/VTID-04763) and the four metrics."
+    }
+  ]
+}

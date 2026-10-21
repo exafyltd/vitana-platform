@@ -1,0 +1,33 @@
+VTID-04339 — commands run
+
+1. Allocated VTID-04339 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
+   set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
+
+2. Located the three sites:
+   - services/gateway/src/index.ts  app.post('/api/v1/brain/test', async ...)  (no middleware)
+   - services/gateway/src/routes/voice-awareness.ts  router.get('/voice/awareness/watchdogs', async ...)  (no auth import)
+   - services/gateway/src/services/assistant-service.ts  processBrainTurn({ user_id: finalSessionId, tenant_id: tenant })
+
+3. Checked callers before changing auth:
+   - grep "brain/test" across the repo, scripts, workflows and vitana-v1: no caller besides the registration.
+   - Command Hub app.js calls /voice/awareness/watchdogs with buildContextHeaders(), which adds
+     "Authorization: Bearer <state.authToken>" — admins keep access.
+   - Command Hub app.js sendOrbMessage() calls /assistant/chat with no Authorization header and
+     tenant 'Vitana-Dev' — hence optionalAuth + stateless fallback rather than requireAuth.
+   - Read requireExafyAdmin in full: checks identity (401) and exafy_admin (403).
+
+4. Live, anonymous, staging (build e09eb264b689), before the change:
+   GET  /api/v1/voice/awareness/watchdogs -> 200 application/json
+   POST /api/v1/brain/test  (body {})     -> 400 application/json
+   POST /api/v1/assistant/chat (body {})  -> 400 application/json
+
+5. Tests:
+   node_modules/.bin/jest test/routes/voice-awareness.test.ts \
+     test/services/vtid-04339-assistant-brain-identity.test.ts \
+     test/vtid-04339-brain-test-route-auth.test.ts
+   -> 3 suites, 10 tests passed (outputs/test-summary.txt)
+
+   node_modules/.bin/jest --testPathPattern "(assistant|vitana-brain|voice-awareness|brain)"
+   -> 48 suites, 832 tests passed
+
+6. Typecheck: node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .  -> exit 0

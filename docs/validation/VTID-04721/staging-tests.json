@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04721",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04721-scheduled-workflow-fixes.test.ts",
+      "cwd": "services/gateway",
+      "reason": "workflow-only change; nothing deploys. The real check is the next scheduled run of each workflow, dispatched after merge."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-04963",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "staging gateway is up on the deployed build (phase 1 keeps staging dispatching via the override)",
+      "target": "gateway",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04963-reminders-guided-journey-gate.test.ts test/vtid-04320-reminders-dispatch.test.ts test/vtid-04763-audiobook-daily.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The loop gate is an env decision with no HTTP surface, and firing a reminder writes to real members' rows in the shared database, so no suite may trigger one. The Jest gate matrix pins prod-on / staging-needs-override / audiobook kill switch and both workflows' pins. Read-only after deploy: oasis_events reminder.* keep arriving with env=staging after phase 1 (override true), and with env=production after PUBLISH."
+    }
+  ]
+}

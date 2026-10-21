@@ -1,0 +1,68 @@
+# VTID-03964 — commands run during this change
+
+## Live post-deploy re-verification (the trigger for this VTID)
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info"
+{"ok":true,"env":"staging","git_commit":"7b9ca15b41c8dbb89d1ec41ac68b2d5da0ae59f6", ...}
+(confirms staging was serving VTID-03954's exact merged commit)
+
+$ for i in 1 2 3 4; do curl -s -o /dev/null -w "run$i: HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/health"; done
+run1: HTTP:200 TIME:4.642897
+run2: HTTP:200 TIME:4.160494
+run3: HTTP:200 TIME:3.596659
+run4: HTTP:200 TIME:6.301110   <- over the panel's 6s budget
+
+$ for i in 1 2 3 4; do curl -s -o /dev/null -w "run$i: HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/pipeline/health"; done
+run1: HTTP:200 TIME:7.753108
+run2: HTTP:500 TIME:7.960371   <- real 500, not just slow
+run3: HTTP:500 TIME:3.656202
+run4: HTTP:200 TIME:0.952270
+
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/pipeline/health"
+{"ok":false,"error":"Body is unusable: Body has already been read"}
+(the actual regression body — root-caused to the shared AbortController
+across 3 concurrent fetches to the same Supabase host)
+
+$ for i in 1 2 3; do curl -s -o /dev/null -w "run$i HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/health"; done
+run1 HTTP:200 TIME:1.912054
+run2 HTTP:200 TIME:3.394255
+run3 HTTP:200 TIME:14.737565   <- independently found while re-checking the panel
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New/updated tests
+$ cd services/gateway && npx jest test/routes/vtid-health.test.ts test/routes/autopilot.test.ts test/services/autopilot-loop-store.test.ts test/services/autopilot-event-loop.test.ts --silent
+Test Suites: 4 passed, 4 total
+Tests:       170 passed, 170 total
+(full output: outputs/jest-new-tests.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 925 passed, 925 of 926 total
+Tests:       29 skipped, 6 todo, 15200 passed, 15235 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight (no frontend files touched)
+$ git diff origin/main...HEAD -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+No CSP pattern hits in added lines.
+(diff is empty by construction — see outputs/csp-gate.txt)
+
+## Route Mount Evidence Gate — local pre-flight (no route added)
+$ git diff origin/main...HEAD -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff.txt
+No route registration added — route-mount evidence not required for this diff.
+(exit 1, confirming the gate is correctly skipped — this PR only edits existing handler bodies)
+
+## Path Ownership Guard (gateway_backend profile) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/empty_body.txt
+APPROVED: 6 in-remit file(s) match the gateway_backend allowlist
+(exit 0)

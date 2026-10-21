@@ -1,0 +1,19 @@
+Supabase (read-only): to_regclass() for 17 candidate tables; pg_proc lookups for overload_*, taste_*, preference_*, d43_get_data_points
+curl (anonymous, staging): every registered health URL, flagged those whose body touches no dependency (23)
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04665-dependency-probe.test.ts   # 25/25
+npx tsc --noEmit -p .   # clean
+node node_modules/.bin/jest   # full suite, see below
+# Post-merge on staging (00ce3fb): /mitigation/health and /autopilot/prompts/health read ok although
+# to_regclass('public.risk_mitigations') and ('public.autopilot_prompts') are null. Root cause: the
+# table probe used a HEAD request; PostgREST answers a missing table with a bodyless 404 and supabase-js
+# returns no error for it. Measured with the anon key:
+#   GET  /rest/v1/risk_mitigations?select=*&limit=0  -> 404 {"code":"PGRST205",...}
+#   HEAD /rest/v1/risk_mitigations?select=*&limit=1  -> 404 (no body)
+#   GET  /rest/v1/oasis_events?select=*&limit=0      -> 200 []
+# Fix: GET with limit(0). Test reproduces the HEAD shape and fails on the old code (1 failed / 25 passed).
+npx jest test/vtid-04665-dependency-probe.test.ts   # 26 passed
+# STAGING-VERIFY run 60 (546143797188): the VTID-04696 guard failed — docs/validation/VTID-04688/staging-tests.json
+# named app.js?v=20261017-vtid-04661 while index.html loads ?v=20261020-vtid-04665 (bumped by P1–P4). Suite updated
+# to the served version; staging serves app.js?v=20261020-vtid-04665.
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts  # 3 passed

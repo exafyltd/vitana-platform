@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05079",
+  "service": "gateway",
+  "note": "Read-only. The browser-origin behaviour is proven by the Jest suite below (the staging harness sends no Origin header); after production the same Origin checks are repeated by hand with read-only GETs.",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/commerce-mcp-cors.test.ts test/middleware/cors.test.ts", "cwd": "services/gateway", "reason": "covers the two new CORS rules and the unchanged allow-list for /mcp, /api/* and unknown origins" },
+    { "kind": "http", "name": "the authorization-server document is still served", "path": "/.well-known/oauth-authorization-server", "expect_status": 200 },
+    { "kind": "http", "name": "the ChatGPT resource metadata is still served", "path": "/.well-known/oauth-protected-resource/mcp/chatgpt", "expect_status": 200 }
+  ]
+}

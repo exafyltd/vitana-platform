@@ -1,0 +1,34 @@
+    ✓ Bedrock profile ids resolve to a priced model (5 ms)
+    ✓ a recorded cost is kept; a $0 row with tokens is repriced (1 ms)
+    ✓ aggregate counts repriced and unpriced calls separately (2 ms)
+    ✓ under budget is allow
+    ✓ a synthetic agent over-spend is a deny naming the budget
+    ✓ a run over its daily line is denied even when the agent has room (1 ms)
+    ✓ the platform line is checked first
+    ✓ an unknown agent gets the default line (1 ms)
+    ✓ platform per day is the monthly envelope over 30 days (1 ms)
+    ✓ the measured 09-22 planning spike ($58) would be denied; the steady translator day ($33) would not (1 ms)
+    ✓ reads only llm.call.completed since UTC midnight and parses metadata (2 ms)
+    ✓ pages until a short page (2 ms)
+    ✓ preference wins and is reported as the source (1 ms)
+    ✓ falls back to user_tenants, then none (1 ms)
+    ✓ surface comes from the route, mobile is always vitanaland, explicit wins (1 ms)
+    ✓ unknown channel normalises to web
+    ✓ combines preference, membership and org membership (1 ms)
+    ✓ a failed read leaves that field empty instead of throwing (14 ms)
+    ✓ no tenant: role reads are skipped
+    ✓ normalizeRunQuery bounds the limit and rejects unknown statuses (1 ms)
+    ✓ summarizeRunRows folds per plane, busiest first
+    ✓ /context: 401 anonymous, own context for a member (26 ms)
+    ✓ /runs, /runs/summary, /agents: 403 for a non-admin (19 ms)
+    ✓ /runs reads the unified view with the normalised filters (4 ms)
+    ✓ /runs/summary returns per-plane counts (4 ms)
+    ✓ /policy: 401 anonymous; own ceilings and a dry evaluation for a member (VTID-04325) (16 ms)
+    ✓ /policy/shadow: 403 for a member; window + catalog for an admin (VTID-04362) (6 ms)
+    ✓ /budgets: 403 for a member; spend vs budgets for an admin (VTID-04370) (6 ms)
+    ✓ /agents returns agent cards; a read error is a 502, not a crash (4 ms)
+    ✓ is additive: no DROP / TRUNCATE / DELETE
+    ✓ ledger tables are service-role only and the view runs as the invoker (1 ms)
+    ✓ the projection covers every existing run plane (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       32 passed, 32 total

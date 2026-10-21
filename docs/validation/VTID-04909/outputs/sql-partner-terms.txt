@@ -1,0 +1,3 @@
+PASS vtid-04895 partner terms lifecycle
+PASS vtid-04909 partner terms german binding
+PASS vtid-04909 migration refuses unless empty

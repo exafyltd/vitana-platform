@@ -1,0 +1,43 @@
+name: SQL-ACTIVITY-TIERS
+run-name: 'activity tiers against a throwaway Postgres [VTID: VTID-05167] (${{ github.ref_name }})'
+
+# VTID-05167 — runs the Life Timeline P1 migration (activity_catalog seed,
+# classify_activity trigger, newest-first backfill, tier-aware archive,
+# privileges, idempotency) against a disposable Postgres service container.
+# Never runs against Supabase or Aurora.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*activity_tiers*.sql'
+      - 'scripts/ci/sql-tests/**'
+      - '.github/workflows/SQL-ACTIVITY-TIERS.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the activity tiers test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-activity-tiers-test.sh 2>&1 | tee /tmp/activity-tiers.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-05167 activity tiers' /tmp/activity-tiers.log

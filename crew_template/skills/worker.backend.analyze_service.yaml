@@ -1,0 +1,222 @@
+# =============================================================================
+# Skill: Worker Backend Analyze Service - VTID-01164
+# =============================================================================
+# Prevents duplication by locating existing endpoints/services and
+# summarizing where to implement similar patterns.
+# =============================================================================
+
+skill_id: worker.backend.analyze_service
+name: Analyze Service
+description: |
+  Prevents code duplication by analyzing existing endpoints and services.
+  Given service_name or keywords + file_patterns, locates existing implementations
+  and summarizes "where to implement" + "similar patterns" for new features.
+version: 1.0.0
+category: worker
+domain: backend
+vtid: VTID-01164
+
+provider:
+  type: internal
+  module: services/agents/workforce/skills/analyzeService
+  function: analyzeService
+  timeout_ms: 60000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  service_name:
+    type: string
+    required: false
+    description: Name of service to analyze or find similar to
+    examples:
+      - "user-service"
+      - "auth"
+      - "oasis-events"
+
+  keywords:
+    type: array
+    required: false
+    description: Keywords to search for in service code
+    items:
+      type: string
+    examples:
+      - ["authentication", "jwt", "token"]
+      - ["CRUD", "user", "profile"]
+
+  file_patterns:
+    type: array
+    required: false
+    description: Glob patterns to search
+    items:
+      type: string
+    default:
+      - "services/gateway/src/routes/**"
+      - "services/gateway/src/services/**"
+
+  feature_description:
+    type: string
+    required: false
+    description: Description of the feature to implement (helps find similar patterns)
+    examples:
+      - "Add endpoint for user profile updates"
+      - "Create service for handling webhook events"
+
+  include_tests:
+    type: boolean
+    required: false
+    default: false
+    description: Include test files in analysis
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether analysis completed successfully
+
+  existing_services:
+    type: array
+    description: Relevant existing services found
+    items:
+      type: object
+      properties:
+        name:
+          type: string
+        file_path:
+          type: string
+        type:
+          type: string
+          enum: [route, service, controller, middleware]
+        endpoints:
+          type: array
+          items:
+            type: object
+            properties:
+              method:
+                type: string
+              path:
+                type: string
+              handler:
+                type: string
+        relevance_score:
+          type: number
+
+  similar_patterns:
+    type: array
+    description: Similar implementation patterns found
+    items:
+      type: object
+      properties:
+        pattern_name:
+          type: string
+        file_path:
+          type: string
+        description:
+          type: string
+        code_example:
+          type: string
+        applicable_to:
+          type: string
+
+  implementation_recommendation:
+    type: object
+    description: Recommended approach for implementation
+    properties:
+      location:
+        type: string
+        description: Suggested file/directory for implementation
+      pattern_to_follow:
+        type: string
+        description: Pattern name to follow
+      existing_service_to_extend:
+        type: string
+        description: Existing service that could be extended
+      notes:
+        type: array
+        items:
+          type: string
+
+  potential_duplicates:
+    type: array
+    description: Existing features that might duplicate intended work
+    items:
+      type: object
+      properties:
+        file_path:
+          type: string
+        description:
+          type: string
+        similarity_score:
+          type: number
+
+  summary:
+    type: object
+    properties:
+      services_found:
+        type: integer
+      patterns_found:
+        type: integer
+      files_analyzed:
+        type: integer
+      duplicate_risk:
+        type: string
+        enum: [none, low, medium, high]
+
+  error:
+    type: string
+    description: Error message if analysis failed
+
+guardrails:
+  # Only analyze backend paths
+  allowed_paths:
+    - "services/gateway/src/**"
+    - "services/**/src/**"
+
+  # Don't analyze frontend
+  forbidden_paths:
+    - "services/gateway/src/frontend/**"
+    - "supabase/**"
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_backend.analyze_service.start
+    - vtid.stage.worker_backend.analyze_service.success
+    - vtid.stage.worker_backend.analyze_service.failed
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - services_found
+    - patterns_found
+    - duplicate_risk
+
+usage:
+  roles:
+    - worker
+    - planner
+  primary_role: worker
+  use_cases:
+    - Find existing patterns before implementing new features
+    - Detect potential code duplication
+    - Identify where to add new endpoints
+    - Analyze service architecture
+
+error_handling:
+  retry_attempts: 2
+  retry_backoff_ms: 1000
+  fallback_strategy: return_partial_results
+
+  error_codes:
+    NO_MATCHES:
+      description: No matching services or patterns found
+      recoverable: true
+
+    SEARCH_TIMEOUT:
+      description: Service search exceeded timeout
+      recoverable: true
+
+    PATH_ERROR:
+      description: Could not access specified paths
+      recoverable: false

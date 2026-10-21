@@ -1,0 +1,6 @@
+{"applied_via":"RUN-MIGRATION.yml (Supabase Management API), ref claude/funny-mccarthy-1bt8nz, 2026-10-07",
+ "pre_apply_recheck_2026-10-07T11:33Z":{"live_function_md5_unchanged_since_capture":true,"excluded_accounts":3,"visible_excluded_profiles":3,"live_intents":18,"own_recs":16,"real_recs":11,"matches":173,"dependent_rows":0},
+ "migration":{"live_md5_equals_migration_file":{"search_intent_catalog_v2":"d15ef82533d1685d02e0d7ba2e514ffc","compute_intent_matches_v2":"e381895a754ae2b55a061f98c71a72d6","search_intent_catalog":"99daf555d75ff6a7baf7eb21633a4721","compute_intent_matches":"e9bf3812957dca21323cee9d70336211"},
+   "triggers":["trg_gcp_hide_excluded_accounts@global_community_profiles","trg_intent_matches_skip_excluded@intent_matches","trg_service_bot_hide_profile@service_bot_accounts","trg_test_actor_hide_profile@notification_test_actors"],
+   "is_excluded_account_execute":{"authenticated":false,"anon":false,"service_role":true}},
+ "fixup_after_2026-10-07T11:34Z":{"visible_excluded_profiles":0,"live_intents_of_excluded":0,"recommendation_rows_on_their_intents":0,"real_members_rows_listing_them":0,"matches_involving_them":0,"intent_matches_total":124,"intent_match_recommendations_total":49,"visible_profiles_total":233}}

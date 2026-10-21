@@ -1,0 +1,39 @@
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:158: NOTICE:  trigger "trg_plan_sparring_sessions_touch" for relation "public.plan_sparring_sessions" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:191: NOTICE:  policy "plan_sparring_sessions_service_role" for relation "public.plan_sparring_sessions" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:194: NOTICE:  policy "plan_sparring_config_service_role_read" for relation "public.plan_sparring_config" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:197: NOTICE:  policy "plan_sparring_config_governance_owner" for relation "public.plan_sparring_config" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:200: NOTICE:  policy "plan_sparring_shadow_log_service_role_read" for relation "public.plan_sparring_shadow_log" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:208: NOTICE:  policy "vtid_ledger_governance_owner_insert" for relation "public.vtid_ledger" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:599: NOTICE:  trigger "trg_plan_sparring_check" for relation "public.vtid_ledger" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql:58: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:107: NOTICE:  relation "plan_sparring_sessions" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:110: NOTICE:  relation "idx_plan_sparring_sessions_plan" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:119: NOTICE:  relation "plan_sparring_config" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:136: NOTICE:  relation "plan_sparring_shadow_log" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:139: NOTICE:  relation "idx_plan_sparring_shadow_log_created" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:141: NOTICE:  relation "idx_plan_sparring_shadow_log_outcome" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:215: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:609: NOTICE:  relation "vtid_ledger_sparring_id_unique" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql:58: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:107: NOTICE:  relation "plan_sparring_sessions" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:110: NOTICE:  relation "idx_plan_sparring_sessions_plan" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:119: NOTICE:  relation "plan_sparring_config" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:136: NOTICE:  relation "plan_sparring_shadow_log" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:139: NOTICE:  relation "idx_plan_sparring_shadow_log_created" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:141: NOTICE:  relation "idx_plan_sparring_shadow_log_outcome" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:215: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:609: NOTICE:  relation "vtid_ledger_sparring_id_unique" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql:58: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+VTID-04868: all assertions passed
+psql:/home/user/vitana-platform/docs/validation/VTID-04868/rollback.sql:45: NOTICE:  function public.plan_sparring_append_round(uuid,jsonb) does not exist, skipping
+psql:/home/user/vitana-platform/docs/validation/VTID-04868/rollback.sql:57: NOTICE:  function public.allocate_global_vtid(text,text,text,uuid) does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:107: NOTICE:  relation "plan_sparring_sessions" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:110: NOTICE:  relation "idx_plan_sparring_sessions_plan" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:119: NOTICE:  relation "plan_sparring_config" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:136: NOTICE:  relation "plan_sparring_shadow_log" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:139: NOTICE:  relation "idx_plan_sparring_shadow_log_created" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:141: NOTICE:  relation "idx_plan_sparring_shadow_log_outcome" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:208: NOTICE:  policy "vtid_ledger_governance_owner_insert" for relation "public.vtid_ledger" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004110000_vtid_04868_plan_sparring_gate.sql:599: NOTICE:  trigger "trg_plan_sparring_check" for relation "public.vtid_ledger" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261004120000_vtid_04868_plan_sparring_hardening.sql:58: NOTICE:  function public.allocate_global_vtid(text,text,text) does not exist, skipping
+VTID-04868: rollback + re-apply passed

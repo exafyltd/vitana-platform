@@ -1,0 +1,148 @@
+# =============================================================================
+# Skill: Worker Route Subagent - VTID-01163
+# =============================================================================
+# Routes a work order to the appropriate domain-specialized worker subagent.
+# =============================================================================
+
+skill_id: worker.route_subagent
+name: Route to Worker Subagent
+description: |
+  Routes an incoming work order to the appropriate domain-specialized worker
+  subagent (frontend, backend, or memory). Validates the payload, determines
+  the target domain, and emits routing events.
+version: 1.0.0
+category: orchestration
+vtid: VTID-01163
+
+provider:
+  type: internal
+  module: services/agents/workforce/subagents/worker-orchestrator
+  function: routeToSubagent
+  timeout_ms: 30000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier (VTID-XXXXX format)
+    pattern: "^VTID-\\d{4,}$"
+    examples:
+      - VTID-01163
+      - VTID-01164
+
+  task_domain:
+    type: string
+    required: false
+    description: Explicit domain override (frontend | backend | memory | mixed)
+    enum:
+      - frontend
+      - backend
+      - memory
+      - mixed
+    examples:
+      - frontend
+      - backend
+
+  target_paths:
+    type: array
+    required: false
+    description: Explicit file globs to scope the work
+    items:
+      type: string
+    examples:
+      - ["services/gateway/src/frontend/**"]
+      - ["services/gateway/src/routes/**", "services/gateway/src/services/**"]
+
+  task_payload:
+    type: object
+    required: true
+    description: Full work order payload to dispatch
+    properties:
+      title:
+        type: string
+        required: true
+      spec_content:
+        type: string
+        required: false
+      change_budget:
+        type: object
+        required: false
+        properties:
+          max_files:
+            type: integer
+          max_directories:
+            type: integer
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether routing succeeded
+
+  dispatched_to:
+    type: string
+    description: Agent ID that received the work order
+    enum:
+      - worker-frontend
+      - worker-backend
+      - worker-memory
+
+  run_id:
+    type: string
+    description: Unique identifier for this dispatch
+
+  stages:
+    type: array
+    description: For mixed tasks, list of sequential stages
+    items:
+      type: object
+      properties:
+        domain:
+          type: string
+        order:
+          type: integer
+
+  error:
+    type: string
+    description: Error message if routing failed
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_orchestrator.start
+    - vtid.stage.worker_orchestrator.route
+    - vtid.stage.worker_orchestrator.success
+    - vtid.stage.worker_orchestrator.failed
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+
+usage:
+  roles:
+    - orchestrator
+    - worker
+  primary_role: orchestrator
+  use_cases:
+    - Route frontend UI tasks to worker-frontend
+    - Route API/backend tasks to worker-backend
+    - Route database/memory tasks to worker-memory
+    - Split mixed tasks into sequential stages
+
+error_handling:
+  retry_attempts: 2
+  retry_backoff_ms: 1000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    INVALID_VTID:
+      description: VTID format is invalid
+      recoverable: false
+
+    DOMAIN_UNKNOWN:
+      description: Could not determine task domain
+      recoverable: false
+
+    SUBAGENT_UNAVAILABLE:
+      description: Target subagent is not responding
+      recoverable: true
+
+    BUDGET_EXCEEDED:
+      description: Work order exceeds change budget
+      recoverable: false

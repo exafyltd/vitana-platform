@@ -1,0 +1,5 @@
+# VTID-04882 — commands run while authoring (2026-10-05)
+# Read-only diagnosis (Supabase auth logs, project inmkhvwdcuyhnxkgfvsb):
+#   POST /auth/v1/oauth/token 500 — "HS256 is not supported for ID token signing"
+#   authorize request scope=openid+profile+email+phone+offline_access
+curl -s https://preview-aws-gateway.vitanaland.com/.well-known/oauth-protected-resource/mcp   # before: no scopes_supported

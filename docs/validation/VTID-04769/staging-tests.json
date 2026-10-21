@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04769",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04769-supplier-go-live-listing.test.ts", "cwd": "services/gateway",
+      "reason": "the go-live gate is a database migration that switches products on and off; doing that on staging would write to the shared production database, so it is proven by this suite and by docs/validation/VTID-04769/migration-scenarios.sql (41 scenarios on a throwaway Postgres 16)" }
+  ]
+}

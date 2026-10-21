@@ -1,0 +1,1396 @@
+/**
+ * BOOTSTRAP-LLM-ROUTER: Provider-agnostic LLM call dispatcher.
+ *
+ * Why this exists:
+ *   Every LLM call site in the gateway used to hard-code Anthropic. As we
+ *   scale 10-50× into autonomous operation, the per-call API cost becomes
+ *   prohibitive. This router reads the active `llm_routing_policy.policy[stage]`
+ *   row and dispatches to the configured provider — Anthropic, OpenAI,
+ *   Vertex (Google), DeepSeek, or claude_subscription (free, via worker queue).
+ *
+ *   Operators flip providers via the Command Hub dropdown without code edits.
+ *   Defaults are FLAGSHIP-ONLY: every primary and fallback in LLM_SAFE_DEFAULTS
+ *   is the strongest model the provider exposes. Stepping down to a mid-tier
+ *   model is opt-in per stage, never automatic.
+ *
+ * Architecture:
+ *   callViaRouter(stage, prompt, opts)
+ *     ├─ load policy[stage] (cached 30s)
+ *     ├─ call adapter[primary_provider].call(prompt, primary_model)
+ *     │   ├─ on success → completeLLMCall + return {ok:true, text, usage, ...}
+ *     │   └─ on failure → if fallback set, call adapter[fallback_provider]
+ *     │                   → record fallback_used=true in telemetry
+ *     └─ never throws — always returns {ok, text? | error?}
+ *
+ *   Adapters live inline in this file (small, no shared state) rather than
+ *   one-file-per-provider. Each adapter implements `call(prompt, model)
+ *   → Promise<AdapterResult>`. Adding a sixth provider is a new entry in
+ *   the ADAPTERS map plus an env var read.
+ *
+ * Reuses (do NOT reimplement):
+ *   - getActivePolicy() from llm-routing-policy-service.ts
+ *   - startLLMCallDetached / completeLLMCallDetached / failLLMCallDetached from
+ *     llm-telemetry-service.ts (non-blocking since VTID-04546)
+ *   - LLM_SAFE_DEFAULTS / estimateCost from constants/llm-defaults.ts
+ */
+
+import { getActivePolicy } from './llm-routing-policy-service';
+import {
+  startLLMCallDetached,
+  completeLLMCallDetached,
+  failLLMCallDetached,
+} from './llm-telemetry-service';
+import {
+  invokeBedrock,
+  type BedrockContentBlock,
+  type BedrockThinkingBlock,
+  type BedrockThinkingConfig,
+  type BedrockEffort,
+} from '../providers/bedrock';
+import {
+  LLM_SAFE_DEFAULTS,
+  NO_FALLBACK_STAGES,
+  type LLMRoutingPolicy,
+  type LLMStage,
+  type LLMProvider,
+  type StageRoutingConfig,
+} from '../constants/llm-defaults';
+
+const LOG_PREFIX = '[llm-router]';
+
+// =============================================================================
+// Public types
+// =============================================================================
+
+export interface LLMUsage {
+  inputTokens: number;
+  outputTokens: number;
+  /**
+   * VTID-05077: hidden reasoning tokens counted inside `outputTokens`, when the
+   * provider reports them (DeepSeek `completion_tokens_details.reasoning_tokens`).
+   */
+  reasoningTokens?: number;
+}
+
+/**
+ * Tool definition for function calling. Provider-neutral — the adapter
+ * translates to each provider's wire format (Anthropic `tools`, OpenAI
+ * `tools` + `tool_choice`, Vertex `function_declarations`, DeepSeek
+ * (OpenAI-compatible)). The router enforces tool_choice='required' on
+ * the named tool so the model emits the structured call instead of free
+ * text.
+ */
+export interface LLMRouterTool {
+  name: string;
+  description: string;
+  /** JSON Schema describing the tool's input. */
+  inputSchema: Record<string, unknown>;
+}
+
+/** Optional inputs for image / vision / multiple images per call. */
+export interface LLMRouterImage {
+  base64: string;
+  mimeType: string;
+}
+
+export interface LLMRouterOpts {
+  /** VTID for telemetry correlation. Optional — falls back to VTID-LLM-ROUTER. */
+  vtid?: string | null;
+  /** Service that originated the call (e.g. 'triage-agent'). Logged in OASIS. */
+  service: string;
+  /** Allow fallback adapter on primary failure. Defaults true. */
+  allowFallback?: boolean;
+  /** Override max output tokens. Adapter may clamp to its own limit. */
+  maxTokens?: number;
+  /** Optional system prompt prepended to the user prompt. */
+  systemPrompt?: string;
+  /** Single image input (back-compat). Use `images` for multi-image. */
+  image?: LLMRouterImage;
+  /** Multi-image input — Vertex / Anthropic / OpenAI all accept ordered images
+   *  attached as parts on the user message. */
+  images?: LLMRouterImage[];
+  /**
+   * Tools the model may call. When set with `forceTool`, the router asks the
+   * provider to emit a tool call deterministically and returns it in
+   * `LLMRouterResult.toolCall`. Used by vision (structured metadata) and
+   * triage (multi-step investigation).
+   */
+  tools?: LLMRouterTool[];
+  /**
+   * Force the model to invoke `tools[forceTool].name` and return the parsed
+   * arguments instead of free text. Index into `tools` array.
+   */
+  forceTool?: number;
+  /**
+   * VTID-03579: prior turns, oldest first. `prompt` remains the CURRENT user
+   * turn and is appended after these — so every existing caller is unaffected
+   * and a single-turn call is still literally a string.
+   */
+  history?: LLMRouterMessage[];
+  /**
+   * VTID-03820: per-call override of the stage's PRIMARY provider/model,
+   * bypassing the DB-backed `llm_routing_policy` for this one call only.
+   * Both fields must be set together or neither is used — a lone override
+   * without its model (or vice versa) is ambiguous and is ignored rather
+   * than guessed. The stage's own `fallback_provider`/`fallback_model`
+   * (from `llm_routing_policy`, unchanged) still applies if the override
+   * fails, so a DeepSeek outage on an overridden call degrades exactly the
+   * way a normal policy-driven call would.
+   *
+   * Every existing caller omits these fields, so `loadPolicy()` still
+   * governs every stage/caller that doesn't explicitly opt in — this does
+   * NOT change what `llm_routing_policy` serves for anyone else.
+   */
+  providerOverride?: LLMProvider;
+  modelOverride?: string;
+  /**
+   * VTID-04868: Anthropic-shaped request extensions. `thinking: {type:'adaptive'}`
+   * and `effort` (sent as `output_config.effort`) are honoured by the Bedrock
+   * adapter only; every other adapter ignores them. Both default OFF — omitted,
+   * the Bedrock request body is byte-identical to before this change.
+   */
+  thinking?: LLMRouterThinkingConfig;
+  effort?: LLMRouterEffort;
+  /**
+   * VTID-05077: per-call override of the stage's FALLBACK provider/model (the
+   * counterpart of providerOverride/modelOverride, which replace the primary).
+   * Used by the Dev Autopilot planner to fall back to Bedrock Opus 4.6 without
+   * changing the shared `planner` policy row that member-facing features read.
+   * Ignored (and logged) for a no-fallback stage and for a refused provider
+   * (vertex, anthropic, claude_subscription); the policy fallback then applies
+   * exactly as before. Omitted by every other caller.
+   */
+  fallbackOverride?: { provider: LLMProvider; model: string };
+  /**
+   * VTID-05077: DeepSeek's thinking toggle, sent as `thinking: {type}`. DeepSeek
+   * Flash reasons by default and can spend the whole output cap on hidden
+   * reasoning (VTID-04794). Honoured by the DeepSeek adapter only; omitted, the
+   * request body is byte-identical to before.
+   */
+  deepseekThinking?: 'enabled' | 'disabled';
+  /**
+   * Plan-sparring last-resort tier (owner decision 2026-10-19): when Bedrock
+   * Opus 4.6 AND Sonnet 4.6 are both out of quota, the partner pass may run one
+   * turn on DeepSeek. Only `runPartnerPass` sets this, together with
+   * `providerOverride: 'deepseek'`; the router then lets the no-fallback
+   * `plan_sparring` stage run on that one provider for that one call. Every
+   * other non-Bedrock primary for the stage is still refused, and the router
+   * itself still never falls back for it.
+   */
+  planSparringLastResort?: boolean;
+}
+
+/** Plan-sparring last-resort tier: the only non-Bedrock provider the stage may run on. */
+export const PLAN_SPARRING_LAST_RESORT_PROVIDERS: readonly LLMProvider[] = ['deepseek'];
+
+/** VTID-05077: providers a per-call fallback override may never name. */
+export const REFUSED_FALLBACK_OVERRIDE_PROVIDERS: readonly string[] = ['vertex', 'anthropic', 'claude_subscription'];
+
+/** VTID-04868: see LLMRouterOpts.thinking. */
+export type LLMRouterThinkingConfig = BedrockThinkingConfig;
+/** VTID-04868: see LLMRouterOpts.effort. */
+export type LLMRouterEffort = BedrockEffort;
+/**
+ * VTID-04868: a thinking / redacted_thinking block returned by the model.
+ * OPAQUE: callers must hand it back byte-for-byte (signature/data included) on
+ * the assistant turn it came from — the API rejects a modified or reordered
+ * block when the turn carries tool_use.
+ */
+export type LLMRouterThinkingBlock = BedrockThinkingBlock;
+
+/** Returned when `forceTool` is set and the model emitted a tool call. */
+export interface LLMRouterToolCall {
+  name: string;
+  /** Already-parsed JSON arguments. Adapters parse the provider-specific shape. */
+  arguments: Record<string, unknown>;
+  /**
+   * VTID-03579: provider-assigned id for this call. Opaque here, but it must be
+   * echoed back on the matching tool result — Anthropic pairs them by id and
+   * rejects a mismatch outright.
+   */
+  id?: string;
+}
+
+/**
+ * VTID-03579: one prior turn of a multi-turn exchange.
+ *
+ * Deliberately provider-neutral and deliberately NOT a raw provider payload:
+ * an agentic caller should describe what happened (the model asked for tools /
+ * here are the results), and each adapter renders that into its own wire shape.
+ * Passing Anthropic content blocks straight through would work today and pin
+ * every future caller to Anthropic, which is the coupling this whole file
+ * exists to prevent.
+ */
+export type LLMRouterMessage =
+  | { role: 'user' | 'assistant'; content: string }
+  /**
+   * The model asked to call tools. VTID-04868: `thinking` carries the turn's
+   * thinking / redacted_thinking blocks VERBATIM, in the order the model
+   * emitted them; Anthropic-shaped adapters render them first in the turn,
+   * other adapters ignore them.
+   */
+  | { role: 'assistant'; toolCalls: LLMRouterToolCall[]; content?: string; thinking?: LLMRouterThinkingBlock[] }
+  /** The caller ran them; these are the outcomes, in the same order. */
+  | {
+      role: 'user';
+      toolResults: Array<{ id?: string; name: string; result: string; isError?: boolean }>;
+    };
+
+export interface LLMRouterResult {
+  ok: boolean;
+  text?: string;
+  /** Populated when `forceTool` was set and the model emitted a structured call. */
+  toolCall?: LLMRouterToolCall;
+  /**
+   * VTID-03579: ALL tool calls from this turn. A model can request several at
+   * once; reading `toolCall` alone drops the rest and then waits forever for
+   * results the caller was never told to produce.
+   */
+  toolCalls?: LLMRouterToolCall[];
+  usage?: LLMUsage;
+  provider?: LLMProvider;
+  model?: string;
+  fallbackUsed?: boolean;
+  error?: string;
+  /** VTID-04381: the provider's own stop reason (`length`, `max_tokens`, `tool_calls`, `end_turn`, …). */
+  stopReason?: string;
+  /**
+   * VTID-04381: the reply was cut off at the output-token limit. Its text is
+   * incomplete and its last tool call may be missing or half-written — an
+   * agentic caller must not act on it as if the model had finished the turn.
+   */
+  truncated?: boolean;
+  /**
+   * VTID-04868: thinking / redacted_thinking blocks from this turn, verbatim
+   * and in order (Bedrock only, and only when thinking was requested). Pass
+   * them back on the assistant history entry for this turn.
+   */
+  thinkingBlocks?: LLMRouterThinkingBlock[];
+}
+
+interface AdapterCallArgs {
+  prompt: string;
+  model: string;
+  systemPrompt?: string;
+  maxTokens?: number;
+  image?: LLMRouterImage;
+  images?: LLMRouterImage[];
+  tools?: LLMRouterTool[];
+  forceTool?: number;
+  /** VTID-03579: prior turns; `prompt` is appended as the current user turn. */
+  history?: LLMRouterMessage[];
+  /** VTID-04868: Bedrock-only request extensions (default off). */
+  thinking?: LLMRouterThinkingConfig;
+  effort?: LLMRouterEffort;
+  /** VTID-05077: DeepSeek only (see LLMRouterOpts.deepseekThinking). */
+  deepseekThinking?: 'enabled' | 'disabled';
+}
+
+interface AdapterResult {
+  ok: boolean;
+  text?: string;
+  toolCall?: LLMRouterToolCall;
+  /** VTID-03579: every tool the model asked for this turn, in order. */
+  toolCalls?: LLMRouterToolCall[];
+  usage?: LLMUsage;
+  error?: string;
+  /** VTID-04381: provider stop reason, verbatim. */
+  stopReason?: string;
+  /** VTID-04868: thinking blocks, verbatim (Bedrock only). */
+  thinkingBlocks?: LLMRouterThinkingBlock[];
+}
+
+/**
+ * VTID-04381: did the provider stop because it ran out of output tokens?
+ * OpenAI-compatible APIs (DeepSeek, OpenAI) say `length`; the Anthropic
+ * Messages API (Bedrock, Anthropic) says `max_tokens`. Pure; exported for tests.
+ */
+export function isTruncatedStop(stopReason: string | undefined | null): boolean {
+  return stopReason === 'length' || stopReason === 'max_tokens';
+}
+
+/**
+ * VTID-04381: parse EVERY tool call of an OpenAI-compatible reply (DeepSeek
+ * used to read `tool_calls[0]` only, silently dropping the rest). A call whose
+ * arguments are not JSON is counted, not dropped quietly — on a truncated
+ * reply that is the half-written last call. Pure; exported for tests.
+ */
+export function parseOpenAIToolCalls(
+  raw: Array<{ id?: string; function?: { name?: string; arguments?: string } }> | undefined,
+): { calls: LLMRouterToolCall[]; unparseable: number } {
+  const calls: LLMRouterToolCall[] = [];
+  let unparseable = 0;
+  for (const tc of raw || []) {
+    const name = tc?.function?.name;
+    if (!name) continue;
+    const argText = tc.function?.arguments;
+    try {
+      const args = argText ? JSON.parse(argText) : {};
+      calls.push({ name, arguments: args && typeof args === 'object' ? args : {}, ...(tc.id ? { id: tc.id } : {}) });
+    } catch {
+      unparseable += 1;
+    }
+  }
+  return { calls, unparseable };
+}
+
+interface ProviderAdapter {
+  /** Execute a prompt against the provider's API. Must not throw. */
+  call(args: AdapterCallArgs): Promise<AdapterResult>;
+  /** True if this provider has the env credentials it needs to run. */
+  isAvailable(): boolean;
+}
+
+// =============================================================================
+// Policy cache (30s TTL — same provider keeps serving across short bursts
+// without re-reading the policy table for every call)
+// =============================================================================
+
+const POLICY_CACHE_TTL_MS = 30_000;
+let cachedPolicy: { policy: LLMRoutingPolicy; expiresAt: number } | null = null;
+
+async function loadPolicy(): Promise<LLMRoutingPolicy> {
+  if (cachedPolicy && cachedPolicy.expiresAt > Date.now()) {
+    return cachedPolicy.policy;
+  }
+  try {
+    const env = process.env.LLM_ROUTING_ENV || 'DEV';
+    const row = await getActivePolicy(env);
+    const policy = (row?.policy as LLMRoutingPolicy | undefined) || LLM_SAFE_DEFAULTS;
+    cachedPolicy = { policy, expiresAt: Date.now() + POLICY_CACHE_TTL_MS };
+    return policy;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} policy load failed, falling back to LLM_SAFE_DEFAULTS:`, err);
+    return LLM_SAFE_DEFAULTS;
+  }
+}
+
+/** Test-only: clear the policy cache so tests can override the active policy. */
+export function _resetPolicyCacheForTests(): void {
+  cachedPolicy = null;
+}
+
+// =============================================================================
+// Provider adapters
+// =============================================================================
+
+/**
+ * VTID-03579 (review follow-up): render prior turns into the Anthropic Messages
+ * wire shape. Extracted so `anthropicAdapter` and `bedrockAdapter` cannot drift
+ * — they speak the same protocol, and a history bug in one that the other lacks
+ * would surface only on fallback, i.e. exactly when nobody is watching.
+ */
+function renderAnthropicHistory(
+  history: LLMRouterMessage[] | undefined,
+): Array<{ role: 'user' | 'assistant'; content: string | BedrockContentBlock[] }> {
+  const out: Array<{ role: 'user' | 'assistant'; content: string | BedrockContentBlock[] }> = [];
+  for (const m of history ?? []) {
+    if ('toolCalls' in m && m.toolCalls) {
+      const blocks: BedrockContentBlock[] = [];
+      // VTID-04868: thinking blocks lead the assistant turn, verbatim. A turn
+      // with tool_use whose thinking is dropped or edited is rejected by the
+      // API once thinking is on; spread-copying keeps signature/data intact.
+      for (const tb of m.thinking ?? []) blocks.push({ ...tb });
+      if (m.content) blocks.push({ type: 'text', text: m.content });
+      for (const tc of m.toolCalls) {
+        blocks.push({ type: 'tool_use', id: tc.id ?? tc.name, name: tc.name, input: tc.arguments });
+      }
+      out.push({ role: 'assistant', content: blocks });
+    } else if ('toolResults' in m && m.toolResults) {
+      out.push({
+        role: 'user',
+        content: m.toolResults.map((tr) => ({
+          type: 'tool_result' as const,
+          tool_use_id: tr.id ?? tr.name,
+          content: tr.result,
+          ...(tr.isError ? { is_error: true } : {}),
+        })),
+      });
+    } else if ('content' in m && typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  return out;
+}
+
+/**
+ * VTID-03579 (review follow-up): render prior turns into the OpenAI chat shape,
+ * shared by `openaiAdapter` and `deepseekAdapter`. A tool round-trip here is an
+ * assistant message carrying `tool_calls` plus one `role:'tool'` message per
+ * result — NOT Anthropic's content blocks.
+ */
+function renderOpenAIHistory(history: LLMRouterMessage[] | undefined): Array<Record<string, unknown>> {
+  const out: Array<Record<string, unknown>> = [];
+  for (const m of history ?? []) {
+    if ('toolCalls' in m && m.toolCalls) {
+      out.push({
+        role: 'assistant',
+        content: m.content ?? null,
+        tool_calls: m.toolCalls.map((tc) => ({
+          id: tc.id ?? tc.name,
+          type: 'function',
+          function: { name: tc.name, arguments: JSON.stringify(tc.arguments) },
+        })),
+      });
+    } else if ('toolResults' in m && m.toolResults) {
+      for (const tr of m.toolResults) {
+        out.push({ role: 'tool', tool_call_id: tr.id ?? tr.name, content: tr.result });
+      }
+    } else if ('content' in m && typeof m.content === 'string') {
+      out.push({ role: m.role, content: m.content });
+    }
+  }
+  return out;
+}
+
+/** Anthropic Messages API — supports text, multi-image, and tool_use. */
+const anthropicAdapter: ProviderAdapter = {
+  isAvailable: () => Boolean(process.env.ANTHROPIC_API_KEY),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
+    const apiKey = process.env.ANTHROPIC_API_KEY;
+    if (!apiKey) return { ok: false, error: 'ANTHROPIC_API_KEY not set' };
+
+    const userContent: unknown[] = [];
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+    for (const img of allImages) {
+      userContent.push({
+        type: 'image',
+        source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+      });
+    }
+    userContent.push({ type: 'text', text: prompt });
+
+    const body: Record<string, unknown> = {
+      model,
+      max_tokens: maxTokens ?? 8000,
+      messages: [...renderAnthropicHistory(history), { role: 'user', content: userContent }],
+    };
+    if (systemPrompt) body.system = systemPrompt;
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        name: t.name,
+        description: t.description,
+        input_schema: t.inputSchema,
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'tool', name: tools[forceTool].name };
+      }
+    }
+
+    try {
+      const resp = await fetch('https://api.anthropic.com/v1/messages', {
+        method: 'POST',
+        headers: {
+          'x-api-key': apiKey,
+          'anthropic-version': '2023-06-01',
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { ok: false, error: `Anthropic ${resp.status}: ${errText.slice(0, 300)}` };
+      }
+      const json = await resp.json() as {
+        content?: Array<{ type: string; text?: string; name?: string; input?: Record<string, unknown> }>;
+        usage?: { input_tokens?: number; output_tokens?: number };
+      };
+      const text = (json.content || []).filter(c => c.type === 'text').map(c => c.text || '').join('');
+      const toolBlock = (json.content || []).find(c => c.type === 'tool_use');
+      const toolCall = toolBlock && toolBlock.name && toolBlock.input
+        ? { name: toolBlock.name, arguments: toolBlock.input }
+        : undefined;
+      return {
+        ok: true,
+        text,
+        toolCall,
+        usage: {
+          inputTokens: json.usage?.input_tokens ?? 0,
+          outputTokens: json.usage?.output_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: `Anthropic threw: ${String(err).slice(0, 300)}` };
+    }
+  },
+};
+
+/** OpenAI Chat Completions API — supports text, multi-image, and function calling. */
+const openaiAdapter: ProviderAdapter = {
+  isAvailable: () => Boolean(process.env.OPENAI_API_KEY),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history }): Promise<AdapterResult> {
+    const apiKey = process.env.OPENAI_API_KEY;
+    if (!apiKey) return { ok: false, error: 'OPENAI_API_KEY not set' };
+
+    const messages: Array<Record<string, unknown>> = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+    // VTID-03579 (review follow-up): OpenAI is a selectable operator provider,
+    // so it must carry history too — otherwise switching the policy to it makes
+    // every follow-up turn stateless, silently.
+    messages.push(...renderOpenAIHistory(history));
+
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+    if (allImages.length > 0) {
+      const content: Array<Record<string, unknown>> = [];
+      for (const img of allImages) {
+        content.push({ type: 'image_url', image_url: { url: `data:${img.mimeType};base64,${img.base64}` } });
+      }
+      content.push({ type: 'text', text: prompt });
+      messages.push({ role: 'user', content });
+    } else {
+      messages.push({ role: 'user', content: prompt });
+    }
+
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: maxTokens ?? 8000,
+    };
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'function', function: { name: tools[forceTool].name } };
+      }
+    }
+
+    try {
+      const resp = await fetch('https://api.openai.com/v1/chat/completions', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { ok: false, error: `OpenAI ${resp.status}: ${errText.slice(0, 300)}` };
+      }
+      const json = await resp.json() as {
+        choices?: Array<{
+          message?: {
+            content?: string;
+            tool_calls?: Array<{ function?: { name?: string; arguments?: string } }>;
+          };
+        }>;
+        usage?: { prompt_tokens?: number; completion_tokens?: number };
+      };
+      const msg = json.choices?.[0]?.message;
+      const text = msg?.content ?? '';
+      let toolCall: LLMRouterToolCall | undefined;
+      const tc = msg?.tool_calls?.[0];
+      if (tc?.function?.name && tc.function.arguments) {
+        try {
+          toolCall = { name: tc.function.name, arguments: JSON.parse(tc.function.arguments) };
+        } catch {
+          // Tool call not JSON-parseable — leave undefined; caller falls back to text.
+        }
+      }
+      return {
+        ok: true,
+        text,
+        toolCall,
+        usage: {
+          inputTokens: json.usage?.prompt_tokens ?? 0,
+          outputTokens: json.usage?.completion_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: `OpenAI threw: ${String(err).slice(0, 300)}` };
+    }
+  },
+};
+
+/**
+ * Google Vertex AI — uses Application Default Credentials, no API key required
+ * on Cloud Run (the gateway service account has Vertex AI User role). Falls
+ * back to GOOGLE_GEMINI_API_KEY for local dev. Supports text, multi-image,
+ * and function calling.
+ */
+// Permissive safety thresholds for Gemini. The default filters block benign
+// wellness/coaching topics (relationships, weight, mental health, substance
+// recovery) — e.g. a goal of "Find a life partner" came back empty and the
+// planner surfaced no_plan_generated. BLOCK_ONLY_HIGH still blocks
+// high-confidence harmful content while letting legitimate coaching through.
+const GEMINI_SAFETY_SETTINGS = [
+  { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_HATE_SPEECH', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_SEXUALLY_EXPLICIT', threshold: 'BLOCK_ONLY_HIGH' },
+  { category: 'HARM_CATEGORY_DANGEROUS_CONTENT', threshold: 'BLOCK_ONLY_HIGH' },
+];
+
+const vertexAdapter: ProviderAdapter = {
+  isAvailable: () =>
+    Boolean(process.env.GOOGLE_CLOUD_PROJECT) || Boolean(process.env.GOOGLE_GEMINI_API_KEY),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool }): Promise<AdapterResult> {
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+
+    const fnDecls = tools && tools.length > 0
+      ? tools.map(t => ({ name: t.name, description: t.description, parameters: t.inputSchema }))
+      : undefined;
+
+    // VTID-02690: Preview models (e.g. `gemini-3.1-pro-preview`) are NOT
+    // in the Vertex v1 publisher catalog the @google-cloud/vertexai Node
+    // SDK queries — they're exposed via the consumer Generative Language
+    // API (AI Studio). The Python google-genai used by livekit-plugins-
+    // google with vertexai=True talks to a different Vertex endpoint
+    // that DOES expose them. Until we migrate to @google/genai for Node,
+    // route preview models directly to AI Studio (skips Vertex entirely).
+    const isPreviewModel = /-preview\b/i.test(model);
+    const aiStudioKey = process.env.GOOGLE_GEMINI_API_KEY;
+    const skipVertex = isPreviewModel && Boolean(aiStudioKey);
+
+    // Prefer Vertex AI when GOOGLE_CLOUD_PROJECT is set (Cloud Run path).
+    // Fall back to Google AI Studio when only GOOGLE_GEMINI_API_KEY is present.
+    const projectId = process.env.GOOGLE_CLOUD_PROJECT;
+    if (projectId && !skipVertex) {
+      try {
+        const { VertexAI } = await import('@google-cloud/vertexai');
+        const location = process.env.VERTEX_LOCATION || 'us-central1';
+        const vertex = new VertexAI({ project: projectId, location });
+        const modelInit: Record<string, unknown> = {
+          model,
+          generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
+          safetySettings: GEMINI_SAFETY_SETTINGS,
+        };
+        if (systemPrompt) {
+          modelInit.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
+        }
+        if (fnDecls) {
+          modelInit.tools = [{ functionDeclarations: fnDecls }];
+          if (typeof forceTool === 'number' && tools && tools[forceTool]) {
+            modelInit.toolConfig = {
+              functionCallingConfig: {
+                mode: 'ANY',
+                allowedFunctionNames: [tools[forceTool].name],
+              },
+            };
+          }
+        }
+        const generativeModel = vertex.getGenerativeModel(modelInit as any);
+
+        const parts: Array<Record<string, unknown>> = [];
+        for (const img of allImages) {
+          parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } });
+        }
+        parts.push({ text: prompt });
+
+        const result = await generativeModel.generateContent({
+          contents: [{ role: 'user', parts: parts as any }],
+        });
+        const candidate = result.response?.candidates?.[0];
+        const candidateParts = (candidate?.content?.parts || []) as Array<{ text?: string; thought?: boolean; functionCall?: { name?: string; args?: Record<string, unknown> } }>;
+        // Drop the model's "thinking" parts — gemini thinking models emit reasoning
+        // as parts flagged thought=true; only the non-thought parts hold the answer.
+        const text = candidateParts.filter(p => !p.thought).map(p => p.text || '').join('');
+        const fnPart = candidateParts.find(p => !!p.functionCall);
+        const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
+          ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
+          : undefined;
+        const usageMeta = result.response?.usageMetadata;
+        if (!text && !toolCall) {
+          const finishReason = (candidate as any)?.finishReason;
+          const blockReason = (result.response as any)?.promptFeedback?.blockReason;
+          return { ok: false, error: `gemini_no_output finishReason=${finishReason ?? 'none'} blockReason=${blockReason ?? 'none'}` };
+        }
+        return {
+          ok: true,
+          text,
+          toolCall,
+          usage: {
+            inputTokens: usageMeta?.promptTokenCount ?? 0,
+            outputTokens: usageMeta?.candidatesTokenCount ?? 0,
+          },
+        };
+      } catch (err) {
+        const errStr = String(err);
+        // VTID-02689: fall through to AI Studio when Vertex doesn't have
+        // the model. Preview models like `gemini-3.1-pro-preview` are
+        // exposed via generativelanguage.googleapis.com (consumer/AI Studio
+        // endpoint) but not the Vertex v1 publisher catalog used by the
+        // @google-cloud/vertexai Node SDK. The Python google-genai SDK
+        // (used by livekit-plugins-google with vertexai=True) talks to a
+        // different Vertex endpoint that DOES expose the preview models.
+        // Until we migrate this adapter to @google/genai, AI Studio is the
+        // path that works for preview models.
+        if (errStr.match(/Publisher Model.*not found|404 Not Found|model.*not.*supported/i)
+          && process.env.GOOGLE_GEMINI_API_KEY) {
+          console.log(`[llm-router] Vertex returned 404 for model "${model}" — falling through to AI Studio`);
+          // fall through to AI Studio block below
+        } else {
+          return { ok: false, error: `Vertex threw: ${errStr.slice(0, 300)}` };
+        }
+      }
+    }
+
+    // Google AI Studio path
+    const apiKey = aiStudioKey;
+    if (!apiKey) return { ok: false, error: 'No Vertex/Google AI credentials available' };
+    if (skipVertex) {
+      console.log(`[llm-router] preview model "${model}" — routing direct to AI Studio (skip Vertex)`);
+    }
+    try {
+      const url = `https://generativelanguage.googleapis.com/v1beta/models/${encodeURIComponent(model)}:generateContent?key=${apiKey}`;
+      const parts: Array<Record<string, unknown>> = [];
+      for (const img of allImages) {
+        parts.push({ inlineData: { data: img.base64, mimeType: img.mimeType } });
+      }
+      parts.push({ text: prompt });
+      const body: Record<string, unknown> = {
+        contents: [{ role: 'user', parts }],
+        generationConfig: { maxOutputTokens: maxTokens ?? 8000 },
+        safetySettings: GEMINI_SAFETY_SETTINGS,
+      };
+      if (systemPrompt) body.systemInstruction = { role: 'system', parts: [{ text: systemPrompt }] };
+      if (fnDecls) {
+        body.tools = [{ functionDeclarations: fnDecls }];
+        if (typeof forceTool === 'number' && tools && tools[forceTool]) {
+          body.toolConfig = {
+            functionCallingConfig: {
+              mode: 'ANY',
+              allowedFunctionNames: [tools[forceTool].name],
+            },
+          };
+        }
+      }
+      const resp = await fetch(url, {
+        method: 'POST',
+        headers: { 'content-type': 'application/json' },
+        body: JSON.stringify(body),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { ok: false, error: `Google AI ${resp.status}: ${errText.slice(0, 300)}` };
+      }
+      const json = await resp.json() as {
+        candidates?: Array<{ finishReason?: string; content?: { parts?: Array<{ text?: string; thought?: boolean; functionCall?: { name?: string; args?: Record<string, unknown> } }> } }>;
+        promptFeedback?: { blockReason?: string };
+        usageMetadata?: { promptTokenCount?: number; candidatesTokenCount?: number };
+      };
+      const candidate0 = json.candidates?.[0];
+      const candidateParts = candidate0?.content?.parts || [];
+      // Drop "thinking" parts (thought=true) — only non-thought parts hold the answer.
+      const text = candidateParts.filter(p => !p.thought).map(p => p.text || '').join('');
+      const fnPart = candidateParts.find(p => !!p.functionCall);
+      const toolCall = fnPart?.functionCall?.name && fnPart.functionCall.args
+        ? { name: fnPart.functionCall.name, arguments: fnPart.functionCall.args }
+        : undefined;
+      if (!text && !toolCall) {
+        return {
+          ok: false,
+          error: `gemini_no_output finishReason=${candidate0?.finishReason ?? 'none'} blockReason=${json.promptFeedback?.blockReason ?? 'none'}`,
+        };
+      }
+      return {
+        ok: true,
+        text,
+        toolCall,
+        usage: {
+          inputTokens: json.usageMetadata?.promptTokenCount ?? 0,
+          outputTokens: json.usageMetadata?.candidatesTokenCount ?? 0,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: `Google AI threw: ${String(err).slice(0, 300)}` };
+    }
+  },
+};
+
+/**
+ * DeepSeek API — OpenAI-compatible. Supports text + function calling but
+ * NOT vision (DeepSeek hasn't shipped a multimodal model). When images are
+ * passed they're ignored and only the text prompt is sent; the router's
+ * fallback chain is responsible for routing vision calls to a different
+ * provider via the `vision` stage policy.
+ */
+// VTID-03841: bound every DeepSeek request. The adapter used to issue a
+// plain fetch with no AbortSignal, so a stalled request never returned —
+// observed on staging 2026-09-13: the first operator on-ramp execution
+// (VTID-03829, exec beeb2c55) started its worker call on deepseek-flash at
+// 07:40:04 and emitted neither a completion nor a failure for 20 minutes,
+// until the stuck-running watchdog reclaimed it. With no error surfacing,
+// the router's own fallback (`allowFallback`) could never engage. 10 min
+// sits under the worker execution budget (MESSAGES_TIMEOUT_MS, 12 min) and
+// the 20-min watchdog, and far above any legitimate call observed (the
+// operator chat completes in ~2s).
+const DEFAULT_DEEPSEEK_TIMEOUT_MS = 10 * 60 * 1000;
+export function resolveDeepseekTimeoutMs(raw: string | undefined = process.env.DEEPSEEK_TIMEOUT_MS): number {
+  const n = Number(raw);
+  return Number.isFinite(n) && n > 0 ? Math.floor(n) : DEFAULT_DEEPSEEK_TIMEOUT_MS;
+}
+function isAbortLikeError(err: unknown): boolean {
+  const name = (err as { name?: unknown } | null)?.name;
+  return name === 'TimeoutError' || name === 'AbortError';
+}
+
+const deepseekAdapter: ProviderAdapter = {
+  isAvailable: () => Boolean(process.env.DEEPSEEK_API_KEY),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history, deepseekThinking }): Promise<AdapterResult> {
+    const apiKey = process.env.DEEPSEEK_API_KEY;
+    if (!apiKey) return { ok: false, error: 'DEEPSEEK_API_KEY not set' };
+
+    if (image || (images && images.length > 0)) {
+      return {
+        ok: false,
+        error: 'DeepSeek does not support vision input — route vision calls to a different provider',
+      };
+    }
+
+    const messages: Array<Record<string, unknown>> = [];
+    if (systemPrompt) messages.push({ role: 'system', content: systemPrompt });
+
+    // VTID-03579: DeepSeek is the standing fallback for every Bedrock stage, so
+    // it has to carry conversation history too — otherwise a Bedrock blip would
+    // silently drop the whole exchange and the model would answer the current
+    // turn with no idea what came before. That is worse than a visible failure,
+    // because it looks like the assistant simply forgot.
+    messages.push(...renderOpenAIHistory(history));
+
+    messages.push({ role: 'user', content: prompt });
+
+    const body: Record<string, unknown> = {
+      model,
+      messages,
+      max_tokens: maxTokens ?? 8000,
+    };
+    // VTID-05077: only when the caller asks; otherwise the body is unchanged.
+    if (deepseekThinking) body.thinking = { type: deepseekThinking };
+    if (tools && tools.length > 0) {
+      body.tools = tools.map(t => ({
+        type: 'function',
+        function: { name: t.name, description: t.description, parameters: t.inputSchema },
+      }));
+      if (typeof forceTool === 'number' && tools[forceTool]) {
+        body.tool_choice = { type: 'function', function: { name: tools[forceTool].name } };
+      }
+    }
+
+    const timeoutMs = resolveDeepseekTimeoutMs();
+    try {
+      const resp = await fetch('https://api.deepseek.com/chat/completions', {
+        method: 'POST',
+        headers: {
+          authorization: `Bearer ${apiKey}`,
+          'content-type': 'application/json',
+        },
+        body: JSON.stringify(body),
+        // VTID-03841: covers the connection AND the body read below.
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+      if (!resp.ok) {
+        const errText = await resp.text();
+        return { ok: false, error: `DeepSeek ${resp.status}: ${errText.slice(0, 300)}` };
+      }
+      const json = await resp.json() as {
+        choices?: Array<{
+          finish_reason?: string;
+          message?: {
+            content?: string;
+            reasoning_content?: string;
+            tool_calls?: Array<{ id?: string; function?: { name?: string; arguments?: string } }>;
+          };
+        }>;
+        usage?: {
+          prompt_tokens?: number;
+          completion_tokens?: number;
+          completion_tokens_details?: { reasoning_tokens?: number };
+        };
+      };
+      const choice = json.choices?.[0];
+      const msg = choice?.message;
+      const text = msg?.content ?? '';
+      // VTID-04381: every tool call, with its id; unparseable ones are logged.
+      const parsed = parseOpenAIToolCalls(msg?.tool_calls);
+      if (parsed.unparseable > 0) {
+        console.warn(`[llm-router] DeepSeek returned ${parsed.unparseable} tool call(s) with non-JSON arguments (finish_reason=${choice?.finish_reason ?? 'n/a'})`);
+      }
+      return {
+        ok: true,
+        text,
+        toolCall: parsed.calls[0],
+        toolCalls: parsed.calls.length > 0 ? parsed.calls : undefined,
+        stopReason: choice?.finish_reason,
+        usage: {
+          inputTokens: json.usage?.prompt_tokens ?? 0,
+          outputTokens: json.usage?.completion_tokens ?? 0,
+          ...(typeof json.usage?.completion_tokens_details?.reasoning_tokens === 'number'
+            ? { reasoningTokens: json.usage.completion_tokens_details.reasoning_tokens }
+            : {}),
+        },
+      };
+    } catch (err) {
+      if (isAbortLikeError(err)) {
+        // VTID-03841: a bounded, named failure — the router can fall back
+        // and telemetry records it, instead of a silent hang.
+        return { ok: false, error: `DeepSeek request timed out after ${timeoutMs}ms (DEEPSEEK_TIMEOUT_MS)` };
+      }
+      return { ok: false, error: `DeepSeek threw: ${String(err).slice(0, 300)}` };
+    }
+  },
+};
+
+/**
+ * claude_subscription: free pseudo-provider that routes through the local
+ * autopilot-worker queue → `claude -p` against the user's Pro/Max plan.
+ *
+ * Only meaningful for `worker` / `planner` stages. For other stages (triage,
+ * vision, classifier) the worker overhead and 10-min timeout are wrong; the
+ * router will report "claude_subscription not viable for this stage" and
+ * the caller should pick another provider.
+ *
+ * Implementation defers to `runWorkerTask` from dev-autopilot-worker-queue
+ * to avoid duplicating the queue protocol.
+ */
+const claudeSubscriptionAdapter: ProviderAdapter = {
+  // VTID-04327: the autopilot-worker daemon is retired, so this provider is
+  // never available; a stage pointed at it is skipped like any unconfigured one.
+  isAvailable: () => false,
+  async call({ prompt, model, maxTokens }): Promise<AdapterResult> {
+    try {
+      const { runWorkerTask } = await import('./dev-autopilot-worker-queue');
+      // The worker queue requires a finding_id; we synthesize one for ad-hoc
+      // routes that have no finding context. Worker doesn't validate the
+      // shape — it just stores it on the row.
+      const result = await runWorkerTask(
+        {
+          kind: 'plan',
+          finding_id: '00000000-0000-0000-0000-000000000000',
+          prompt,
+          model,
+          max_tokens: maxTokens ?? 8000,
+          notes: 'llm-router ad-hoc',
+        },
+        { timeoutMs: 6 * 60 * 1000 },
+      );
+      if (!result.ok) {
+        return { ok: false, error: `claude_subscription: ${result.error || 'worker failed'}` };
+      }
+      return {
+        ok: true,
+        text: result.text || '',
+        usage: {
+          inputTokens: result.usage?.input_tokens ?? 0,
+          outputTokens: result.usage?.output_tokens ?? 0,
+        },
+      };
+    } catch (err) {
+      return { ok: false, error: `claude_subscription threw: ${String(err).slice(0, 300)}` };
+    }
+  },
+};
+
+/**
+ * Anthropic Claude via Amazon Bedrock — dormant until BEDROCK_ROLE_ARN is
+ * set on a real deployment (VTID-03403; AWS IAM/model-access provisioning
+ * requires AWS console/CLI access outside this codebase). Vision and tool
+ * calling are not yet supported — see `call()` below.
+ */
+const bedrockAdapter: ProviderAdapter = {
+  isAvailable: () => Boolean(process.env.BEDROCK_ROLE_ARN),
+  async call({ prompt, model, systemPrompt, maxTokens, image, images, tools, forceTool, history, thinking, effort }): Promise<AdapterResult> {
+    // VTID-03496: images and tools are now supported. Bedrock speaks the same
+    // Anthropic Messages API shape as `anthropicAdapter` above, so the content
+    // blocks, tool schema key (`input_schema`) and `tool_choice` are built
+    // identically — deliberately mirrored so the two stay easy to diff.
+    const allImages: LLMRouterImage[] = [];
+    if (images && images.length > 0) allImages.push(...images);
+    if (image) allImages.push(image);
+
+    // Text-only stays a plain string: it is the overwhelmingly common path and
+    // keeps the request byte-identical to what shipped under VTID-03403.
+    const content: BedrockContentBlock[] | string =
+      allImages.length > 0
+        ? [
+            ...allImages.map(
+              (img): BedrockContentBlock => ({
+                type: 'image',
+                source: { type: 'base64', media_type: img.mimeType, data: img.base64 },
+              }),
+            ),
+            { type: 'text', text: prompt },
+          ]
+        : prompt;
+
+    const bedrockTools =
+      tools && tools.length > 0
+        ? tools.map((t) => ({
+            name: t.name,
+            description: t.description,
+            input_schema: t.inputSchema,
+          }))
+        : undefined;
+
+    const toolChoice =
+      bedrockTools && typeof forceTool === 'number' && tools && tools[forceTool]
+        ? ({ type: 'tool', name: tools[forceTool].name } as const)
+        : undefined;
+
+    // VTID-03579: prior turns render into Anthropic content blocks via the
+    // shared helper, so this and `anthropicAdapter` cannot drift apart.
+    const historyMessages = renderAnthropicHistory(history);
+
+    const result = await invokeBedrock({
+      model,
+      messages: [...historyMessages, { role: 'user', content }],
+      system: systemPrompt,
+      max_tokens: maxTokens,
+      tools: bedrockTools,
+      tool_choice: toolChoice,
+      // VTID-04868: only present when the caller asked — default off.
+      ...(thinking ? { thinking } : {}),
+      ...(effort ? { output_config: { effort } } : {}),
+    });
+
+    if (!result.ok) {
+      return { ok: false, error: `Bedrock ${result.error}: ${result.message}` };
+    }
+    return {
+      ok: true,
+      text: result.text,
+      toolCall: result.toolCall,
+      toolCalls: result.toolCalls,
+      stopReason: result.stopReason,
+      ...(result.thinkingBlocks && result.thinkingBlocks.length > 0 ? { thinkingBlocks: result.thinkingBlocks } : {}),
+      usage: {
+        inputTokens: result.usage?.input_tokens ?? 0,
+        outputTokens: result.usage?.output_tokens ?? 0,
+      },
+    };
+  },
+};
+
+const ADAPTERS: Record<LLMProvider, ProviderAdapter> = {
+  anthropic: anthropicAdapter,
+  openai: openaiAdapter,
+  vertex: vertexAdapter,
+  deepseek: deepseekAdapter,
+  claude_subscription: claudeSubscriptionAdapter,
+  bedrock: bedrockAdapter,
+};
+
+// =============================================================================
+// Public API
+// =============================================================================
+
+/** Outcome of a provider preflight — see `verifyProvider()`. */
+export interface ProviderVerifyResult {
+  provider: LLMProvider;
+  model: string;
+  /** True only if the provider actually returned a completion. */
+  ok: boolean;
+  /** Why it failed, verbatim from the adapter — the whole point of this call. */
+  error?: string;
+  /** False when the provider's credentials env gate is unset (router SKIPS it). */
+  available: boolean;
+  latencyMs: number;
+}
+
+/**
+ * Preflight a provider/model with a real, minimal completion (VTID-03565).
+ *
+ * This exists because nothing else in the codebase could answer "does this
+ * provider actually work?". `GET /providers/health` reports env-var PRESENCE,
+ * which is precisely the illusion that hid VTID-03563: `anthropic` reported
+ * available while every call died on credit balance, and the router silently
+ * served Gemini instead. A routing table states intent; only a real invoke
+ * says who will actually serve the request.
+ *
+ * Deliberately routed through `ADAPTERS[provider]` — the exact map
+ * `runProviderCall()` uses — so a preflight cannot pass via a code path the
+ * real traffic does not take.
+ *
+ * Deliberately NOT recorded via startLLMCall/completeLLMCall: a preflight is
+ * an operator action, not traffic, and booking it as `llm.call.completed`
+ * would corrupt the very telemetry used to decide whether a flip worked.
+ */
+export async function verifyProvider(
+  provider: LLMProvider,
+  model: string,
+): Promise<ProviderVerifyResult> {
+  const startedAt = Date.now();
+  const base = { provider, model, latencyMs: 0 };
+  const adapter = ADAPTERS[provider];
+  if (!adapter) {
+    return { ...base, ok: false, available: false, error: `Unknown provider '${provider}'` };
+  }
+  if (!adapter.isAvailable()) {
+    return {
+      ...base,
+      ok: false,
+      available: false,
+      error: `Provider '${provider}' has no credentials configured — the router SKIPS it and serves the fallback instead`,
+    };
+  }
+
+  try {
+    const result = await adapter.call({
+      prompt: 'Reply with exactly: OK',
+      model,
+      maxTokens: 16,
+    });
+    return {
+      provider,
+      model,
+      available: true,
+      ok: result.ok,
+      error: result.ok ? undefined : result.error,
+      latencyMs: Date.now() - startedAt,
+    };
+  } catch (err) {
+    // Adapters are contractually non-throwing, but a preflight that itself
+    // throws would report as a route 500 and tell the operator nothing.
+    return {
+      provider,
+      model,
+      available: true,
+      ok: false,
+      error: `adapter threw: ${String(err).slice(0, 300)}`,
+      latencyMs: Date.now() - startedAt,
+    };
+  }
+}
+
+/**
+ * Dispatch an LLM call to the configured provider for `stage`.
+ *
+ * Never throws — always returns `{ ok, text? | error? }`. Records start +
+ * complete/fail telemetry via `llm-telemetry-service`. Falls back to the
+ * stage's `fallback_provider` on primary failure when `allowFallback !== false`.
+ */
+export async function callViaRouter(
+  stage: LLMStage,
+  prompt: string,
+  opts: LLMRouterOpts,
+): Promise<LLMRouterResult> {
+  const policy = await loadPolicy();
+  // VTID-03565: `| undefined` is not defensive typing — the ACTIVE production
+  // policy really does omit `vision`/`classifier`, and `loadPolicy()` takes the
+  // stored row wholesale rather than merging per-stage defaults (unlike
+  // `getStageRoutingConfig()`, which does merge). The guard below was already
+  // correct; only the annotation claimed otherwise.
+  // VTID-04868: a no-fallback stage (plan_sparring) is absent from every
+  // stored policy today; resolve it to its compiled-in default (Bedrock, NULL
+  // fallback) rather than failing with "No policy configured".
+  const noFallbackStage = NO_FALLBACK_STAGES.includes(stage);
+  const policyStageConfig: StageRoutingConfig | undefined =
+    policy[stage] ?? (noFallbackStage ? LLM_SAFE_DEFAULTS[stage] : undefined);
+  if (!policyStageConfig) {
+    return { ok: false, error: `No policy configured for stage '${stage}'` };
+  }
+
+  // VTID-03820: an explicit per-call override replaces PRIMARY only; the
+  // stage's own policy-configured fallback still applies on failure. See
+  // LLMRouterOpts.providerOverride/modelOverride doc comment.
+  // VTID-05077: always a copy — a fallback override below must never write into
+  // the cached policy object.
+  const stageConfig: StageRoutingConfig = (opts.providerOverride && opts.modelOverride)
+    ? {
+        ...policyStageConfig,
+        primary_provider: opts.providerOverride,
+        primary_model: opts.modelOverride,
+      }
+    : { ...policyStageConfig };
+
+  // VTID-04868: a no-fallback stage never falls back, whatever the caller or
+  // the stored policy says, and only ever runs on Bedrock — a stored
+  // non-Bedrock primary is refused before any provider is called.
+  // Plan-sparring last-resort tier: an explicit per-call DeepSeek override,
+  // flagged by the partner pass after both Bedrock models failed, is allowed.
+  const lastResortOverride =
+    opts.planSparringLastResort === true &&
+    opts.providerOverride !== undefined &&
+    PLAN_SPARRING_LAST_RESORT_PROVIDERS.includes(opts.providerOverride) &&
+    stageConfig.primary_provider === opts.providerOverride;
+  if (noFallbackStage && stageConfig.primary_provider !== 'bedrock' && !lastResortOverride) {
+    return {
+      ok: false,
+      error: `Stage '${stage}' must run on bedrock; refusing configured provider '${stageConfig.primary_provider}'`,
+      provider: stageConfig.primary_provider,
+      model: stageConfig.primary_model,
+    };
+  }
+  const allowFallback = opts.allowFallback !== false && !noFallbackStage;
+
+  // VTID-05077: a per-call fallback override replaces the policy FALLBACK only.
+  if (opts.fallbackOverride) {
+    const fo = opts.fallbackOverride;
+    if (noFallbackStage) {
+      console.warn(`${LOG_PREFIX} stage=${stage} is a no-fallback stage — fallbackOverride ${fo.provider}/${fo.model} ignored`);
+    } else if (!fo.provider || !fo.model || REFUSED_FALLBACK_OVERRIDE_PROVIDERS.includes(fo.provider)) {
+      console.warn(`${LOG_PREFIX} stage=${stage} fallbackOverride ${fo.provider}/${fo.model} refused — the policy fallback applies`);
+    } else {
+      stageConfig.fallback_provider = fo.provider;
+      stageConfig.fallback_model = fo.model;
+    }
+  }
+
+  // === PRIMARY ===
+  const primary = await runProviderCall(
+    stage,
+    stageConfig.primary_provider,
+    stageConfig.primary_model,
+    prompt,
+    opts,
+    /* fallbackUsed= */ false,
+  );
+  if (primary.ok) return primary;
+
+  // === FALLBACK ===
+  if (
+    !allowFallback ||
+    !stageConfig.fallback_provider ||
+    !stageConfig.fallback_model
+  ) {
+    return primary;
+  }
+  console.warn(
+    `${LOG_PREFIX} stage=${stage} primary ${stageConfig.primary_provider}/${stageConfig.primary_model} failed: ${primary.error?.slice(0, 200)} — trying fallback ${stageConfig.fallback_provider}/${stageConfig.fallback_model}`,
+  );
+  const fallback = await runProviderCall(
+    stage,
+    stageConfig.fallback_provider,
+    stageConfig.fallback_model,
+    prompt,
+    opts,
+    /* fallbackUsed= */ true,
+  );
+  if (fallback.ok) {
+    return { ...fallback, fallbackUsed: true };
+  }
+  return {
+    ok: false,
+    error: `both providers failed: primary=${primary.error}; fallback=${fallback.error}`,
+    fallbackUsed: true,
+  };
+}
+
+async function runProviderCall(
+  stage: LLMStage,
+  provider: LLMProvider,
+  model: string,
+  prompt: string,
+  opts: LLMRouterOpts,
+  fallbackUsed: boolean,
+): Promise<LLMRouterResult> {
+  const adapter = ADAPTERS[provider];
+  if (!adapter) {
+    return { ok: false, error: `Unknown provider '${provider}'`, provider, model };
+  }
+  if (!adapter.isAvailable()) {
+    return {
+      ok: false,
+      error: `Provider '${provider}' has no credentials configured`,
+      provider,
+      model,
+    };
+  }
+
+  // VTID-04546: telemetry is emitted in the background — the llm.call.started
+  // insert no longer sits between the caller and the provider, and the
+  // completed/failed insert no longer sits between the provider and the
+  // caller. Payloads are unchanged; the terminal event is issued only after
+  // the started insert settles (see llm-telemetry-service.ts).
+  const ctx = startLLMCallDetached({
+    vtid: opts.vtid ?? null,
+    service: opts.service,
+    stage,
+    provider,
+    model,
+    prompt,
+  });
+
+  const result = await adapter.call({
+    prompt,
+    model,
+    systemPrompt: opts.systemPrompt,
+    maxTokens: opts.maxTokens,
+    image: opts.image,
+    images: opts.images,
+    tools: opts.tools,
+    forceTool: opts.forceTool,
+    history: opts.history,
+    thinking: opts.thinking,
+    effort: opts.effort,
+    deepseekThinking: opts.deepseekThinking,
+  });
+
+  // VTID-04794: a reply cut off by the output cap with no text and no tool
+  // call is not an answer. DeepSeek Flash spends its budget on hidden
+  // reasoning and returns empty `content` with finish_reason=length; reported
+  // as ok, the stage fallback never ran and the planner failed with
+  // "unknown error" on about half of all plans (staging, 2026-10-01).
+  if (
+    result.ok
+    && isTruncatedStop(result.stopReason)
+    && !(result.text ?? '').trim()
+    && !result.toolCall
+    && !(result.toolCalls && result.toolCalls.length > 0)
+  ) {
+    const error = `${provider}/${model} returned no text: output cap reached (stop_reason=${result.stopReason}, `
+      + `output_tokens=${result.usage?.outputTokens ?? 'n/a'}`
+      + `${typeof result.usage?.reasoningTokens === 'number' ? `, reasoning_tokens=${result.usage.reasoningTokens}` : ''})`;
+    void failLLMCallDetached(ctx, { code: 'empty_truncated', message: error });
+    return { ok: false, error, provider, model };
+  }
+
+  if (result.ok) {
+    void completeLLMCallDetached(ctx, {
+      inputTokens: result.usage?.inputTokens,
+      outputTokens: result.usage?.outputTokens,
+      fallbackUsed,
+    });
+    return {
+      ok: true,
+      text: result.text,
+      toolCall: result.toolCall,
+      // VTID-03579 (review follow-up): normalise here, once, rather than in
+      // each adapter. Only `bedrockAdapter` populates `toolCalls`; anthropic,
+      // openai, vertex and deepseek all return the singular `toolCall`. An
+      // agentic caller reading only `toolCalls` therefore saw NOTHING whenever
+      // the router fell back — and since a tool-call response has empty text,
+      // that surfaced as an empty assistant reply rather than an error, with
+      // the requested tool never executed. Normalising at the seam means a new
+      // adapter cannot reintroduce the gap by forgetting the plural field.
+      toolCalls:
+        result.toolCalls && result.toolCalls.length > 0
+          ? result.toolCalls
+          : result.toolCall
+            ? [result.toolCall]
+            : undefined,
+      usage: result.usage,
+      provider,
+      model,
+      fallbackUsed,
+      stopReason: result.stopReason,
+      truncated: isTruncatedStop(result.stopReason),
+      ...(result.thinkingBlocks ? { thinkingBlocks: result.thinkingBlocks } : {}),
+    };
+  }
+
+  void failLLMCallDetached(ctx, {
+    code: 'provider_error',
+    message: result.error || 'unknown',
+  });
+  return {
+    ok: false,
+    error: result.error,
+    provider,
+    model,
+    fallbackUsed,
+  };
+}
+
+// =============================================================================
+// Re-exports for callers that want raw types
+// =============================================================================
+
+export type { LLMStage, LLMProvider, LLMRoutingPolicy, StageRoutingConfig };

@@ -1,0 +1,17 @@
+=== npm run build ===
+
+> @vitana/gateway@1.0.1 prebuild
+> rm -rf dist
+
+
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+
+
+> @vitana/gateway@1.0.1 copy-frontend
+> mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/
+
+
+> @vitana/gateway@1.0.1 copy-data
+> mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/
+

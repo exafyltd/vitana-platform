@@ -1,0 +1,8 @@
+# VTID-05126 — local checks (services/gateway unless noted)
+npx tsc --noEmit -p .                                          # 0 errors
+npx jest test/vtid-05126-calendar-share-any-entry.test.ts      # 14 passed
+npm run test:calendar                                          # 29 suites, 564 passed
+npx jest (full gateway suite)                                  # only description snapshots moved (tool catalog, system instruction, payload hashes) — updated with -u; all others pass
+UPDATE_CALENDAR_GOLDEN=1 npx jest test/calendar                # route table gains POST /feed-posts/:postId/add; window items gain invitable/sensitive
+ORB_TOOLS_PARITY_GATE=1 node scripts/orb-tools-lift-scanner.mjs  # (repo root) exit 0
+# vitana-v1: scripts/sql-tests/run-calendar-entry-share-test.sh on a throwaway Postgres 16 → PASS (and the VTID-04916 SQL test still PASS)

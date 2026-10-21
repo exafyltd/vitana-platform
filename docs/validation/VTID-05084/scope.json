@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-05084",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/specs/loop-catalog-v1.json",
+    "services/gateway/specs/dev-screen-inventory-v1.json",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/src/services/loop-catalog.ts",
+    "services/gateway/src/routes/autonomy-loops.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/frontend/command-hub/**",
+    "services/gateway/src/navigation/data/command-hub-screens.json",
+    "services/gateway/src/navigation/data/nav-embeddings.json",
+    "services/gateway/src/navigation/data/nav-embeddings.bin",
+    "services/gateway/scripts/regen-screens-catalog.mjs",
+    "services/gateway/test/loop-catalog.test.ts",
+    "services/gateway/test/routes/autonomy-loops.test.ts",
+    "services/gateway/test/command-hub/**",
+    "services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "docs/autonomy/LOOP-ENGINEERING.md",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05084/**",
+    "docs/CHANGELOG.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05084/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

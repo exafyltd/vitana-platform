@@ -1,0 +1,5 @@
+{"vtid":"VTID-04931","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"build-info answers JSON","path":"/api/v1/admin/build-info","expect_status":200,"expect_content_type":"json"},
+{"kind":"existing","ref":"npx jest test/vtid-04878-reward-earning.test.ts test/milestone-service.test.ts","cwd":"services/gateway","reason":"Recording a milestone is a write and staging shares the production database, so the row shape is proven by the unit test that pins its exact keys (mutation-checked). Staging never sweeps (VITANA_ENV=staging)."}
+]}

@@ -1,0 +1,50 @@
+name: SQL-WEARABLE-SAMPLES-RPC-REVOKE
+run-name: 'wearable samples rpc revoke against a throwaway Postgres [VTID: VTID-05156] (${{ github.ref_name }})'
+
+# VTID-05156 — runs the migration that makes
+# public.health_ingest_wearable_samples(jsonb) service_role only (revoked from
+# PUBLIC, anon, authenticated) against a disposable Postgres service container:
+# live ACL shape, idempotency, a PUBLIC grant, service_role granted when
+# missing, the lab-report sibling untouched, and a missing function failing
+# loudly. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*_vtid_05156_revoke_wearable_samples_rpc.sql'
+      - 'scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh'
+      - '.github/workflows/SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml'
+  push:
+    paths:
+      - 'supabase/migrations/*_vtid_05156_revoke_wearable_samples_rpc.sql'
+      - 'scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh'
+      - '.github/workflows/SQL-WEARABLE-SAMPLES-RPC-REVOKE.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the wearable samples rpc revoke test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          bash scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh 2>&1 | tee /tmp/wearable-revoke.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-05156 wearable samples rpc revoke' /tmp/wearable-revoke.log

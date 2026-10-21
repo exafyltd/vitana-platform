@@ -1,0 +1,8 @@
+$ curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04397 (ledger: in_progress / approved)
+$ SELECT ticket_number FROM feedback_tickets ... LIMIT 5   # read-only: confirmed the FB-YYYY-MM-NNNNNN shape the normaliser targets
+$ npx tsc --noEmit                                           # clean
+$ npx jest test/services/orchestrator/vtid-04397-support-specialist.test.ts   # 17/17
+$ npx jest test/services/orchestrator test/orb/live/tools test/orb/live/vtid-04386-voice-delegation.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts
+  first run: 1 failure — "every priority name exists in the real authenticated catalog": the three flag-gated names were added to VERTEX_BRIDGE_PRIORITY_TOOLS but only exist when the flag is on.
+  fix: moved them to FLAG_GATED_PRIORITY_TOOLS, appended by the packer's default priority; the existing invariant keeps its meaning.
+$ npx jest   # full gateway suite, see outputs/full-suite.txt

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04860",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04860-vtna-token-name.test.ts", "cwd": "services/gateway",
+      "reason": "Text-only rename (push copy, knowledge-base sources, docs) plus a knowledge_docs migration that is applied at the production step, because staging shares the production database. The guard pins that no member- or Vitana-readable source says VTN and that the migration is whole-word and non-destructive." }
+  ]
+}

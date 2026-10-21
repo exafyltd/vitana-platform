@@ -1,0 +1,2 @@
+npx tsc --noEmit -p services/gateway          # clean
+npx jest <16 operator suites> test/vtid-04598-onramp-model-label.test.ts   # pass

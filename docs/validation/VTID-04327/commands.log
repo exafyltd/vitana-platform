@@ -1,0 +1,4 @@
+$ cd services/gateway && npx tsc --noEmit -p .   -> clean
+$ node node_modules/.bin/jest test/services/dev-autopilot-worker-queue.test.ts test/vtid-03854-planning-stub-gate.test.ts test/vtid-03820-execution-onramp-metadata.test.ts test/vtid-03821-execution-telemetry-vtid.test.ts test/missing-test-scanner.test.ts
+Test Suites: 5 passed; Tests: 75 passed
+$ node node_modules/.bin/jest --silent  -> outputs/jest-full.txt (1081 passed, 1 skipped, 0 failed)

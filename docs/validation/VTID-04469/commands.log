@@ -1,0 +1,6 @@
+$ cd services/gateway && npx tsc --noEmit
+(clean)
+$ node node_modules/.bin/jest test/vtid-04469-recommended-models-no-google.test.ts
+PASS  4 tests
+$ node node_modules/.bin/jest <10 suites importing llm-defaults>
+Test Suites: 10 passed, 10 total; Tests: 126 passed, 126 total

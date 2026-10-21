@@ -1,0 +1,5 @@
+Staging (preview-aws-gateway.vitanaland.com), signed out, before this PR, 2026-09-24:
+200 application/json GET /api/v1/voice-tools/catalog/stats -> {"ok":true,"total":683,"by_surface":{...}}   (public: the defect)
+200 application/json GET /api/v1/voice-tools/health        -> {"ok":true,"total":683,"source":"reconciled"}  (stays public)
+401 application/json GET /api/v1/voice/next-action/inspector?user_id=0000... -> {"error":"UNAUTHENTICATED"}
+Expected after merge: catalog routes 401 JSON signed out; health 200; inspector 200 for an exafy_admin bearer.

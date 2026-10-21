@@ -1,0 +1,46 @@
+# VTID-03603 — commands executed for verification (2026-08-11)
+
+# 0. URL verification BEFORE writing any code (never guess a URL): fetched
+#    shopify.dev's own docs for the authorization-code-grant flow.
+#    https://shopify.dev/docs/apps/build/authentication-authorization/access-tokens/authorization-code-grant
+#    Confirmed: authorize = GET https://{shop}/admin/oauth/authorize
+#               token exchange = POST https://{shop}/admin/oauth/access_token
+#               callback params = code, hmac, shop, state, timestamp, host
+#               HMAC = sha256 hexdigest over sorted, hmac-excluded query
+
+# 1. Migration applied to Supabase (project inmkhvwdcuyhnxkgfvsb) via MCP
+#    apply_migration as vcaop_shopify_oauth_0006_vtid_03603 — new
+#    partner_oauth_credential table, FK to integration_manifest, unique on
+#    (manifest_id, provider). Applied 2026-08-11 before this PR opened.
+
+# 2. New tests
+cd services/gateway && npx jest test/services/shopify-oauth.test.ts test/routes/shopify-oauth-callback.test.ts test/routes/vcaop-portal-my.test.ts
+# -> Test Suites: 3 passed; Tests: 45 passed (captured in ./outputs/shopify-oauth-tests.txt)
+
+# 3. Typecheck of changed files
+cd services/gateway && npx tsc --noEmit -p tsconfig.json
+# -> 0 errors in services/shopify-oauth.ts, routes/shopify-oauth-callback.ts,
+#    routes/vcaop-portal-my.ts, or index.ts. Same 2 pre-existing, unrelated
+#    compression/pg module-resolution errors as VTID-03601 (confirmed by
+#    grepping tsc output for the changed file paths only — zero hits).
+
+# 4. CSP governance gate — simulated locally against every new/changed file
+#    (app source + tests) with the exact 7 regexes from
+#    gov/validator-rules.yaml's csp_gate.reject_patterns. Zero hits.
+
+# 5. Full local suite
+cd services/gateway && npx jest --silent
+# -> 646/655 suites pass, 12412/12423 tests pass. The 9 failing suites fail
+#    identically and immediately on `Cannot find module 'compression'` at
+#    src/index.ts import time — the same pre-existing environment/install
+#    gap recorded in VTID-03601's evidence pack, unrelated to this diff.
+
+# 6. Route mount
+grep -n "shopifyOAuthCallbackRouter\|shopify-oauth" services/gateway/src/index.ts
+# -> const shopifyOAuthCallbackRouter = require('./routes/shopify-oauth-callback').default;
+#    mountRouterSync(app, '/api/v1/vcaop/shopify-oauth', shopifyOAuthCallbackRouter, ...);
+#    Distinct from the pre-existing /api/v1/vcaop/shopify (shopify-sync.ts,
+#    an unrelated admin-only own-store catalog sync feature — confirmed
+#    non-duplicative by reading shopify-sync.ts before starting this VTID).
+#    The authorize endpoint rides the existing /api/v1/vcaop/portal/my mount
+#    (unchanged by this PR, added under VTID-03553).

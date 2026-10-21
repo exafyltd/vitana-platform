@@ -1,0 +1,8 @@
+# VTID-05085 — commands run (real), Claude Code cloud session, 2026-10-12
+python3 -c "<sha256 of the text between the plan markers in docs/validation/VTID-05085/plan-sparring.md>"   # -> outputs/plan-hash.log
+grep -n "is_active\|disconnected_at\|status" supabase/migrations/20260327000000_vtid_01250_social_connections.sql
+grep -n "social-accounts" services/gateway/src/index.ts
+grep -n "export async function fetchUserDiaryStreak" services/gateway/src/services/diary-streak-celebrator-repository.ts
+grep -nE 'path="/(me/profile|connectors|calendar|comm/media-hub|settings/connected-apps)"' ../vitana-v1/src/App.tsx
+grep -c 'path="/comm/create-post' ../vitana-v1/src/App.tsx   # -> 0
+# all outputs -> outputs/code-facts.log

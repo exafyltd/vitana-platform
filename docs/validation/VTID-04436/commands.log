@@ -1,0 +1,3 @@
+cd services/gateway && npx tsc --noEmit -p .                                        # clean
+npx jest test/vtid-04436-calendar-push.test.ts test/vtid-04402-connected-apps.test.ts test/vtid-04372*   # 3 suites, 73 passed
+Supabase MCP apply_migration vtid_04436_calendar_push                             # success (two new empty tables)

@@ -1,0 +1,98 @@
+skill_id: vitana.kb.get_bundle
+name: Get Knowledge Base Bundle
+description: Creates a custom bundle of documentation from multiple sources with word limit enforcement
+version: 1.0.0
+category: knowledge_base
+
+provider:
+  type: http
+  method: POST
+  endpoint: ${KB_AGENT_BASE_URL}/api/kb/bundle
+  timeout_ms: 10000
+
+parameters:
+  query:
+    type: string
+    required: false
+    description: Natural language query for semantic search across KB
+    examples:
+      - Vitana vision and ecosystem strategy
+      - How to deploy services to production
+      - Multi-agent coordination patterns
+  
+  doc_ids:
+    type: array
+    items:
+      type: string
+    required: false
+    description: Specific document IDs to include in bundle
+  
+  families:
+    type: array
+    items:
+      type: string
+    required: false
+    description: Limit search to specific document families
+  
+  max_total_words:
+    type: integer
+    required: false
+    default: 5000
+    minimum: 500
+    maximum: 15000
+    description: Maximum total word count for bundle (enforces truncation)
+  
+  include_sources:
+    type: boolean
+    required: false
+    default: true
+    description: Include source references in response
+  
+  format:
+    type: string
+    enum:
+      - markdown
+      - json
+      - consolidated
+    required: false
+    default: markdown
+    description: Output format for bundle content
+
+response_schema:
+  bundle_id:
+    type: string
+  content:
+    type: string
+  sources:
+    type: array
+  total_words:
+    type: integer
+  truncated:
+    type: boolean
+
+telemetry:
+  emit_events: true
+  event_types:
+    - kb.skill_invoked
+    - kb.bundle_created
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - bundle_id
+    - query
+    - sources
+    - total_words
+    - docs_included
+
+usage:
+  roles:
+    - worker
+  primary_role: worker
+  use_cases:
+    - Task execution context
+    - Multi-document synthesis
+    - Semantic KB search
+
+error_handling:
+  retry_attempts: 2
+  retry_backoff_ms: 1000
+  fallback_strategy: return_partial_results

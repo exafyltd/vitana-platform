@@ -1,0 +1,12 @@
+# VTID-04754 Jev P0 — commands run in this session (services/gateway unless noted)
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .        # clean
+npx jest test/vtid-04754 test/vtid-04473 test/routes/jev-decisions.test.ts test/command-hub/vtid-04754-jev-card.test.ts
+npx jest <every suite reading AWS-PROD/STAGE-DEPLOY-GATEWAY.yml or the ownership guard> \
+  test/vtid-04456-customer-support-pipeline-regression.test.ts \
+  test/vtid-04465-operator-pipeline-regression.test.ts \
+  test/vtid-04560-role-separation-regression.test.ts                      # 80 suites, 1057 tests, all pass
+(root) node scripts/conversation/generate-flag-pins.mjs --check            # current
+(root) node scripts/ci/staging-verify/lib.test.cjs                         # pass; manifest validates
+(root) Playwright render of /command-hub/jev.html, 1400x900 and 390x844, mocked stats — no horizontal overflow
+(root) migration applied to the VITANA project (additive), verification in outputs/migration-applied.txt
+npx jest (full gateway suite)                                              # 1413 suites, 22708 tests, 0 failed

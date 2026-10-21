@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05078",
+  "service": "gateway",
+  "note": "Phase B changes how the Dev Autopilot plans (server-side, staging-owned loop); nothing new is served. The tools stay off until PLAN_SPARRING_GITHUB_TOKEN is provisioned. Read-only probes confirm the gateway and the autopilot routes are up; the behaviour is proven by the jest suite.",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "the Dev Autopilot spend route is mounted and still requires a developer login", "path": "/api/v1/dev-autopilot/spend", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05078-planner-tools.test.ts", "cwd": "services/gateway", "reason": "Proves the planner's read-only tools, their budget and credential, the path validation and the community-app routing" }
+  ]
+}

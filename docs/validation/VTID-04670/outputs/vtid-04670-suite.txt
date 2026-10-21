@@ -1,0 +1,69 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-aa6b9c96b367fbd93/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+
+(node:1956) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+
+  console.warn
+    [VTID-01180] dismiss reason not stored for 11111111: 500
+
+      2095 |     );
+      2096 |     if (!p.ok) {
+    > 2097 |       console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${p.status}`);
+           |               ^
+      2098 |       return false;
+      2099 |     }
+      2100 |     return true;
+
+
+PASS test/vtid-04670-recommendation-acceptance.test.ts
+  VTID-04670 dismiss reasons
+    ✓ accepts exactly the six codes (5 ms)
+    ✓ buildDismissRecord trims and caps the note at 300 chars (1 ms)
+  VTID-04670 acceptance stats
+    ✓ counts per breaker key; auto_archived is not a human decision (3 ms)
+    ✓ demotes a key with ≥ 10 human decisions and < 10 % acceptance; noise dismissals demote harder (2 ms)
+    ✓ reads the last 90 days of decided developer rows in one query; a failed read demotes nothing (2 ms)
+  VTID-04670 demotion in the P2 score
+    ✓ a demoted producer falls below the confidence floor; others are unchanged (8 ms)
+    ✓ priority.ts stays pure: acceptance is injected, never imported
+    ✓ loadScoringContext wires acceptance; the rescore keeps quality.dismiss (2 ms)
+  VTID-04670 supervisor and weekly summary
+    ✓ summarizeAcceptance lists demoted keys first with top dismiss reasons (2 ms)
+    ✓ the supervisor snapshot carries recommendation_acceptance (1 ms)
+    ✓ buildWeeklySummary counts by source/key and slices the last 7 days (1 ms)
+    ✓ emits autopilot.recommendations.weekly_summary once when the newest summary is ≥ 7 days old, and not again within the week (8 ms)
+    ✓ sends nothing when the last-summary read fails (1 ms)
+    ✓ the event type is registered and the tick runs on the executor loop (2 ms)
+  VTID-04670 POST /recommendations/:id/reject stores the reason
+    ✓ unknown reason_code → 400 and nothing is written (328 ms)
+    ✓ developer row: RPC first, then quality.dismiss is merged in (review kept) (128 ms)
+    ✓ community row: the reason is not written (community behaviour unchanged) (96 ms)
+    ✓ no reason code → no extra reads or writes (legacy callers unchanged) (85 ms)
+    ✓ a failed dismiss write does not fail the reject (108 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        1.395 s, estimated 2 s
+Ran all test suites matching /test\/vtid-04670/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

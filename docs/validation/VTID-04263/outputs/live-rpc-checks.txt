@@ -1,0 +1,63 @@
+Live, read-only verification against project inmkhvwdcuyhnxkgfvsb, 2026-09-22
+(all reads only — no writes, per repo rule of never testing against
+production with a mutating call).
+
+select ci_system_health();
+{"db_ok":true,"orphaned_claims":0,"oasis_events_6h":4459}
+
+select ci_welcome_greeting_health();
+{"trigger_present":true,"trigger_enabled":true,"function_present":true,
+ "function_secdef":true,"trigger_table":"user_tenants","signups_24h":0,
+ "greeted_senders_24h":0,"unflagged_24h":0}
+
+select ci_vital_systems_health();
+{"llm_stages_on_forbidden_provider":[],"llm_anthropic_credit_failures_24h":0,
+ "llm_bedrock_completions_24h":792,"llm_vertex_completions_24h":0,
+ "locales_ga":11,"locales_beta":0,"journey_checklist_canonical_topics":254,
+ "journey_checklist_incomplete_ga_locales":[],"nav_catalog_canonical_entries":291,
+ "nav_catalog_incomplete_ga_locales":[],"notif_test_actor_guard_present":true,
+ "notif_test_actor_trigger_enabled":true}
+
+select ci_orb_session_state_health();
+{"table_exists":true,"session_starts_24h":27,"state_writes_24h":16,
+ "acks_24h":12,"acks_failed_24h":1}
+
+select ci_ledger_integrity_check(3);
+[]
+
+--- HTTP checks (curl, --max-time 10-15) ---
+gateway.vitanaland.com/alive                    -> 200
+gateway.vitanaland.com/health                   -> 200
+preview-aws-gateway.vitanaland.com/alive        -> 200
+gateway.vitanaland.com/api/v1/orb/health        -> 200
+gateway.vitanaland.com/api/v1/orb/nova-sonic/health -> ready:true
+gateway.vitanaland.com/api/v1/live/health       -> 200
+vitanaland.com                                  -> 200
+preview-aws.vitanaland.com                      -> 200
+preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+  -> {"ok":true,"env":"staging","git_commit":"80f4fb8f...","marker":"80f4fb8f4e01"}
+  (1 commit behind latest gateway-touching main commit, 8 min old — transient
+  auto-deploy lag at the time of the check, not a real defect)
+
+--- ALERT-ORB-SESSION-STATE-HEALTH.yml, run 35728621884 (2026-09-22 12:40 UTC) ---
+conclusion: failure
+{"table_exists":true,"session_starts_24h":27,"state_writes_24h":16,"acks_24h":12,"acks_failed_24h":1}
+"1 of 12 audio-ready acks in the last 24h reported ok:false."
+(root cause traced to the dropped `reason` field — fixed by AC-2)
+
+--- ALERT-PUSH-DISPATCH-HEALTH.yml, run 35725664101 (2026-09-22 12:11 UTC) ---
+conclusion: failure
+unsent=1000  oldest_age_min=299504  by_type={"new_chat_message":24,"community_post_published":976}
+"push-dispatch backlog is growing — oldest unsent notification is 299504min
+old (limit 15min); 1000 unsent notifications (limit 25)"
+(NOT on the MORNING-SYSTEM-HEALTH-CHECK.yml watchlist before this change —
+fixed by AC-1; underlying scheduler fix is out of this session's reach,
+no AWS CLI/credentials available)
+
+--- EXERCISE-STAGING-SHADOW.yml, run 35729038112 (2026-09-22 12:44 UTC, on
+    corrected URL preview-aws-gateway.vitanaland.com) ---
+conclusion: failure
+HTTP 401 {"ok":false,"error":"invalid service token"}
+(GATEWAY_SERVICE_TOKEN mismatch between AWS Secrets Manager and the GitHub
+repo secret — flagged for an operator, not fixed here: no secret-value
+access from this session)

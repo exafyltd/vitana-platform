@@ -1,0 +1,147 @@
+diff --git a/scripts/erpclaw-gl/db_query.py b/scripts/erpclaw-gl/db_query.py
+index e33d66b..82c6719 100644
+--- a/scripts/erpclaw-gl/db_query.py
++++ b/scripts/erpclaw-gl/db_query.py
+@@ -984,6 +984,8 @@ def _close_pl_accounts(conn, company_id, fy, closing_account_id, pcv_id, posting
+     gl_ids = []
+ 
+     # raw SQL — LEFT JOIN with conditions, GROUP BY, HAVING with != comparison
++    # VITANA PATCH 0004 (VTID-03840): HAVING repeats the aggregates, not the
++    # SELECT aliases (PostgreSQL disallows output-column aliases in HAVING).
+     pl_accounts = conn.execute(
+         """SELECT a.id, a.root_type,
+                   COALESCE(decimal_sum(g.debit), '0') as total_debit,
+@@ -995,7 +997,8 @@ def _close_pl_accounts(conn, company_id, fy, closing_account_id, pcv_id, posting
+            WHERE a.root_type IN ('income', 'expense') AND a.company_id = ?
+              AND a.is_group = 0
+            GROUP BY a.id
+-           HAVING total_debit != 0 OR total_credit != 0""",
++           HAVING CAST(COALESCE(decimal_sum(g.debit), '0') AS NUMERIC) != 0
++              OR CAST(COALESCE(decimal_sum(g.credit), '0') AS NUMERIC) != 0""",
+         (fy["start_date"], fy["end_date"], company_id),
+     ).fetchall()
+ 
+diff --git a/scripts/erpclaw-reports/db_query.py b/scripts/erpclaw-reports/db_query.py
+index 6366c9b..4d43ef2 100644
+--- a/scripts/erpclaw-reports/db_query.py
++++ b/scripts/erpclaw-reports/db_query.py
+@@ -591,6 +591,9 @@ def cash_flow(conn, args):
+ 
+     # Raw SQL: too complex for PyPika, readability preserved
+     # (JOIN + decimal_sum + NOT IN clause + HAVING on computed aliases)
++    # VITANA PATCH 0004 (VTID-03840): HAVING repeats the aggregates instead of
++    # the SELECT aliases — PostgreSQL disallows output-column aliases in HAVING
++    # (same remedy upstream uses in party_ledger_residual below).
+     movements = conn.execute(
+         """SELECT a.id, a.name, a.root_type, a.account_type,
+                   COALESCE(decimal_sum(g.debit), '0') as d,
+@@ -601,7 +604,8 @@ def cash_flow(conn, args):
+            AND g.is_cancelled = 0
+            AND a.account_type NOT IN ('bank','cash')""" + _dim_clause + """
+            GROUP BY a.id
+-           HAVING d != 0 OR c != 0
++           HAVING CAST(COALESCE(decimal_sum(g.debit), '0') AS NUMERIC) != 0
++              OR CAST(COALESCE(decimal_sum(g.credit), '0') AS NUMERIC) != 0
+            ORDER BY a.root_type, a.name""",
+         (company_id, args.from_date, args.to_date) + _dim_params,
+     ).fetchall()
+@@ -1503,7 +1507,10 @@ def check_overdue(conn, args):
+         )
+         .where(si_t.company_id == P())
+         .where(si_t.status.isin(["submitted", "partially_paid", "overdue"]))
+-        .where(LiteralValue("si.\"outstanding_amount\" + 0 > 0"))
++        # VITANA PATCH 0004 (VTID-03840): CAST replaces the SQLite-only "text + 0"
++        # coercion (PostgreSQL: operator does not exist: text + integer) — same
++        # remedy upstream already uses in party_ledger_residual above.
++        .where(LiteralValue("CAST(si.\"outstanding_amount\" AS NUMERIC) > 0"))
+         .where(si_t.due_date < P())
+         .orderby(si_t.due_date)
+         .get_sql()
+diff --git a/scripts/erpclaw-setup/lib/erpclaw_lib/db.py b/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
+index 0ac553a..737e7d0 100644
+--- a/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
++++ b/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
+@@ -262,23 +262,37 @@ def _ensure_pg_decimal_sum(conn) -> None:
+     both backends expose ``decimal_sum(col)`` — financial sums over TEXT-stored
+     Decimal amounts (cross-DB add-on C).
+ 
+-    The aggregate sums each value as ``numeric`` (exact, no float drift) and
+-    returns the total as TEXT, matching the SQLite ``_DecimalSum.finalize``
+-    contract so call sites can keep doing ``to_decimal(str(row["total"]))``.
+-    Idempotent and race-tolerant: the support functions use
+-    ``CREATE OR REPLACE`` and the aggregate is guarded by an existence check.
++    The aggregate sums each value as ``numeric`` (exact, no float drift).
++
++    VITANA PATCH 0004 (VTID-03840): the result is returned as ``numeric``, not
++    TEXT. SQLite's ``_DecimalSum.finalize`` returns a string, but SQLite applies
++    numeric affinity in arithmetic so ``decimal_sum(a) - decimal_sum(b)`` and
++    ``COALESCE(decimal_sum(x), 0)`` work there. PostgreSQL has no such
++    coercion: with a TEXT result every arithmetic call site (51 across
++    reports/gl/selling/inventory/buying) fails with ``operator does not exist:
++    text - text``. Python call sites do ``to_decimal(str(row["total"]))`` and
++    ``str(Decimal)`` is exactly what they consumed before, so the Python
++    contract is unchanged. A pre-0004 aggregate (finalfunc returning text) is
++    detected by its return type and replaced on the next connection open, so
++    already-initialised databases upgrade themselves.
++    Idempotent and race-tolerant: the support function uses
++    ``CREATE OR REPLACE``, creators serialise on an advisory lock, and the
++    aggregate is guarded by an existence + return-type check.
+     """
+     cur = conn.cursor()
+     try:
+         # VITANA PATCH 0002 (VTID-03840): this ran CREATE OR REPLACE on every
+         # connection open. Under concurrent subprocesses Postgres raises
+         # "tuple concurrently updated" (measured 4/12 failures in the
+-        # VTID-03840 spike). Fast path: if the aggregate already exists,
+-        # nothing to do. Slow path: serialize creators on an advisory lock.
++        # VTID-03840 spike). Fast path: if the aggregate already exists with
++        # the right return type, nothing to do. Slow path: serialize creators
++        # on an advisory lock.
+         cur.execute(
+-            "SELECT 1 FROM pg_proc WHERE proname = 'decimal_sum' AND prokind = 'a'"
++            "SELECT prorettype = 'numeric'::regtype FROM pg_proc "
++            "WHERE proname = 'decimal_sum' AND prokind = 'a'"
+         )
+-        if cur.fetchone():
++        row = cur.fetchone()
++        if row and row[0]:
+             return
+         cur.execute("SELECT pg_advisory_xact_lock(hashtext('erpclaw_decimal_sum'))")
+         cur.execute(
+@@ -288,17 +302,21 @@ def _ensure_pg_decimal_sum(conn) -> None:
+             $$ SELECT $1 + COALESCE($2::numeric, 0) $$;
+             """
+         )
+-        cur.execute(
+-            """
+-            CREATE OR REPLACE FUNCTION erpclaw_decimal_sum_ffunc(numeric)
+-            RETURNS text LANGUAGE sql IMMUTABLE AS
+-            $$ SELECT $1::text $$;
+-            """
+-        )
+         cur.execute(
+             """
+             DO $do$
+             BEGIN
++              -- VITANA PATCH 0004: replace a pre-0004 aggregate whose finalfunc
++              -- returned text. CREATE OR REPLACE cannot change a return type and
++              -- the finalfunc cannot be dropped while the aggregate uses it.
++              IF EXISTS (
++                SELECT 1 FROM pg_proc
++                WHERE proname = 'decimal_sum' AND prokind = 'a'
++                  AND prorettype <> 'numeric'::regtype
++              ) THEN
++                DROP AGGREGATE decimal_sum(text);
++              END IF;
++              DROP FUNCTION IF EXISTS erpclaw_decimal_sum_ffunc(numeric);
+               IF NOT EXISTS (
+                 SELECT 1 FROM pg_proc
+                 WHERE proname = 'decimal_sum' AND prokind = 'a'
+@@ -306,7 +324,6 @@ def _ensure_pg_decimal_sum(conn) -> None:
+                 CREATE AGGREGATE decimal_sum(text) (
+                   sfunc = erpclaw_decimal_sum_sfunc,
+                   stype = numeric,
+-                  finalfunc = erpclaw_decimal_sum_ffunc,
+                   initcond = '0'
+                 );
+               END IF;

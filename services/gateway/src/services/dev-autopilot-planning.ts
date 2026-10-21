@@ -1,0 +1,1480 @@
+/**
+ * Developer Autopilot — Stage B Planning (routed LLM call)
+ *
+ * Given a finding (autopilot_recommendations row), calls the configured LLM
+ * (via callRoutedLlm() → callViaRouter('planner', ...), i.e. the DB-backed
+ * llm_routing_policy 'planner' stage — not a hardcoded Anthropic-direct call
+ * since VTID-02686) with the referenced file content pre-fetched from GitHub
+ * and asks it to produce a complete plan_markdown in the canonical
+ * structure (Context / Target flow / Components / Files / Reused
+ * primitives / Implementation order / Verification / Out of scope).
+ *
+ * History / why NOT Managed Agents:
+ *   An earlier revision wired this through the Managed Agents API with
+ *   a GitHub repo mount. Every call hit the Cloud Run 300s request
+ *   timeout (plan.failed events, 2026-04-18..19) because the agent spent
+ *   all of its budget exploring the repo and never produced the final
+ *   plan text. Messages API with the file content pre-attached returns
+ *   in ~20-60s and is well within Cloud Run's window.
+ *
+ * Two invocation points:
+ *   - Eager: called from synthesis after Stage A ingest for the top K findings
+ *     by impact×risk_class (so the queue always has actionable cards)
+ *   - Lazy:  called on demand when the user clicks "Expand plan" or approves
+ *     a row that has no plan yet
+ *
+ * Plan versions are append-only: v1 on first generation; v2+ each time the
+ * user submits "Continue planning" feedback. Prior versions stay readable.
+ *
+ * VTID-03854: this used to return a deterministic stub plan (buildStubPlan)
+ * whenever ANTHROPIC_API_KEY was unset — checked BEFORE even attempting the
+ * routed call. Since CLAUDE.md §1b records that key as deliberately never
+ * populated in AWS Secrets Manager, that gate was permanently true on the
+ * real deployed gateway: every finding whose worker queue was unavailable
+ * silently got the generic stub template instead of a real plan, in
+ * production, indefinitely. The stub is now an explicit opt-in
+ * (DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true, default off) for exercising the
+ * UI/pipeline without a live LLM call — never an accidental substitute for
+ * one. A real call failure still surfaces as a real, visible
+ * {ok:false,error} — that path was already correct and is unchanged.
+ */
+
+import { randomUUID } from 'crypto';
+import { emitOasisEvent } from './oasis-event-service';
+import { renderPlanHtml } from './dev-autopilot-html';
+import { isWorkerQueueEnabled, runWorkerTask } from './dev-autopilot-worker-queue';
+import { writeAutopilotFailure, isWorkerBinaryMissing } from './dev-autopilot-self-heal-log';
+import { loadAutopilotContext } from './dev-autopilot/context-loader';
+import { isTestFile } from './dev-autopilot-safety';
+import {
+  extractTableNames,
+  loadSchemaSnippets,
+  formatSchemaBlock,
+} from './dev-autopilot-schema-context';
+
+import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
+import { recordShown } from './watcher/feedback';
+import { devPlannerModel, devPlannerFallbackModel } from './dev-pipeline-models';
+import {
+  PLANNER_DEADLINE_MS,
+  PLANNER_MAX_TOOL_CALLS,
+  PLANNER_MAX_TURNS,
+  checkPlanPaths,
+  createPlannerToolExecutor,
+  pathFeedback,
+  plannerRouterTools,
+  plannerToolsEnabled,
+  plannerToolsPromptBlock,
+  readPlanPathEntries,
+  resolveMainRefs,
+} from './dev-autopilot/planner-tools';
+import { applyScannerOverrides } from './dev-autopilot-safety';
+import { isPlannabilityOn, recordPlannabilityOutcome, runPlannabilityCheck } from './jev/gates/plannability-gate';
+
+const LOG_PREFIX = '[dev-autopilot-planning]';
+const PLAN_VTID = 'VTID-DEV-AUTOPILOT';
+
+// VTID-03854: DEV_AUTOPILOT_PLANNING_STUB_ENABLED replaces the old
+// "ANTHROPIC_API_KEY unset → stub" gate — see callRoutedLlm() and
+// runPlanningSession() below. Default off: a stub plan must be an explicit
+// choice, never an accidental substitute for a real one.
+export function isPlanningStubEnabled(): boolean {
+  return (process.env.DEV_AUTOPILOT_PLANNING_STUB_ENABLED || '').toLowerCase() === 'true';
+}
+// LLM call timeout. Applies whether we're using the routed call
+// path or the worker-queue path.
+//
+//   Routed call:      15-45s typical, 240s was the original guard.
+//   Worker queue:     subprocess overhead + larger contexts bring this
+//                     up to ~200-300s in practice (observed 267s on a
+//                     first real call against WSL + busy workstation).
+//
+// Cloud Run request ceiling is 300s — the lazy plan endpoint is request-
+// scoped so we can't go above that. Eager planning is background-ticker
+// scoped and tolerates a longer wait, so when the worker queue is in use
+// we extend to 480s for the executor path (see dev-autopilot-execute.ts);
+// the /generate-plan request handler still caps at 280s to stay inside
+// Cloud Run's wall. If the subprocess doesn't finish in that window we
+// return a timeout error to the UI and leave the queue row around — the
+// worker's result is not lost, it's just orphaned, and the next
+// regeneration attempt picks up from the same inputs.
+const MESSAGES_TIMEOUT_MS = 280_000;
+// Model used for planning. Claude Sonnet 4.6 is the right balance of depth
+// and latency for this task; Opus is overkill and slower. Override with
+// DEV_AUTOPILOT_PLANNING_MODEL if needed.
+const PLANNING_MODEL = process.env.DEV_AUTOPILOT_PLANNING_MODEL || 'claude-sonnet-4-6';
+
+// How much of the referenced file to include verbatim in the prompt.
+// 600k chars ≈ 150k tokens — well within Sonnet 4.6's 200k context window
+// once we add the prompt + headroom for the response.
+const FILE_MAX_CHARS = 600_000;
+// When the file exceeds FILE_MAX_CHARS, give the model the head, tail, and
+// a window around the flagged line_number.
+const FILE_HEAD_LINES = 300;
+const FILE_TAIL_LINES = 300;
+const FILE_FOCUS_WINDOW_LINES = 400;
+
+const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO || 'exafyltd/vitana-platform';
+const GITHUB_REF = process.env.DEV_AUTOPILOT_REF || 'main';
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface FindingForPlanning {
+  id: string;
+  title: string;
+  summary: string;
+  domain: string;
+  risk_class: 'low' | 'medium' | 'high';
+  spec_snapshot: {
+    signal_type?: string;
+    file_path?: string;
+    line_number?: number;
+    suggested_action?: string;
+    scanner?: string;
+  };
+}
+
+export interface PlanVersion {
+  finding_id: string;
+  version: number;
+  plan_markdown: string;
+  plan_html: string;
+  planning_session_id?: string;
+  feedback_note?: string;
+  files_referenced: string[];
+}
+
+export interface PlanningResult {
+  ok: boolean;
+  plan?: PlanVersion;
+  error?: string;
+}
+
+// =============================================================================
+// Routed LLM call + GitHub + Supabase helpers
+// =============================================================================
+
+interface MessagesResponse {
+  content: Array<{ type: string; text?: string }>;
+  stop_reason?: string;
+  usage?: { input_tokens?: number; output_tokens?: number };
+}
+
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase D), renamed from callMessagesApi at VTID-03854
+ * (the old name implied a hardcoded call to api.anthropic.com, which this
+ * function has not done since it was first wired to the router): dispatches
+ * through callViaRouter('planner', ...), which reads the DB-backed
+ * llm_routing_policy 'planner' stage and dispatches to whichever provider is
+ * currently configured there (per CLAUDE.md §2b/VTID-03563, that is Bedrock
+ * Claude primary with a DeepSeek fallback as of this writing — never assume
+ * this file's prose over the live policy row). Operators flip providers via
+ * the Command Hub dropdown without code edits.
+ *
+ * This is called whenever the worker queue is unavailable/disabled — see
+ * runPlanningSession() below, which is the ONLY path to a plan when the
+ * worker queue is off (VTID-03854: it no longer short-circuits to a stub
+ * plan just because ANTHROPIC_API_KEY happens to be unset).
+ *
+ * Return shape preserved so callers don't change.
+ */
+async function callRoutedLlm(
+  prompt: string,
+  vtid?: string | null,
+): Promise<PlannerCallResult> {
+  // Lazy import to avoid a circular dep at module init time.
+  const { callViaRouter } = await import('./llm-router');
+  // VTID-04593: the planner runs on DeepSeek Flash. VTID-05077: its fallback is
+  // Bedrock Opus 4.6, passed per call (the shared `planner` row is untouched),
+  // and DeepSeek's thinking is off — Flash reasons by default and spent the
+  // whole 8,000-token cap on hidden reasoning in about half of all plans
+  // (VTID-04794; 128 of 246 calls, 2026-10-05..11).
+  const planner = devPlannerModel();
+  const fallback = devPlannerFallbackModel();
+  const r = await callViaRouter('planner', prompt, {
+    vtid: vtid ?? null,
+    service: 'dev-autopilot-planning',
+    allowFallback: true,
+    maxTokens: 8000,
+    providerOverride: planner.provider,
+    modelOverride: planner.model,
+    fallbackOverride: { provider: fallback.provider, model: fallback.model },
+    ...(planner.provider === 'deepseek' ? { deepseekThinking: 'disabled' as const } : {}),
+  });
+  return plannerCallResult(r);
+}
+
+/**
+ * VTID-05078 (Phase B): the planner as a bounded read-only tool loop — same
+ * primary (DeepSeek, thinking off) and fallback (Opus 4.6) as callRoutedLlm,
+ * at most PLANNER_MAX_TOOL_CALLS tool calls and PLANNER_DEADLINE_MS, then the
+ * model writes the plan with what it has.
+ */
+async function callPlannerWithTools(
+  prompt: string,
+  vtid: string,
+): Promise<{ result: PlannerCallResult; stats: NonNullable<PlanningSessionResult['tool_stats']> }> {
+  const { runStageToolLoop } = await import('./llm-stage-tool-loop');
+  const planner = devPlannerModel();
+  const fallback = devPlannerFallbackModel();
+  const refs = await resolveMainRefs();
+  const loop = await runStageToolLoop({
+    stage: 'planner',
+    service: 'dev-autopilot-planning',
+    vtid,
+    systemPrompt: 'You are the Vitana Dev Autopilot planner. Read the code you need with your read-only tools, then answer with the plan document only.',
+    prompt,
+    tools: plannerRouterTools(),
+    execute: createPlannerToolExecutor({ refs }),
+    maxTurns: PLANNER_MAX_TURNS,
+    maxToolCalls: PLANNER_MAX_TOOL_CALLS,
+    deadlineMs: PLANNER_DEADLINE_MS,
+    maxTokens: 8000,
+    allowFallback: true,
+    providerOverride: planner.provider,
+    modelOverride: planner.model,
+    fallbackOverride: { provider: fallback.provider, model: fallback.model },
+    ...(planner.provider === 'deepseek' ? { deepseekThinking: 'disabled' as const } : {}),
+  });
+  const toolErrors = loop.steps.filter((st) => st.kind === 'tool' && st.isError).length;
+  const stats = { tool_calls: loop.toolCalls, tool_errors: toolErrors, tool_names: loop.toolNames, budget_exhausted: loop.budgetExhausted, stalled: loop.stalled };
+  const result = plannerCallResult({
+    ok: loop.ok,
+    text: loop.text,
+    error: loop.error,
+    provider: loop.provider,
+    model: loop.model,
+    fallbackUsed: loop.fallbackUsed,
+    usage: loop.usage,
+  });
+  return { result, stats };
+}
+
+/** VTID-05077: what one planner call returned, with who answered it. */
+export interface PlannerCallResult {
+  ok: boolean;
+  text?: string;
+  usage?: MessagesResponse['usage'];
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+}
+
+/**
+ * VTID-05077 (A3): maps a router result to the planner's shape. A failure
+ * always carries a reason — the router's own error, or a named empty answer —
+ * never a bare "unknown error". Pure; exported for tests.
+ */
+export function plannerCallResult(r: {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+  stopReason?: string;
+  usage?: { inputTokens: number; outputTokens: number };
+}): PlannerCallResult {
+  const who = { provider: r.provider, model: r.model, fallbackUsed: Boolean(r.fallbackUsed) };
+  if (!r.ok) {
+    return { ok: false, error: r.error || `router returned ok=false without an error (${r.provider || '?'}/${r.model || '?'})`, ...who };
+  }
+  if (!(r.text || '').trim()) {
+    return { ok: false, error: `${r.provider || '?'}/${r.model || '?'} returned an empty plan (stop_reason=${r.stopReason || 'n/a'})`, ...who };
+  }
+  return {
+    ok: true,
+    text: r.text,
+    usage: r.usage ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens } : undefined,
+    ...who,
+  };
+}
+
+async function fetchFileFromGitHub(
+  filePath: string,
+): Promise<{ ok: boolean; content?: string; status?: number; error?: string }> {
+  const token = process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+  if (!token) return { ok: false, error: 'GITHUB_SAFE_MERGE_TOKEN not set' };
+  // Normalize path — drop leading slash, URL-encode segments but keep '/'.
+  const clean = filePath.replace(/^\/+/, '');
+  const encoded = clean.split('/').map(encodeURIComponent).join('/');
+  const url = `https://api.github.com/repos/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(GITHUB_REF)}`;
+  try {
+    const res = await fetch(url, {
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: 'application/vnd.github.v3.raw',
+        'User-Agent': 'vitana-dev-autopilot-planner',
+      },
+    });
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 300);
+      return { ok: false, status: res.status, error: `${res.status}: ${body}` };
+    }
+    const content = await res.text();
+    return { ok: true, content, status: res.status };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+/**
+ * VTID-05078 (B3): does `path` exist in the execution repo at its ref? true /
+ * false, or null when GitHub could not answer (treated as "not proven
+ * missing" — a transient API error never fails a plan). Server-side check
+ * only; the model never sees this credential.
+ */
+async function planPathExists(filePath: string): Promise<boolean | null> {
+  const token = process.env.PLAN_SPARRING_GITHUB_TOKEN || process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+  if (!token) return null;
+  const encoded = filePath.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(GITHUB_REF)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3.object', 'User-Agent': 'vitana-dev-autopilot-planner' },
+    });
+    if (res.status === 404) return false;
+    return res.ok ? true : null;
+  } catch {
+    return null;
+  }
+}
+
+function buildFileContext(content: string, lineNumber: number | undefined, path: string): string {
+  const totalLines = content.split('\n').length;
+  if (content.length <= FILE_MAX_CHARS) {
+    return [
+      `\`\`\`${inferFenceLang(path)}`,
+      `// ${path} — ${totalLines} lines (full file below)`,
+      content.length > 0 ? content : '(empty file)',
+      `\`\`\``,
+    ].join('\n');
+  }
+  // Too big — slice head, tail, and a window around the flagged line.
+  const lines = content.split('\n');
+  const focus = lineNumber && lineNumber > 0 ? Math.min(lineNumber, totalLines) : Math.floor(totalLines / 2);
+  const halfWin = Math.floor(FILE_FOCUS_WINDOW_LINES / 2);
+  const winStart = Math.max(0, focus - halfWin);
+  const winEnd = Math.min(totalLines, focus + halfWin);
+  const head = lines.slice(0, FILE_HEAD_LINES).join('\n');
+  const mid = lines.slice(winStart, winEnd).join('\n');
+  const tail = lines.slice(Math.max(totalLines - FILE_TAIL_LINES, winEnd), totalLines).join('\n');
+  const fence = inferFenceLang(path);
+  return [
+    `> Note: ${path} is ${totalLines} lines (${content.length.toLocaleString()} chars) — too large to inline in full.`,
+    `> The excerpts below are: HEAD (lines 1–${FILE_HEAD_LINES}), FOCUS (lines ${winStart + 1}–${winEnd} around flagged line ${focus}), TAIL (last ${FILE_TAIL_LINES} lines).`,
+    ``,
+    `\`\`\`${fence}`,
+    `// ${path} — HEAD (lines 1–${FILE_HEAD_LINES})`,
+    head,
+    `\`\`\``,
+    ``,
+    `\`\`\`${fence}`,
+    `// ${path} — FOCUS (lines ${winStart + 1}–${winEnd})`,
+    mid,
+    `\`\`\``,
+    ``,
+    `\`\`\`${fence}`,
+    `// ${path} — TAIL (last ${FILE_TAIL_LINES} lines)`,
+    tail,
+    `\`\`\``,
+  ].join('\n');
+}
+
+function inferFenceLang(path: string): string {
+  const ext = path.split('.').pop()?.toLowerCase() || '';
+  const map: Record<string, string> = {
+    ts: 'typescript', tsx: 'typescript', js: 'javascript', jsx: 'javascript',
+    py: 'python', sql: 'sql', yml: 'yaml', yaml: 'yaml', json: 'json', md: 'markdown',
+  };
+  return map[ext] || '';
+}
+
+interface SupaConfig { url: string; key: string; }
+function getSupabase(): SupaConfig | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  return { url, key };
+}
+
+async function supaRequest<T>(
+  supa: SupaConfig,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ ok: boolean; data?: T; status: number; error?: string }> {
+  try {
+    const res = await fetch(`${supa.url}${path}`, {
+      ...init,
+      headers: {
+        apikey: supa.key,
+        Authorization: `Bearer ${supa.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+        ...(init.headers || {}),
+      },
+    });
+    if (!res.ok) return { ok: false, status: res.status, error: `${res.status}: ${await res.text()}` };
+    if (res.status === 204 || res.status === 201) {
+      // Prefer: return=minimal produces 201 with an empty body — don't parse.
+      const text = await res.text();
+      if (!text) return { ok: true, status: res.status };
+      try {
+        return { ok: true, status: res.status, data: JSON.parse(text) as T };
+      } catch { return { ok: true, status: res.status }; }
+    }
+    const data = (await res.json()) as T;
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 500, error: String(err) };
+  }
+}
+
+// =============================================================================
+// Prompt-gap feedback — pull recent validation failures for the same scanner
+// so plan prompts can warn Claude off known traps.
+// =============================================================================
+
+export interface PromptLesson {
+  pattern_type: string;
+  pattern_key: string;
+  example_message: string;
+  mitigation_note: string | null;
+  last_seen_at: string;
+}
+
+/**
+ * Load up to `limit` recent validation failures for a given scanner. Best-
+ * effort — a DB hiccup here must not block plan generation, so we swallow
+ * errors and return an empty list.
+ */
+export async function loadRecentLessons(
+  supa: SupaConfig,
+  scanner: string | null | undefined,
+  limit = 5,
+): Promise<PromptLesson[]> {
+  if (!scanner) return [];
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    // VTID-03461: reads watcher_lessons; dev_autopilot_prompt_learnings was
+    // migrated into it and dropped. Two behaviour changes worth knowing:
+    //   * stage=in.(planning,any) — the old table had no stage axis, so every
+    //     row was implicitly execute-time. Planning now gets planning-scoped
+    //     lessons instead of execution ones.
+    //   * scope->>scanner replaces the flat `scanner` column.
+    // Still best-effort: a 404 during the migration/deploy window returns []
+    // and the prompt just carries no lessons block. The migration's
+    // deploy-order safety argument depends on that staying true.
+    const r = await supaRequest<Array<PromptLesson & { lesson?: string }>>(
+      supa,
+      `/rest/v1/watcher_lessons?scope->>scanner=eq.${encodeURIComponent(scanner)}`
+      + `&stage=in.(planning,any)`
+      + `&status=eq.active`
+      + `&last_seen_at=gte.${since}`
+      + `&order=last_seen_at.desc&limit=${limit}`
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,last_seen_at,lesson`,
+    );
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    // `lesson` is the distilled imperative text and is strictly better prompt
+    // material than "pattern_type: pattern_key". Surface it through the
+    // existing mitigation_note slot, which formatLessonsBlock already prefers,
+    // rather than reshaping the formatter and its callers.
+    return r.data.map((l) => ({
+      ...l,
+      mitigation_note: l.mitigation_note || l.lesson || null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+function formatLessonsBlock(lessons: PromptLesson[]): string {
+  if (!lessons || lessons.length === 0) return '';
+  const lines: string[] = [
+    ``,
+    `## Lessons from prior attempts on findings from this scanner`,
+    ``,
+    `These validation failures have surfaced recently on similar findings.`,
+    `Avoid repeating them in this plan.`,
+    ``,
+  ];
+  for (const l of lessons) {
+    const header = l.mitigation_note && l.mitigation_note.trim().length > 0
+      ? l.mitigation_note.trim()
+      : `${l.pattern_type}: ${l.pattern_key}`;
+    lines.push(`- **${header}**`);
+    const example = (l.example_message || '').trim().split('\n')[0].slice(0, 240);
+    if (example) lines.push(`  Example: ${example}`);
+  }
+  lines.push(``);
+  return lines.join('\n');
+}
+
+// =============================================================================
+// Prompt builder
+// =============================================================================
+
+export function buildPlanningPrompt(
+  finding: FindingForPlanning,
+  previousPlan?: string,
+  feedbackNote?: string,
+  scope?: { allow?: string[]; deny?: string[] },
+  lessons?: PromptLesson[],
+  schemaBlock?: string,
+  /**
+   * VTID-03462: pre-rendered Watcher reminder block. Passed in rather than
+   * fetched here so this function stays pure and synchronous — its callers
+   * already own the async context, and a prompt builder that reaches out to
+   * the database is untestable.
+   */
+  watcherRemindersBlock?: string,
+  /**
+   * VTID-04224 Phase 4: pre-rendered file-scoped dev_agent_memory block
+   * (dev-agent-memory-file-recall.ts) for the finding's candidate file(s).
+   * Same pure/synchronous contract as watcherRemindersBlock. '' when the
+   * flag is off or nothing was recalled.
+   */
+  devMemoryBlock?: string,
+  /** VTID-05078: the planner has read-only tools on both repos and the index. */
+  opts: { toolsEnabled?: boolean } = {},
+): string {
+  const snap = finding.spec_snapshot || {};
+  const lines: string[] = [];
+
+  lines.push(
+    `# Developer Autopilot — Plan Generation`,
+    ``,
+    `You are generating a plan that a developer will approve with one click.`,
+    `A single click triggers end-to-end execution (branch → edits → PR → CI →`,
+    `merge → deploy). Depth and precision matter.`,
+    ``,
+    `## Codebase conventions + imports surface`,
+    ``,
+    `READ THIS FIRST. Reference these rules in your Files-to-modify and`,
+    `Implementation steps so the executor doesn't hallucinate APIs or`,
+    `produce non-conforming filenames.`,
+    ``,
+    loadAutopilotContext(),
+    ``,
+    `---`,
+    ``,
+    `## Finding`,
+    `- **Title:** ${finding.title}`,
+    `- **Summary:** ${finding.summary}`,
+    `- **Domain:** ${finding.domain}`,
+    `- **Risk class:** ${finding.risk_class}`,
+    `- **Signal type:** ${snap.signal_type || 'unknown'}`,
+    `- **File:** ${snap.file_path || '(unspecified)'}${snap.line_number ? `:${snap.line_number}` : ''}`,
+    `- **Scanner:** ${snap.scanner || '(unknown)'}`,
+    `- **Suggested action:** ${snap.suggested_action || '(none)'}`,
+    ``,
+  );
+
+  // VTID-02672: when the finding came from a feedback ticket (Devon's
+  // spec workflow), the bridge already pre-validated `proposed_files`
+  // against allow/deny scope. The planner MUST use only those paths so
+  // the safety gate doesn't reject the plan after Devon wrote a clean
+  // spec. Co-located test files (`.test.ts` next to the source) are
+  // allowed automatically since they're in the same allow-scope.
+  const proposedFiles = (snap as { proposed_files?: string[] }).proposed_files;
+  if (snap.signal_type === 'feedback_ticket' && Array.isArray(proposedFiles) && proposedFiles.length > 0) {
+    lines.push(
+      `## LOCKED file list (feedback ticket — DO NOT DEVIATE)`,
+      ``,
+      `This finding came from a feedback ticket. The pre-flight already`,
+      `validated these file paths against the allow-scope and deny-scope.`,
+      `Your Files-to-modify section MUST contain ONLY these paths (plus`,
+      `co-located \`.test.ts\` files if you need new tests):`,
+      ``,
+      ...proposedFiles.map(f => `- \`${f}\``),
+      ``,
+      `Do NOT add additional source files. Do NOT swap a path for a`,
+      `different one. If a path here doesn't actually exist in the repo`,
+      `(GitHub fetch returned 404 in the Referenced file section), state`,
+      `that explicitly in the Out-of-scope section and propose to CREATE`,
+      `the file at that path. Do not silently use a different path.`,
+      ``,
+    );
+  }
+
+  // VTID-02640: live DB schema for any tables referenced in the flagged
+  // file. Inserted EARLY in the prompt so column-name hallucinations
+  // (e.g. PR #1091's wrong vitana_id -> vuid rename) are short-circuited
+  // before the LLM starts thinking about edits. Empty string is a no-op.
+  if (schemaBlock) lines.push(schemaBlock);
+
+  // VTID-02640: hard rules to suppress the most damaging classes of
+  // hallucination we've seen ship in PRs: migration modifications and
+  // unverified column renames. These rules supplement (not replace) the
+  // safety gate's allow/deny scope check + the deny_scope on migrations.
+  lines.push(
+    `## Critical anti-hallucination rules (read before producing the plan)`,
+    ``,
+    `1. **Never modify any file under \`supabase/migrations/\`.** Migrations`,
+    `   are append-only after they are applied. If schema needs to change,`,
+    `   add a NEW dated migration file (\`supabase/migrations/YYYYMMDDHHMMSS_<purpose>.sql\`)`,
+    `   and put the new file in Files-to-modify. Modifying an applied`,
+    `   migration is the failure mode behind closed PR #1086.`,
+    ``,
+    `2. **Never propose a column rename, table rename, or schema-drift fix`,
+    `   without verifying the columns in the Live DB schema section above`,
+    `   (or in an attached migration file).** If a column you want to`,
+    `   reference does not appear in the schema section, treat it as`,
+    `   "may not exist" and write the plan to investigate, not to rename.`,
+    `   Closed PR #1091 proposed renaming \`vitana_id\` -> \`vuid\` because`,
+    `   the planner inferred from filename patterns alone — \`vuid\` does`,
+    `   not exist; the canonical column is \`vitana_id\`.`,
+    ``,
+    `3. **Files-to-modify must match the diff your executor will produce.**`,
+    `   Do not list files for "the developer to verify" — those go in`,
+    `   Out-of-scope. The executor writes exactly the listed files; if a`,
+    `   file is not listed, no edits are made to it.`,
+    ``,
+  );
+
+  // Prompt-gap feedback loop — inject recent validation failures scoped to
+  // this scanner so Claude doesn't repeat known traps.
+  const lessonsBlock = formatLessonsBlock(lessons || []);
+  if (lessonsBlock) lines.push(lessonsBlock);
+
+  // VTID-03462 (Watcher Phase 3): authored governance rules + cross-stage
+  // lessons, ranked and hard-budgeted (<=6 items / <=800 tokens). Distinct
+  // from the block above, which is scanner-scoped validation history only.
+  //
+  // Ships dark behind WATCHER_REMINDERS_ENABLED. Off, this is a no-op and
+  // the prompt is byte-identical to before.
+  if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
+  if (devMemoryBlock) lines.push(devMemoryBlock, ``);
+
+  if (previousPlan && feedbackNote) {
+    lines.push(
+      `## Previous plan (v-1) — reviewer feedback below`,
+      ``,
+      `\`\`\`markdown`,
+      previousPlan.substring(0, 4000),
+      `\`\`\``,
+      ``,
+      `## Reviewer feedback`,
+      feedbackNote,
+      ``,
+      `Revise the plan to address the feedback above. Keep what was good, change`,
+      `what the reviewer flagged, and output a complete new plan — not a diff.`,
+      ``,
+    );
+  }
+
+  // HARD CONSTRAINT on the Files to modify section — the safety gate rejects
+  // approvals whose plan cites any path outside allow_scope or any path in
+  // deny_scope, so a plan that puts config files in that section is
+  // guaranteed to be blocked. Surface the constraint as part of the prompt
+  // so Claude puts reference-only files in a separate section instead.
+  // Compute the EFFECTIVE allow/deny shown to the LLM using the same
+  // scanner-aware overrides the safety gate applies. Without this, the
+  // gate accepts a fix that touches `package.json` (per applyScannerOverrides)
+  // but the planner prompt still tells the LLM the file is out-of-scope, so
+  // the LLM correctly omits it and the resulting plan is the test-only PR
+  // we keep failing on.
+  const baseAllow = scope?.allow && scope.allow.length > 0 ? scope.allow : [];
+  const baseDeny = scope?.deny && scope.deny.length > 0 ? scope.deny : [];
+  const scannerForOverrides = String(snap.scanner || '');
+  const { effectiveAllow, effectiveDeny } = applyScannerOverrides(
+    baseAllow,
+    baseDeny,
+    scannerForOverrides,
+  );
+  const allow = effectiveAllow.length > 0 ? effectiveAllow : undefined;
+  const deny = effectiveDeny.length > 0 ? effectiveDeny : undefined;
+
+  // Positive guidance per scanner: tell the LLM what the canonical fix
+  // looks like for THIS scanner type. Without this, even with overrides,
+  // the LLM tends to default to "add a regression test, ask the developer
+  // to bump the version manually" — which is what produced PRs #1995-1998
+  // (test-only PRs that fail CI 100%).
+  const NPM_AUDIT_SCANNERS_LOCAL = new Set(['npm-audit-scanner-v1', 'cve-scanner-v1']);
+  const NEW_MIGRATION_SCANNERS_LOCAL = new Set([
+    'rls-policy-scanner-v1',
+    'schema-drift-scanner-v1',
+  ]);
+  if (NPM_AUDIT_SCANNERS_LOCAL.has(scannerForOverrides)) {
+    lines.push(
+      `## Canonical fix shape for this scanner (REQUIRED)`,
+      ``,
+      `This finding came from \`${scannerForOverrides}\`. The canonical fix`,
+      `for a CVE / dep-audit finding is to **bump the affected package**`,
+      `in the relevant \`package.json\` (and \`pnpm-lock.yaml\` if applicable).`,
+      `A regression test that asserts the new version is welcome but is NOT`,
+      `sufficient on its own — the test will fail CI 100% of the time until`,
+      `the manifest is updated, and the developer cannot merge a guaranteed-`,
+      `red PR.`,
+      ``,
+      `Your "Files to modify" list MUST include the relevant \`package.json\``,
+      `(typically \`services/gateway/package.json\`). The override on the`,
+      `safety gate explicitly allows this for your scanner — \`package.json\``,
+      `and \`pnpm-lock.yaml\` are NOT off-limits here.`,
+      ``,
+    );
+  }
+  if (NEW_MIGRATION_SCANNERS_LOCAL.has(scannerForOverrides)) {
+    lines.push(
+      `## Canonical fix shape for this scanner (REQUIRED)`,
+      ``,
+      `This finding came from \`${scannerForOverrides}\`. The canonical fix`,
+      `is a **new dated migration** under \`supabase/migrations/\` (filename`,
+      `\`YYYYMMDDHHMMSS_<purpose>.sql\`). Existing migrations are append-only`,
+      `(rule #1 above) — never modify them. The override on the safety gate`,
+      `explicitly allows you to ADD a new migration file for this scanner.`,
+      ``,
+      `Your "Files to modify" list MUST include the new migration file path.`,
+      `A test alone is not sufficient.`,
+      ``,
+    );
+  }
+
+  if (allow || deny) {
+    // Tailor the introduction to the override status: when the scanner has
+    // legitimately allowed a config/dep file, the "do NOT list config files"
+    // sentence becomes wrong and confuses the LLM.
+    const hasManifestOverride = NPM_AUDIT_SCANNERS_LOCAL.has(scannerForOverrides);
+    const hasMigrationOverride = NEW_MIGRATION_SCANNERS_LOCAL.has(scannerForOverrides);
+    lines.push(
+      `## Scope constraints (enforced automatically — violations block approval)`,
+      ``,
+      `The "Files to modify" section must contain ONLY paths that the executor`,
+      `will actually create, modify, or delete.`,
+      ``,
+    );
+    if (!hasManifestOverride && !hasMigrationOverride) {
+      lines.push(
+        `Do NOT list config files or dependency manifests there for the`,
+        `developer to "double-check" — put those as plain-text notes in the`,
+        `Out-of-scope section instead.`,
+        ``,
+      );
+    }
+    if (allow) {
+      lines.push(`Files to modify MUST match one of these allow-scope globs:`);
+      for (const g of allow) lines.push(`  - \`${g}\``);
+      lines.push(``);
+    }
+    if (deny) {
+      lines.push(`Files to modify MUST NOT match any of these deny-scope globs:`);
+      for (const g of deny) lines.push(`  - \`${g}\``);
+      lines.push(``);
+    }
+    // Scanner-aware trap list. The blanket "never modify package.json /
+    // migrations / workflows / etc." rule was added to stop the planner
+    // from sneaking config files into unrelated plans, but it became the
+    // dominant reason autopilot PRs couldn't actually fix anything: an
+    // npm-audit-scanner-v1 finding's only valid fix IS bumping
+    // package.json, an rls-policy-scanner-v1 finding's only valid fix IS
+    // a new migration, etc. The 2026-05-08 audit found these scanners
+    // produced test-only PRs that fail CI 100% of the time because the
+    // actual fix was forbidden. Below, each trap is gated on the
+    // scanner of THIS finding so the trap fires for every UNRELATED
+    // finding (preserving the original protection) but is lifted for
+    // findings whose category legitimately requires touching that file
+    // type.
+    const scanner = String(snap.scanner || '');
+    const trapBullets: string[] = [];
+    if (scanner !== 'npm-audit-scanner-v1' && scanner !== 'cve-scanner-v1') {
+      trapBullets.push(
+        `  - \`services/gateway/package.json\` / any \`package.json\` ` +
+          `(this finding's scanner is not the dependency-audit scanner — ` +
+          `if a dep change is genuinely needed, surface it in Out-of-scope)`,
+      );
+    }
+    trapBullets.push(
+      `  - \`services/gateway/tsconfig.json\` / any \`tsconfig*.json\``,
+      `  - \`services/gateway/jest.config.ts\` / any \`jest.config.*\``,
+    );
+    if (scanner !== 'workflow-fix-scanner-v1' && scanner !== 'ci-fix-scanner-v1') {
+      trapBullets.push(`  - Any \`.github/workflows/*\` file`);
+    }
+    // Migration MODIFICATIONS are never allowed (rule #1 above), but new
+    // dated migration files ARE the canonical fix for schema-drift /
+    // rls-policy findings. The blanket trap was wrong here.
+    if (scanner !== 'rls-policy-scanner-v1' && scanner !== 'schema-drift-scanner-v1') {
+      trapBullets.push(`  - Any \`supabase/migrations/*\` file`);
+    } else {
+      trapBullets.push(
+        `  - **Modifying** any existing \`supabase/migrations/*\` file (per ` +
+          `rule #1 above; ADDING a new dated migration file IS allowed for this scanner)`,
+      );
+    }
+    trapBullets.push(`  - Any path containing \`auth\` unless it IS the finding's target`);
+    lines.push(
+      `Common traps — do NOT put these in Files to modify:`,
+      ...trapBullets,
+      ``,
+      `If the developer needs to verify a forbidden file, write a bullet in`,
+      `Out-of-scope like: "Developer should verify supertest is in`,
+      `services/gateway/package.json devDependencies" — NOT a line in`,
+      `Files to modify.`,
+      ``,
+    );
+  }
+
+  lines.push(
+    `## Your task`,
+    ...(opts.toolsEnabled
+      ? [
+          `The referenced file is attached below. Read whatever else you need with`,
+          `your tools, then produce a complete, actionable plan. Cite every file you`,
+          `propose to modify by its repo-relative path (e.g. \`services/gateway/src/...\`).`,
+          `A plan that cites a nonexistent path will be rejected by validation.`,
+          ``,
+          plannerToolsPromptBlock(),
+        ]
+      : [
+          `The referenced file is attached below. Use it (plus the finding metadata`,
+          `above) to produce a complete, actionable plan. Do NOT ask to see other`,
+          `files — infer tests/types/callers by naming conventions and state them`,
+          `as candidates in the plan. Cite every file you propose to modify by its`,
+          `repo-relative path (e.g. \`services/gateway/src/...\`), matching the style`,
+          `of the finding's file path. A plan that cites a nonexistent path will be`,
+          `rejected by validation.`,
+          `Mark a file the plan creates with "(new)" on its line in "Files to modify".`,
+        ]),
+    ``,
+    `If the flagged file is partial (head/focus/tail excerpts only), work`,
+    `from what you can see and explicitly note in the plan any areas where`,
+    `the developer should double-check sections you couldn't see in full.`,
+    ``,
+    `## Output format — raw markdown, exactly these section headers, no code fences around the whole document`,
+    ``,
+    `## Context`,
+    `(Why this change — the problem, what prompted it, the intended outcome.)`,
+    ``,
+    `## Target flow`,
+    `(Short narrative or ASCII diagram of the end-to-end behavior after the change.)`,
+    ``,
+    `## Components to build / modify`,
+    `(One bullet per file, grouped by purpose. Include file path + what changes.)`,
+    ``,
+    `## Files to modify`,
+    `(Flat list of repo-relative paths, one per line. Include test files.`,
+    ` Every path here MUST pass the scope constraints above — no config files,`,
+    ` no package.json, no tsconfig, no jest.config. The executor writes exactly`,
+    ` these files and no others.)`,
+    ``,
+    `## Reused primitives`,
+    `(Existing functions/types/services the change should call into — do not`,
+    ` rebuild anything already in the repo.)`,
+    ``,
+    `## Implementation order`,
+    `(Numbered steps a developer or agent can follow.)`,
+    ``,
+    `## Verification`,
+    `(Unit tests + integration path + observable outcome.)`,
+    ``,
+    `## Out of scope`,
+    `(Things intentionally not in this change. Put "developer should verify"`,
+    ` notes about config files HERE, not in Files to modify.)`,
+  );
+
+  return lines.join('\n');
+}
+
+// =============================================================================
+// File-path extraction + validation (catches hallucinated paths)
+// =============================================================================
+
+// Extension alternation — longest alternatives first + a trailing negative
+// lookahead so ".json" never truncates to ".js" (standard regex alternation
+// is left-to-right-first-match, so "js" silently wins over "json" unless we
+// order longest-first and anchor the end). Before this fix, every plan that
+// referenced `package.json` stored it as `package.js`, which then collided
+// with the safety-gate allow_scope check as an out-of-scope file.
+const EXT_GROUP = '(?:tsx|ts|jsx|js|sql|yaml|yml|json|md)(?![a-zA-Z0-9])';
+const PATH_LINE_RE = new RegExp(
+  `(?<![a-zA-Z0-9])((?:services|supabase|scripts|\\.github|specs|src)\\/[a-zA-Z0-9_./\\-]+\\.${EXT_GROUP})`,
+  'g',
+);
+const FILES_SECTION_LINE_RE = new RegExp(`([a-zA-Z0-9_./\\-]+\\.${EXT_GROUP})`);
+
+export function extractFilePaths(markdown: string): string[] {
+  const paths = new Set<string>();
+  // Prefer the explicit "Files to modify" section. If it exists AND lists at
+  // least one path, trust ONLY that list — don't fall back to scanning the
+  // whole markdown. The fallback scan is an over-eager safety net that pulls
+  // in every path the LLM mentions for context (package.json, jest.config.ts,
+  // tsconfig.js, etc.) and flags them as files to modify, which then fails
+  // the safety gate's allow_scope check even though the plan never intended
+  // to touch them.
+  // VTID-02679: tolerate "Files to touch" / "Files to change" / "Files to edit"
+  // and the hyphenated "Files-to-modify". Devon's spec uses "Files to touch"
+  // so the planner often inherits that phrasing when echoing the LOCKED file
+  // list — without this, plans look empty and dispatch fails with
+  // "plan has no files_referenced".
+  const filesSection = markdown.match(/##\s*Files\s*[- ]\s*to\s*[- ]\s*(?:modify|touch|change|edit)[\s\S]+?(?=\n##\s|$)/i);
+  if (filesSection) {
+    for (const line of filesSection[0].split('\n').slice(1)) {
+      const match = line.match(FILES_SECTION_LINE_RE);
+      if (match && match[1].includes('/')) paths.add(match[1]);
+    }
+    if (paths.size > 0) return Array.from(paths);
+  }
+  // Fallback: only if the Files-to-modify section was absent or empty, scan
+  // the whole plan for path-like strings. This handles older plans that used
+  // the Components-only format.
+  for (const m of markdown.matchAll(PATH_LINE_RE)) {
+    paths.add(m[1]);
+  }
+  return Array.from(paths);
+}
+
+// =============================================================================
+// Stub plan generator (used when DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true)
+// =============================================================================
+
+function buildStubPlan(finding: FindingForPlanning, note?: string): string {
+  const snap = finding.spec_snapshot || {};
+  const file = snap.file_path || 'services/gateway/src/services/example.ts';
+  const base = file.split('/').pop() || 'example.ts';
+  const testFile = file.replace(/\.ts$/, '.test.ts').replace('src/', 'test/');
+  const lines = [
+    `## Context`,
+    `${finding.summary} Deterministic plan generated without LLM (DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true).${note ? ' Reviewer feedback: ' + note : ''}`,
+    ``,
+    `## Target flow`,
+    `Apply the suggested action: ${snap.suggested_action || 'refactor per signal'}. No change to external behavior.`,
+    ``,
+    `## Components to build / modify`,
+    `- ${file} — ${snap.suggested_action || 'refactor'}`,
+    `- ${testFile} — add/adjust tests to cover the change`,
+    ``,
+    `## Files to modify`,
+    `- ${file}`,
+    `- ${testFile}`,
+    ``,
+    `## Reused primitives`,
+    `None beyond existing module APIs.`,
+    ``,
+    `## Implementation order`,
+    `1. Apply the change to ${base}`,
+    `2. Run tests locally`,
+    `3. Commit + open PR`,
+    ``,
+    `## Verification`,
+    `- Unit tests pass`,
+    `- Typecheck clean`,
+    `- Deploy smoke green`,
+    ``,
+    `## Out of scope`,
+    `- Unrelated refactors in surrounding modules`,
+  ];
+  return lines.join('\n');
+}
+
+// =============================================================================
+// Run a planning session via the routed LLM call (or the worker queue)
+// =============================================================================
+
+async function runPlanningSession(
+  finding: FindingForPlanning,
+  previousPlan: string | undefined,
+  feedbackNote: string | undefined,
+  scope?: { allow?: string[]; deny?: string[] },
+  supa?: SupaConfig,
+): Promise<PlanningSessionResult> {
+  const sessionId = `plan_${randomUUID().slice(0, 12)}`;
+
+  // VTID-03854: this used to gate on `!ANTHROPIC_API_KEY` — permanently true
+  // on the real deployed gateway (CLAUDE.md §1b: that key is deliberately
+  // never populated in AWS Secrets Manager), so every finding whose worker
+  // queue was unavailable silently got the stub template instead of a real
+  // plan. The stub is now an explicit, off-by-default opt-in for exercising
+  // the UI/pipeline without a live call — never an accidental substitute.
+  if (isPlanningStubEnabled()) {
+    console.warn(`${LOG_PREFIX} DEV_AUTOPILOT_PLANNING_STUB_ENABLED=true — emitting stub plan for ${finding.id}`);
+    return {
+      ok: true,
+      plan_markdown: buildStubPlan(finding, feedbackNote),
+      session_id: sessionId,
+    };
+  }
+
+  // Pull recent validation lessons for this scanner so Claude can avoid
+  // known traps. Best-effort — never blocks plan generation.
+  const lessons = supa
+    ? await loadRecentLessons(supa, finding.spec_snapshot?.scanner)
+    : [];
+
+  const startedAt = Date.now();
+  const filePath = finding.spec_snapshot?.file_path;
+  let fileSection = '';
+  let fileContent: string | null = null;
+
+  if (filePath) {
+    const fileR = await fetchFileFromGitHub(filePath);
+    if (fileR.ok && typeof fileR.content === 'string') {
+      fileContent = fileR.content;
+      fileSection =
+        `\n\n## Referenced file\n\n` +
+        buildFileContext(fileR.content, finding.spec_snapshot?.line_number, filePath) +
+        `\n`;
+      console.log(
+        `${LOG_PREFIX} fetched ${filePath} (${fileR.content.length} chars) from GitHub for ${finding.id}`,
+      );
+    } else {
+      // File fetch is best-effort. If the path is wrong or the token is
+      // missing, still try to produce a useful plan from the finding metadata
+      // alone — but include a note so the model knows.
+      fileSection = `\n\n## Referenced file\n\n> Could not fetch \`${filePath}\` from GitHub (${fileR.error || 'unknown error'}). Produce the plan from the finding metadata and general knowledge of the repo conventions; flag the file-read failure in the Out-of-scope section.\n`;
+      console.warn(
+        `${LOG_PREFIX} fetchFileFromGitHub(${filePath}) failed for ${finding.id}: ${fileR.error}`,
+      );
+    }
+  } else {
+    fileSection = `\n\n## Referenced file\n\n> No file_path recorded on this finding. Produce the plan from the finding metadata alone.\n`;
+  }
+
+  // VTID-02640: pre-fetch live schema for tables referenced in the file.
+  // Best-effort — fetch failure or missing supa just means the planner runs
+  // without schema context, same as before.
+  let schemaBlock = '';
+  if (supa && fileContent) {
+    try {
+      const tables = extractTableNames(fileContent);
+      if (tables.length > 0) {
+        const rows = await loadSchemaSnippets(supa, tables);
+        schemaBlock = formatSchemaBlock(rows);
+        if (rows.length > 0) {
+          console.log(
+            `${LOG_PREFIX} schema context: ${rows.length} cols across ${tables.length} tables for ${finding.id}`,
+          );
+        }
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} schema-context fetch threw for ${finding.id}:`, err);
+    }
+  }
+
+  // VTID-03462 (Watcher Phase 3). Best-effort and flag-gated: with
+  // WATCHER_REMINDERS_ENABLED unset this resolves to '' and the prompt is
+  // byte-identical to before. A Watcher fault must never block planning.
+  let watcherBlock = '';
+  if (remindersEnabled()) {
+    try {
+      const bundle = await buildReminders({
+        stage: 'planning',
+        scanner: (finding.spec_snapshot as { scanner?: string } | null)?.scanner,
+      });
+      watcherBlock = renderRemindersBlock(bundle);
+      await recordShown(bundle.reminders.map((r) => r.reminder_id));
+    } catch {
+      watcherBlock = '';
+    }
+  }
+  // VTID-04224 Phase 4: flag-gated file-scoped dev_agent_memory recall over
+  // the finding's candidate file(s) — the referenced file plus, for the
+  // feedback lane, any bridge-validated proposed_files. Fail-open — a
+  // recall failure must never block or degrade planning.
+  let devMemoryBlock = '';
+  if (isPlannerMemoryRecallEnabled()) {
+    try {
+      const proposedFiles = (finding.spec_snapshot as { proposed_files?: unknown } | null)?.proposed_files;
+      const candidateFiles = Array.from(new Set([
+        ...(filePath ? [filePath] : []),
+        ...(Array.isArray(proposedFiles) ? proposedFiles.filter((p): p is string => typeof p === 'string') : []),
+      ]));
+      devMemoryBlock = await buildFileScopedMemoryBlock(candidateFiles, 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
+  // VTID-05078: read-only tools on both repos + the code index when the
+  // read-only token exists (and never on the worker-queue path).
+  const toolsOn = plannerToolsEnabled() && !isWorkerQueueEnabled();
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock, devMemoryBlock, { toolsEnabled: toolsOn }) + fileSection;
+
+  // Route through the local worker queue when enabled, so the LLM call draws
+  // on the Claude subscription instead of the pay-per-token API key. Falls
+  // back to the routed LLM call (llm_routing_policy 'planner' stage) when
+  // the feature flag is off.
+  let toolStats: PlanningSessionResult['tool_stats'];
+  let call = toolsOn
+    ? await (async () => {
+        const loop = await callPlannerWithTools(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+        toolStats = loop.stats;
+        return loop.result;
+      })()
+    : isWorkerQueueEnabled()
+    ? await runWorkerTask(
+        {
+          kind: 'plan',
+          finding_id: finding.id,
+          prompt,
+          model: PLANNING_MODEL,
+          max_tokens: 8_000,
+          notes: `plan ${finding.id} — ${feedbackNote ? 'continue' : 'first'}`,
+        },
+        { timeoutMs: MESSAGES_TIMEOUT_MS },
+      )
+    : await callRoutedLlm(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+
+  // Auto-fallback for the worker-binary-missing failure: when the worker
+  // can't spawn the Claude Code CLI (ENOENT, binary path stale after an
+  // extension update, etc.), retry once via the routed LLM call. This is
+  // the kind of self-healing the "fully autonomous" goal requires: detect a
+  // known dependency failure and route around it without human intervention.
+  // VTID-03854: no longer gated on ANTHROPIC_API_KEY — callRoutedLlm goes
+  // through llm_routing_policy (Bedrock/DeepSeek/etc), which that key has
+  // nothing to do with; if every configured provider is genuinely
+  // unreachable, the call itself fails and that failure still surfaces on
+  // self_healing_log below, same as before.
+  let fallback_used = false;
+  if (!call.ok && isWorkerQueueEnabled() && isWorkerBinaryMissing(call.error)) {
+    console.warn(`${LOG_PREFIX} worker binary missing — falling back to routed LLM call for ${finding.id}`);
+    call = await callRoutedLlm(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+    fallback_used = true;
+  }
+  const elapsed = Math.round((Date.now() - startedAt) / 1000);
+
+  if (!call.ok || !call.text) {
+    const supaForLog = getSupabase();
+    if (supaForLog) {
+      const isBinaryMissing = isWorkerBinaryMissing(call.error);
+      await writeAutopilotFailure(supaForLog, {
+        stage: 'plan_gen',
+        vtid: `VTID-DA-FIND-${finding.id.slice(0, 8)}`,
+        endpoint: finding.spec_snapshot?.file_path || `autopilot.plan_gen`,
+        failure_class: isBinaryMissing
+          ? 'dev_autopilot_worker_binary_missing'
+          : 'dev_autopilot_plan_gen_failed',
+        confidence: 0,
+        diagnosis: {
+          summary: isBinaryMissing
+            ? 'Worker process cannot spawn Claude Code CLI (binary moved or PATH changed). Restart worker or update binary path. Fallback routed LLM call also failed.'
+            : `Plan generation failed after ${elapsed}s: ${call.error || 'unknown error'}`,
+          finding_id: finding.id,
+          finding_title: finding.title,
+          scanner: finding.spec_snapshot?.scanner,
+          file_path: finding.spec_snapshot?.file_path,
+          worker_used: isWorkerQueueEnabled(),
+          fallback_attempted: fallback_used,
+          elapsed_s: elapsed,
+          raw_error: (call.error || '').slice(0, 500),
+        },
+        outcome: 'escalated',
+        attempt_number: 1,
+      });
+    }
+    return {
+      ok: false,
+      error: `Plan generation failed after ${elapsed}s: ${call.error || 'unknown error'}`,
+      session_id: sessionId,
+    };
+  }
+
+  console.log(
+    `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'routed-llm'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
+  );
+
+  // VTID-05077: who wrote it. The worker-queue path (claude subscription) has no
+  // router provider; it is recorded as such.
+  const routed = call as Partial<PlannerCallResult>;
+  return {
+    ok: true,
+    plan_markdown: call.text,
+    session_id: sessionId,
+    planner_provider: routed.provider ?? (isWorkerQueueEnabled() ? 'claude_subscription' : undefined),
+    planner_model: routed.model ?? (isWorkerQueueEnabled() ? PLANNING_MODEL : undefined),
+    fallback_used: Boolean(routed.fallbackUsed),
+    ...(toolStats ? { tool_stats: toolStats } : {}),
+  };
+}
+
+/** VTID-05077: one planning session's result, with who wrote the plan. */
+export interface PlanningSessionResult {
+  ok: boolean;
+  plan_markdown?: string;
+  session_id?: string;
+  error?: string;
+  planner_provider?: string;
+  planner_model?: string;
+  fallback_used?: boolean;
+  /** VTID-05078 (B4a): how the planner used its tools on this plan. */
+  tool_stats?: { tool_calls: number; tool_errors: number; tool_names: string[]; budget_exhausted: boolean; stalled: boolean };
+}
+
+// =============================================================================
+// Public API — generate a plan version
+// =============================================================================
+
+export async function generatePlanVersion(
+  findingId: string,
+  opts: { feedback_note?: string } = {},
+): Promise<PlanningResult> {
+  const supa = getSupabase();
+  if (!supa) return { ok: false, error: 'Supabase not configured' };
+
+  // 1. Load the finding
+  const recR = await supaRequest<FindingForPlanning[]>(
+    supa,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=id,title,summary,domain,risk_class,spec_snapshot&limit=1`,
+  );
+  if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
+  const finding = recR.data[0];
+  if (!finding) return { ok: false, error: 'finding not found' };
+
+  // 2. Load the previous plan version (if continue-planning)
+  let previousPlan: string | undefined;
+  let nextVersion = 1;
+  if (opts.feedback_note) {
+    const prevR = await supaRequest<Array<{ version: number; plan_markdown: string }>>(
+      supa,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&order=version.desc&limit=1`,
+    );
+    if (prevR.ok && prevR.data && prevR.data[0]) {
+      previousPlan = prevR.data[0].plan_markdown;
+      nextVersion = prevR.data[0].version + 1;
+    }
+  } else {
+    // First-time generation: only insert v1 if none exists
+    const existingR = await supaRequest<Array<{ version: number }>>(
+      supa,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&order=version.desc&limit=1`,
+    );
+    if (existingR.ok && existingR.data && existingR.data[0]) {
+      nextVersion = existingR.data[0].version + 1;
+    }
+  }
+
+  // 3. Load scope from config so the LLM can be told the hard constraints
+  // in the prompt. If the config isn't reachable, fall through with
+  // undefined — the prompt will still list the common traps.
+  let scope: { allow?: string[]; deny?: string[] } | undefined;
+  const cfgR = await supaRequest<Array<{ allow_scope: string[]; deny_scope: string[] }>>(
+    supa,
+    `/rest/v1/dev_autopilot_config?id=eq.1&select=allow_scope,deny_scope&limit=1`,
+  );
+  if (cfgR.ok && cfgR.data && cfgR.data[0]) {
+    scope = { allow: cfgR.data[0].allow_scope, deny: cfgR.data[0].deny_scope };
+  }
+
+  // VTID-04806 (Jev A3, shadow): on a first-time plan, ask whether the finding
+  // is plannable at all, in parallel with the planner — never awaited before it.
+  const plannability = !opts.feedback_note && isPlannabilityOn() ? runPlannabilityCheck({ finding }) : null;
+
+  // 4. Run the planning session
+  const initialSession = await runPlanningSession(finding, previousPlan, opts.feedback_note, scope, supa);
+  if (!initialSession.ok || !initialSession.plan_markdown) {
+    void recordPlannabilityOutcome(plannability, { ok: false, error: initialSession.error || 'planning failed' });
+    await emitOasisEvent({
+      vtid: PLAN_VTID,
+      type: 'dev_autopilot.plan.failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Plan generation failed for ${findingId}: ${initialSession.error}`,
+      payload: { finding_id: findingId, error: initialSession.error, session_id: initialSession.session_id },
+    });
+    return { ok: false, error: initialSession.error || 'planning failed' };
+  }
+  // Bind to non-undefined locals so the retry branch below can update them
+  // without losing TypeScript's narrowing across reassignment.
+  let plan_markdown: string = initialSession.plan_markdown;
+  let session_id: string | undefined = initialSession.session_id;
+  let writtenBy: { provider?: string; model?: string; fallback: boolean; toolStats?: PlanningSessionResult['tool_stats'] } = { provider: initialSession.planner_provider, model: initialSession.planner_model, fallback: Boolean(initialSession.fallback_used), toolStats: initialSession.tool_stats };
+
+  // VTID-02680: for feedback-bridged findings, the bridge has already
+  // pre-validated `proposed_files` against allow_scope/deny_scope. Trust
+  // that list directly instead of round-tripping through the planner's
+  // free-form markdown output. Eliminates dependency on the planner LLM
+  // producing a recognisable "Files to ..." section heading — which it
+  // doesn't reliably do, leading to "plan has no files_referenced" loops.
+  // For non-feedback findings, fall back to the markdown extractor.
+  const proposedFiles = (finding.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
+  const isFeedbackLane = (finding.spec_snapshot as { signal_type?: string })?.signal_type === 'feedback_ticket';
+  let files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
+    ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
+    : extractFilePaths(plan_markdown);
+
+  // VTID-AUTOPILOT-PLAN-TESTS: auto-retry-once if the plan lacks test files.
+  // The safety gate at approval time rejects any non-deletion-only plan
+  // missing a test file. The planner prompt mentions "Include test files"
+  // but the model often drops it. Catching this at plan-generation time
+  // and re-running once with explicit feedback raises first-time-pass
+  // rate substantially without burning the executor's LLM call. Skip
+  // when:
+  //   - This is already a continue-planning call (opts.feedback_note set).
+  //     A second forced retry on top of a human-driven retry would silently
+  //     overwrite the human's feedback intent.
+  //   - All listed files are tests (e.g., "missing tests" findings whose
+  //     scope IS test files only).
+  //   - All listed files are deletions only (no isDeletion check yet — use
+  //     a markdown heuristic on "## Files to delete" presence as a proxy).
+  const looksDeletionsOnly = /##\s*Files\s+to\s+(?:delete|remove)/i.test(plan_markdown)
+    && !/##\s*Files\s+to\s+(?:modify|touch|change|edit|create|add)/i.test(plan_markdown);
+  const hasTestFile = files_referenced.some(p => isTestFile(p));
+  if (!hasTestFile && !looksDeletionsOnly && !opts.feedback_note && files_referenced.length > 0) {
+    console.log(
+      `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} lacks test files — auto-retrying once with explicit feedback`,
+    );
+    const testFeedback = `Your previous plan listed ${files_referenced.length} file(s) but no test file. The safety gate REQUIRES at least one test file when the plan makes any non-deletion edits. Test files end in \`.test.ts\` / \`.test.tsx\` / \`.spec.ts\`. Regenerate the plan adding the matching co-located test file (or a new one under \`services/gateway/test/\` or \`services/gateway/tests/\`) and include it in the "Files to modify" section.`;
+    const retrySession = await runPlanningSession(finding, plan_markdown, testFeedback, scope, supa);
+    if (retrySession.ok && retrySession.plan_markdown) {
+      plan_markdown = retrySession.plan_markdown;
+      session_id = retrySession.session_id;
+      writtenBy = { provider: retrySession.planner_provider, model: retrySession.planner_model, fallback: Boolean(retrySession.fallback_used), toolStats: retrySession.tool_stats };
+      files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
+        ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
+        : extractFilePaths(plan_markdown);
+      const retryHasTest = files_referenced.some(p => isTestFile(p));
+      console.log(
+        `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} retry result: ${files_referenced.length} files, hasTest=${retryHasTest}`,
+      );
+    } else {
+      console.warn(
+        `${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} retry failed: ${retrySession.error} — proceeding with original plan (safety gate may block)`,
+      );
+    }
+  }
+  if (isFeedbackLane && Array.isArray(proposedFiles)) {
+    console.log(`${LOG_PREFIX} feedback finding ${findingId}: using bridge-validated files (${files_referenced.length}) instead of planner extraction`);
+  }
+  // VTID-05078 (Phase B, B3/B4): every path in "Files to modify" must exist at
+  // main or be marked "(new)", and must not be denied; one revision round with
+  // the reasons, then the plan fails with them. A community-app path routes
+  // the plan to a human (the executor only changes vitana-platform).
+  const bridgeValidated = isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0;
+  let pathEntries = bridgeValidated ? [] : readPlanPathEntries(plan_markdown);
+  if (pathEntries.length > 0) {
+    const deny = applyScannerOverrides(scope?.allow || [], scope?.deny || [], finding.spec_snapshot?.scanner).effectiveDeny;
+    let check = await checkPlanPaths(pathEntries, { deny, exists: planPathExists });
+    if (!check.ok && !opts.feedback_note) {
+      console.log(`${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} failed path validation (${check.problems.length}) — one revision round`);
+      const revision = await runPlanningSession(finding, plan_markdown, pathFeedback(check.problems), scope, supa);
+      if (revision.ok && revision.plan_markdown) {
+        plan_markdown = revision.plan_markdown;
+        session_id = revision.session_id;
+        writtenBy = { provider: revision.planner_provider, model: revision.planner_model, fallback: Boolean(revision.fallback_used), toolStats: revision.tool_stats };
+        files_referenced = extractFilePaths(plan_markdown);
+        pathEntries = readPlanPathEntries(plan_markdown);
+        check = await checkPlanPaths(pathEntries, { deny, exists: planPathExists });
+      }
+    }
+    if (!check.ok) {
+      void recordPlannabilityOutcome(plannability, { ok: false, error: 'path validation failed' });
+      const error = `Plan failed path validation: ${check.problems.join('; ')}`;
+      await emitOasisEvent({
+        vtid: PLAN_VTID,
+        type: 'dev_autopilot.plan.failed',
+        source: 'dev-autopilot',
+        status: 'error',
+        message: `Plan generation failed for ${findingId}: ${error}`.slice(0, 1000),
+        payload: { finding_id: findingId, error, path_problems: check.problems, session_id },
+      });
+      return { ok: false, error };
+    }
+    if (check.communityApp) {
+      // The executor cannot change exafyltd/vitana-v1: no files to execute, so
+      // the safety gate keeps this plan in the human queue.
+      files_referenced = [];
+      plan_markdown = `> **Needs a human:** this plan changes \`exafyltd/vitana-v1\`, which the Dev Autopilot cannot change. It stays in the queue for a developer.\n\n${plan_markdown}`;
+      await emitOasisEvent({
+        vtid: PLAN_VTID,
+        type: 'dev_autopilot.plan.needs_human',
+        source: 'dev-autopilot',
+        status: 'info',
+        message: `Plan v${nextVersion} for ${findingId} changes exafyltd/vitana-v1 — routed to a human`,
+        payload: { finding_id: findingId, version: nextVersion, reason: 'community_app_change' },
+      });
+    }
+  }
+
+  const plan_html = renderPlanHtml(plan_markdown);
+
+  // 4. Persist plan version
+  const insertR = await supaRequest(supa, '/rest/v1/dev_autopilot_plan_versions', {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      finding_id: findingId,
+      version: nextVersion,
+      plan_markdown,
+      plan_html,
+      planning_session_id: session_id,
+      feedback_note: opts.feedback_note || null,
+      files_referenced,
+      planner_provider: writtenBy.provider ?? null,
+      planner_model: writtenBy.model ?? null,
+    }),
+  });
+  if (!insertR.ok) {
+    void recordPlannabilityOutcome(plannability, { ok: false, error: 'plan insert failed' });
+    return { ok: false, error: `plan insert failed: ${insertR.error}` };
+  }
+  void recordPlannabilityOutcome(plannability, { ok: true, files: files_referenced.length });
+
+  await emitOasisEvent({
+    vtid: PLAN_VTID,
+    type: nextVersion === 1 ? 'dev_autopilot.plan.generated' : 'dev_autopilot.plan.version_added',
+    source: 'dev-autopilot',
+    status: 'success',
+    message: `Plan v${nextVersion} generated for ${findingId} (${files_referenced.length} files cited)`,
+    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null, fallback_used: writtenBy.fallback, tool_stats: writtenBy.toolStats ?? null },
+  });
+
+  // VTID-05077 (A2): the fallback is allowed but never silent.
+  if (writtenBy.fallback) {
+    await emitOasisEvent({
+      vtid: PLAN_VTID,
+      type: 'dev_autopilot.plan.fallback_used',
+      source: 'dev-autopilot',
+      status: 'warning',
+      message: `Plan v${nextVersion} for ${findingId} was written by the fallback ${writtenBy.provider}/${writtenBy.model}, not the primary planner`,
+      payload: { finding_id: findingId, version: nextVersion, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null },
+    });
+  }
+
+  return {
+    ok: true,
+    plan: {
+      finding_id: findingId,
+      version: nextVersion,
+      plan_markdown,
+      plan_html,
+      planning_session_id: session_id,
+      feedback_note: opts.feedback_note,
+      files_referenced,
+    },
+  };
+}
+
+// =============================================================================
+// Eager top-K planning — called from synthesis after Stage A ingest
+// =============================================================================
+
+export async function eagerlyPlanTopK(runId: string, k: number): Promise<{ planned: number; errors: number }> {
+  const supa = getSupabase();
+  if (!supa) return { planned: 0, errors: 0 };
+
+  // Pick newly-inserted findings from this run, ordered by impact desc × risk_class
+  // (risk=low ranks above medium above high because high is ineligible anyway;
+  // the UI still shows them, but we don't waste tokens planning them eagerly).
+  const r = await supaRequest<Array<{ id: string; risk_class: string | null }>>(
+    supa,
+    `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot&source_run_id=eq.${runId}&status=eq.new&risk_class=in.(low,medium)&order=impact_score.desc&limit=${k}&select=id,risk_class`,
+  );
+  if (!r.ok || !r.data) return { planned: 0, errors: 0 };
+
+  let planned = 0;
+  let errors = 0;
+  for (const row of r.data) {
+    const result = await generatePlanVersion(row.id);
+    if (result.ok) planned++; else errors++;
+  }
+  return { planned, errors };
+}
+
+// =============================================================================
+// Exports
+// =============================================================================
+
+export { buildStubPlan, LOG_PREFIX };

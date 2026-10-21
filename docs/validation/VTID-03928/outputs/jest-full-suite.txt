@@ -1,0 +1,17 @@
+  ✓ several exact matches → entity_ambiguous with candidates, never a pick
+  ✓ no match → entity_not_found; a near miss is not a match (1 ms)
+  ✓ ref and id both present → entity_ref_conflict; lookup failure surfaces; no refs → passthrough (1 ms)
+  ✓ account_ref matches on number or name
+
+PASS test/services/notification-service-user-prefs-error-logging.test.ts
+  notification-service.ts — getUserPrefs query error logging
+    ✓ destructures `error` from fetchUserNotificationPreferences and logs a non-PGRST116 error (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 905 passed, 905 of 906 total
+Tests:       29 skipped, 6 todo, 14978 passed, 15013 total
+Snapshots:   44 passed, 44 total
+Time:        67.177 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

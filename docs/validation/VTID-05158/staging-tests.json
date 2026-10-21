@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05158",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/scripts/check-migration-drift.test.ts",
+      "cwd": "services/gateway",
+      "reason": "A1 deploys nothing: two SQL migrations (the health store is Aurora-only and applied nowhere by merge; the erase_user_data() fix is applied only after its own Gate 2), CI guards, SQL tests on a throwaway Postgres (SQL-HEALTH-STORE, SQL-ERASE-USER-DATA), a capacity-model script and docs. No file under services/gateway changes, so no staging runtime path exists; the drift parser suite still loads the changed checker."
+    }
+  ]
+}

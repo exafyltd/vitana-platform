@@ -1,0 +1,8 @@
+# VTID-04007 — commands run (Claude Code session, 2026-09-17)
+npx jest test/vtid-04007-open-ended-intake.test.ts test/vtid-04005-onramp-vtid-self-allocate.test.ts \
+         test/vtid-03838-operator-prompt-lists-execute-tool.test.ts test/vtid-03851-execute-task-requires-auth.test.ts \
+         test/vtid-03820-onramp-staging-flag-pinned.test.ts test/autopilot-agent-scope-validate.test.ts \
+         test/vtid-03835-operator-console-read-tools.test.ts                 -> 7 suites, 84 tests passing
+npx jest <every operator*/onramp*/autopilot-agent*/pr-contract/personality suite, 31 files>   -> 31 suites, 319 passed, 2 skipped (pre-existing)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json  -> exit 0
+NOT run here: Test Run #5 on staging (needs OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true on the staging gateway — owner flip).

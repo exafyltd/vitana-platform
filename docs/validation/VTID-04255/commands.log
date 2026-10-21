@@ -1,0 +1,24 @@
+VTID-04255 — commands actually run, this session, on this branch's exact head
+
+1. cd services/gateway && npx jest test/services/conversation/compute-greeting-decision.golden.test.ts
+   -> Test Suites: 1 passed, 1 total
+   -> Tests:       66 passed, 66 total
+   -> Snapshots:   32 passed, 32 total
+   Full output: outputs/jest-golden-suite.log
+
+2. cd services/gateway && npx tsc --noEmit
+   -> exit code 0 (clean, no output)
+   Full output: outputs/tsc-noemit.log
+
+Model/executor: this Claude Code session (claude-sonnet-5), no LLM API call
+involved in producing this diff — it is a hand-written code fix reviewed and
+tested directly against the source.
+
+Scope: two files changed —
+  services/gateway/src/services/conversation/compute-greeting-decision.ts
+  services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+
+No migration, no route, no deploy-workflow change in this PR (the separate
+ALERT-NEWDAY-BRIEFING-LOOP.yml watchdog added in the same PR is a new
+.github/workflows/ file, outside this gate's remit per VTID-03696 — it is
+not part of the gateway_backend evidence surface this pack covers).

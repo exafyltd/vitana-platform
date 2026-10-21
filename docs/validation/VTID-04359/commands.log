@@ -1,0 +1,9 @@
+# VTID-04359 — commands run (local, services/gateway)
+npx tsc --noEmit                                                       # exit 0
+npx jest test/vtid-04359-support-followups.test.ts \
+         test/orb-tools/feedback-settings-tools.test.ts \
+         test/vtid-04312-feedback-reporter-notify.test.ts \
+         test/feedback-pipeline.test.ts                                # 4 suites, 69 tests passed
+npx jest test/orb/live/characterization -u                             # 4 snapshots updated: only the "at least N words" wording
+npx jest                                                               # 1100 suites passed / 1 skipped; 17835 tests passed, 29 skipped, 0 failed
+# Not run live: staging ECS is blocked by the AWS account block (serves e09eb26).

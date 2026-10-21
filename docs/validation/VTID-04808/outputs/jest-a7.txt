@@ -1,0 +1,5 @@
+PASS test/vtid-04808-pr-clash.test.ts
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.496 s)
+Test Suites: 3 passed, 3 total
+Tests:       52 passed, 52 total

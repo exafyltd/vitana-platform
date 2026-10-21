@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-04025",
+  "wave": "W4c (memory that accrues)",
+  "kill_switch": "OPERATOR_TURN_MEMORY_ENABLED=true (exact string; default off; not pinned anywhere)",
+  "producers": {
+    "operator_turn": {
+      "hook": "routes/operator.ts after processWithGemini — fire-and-forget, off the reply's critical path",
+      "skip": "no model call when the user text or reply is empty, or the reply is < 160 chars with no tool call",
+      "stage": "callViaRouter('memory', prompt, { service: 'operator-turn-memory', maxTokens: 700 })",
+      "categories": ["decision", "convention", "incident", "preference", "gotcha"],
+      "never": "task_outcome (owned by VTID-03928's tool-outcome writer and by the executor)",
+      "bounds": { "items_per_turn": 3, "title_chars": 160, "content_chars": 600, "importance": "10-90 (default 50)" },
+      "write": { "repo": "vitana-platform", "source": "session", "tags": ["operator-console", "turn-extracted", "<category>"], "vtid": "from the item, the text, or the route's validated VTID", "content_suffix": "(Operator Console thread <8 chars>, extracted from the turn by VTID-04025.)" }
+    },
+    "executor_run": {
+      "hook": "dev-autopilot-execute.ts applyExecutionResult — after the OASIS event on both branches, fire-and-forget",
+      "pr_opened": { "category": "task_outcome", "importance": 40, "tags": ["dev-autopilot", "execution", "pr_opened"] },
+      "failed": { "category": "gotcha", "importance": 55, "tags": ["dev-autopilot", "execution", "failed"], "content": "the failure reason (carries the W0 CI log excerpt when the failure came from CI)" },
+      "source": "autopilot"
+    }
+  },
+  "failure_posture": "fail-open: extractor/router/write failures are logged and never reach the reply or the execution row",
+  "oasis_impact": "none",
+  "next_signal": "[operator-turn-memory] thread …: N memory row(s) written in the staging gateway log; turn-extracted rows in dev_agent_memory"
+}

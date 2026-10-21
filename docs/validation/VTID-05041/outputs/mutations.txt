@@ -1,0 +1,7 @@
+# mutation: no_revoke
+psql:…/no_revoke.sql:186: ERROR:  VTID-05041: recall_at_time_range(uuid,timestamp with time zone,timestamp with time zone,text) must not be executable by members (authenticated/anon)
+exit=1
+# mutation: email_back
+order guard: S2 refused before VTID-04981 and rolled back
+psql:…/email_back.sql:186: ERROR:  VTID-05041: get_user_profile_by_identifier must not return email
+exit=3

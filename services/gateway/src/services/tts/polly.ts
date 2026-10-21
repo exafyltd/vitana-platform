@@ -1,0 +1,362 @@
+/**
+ * VTID-03495 — Amazon Polly TTS provider.
+ *
+ * First of the four provider replacements that must exist before a GCP
+ * shutdown is possible (Polly → Titan image gen → Bedrock vision/tool-calling
+ * → Nova Sonic promotion). This module is the Polly half; provider SELECTION
+ * lives in `tts-provider.ts` and is gated on `TTS_PROVIDER`, default `google`.
+ * Importing this file changes nothing on its own.
+ *
+ * Three things about Polly differ materially from Google Cloud TTS and are
+ * handled explicitly here rather than papered over:
+ *
+ * 1. **PCM sample rate.** Cloud TTS will emit LINEAR16 at any rate; the
+ *    greeting bridge asks for 24kHz. Polly's `pcm` output format supports
+ *    ONLY 8000 and 16000 Hz. We emit 16000 and report it back to the caller
+ *    so the `audio/pcm;rate=` mime the widget reads stays truthful — the rate
+ *    is negotiated, never assumed (see `orb-live.ts` ~L8966).
+ *
+ * 2. **Speaking rate.** Cloud TTS takes `speakingRate` as a request field.
+ *    Polly has no equivalent — rate is expressed via SSML `<prosody rate>`,
+ *    so any non-1.0 rate forces `TextType: 'ssml'` and the input text must be
+ *    XML-escaped. At rate 1.0 we send plain text and skip SSML entirely.
+ *
+ * 3. **Serbian is not supported by Polly at all.** Cloud TTS has
+ *    `sr-RS-Standard-A`; Polly has no Serbian voice in any engine. `sr` is a
+ *    live locale for this platform (CLAUDE.md §13b lists DE/EN/ES/SR), so
+ *    this is a real coverage regression, not a rounding error. Rather than
+ *    silently substituting another language's voice — which would emit
+ *    confident, fluent, WRONG-language audio to a Serbian user —
+ *    `resolvePollyVoice()` returns null for `sr` and the caller falls back to
+ *    Google (or degrades to no audio if Google is gone). See
+ *    `POLLY_UNSUPPORTED_LANGS`.
+ *
+ *    **`sr` is therefore the one hard blocker on switching Google TTS off
+ *    entirely.** Everything else this platform ships now has a Polly voice.
+ *
+ * VTID-03578 — coverage against the 9 release locales after the language
+ * expansion, so the table is checkable against something rather than being a
+ * list that happens to exist:
+ *
+ *   de en es fr pt pl ru zh  → Polly voice below
+ *   sr                       → no voice in any engine; falls back to Google
+ *
+ * `ar` is also present here though it is not yet a release locale.
+ *
+ * Voice/engine pairs below are pinned per-language. `Engine` is always sent
+ * explicitly, satisfying CLAUDE.md's "IF TTS is used → THEN specify
+ * model_name explicitly" rule — Polly's `Engine` is that knob.
+ *
+ * NOTE: the voice/engine table and the Serbian gap were derived from Polly's
+ * documented voice list, NOT verified against the live API — this session had
+ * no working AWS credentials. `scripts/tts/verify-polly-voices.ts` exists to
+ * confirm both against `DescribeVoices` before anyone flips `TTS_PROVIDER`.
+ */
+
+import {
+  PollyClient,
+  SynthesizeSpeechCommand,
+  type Engine,
+  type OutputFormat,
+  type VoiceId,
+} from '@aws-sdk/client-polly';
+
+export interface PollyVoiceConfig {
+  /** Polly VoiceId, e.g. 'Vicki'. */
+  voiceId: VoiceId;
+  /** Explicit engine — never left to Polly's default. */
+  engine: Engine;
+  /** Polly language code, for logging/telemetry parity with Cloud TTS. */
+  languageCode: string;
+}
+
+/**
+ * Languages this platform speaks that Polly cannot. Kept as an explicit,
+ * named constant so the gap is greppable rather than an absence in a table.
+ */
+export const POLLY_UNSUPPORTED_LANGS: ReadonlySet<string> = new Set(['sr']);
+
+/**
+ * Language → Polly voice. Female voices throughout, matching the existing
+ * Cloud TTS selections (Neural2-F / Kore).
+ *
+ * `ru` is standard-engine only — Polly has no neural Russian voice. That is a
+ * quality step down from `ru-RU-Wavenet-A`, flagged rather than hidden.
+ */
+const POLLY_VOICES: Record<string, PollyVoiceConfig> = {
+  en: { voiceId: 'Joanna' as VoiceId, engine: 'neural' as Engine, languageCode: 'en-US' },
+  de: { voiceId: 'Vicki' as VoiceId, engine: 'neural' as Engine, languageCode: 'de-DE' },
+  fr: { voiceId: 'Lea' as VoiceId, engine: 'neural' as Engine, languageCode: 'fr-FR' },
+  es: { voiceId: 'Lucia' as VoiceId, engine: 'neural' as Engine, languageCode: 'es-ES' },
+  ar: { voiceId: 'Hala' as VoiceId, engine: 'neural' as Engine, languageCode: 'ar-AE' },
+  zh: { voiceId: 'Zhiyu' as VoiceId, engine: 'neural' as Engine, languageCode: 'cmn-CN' },
+  ru: { voiceId: 'Tatyana' as VoiceId, engine: 'standard' as Engine, languageCode: 'ru-RU' },
+  // VTID-03578. Both added when `pt`/`pl` went live as release locales. Until
+  // then they were absent from this table AND absent from the unsupported set,
+  // so they took the English fallback below — a Portuguese user would have been
+  // read to in English by a `neural` voice that sounded entirely healthy.
+  //
+  // `pt` is pinned to pt-BR, not pt-PT: the UI catalog is Brazilian (VTID-03576),
+  // and Polly's pt-PT voice (Inês) would speak the European variant over
+  // Brazilian text. Camila is the neural pt-BR female voice, matching the
+  // female-throughout convention above.
+  pt: { voiceId: 'Camila' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
+  // Ola is Polly's only NEURAL Polish voice; Ewa/Maja are standard-engine.
+  pl: { voiceId: 'Ola' as VoiceId, engine: 'neural' as Engine, languageCode: 'pl-PL' },
+  // VTID-03719. Turkish had NO entry here and NO entry in
+  // POLLY_UNSUPPORTED_LANGS — the exact undeclared gap this file's own
+  // pt/pl comment above warns about: `resolvePollyVoice('tr')` fell through
+  // to the caller's `?? POLLY_VOICES['en']` fallback, so Turkish users were
+  // silently served English audio by Joanna with no error. Burcu, NOT Filiz:
+  // `aws polly describe-voices --language-code tr-TR` (eu-central-1) lists
+  // both — Filiz is standard-only, Burcu supports `neural`, matching this
+  // table's preference for neural everywhere Polly offers it. Confirmed
+  // live via `synthesize-speech --engine neural --voice-id Burcu` (real PCM
+  // bytes back), not assumed from the voice listing alone (§2b's own
+  // ACTIVE-does-not-mean-invokable lesson, same discipline applied here).
+  tr: { voiceId: 'Burcu' as VoiceId, engine: 'neural' as Engine, languageCode: 'tr-TR' },
+};
+
+/**
+ * VTID-04336 — which persona a synthesis request speaks for. `receptionist`
+ * (the default, and every existing caller) is Vitana: `POLLY_VOICES` above,
+ * byte-for-byte unchanged. `specialist` is the hand-off colleague (Devon, the
+ * only enabled specialist — male, registry voice `Charon`) on the cascade
+ * voice path, where there is no Nova/Gemini voice to switch to.
+ */
+export type PollyVoiceRole = 'receptionist' | 'specialist';
+
+/**
+ * VTID-04336 — the specialist's voice per language: the male counterpart of
+ * the female receptionist voice above, same language code, so a member hears
+ * a different colleague pick up after the hand-off.
+ *
+ * Deliberately ABSENT, because Polly has no male voice in that language at
+ * all: `zh` (cmn-CN has only Zhiyu) and `tr` (Burcu and Filiz, both female).
+ * VTID-04445 (owner rule: every Devon voice is a man's voice) — Devon speaks
+ * those languages with the male Fish Official voices (`fish.ts`,
+ * `FISH_SPECIALIST_VOICES`), never with the receptionist's female voice, and
+ * when Fish is not configured the hand-off does not happen at all
+ * (`specialist-voice-availability.ts`). Never substitute another language's
+ * voice to manufacture a difference.
+ *
+ * `ru` (Maxim) and `pl` (Jacek) are standard-engine only — the same quality
+ * floor `ru`'s receptionist voice already has; Polly has no neural male voice
+ * in either language.
+ *
+ * VERIFIED against the live API 2026-09-23 (VTID-04445): every id below
+ * exists in `DescribeVoices` (eu-central-1) with `Gender: Male` and supports
+ * its pinned engine; every `POLLY_VOICES` id above reports `Gender: Female`.
+ * A failed specialist synthesis is retried once with the SAME male voice and
+ * never falls back to the receptionist voice (`cascaded/tts-backend.ts`).
+ */
+const POLLY_SPECIALIST_VOICES: Record<string, PollyVoiceConfig> = {
+  en: { voiceId: 'Matthew' as VoiceId, engine: 'neural' as Engine, languageCode: 'en-US' },
+  de: { voiceId: 'Daniel' as VoiceId, engine: 'neural' as Engine, languageCode: 'de-DE' },
+  fr: { voiceId: 'Remi' as VoiceId, engine: 'neural' as Engine, languageCode: 'fr-FR' },
+  es: { voiceId: 'Sergio' as VoiceId, engine: 'neural' as Engine, languageCode: 'es-ES' },
+  ar: { voiceId: 'Zayd' as VoiceId, engine: 'neural' as Engine, languageCode: 'ar-AE' },
+  ru: { voiceId: 'Maxim' as VoiceId, engine: 'standard' as Engine, languageCode: 'ru-RU' },
+  pt: { voiceId: 'Thiago' as VoiceId, engine: 'neural' as Engine, languageCode: 'pt-BR' },
+  pl: { voiceId: 'Jacek' as VoiceId, engine: 'standard' as Engine, languageCode: 'pl-PL' },
+};
+
+/**
+ * Polly's `pcm` OutputFormat accepts only 8000 or 16000 Hz. The greeting
+ * bridge's Cloud TTS path uses 24000; callers must read the rate off the
+ * synthesis result rather than assuming either value.
+ */
+export const POLLY_PCM_SAMPLE_RATE_HZ = 16_000;
+
+export function normalizeLang(input: string): string {
+  return (input || 'en').toLowerCase().split(/[-_]/)[0].slice(0, 2) || 'en';
+}
+
+/**
+ * Resolve a Polly voice for `lang`, or null when Polly cannot serve it.
+ *
+ * Returns null (rather than an English fallback) for unsupported languages
+ * on purpose: emitting fluent audio in the wrong language is a worse failure
+ * than emitting none, because it is not self-evidently broken to the caller.
+ *
+ * VTID-03578: that principle used to be stated here and then contradicted on
+ * the next line, which ended `?? POLLY_VOICES['en']` — so `sr` was refused
+ * while every OTHER unlisted language got confident English audio. The two
+ * that actually hit it were `pt` and `pl`, both live release locales. An
+ * unlisted language now returns null like `sr` does, so the caller's existing
+ * "null means fall back / degrade" contract covers the whole gap rather than
+ * one hand-picked entry of it.
+ */
+export function resolvePollyVoice(lang: string): PollyVoiceConfig | null {
+  const normalized = normalizeLang(lang);
+  if (POLLY_UNSUPPORTED_LANGS.has(normalized)) return null;
+  return POLLY_VOICES[normalized] ?? null;
+}
+
+/**
+ * VTID-04336 — the specialist's Polly voice for `lang`, or null when Polly
+ * has no distinct specialist voice there (see `POLLY_SPECIALIST_VOICES`).
+ * Null means "use the receptionist voice", never another language's voice.
+ */
+export function resolvePollySpecialistVoice(lang: string): PollyVoiceConfig | null {
+  const normalized = normalizeLang(lang);
+  if (POLLY_UNSUPPORTED_LANGS.has(normalized)) return null;
+  return POLLY_SPECIALIST_VOICES[normalized] ?? null;
+}
+
+/** Test/verification seam: the specialist table, read-only. */
+export function listPollySpecialistVoices(): Readonly<Record<string, PollyVoiceConfig>> {
+  return POLLY_SPECIALIST_VOICES;
+}
+
+/** XML-escape text destined for an SSML payload. */
+export function escapeSsml(text: string): string {
+  return text
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+/**
+ * Wrap `text` in SSML with a prosody rate, or return it unchanged when the
+ * rate is effectively 1.0 (Polly is happy with plain text and it avoids a
+ * whole class of escaping bugs on the common path).
+ */
+export function buildPollyInput(
+  text: string,
+  speakingRate: number,
+): { text: string; textType: 'text' | 'ssml' } {
+  const rate = Number.isFinite(speakingRate) && speakingRate > 0 ? speakingRate : 1;
+  if (Math.abs(rate - 1) < 0.01) return { text, textType: 'text' };
+  const pct = Math.round(rate * 100);
+  return {
+    text: `<speak><prosody rate="${pct}%">${escapeSsml(text)}</prosody></speak>`,
+    textType: 'ssml',
+  };
+}
+
+let pollyClient: PollyClient | null = null;
+
+/**
+ * Region resolution mirrors the Bedrock adapter's precedence
+ * (CLAUDE.md §2b): explicit override → generic AWS region → eu-central-1,
+ * the only region with Vitana AWS infrastructure.
+ */
+export function getPollyRegion(): string {
+  return process.env.AWS_POLLY_REGION || process.env.AWS_REGION || 'eu-central-1';
+}
+
+function getPollyClient(): PollyClient {
+  if (!pollyClient) {
+    pollyClient = new PollyClient({ region: getPollyRegion() });
+  }
+  return pollyClient;
+}
+
+/** Test seam — drop the memoized client so a new region/credential set applies. */
+export function resetPollyClientForTests(): void {
+  pollyClient = null;
+}
+
+export interface PollySynthesisResult {
+  /** Base64 audio. For 'pcm' this is headerless LINEAR16 (Polly sends no WAV header). */
+  audioB64: string;
+  /** Actual sample rate of the returned audio — authoritative, never assumed. */
+  sampleRateHz: number;
+  /** Voice actually used, for telemetry parity with the Cloud TTS path. */
+  voice: string;
+  engine: string;
+  languageCode: string;
+}
+
+/**
+ * Synthesize `text` via Polly.
+ *
+ * Returns null when Polly cannot serve the request (unsupported language,
+ * missing credentials, API error) so every caller keeps the same
+ * "null means fall back / degrade" contract the Cloud TTS helpers already use.
+ */
+export async function synthesizePolly(opts: {
+  text: string;
+  lang: string;
+  format: 'mp3' | 'pcm';
+  speakingRate?: number;
+  /**
+   * VTID-04336 — omitted (every pre-existing caller) = receptionist voice,
+   * unchanged. `specialist` resolves `POLLY_SPECIALIST_VOICES` and returns
+   * null when that language has no specialist voice; the caller decides
+   * whether to retry with the receptionist voice.
+   */
+  voiceRole?: PollyVoiceRole;
+  /**
+   * VTID-05026 — an explicit voice, used instead of the receptionist or
+   * specialist table (the Audiobook voice table passes its own entry). Omitted
+   * by every other caller, whose request is byte-identical to before. An
+   * invalid voice/engine pair makes Polly reject the request, which returns
+   * null like any other failure — never a different voice.
+   */
+  voiceOverride?: PollyVoiceConfig;
+}): Promise<PollySynthesisResult | null> {
+  const { text, lang, format } = opts;
+  if (!text || text.trim().length === 0) return null;
+
+  const voice = opts.voiceOverride
+    ? opts.voiceOverride
+    : opts.voiceRole === 'specialist'
+      ? resolvePollySpecialistVoice(lang)
+      : resolvePollyVoice(lang);
+  if (!voice && opts.voiceRole === 'specialist') {
+    console.warn(`[POLLY] No specialist voice for lang='${normalizeLang(lang)}' — caller keeps the receptionist voice.`);
+    return null;
+  }
+  if (!voice) {
+    // Name BOTH reasons a lang can land here — explicitly unsupported, or
+    // simply not in the voice table — because they need different fixes and
+    // the log line is the only place anyone will see which one happened.
+    const n = normalizeLang(lang);
+    const why = POLLY_UNSUPPORTED_LANGS.has(n)
+      ? 'Polly has no voice for this language in any engine'
+      : 'no entry in POLLY_VOICES — add one, or add it to POLLY_UNSUPPORTED_LANGS';
+    console.warn(`[POLLY] No Polly voice for lang='${n}' (${why}) — caller must fall back.`);
+    return null;
+  }
+
+  const { text: input, textType } = buildPollyInput(text, opts.speakingRate ?? 1);
+  // Polly rejects SSML on some standard-engine voices' newer features; the
+  // prosody tag used here is supported on both engines, so no branch needed.
+  const sampleRateHz = format === 'pcm' ? POLLY_PCM_SAMPLE_RATE_HZ : 24_000;
+
+  try {
+    const res = await getPollyClient().send(
+      new SynthesizeSpeechCommand({
+        Text: input,
+        TextType: textType,
+        VoiceId: voice.voiceId,
+        Engine: voice.engine,
+        LanguageCode: voice.languageCode as never,
+        OutputFormat: format as OutputFormat,
+        SampleRate: String(sampleRateHz),
+      }),
+    );
+
+    if (!res.AudioStream) return null;
+    // AudioStream is a stream in Node; the SDK exposes transformToByteArray().
+    const bytes = await (
+      res.AudioStream as unknown as { transformToByteArray(): Promise<Uint8Array> }
+    ).transformToByteArray();
+    if (!bytes || bytes.length === 0) return null;
+
+    return {
+      audioB64: Buffer.from(bytes).toString('base64'),
+      sampleRateHz,
+      voice: String(voice.voiceId),
+      engine: String(voice.engine),
+      languageCode: voice.languageCode,
+    };
+  } catch (err) {
+    console.warn(`[POLLY] Synthesis failed (lang=${lang}, format=${format}):`, (err as Error).message);
+    return null;
+  }
+}

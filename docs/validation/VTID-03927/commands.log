@@ -1,0 +1,65 @@
+# VTID-03927 — commands actually run.
+
+# --- Investigation (prior conversation turn) -----------------------------
+
+# Answering "does the Operator communicate status to me step by step" by
+# reading the real code, not assuming:
+
+grep -n "channel:\|req.query" services/gateway/src/routes/events.ts
+#   -> doc comment claims a `channel` filter; handler only reads
+#      req.query.topic and req.query.vtid. channel is dead code.
+
+grep -n "surface:" services/gateway/src/routes/conversation.ts \
+  services/gateway/src/routes/tenant-specialists.ts
+#   -> 'surface' is a real, already-populated oasis_events column carrying
+#      exactly the literal values 'operator'/'orb' — the right column for
+#      the channel filter to map onto, not a new invented one.
+
+sed -n '195,285p' services/gateway/src/lib/stage-mapping.ts
+#   -> buildStageTimeline()'s SUCCESS branch: `sorted.find(predicate) ||
+#      lastEvent` on an ASCENDING-sorted array picks the FIRST match, not
+#      the last — a later completion event never updates completedAt.
+
+grep -n "inferTaskStageFromType" -A 15 services/gateway/src/services/oasis-event-service.ts
+#   -> keyword list has no match for 'operator.planner.sweep_completed';
+#      emitOasisEvent() never writes kind/title columns either, so
+#      buildStageTimeline()'s content-inference fallback has nothing to
+#      match against for this event type.
+
+# --- Fix -------------------------------------------------------------
+
+# services/gateway/src/routes/events.ts
+#   channel=<x> now appends &surface=eq.<x> to the oasis_events query.
+
+# services/gateway/src/lib/stage-mapping.ts
+#   completedEvent lookup: sorted.find(...) -> [...sorted].reverse().find(...)
+
+# services/gateway/src/services/operator-planner.ts
+#   emitOasisEvent({...}) for operator.planner.sweep_completed now sets
+#   task_stage: 'PLANNER' explicitly.
+
+# --- Verification ------------------------------------------------------
+
+cd services/gateway
+
+npx jest test/events-stream-channel-filter.test.ts test/stage-mapping.test.ts test/operator-planner.test.ts --runInBand
+#   -> 3/3 suites, 32/32 tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check on the stage-mapping fix: reverted
+# `[...sorted].reverse().find(...)` back to `sorted.find(...)`, re-ran the
+# new AC-4 test -- confirmed it fails (received the draft timestamp
+# instead of the approval timestamp). Restored the fix, re-ran -- green
+# again, full 19/19 stage-mapping.test.ts suite unaffected.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules — declared in package.json,
+#      not referenced by any file this VTID touches). Zero errors in
+#      events.ts / stage-mapping.ts / operator-planner.ts or their tests.
+#      (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite: 894/905 suites passing (11 pre-existing failures, same
+#      2 missing-module root cause as above; 1 pre-existing skip),
+#      14709/14755 tests passing, 0 failures in any file this VTID
+#      touched. (outputs/full-suite.txt)

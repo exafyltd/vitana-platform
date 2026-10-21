@@ -1,0 +1,8 @@
+## Staging reproduction (test user, own rows only)
+node orb-session.mjs sessionA u1.raw u2.raw  -> 3 turns, stop 200; memory_facts +5 (user_stated), memory_items session_summary (Titan V2)
+node orb-session.mjs sessionB u3.raw u4.raw  -> model: "I don't have access to personal information about family members..."
+orb.live.diag instruction_budget (live-bb7642e1): section_bytes {scaffold: 32919, bootstrap: 12072}, budget_bytes 30720, trimmed_sections [bootstrap], still_over_budget true
+## Local
+npx jest test/orb/live/instruction -> 292 passed
+npx jest test/orb test/routes/vtid-04525-conversation-hub-phase-a-routes.test.ts test/vitana-brain-cache.test.ts -> 241 suites, 4037 passed (one 04525 pin updated to the per-provider budget)
+npx tsc --noEmit -> clean

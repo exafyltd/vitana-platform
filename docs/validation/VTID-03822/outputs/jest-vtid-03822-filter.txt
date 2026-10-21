@@ -1,0 +1,33 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03822-operator-chat-threads.test.ts
+  Multi-thread conversation state (VTID-03822)
+    ✓ state carries operatorThreads and operatorActiveThreadId (3 ms)
+    ✓ defines the thread-index and per-thread-history localStorage keys (1 ms)
+    ✓ migrateOperatorHistoryToThreads() no-ops once threads already exist and otherwise wraps legacy history into thread 1
+    ✓ startNewOperatorThread() creates a fresh thread, clears legacy single-thread keys, and re-renders
+    ✓ switchOperatorThread() restores the target thread's saved history into chatMessages (1 ms)
+    ✓ initOperatorChatSession() is idempotent per session load (guards on operatorActiveThreadId) (1 ms)
+    ✓ sendChatMessage saves both the user and assistant turns into the ACTIVE thread's history, not the legacy single key (2 ms)
+  Operator chat message rendering (VTID-03822)
+    ✓ renders bubbles through renderManualMarkdown instead of raw textContent (1 ms)
+    ✓ surfaces msg.toolResults via describeToolActivity() instead of leaving it unread (1 ms)
+    ✓ describeToolActivity() falls back gracefully for an unmapped tool name (1 ms)
+    ✓ renderOperatorChat() includes a thread-switcher select wired to switchOperatorThread (1 ms)
+  Live Console markdown rendering parity (VTID-03822)
+    ✓ renders console content through renderManualMarkdown, not raw textContent (2 ms)
+  CSS additions (VTID-03822)
+    ✓ defines the thread bar and tool-activity classes (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        0.485 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03822-operator-chat-threads.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

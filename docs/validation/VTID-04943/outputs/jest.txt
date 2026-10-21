@@ -1,0 +1,7 @@
+Full gateway jest (2026-10-07, branch 7b1e7345):
+Test Suites: 1 skipped, 1538 passed, 1538 of 1539 total
+Tests:       25 skipped, 6 todo, 24542 passed, 24573 total
+
+VTID-04943 + related suites:
+PASS test/vtid-04943-orb-ws-audio-ready-ack.test.ts (7)
+10 related ORB / session-state / health suites: 120 passed

@@ -1,0 +1,83 @@
+# VTID-03926 — commands run during this change
+
+## Investigation
+- Read services/gateway/src/routes/operator.ts lines 1-380 in full: Zod
+  validation, threadId/auth-marker handling, task detection, and the
+  processWithGemini() call site (confirmed no userRole/systemInstruction
+  passed).
+- Read services/gateway/src/services/gemini-operator.ts's tool catalog and
+  getRouterToolDefinitions()/callerIdentity handling — confirmed a large
+  existing dev_* tool catalog (VTID-DEV-ASSIST, VTID-03835/03836/03837) and
+  a standing dev_agent_memory recall (VTID-03892) that runs unconditionally
+  on every operator turn, all gated behind userRole for the dev_* tools.
+- grep confirmed getOperatorRole(req) (reads the client-supplied
+  x-operator-role header) is called at lines 648/747 only — never near the
+  /chat handler — and req.identity.exafy_admin (JWT-verified) is the value
+  already used for VTID-03851's thread-auth marker a few lines above the
+  processWithGemini() call.
+
+## Fix
+Derived `userRole` from `callerIdentity?.exafy_admin === true` and passed it
+into the existing `processWithGemini({ ... userRole })` call in
+services/gateway/src/routes/operator.ts.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03926-operator-chat-userrole.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 903 passed, 903 of 904 total
+Tests:       29 skipped, 6 todo, 14965 passed, 15000 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+Re-confirmed tsc --noEmit clean and both new-VTID suites (vtid-03925,
+vtid-03926) passing together after merging origin/main into this branch.
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"operator-console"}'
+{"ok":true,"vtid":"VTID-03926","num":3926,"id":"062e26e8-e77c-4147-92f3-3b29486778d7"}
+
+Followed up with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb, the
+platform's own VTID ledger — not a community-content write) to set
+title/summary, status='in_progress', spec_status='approved' — the user
+directly instructed this work in conversation, which is the standing
+approval per CLAUDE.md IF-THEN rule "task moved to in_progress manually ->
+explicit consent".
+
+## Branch sync
+Local branch claude/youthful-mccarthy-9o56j5 was behind origin/main (which
+had advanced with VTID-03925 "Command Hub Overview pipeline-summary
+infinite loop fix" and VTID-03914). Merged origin/main into this branch;
+resolved two conflicts (scripts/ci/command-hub-ownership-guard.js's
+ALLOWED_VTID_PATTERN — took origin/main's superset regex; index.html's
+app.js cache-bust tag — combined into a single
+?v=20260915-vtid-03917-18-25-overview-poll-mic-pipeline-fix line). Neither
+conflict touched anything VTID-03926 itself changed (operator.ts, the new
+test file) — the conflicts were purely between two already-merged upstream
+VTIDs (03917/03918 vs 03925) on Command Hub frontend files this VTID never
+touches. Re-ran tsc --noEmit and both new suites clean after the merge.
+
+## CSP Governance Gate — local pre-flight
+No CSP header touched by this change (route logic + a new test file only).
+
+## Command Hub Ownership Guard — n/a
+This VTID does not touch any Command Hub frontend file
+(services/gateway/src/frontend/command-hub/**) — no ALLOWED_VTID_PATTERN
+entry needed.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/routes/operator.ts,
+services/gateway/test/vtid-03926-operator-chat-userrole.test.ts,
+docs/validation/VTID-03926/** — all within the gateway_backend profile's
+allowed paths (services/gateway/src/**, services/gateway/test/**,
+docs/validation/**).

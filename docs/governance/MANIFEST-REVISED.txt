@@ -1,0 +1,11 @@
+GOV-FRONTEND-CANONICAL-SOURCE-0001 – File Manifest
+
+1. services/gateway/src/frontend/command-hub/BUILD.md
+2. services/validators/frontend-canonical-source.ts
+3. .github/workflows/enforce-frontend-canonical-source.yml
+4. governance-record-revised.sql
+5. scripts/verify-structure.sh
+6. docs/governance/CEO-HANDOVER-REVISED.md
+7. docs/governance/MANIFEST-REVISED.txt
+
+All files part of the canonical governance package.

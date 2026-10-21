@@ -1,0 +1,43 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+    [VTID-04684] forget backstop s1: forgotten user_pet_name
+PASS test/services/memory/vtid-04684-forget-fact.test.ts
+  VTID-04684 detectForgetIntent
+    ✓ recognises "vergiss bitte dass mein hund bello heißt" (8 ms)
+    ✓ recognises "Vergiss meinen Hund" (2 ms)
+    ✓ recognises "lösch bitte aus deinem Gedächtnis, dass ich Lasagne mag" (1 ms)
+    ✓ recognises "forget that my dog is called Bello" (1 ms)
+    ✓ recognises "please delete what you know about my birthday" (1 ms)
+    ✓ recognises "olvida que mi perro se llama Bello" (1 ms)
+    ✓ recognises "zaboravi da mi se pas zove Bello" (1 ms)
+    ✓ does not treat "vergiss das nicht, mein Hund heißt Bello" as a forget request
+    ✓ does not treat "vergiss nicht mein Termin ist morgen" as a forget request (1 ms)
+    ✓ does not treat "don't forget my dentist appointment" as a forget request (1 ms)
+    ✓ does not treat "no olvides mi cita" as a forget request
+    ✓ does not treat "ne zaboravi moj rođendan" as a forget request (1 ms)
+    ✓ does not treat "mein Hund heißt Bello" as a forget request
+    ✓ does not treat "lösch den Post von gestern" as a forget request
+    ✓ does not treat "" as a forget request (1 ms)
+  VTID-04684 matchFactsToForget
+    ✓ finds the fact by the value the member names (3 ms)
+    ✓ finds the fact by its key words across languages (2 ms)
+    ✓ never matches a system or profile key (1 ms)
+    ✓ reports ambiguity when two keys fit equally (1 ms)
+  VTID-04684 runForgetFact
+    ✓ forgets the key, removes the transcript lines carrying it, and rebuilds the snapshot (3 ms)
+    ✓ says not_found and deletes nothing when nothing matches (1 ms)
+    ✓ asks instead of guessing when more than one key fits (1 ms)
+    ✓ reports a failed forget honestly (1 ms)
+  VTID-04684 forget backstop
+    ✓ runs the forget and tells the model the real outcome when the tool was skipped (15 ms)
+    ✓ stands down when the model called forget_fact this turn (1 ms)
+    ✓ does nothing for an ordinary statement (2 ms)
+    ✓ is Nova only (1 ms)
+  VTID-04684 forget_fact is wired
+    ✓ is in the catalog and dispatched, runs through the backstop, and the prompt forbids an unbacked claim (7 ms)
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        0.737 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04684-forget-fact.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

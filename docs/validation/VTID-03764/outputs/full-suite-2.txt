@@ -1,0 +1,40 @@
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/instruction/client-context-format.test.ts
+  formatClientContextForInstruction — ENVIRONMENT block contract
+    ✓ surfaces location + timezone + local time when all are known (1 ms)
+    ✓ CONTRACT: always carries a UTC anchor so the model can compute any timezone
+    ✓ CONTRACT: NEVER fabricates a city/location when geo is unavailable
+    ✓ CONTRACT: when even the timezone is unknown, omits Timezone/Local time (no guessing) but keeps the UTC anchor (1 ms)
+    ✓ country-only location renders without a city
+    ✓ instructs the model to compute time from UTC, never guess offsets (DST safety)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (8a75473e-2289-4367-828a-0e8425b0c82b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.748 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (34 ms)
+    ✓ 400 when autopilot_execution_id is missing (5 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (3 ms)
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (5 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (4 ms)
+    ✓ returns failed when status=failed (5 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60063 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (3 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 712 passed, 712 of 713 total
+Tests:       29 skipped, 6 todo, 13419 passed, 13454 total
+Snapshots:   44 passed, 44 total
+Time:        61.886 s, estimated 65 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

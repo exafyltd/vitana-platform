@@ -1,0 +1,50 @@
+{
+  "vtid": "VTID-05168",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05167/plan-sparring.md",
+  "paths": [
+    "supabase/migrations/20261014140000_vtid_05168_index_movements.sql",
+    "scripts/ci/sql-tests/vtid-05168-index-movements.test.sql",
+    "scripts/ci/sql-tests/run-index-movements-test.sh",
+    ".github/workflows/SQL-INDEX-MOVEMENTS.yml",
+    "services/gateway/src/services/vitana-index/**",
+    "services/gateway/src/services/voice-tools/health-log.ts",
+    "services/gateway/src/services/voice-tools/health-log-repository.ts",
+    "services/gateway/src/services/orb-tools/health-depth-tools.ts",
+    "services/gateway/src/services/orb-tools/health-depth-tools-repository.ts",
+    "services/gateway/src/services/wearable-features-bridge.ts",
+    "services/gateway/src/services/wearable-features-bridge-repository.ts",
+    "services/gateway/src/services/orb-tools-shared.ts",
+    "services/gateway/src/routes/integrations.ts",
+    "services/gateway/src/routes/integrations-repository.ts",
+    "services/gateway/src/routes/memory-repository.ts",
+    "services/gateway/src/routes/calendar.ts",
+    "services/gateway/src/routes/calendar-repository.ts",
+    "services/gateway/src/routes/health.ts",
+    "services/gateway/src/routes/health-repository.ts",
+    "services/gateway/src/routes/guided-journey.ts",
+    "services/gateway/test/vtid-05168-index-movements.test.ts",
+    "services/gateway/test/routes/health.test.ts",
+    "services/gateway/test/vtid-05089-wearable-features-bridge.test.ts",
+    "services/gateway/test/services/voice-tools/health-log.test.ts",
+    "services/postgrest-aurora-proxy/aurora-restore-0*.sql",
+    "scripts/ci/migration-drift-baseline.json",
+    "DATABASE_SCHEMA.md",
+    ".kiro/specs/life-timeline/**",
+    "docs/validation/VTID-05168/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/routes/health.test.ts",
+      "reason": "POST /baseline-survey no longer computes a TypeScript-only Day-0 score and upserts it into vitana_index_scores (sparring F15, owner decision D4b). The two tests that pinned score_total 125/127 from the TS curve and model_version 'baseline-survey-v3-5pillar' now pin the new contract: the survey is saved, the score comes from vitana_index_recompute_and_record (trigger baseline_survey) and no direct vitana_index_scores write happens; a third test pins the 400 on a failed compute."
+    },
+    {
+      "file": "services/gateway/test/vtid-05089-wearable-features-bridge.test.ts",
+      "reason": "The bridge still recomputes the Index exactly once per call (AC-8 unchanged); the RPC it calls is now the locked recording function with trigger wearable_sync, so the asserted RPC name and parameters changed. The count assertion is the same."
+    },
+    {
+      "file": "services/gateway/test/services/voice-tools/health-log.test.ts",
+      "reason": "The voice log tools recompute through vitana_index_recompute_and_record instead of health_compute_vitana_index_for_user; only the mocked RPC name changed, every assertion is the same."
+    }
+  ]
+}

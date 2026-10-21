@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-04195",
+  "summary": "Wire the Command Hub symbol index (VTID-04085) into the Dev Autopilot agent's conventions prompt so it is actually consulted before blind search_text/read_file exploration of command-hub/*.js",
+  "root_cause_investigation": {
+    "failures_examined": ["VTID-04138", "VTID-04139", "VTID-04140", "VTID-04141"],
+    "vtid_04141": {
+      "terminal_outcome": "failed",
+      "reason": "agent hit the 120-turn cap without calling finish",
+      "observed": "turns 116-120 all search_text calls navigating command-hub/*.js, never reached finish"
+    },
+    "vtid_04139": {
+      "terminal_outcome": "failed",
+      "reason": "model answered with text 3 times in a row without calling finish",
+      "observed": "3 consecutive completions each exactly 8000 output tokens (the cap) with 0 visible text, input_tokens ~92K"
+    }
+  },
+  "fix": {
+    "file": "services/gateway/src/services/dev-autopilot/context-loader.ts",
+    "change": "added '## Command Hub navigation' section to CONVENTIONS pointing the agent at specs/command-hub-symbol-index.json before searching command-hub/*.js"
+  },
+  "tests": {
+    "suite": "test/services/dev-autopilot/context-loader.test.ts",
+    "result": "12/12 passing (10 pre-existing + 2 new)"
+  },
+  "typecheck": "tsc --noEmit clean",
+  "not_verified_live": "This changes what future agent executions do, not the two already-terminal failures above (they are not retried by this fix). The next real signal is a Command Hub task involving command-hub/*.js completing without exhausting its turn budget on navigation."
+}

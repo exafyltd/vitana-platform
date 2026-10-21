@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-04022",
+  "wave": "W4b",
+  "kill_switch": "OPERATOR_THREADS_ENABLED=true (exact string; default off; not pinned on any deploy workflow yet)",
+  "cadence": "OPERATOR_THREAD_SUMMARY_EVERY (default 10, floor 2)",
+  "migration": { "file": "supabase/migrations/20260917230000_vtid_04022_operator_threads.sql", "applied": false, "tables": ["operator_threads", "operator_messages"], "rls": "service_role only" },
+  "route_wiring": {
+    "before_model_call": "getThreadSummary(threadId) -> processWithGemini({ threadSummary })",
+    "recall_query": "buildRecallQuery(summary, text) = 'Conversation so far: <summary ≤1200 chars>\\n\\nCurrent message: <text>' | text",
+    "after_model_call": "recordOperatorTurn({ threadId, identity, userText, reply, tools, meta }) -> maybeSummarizeThread(threadId, turns)  (fire-and-forget)"
+  },
+  "summariser": { "stage": "memory", "call": "callViaRouter('memory', prompt, { service: 'operator-threads', maxTokens: 600 })", "window_messages": 30, "summary_max_chars": 1600 },
+  "bounds": { "message_chars": 6000, "tool_result_chars": 2000, "title_chars": 80 },
+  "failure_posture": "fail-open everywhere: missing table warns once and records nothing; Supabase/router errors are logged and never reach the reply; recording is off the reply's critical path",
+  "oasis_impact": "none — existing operator.* audit rows unchanged"
+}

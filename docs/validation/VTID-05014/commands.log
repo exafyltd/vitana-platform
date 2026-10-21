@@ -1,0 +1,8 @@
+$ npx tsc --noEmit -p services/gateway
+(exit 0)
+$ npx jest test/vtid-05014-kiro-v1-writes.test.ts
+Tests: 13 passed, 13 total
+$ npx jest test/vtid-04465-operator-pipeline-regression.test.ts
+Tests: 36 passed, 36 total
+$ npx jest test/vtid-05014 test/vtid-05006 test/vtid-05005 test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-03946-operator-cross-repo-search.test.ts test/vtid-04560-role-separation-regression.test.ts test/orb-tools/developer-tools.test.ts test/vtid-05006-dev-pr-executor-payload.test.ts
+Tests: 260 passed (after fixing the scenario's branch slug)

@@ -1,0 +1,9 @@
+# VTID-04645 — commands run
+cd services/gateway
+npx tsc --noEmit -p .                                   # exit 0
+npx jest test/vtid-04618-memory-owned-by-user.test.ts   # 5/5 pass
+npx jest test/orb/latency -u                            # payload-identity snapshot regenerated on purpose (memory context wording only)
+npx jest test/vtid-04618-memory-owned-by-user.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts  # green, see outputs/jest.txt
+# Staging (before this fix, on de21940): spoken "erinnerst du dich an den Geburtstag meiner Frau?"
+#   session live-2e9fd81d-9d3e-47b1-905f-fab3cc897071 -> no refusal, but answered with the brother's date (the bug this VTID fixes)
+# Staging (after merge): same spoken question, expected "12. März" or a search_memory lookup.

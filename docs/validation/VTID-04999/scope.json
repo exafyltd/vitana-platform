@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04999",
+  "kind": "feature",
+  "paths": [
+    "services/kiro-runner/**",
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/vtid-04999-*.test.ts",
+    "services/gateway/test/command-hub/vtid-04999-*.test.ts",
+    "services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts",
+    "services/gateway/test/command-hub/vtid-04984-kiro-model-select.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "scripts/aws/setup-kiro-runner-staging.sh",
+    ".github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "config/service-path-map.json",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-04999/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,7 @@
+# read-only production telemetry (Supabase MCP execute_sql)
+select created_at, topic, metadata->>'stage' ... from oasis_events where metadata::text like '%a7b3a904%' (08:33:30–08:34:40 UTC)
+select content from chat_messages where metadata->>'orb_session_id'='live-a7b3a904-…'
+# local
+cd services/gateway && npx tsc --noEmit -p .                                    # clean
+cd services/gateway && npx jest test/orb/live/session test/routes/orb-live     # 36 suites, 768 passed, 1 skipped
+# mutation: farewellSpokenBeforeClose forced to false -> AC-1 fails; restored -> 4/4 pass

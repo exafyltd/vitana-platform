@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04941",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04941-commerce-mcp-automation.test.ts test/vtid-04941-verification-service.test.ts test/commerce-mcp.test.ts test/partner-onboarding-verification.test.ts test/partner-onboarding-connections.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the MCP needs a sign-in and staging tests are read-only, so the new tools, the shared services and the guards are proven by jest; the portal routes they were extracted from must stay green."
+    }
+  ]
+}

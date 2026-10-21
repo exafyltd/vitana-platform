@@ -1,0 +1,443 @@
+openapi: 3.0.3
+info:
+  title: OASIS Events API
+  version: 1.0.0
+  description: |
+    OASIS (Observability & Audit System for Intelligent Services) - Events Query API
+    
+    ## Overview
+    OASIS provides a normalized, queryable view of all events across the Vitana Platform:
+    - GitHub Actions (workflow_run, check_run, pull_request, push)
+    - GCP Deployments (Cloud Run, Cloud Build)
+    - Agent Heartbeats (task execution, idle states)
+    - System Events (manual ingestion, automated triggers)
+    
+    ## Key Concepts
+    
+    ### VTID (Vitana Task Identifier)
+    Every event is associated with a VTID in the format: `PREFIX-LAYER-NUMBER`
+    - Example: `DEV-CICDL-0031`
+    - Components: 
+      - Prefix: DEV (development), PROD (production), etc.
+      - Layer: CICDL (CI/CD), APIL (API), AGTL (Agent), UIUX (UI/UX)
+      - Number: Sequential identifier
+    
+    ### Event Sources
+    - `github.actions`: GitHub webhook events
+    - `gcp.deploy`: Cloud Run/Build deployments
+    - `agent.ping`: Agent heartbeat and status updates
+    - `oasis.events`: Manual or system-generated events
+    
+    ### Event Lifecycle
+    ```
+    [External Source] → [Gateway Webhook] → [OASIS Persistence] → [Query API]
+                                                ↓
+                                          [SSE Stream (DevHub)]
+    ```
+    
+  contact:
+    name: Vitana Platform Team
+    url: https://github.com/exafyltd/vitana-platform
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://vitana-gateway-86804897789.us-central1.run.app/api/v1/oasis
+    description: Production OASIS API (via Gateway)
+  - url: http://localhost:8080/api/v1/oasis
+    description: Local Development
+
+tags:
+  - name: Events
+    description: Query and retrieve normalized events
+  - name: Ingestion
+    description: Submit events to OASIS (internal use)
+
+paths:
+  /events:
+    get:
+      summary: Query OASIS Events
+      description: |
+        Retrieve normalized events from OASIS with optional filtering.
+        Results are ordered by timestamp descending (most recent first).
+        
+        ## Query Patterns
+        
+        **By VTID:**
+        ```
+        GET /events?vtid=DEV-CICDL-0031&limit=200
+        ```
+        
+        **By Source:**
+        ```
+        GET /events?source=github.actions&limit=50
+        ```
+        
+        **By Status:**
+        ```
+        GET /events?status=failure&limit=100
+        ```
+        
+        **Combined Filters:**
+        ```
+        GET /events?vtid=DEV-CICDL-0031&source=github.actions&status=success
+        ```
+        
+      tags: [Events]
+      parameters:
+        - name: vtid
+          in: query
+          description: Filter by VTID
+          schema:
+            type: string
+            pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+            example: "DEV-CICDL-0031"
+        
+        - name: layer
+          in: query
+          description: Filter by layer (extracted from VTID)
+          schema:
+            type: string
+            pattern: '^[A-Z]+$'
+            example: "CICDL"
+        
+        - name: module
+          in: query
+          description: Filter by module/service name
+          schema:
+            type: string
+            pattern: '^[A-Z]+$'
+            example: "GATEWAY"
+        
+        - name: source
+          in: query
+          description: Filter by event source
+          schema:
+            type: string
+            enum: [github.actions, gcp.deploy, agent.ping, oasis.events]
+            example: "github.actions"
+        
+        - name: kind
+          in: query
+          description: Filter by event kind/type
+          schema:
+            type: string
+            example: "workflow_run"
+        
+        - name: status
+          in: query
+          description: Filter by event status
+          schema:
+            type: string
+            enum: [success, failure, in_progress, info, cancelled]
+            example: "success"
+        
+        - name: limit
+          in: query
+          description: Maximum number of events to return
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+            example: 100
+        
+        - name: offset
+          in: query
+          description: Number of events to skip (for pagination)
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+            example: 0
+      
+      responses:
+        '200':
+          description: Events retrieved successfully
+          headers:
+            X-VTID:
+              schema:
+                type: string
+              description: Echo of VTID query parameter if provided
+              example: "DEV-CICDL-0031"
+            X-Total-Count:
+              schema:
+                type: integer
+              description: Total number of matching events (before pagination)
+              example: 342
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OASISEvent'
+              examples:
+                github_workflow:
+                  summary: GitHub workflow run event
+                  value:
+                    - id: 1234
+                      ts: "2025-10-29T22:45:30.123Z"
+                      vtid: "DEV-CICDL-0031"
+                      layer: "CICDL"
+                      module: "WORKFLOW"
+                      source: "github.actions"
+                      kind: "workflow_run"
+                      status: "success"
+                      title: "CICDL-WORKFLOW-COMPLETED"
+                      ref: "vt/DEV-CICDL-0031-phase2b"
+                      link: "https://github.com/exafyltd/vitana-platform/actions/runs/12345"
+                      meta:
+                        workflow_name: "Deploy Gateway"
+                        run_number: 42
+                        repository: "exafyltd/vitana-platform"
+                
+                agent_heartbeat:
+                  summary: Agent heartbeat event
+                  value:
+                    - id: 5678
+                      ts: "2025-10-29T22:46:00.456Z"
+                      vtid: "DEV-AGTL-0042"
+                      layer: "AGTL"
+                      module: "WORKER"
+                      source: "agent.ping"
+                      kind: "heartbeat"
+                      status: "info"
+                      title: "AGTL-WORKER-HEARTBEAT"
+                      ref: null
+                      link: null
+                      meta:
+                        agent_id: "worker-core-1"
+                        uptime_seconds: 3600
+        
+        '400':
+          description: Invalid query parameters
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        
+        '500':
+          description: Internal server error
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+  /events/ingest:
+    post:
+      summary: Ingest Event into OASIS
+      description: |
+        Submit a new event to OASIS for persistence and streaming.
+        **Internal use only** - typically called by agents or system components.
+        
+        Events submitted here are:
+        1. Validated against schema
+        2. Persisted to oasis_events table
+        3. Automatically streamed to DevHub SSE feed
+      tags: [Ingestion]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/IngestEventRequest'
+            examples:
+              agent_task_start:
+                summary: Agent starting task execution
+                value:
+                  vtid: "DEV-AGTL-0042"
+                  source: "agent.ping"
+                  kind: "task.start"
+                  status: "in_progress"
+                  title: "AGTL-WORKER-TASK-START"
+                  meta:
+                    agent_id: "worker-core-1"
+                    task_type: "data_processing"
+              
+              manual_event:
+                summary: Manual system event
+                value:
+                  vtid: "DEV-CICDL-0031"
+                  source: "oasis.events"
+                  kind: "manual.trigger"
+                  status: "info"
+                  title: "CICDL-MANUAL-TRIGGER"
+                  ref: "admin-console"
+                  link: "https://console.vitana.ai"
+      
+      responses:
+        '201':
+          description: Event ingested successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  event_id:
+                    type: integer
+                    example: 9012
+                  ts:
+                    type: string
+                    format: date-time
+        
+        '400':
+          description: Invalid event payload
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+        
+        '500':
+          description: Ingestion failed
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/Error'
+
+components:
+  schemas:
+    OASISEvent:
+      type: object
+      required: [id, ts, source, kind, status, title]
+      properties:
+        id:
+          type: integer
+          description: Unique event ID (auto-generated)
+          example: 1234
+        
+        ts:
+          type: string
+          format: date-time
+          description: Event timestamp (ISO 8601 UTC)
+          example: "2025-10-29T22:45:30.123Z"
+        
+        vtid:
+          type: string
+          pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+          nullable: true
+          description: Associated VTID (null for untracked events)
+          example: "DEV-CICDL-0031"
+        
+        layer:
+          type: string
+          pattern: '^[A-Z]+$'
+          nullable: true
+          description: Extracted layer from VTID (e.g., CICDL, APIL, AGTL)
+          example: "CICDL"
+        
+        module:
+          type: string
+          pattern: '^[A-Z]+$'
+          nullable: true
+          description: Service/module name in UPPERCASE (e.g., GATEWAY, WORKER)
+          example: "GATEWAY"
+        
+        source:
+          type: string
+          enum: [github.actions, gcp.deploy, agent.ping, oasis.events]
+          description: Event source system
+          example: "github.actions"
+        
+        kind:
+          type: string
+          description: Event type/kind (snake_case or dot.notation)
+          example: "workflow_run"
+        
+        status:
+          type: string
+          enum: [success, failure, in_progress, info, cancelled]
+          description: Event status/outcome
+          example: "success"
+        
+        title:
+          type: string
+          pattern: '^[A-Z-]+$'
+          description: UPPERCASE event title (format: LAYER-MODULE-ACTION)
+          example: "CICDL-GATEWAY-DEPLOY-SUCCESS"
+        
+        ref:
+          type: string
+          nullable: true
+          description: Reference identifier (branch name, tag, commit SHA, etc.)
+          example: "vt/DEV-CICDL-0031-phase2b"
+        
+        link:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to related resource (GitHub, GCP Console, etc.)
+          example: "https://github.com/exafyltd/vitana-platform/actions/runs/12345"
+        
+        meta:
+          type: object
+          nullable: true
+          additionalProperties: true
+          description: Additional metadata (varies by event type)
+          example:
+            workflow_name: "Deploy Gateway"
+            run_number: 42
+    
+    IngestEventRequest:
+      type: object
+      required: [source, kind, status, title]
+      properties:
+        vtid:
+          type: string
+          pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+          nullable: true
+          example: "DEV-CICDL-0031"
+        
+        source:
+          type: string
+          enum: [github.actions, gcp.deploy, agent.ping, oasis.events]
+          example: "agent.ping"
+        
+        kind:
+          type: string
+          example: "task.start"
+        
+        status:
+          type: string
+          enum: [success, failure, in_progress, info, cancelled]
+          example: "in_progress"
+        
+        title:
+          type: string
+          pattern: '^[A-Z-]+$'
+          example: "AGTL-WORKER-TASK-START"
+        
+        ref:
+          type: string
+          nullable: true
+          example: null
+        
+        link:
+          type: string
+          format: uri
+          nullable: true
+          example: null
+        
+        meta:
+          type: object
+          nullable: true
+          example:
+            agent_id: "worker-core-1"
+            task_type: "data_processing"
+    
+    Error:
+      type: object
+      required: [ok, error]
+      properties:
+        ok:
+          type: boolean
+          example: false
+        error:
+          type: string
+          example: "Invalid VTID format"
+        details:
+          type: object
+          nullable: true
+          additionalProperties: true

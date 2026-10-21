@@ -1,0 +1,5 @@
+Supabase (read-only): oasis_events topics (staging.verify.*, *.deploy.*), dev_autopilot_executions/runs/config, feedback_tickets, 24h voice topics
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04664-ops-runtime-health.test.ts test/vtid-04663-ops-health-checks.test.ts test/vtid-04662-service-health-registered-routes.test.ts test/vtid-04661-service-health-panel.test.ts   # 109/109
+node node_modules/.bin/jest test/vtid-04661-service-health-panel.test.ts test/vtid-04560-role-separation-regression.test.ts test/command-hub test/scripts   # 695/695
+npx tsc --noEmit -p .   # clean

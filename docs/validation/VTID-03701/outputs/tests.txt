@@ -1,0 +1,148 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [db-i18n] batch of 4 failed to parse (Expected property name or '}' in JSON at position 8 (line 1 column 9)) — splitting (depth 0)
+
+      373 |       // batch reproduces it. Halve and recurse.
+      374 |       const mid = Math.ceil(batch.length / 2);
+    > 375 |       console.warn(
+          |               ^
+      376 |         `[db-i18n] batch of ${batch.length} failed to parse (${message.slice(0, 80)}) — splitting (depth ${depth})`,
+      377 |       );
+      378 |       await run(batch.slice(0, mid), depth + 1);
+
+      at run (src/services/db-i18n/translator.ts:375:15)
+      at translateUnits (src/services/db-i18n/translator.ts:391:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:383:17)
+
+  console.warn
+    [db-i18n] batch of 2 failed to parse (Unexpected token 'o', "not json" is not valid JSON) — splitting (depth 0)
+
+      373 |       // batch reproduces it. Halve and recurse.
+      374 |       const mid = Math.ceil(batch.length / 2);
+    > 375 |       console.warn(
+          |               ^
+      376 |         `[db-i18n] batch of ${batch.length} failed to parse (${message.slice(0, 80)}) — splitting (depth ${depth})`,
+      377 |       );
+      378 |       await run(batch.slice(0, mid), depth + 1);
+
+      at run (src/services/db-i18n/translator.ts:375:15)
+      at translateUnits (src/services/db-i18n/translator.ts:391:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:392:17)
+
+  console.warn
+    [db-i18n] provider call failed for 1 unit(s) — NOT splitting: quota exceeded
+
+      359 |       // cascade that looks like a content problem.
+      360 |       if (err instanceof ProviderCallError) {
+    > 361 |         console.warn(
+          |                 ^
+      362 |           `[db-i18n] provider call failed for ${batch.length} unit(s) — NOT splitting: ${message.slice(0, 160)}`,
+      363 |         );
+      364 |         for (const unit of batch) failures.push({ key: unit.key, reason: message });
+
+      at run (src/services/db-i18n/translator.ts:361:17)
+      at translateUnits (src/services/db-i18n/translator.ts:391:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:399:17)
+
+  console.warn
+    [db-i18n] provider call failed for 4 unit(s) — NOT splitting: HTTP 429: You exceeded your quota
+
+      359 |       // cascade that looks like a content problem.
+      360 |       if (err instanceof ProviderCallError) {
+    > 361 |         console.warn(
+          |                 ^
+      362 |           `[db-i18n] provider call failed for ${batch.length} unit(s) — NOT splitting: ${message.slice(0, 160)}`,
+      363 |         );
+      364 |         for (const unit of batch) failures.push({ key: unit.key, reason: message });
+
+      at run (src/services/db-i18n/translator.ts:361:17)
+      at translateUnits (src/services/db-i18n/translator.ts:391:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:418:17)
+
+PASS test/db-i18n/db-i18n.test.ts
+  target selection
+    ✓ defaults to supabase when unset or empty (3 ms)
+    ✓ selects aurora on the exact value, case/space tolerant (1 ms)
+    ✓ falls back to supabase on an unrecognised value rather than guessing (1 ms)
+  aurora adapter (VTID-03517)
+    ✓ is constructible without a Supabase client (1 ms)
+    ✓ reports a missing connection string as config, not as an empty result (11 ms)
+    ✓ rejects a connection string that is not a postgres URL (12 ms)
+    ✓ redacts the password when describing the target (1 ms)
+    ✓ never silently falls back to supabase
+    ✓ keeps naming the remaining risk rather than decaying to "not implemented"
+    writes are gated separately from connectivity
+      ✓ upsertNavCatalogI18n refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ upsertChecklistTranslations refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ explains WHY, so the flag is not set reflexively (1 ms)
+      ✓ does not gate reads behind the write flag
+  aurora TLS resolution
+    ✓ defaults to verifying certificates (1 ms)
+    ✓ only disables verification on an explicit opt-in, and warns (1 ms)
+    ✓ fails loudly when the CA bundle path is set but absent (1 ms)
+    sslmode=disable is a loopback-only escape hatch
+      ✓ permits plaintext to 127.0.0.1 (1 ms)
+      ✓ permits plaintext to localhost
+      ✓ permits plaintext to [::1] (1 ms)
+      ✓ REFUSES plaintext to a remote host (6 ms)
+      ✓ still requires TLS for a loopback host without the flag
+  supabase target requires a client
+    ✓ throws a specific error rather than a null dereference
+  sourceSha
+    ✓ is stable regardless of object key insertion order (1 ms)
+    ✓ changes when any source field changes
+    ✓ does not collide when content shifts between fields (1 ms)
+    ✓ distinguishes an empty field from a missing one consistently
+  placeholder handling
+    ✓ matches non-ASCII token names — the case \w+ misses (1 ms)
+    ✓ does not swallow an embedded JSON example as one token
+    ✓ passes through an already-correct translation
+    ✓ repairs renamed tokens positionally (1 ms)
+    ✓ refuses to guess when the token COUNT changed
+  validateUnit
+    ✓ accepts a well-formed translation (1 ms)
+    ✓ keeps an empty source field empty rather than inventing content
+    ✓ rejects the unit when a REQUIRED field is blank
+    ✓ blanks an OPTIONAL missing field so the read path falls back to German (1 ms)
+    ✓ rejects a unit missing entirely from the response
+    ✓ rejects a substantive field echoed back verbatim (1 ms)
+    ✓ allows a SHORT unchanged string — proper nouns survive translation
+    ✓ rejects a unit whose placeholder count changed
+    ✓ repairs a renamed placeholder rather than failing the unit (1 ms)
+  translateUnits batch splitting
+    ✓ splits a batch that fails to parse, down to units that succeed (12 ms)
+    ✓ reports a genuine per-unit failure once the batch is a single unit (2 ms)
+    ✓ surfaces a provider failure as a failure rather than an empty success (1 ms)
+    ✓ does NOT split on a provider failure — one refusal must not become fifteen (1 ms)
+    ✓ recovers from a raw newline embedded in a JSON string value (VTID-03701-follow-up)
+    ✓ still reports a failure when the JSON is genuinely unparseable, sanitization or not (1 ms)
+    ✓ names no provider and no model — routing belongs to llm_routing_policy
+  surface registry
+    ✓ exposes both content surfaces (1 ms)
+    ✓ rejects an unknown surface by name, listing the known ones (1 ms)
+    ✓ never treats German as a translation target
+    ✓ builds a nav_catalog_i18n row with the natural key and stamp (1 ms)
+    ✓ writes NULL rather than empty string for untranslated checklist fields (1 ms)
+    ✓ requires a non-empty label on both surfaces
+  db-i18n contacts no provider host directly
+    ✓ has files to check (a passing scan over an empty list proves nothing)
+    ✓ aurora-client.ts contacts no provider host (1 ms)
+    ✓ db-i18n-repository.ts contacts no provider host
+    ✓ notify-source-changed.ts contacts no provider host (1 ms)
+    ✓ surfaces.ts contacts no provider host
+    ✓ translator.ts contacts no provider host
+
+Test Suites: 1 passed, 1 total
+Tests:       59 passed, 59 total
+Snapshots:   0 total
+Time:        0.863 s, estimated 1 s
+Ran all test suites matching /test\/db-i18n\/db-i18n.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+--- tsc exit: 0 ---

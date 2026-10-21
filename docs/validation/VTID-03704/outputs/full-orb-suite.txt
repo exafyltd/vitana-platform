@@ -1,0 +1,11 @@
+# npx jest test/orb/  — summary only.
+# Full verbose output is reproducible; storing 11k lines of per-test names
+# in the repo is not evidence, it is noise (cf. VTID-03703's 12-line pack).
+
+FAILURES: none
+
+Test Suites: 126 passed, 126 total
+Tests:       6 todo, 1724 passed, 1730 total
+Snapshots:   10 passed, 10 total
+Time:        12.484 s
+Ran all test suites matching /test\/orb\//i.

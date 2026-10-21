@@ -1,0 +1,20 @@
+# VTID-04909 / VTID-04910 — commands run while authoring (2026-10-06)
+
+# Read-only precondition check (production Supabase, SELECT only):
+select count(*) from public.partner_terms_versions;     -- 0
+select count(*) from public.partner_terms_acceptances;  -- 0
+# Read-only check of the constraint names the migration drops (pg_constraint): binding_locale_check, binding_text — as expected.
+
+# SQL tests on a throwaway local Postgres 16 (never Supabase):
+PGHOST=<local socket> PGPORT=54329 PGUSER=postgres scripts/ci/sql-tests/run-partner-terms-test.sh
+#   -> outputs/sql-partner-terms.txt (3 PASS lines)
+
+# Draft text structure (all 11 files identical to German):
+python3 <structure check>   -> outputs/draft-text-structure.txt
+
+# Staging manifests:
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04909/staging-tests.json'))"  # ok
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04910/staging-tests.json'))"  # ok
+
+# Gateway jest: run by CI (npm registry blocked in the authoring container).
+# NOT run: the migration against any shared database (separate owner approval).

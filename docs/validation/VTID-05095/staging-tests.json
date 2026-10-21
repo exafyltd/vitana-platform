@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05095",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "phone status is mounted and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/me/phone", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "send code is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/me/phone/verification", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "confirm code is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/me/phone/verification/confirm", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "remove phone is mounted and requires auth (rejected write probe)", "method": "DELETE", "path": "/api/v1/me/phone", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-05095-phone-verification.test.ts test/i18n/catalog-coverage.test.ts", "cwd": "services/gateway",
+      "reason": "Sending a code, confirming it and removing a number write to the shared production database and send a real SMS, so none of it runs on staging (rule 48). The off switch, the missing-secret refusal, normalisation, the country list, test/service-account refusal, the number-in-use checks, every limit verdict, every confirm verdict, the Auth write and the routes are proven by Jest with a mocked SMS sender; the migration (atomic one-challenge upsert, limits, attempts, expiry, privileges, the auth → profile → link → unlink chain, NULL-safe e-mail rule, concurrency) is proven on a throwaway local Postgres by docs/validation/VTID-05095/migration-test.sql (outputs/migration-test.txt). The signed-in read of GET /api/v1/me/phone (enabled:false while the switch is off) is in the VTID-05096 community-app staging spec." }
+  ]
+}

@@ -1,0 +1,2140 @@
+import { Router, Request, Response } from "express";
+import { z } from "zod";
+import { randomUUID } from "crypto";
+
+import { withDependencyHealth } from '../services/dependency-probe';
+const OasisEventSchema = z.object({
+  service: z.string().min(1, "Service name required"),
+  event: z.string().min(1, "Event name required"),
+  tenant: z.string().min(1, "Tenant required"),
+  status: z.enum(["start", "success", "fail", "blocked", "warning", "info"]),
+  notes: z.string().optional(),
+  git_sha: z.string().optional(),
+  rid: z.string().optional(),
+  metadata: z.record(z.any()).optional(),
+  timestamp: z.string().optional(),
+});
+
+type OasisEventInput = z.infer<typeof OasisEventSchema>;
+
+const IngestEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  type: z.string().min(1, "type required"),
+  source: z.string().min(1, "source required"),
+  status: z.enum(["info", "warning", "error", "success"], {
+    errorMap: () => ({
+      message: "status must be: info, warning, error, or success",
+    }),
+  }),
+  message: z.string().min(1, "message required"),
+  payload: z.record(z.any()).optional(),
+  created_at: z.string().optional(),
+  // VTID-01260: Actor identification and surface tracking
+  actor_id: z.string().optional(),
+  actor_email: z.string().optional(),
+  actor_role: z.enum(["user", "operator", "admin", "system", "agent"]).optional(),
+  surface: z.enum(["orb", "operator", "command-hub", "cicd", "system", "api"]).optional(),
+  conversation_turn_id: z.string().optional(),
+});
+
+export const router = Router();
+
+router.post("/api/v1/events/ingest", async (req: Request, res: Response) => {
+  try {
+    const validation = IngestEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("❌ Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    const eventId = randomUUID();
+    const timestamp = body.created_at || new Date().toISOString();
+
+    const payload: Record<string, unknown> = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: body.type,
+      service: body.source,
+      role: "API",
+      model: "event-ingestion-api",
+      status: body.status,
+      message: body.message,
+      link: null,
+      metadata: body.payload || {},
+      // VTID-01260: Actor identification and surface tracking
+      ...(body.actor_id && { actor_id: body.actor_id }),
+      ...(body.actor_email && { actor_email: body.actor_email }),
+      ...(body.actor_role && { actor_role: body.actor_role }),
+      ...(body.surface && { surface: body.surface }),
+      ...(body.conversation_turn_id && { conversation_turn_id: body.conversation_turn_id }),
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ OASIS insert failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await resp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`✅ Event ingested: ${eventId} - ${body.vtid}/${body.type}`);
+
+    // VTID-02032: Auto-route routine-emitted breaches through the FULL
+    // self-healing pipeline (LLM diagnosis + auto-fix-or-escalate). When a
+    // daily routine ingests an event with source=routine.* AND
+    // status=warning|error, that's a detected breach. Calling
+    // processFailingService runs the same flow real health-probe failures
+    // take: dedup/circuit-breaker → beginDiagnosis (allocates VTID + LLM
+    // generates a fix spec) → auto-apply if confidence ≥ threshold OR deep
+    // triage → escalate. Without this, rows just sat in self_healing_log
+    // with no spec and the reconciler escalated them after 1h.
+    let selfHealingResult: {
+      action?: string;
+      vtid?: string;
+      reason?: string;
+    } = {};
+    const isRoutineBreach =
+      typeof body.source === 'string' &&
+      body.source.startsWith('routine.') &&
+      (body.status === 'warning' || body.status === 'error');
+    if (isRoutineBreach) {
+      try {
+        const safeTopic = (body.type || 'unknown').replace(/[^a-zA-Z0-9._-]/g, '_');
+        const safeRoutine = body.source
+          .replace(/^routine\./, '')
+          .replace(/[^a-zA-Z0-9._-]/g, '_');
+        const syntheticEndpoint = `routine-incident://${safeRoutine}/${safeTopic}`;
+
+        // Lazy-load processFailingService + getAutonomyLevel from
+        // self-healing.ts to avoid a module-load cycle (events.ts is loaded
+        // earlier than self-healing.ts in some boot paths).
+        const selfHealingMod = require('./self-healing');
+        const { processFailingService, getAutonomyLevel } = selfHealingMod;
+        const AutonomyLevels = require('../types/self-healing').AutonomyLevel;
+        if (typeof processFailingService === 'function' && typeof getAutonomyLevel === 'function') {
+          const autonomyLevel = await getAutonomyLevel();
+          const synthetic = {
+            name: body.source,
+            endpoint: syntheticEndpoint,
+            status: 'down' as const,
+            http_status: null,
+            response_body: '',
+            response_time_ms: 0,
+            error_message: `${body.message} | payload=${JSON.stringify(body.payload ?? {}).slice(0, 1500)}`,
+          };
+          const result = await processFailingService(synthetic, autonomyLevel);
+          selfHealingResult = result;
+          console.log(
+            `[events.ingest] Routine breach → processFailingService: action=${result.action} vtid=${result.vtid ?? 'none'}`
+          );
+        } else {
+          console.warn(
+            '[events.ingest] processFailingService not exported — falling back to OASIS-only ingest'
+          );
+        }
+      } catch (autoRouteErr: any) {
+        // Best-effort; don't fail the OASIS event ingest if self-healing routing fails.
+        console.warn(
+          `[events.ingest] Self-healing pipeline failed (non-fatal): ${autoRouteErr.message}`
+        );
+      }
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      self_healing_action: selfHealingResult.action ?? null,
+      self_healing_vtid: selfHealingResult.vtid ?? null,
+      self_healing_reason: selfHealingResult.reason ?? null,
+    });
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+      data: null,
+    });
+  }
+});
+
+router.post("/events/ingest", async (req: Request, res: Response) => {
+  try {
+    const body = OasisEventSchema.parse(req.body);
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const payload = {
+      rid: body.rid ?? randomUUID(),
+      service: body.service,
+      event: body.event,
+      tenant: body.tenant,
+      status: body.status,
+      notes: body.notes ?? null,
+      git_sha: body.git_sha ?? null,
+      metadata: body.metadata ?? null,
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/OasisEvent`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ Supabase insert failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Supabase insert failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = await resp.json();
+    console.log(
+      `✅ Event persisted: ${payload.rid} - ${payload.service}/${payload.event}`,
+    );
+
+    return res.status(200).json({
+      ok: true,
+      data,
+    });
+  } catch (e: any) {
+    if (e instanceof z.ZodError) {
+      console.error("❌ Validation error:", e.errors);
+      return res.status(400).json({
+        error: "Invalid payload",
+        detail: e.errors,
+      });
+    }
+
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
+/**
+ * GET /api/v1/events
+ * DEV-OASIS-0210-B: Canonical events list endpoint - queries local oasis_events table
+ *
+ * Query params:
+ * - topic: Filter by event type/topic (e.g., "assistant.session.started", "deploy.gateway.success")
+ * - vtid: Filter by VTID (e.g., "VTID-0416")
+ * - limit: Max number of events to return (default 50, max 200)
+ * - since: ISO timestamp to filter events after
+ */
+router.get("/api/v1/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[DEV-OASIS-0210-B] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // Parse query parameters
+    const limitParam = parseInt(req.query.limit as string) || 50;
+    const limit = Math.min(Math.max(limitParam, 1), 200); // Clamp between 1-200
+    const topic = req.query.topic as string;
+    const vtid = req.query.vtid as string;
+    const since = req.query.since as string;
+    const type = req.query.type as string; // Legacy support
+
+    // Build Supabase REST API query
+    let queryParams = `limit=${limit}&order=created_at.desc`;
+
+    // Topic filter - filter by event type/topic column
+    if (topic) {
+      queryParams += `&topic=eq.${encodeURIComponent(topic)}`;
+    } else if (type) {
+      // Legacy support for 'type' param
+      queryParams += `&topic=eq.${encodeURIComponent(type)}`;
+    }
+
+    // VTID filter
+    if (vtid) {
+      queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
+    }
+
+    // Since filter - events created after timestamp
+    if (since) {
+      queryParams += `&created_at=gt.${encodeURIComponent(since)}`;
+    }
+
+    console.log(`[DEV-OASIS-0210-B] Querying oasis_events: topic=${topic || 'all'}, vtid=${vtid || 'all'}, limit=${limit}`);
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[DEV-OASIS-0210-B] Supabase query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database query failed",
+      });
+    }
+
+    const events = (await resp.json()) as any[];
+
+    // Transform to Gateway standard format
+    const normalizedEvents = events.map((event: any) => ({
+      id: event.id,
+      vtid: event.vtid || (event.metadata && event.metadata.vtid) || undefined,
+      type: event.topic || "unknown",
+      topic: event.topic || "unknown",
+      source: event.service || "oasis",
+      status: event.status,
+      message: event.message,
+      created_at: event.created_at,
+      // VTID-01260: Actor identification and surface tracking
+      actor_id: event.actor_id || null,
+      actor_email: event.actor_email || null,
+      actor_role: event.actor_role || null,
+      surface: event.surface || null,
+      conversation_turn_id: event.conversation_turn_id || null,
+      payload: {
+        message: event.message,
+        vtid: event.vtid,
+        swv: event.metadata && event.metadata.swv,
+        service: event.metadata && event.metadata.service,
+        branch: event.metadata && event.metadata.branch,
+        environment: event.metadata && event.metadata.environment,
+        ...event.metadata,
+      },
+    }));
+
+    console.log(`[DEV-OASIS-0210-B] Returning ${normalizedEvents.length} events`);
+
+    return res.status(200).json({
+      ok: true,
+      count: normalizedEvents.length,
+      data: normalizedEvents,
+    });
+  } catch (e: any) {
+    console.error("[DEV-OASIS-0210-B] Error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: e.message || "Internal server error",
+    });
+  }
+});
+
+/**
+ * GET /events (legacy route)
+ */
+router.get("/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error(
+        "❌ Gateway misconfigured: Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE",
+      );
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const limit = parseInt(req.query.limit as string) || 10;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const service = req.query.service as string;
+    const topic = req.query.topic as string;
+    const status = req.query.status as string;
+
+    let queryParams = `limit=${limit}&offset=${offset}&order=created_at.desc`;
+    if (service) queryParams += `&service=eq.${service}`;
+    if (topic) queryParams += `&topic=eq.${topic}`;
+    if (status) queryParams += `&status=eq.${status}`;
+
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ Supabase query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "Supabase query failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const data = (await resp.json()) as any[];
+    console.log(`✅ Retrieved ${data.length} events`);
+
+    return res.status(200).json(data);
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
+router.get("/events/health", async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  res.status(200).json(await withDependencyHealth([{ table: 'oasis_events' }], {
+    ok: true,
+    service: "oasis-events",
+    timestamp: new Date().toISOString(),
+  }));
+});
+
+/**
+ * VTID-0416: Deploy Event Schema for CI/CD workflow
+ * Accepts deploy events from the governed CI pipeline
+ */
+const DeployEventSchema = z.object({
+  type: z.string().min(1, "type required"),
+  vtid: z.string().min(1, "vtid required"),
+  service: z.string().min(1, "service required"),
+  branch: z.string().optional(),
+  source: z.string().default("ci_cd"),
+  message: z.string().min(1, "message required"),
+  details: z.record(z.any()).optional(),
+});
+
+/**
+ * POST /api/v1/oasis/events
+ * VTID-0416: Emit deploy events to OASIS from CI/CD workflow
+ */
+router.post("/api/v1/oasis/events", async (req: Request, res: Response) => {
+  try {
+    const validation = DeployEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-0416] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-0416] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+
+    // Determine status based on event type
+    let eventStatus: string = "info";
+    if (body.type.includes(".success")) {
+      eventStatus = "success";
+    } else if (body.type.includes(".failed") || body.type.includes(".blocked")) {
+      eventStatus = "error";
+    } else if (body.type.includes(".warning")) {
+      eventStatus = "warning";
+    }
+
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: body.type,
+      service: body.source,
+      role: "CICD",
+      model: "vtid-0416-governed-deploy",
+      status: eventStatus,
+      message: body.message,
+      link: null,
+      metadata: {
+        service: body.service,
+        branch: body.branch,
+        ...body.details,
+      },
+    };
+
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-0416] OASIS insert failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await resp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-0416] Deploy event recorded: ${eventId} - ${body.type} for ${body.service}`);
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      type: body.type,
+    });
+  } catch (e: any) {
+    console.error("[VTID-0416] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+router.get("/api/v1/oasis/events", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("❌ Gateway misconfigured");
+      return res.status(500).json({
+        error: "Gateway misconfigured",
+        detail: "Missing Supabase environment variables",
+      });
+    }
+
+    const vtid = req.query.vtid as string;
+    const limit = parseInt(req.query.limit as string) || 200;
+    const offset = parseInt(req.query.offset as string) || 0;
+    const source = req.query.source as string;
+    const kind = req.query.kind as string;
+    const status = req.query.status as string;
+    const layer = req.query.layer as string;
+    const topic = req.query.topic as string;
+    const service = req.query.service as string;
+    // VTID-01260: Actor and surface filters
+    const actorEmail = req.query.actor_email as string;
+    const surface = req.query.surface as string;
+    const conversationTurnId = req.query.conversation_turn_id as string;
+
+    // VTID-01189: Fetch limit+1 to determine if there are more items
+    let queryParams = `limit=${limit + 1}&offset=${offset}&order=created_at.desc`;
+    if (vtid) queryParams += `&vtid=eq.${vtid}`;
+    if (source) queryParams += `&source=eq.${source}`;
+    if (kind) queryParams += `&kind=eq.${kind}`;
+    if (status) queryParams += `&status=eq.${status}`;
+    if (layer) queryParams += `&layer=eq.${layer}`;
+
+    // VTID-01250: Added filter support for Command Hub
+    if (topic) queryParams += `&topic=ilike.*${topic}*`;
+    if (service) queryParams += `&service=eq.${service}`;
+    // VTID-01260: Actor and surface filters
+    if (actorEmail) queryParams += `&actor_email=eq.${encodeURIComponent(actorEmail)}`;
+    if (surface) queryParams += `&surface=eq.${encodeURIComponent(surface)}`;
+    if (conversationTurnId) queryParams += `&conversation_turn_id=eq.${encodeURIComponent(conversationTurnId)}`;
+
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`❌ OASIS query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({
+        error: "OASIS query failed",
+        detail: text,
+        status: resp.status,
+      });
+    }
+
+    const dataRaw = (await resp.json()) as any[];
+
+    // VTID-01189: Check if there are more items
+    const hasMore = dataRaw.length > limit;
+    const data = hasMore ? dataRaw.slice(0, limit) : dataRaw;
+
+    if (vtid) {
+      res.setHeader("X-VTID", vtid);
+    }
+
+    console.log(
+      `✅ OASIS query: ${data.length} events (vtid=${vtid || "all"}, hasMore=${hasMore})`,
+    );
+
+    // VTID-01189: Return with pagination info for infinite scroll
+    return res.status(200).json({
+      data: data,
+      pagination: { has_more: hasMore, offset: offset, limit: limit }
+    });
+  } catch (e: any) {
+    console.error("❌ Unexpected error:", e);
+    return res.status(500).json({
+      error: "Internal server error",
+      detail: e.message,
+    });
+  }
+});
+
+/**
+ * VTID-01260: Smart OASIS Events - Grouped/Summary View
+ * GET /api/v1/oasis/events/smart
+ *
+ * Returns events grouped intelligently for supervisor display:
+ * - Conversation pipeline events (turn.received, model.called, etc.) are collapsed
+ *   into a single summary row per conversation turn
+ * - Shows actor_email and surface prominently
+ * - Supports filtering by actor_email, surface, vtid
+ * - Reduces noise by 80%+ for conversation-heavy periods
+ *
+ * Query params:
+ * - vtid: Filter by VTID
+ * - actor_email: Filter by actor email
+ * - surface: Filter by surface (orb, operator, command-hub, cicd, system)
+ * - limit: Max groups to return (default 50, max 200)
+ * - offset: Pagination offset
+ * - status: Filter by status
+ * - topic: Filter by topic (ilike)
+ */
+router.get("/api/v1/oasis/events/smart", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const vtid = req.query.vtid as string;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const offset = parseInt(req.query.offset as string) || 0;
+    const actorEmail = req.query.actor_email as string;
+    const surface = req.query.surface as string;
+    const status = req.query.status as string;
+    const topic = req.query.topic as string;
+
+    // Fetch more events than requested so we can group them
+    const fetchLimit = limit * 5; // Over-fetch to ensure enough groups
+    let queryParams = `limit=${fetchLimit + 1}&offset=${offset}&order=created_at.desc`;
+    if (vtid) queryParams += `&vtid=eq.${encodeURIComponent(vtid)}`;
+    if (actorEmail) queryParams += `&actor_email=eq.${encodeURIComponent(actorEmail)}`;
+    if (surface) queryParams += `&surface=eq.${encodeURIComponent(surface)}`;
+    if (status) queryParams += `&status=eq.${encodeURIComponent(status)}`;
+    if (topic) queryParams += `&topic=ilike.*${encodeURIComponent(topic)}*`;
+
+    const resp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      },
+    );
+
+    if (!resp.ok) {
+      const text = await resp.text();
+      console.error(`[VTID-01260] Smart events query failed: ${resp.status} - ${text}`);
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rawEvents = (await resp.json()) as any[];
+
+    // VTID-01260: Conversation telemetry topics that should be grouped
+    const CONVERSATION_NOISE_TOPICS = new Set([
+      'conversation.turn.received',
+      'conversation.retrieval.router_decision',
+      'conversation.retrieval.memory.completed',
+      'conversation.retrieval.knowledge.completed',
+      'conversation.retrieval.web.completed',
+      'conversation.context_pack.built',
+      'conversation.model.called',
+      'conversation.tool.called',
+      'conversation.tool.health_check',
+    ]);
+
+    // Group events intelligently
+    const smartEvents: any[] = [];
+    let conversationGroup: any[] = [];
+    let lastConversationTurnId: string | null = null;
+
+    for (const event of rawEvents) {
+      const topic = event.topic || '';
+      const turnId = event.conversation_turn_id || null;
+
+      // Check if this is a conversation pipeline event
+      const isConversationNoise = CONVERSATION_NOISE_TOPICS.has(topic);
+
+      if (isConversationNoise) {
+        // Group conversation events by turn_id or by time proximity
+        if (turnId && turnId === lastConversationTurnId) {
+          conversationGroup.push(event);
+        } else {
+          // Flush previous group
+          if (conversationGroup.length > 0) {
+            smartEvents.push(collapseConversationGroup(conversationGroup));
+          }
+          conversationGroup = [event];
+          lastConversationTurnId = turnId;
+        }
+      } else {
+        // Flush any pending conversation group
+        if (conversationGroup.length > 0) {
+          smartEvents.push(collapseConversationGroup(conversationGroup));
+          conversationGroup = [];
+          lastConversationTurnId = null;
+        }
+
+        // Check if this is the turn.completed that summarizes the whole turn
+        if (topic === 'conversation.turn.completed') {
+          // This is the summary event - enrich it
+          smartEvents.push({
+            ...event,
+            _smart_type: 'conversation_summary',
+            _event_count: 1,
+          });
+        } else {
+          // Regular event - pass through
+          smartEvents.push({
+            ...event,
+            _smart_type: 'single',
+            _event_count: 1,
+          });
+        }
+      }
+    }
+
+    // Flush remaining conversation group
+    if (conversationGroup.length > 0) {
+      smartEvents.push(collapseConversationGroup(conversationGroup));
+    }
+
+    // Apply pagination to grouped results
+    const hasMore = smartEvents.length > limit;
+    const pagedEvents = smartEvents.slice(0, limit);
+
+    console.log(`[VTID-01260] Smart events: ${rawEvents.length} raw -> ${smartEvents.length} grouped -> ${pagedEvents.length} returned`);
+
+    return res.status(200).json({
+      ok: true,
+      data: pagedEvents,
+      pagination: { has_more: hasMore, offset, limit },
+      meta: {
+        raw_event_count: rawEvents.length,
+        grouped_count: smartEvents.length,
+        noise_reduction_pct: rawEvents.length > 0
+          ? Math.round((1 - smartEvents.length / rawEvents.length) * 100)
+          : 0,
+      },
+    });
+  } catch (e: any) {
+    console.error("[VTID-01260] Smart events error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * VTID-01260: Collapse a group of conversation pipeline events into one summary
+ */
+function collapseConversationGroup(events: any[]): any {
+  if (events.length === 0) return null;
+  if (events.length === 1) return { ...events[0], _smart_type: 'single', _event_count: 1 };
+
+  // Use the earliest event as the base (conversation.turn.received)
+  const sorted = events.sort((a: any, b: any) =>
+    new Date(a.created_at).getTime() - new Date(b.created_at).getTime()
+  );
+  const first = sorted[0];
+  const last = sorted[sorted.length - 1];
+
+  // Extract useful info from the group
+  const topics = sorted.map((e: any) => e.topic).filter(Boolean);
+  const hasError = sorted.some((e: any) => e.status === 'error');
+  const toolCalls = sorted.filter((e: any) => e.topic === 'conversation.tool.called');
+
+  // Calculate duration
+  const startTime = new Date(first.created_at).getTime();
+  const endTime = new Date(last.created_at).getTime();
+  const durationMs = endTime - startTime;
+
+  return {
+    id: first.id,
+    vtid: first.vtid,
+    topic: 'conversation.turn.summary',
+    service: first.service,
+    status: hasError ? 'error' : 'success',
+    message: `Conversation turn: ${events.length} pipeline steps (${toolCalls.length} tool calls, ${durationMs}ms)`,
+    created_at: first.created_at,
+    actor_id: first.actor_id || last.actor_id,
+    actor_email: first.actor_email || last.actor_email,
+    actor_role: first.actor_role || last.actor_role,
+    surface: first.surface || last.surface,
+    conversation_turn_id: first.conversation_turn_id,
+    _smart_type: 'conversation_group',
+    _event_count: events.length,
+    _collapsed_topics: topics,
+    _duration_ms: durationMs,
+    _tool_calls: toolCalls.length,
+    _has_error: hasError,
+    metadata: {
+      ...first.metadata,
+      grouped_event_count: events.length,
+      pipeline_steps: topics,
+      tool_calls: toolCalls.length,
+      duration_ms: durationMs,
+    },
+  };
+}
+
+/**
+ * DEV-COMHU-0202: SSE Stream endpoint for real-time events
+ * GET /api/v1/events/stream
+ *
+ * Provides Server-Sent Events for real-time event streaming to Command Hub UI.
+ * Supports the following query parameters:
+ * - channel: Filter channel (e.g., "operator")
+ * - topic: Filter by event topic (e.g., "deploy.gateway.success")
+ * - vtid: Filter by VTID
+ */
+// VTID-03980: SSE ticker back-pressure. Measured live 2026-09-16 on the
+// shared Supabase project (one DB for prod, staging and the Command Hub):
+// every open Command Hub tab ran this poll every 3s, the FIRST poll had no
+// time bound at all (`ORDER BY created_at DESC LIMIT 20` over a 540 MB
+// table with no created_at index = full seq scan + sort), and once the DB
+// was slow enough for that first page to hit PostgREST's 8s
+// statement_timeout, `lastSeenTimestamp` never got set — so the SAME
+// heaviest query was re-issued every 3s, overlapping (3s interval < 8s
+// timeout), forever, per tab. That storm is what starved logins and profile
+// reads for the mobile app. The rules now:
+//   1. the first poll is bounded to a recent window (index-friendly, and a
+//      bounded scan even without an index);
+//   2. polls never overlap — a poll still in flight means skip this tick;
+//   3. each poll carries its own AbortController timeout, well under
+//      PostgREST's statement_timeout, so the gateway gives up first;
+//   4. a failed poll doubles the interval (capped) and a successful poll
+//      resets it — a slow DB gets fewer requests, not more.
+export const SSE_POLL_INTERVAL_MS = 3000;
+export const SSE_POLL_MAX_BACKOFF_MS = 30_000;
+export const SSE_POLL_TIMEOUT_MS = 5000;
+export const SSE_INITIAL_WINDOW_MS = 15 * 60 * 1000;
+
+/** Query string for one SSE poll against PostgREST (pure — unit-tested). */
+export function buildSseEventsQuery(opts: {
+  lastSeenTimestamp: string | null;
+  topic?: string;
+  vtid?: string;
+  channel?: string;
+  now?: Date;
+}): string {
+  let queryParams = "limit=20&order=created_at.desc";
+  if (opts.lastSeenTimestamp) {
+    queryParams += `&created_at=gt.${encodeURIComponent(opts.lastSeenTimestamp)}`;
+  } else {
+    // No cursor yet (first poll, or every poll after a first page that
+    // never came back): bound the window instead of scanning everything.
+    const since = new Date((opts.now ?? new Date()).getTime() - SSE_INITIAL_WINDOW_MS).toISOString();
+    queryParams += `&created_at=gt.${encodeURIComponent(since)}`;
+  }
+  if (opts.topic) queryParams += `&topic=eq.${encodeURIComponent(opts.topic)}`;
+  if (opts.vtid) queryParams += `&vtid=eq.${encodeURIComponent(opts.vtid)}`;
+  // VTID-03927: `channel` maps to the existing `surface` column.
+  if (opts.channel) queryParams += `&surface=eq.${encodeURIComponent(opts.channel)}`;
+  return queryParams;
+}
+
+/** Next delay before polling again: reset on success, double (capped) on failure. */
+export function nextSsePollDelay(currentDelayMs: number, ok: boolean): number {
+  if (ok) return SSE_POLL_INTERVAL_MS;
+  return Math.min(Math.max(currentDelayMs, SSE_POLL_INTERVAL_MS) * 2, SSE_POLL_MAX_BACKOFF_MS);
+}
+
+router.get("/api/v1/events/stream", async (req: Request, res: Response) => {
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+
+  // Set SSE headers
+  res.setHeader("Content-Type", "text/event-stream");
+  res.setHeader("Cache-Control", "no-cache");
+  res.setHeader("Connection", "keep-alive");
+  res.setHeader("X-Accel-Buffering", "no"); // Disable nginx buffering
+
+  // Send initial connection event
+  res.write(`event: connected\ndata: ${JSON.stringify({ status: "connected", timestamp: new Date().toISOString() })}\n\n`);
+
+  // Track last seen event ID for polling
+  let lastSeenId: string | null = null;
+  let lastSeenTimestamp: string | null = null;
+
+  // VTID-03980: back-pressure state (see the constants above).
+  let inFlight = false;
+  let closed = false;
+  let pollDelayMs = SSE_POLL_INTERVAL_MS;
+  let pollTimer: NodeJS.Timeout | null = null;
+  let inFlightController: AbortController | null = null;
+
+  // Function to fetch and send new events. Resolves true on a successful
+  // poll, false when it failed or timed out (drives the backoff).
+  const pollEvents = async (): Promise<boolean> => {
+    if (!svcKey || !supabaseUrl) {
+      console.error("[SSE] Gateway misconfigured");
+      return false;
+    }
+    if (inFlight) {
+      // VTID-03980: never stack a second scan on top of one still running.
+      return false;
+    }
+    inFlight = true;
+    const controller = new AbortController();
+    inFlightController = controller;
+    const timeout = setTimeout(() => controller.abort(), SSE_POLL_TIMEOUT_MS);
+
+    try {
+      // VTID-03927: `channel` was documented above but never read — every
+      // caller passing `channel=operator` (e.g. Command Hub's SSE ticker)
+      // silently got the unfiltered platform-wide firehose instead. Maps to
+      // the existing `surface` column (already written as 'operator'/'orb'
+      // by conversation.ts/tenant-specialists.ts) rather than inventing a
+      // new column.
+      const queryParams = buildSseEventsQuery({
+        lastSeenTimestamp,
+        topic: req.query.topic as string | undefined,
+        vtid: req.query.vtid as string | undefined,
+        channel: req.query.channel as string | undefined,
+      });
+
+      const resp = await fetch(
+        `${supabaseUrl}/rest/v1/oasis_events?${queryParams}`,
+        {
+          method: "GET",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+          signal: controller.signal,
+        },
+      );
+
+      if (!resp.ok) {
+        console.error(`[SSE] OASIS poll failed: ${resp.status}`);
+        return false;
+      }
+
+      const events = (await resp.json()) as any[];
+
+      // Send new events (reverse to send oldest first)
+      const newEvents = events.filter((e: any) => e.id !== lastSeenId).reverse();
+
+      for (const event of newEvents) {
+        // Normalize event structure for frontend
+        const normalizedEvent = {
+          id: event.id,
+          type: event.topic || event.kind || "unknown",
+          topic: event.topic || event.kind || "unknown",
+          vtid: event.vtid || (event.metadata && event.metadata.vtid) || null,
+          swv: event.metadata && event.metadata.swv || null,
+          service: event.service || (event.metadata && event.metadata.service) || null,
+          created_at: event.created_at,
+          status: event.status,
+          message: event.message || event.title || "",
+          task_stage: event.task_stage || (event.metadata && event.metadata.task_stage) || null,
+          // VTID-01260: Actor identification and surface tracking
+          actor_id: event.actor_id || null,
+          actor_email: event.actor_email || null,
+          actor_role: event.actor_role || null,
+          surface: event.surface || null,
+          conversation_turn_id: event.conversation_turn_id || null,
+          payload: {
+            message: event.message || event.title || "",
+            vtid: event.vtid,
+            swv: event.metadata && event.metadata.swv,
+            service: event.metadata && event.metadata.service,
+            branch: event.metadata && event.metadata.branch,
+            task_stage: event.task_stage || (event.metadata && event.metadata.task_stage),
+            ...event.metadata,
+          },
+        };
+
+        res.write(`event: oasis-event\ndata: ${JSON.stringify(normalizedEvent)}\n\n`);
+
+        lastSeenId = event.id;
+        if (event.created_at) {
+          lastSeenTimestamp = event.created_at;
+        }
+      }
+      return true;
+    } catch (err: any) {
+      console.error(`[SSE] Poll error${controller.signal.aborted ? ` (timed out after ${SSE_POLL_TIMEOUT_MS}ms)` : ""}:`, err?.message);
+      return false;
+    } finally {
+      clearTimeout(timeout);
+      inFlight = false;
+      if (inFlightController === controller) inFlightController = null;
+    }
+  };
+
+  // VTID-03980: self-scheduling poll loop (replaces a fixed setInterval so
+  // the delay can back off while the DB is slow and never overlaps).
+  const scheduleNext = () => {
+    if (closed) return;
+    pollTimer = setTimeout(async () => {
+      pollTimer = null;
+      const ok = await pollEvents();
+      pollDelayMs = nextSsePollDelay(pollDelayMs, ok);
+      scheduleNext();
+    }, pollDelayMs);
+  };
+
+  // Send heartbeat every 30 seconds to keep connection alive
+  const heartbeatInterval = setInterval(() => {
+    if (closed) return;
+    res.write(`: heartbeat ${new Date().toISOString()}\n\n`);
+  }, 30000);
+
+  // Cleanup on client disconnect. VTID-03980: registered BEFORE the initial
+  // poll — it used to be registered after `await pollEvents()`, so a client
+  // that gave up during a slow first poll (exactly the case under DB load)
+  // was never noticed: the handler kept polling for a socket nobody read,
+  // one more zombie ticker per abandoned tab.
+  req.on("close", () => {
+    console.log("[SSE] Client disconnected");
+    closed = true;
+    if (pollTimer) clearTimeout(pollTimer);
+    if (inFlightController) inFlightController.abort();
+    clearInterval(heartbeatInterval);
+    res.end();
+  });
+
+  // Initial poll to send recent events
+  const firstOk = await pollEvents();
+  if (closed) return;
+  pollDelayMs = nextSsePollDelay(pollDelayMs, firstOk);
+  scheduleNext();
+});
+
+/**
+ * VTID-01008: Stage Event Backfill Helper
+ * Emits stage success events (PLANNER, WORKER, VALIDATOR, DEPLOY) when a VTID completes successfully.
+ * Ensures stage timeline is complete and OASIS tracked events are present.
+ *
+ * Rules:
+ * - Only emit for stages that don't already have a success event
+ * - Never override stages that have a FAILED event
+ * - Idempotent: safe to call multiple times
+ *
+ * @param vtid - The VTID to backfill stages for
+ * @param source - The source of the completion (claude, cicd, operator)
+ * @param supabaseUrl - Supabase URL
+ * @param svcKey - Supabase service role key
+ * @returns Array of emitted stage events (may be empty if all already exist)
+ */
+async function backfillStageSuccessEvents(
+  vtid: string,
+  source: string,
+  supabaseUrl: string,
+  svcKey: string
+): Promise<{ stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[]> {
+  const stages = ['PLANNER', 'WORKER', 'VALIDATOR', 'DEPLOY'] as const;
+  const results: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+  const timestamp = new Date().toISOString();
+
+  // Fetch existing stage events for this VTID to check idempotency
+  const existingResp = await fetch(
+    `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${encodeURIComponent(vtid)}&or=(topic.like.vtid.stage.%,task_stage.in.(PLANNER,WORKER,VALIDATOR,DEPLOY))&limit=100`,
+    {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    }
+  );
+
+  let existingStageEvents: any[] = [];
+  if (existingResp.ok) {
+    existingStageEvents = await existingResp.json() as any[];
+  }
+
+  // Build a map of existing stage statuses
+  const stageStatusMap: Map<string, { hasSuccess: boolean; hasFailure: boolean }> = new Map();
+  for (const stage of stages) {
+    stageStatusMap.set(stage, { hasSuccess: false, hasFailure: false });
+  }
+
+  for (const event of existingStageEvents) {
+    const stage = event.task_stage || extractStageFromTopic(event.topic);
+    if (stage && stageStatusMap.has(stage)) {
+      const status = stageStatusMap.get(stage)!;
+      if (event.status === 'success' || (event.topic && event.topic.endsWith('.success'))) {
+        status.hasSuccess = true;
+      }
+      if (event.status === 'error' || event.status === 'failure' ||
+        (event.topic && (event.topic.endsWith('.failed') || event.topic.endsWith('.error')))) {
+        status.hasFailure = true;
+      }
+    }
+  }
+
+  // Emit stage success events for stages without success (unless they have failure)
+  for (const stage of stages) {
+    const status = stageStatusMap.get(stage)!;
+
+    // Skip if stage already has a success event
+    if (status.hasSuccess) {
+      results.push({ stage, event_id: '', already_exists: true });
+      continue;
+    }
+
+    // Skip if stage has a failure event (don't override failures)
+    if (status.hasFailure) {
+      console.log(`[VTID-01008] Skipping ${stage} for ${vtid} - has existing failure event`);
+      results.push({ stage, event_id: '', has_failure: true });
+      continue;
+    }
+
+    // Emit stage success event
+    const eventId = randomUUID();
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: vtid,
+      topic: `vtid.stage.${stage.toLowerCase()}.success`,
+      task_stage: stage,
+      service: `vtid-stage-backfill-${source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01008-stage-backfill",
+      status: "success",
+      message: `${stage} stage completed successfully for ${vtid}`,
+      kind: `${stage.toLowerCase()}.completed`,
+      title: `${stage} Complete`,
+      link: null,
+      metadata: {
+        vtid: vtid,
+        stage: stage,
+        source: source,
+        backfilled: true,
+        completed_at: timestamp,
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (insertResp.ok) {
+      console.log(`[VTID-01008] Emitted stage success event: ${stage} for ${vtid}`);
+      results.push({ stage, event_id: eventId });
+    } else {
+      console.error(`[VTID-01008] Failed to emit stage success event: ${stage} for ${vtid}`);
+      results.push({ stage, event_id: '', already_exists: false });
+    }
+  }
+
+  return results;
+}
+
+/**
+ * VTID-01008: Helper to extract stage from topic string
+ * e.g., "vtid.stage.planner.success" -> "PLANNER"
+ */
+function extractStageFromTopic(topic: string | null | undefined): string | null {
+  if (!topic) return null;
+  const match = topic.match(/vtid\.stage\.(\w+)\./i);
+  if (match) {
+    return match[1].toUpperCase();
+  }
+  return null;
+}
+
+/**
+ * VTID-01005: Terminal Lifecycle Event Schema
+ * Ensures mandatory terminal lifecycle events are emitted for governance compliance
+ */
+const TerminalLifecycleEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  outcome: z.enum(["success", "failed"], {
+    errorMap: () => ({ message: "outcome must be: success or failed" }),
+  }),
+  source: z.enum(["claude", "cicd", "operator"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, or operator" }),
+  }),
+  summary: z.string().optional(),
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/complete
+ * VTID-01005: Emit terminal lifecycle event for a VTID
+ *
+ * This is the MANDATORY endpoint for marking a VTID as terminally complete.
+ * OASIS is the single source of truth for task completion.
+ *
+ * Body:
+ * - vtid: The VTID to mark as complete (required)
+ * - outcome: "success" or "failed" (required)
+ * - source: "claude", "cicd", or "operator" (required)
+ * - summary: Optional summary message
+ *
+ * Idempotency: If a terminal lifecycle event already exists for this VTID,
+ * this endpoint returns 200 OK with a note that the event already exists.
+ */
+router.post("/api/v1/vtid/lifecycle/complete", async (req: Request, res: Response) => {
+  try {
+    const validation = TerminalLifecycleEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-01005] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-01005] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // Check for existing terminal lifecycle event (idempotency)
+    const existingResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (existingResp.ok) {
+      const existingEvents = await existingResp.json() as any[];
+      if (existingEvents.length > 0) {
+        console.log(`[VTID-01005] Terminal lifecycle event already exists for ${body.vtid}`);
+
+        // VTID-01008: Still trigger stage backfill even if lifecycle event exists
+        // This ensures stages are complete for VTIDs that were completed before stage backfill was implemented
+        let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+        if (body.outcome === "success") {
+          console.log(`[VTID-01008] Backfilling stage success events for existing complete VTID ${body.vtid}`);
+          stageBackfillResults = await backfillStageSuccessEvents(body.vtid, body.source, supabaseUrl, svcKey);
+          const emittedCount = stageBackfillResults.filter(r => r.event_id && !r.already_exists).length;
+          console.log(`[VTID-01008] Stage backfill complete for ${body.vtid}: ${emittedCount} new events emitted`);
+        }
+
+        return res.status(200).json({
+          ok: true,
+          vtid: body.vtid,
+          already_exists: true,
+          existing_event_id: existingEvents[0].id,
+          message: `Terminal lifecycle event already exists for ${body.vtid}`,
+          stage_backfill: body.outcome === "success" ? stageBackfillResults : undefined,
+        });
+      }
+    }
+
+    // Emit the terminal lifecycle event
+    const eventId = randomUUID();
+    const timestamp = new Date().toISOString();
+    const topic = body.outcome === "success" ? "vtid.lifecycle.completed" : "vtid.lifecycle.failed";
+    const eventStatus = body.outcome === "success" ? "success" : "error";
+    const defaultMessage = body.outcome === "success"
+      ? `VTID ${body.vtid} completed successfully`
+      : `VTID ${body.vtid} failed`;
+
+    const payload = {
+      id: eventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: topic,
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01005-terminal-lifecycle",
+      status: eventStatus,
+      message: body.summary || defaultMessage,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        outcome: body.outcome,
+        source: body.source,
+        terminal: true,
+        completed_at: timestamp,
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(payload),
+    });
+
+    if (!insertResp.ok) {
+      const text = await insertResp.text();
+      console.error(`[VTID-01005] OASIS insert failed: ${insertResp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await insertResp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-01005] Terminal lifecycle event emitted: ${eventId} - ${body.vtid} (${body.outcome})`);
+
+    // Also update the vtid_ledger status
+    const ledgerStatus = body.outcome === "success" ? "complete" : "failed";
+    const ledgerUpdateResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          status: ledgerStatus,
+          updated_at: timestamp,
+        }),
+      }
+    );
+
+    if (!ledgerUpdateResp.ok) {
+      console.warn(`[VTID-01005] Ledger update failed for ${body.vtid}, but lifecycle event was emitted`);
+    }
+
+    // VTID-01008: Backfill stage success events when terminal completion is success
+    let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+    if (body.outcome === "success") {
+      console.log(`[VTID-01008] Backfilling stage success events for ${body.vtid}`);
+      stageBackfillResults = await backfillStageSuccessEvents(body.vtid, body.source, supabaseUrl, svcKey);
+      const emittedCount = stageBackfillResults.filter(r => r.event_id && !r.already_exists).length;
+      console.log(`[VTID-01008] Stage backfill complete for ${body.vtid}: ${emittedCount} new events emitted`);
+    }
+
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      outcome: body.outcome,
+      topic: topic,
+      message: `Terminal lifecycle event emitted for ${body.vtid}`,
+      stage_backfill: body.outcome === "success" ? stageBackfillResults : undefined,
+    });
+  } catch (e: any) {
+    console.error("[VTID-01005] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
+ * VTID-01009 + VTID-01194: Lifecycle Start Event Schema
+ *
+ * VTID-01194: Autonomous Execution Trigger Semantics
+ * IN_PROGRESS = Explicit Human Approval to Execute
+ *
+ * Moving a task to IN_PROGRESS now triggers autonomous execution immediately.
+ * This is the ONLY approval needed - no separate "arm" step required.
+ */
+const LifecycleStartEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  source: z.enum(["claude", "cicd", "operator", "command-hub"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, operator, or command-hub" }),
+  }),
+  summary: z.string().optional(),
+  // VTID-01194: Optional reason for audit trail (from confirmation modal)
+  // Use .nullish() to accept string, undefined, OR null (frontend sends null when empty)
+  approval_reason: z.string().nullish(),
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/start
+ * VTID-01009 + VTID-01194: Emit execution_approved event when task moves to IN_PROGRESS
+ *
+ * VTID-01194 SEMANTICS:
+ * - Moving to IN_PROGRESS = Explicit human approval to execute
+ * - This is the ONLY approval needed for autonomous execution
+ * - No separate "arm" step required in daily workflow
+ * - autopilot_execution_enabled is now an EMERGENCY STOP only
+ *
+ * This endpoint emits:
+ * 1. vtid.lifecycle.execution_approved (NEW - VTID-01194)
+ * 2. vtid.lifecycle.started (Legacy - kept for backward compatibility)
+ *
+ * Body:
+ * - vtid: The VTID to mark as started (required)
+ * - source: "claude", "cicd", "operator", or "command-hub" (required)
+ * - summary: Optional summary message
+ * - approval_reason: Optional reason from confirmation modal (VTID-01194)
+ *
+ * Idempotency: If execution_approved/started event already exists for this VTID,
+ * this endpoint returns 200 OK with a note that the event already exists.
+ */
+router.post("/api/v1/vtid/lifecycle/start", async (req: Request, res: Response) => {
+  try {
+    const validation = LifecycleStartEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      console.error("[VTID-01194] Validation error:", validation.error.errors);
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      console.error("[VTID-01194] Gateway misconfigured: Missing Supabase credentials");
+      return res.status(500).json({
+        ok: false,
+        error: "Gateway misconfigured",
+      });
+    }
+
+    // VTID-01194/VTID-01843: Check for existing execution_approved OR started event (idempotency)
+    // Must respect retry_reset: only consider events AFTER the most recent retry_reset
+    let idempotencyFilter = `vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&order=created_at.desc&limit=1`;
+
+    // First check if there's a retry_reset event that invalidates old started/execution_approved events
+    const retryResetResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?vtid=eq.${body.vtid}&topic=eq.vtid.lifecycle.retry_reset&order=created_at.desc&limit=1`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    let retryResetCutoff: string | null = null;
+    if (retryResetResp.ok) {
+      const retryResets = await retryResetResp.json() as any[];
+      if (retryResets.length > 0) {
+        retryResetCutoff = retryResets[0].created_at;
+        // Only look for started/execution_approved events AFTER the retry_reset
+        idempotencyFilter = `vtid=eq.${body.vtid}&or=(topic.eq.vtid.lifecycle.execution_approved,topic.eq.vtid.lifecycle.started)&created_at=gt.${retryResetCutoff}&order=created_at.desc&limit=1`;
+        console.log(`[VTID-01194] Retry reset found for ${body.vtid} at ${retryResetCutoff}, scoping idempotency check`);
+      }
+    }
+
+    const existingResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${idempotencyFilter}`,
+      {
+        method: "GET",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (existingResp.ok) {
+      const existingEvents = await existingResp.json() as any[];
+      if (existingEvents.length > 0) {
+        console.log(`[VTID-01194] Execution already approved for ${body.vtid} (existing event: ${existingEvents[0].topic})`);
+        return res.status(200).json({
+          ok: true,
+          vtid: body.vtid,
+          already_exists: true,
+          existing_event_id: existingEvents[0].id,
+          existing_topic: existingEvents[0].topic,
+          message: `Execution already approved for ${body.vtid}`,
+        });
+      }
+    }
+
+    // Spec gate: verify spec is approved before allowing execution (defense in depth)
+    const specCheckResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}&select=spec_status,spec_current_hash,spec_approved_hash`,
+      {
+        headers: {
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (specCheckResp.ok) {
+      const specRows = await specCheckResp.json() as any[];
+      if (specRows.length > 0) {
+        const specStatus = specRows[0].spec_status;
+        if (specStatus !== 'approved') {
+          console.warn(`[VTID-01194] Spec gate blocked ${body.vtid}: spec_status=${specStatus}`);
+          return res.status(409).json({
+            ok: false,
+            vtid: body.vtid,
+            error: 'SPEC_NOT_APPROVED',
+            code: 'SPEC_NOT_APPROVED',
+            spec_status: specStatus || 'missing',
+            message: `Cannot start execution: spec must be approved first (current: ${specStatus || 'missing'}). Approve the spec in Command Hub, then click Activate.`,
+          });
+        }
+        // Also check hash integrity
+        const { spec_current_hash, spec_approved_hash } = specRows[0];
+        if (spec_approved_hash && spec_current_hash && spec_approved_hash !== spec_current_hash) {
+          console.warn(`[VTID-01194] Spec hash mismatch for ${body.vtid}`);
+          return res.status(409).json({
+            ok: false,
+            vtid: body.vtid,
+            error: 'SPEC_HASH_MISMATCH',
+            code: 'SPEC_HASH_MISMATCH',
+            message: 'Spec was modified after approval. Re-validate and re-approve the spec.',
+          });
+        }
+      }
+    }
+
+    const timestamp = new Date().toISOString();
+    const defaultMessage = `${body.vtid}: Execution approved - moving to IN_PROGRESS`;
+
+    // VTID-01194: Emit the NEW execution_approved event (canonical trigger)
+    const executionApprovedId = randomUUID();
+    const executionApprovedPayload = {
+      id: executionApprovedId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: "vtid.lifecycle.execution_approved",
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01194-execution-approved",
+      status: "in_progress",
+      message: body.summary || defaultMessage,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        source: body.source,
+        approved_at: timestamp,
+        approval_reason: body.approval_reason || null,
+        // VTID-01194: Mark this as the canonical execution trigger
+        trigger_type: "human_approval",
+        vtid_ref: "VTID-01194",
+      },
+    };
+
+    const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+        Prefer: "return=representation",
+      },
+      body: JSON.stringify(executionApprovedPayload),
+    });
+
+    if (!insertResp.ok) {
+      const text = await insertResp.text();
+      console.error(`[VTID-01194] OASIS insert failed: ${insertResp.status} - ${text}`);
+      return res.status(502).json({
+        ok: false,
+        error: "Database insert failed",
+      });
+    }
+
+    const data = await insertResp.json();
+    const insertedEvent = Array.isArray(data) ? data[0] : data;
+
+    console.log(`[VTID-01194] Execution approved event emitted: ${executionApprovedId} - ${body.vtid}`);
+
+    // VTID-01194: Also emit legacy started event for backward compatibility
+    const startedEventId = randomUUID();
+    const startedPayload = {
+      id: startedEventId,
+      created_at: timestamp,
+      vtid: body.vtid,
+      topic: "vtid.lifecycle.started",
+      service: `vtid-lifecycle-${body.source}`,
+      role: "GOVERNANCE",
+      model: "vtid-01009-lifecycle-start",
+      status: "in_progress",
+      message: body.summary || `${body.vtid}: Activated from Command Hub`,
+      link: null,
+      metadata: {
+        vtid: body.vtid,
+        source: body.source,
+        started_at: timestamp,
+        // VTID-01194: Link to the canonical event
+        execution_approved_event_id: executionApprovedId,
+      },
+    };
+
+    // VTID-01843: Await legacy started event (was fire-and-forget, caused race condition)
+    try {
+      const startedResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify(startedPayload),
+      });
+      if (!startedResp.ok) {
+        console.warn(`[VTID-01194] Legacy started event insert failed: ${startedResp.status}`);
+      }
+    } catch (err: any) {
+      console.warn(`[VTID-01194] Legacy started event insert failed: ${err.message}`);
+    }
+
+    // Update the vtid_ledger status to in_progress (with retry)
+    let ledgerUpdateOk = false;
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      const ledgerUpdateResp = await fetch(
+        `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+        {
+          method: "PATCH",
+          headers: {
+            "Content-Type": "application/json",
+            apikey: svcKey,
+            Authorization: `Bearer ${svcKey}`,
+          },
+          body: JSON.stringify({
+            status: "in_progress",
+            updated_at: timestamp,
+          }),
+        }
+      );
+
+      if (ledgerUpdateResp.ok) {
+        ledgerUpdateOk = true;
+        break;
+      }
+      console.warn(`[VTID-01194] Ledger update attempt ${attempt} failed for ${body.vtid}: ${ledgerUpdateResp.status}`);
+    }
+
+    if (!ledgerUpdateOk) {
+      console.error(`[VTID-01194] Ledger update failed after retries for ${body.vtid}, but execution_approved event was emitted`);
+    }
+
+    // VTID-01194: Return response indicating execution will start
+    return res.status(200).json({
+      ok: true,
+      event_id: insertedEvent.id,
+      vtid: body.vtid,
+      topic: "vtid.lifecycle.execution_approved",
+      status: "in_progress",
+      message: `Execution approved for ${body.vtid} - autonomous execution will begin`,
+      // VTID-01194: Include semantic info
+      execution_trigger: {
+        type: "human_approval",
+        approved_at: timestamp,
+        source: body.source,
+        vtid_ref: "VTID-01194",
+      },
+    });
+  } catch (e: any) {
+    console.error("[VTID-01194] Unexpected error:", e);
+    return res.status(500).json({
+      ok: false,
+      error: "Internal server error",
+    });
+  }
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/reject
+ * Reject a scheduled task (soft deny — keeps the VTID, marks status as 'rejected').
+ *
+ * Body:
+ * - vtid: The VTID to reject (required)
+ * - source: "command-hub", "operator", "claude", or "cicd" (required)
+ * - reason: Optional rejection reason
+ *
+ * Guards:
+ * - VTID must exist in vtid_ledger
+ * - VTID must not already be in a terminal state (completed, failed, cancelled)
+ * - VTID must not be in_progress (cannot reject running tasks — block or cancel instead)
+ */
+const LifecycleRejectEventSchema = z.object({
+  vtid: z.string().min(1, "vtid required"),
+  source: z.enum(["claude", "cicd", "operator", "command-hub"], {
+    errorMap: () => ({ message: "source must be: claude, cicd, operator, or command-hub" }),
+  }),
+  reason: z.string().nullish(),
+});
+
+router.post("/api/v1/vtid/lifecycle/reject", async (req: Request, res: Response) => {
+  try {
+    const validation = LifecycleRejectEventSchema.safeParse(req.body);
+
+    if (!validation.success) {
+      return res.status(400).json({
+        ok: false,
+        error: validation.error.errors
+          .map((e) => `${e.path.join(".")}: ${e.message}`)
+          .join(", "),
+      });
+    }
+
+    const body = validation.data;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    // Fetch current task status
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}&select=vtid,status,is_terminal`,
+      {
+        headers: {
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+      }
+    );
+
+    if (!ledgerResp.ok) {
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rows = await ledgerResp.json() as any[];
+    if (rows.length === 0) {
+      return res.status(404).json({ ok: false, error: `VTID ${body.vtid} not found in ledger` });
+    }
+
+    const task = rows[0];
+    const terminalStatuses = ['completed', 'failed', 'cancelled', 'merged', 'deployed', 'done'];
+
+    if (task.is_terminal || terminalStatuses.includes(task.status)) {
+      return res.status(409).json({
+        ok: false,
+        error: 'ALREADY_TERMINAL',
+        message: `Cannot reject ${body.vtid}: already in terminal status '${task.status}'`,
+      });
+    }
+
+    if (task.status === 'in_progress' || task.status === 'running') {
+      return res.status(409).json({
+        ok: false,
+        error: 'TASK_IN_PROGRESS',
+        message: `Cannot reject ${body.vtid}: task is currently in progress. Use block or cancel instead.`,
+      });
+    }
+
+    const timestamp = new Date().toISOString();
+
+    // Update vtid_ledger status to 'rejected'
+    const updateResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${body.vtid}`,
+      {
+        method: "PATCH",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify({
+          status: "rejected",
+          updated_at: timestamp,
+        }),
+      }
+    );
+
+    if (!updateResp.ok) {
+      const errText = await updateResp.text();
+      console.error(`[lifecycle/reject] Ledger update failed for ${body.vtid}: ${errText}`);
+      return res.status(502).json({ ok: false, error: "Ledger update failed" });
+    }
+
+    // Emit OASIS event
+    const eventId = randomUUID();
+    await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        id: eventId,
+        created_at: timestamp,
+        vtid: body.vtid,
+        topic: "vtid.lifecycle.rejected",
+        service: `vtid-lifecycle-${body.source}`,
+        role: "GOVERNANCE",
+        model: "vtid-lifecycle-reject",
+        status: "warning",
+        message: `${body.vtid}: Rejected — ${body.reason || 'No reason provided'}`,
+        metadata: {
+          vtid: body.vtid,
+          source: body.source,
+          reason: body.reason || null,
+          previous_status: task.status,
+          rejected_at: timestamp,
+        },
+      }),
+    }).catch(err => {
+      console.warn(`[lifecycle/reject] OASIS event insert failed (non-blocking): ${err.message}`);
+    });
+
+    console.log(`[lifecycle/reject] ${body.vtid} rejected by ${body.source}: ${body.reason || 'No reason'}`);
+
+    return res.status(200).json({
+      ok: true,
+      vtid: body.vtid,
+      status: "rejected",
+      event_id: eventId,
+      message: `Task ${body.vtid} has been rejected`,
+    });
+  } catch (e: any) {
+    console.error("[lifecycle/reject] Unexpected error:", e);
+    return res.status(500).json({ ok: false, error: "Internal server error" });
+  }
+});
+
+/**
+ * POST /api/v1/vtid/lifecycle/backfill
+ * VTID-01005: Backfill terminal lifecycle events for VTIDs that are already complete
+ *
+ * This endpoint scans VTIDs that have terminal states (from ledger or events)
+ * but don't have explicit terminal lifecycle events, and creates them.
+ *
+ * Query params:
+ * - limit: Max VTIDs to process (default 50)
+ * - dry_run: If true, don't actually emit events (default false)
+ */
+router.post("/api/v1/vtid/lifecycle/backfill", async (req: Request, res: Response) => {
+  try {
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    const supabaseUrl = process.env.SUPABASE_URL;
+
+    if (!svcKey || !supabaseUrl) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const dryRun = req.query.dry_run === "true";
+
+    console.log(`[VTID-01005] Backfill request: limit=${limit}, dry_run=${dryRun}`);
+
+    // Step 1: Get all VTIDs with terminal ledger status
+    const ledgerResp = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?or=(status.eq.done,status.eq.complete,status.eq.deployed,status.eq.merged,status.eq.closed,status.eq.failed,status.eq.error)&limit=${limit}`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    if (!ledgerResp.ok) {
+      return res.status(502).json({ ok: false, error: "Failed to fetch ledger" });
+    }
+
+    const terminalVtids = await ledgerResp.json() as any[];
+
+    // Step 2: Get existing terminal lifecycle events
+    // VTID-01227: Add LIMIT to prevent disk IO exhaustion
+    const eventsResp = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?or=(topic.eq.vtid.lifecycle.completed,topic.eq.vtid.lifecycle.failed)&limit=10000`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+    );
+
+    let existingTerminalEvents: any[] = [];
+    if (eventsResp.ok) {
+      existingTerminalEvents = await eventsResp.json() as any[];
+    }
+
+    const vtidsWithTerminalEvents = new Set(existingTerminalEvents.map((e: any) => e.vtid));
+
+    // Step 3: Find VTIDs that need backfill
+    const vtidsToBackfill = terminalVtids.filter((v: any) => !vtidsWithTerminalEvents.has(v.vtid));
+
+    console.log(`[VTID-01005] Found ${vtidsToBackfill.length} VTIDs needing backfill`);
+
+    if (dryRun) {
+      return res.status(200).json({
+        ok: true,
+        dry_run: true,
+        vtids_to_backfill: vtidsToBackfill.map((v: any) => ({
+          vtid: v.vtid,
+          current_status: v.status,
+          proposed_outcome: ['done', 'complete', 'deployed', 'merged', 'closed'].includes(v.status.toLowerCase()) ? 'success' : 'failed',
+        })),
+        count: vtidsToBackfill.length,
+      });
+    }
+
+    // Step 4: Emit terminal lifecycle events for each
+    const results: any[] = [];
+    for (const vtidRow of vtidsToBackfill) {
+      const outcome = ['done', 'complete', 'deployed', 'merged', 'closed'].includes(vtidRow.status.toLowerCase())
+        ? 'success'
+        : 'failed';
+      const topic = outcome === 'success' ? 'vtid.lifecycle.completed' : 'vtid.lifecycle.failed';
+      const eventId = randomUUID();
+      const timestamp = new Date().toISOString();
+
+      const payload = {
+        id: eventId,
+        created_at: timestamp,
+        vtid: vtidRow.vtid,
+        topic: topic,
+        service: 'vtid-lifecycle-backfill',
+        role: 'GOVERNANCE',
+        model: 'vtid-01005-backfill',
+        status: outcome === 'success' ? 'success' : 'error',
+        message: `VTID ${vtidRow.vtid} marked ${outcome} (backfilled)`,
+        link: null,
+        metadata: {
+          vtid: vtidRow.vtid,
+          outcome: outcome,
+          source: 'backfill',
+          terminal: true,
+          original_status: vtidRow.status,
+          backfilled_at: timestamp,
+        },
+      };
+
+      const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_events`, {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          apikey: svcKey,
+          Authorization: `Bearer ${svcKey}`,
+        },
+        body: JSON.stringify(payload),
+      });
+
+      // VTID-01008: Also backfill stage success events for successful VTIDs
+      let stageBackfillResults: { stage: string; event_id: string; already_exists?: boolean; has_failure?: boolean }[] = [];
+      if (insertResp.ok && outcome === 'success') {
+        stageBackfillResults = await backfillStageSuccessEvents(vtidRow.vtid, 'backfill', supabaseUrl, svcKey);
+      }
+
+      results.push({
+        vtid: vtidRow.vtid,
+        outcome,
+        event_id: eventId,
+        success: insertResp.ok,
+        stage_backfill: outcome === 'success' ? stageBackfillResults : undefined,
+      });
+    }
+
+    console.log(`[VTID-01005] Backfill complete: ${results.filter(r => r.success).length}/${results.length} lifecycle events emitted`);
+    console.log(`[VTID-01008] Stage backfill complete for bulk operation`);
+
+    return res.status(200).json({
+      ok: true,
+      backfilled: results,
+      count: results.filter(r => r.success).length,
+    });
+  } catch (e: any) {
+    console.error("[VTID-01005] Backfill error:", e);
+    return res.status(500).json({ ok: false, error: e.message });
+  }
+});
+
+/**
+ * GET /api/v1/events/verification-advisory
+ * VTID-01175: Verification engine reports (advisory mode).
+ *
+ * Surfaces vtid.stage.verification.* events from oasis_events so a developer
+ * can review what the verifier flagged and decide whether to accept the
+ * delivered work. Advisory verification never blocks the task — this is where
+ * the "fixes needed" overview lives.
+ *
+ * Query params:
+ *   - outcome: 'advisory' (needs review, default) | 'passed' | 'failed' | 'all'
+ *   - limit:   max rows (default 50, max 200)
+ *
+ * Each row is shaped from the OASIS event payload into:
+ *   { vtid, domain, outcome, recommended_action, checks_failed, fixes_needed,
+ *     reason, run_id, created_at }
+ */
+// public-route: read-only oasis_events query, consistent with the other
+// /api/v1/events/* handlers in this file (anonymous). Command Hub access is
+// gated at the page route, not per data endpoint.
+router.get("/api/v1/events/verification-advisory", async (req: Request, res: Response) => {
+  try {
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) {
+      return res.status(500).json({ ok: false, error: "Gateway misconfigured" });
+    }
+
+    const outcome = (req.query.outcome as string) || "advisory";
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    // Filter on the `topic` column (emitOasisEvent writes event.type into `topic`).
+    // Default to advisory — the rows that need a human decision.
+    let topicFilter = "topic=like.vtid.stage.verification*";
+    if (outcome === "advisory") {
+      topicFilter = "topic=eq.vtid.stage.verification.advisory";
+    } else if (outcome === "passed") {
+      topicFilter = "topic=eq.vtid.stage.verification.passed";
+    } else if (outcome === "failed") {
+      topicFilter = "topic=eq.vtid.stage.verification.failed";
+    }
+
+    const queryParams = `select=vtid,topic,status,message,metadata,created_at&${topicFilter}&order=created_at.desc&limit=${limit}`;
+    const resp = await fetch(`${supabaseUrl}/rest/v1/oasis_events?${queryParams}`, {
+      method: "GET",
+      headers: {
+        "Content-Type": "application/json",
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+    });
+
+    if (!resp.ok) {
+      const detail = await resp.text().catch(() => "");
+      console.error(`[VTID-01175] verification-advisory query failed: ${resp.status} - ${detail}`);
+      return res.status(502).json({ ok: false, error: "Database query failed" });
+    }
+
+    const rows = (await resp.json()) as Array<{
+      vtid: string | null;
+      topic: string;
+      status: string;
+      message: string;
+      metadata: Record<string, any> | null;
+      created_at: string;
+    }>;
+
+    const reports = rows.map((r) => {
+      const p = r.metadata || {};
+      return {
+        vtid: r.vtid,
+        domain: p.domain ?? null,
+        outcome: (r.topic || "").replace("vtid.stage.verification.", "") || "unknown",
+        recommended_action: p.recommended_action ?? null,
+        checks_failed: Array.isArray(p.checks_failed) ? p.checks_failed : [],
+        fixes_needed: Array.isArray(p.fixes_needed) ? p.fixes_needed : [],
+        reason: r.message || null,
+        run_id: p.run_id ?? null,
+        created_at: r.created_at,
+      };
+    });
+
+    res.json({ ok: true, outcome, count: reports.length, reports });
+  } catch (error: any) {
+    console.error("[VTID-01175] verification-advisory error:", error);
+    res.status(500).json({ ok: false, error: error.message });
+  }
+});

@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05211",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/enrichment/card-catalog.ts",
+    "services/gateway/src/services/enrichment/card-availability.ts",
+    "services/gateway/src/routes/enrichment-cards.ts",
+    "services/gateway/test/routes/enrichment-cards.test.ts",
+    ".kiro/specs/profile-vitana-cards/lanes/gateway-profile-list.md",
+    "docs/validation/VTID-05211/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05211/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

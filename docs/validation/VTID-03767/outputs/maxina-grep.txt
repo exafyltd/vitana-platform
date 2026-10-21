@@ -1,0 +1,5 @@
+$ grep -n "Maxina\|ماكسينا\|Максин" src/data/feature-tips.ts src/services/recommendation-engine/analyzers/community-user-analyzer.ts
+src/data/feature-tips.ts:23: * the in-app assistant is named Vitana, never Maxina — MAXINA is the app/
+src/data/feature-tips.ts:24: * brand name (see vitana-v1's src/i18n/<locale>/portals.json: "Maxina is
+src/data/feature-tips.ts:296:    // BOOTSTRAP-SERBIAN-NAV-I18N-ALIGN: was "Talk to Maxina" — wrong. The
+(exit 0)

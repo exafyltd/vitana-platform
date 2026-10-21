@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04969",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "the guard lets discovery through: the protected-resource metadata still answers (read-only, no sign-in)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "expect_status": 401,
+      "reason": "an unsigned MCP request is still refused by the endpoint's own sign-in (rejected probe; nothing is written)",
+      "rejected_probe": true
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04968-delegation-guard.test.ts test/vtid-04969-commerce-mcp-openai-metadata.test.ts test/commerce-mcp.test.ts test/vtid-04940-commerce-mcp-supplier-data.test.ts test/vtid-04941-commerce-mcp-automation.test.ts",
+      "cwd": "services/gateway",
+      "reason": "guard classification, paths, modes and audit; client approval; the standing write-route check; the tool metadata and domain challenge; the existing MCP behaviour"
+    }
+  ]
+}

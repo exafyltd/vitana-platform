@@ -1,0 +1,3 @@
+PASS test/vtid-04799-selfheal-pretriage.test.ts
+PASS test/vtid-04759-selfheal-jev-gates.test.ts
+Tests:       43 passed, 43 total

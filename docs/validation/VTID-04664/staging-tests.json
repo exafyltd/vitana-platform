@@ -1,0 +1,322 @@
+{
+  "vtid": "VTID-04664",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "deploy/staging-verify answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/staging-verify",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/staging-deploy answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/staging-deploy",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/prod-deploy answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/prod-deploy",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/prod-gateway answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/prod-gateway",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/staging-gateway answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/staging-gateway",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/frontend-prod answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/frontend-prod",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "deploy/frontend-staging answers a JSON status",
+      "path": "/api/v1/ops/runtime/deploy/frontend-staging",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-gateway-awsdr answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-gateway answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-gateway",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-community-app-awsdr answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-community-app-staging answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-oasis-operator-awsdr answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-oasis-projector answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-worker-runner answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-worker-runner",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-vitana-verification-engine answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "aws/ecs/vitana-orb-agent answers a JSON status",
+      "path": "/api/v1/ops/runtime/aws/ecs/vitana-orb-agent",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/kill-switch answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/kill-switch",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/stuck-runs answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/stuck-runs",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/approval-backlog answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/approval-backlog",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/success-rate answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/success-rate",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/scan-freshness answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/scan-freshness",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "autopilot/dispatch-failures answers a JSON status",
+      "path": "/api/v1/ops/runtime/autopilot/dispatch-failures",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "voice/polly answers a JSON status",
+      "path": "/api/v1/ops/runtime/voice/polly",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "voice/fish answers a JSON status",
+      "path": "/api/v1/ops/runtime/voice/fish",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "voice/serbian-bridge answers a JSON status",
+      "path": "/api/v1/ops/runtime/voice/serbian-bridge",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "voice/session-errors answers a JSON status",
+      "path": "/api/v1/ops/runtime/voice/session-errors",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "ai/bedrock answers a JSON status",
+      "path": "/api/v1/ops/runtime/ai/bedrock",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "ai/deepseek answers a JSON status",
+      "path": "/api/v1/ops/runtime/ai/deepseek",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "media/titan answers a JSON status",
+      "path": "/api/v1/ops/runtime/media/titan",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "data/oasis-write-lag answers a JSON status",
+      "path": "/api/v1/ops/runtime/data/oasis-write-lag",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "data/db-latency answers a JSON status",
+      "path": "/api/v1/ops/runtime/data/db-latency",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "data/redis answers a JSON status",
+      "path": "/api/v1/ops/runtime/data/redis",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "data/code-index answers a JSON status",
+      "path": "/api/v1/ops/runtime/data/code-index",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "data/scheduled-workflows answers a JSON status",
+      "path": "/api/v1/ops/runtime/data/scheduled-workflows",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "support/stuck-tickets answers a JSON status",
+      "path": "/api/v1/ops/runtime/support/stuck-tickets",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "business/erp-bridge answers a JSON status",
+      "path": "/api/v1/ops/runtime/business/erp-bridge",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "business/jev answers a JSON status",
+      "path": "/api/v1/ops/runtime/business/jev",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"status\":"
+    },
+    {
+      "kind": "http",
+      "name": "staging gateway can read its own build-info through the check",
+      "path": "/api/v1/ops/runtime/deploy/staging-gateway",
+      "expect_json": {
+        "status": "ok"
+      }
+    },
+    {
+      "kind": "http",
+      "name": "registry lists the Phase 3 groups",
+      "path": "/api/v1/admin/health-registry",
+      "expect_body_contains": "AWS Runtime"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04664-ops-runtime-health.test.ts",
+      "cwd": "services/gateway",
+      "reason": "every evaluator's thresholds, the single shared DescribeServices call, AccessDenied as no_access and not_configured counting need controlled inputs a read-only staging run cannot produce"
+    }
+  ]
+}

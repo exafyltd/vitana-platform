@@ -1,0 +1,32 @@
+PASS migration applies
+PASS migration is re-runnable
+PASS first claim is granted (attempt 1) — {"ok":true,"attempt":1,"claimed":true}
+PASS a pending claim is never re-claimed (in_flight) — {"ok":true,"reason":"in_flight","claimed":false}
+PASS finish(sent) moves the pending claim — {"ok":true}
+PASS sent row keeps the DM id and the send time
+PASS a sent welcome is never claimed again (already_sent) — {"ok":true,"reason":"already_sent","claimed":false}
+PASS finish on a non-pending row is refused — {"ok":false,"error":"NOT_PENDING"}
+PASS another sender for the same member is its own claim — {"ok":true,"attempt":1,"claimed":true}
+PASS the same sender for another member is its own claim — {"ok":true,"attempt":1,"claimed":true}
+PASS a failed first attempt may be claimed once more (attempt 2) — {"ok":true,"attempt":2,"claimed":true}
+PASS after a failed retry the pair is spent (retry_spent) — {"ok":true,"reason":"retry_spent","claimed":false}
+PASS failed row has no DM id
+PASS an unknown sender is refused — {"ok":false,"error":"INVALID_SENDER"}
+PASS a missing member is refused — {"ok":false,"error":"ARGS_REQUIRED"}
+PASS an unknown finish status is refused — {"ok":false,"error":"INVALID_STATUS"}
+PASS the primary key blocks a second row for a pair
+PASS RLS is enabled
+PASS no RLS policy exists (no client access)
+PASS anon cannot execute public.claim_welcome_message
+PASS authenticated cannot execute public.claim_welcome_message
+PASS public cannot execute public.claim_welcome_message
+PASS service_role can execute public.claim_welcome_message
+PASS anon cannot execute public.finish_welcome_message
+PASS authenticated cannot execute public.finish_welcome_message
+PASS public cannot execute public.finish_welcome_message
+PASS service_role can execute public.finish_welcome_message
+PASS anon has no SELECT on welcome_team_claims
+PASS authenticated has no SELECT on welcome_team_claims
+PASS claims cascade with the member
+
+ALL CHECKS PASSED

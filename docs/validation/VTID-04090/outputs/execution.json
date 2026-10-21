@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04090",
+  "title": "Command Hub a11y Region 3: keyboard access for custom clickable elements (T10)",
+  "validation_profile": "gateway_backend",
+  "tests": {
+    "new_suite": "services/gateway/test/command-hub/t10-r3-keyboard-clickable-rows.test.ts",
+    "new_suite_result": "15 passed, 15 total",
+    "full_command_hub_sweep": "10 suites, 174 tests passed",
+    "tsc_noemit": "clean",
+    "npm_build": "exit 0"
+  },
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/t10-r3-keyboard-clickable-rows.test.ts"
+  ],
+  "routes_added": [],
+  "cache_bust": "20260918-vtid-04090-a11y-keyboard-rows",
+  "rows_converted": 12
+}

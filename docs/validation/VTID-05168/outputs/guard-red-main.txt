@@ -1,0 +1,2 @@
+guard over origin/main src — direct writers: ["routes/health-repository.ts"]
+direct legacy RPC callers: ["routes/calendar-repository.ts","routes/integrations-repository.ts","routes/memory-repository.ts","services/orb-tools/health-depth-tools-repository.ts","services/orb-tools-shared.ts","services/voice-tools/health-log-repository.ts","services/wearable-features-bridge-repository.ts"]

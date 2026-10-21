@@ -1,0 +1,117 @@
+VTID-04198 / VTID-04199 — what was actually run, in order.
+Session: Claude Code, 2026-09-19..20.
+
+=== 1. INVESTIGATION (read-only; no writes to any live system) ===
+
+Production oasis_events, via Supabase MCP (SELECT only):
+  - topic census over 12h                      -> orb.live.diag dominant
+  - per-session stage traces, 10:17-10:33 UTC  -> the reported window
+  - max(audio_out) per session                 -> 315 / 22 / 16 / 15 chunks
+  - content-filter + bridge counts over 14d    -> bridge is new today (22 vs 0)
+  - anonymous-session census over 30h          -> zero `ru` anon sessions
+  - user_agent per session.start               -> iPhone iOS 16.6 "App96"
+
+Live production gateway (HTTP GET, read-only):
+  curl https://gateway.vitanaland.com/api/v1/admin/build-info
+  curl https://gateway.vitanaland.com/api/v1/orb/health
+  curl https://gateway.vitanaland.com/api/v1/orb/nova-sonic/health
+    -> supported_languages ["en","de"]; cascade.enabled=false, effective=false
+  curl -I https://gateway.vitanaland.com/command-hub/orb-widget.js
+    -> cache-control: public, max-age=31536000, immutable   (see step 4)
+
+Two hypotheses were tested against the data and REJECTED rather than shipped:
+  - "missing wake_opener causes the truncation" -> no-opener sessions average
+    741 chunks, MORE than any opener cohort. Rejected.
+  - "the content-filter block causes it"        -> 42.9% of blocked sessions
+    under 40 chunks vs 46.5% of clean ones. No difference. Rejected.
+  - a zero-diagnostic session that looked like a perfect match turned out to
+    be user_agent curl/8.5.0, a synthetic probe, not the reporting device.
+    Discarded.
+
+=== 2. VTID ALLOCATION (governed) ===
+
+  POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04198
+  POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04199
+  UPDATE vtid_ledger SET title, summary, status='in_progress',
+         spec_status='approved'   (per CLAUDE.md §4.1 step 4)
+
+=== 3. IMPLEMENTATION ===
+
+services/gateway/src/frontend/command-hub/orb-widget.js
+  + _RESUME_GIVE_UP_MS / _RESUME_RETRY_TICK_MS / _AUDIO_QUEUE_HOLD_CHUNKS
+  + _s._resumeWatchdogTimer, _s._audioBlockedBeaconSent
+  + _beaconAudioBlocked(state, detail)
+  ~ _processQueue()      : own re-entry tick; stop discarding the queue
+  ~ _playAudio()         : bound the held queue at the push site
+  ~ _announceAudioBlocked(detail) / _clearAudioBlocked(skipUi)
+  ~ _sessionStop()       : cancel the tick with the session
+
+services/gateway/src/routes/orb-live.ts
+  + POST /session/:id/audio-blocked   (optionalAuth, anonymous-capable)
+
+services/gateway/src/types/cicd.ts
+  + orb.live.audio_blocked{,.recovered,.abandoned}
+
+=== 4. THE CACHE-BUSTER (exafyltd/vitana-v1, separate PR) ===
+
+The gateway serves the widget `immutable, max-age=31536000` ON PURPOSE; the
+?v= query parameter in vitana-v1/index.html IS the cache-busting mechanism.
+Without bumping it this fix would never be fetched by any device that has
+already loaded the widget — including the reporting iPhone. Both the preload
+and the script tag bumped to the identical value (a drift between them makes
+the browser fetch the file twice; VTID-04099 pins that with a test).
+
+=== 5. VERIFICATION ===
+
+$ node --check src/frontend/command-hub/orb-widget.js
+  orb-widget.js OK
+
+$ npx tsc --noEmit
+  src/services/aws-cloudwatch-logs-readonly.ts(24,62): error TS2307:
+    Cannot find module '@aws-sdk/client-cloudwatch-logs'
+  ^ pre-existing, present on main, unrelated (documented in CLAUDE.md).
+    No other errors.
+
+$ npx jest   # WITH these changes
+  Test Suites: 45 failed, 1 skipped, 956 passed, 1001 of 1002 total
+  Tests:       16 failed, 27 skipped, 6 todo, 16029 passed, 16078 total
+
+$ git stash push -u && npx jest && git stash pop   # BASELINE, changes removed
+  Test Suites: 45 failed, 1 skipped, 954 passed, 999 of 1000 total
+  Tests:       16 failed, 27 skipped, 6 todo, 16011 passed, 16060 total
+
+  Identical failure counts. +2 suites, +18 tests, all passing. Zero
+  regressions. Every one of the 117 failure lines is the same missing
+  @aws-sdk/client-cloudwatch-logs package:
+  $ npx jest 2>&1 | grep -c "Cannot find module '@aws-sdk/client-cloudwatch-logs'"
+    117
+
+$ npx jest test/frontend/orb-widget-ios-audio-blocked.test.ts \
+            test/routes/orb-audio-blocked-route.test.ts \
+            test/frontend/orb-widget-gesture-audio-unlock.test.ts \
+            test/frontend/orb-widget-audio-playback.test.ts \
+            test/frontend/orb-widget-audio-ready.test.ts
+  all passing
+
+vitana-v1:
+$ npx tsc --noEmit                      -> clean
+$ npx vitest run                        -> 138 files, 753 tests, all passing
+
+=== 6. ROUTE-MOUNT PROOF ===
+
+See outputs/curl-route-before-deploy.txt — captured live against staging
+BEFORE this merges: the new path returns 404 text/html (route absent on the
+deployed code, per §15's own diagnostic), while its already-live sibling on
+the same router prefix returns 200 application/json. That control rules out
+a bad prefix or an unreachable host.
+
+Note the sibling's live response: {"ok":false,"reason":"anonymous_no_ack"} —
+a real, live demonstration of exactly the behaviour the new route must NOT
+copy, since the reported failure is pre-login.
+
+=== 7. NOT RUN ===
+
+- No real-device test. This session has no iPhone, and there is no acoustic
+  path in a unit test.
+- No production deploy, and no production env change. The Russian fix
+  (ORB_CASCADED_VOICE_ENABLED) is deliberately left to the platform owner.

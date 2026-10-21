@@ -1,0 +1,30 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/routes/tenant-admin/invitations.test.ts
+  Tenant Admin Invitations Routes
+    ✓ returns 401 without an Authorization header (33 ms)
+    ✓ tenant isolation: tenant A admin cannot invite into tenant B (403, no insert) (11 ms)
+    ✓ returns 403 for a non-admin member of the tenant (4 ms)
+    ✓ POST / rejects an invalid email with 400 (4 ms)
+    ✓ POST / creates an invitation with normalized email, default role, and the tenant id (6 ms)
+    ✓ POST / passes through explicit roles (4 ms)
+    ✓ POST / returns 409 when a pending invitation already exists (4 ms)
+    ✓ POST / allows re-inviting once the previous invitation has expired (VTID-03938) (4 ms)
+    ✓ POST / returns 500 (not a silent duplicate-invite risk) when the existing-invitation check errors (4 ms)
+    ✓ POST / returns 503 when the DB client is unavailable (4 ms)
+    ✓ GET / lists invitations scoped to the tenant (3 ms)
+    ✓ GET /?status=pending adds the null accepted_at/revoked_at filters (3 ms)
+    ✓ POST /:id/revoke revokes only within the tenant and stamps the actor (3 ms)
+    ✓ POST /:id/revoke returns 404 when the invitation is not found in this tenant (3 ms)
+    ✓ accept: returns 401 without a token (2 ms)
+    ✓ accept: returns 404 for an unknown/used token (3 ms)
+    ✓ accept: returns 410 for an expired invitation (2 ms)
+    ✓ accept: creates membership + grants roles for the invitation's tenant only (4 ms)
+    ✓ accept: returns 500 (not a silent membership reset) when the existing-membership check errors (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.658 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

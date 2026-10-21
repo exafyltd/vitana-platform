@@ -1,0 +1,3 @@
+npx tsc --noEmit -p services/gateway   # exit 0
+npx jest test/orb/live/vtid-04386-voice-delegation.test.ts test/vtid-04310-* test/orb/live/commerce-surface.test.ts test/orb/live/characterization   # 356 pass
+npx jest   # full suite, outputs/full-jest.txt

@@ -1,0 +1,47 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+  VTID-04226: EventBridge JOBS carry the two test-contract scanners
+    ✓ lists gateway-test-contracts-scheduled-run every 15 minutes with the internal-token auth, targeting the test-contract gateway (3 ms)
+    ✓ lists gateway-test-contracts-missing daily as a GET with the internal-token auth (1 ms)
+    ✓ the test-contract gateway defaults to STAGING (prod is an explicit override, IF-THEN 26) (1 ms)
+    ✓ keeps every pre-existing VTID-03766 job (25, minus daily-feature-tip — VTID-04677) and adds exactly 2
+    ✓ the schedule Input merges the EXTRA json (method/auth/gateway_url) onto path+body
+  VTID-04226: the shared Lambda can present X-Gateway-Internal without the token ever sitting in plain config
+    ✓ reads the token from Secrets Manager at invoke time, cached, only for auth=gateway_internal jobs (1 ms)
+    ✓ honours method (GET sends no body) and a per-job gateway_url override (1 ms)
+    ✓ still fails loudly on non-2xx (a 403 from a missing token is a Lambda error, not a silent success)
+    ✓ grants the Lambda exec role GetSecretValue on exactly the internal-token secret and passes its id as env
+  VTID-04226: scripts parse and dry-run
+    ✓ both scripts pass bash -n (13 ms)
+    ✓ --dry-run prints the two new jobs without calling AWS (12 ms)
+    ✓ the token provisioning script is dry-run by default and never defaults to prod (11 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-05039-onboarding-coach-shadow-start.test.ts
+  VTID-05039: production pins the coach in shadow mode
+    ✓ pins FEATURE_ONBOARDING_ASSISTANT_ENV to a recognised value that is live on prod (1 ms)
+    ✓ pins VOA_ROLLOUT_DATE to a valid calendar date (1 ms)
+    ✓ never sets VOA_MODE (no sending mode)
+    ✓ the staging workflow sets none of the coach switches (1 ms)
+    ✓ the pinned values resolve to shadow on production and stay off on staging (1 ms)
+  VTID-05039: one daily scheduler job for the tick
+    ✓ exactly one job row targets the tick
+    ✓ runs once a day, against the production gateway token, with gateway_internal auth (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.529 s, estimated 1 s
+Ran all test suites matching /test\/vtid-05039-onboarding-coach-shadow-start.test.ts|test\/vtid-04226-eventbridge-test-contract-schedules.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

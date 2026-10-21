@@ -1,0 +1,4 @@
+# VTID-04823 — commands (services/gateway)
+npx jest test/orb/live/session/vtid-04545-session-start-characterization.test.ts   # 2026-10-01 22:44 UTC (00:44 Berlin): 9 failed, 19 passed — same on origin/main 9775dbf
+# cause: decideGreetingKind(journey, today, localHourInTimezone(now, tz)) returns no kind before 05:00 local (VTID-04595)
+npx jest test/orb/live/session/vtid-04545-session-start-characterization.test.ts   # with the hour pinned: 28 passed (outputs/jest-characterization.txt)

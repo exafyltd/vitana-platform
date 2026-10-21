@@ -1,0 +1,109 @@
+{
+  "$schema": "./service-path-map.schema.json",
+  "$comment": "VTID-01032: Service path mapping for multi-service auto-deploy detection",
+  "version": "1.0.0",
+  "mappings": {
+    "gateway": {
+      "paths": [
+        "services/gateway/"
+      ],
+      "cloud_run_service": "gateway",
+      "deployable": true
+    },
+    "oasis-operator": {
+      "paths": [
+        "services/oasis-operator/"
+      ],
+      "cloud_run_service": "oasis-operator",
+      "deployable": true
+    },
+    "oasis-projector": {
+      "paths": [
+        "services/oasis-projector/"
+      ],
+      "cloud_run_service": "oasis-projector",
+      "deployable": true
+    },
+    "vitana-verification-engine": {
+      "paths": [
+        "services/agents/vitana-orchestrator/"
+      ],
+      "cloud_run_service": "vitana-verification-engine",
+      "deployable": true
+    },
+    "agents": {
+      "paths": [
+        "services/agents/"
+      ],
+      "cloud_run_service": "agents",
+      "deployable": false
+    },
+    "mcp": {
+      "paths": [
+        "services/mcp/"
+      ],
+      "cloud_run_service": "mcp",
+      "deployable": false
+    },
+    "mcp-gateway": {
+      "paths": [
+        "services/mcp-gateway/"
+      ],
+      "cloud_run_service": "mcp-gateway",
+      "deployable": false
+    },
+    "validators": {
+      "paths": [
+        "services/validators/"
+      ],
+      "cloud_run_service": null,
+      "deployable": false
+    },
+    "openclaw-bridge": {
+      "paths": [
+        "services/openclaw-bridge/"
+      ],
+      "cloud_run_service": "openclaw-bridge",
+      "deployable": true
+    },
+    "vaea": {
+      "paths": [
+        "services/vaea/"
+      ],
+      "cloud_run_service": "vaea",
+      "deployable": false,
+      "notes": "VTID-02400 Phase 0 scaffold \u2014 flip deployable to true in Phase 1 when loops land"
+    },
+    "erp-bridge": {
+      "paths": [
+        "services/erp-bridge/"
+      ],
+      "cloud_run_service": "erp-bridge",
+      "deployable": true,
+      "$comment": "VTID-03840: AWS ECS staging service vitana-erp-bridge via AWS-STAGE-DEPLOY-ERP-BRIDGE.yml (no Cloud Run \u2014 key kept for schema compatibility)"
+    },
+    "kiro-runner": {
+      "paths": [
+        "services/kiro-runner/"
+      ],
+      "cloud_run_service": "kiro-runner",
+      "deployable": true,
+      "$comment": "VTID-04999: AWS ECS staging service vitana-kiro-runner via AWS-STAGE-DEPLOY-KIRO-RUNNER.yml (no Cloud Run \u2014 key kept for schema compatibility)"
+    }
+  },
+  "shared": {
+    "paths": [
+      "packages/",
+      "libs/",
+      "config/"
+    ],
+    "description": "Shared code paths - require explicit deploy.services when changed alone"
+  },
+  "infrastructure": {
+    "paths": [
+      ".github/workflows/",
+      "scripts/"
+    ],
+    "description": "Infrastructure paths - typically no deploy needed"
+  }
+}

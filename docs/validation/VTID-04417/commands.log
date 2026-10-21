@@ -1,0 +1,18 @@
+# VTID-04417 — commands run (2026-09-23)
+
+## VTID
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate {source:claude-code,layer:DEV,module:orb-brain-parity} -> VTID-04417
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04417'
+
+## Checked before changing
+scripts/ci/impact-rules/transport-flow-parity.mjs meta.severity -> 'blocker' (since VTID-03366)
+.github/workflows/DEV-AUTOPILOT-IMPACT.yml -> scan step continue-on-error: true, then "Fail if blocker findings" exits 1 on pull_request
+grep direct context builds in routes/orb-live.ts -> debug/awareness, context-bootstrap test route, debug/brain-instruction, prewarm, the definition
+
+## Rule on the tree
+node -e "check({ changedFiles: TRANSPORT_FILES as M })" -> []
+
+## Gateway
+npx tsc --noEmit -p .                                                          -> clean
+jest test/scripts/vtid-04417-transport-flow-parity.test.ts                    -> 6 passed
+jest test/orb test/routes test/services/conversation test/scripts test/command-hub -> 403 suites; 6624 passed after the 2 call-name assertions were updated (1 skipped, 6 todo)

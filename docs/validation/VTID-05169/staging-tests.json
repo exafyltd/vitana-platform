@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05169",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "build-info answers JSON (the runner confirms the verified commit from it)", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "GET /api/v1/timeline is mounted and refuses an anonymous caller with JSON 401 (not an HTML 404)", "path": "/api/v1/timeline", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "GET /api/v1/timeline/spotlight is mounted and refuses an anonymous caller with JSON 401", "path": "/api/v1/timeline/spotlight", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "GET /api/v1/timeline/summary is mounted and refuses an anonymous caller with JSON 401", "path": "/api/v1/timeline/summary", "expect_status": 401, "expect_content_type": "application/json" },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/routes/vtid-05169-timeline.test.ts test/vtid-05167-timeline-catalog.test.ts test/vtid-04560-role-separation-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The authenticated responses depend on a member's own timeline rows and Index movements; the staging suite does not sign in for gateway probes and hide/delete are writes to the shared production database. The suite runs the route and reader for real over a mocked repository: auth on every endpoint, the Index spotlight, measured-vs-counted influence, digests without special-category items, the pre-migration in-process classification that never lists silent/system rows, filters, cursor, detail, hide-from-ai and delete scoped to the JWT user. The roles suite pins the atlas claim for the new route file."
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+# VTID-03937 — commands actually run.
+
+# --- Motivation (this session's own PR #3330/#3332 CI failures) ----------
+
+# PR #3330 (VTID-03933) validate-pr job, exit 41:
+#   "REJECTED: AC at line 78 has no TEST:/CURL:/UI: mapping within 12 lines"
+# PR #3330 + #3332 validate-pr job, exit 80:
+#   "REJECTED: invalid OASIS_IMPACT value"
+# Both fixed by editing the PR body/acceptance.md by hand and waiting for a
+# full CI re-run each time (~2-3 minutes, ~19 jobs) to confirm. Neither
+# miss touched actual engineering verification.
+
+sed -n '1,300p' .github/workflows/VALIDATOR-CHECK.yml
+#   -> read the full validate-pr job to mirror it exactly: step order, exit
+#      codes, and the exact grep/awk/python idioms used for each gate.
+
+cat scripts/ci/validator-path-guard.cjs
+#   -> confirmed evaluate()/cspViolationsInAddedLines()/routeEvidenceRequired()
+#      are already exported and already have their own test suite
+#      (services/gateway/test/scripts/validator-path-guard.test.ts) — reused
+#      directly via require() instead of re-implementing.
+
+# --- Build --------------------------------------------------------------
+
+# scripts/ci/validate-pr-locally.cjs (new)
+#   Mirrors validate-pr's steps in order: title/body presence (exit 2),
+#   VTID extraction (exit 10), VALIDATION_PROFILE extraction (exit 11),
+#   required markers (exit 12-15), changed-files diff (exit 16), Path
+#   Ownership Guard (delegated, exit 20-23), Evidence Pack Gate (exit
+#   30-33), Acceptance Mapping Gate (exit 40-41, ported from the workflow's
+#   inline python), CSP Governance Gate (delegated, exit 50), Build Gate
+#   (opt-in via --build, exit 60), Route Mount Evidence Gate (delegated
+#   trigger + own evidence check, exit 70-72), OASIS Traceability Gate
+#   (exit 80-81), Merge Deploy Gate (exit 90-91), PASS summary.
+
+# services/gateway/test/scripts/validate-pr-locally.test.ts (new)
+#   30 tests, jest.mock('node:child_process') to control git output per
+#   test; a real temp dir (mkdtempSync) stands in for the evidence-pack
+#   directory tree so file-existence/acceptance-mapping checks run against
+#   real files, not further mocks.
+
+cd services/gateway
+
+# --- Verification ---------------------------------------------------------
+
+npx jest test/scripts/validate-pr-locally.test.ts test/scripts/validator-path-guard.test.ts --runInBand
+#   -> 2/2 suites, 75/75 tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check: edited checkAcceptanceMapping() to hardcode
+# `const mapped = true; // MUTATED` (unconditionally treats every AC as
+# mapped) -- re-ran validate-pr-locally.test.ts -- confirmed exactly the 2
+# tests asserting on this behavior failed (Expected: 41, Received: 0), all
+# 28 others unaffected. Restored the original file (verified no "MUTATED"
+# string remains) -- re-ran -- 30/30 green again.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules). Zero errors in
+#      validate-pr-locally.cjs or its test file. (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite: 896/908 suites passing (12 pre-existing failures, same
+#      missing-module root cause documented in VTID-03927/03933/03934's
+#      evidence packs), 14745/14791 tests passing, 0 failures in any file
+#      this VTID touches. (outputs/full-suite.txt)
+
+cd ../..
+
+# --- Live, unmocked verification against this repo's real git state ------
+# (run from the repo root, on branch claude/vtid-03933-area-classifier-fix,
+# against the real origin/main and this branch's real, already-merged-ready
+# diff — not a fixture)
+
+git fetch origin main
+
+# 1. The real, current (fixed) PR #3330 title+body -> APPROVED, exit 0:
+node scripts/ci/validate-pr-locally.cjs \
+  --title-file /tmp/pr-3330-title.txt --body-file /tmp/pr-3330-body.txt --base main
+#   -> Detected VTID=VTID-03933 PROFILE=gateway_backend
+#      Changed files: 7
+#      APPROVED: 7 in-remit file(s) match the gateway_backend allowlist
+#      Acceptance mapping OK
+#      CSP scan: no pattern hits in added lines.
+#      Build Gate SKIPPED (pass --build to run npm ci && npm run build locally too).
+#      Route Mount Evidence Gate: no route registration added, skipped.
+#      OASIS Traceability Gate: OASIS_IMPACT=no.
+#      APPROVED / VTID=VTID-03933 / PROFILE=gateway_backend
+#      EXIT CODE: 0
+#   -> matches the real, current CI state of this exact commit range.
+
+# 2. Reproduce the REAL historical Acceptance Mapping Gate failure: reverted
+#    docs/validation/VTID-03933/acceptance.md's AC-7 line back to the exact
+#    broken wording ("Verified manually —" instead of "TEST:"), re-ran:
+sed -i 's/^TEST: manual mutation check/Verified manually/' docs/validation/VTID-03933/acceptance.md
+node scripts/ci/validate-pr-locally.cjs \
+  --title-file /tmp/pr-3330-title.txt --body-file /tmp/pr-3330-body.txt --base main
+#   -> REJECTED: AC at line 78 has no TEST:/CURL:/UI: mapping within 12 lines
+#      EXIT CODE: 41
+#   -> byte-for-byte the real CI failure message and exit code.
+# Restored the fixed file from a backup copy; re-ran -> APPROVED, exit 0
+# again; confirmed `git status --short` shows no diff (exact restore).
+
+# 3. Reproduce the REAL historical OASIS Traceability Gate failure: used
+#    the literal original PR #3330 body text
+#    ("OASIS_IMPACT: None — pure utility-function logic change with no
+#    OASIS event emission, no DB write, no deploy-workflow change."):
+node scripts/ci/validate-pr-locally.cjs \
+  --title-file /tmp/pr-3330-title.txt --body-file /tmp/pr-3330-body-broken-oasis.txt --base main
+#   -> REJECTED: invalid OASIS_IMPACT value
+#      EXIT CODE: 80
+#   -> byte-for-byte the real CI failure message and exit code.
+
+# All temp fixture files removed after verification; working tree confirmed
+# clean of anything but the two new tool files before committing.

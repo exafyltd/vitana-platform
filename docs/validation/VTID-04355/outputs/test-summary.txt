@@ -1,0 +1,6 @@
+services/gateway, 2026-09-23
+
+Affected suites (13): 252 passed, 0 failed
+Full gateway suite: Test Suites: 1 skipped, 1089 passed, 1089 of 1090 total
+                    Tests: 29 skipped, 6 todo, 17703 passed, 17738 total
+tsc --noEmit: exit 0

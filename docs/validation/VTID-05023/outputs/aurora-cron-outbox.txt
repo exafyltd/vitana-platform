@@ -1,0 +1,47 @@
+initdb: warning: enabling "trust" authentication for local connections
+initdb: hint: You can change this by editing pg_hba.conf or using the option -A, or --auth-local and --auth-host, the next time you run initdb.
+== 1. outbox
+  applied 18 statements from aurora-cutover-outbox.sql
+NOTICE:  relation "outbound_http_requests" already exists, skipping
+NOTICE:  relation "outbound_http_requests_due_idx" already exists, skipping
+  applied 18 statements from aurora-cutover-outbox.sql
+ok 1 - outbox file applies line by line, twice
+ok 2 - notify_test_user_confirmation queues the Supabase URL/headers/body, secret as a reference
+ok 3 - notify_welcome_discount queues the Supabase path/headers/body, secret as a reference
+ok 4 - trigger WHEN clause unchanged (no row for same status or already confirmed)
+ok 5 - no secret value stored in any row
+ok 6 - a failing outbox insert never blocks new-member provisioning (user_discount_codes)
+ok 7 - RLS on, no policies; anon/authenticated locked out; service_role may execute the RPCs
+ok 8 - claim / complete / fail: attempt-scoped, idempotent, backoff respected
+ok 9 - lease expiry re-claims; stale attempts ignored; max attempts ends in failed
+ok 10 - FOR UPDATE SKIP LOCKED: a concurrently locked row is skipped, not waited on
+== 2. aurora-cutover-cron.sql
+  pg_cron available locally: no — stub cron schema, CREATE EXTENSION line skipped
+  (skipped: CREATE EXTENSION IF NOT EXISTS pg_cron;)
+  applied 48 statements from aurora-cutover-cron.sql
+  (skipped: CREATE EXTENSION IF NOT EXISTS pg_cron;)
+  applied 48 statements from aurora-cutover-cron.sql
+ok 11 - 21 plain-SQL jobs scheduled (jobs 15/16 are TODO: commands not in git), idempotent on re-run
+ok 12 - schedules match side-effects.md section A
+ok 13 - multi-line commands (jobs 7, 32) byte-identical to their migrations; quoting of 6, 22 exact
+  (real pg_cron not exercised; run with WITH_PG_CRON=1 to apply against pg_cron in docker postgres:16)
+== 3. Supabase unschedule + rollback (stub cron)
+  (skipped: CREATE EXTENSION IF NOT EXISTS pg_cron;)
+  applied 48 statements from aurora-cutover-cron.sql
+  applied 32 statements from supabase-cutover-unschedule.sql
+NOTICE:  schema "vtid_05023_backup" already exists, skipping
+NOTICE:  relation "cron_job_snapshot" already exists, skipping
+  applied 32 statements from supabase-cutover-unschedule.sql
+ok 14 - unschedule: 25 jobs gone (others kept), both pg_net triggers disabled, re-run safe
+  applied 7 statements from supabase-cutover-unschedule-rollback.sql
+  applied 7 statements from supabase-cutover-unschedule-rollback.sql
+ok 15 - rollback: all 25 back with identical schedule/command/active, triggers enabled, re-run safe
+== 4. aurora-cluster-params-cutover.sh (fake aws)
+ok 16 - dry run: prints the plan + reboot commands, makes no change
+ok 17 - --apply on a default group: copy + set + attach + 2 alarms, no reboot
+ok 18 - --apply on a custom group: modified in place, pg_cron not duplicated
+ok 19 - account guard refuses another account
+== 5. workflow
+OK: workflow parses, 7 run blocks pass bash -n, dispatch-only, schedules DISABLED by default
+ok 20 - AWS-PROD-SETUP-SCHEDULED-EDGE-CALLS.yml
+PASS: 20 checks (VTID-05023 part 6 cron + outbox)

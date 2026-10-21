@@ -1,0 +1,13 @@
+# VTID-04917 commands (platform part)
+cd services/gateway && npx jest test/vtid-04917-calendar-invite-audiobook.test.ts test/vtid-04917-invite-routes.test.ts   # 29 passed (outputs/jest-vtid-04917.txt)
+cd services/gateway && UPDATE_CALENDAR_GOLDEN=1 npm run test:calendar && npm run test:calendar                       # golden re-recorded: 'audiobook' source type, 3 new routes (outputs/jest-calendar-suite.txt)
+cd services/gateway && npx jest test/vtid-04763-audiobook-reminder-route.test.ts test/vtid-04926-chat-group-mentions.test.ts test/vtid-04331-calendar-data-model.test.ts test/chat test/chat-vitana-reply.test.ts test/vtid-04928-group-push-opens-message.test.ts test/routes/chat-groups-repository.test.ts test/wave1-voice-tools-flow.test.ts   # all passed
+cd services/gateway && npx tsc --noEmit -p .                                                                              # clean
+# read-only (Supabase MCP execute_sql, SELECT only, 2026-10-10): live valid_source_type / valid_event_type CHECKs
+#   (match the newest migration), user_guided_journey_state rows with metadata.audiobook_reminder (0 -> no backfill),
+#   columns of calendar_invite_responses, global_event_participants, chat_group_members, event_ticket_types.
+# rebase onto main brought VTID-04997 ('test_result' source type). Resolved: CALENDAR_SOURCE_TYPES and this
+# migration's CHECK keep both 'test_result' and 'audiobook'; golden re-recorded. vtid-04997's migration test
+# asserted that ITS migration lists every current type, which no older migration can after a newer one adds a
+# type: narrowed to "lists 'test_result' and only known types" (full parity stays pinned against the newest
+# migration by vtid-04331-calendar-data-model.test.ts). test:calendar 26 suites / 478 passed.

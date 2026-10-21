@@ -1,0 +1,1 @@
+json+png checked locally; jest runs in CI

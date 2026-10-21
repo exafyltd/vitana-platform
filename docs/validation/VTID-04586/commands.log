@@ -1,0 +1,25 @@
+# VTID-04586 — commands run (services/gateway unless noted)
+
+# baseline on staging (gateway 8fa030b), authenticated test account, voice only
+node scripts/orb/measure-orb-first-audio.mjs --auth --lang=en --route=/command-hub --trials=6   # repo root
+#   first MODEL audio min=4050 p50=4904 p90=7910 max=7910
+# read-only: oasis_events voice.latency.measured / orb.live.diag tool_call / orb.live.tool.executed
+#   -> dev_system_status({fresh:true}) on turn 0; greeting_gather_awaited kind=newday 348-466 ms
+
+npx jest test/vtid-04560-role-separation-regression.test.ts test/services/conversation/vtid-04544-greeting-payload-gather.test.ts
+#   Tests: 194 passed
+
+# mutation check 1: remove tryWorkSurfaceRung from overviewIndependentOpenerWins
+npx jest test/vtid-04560-role-separation-regression.test.ts -t "VTID-04586"   # 2 failed (expected), restored
+# mutation check 2: drop the "call no tool before this first reply" clause
+npx jest test/vtid-04560-role-separation-regression.test.ts -t "VTID-04586"   # 1 failed (expected), restored
+
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts
+#   2 failed before re-record: command-hub-developer-en + manifest (expected — only scenario touched)
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts -u
+#   Snapshots: 2 updated, 54 passed; diff = command-hub instruction bytes/sha only
+
+npx tsc --noEmit                                   # clean
+npx jest test/orb test/services/conversation test/vtid-04560-role-separation-regression.test.ts \
+  test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04465-operator-pipeline-regression.test.ts
+#   Test Suites: 290 passed; Tests: 5100 passed, 6 todo

@@ -1,0 +1,55 @@
+VTID-03799 live probe against staging b4a48529 — what the browser-level check found
+====================================================================================
+
+Staging convergence confirmed first (12/12 build-info samples on b4a48529;
+an earlier round read 7 new / 8 old — probing then would have mixed builds).
+
+1. The VTID-03799 replay fix IS deployed. Grepped the DEPLOYED bundle at
+   https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js
+   (273,412 bytes):
+
+     function _shouldResumeGuidedTopic()      x1   (declared)
+     if (_shouldResumeGuidedTopic())          x3   (all three re-arm sites)
+     overlay_closed_after_delivery            x1   (close-crediting)
+
+2. NEW DEFECT FOUND — the crediting path is unreachable regardless.
+
+   Every host callback the widget READS from _cfg:
+     onClose, onGuidedTopicTeachingEnd, onLink, onNavigationRequest,
+     onSessionEnd, onSessionStart, onSignupRedirect, onTeachingSessionEnd,
+     onTurnComplete
+
+   Every callback init() ASSIGNS from opts:
+     onClose, onLink, onNavigationRequest, onSessionEnd, onSessionStart,
+     onSignupRedirect
+
+   Dropped: onGuidedTopicTeachingEnd, onTeachingSessionEnd, onTurnComplete
+   No bulk copy exists (no Object.assign(_cfg, ...), no for..in over opts),
+   and the _cfg literal does not declare onGuidedTopicTeachingEnd either.
+
+   vitana-v1/src/hooks/useOrbVoiceWidget.ts DOES pass
+   onGuidedTopicTeachingEnd inside navOpts and calls orb.init(navOpts)
+   (it dispatches vitana:guided-topic-teaching-complete, which
+   GuidedJourneyCatalog listens for to open the Well Done drawer).
+
+   => _cfg.onGuidedTopicTeachingEnd is permanently undefined, so BOTH fire
+      sites are dead: VTID-03762/03763's teaching-end signal AND
+      VTID-03799's own close-after-delivery crediting.
+
+   This is the SECOND, independent cause of "no Well Done drawer", sitting
+   underneath the replay loop. Fixing the replay loop alone would not have
+   produced the drawer.
+
+3. Why no test caught it. The widget is a plain IIFE with no export surface,
+   so its suites are static source checks. They assert a fire site EXISTS
+   and are structurally incapable of noticing that nothing populates _cfg.
+   Under the mutation that removes the wiring, the test
+   "still reads onGuidedTopicTeachingEnd at both fire sites" STILL PASSES —
+   that is the blind spot, demonstrated rather than argued.
+
+4. Fix + guard. init() now wires all three (each guarded on
+   typeof === 'function'; onTeachingSessionEnd/onTurnComplete are
+   zero-behaviour-change today since no host passes them).
+   orb-widget-host-callbacks.test.ts closes the CLASS, not the instance:
+   it diffs every _cfg.onX read against every opts.onX assignment.
+   Mutation-verified: removing the wiring fails 3 of its 5 tests.

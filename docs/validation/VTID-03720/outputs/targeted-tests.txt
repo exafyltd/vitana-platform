@@ -1,0 +1,5 @@
+    ✓ upserts the flag as the exact string "true" (2 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ keeps the flag it is useless without
+    ✓ keeps Polly strict, so a TTS gap fails loudly instead of reaching for dead Google (1 ms)
+Tests:       4 passed, 4 total

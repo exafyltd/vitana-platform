@@ -1,0 +1,22 @@
+# VTID-04234 — commands run (2026-09-21)
+
+# Worktree from origin/main 197a76a, later merged with origin/main f36e40f (VTID-04229).
+git worktree add scratchpad/wt-04234 -b claude/cool-dijkstra-p9s8vx-vtid-04234 origin/main
+
+# Rewrite: DEEPSEEK_* constants -> ARCH_INVESTIGATOR_STAGE/SERVICE/MAX_TOKENS,
+# direct fetch -> callInvestigatorModel() over callViaRouter('triage', ...),
+# persistReport/investigateIncident carry the serving provider/model.
+# (edits in services/gateway/src/services/architecture-investigator.ts)
+
+# Type-check -> outputs/tsc-noEmit.log
+cd services/gateway && npx tsc --noEmit; echo exit=$?
+
+# New suite -> outputs/jest-vtid-04234.log
+npx jest test/vtid-04234-architecture-investigator-triage-stage.test.ts
+
+# Source contract -> outputs/source-contract-grep.txt
+grep -n "api.deepseek.com\|DEEPSEEK_API_KEY\|chat/completions" src/services/architecture-investigator.ts   # non-comment hits: none
+grep -n "callViaRouter(ARCH_INVESTIGATOR_STAGE\|ARCH_INVESTIGATOR_STAGE = 'triage'" src/services/architecture-investigator.ts
+
+# Live policy read earlier this session (VTID-04222 pack): triage = bedrock eu.anthropic.claude-sonnet-4-6 -> deepseek deepseek-chat (v17).
+# architecture_reports: no CHECK on llm_provider (only confidence/status/trigger_reason); 0 rows today.

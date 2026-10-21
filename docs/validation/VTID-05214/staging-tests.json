@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05214",
+  "service": "gateway",
+  "note": "Policy approval lives in the sparring service; a real sparring round writes a session row and calls Bedrock, so staging probes stay read-only (the route is mounted and rejects a call without the service token). Policy approval, the escalation path, the reconciler check and the migration are proven by Jest and the throwaway-Postgres harness.",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "the sparring route is mounted and requires the service token", "path": "/api/v1/plans/spar/00000000-0000-4000-8000-000000000000", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04868-plan-sparring-service.test.ts test/vtid-05214-policy-approval-migration.test.ts", "cwd": "services/gateway", "reason": "Policy approval only for converged sessions that asked for converged-auto-v1; escalated never; owner approval and new rounds refused after it; reconciler detects a policy approval on a non-converged session; migration contract + log/enforce gate on Postgres" }
+  ]
+}

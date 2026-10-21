@@ -1,0 +1,19 @@
+{
+ "vtid": "VTID-05144",
+ "service": "gateway",
+ "note": "The runner/workflow half (scripts/ci/staging-verify/**, STAGING-VERIFY.yml) deploys nothing; it is proven by node --test scripts/ci/staging-verify/{lib,record-oasis,workflow}.test.cjs and confirm-live.test.mjs in UNIT.yml (an `existing` ref cannot run node --test). Its proof on staging is the next full STAGING-VERIFY gateway run, which reads this runner from main: a merge during it → staging.verify.superseded with superseded_by and a chained full run (chain=1); a quiet-window/nightly full run → staging.verify.passed with metadata.full=true.",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "existing",
+   "ref": "npx jest test/services/testing/publish-gate.test.ts test/operator-runs-view.test.ts",
+   "cwd": "services/gateway",
+   "reason": "The gateway change is which staging.verify.* row decides: PUBLISH (publish-gate.ts) and the Operator run view (run-view.ts) now take the newest passed/failed row for a commit and fall back to a newer superseded row only when no decisive row exists. Proving it on staging would need fresh OASIS rows (a write to the production database, rule 48), so it is proven over fixture rows in these suites."
+  }
+ ]
+}

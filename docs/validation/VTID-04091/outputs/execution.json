@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04091",
+  "title": "Command Hub a11y Region 4: modal/drawer focus management (T10)",
+  "validation_profile": "gateway_backend",
+  "tests": {
+    "new_suite": "services/gateway/test/command-hub/t10-r4-modal-focus-management.test.ts",
+    "new_suite_result": "17 passed, 17 total",
+    "full_command_hub_sweep": "10 suites, 176 tests passed",
+    "tsc_noemit": "clean",
+    "npm_build": "exit 0"
+  },
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/t10-r4-modal-focus-management.test.ts"
+  ],
+  "routes_added": [],
+  "cache_bust": "20260918-vtid-04091-a11y-modal-focus",
+  "overlays_converted": 9,
+  "overlays_deferred": ["renderOperatorOverlay", "renderTaskDrawer"]
+}

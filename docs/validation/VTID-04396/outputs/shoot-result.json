@@ -1,0 +1,48 @@
+{
+ "tag": "desktop",
+ "horizontalOverflow": false,
+ "titles": [
+  "Runs by plane — last 7 days",
+  "Unified runs",
+  "Agent registry",
+  "LLM spend today vs budgets (shadow — nothing is blocked yet)",
+  "Policy shadow — what enforcement would change",
+  "Delegation targets",
+  "Default role grants (shadow — not enforced yet)"
+ ],
+ "facts": {
+  "budgetTotal": "$113 of $200 today",
+  "barValue": 56.58,
+  "overRows": 3,
+  "denyPills": 6,
+  "escalatePills": 5,
+  "errors": [
+   "3 budget line(s) over limit — enforcement would deny: VTID-04228, VTID-04287, dev-autopilot-planning"
+  ]
+ },
+ "pageErrors": []
+}
+{
+ "tag": "mobile",
+ "horizontalOverflow": false,
+ "titles": [
+  "Runs by plane — last 7 days",
+  "Unified runs",
+  "Agent registry",
+  "LLM spend today vs budgets (shadow — nothing is blocked yet)",
+  "Policy shadow — what enforcement would change",
+  "Delegation targets",
+  "Default role grants (shadow — not enforced yet)"
+ ],
+ "facts": {
+  "budgetTotal": "$113 of $200 today",
+  "barValue": 56.58,
+  "overRows": 3,
+  "denyPills": 6,
+  "escalatePills": 5,
+  "errors": [
+   "3 budget line(s) over limit — enforcement would deny: VTID-04228, VTID-04287, dev-autopilot-planning"
+  ]
+ },
+ "pageErrors": []
+}

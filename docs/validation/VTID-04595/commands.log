@@ -1,0 +1,7 @@
+# Read-only diagnosis: oasis_events (greeting_facts_user_journey_read, greeting_sent) + user_journey row
+# Owner-approved reset (their own row only):
+update user_journey set last_full_briefing_date='2026-09-25' where user_id='<owner>' returning last_full_briefing_date   # -> 2026-09-25
+cd services/gateway && npx tsc --noEmit -p .                                           # clean
+cd services/gateway && npx jest test/vtid-04595-new-day-starts-at-5am.test.ts          # 15/15
+# mutation: removing the briefingDue hour gate -> 2 failed; removing the decideGreetingKind hour gate -> 1 failed
+cd services/gateway && npx jest                                                        # 1297 suites passed (1 skipped), 20817 tests passed, 0 failed (before the new suite was added)

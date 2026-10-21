@@ -1,0 +1,189 @@
+# "Aurora for everything, Supabase for auth only" — feasibility assessment
+
+**VTID-03512** · 2026-08-05 · measured against production
+
+User decision (2026-08-05), revising VTID-03494's Option B:
+
+> supabase is replaced with aurora, except the auth — everything else should be
+> aurora and no more supabase
+
+This is a **narrower and better-shaped** target than full Option B: keeping
+GoTrue removes the hardest workstream (migrating 201 users' credentials and
+re-implementing identity). It is **not** the "hybrid" rejected in the earlier
+plan — that was about dual-writing the *same* tables. This splits by
+responsibility, which is a legitimate boundary.
+
+But the split lands on a seam that is currently load-bearing, and three things
+have to be decided before it can be scheduled.
+
+---
+
+## The blocker: 116 foreign keys into `auth.users`
+
+Measured on production:
+
+| | count |
+|---|---|
+| FKs from `public.*` → `auth.users` | **116** |
+| distinct tables carrying one | **105** |
+| FKs → `public.app_users` (the mirror) | 18 |
+| rows in `auth.users` | 201 |
+| rows in `public.app_users` | 194 |
+| `app_users` rows with no `auth.users` row | 0 |
+| **`auth.users` rows with no `app_users` row** | **7** |
+
+If auth stays on Supabase and data moves to Aurora, **105 tables lose a foreign
+key that Aurora cannot satisfy** — there is no `auth.users` there to point at.
+That is the whole decision in one number.
+
+There is already a mirror (`app_users`, referenced by CLAUDE.md as "the
+canonical app_users mirror"), which is the shape of the answer — but it is
+**7 rows behind today**. A mirror that silently drifts is exactly the failure
+class of VTID-03480, and here it would mean users who can authenticate but own
+no data.
+
+### Three ways through, in preference order
+
+**1. Promote `app_users` to the identity anchor (recommended).**
+Repoint all 116 FKs from `auth.users` to `app_users`, move `app_users` to
+Aurora with everything else, and make GoTrue→`app_users` the *only* thing
+crossing the boundary. Requires: fixing the 7-row drift first, then a
+guaranteed-delivery sync (a webhook or outbox, not a periodic reconcile), plus
+a monitor that alarms on any drift — the lesson from VTID-03480.
+
+**2. Drop the FKs, enforce in application code.**
+Fast, and permanently loses database-level integrity on the most important
+relationship in the system (every row → its owner). Given this codebase has
+already accumulated 103 missing tables and a 7-row identity drift, removing a
+constraint that currently *cannot* silently break is the wrong direction.
+
+**3. Move auth too** — the original Option B. Rejected by this decision.
+
+---
+
+## Second problem: the frontend talks to Supabase directly
+
+207 files in `vitana-v1/src` import Supabase, with 60 realtime `.channel()`
+subscriptions and 19 storage calls. Those are **direct browser → Supabase**
+data reads, not gateway calls.
+
+Aurora has no PostgREST and is not internet-facing. So "all data in Aurora"
+necessarily means **every one of those reads moves behind the gateway**. That
+is a frontend workstream at least as large as the gateway one, and it is not
+implied by the words "replace Supabase with Aurora" — worth being explicit
+that it is in scope.
+
+## Third problem: Realtime has no Aurora equivalent
+
+Supabase Realtime works by reading the Supabase database's WAL. Move the tables
+to Aurora and **Realtime sees nothing** — the 79 subscriptions across gateway
+and frontend go silent. Retaining "Supabase for auth only" does not retain
+Realtime, because Realtime is a function of where the *data* lives.
+
+Replacement is a websocket service we own, fed by Aurora logical replication or
+application-level publish. Sizeable, and easy to miss when scoping.
+
+## What "auth only" does and does not keep
+
+| stays on Supabase | must move / be rebuilt |
+|---|---|
+| GoTrue: signup, login, JWT issuance, sessions, password reset | PostgREST (2,461 gateway `.from()` calls) |
+| `auth.users` and the 201 credentials | Realtime (79 subscriptions) |
+| | Storage (23 call sites) |
+| | 74 edge functions |
+| | 925 RLS policies — 557 reference `auth.uid()` |
+| | 116 FKs into `auth.users` |
+
+### RLS is more tractable than it looks
+
+The gateway uses the **service-role** client, so RLS is already bypassed for
+every gateway query — those 925 policies protect the *frontend's* direct
+access. Once the frontend goes through the gateway (forced by this
+architecture anyway), the policies stop being the enforcement layer and the
+gateway's own tenant scoping becomes it.
+
+That is a real simplification — and a real risk. The tenant-isolation work in
+VTID-03498 is a preview: with RLS bypassed, isolation is enforced *by code*,
+which is why those repository functions take `tenantId` as a required first
+parameter. Doing that consistently across 2,461 call sites is the actual
+security task hiding inside this migration.
+
+---
+
+## Recommendation
+
+The decision is sound and reduces scope versus Option B. Before it can be
+scheduled, three answers are needed:
+
+1. **FK strategy** — promote `app_users` to anchor (recommended), or drop the
+   116 FKs? This shapes everything downstream.
+2. **Is the frontend rewrite in scope?** "All data in Aurora" requires it;
+   207 files, 60 realtime subscriptions, 19 storage calls.
+3. **What replaces Realtime?** Nothing in "keep auth on Supabase" covers it.
+
+And one thing to fix regardless of the answers, because it is a live bug:
+**7 `auth.users` rows have no `app_users` row.** Whatever the identity anchor
+ends up being, that drift should not be carried into a migration.
+
+## Sequencing note
+
+None of this blocks the B1 data-access seam (VTID-03498) already in flight.
+B1 is transport-agnostic by construction: it moves queries behind repositories
+that currently wrap supabase-js. Whether the adapter later points at Aurora,
+or the frontend routes through the gateway, B1 is the prerequisite either way
+and is safe to continue against the current stack.
+
+## Addendum (VTID-03815 continuation), 2026-09-10 — the drift already recurred, and now has a monitor
+
+This doc's own recommendation named "a monitor that alarms on any drift" as
+a precondition for promoting `app_users` to the identity anchor — not yet
+built when this doc was written. It was needed sooner than expected: a live
+comparison this session (VTID-03811, same day as this addendum) found 10
+`app_users` rows out of sync between Supabase and Aurora — a different,
+later instance of the exact drift this doc flagged at 7 rows on 2026-08-05.
+Fixed by hand again, with nothing that would have caught it happening.
+
+`.github/workflows/ALERT-APP-USERS-IDENTITY-DRIFT.yml` closes that gap: a
+daily row-count comparison (Aurora via RDS Data API, Supabase via
+PostgREST — both HTTPS-only transports reachable from a GitHub-hosted
+runner, unlike the raw-Postgres-wire reconciliation script in
+`services/gateway/scripts/reconciliation/`) that alarms once the gap
+exceeds a small threshold. Live-verified the Aurora leg's exact query
+against the real cluster this session (`208` — matching VTID-03811's
+post-fix count); the Supabase leg is syntactically validated but not
+live-exercised (no Supabase credentials in this sandbox). **Will very
+likely fire red on its first scheduled run** — CDC replication has been
+down since 2026-08-20 (`docs/AURORA-PHASE0-RECONCILIATION-2026-08-27.md`),
+so the two tables are almost certainly diverging again already; that is
+the alert doing its job, not a false positive, and the workflow's own
+error message says so explicitly. Also unverified: whether the reused
+`AWS_STAGING_ACCESS_KEY_ID` identity actually holds `rds-data:ExecuteStatement`
+on the cluster — the workflow distinguishes that failure mode from a real
+drift finding in its own output.
+
+## Addendum, 2026-09-11 (VTID-03815 continuation) — the mirror has held: 0 drift today, but the FK count this section's headline number is built on has grown
+
+**Good news first, checked live via Supabase MCP:** `auth.users` and
+`public.app_users` are **currently perfectly in sync — 209 rows each, 0
+`auth.users` rows missing an `app_users` counterpart.** The 2026-09-10 fix
+(VTID-03811, 208/208) has held for at least a day without a fresh
+recurrence — real evidence the mirror isn't drifting on its own between
+manual checks, at least not yet, though the drift-alert workflow still
+can't run on a schedule until this branch merges (`schedule` triggers
+only fire from the default branch).
+
+**The section's headline number has grown, re-measured with a more
+reliable method than this addendum's own first attempt:** an
+`information_schema.constraint_column_usage`-based query returned a
+suspicious `0`, which turned out to be that view's own known unreliability
+for cross-schema foreign keys, not a real finding — switched to direct
+`pg_constraint`/`pg_class`/`pg_namespace` introspection instead, which is
+immune to that quirk. Result: **127 FKs into `auth.users` across 116
+distinct tables** (was 116 FKs / 105 tables in this doc's original
+measurement) — both counts grew by exactly 11, consistent with 11 new
+tables each picking up one new FK since this doc was written, rather than
+existing tables gaining additional FKs. FKs into `public.app_users` (the
+mirror) are unchanged at **18**. This doesn't change the doc's
+recommendation — the `auth.users` FK count growing over time is exactly
+the cost-of-delay dynamic B4 sizing already established elsewhere in this
+migration's docs, not a new risk shape.

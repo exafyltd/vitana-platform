@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04193",
+  "execution_id": "ff28fb31-e9f8-444b-8f3c-e9d6ada32247",
+  "finding_id": "99c4f98c-1fec-473e-8125-60d1ef528dee",
+  "plan_version": 1,
+  "branch": "dev-autopilot/ff28fb31",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/operator-execution-onramp.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/console-task-29-vtid-selfalloc-failure-mode.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:41:21.779Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

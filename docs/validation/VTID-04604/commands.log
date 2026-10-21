@@ -1,0 +1,7 @@
+cd services/gateway
+npx jest                                 # 1299 suites passed (1 skipped), 20832 tests passed, 0 failed
+npm run test:support                     # 82/82 (rule 42c)
+npm run test:operator                    # 21/21 (rule 42e)
+npx tsc --noEmit -p .                    # exit 0
+node scripts/conversation/generate-flag-pins.mjs   # pins regenerated: prod "true" for the three flags
+npx jest <payload-identity, conversation-replay, tool-catalog, system-instruction characterization> -u   # only calendar text / bytes / hashes changed

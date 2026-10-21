@@ -1,0 +1,11 @@
+# VTID-05101 Phase 3 (generators + back-off) — local only; no production, staging or database access of any kind
+# Data sources verified by reading migrations / DATABASE_SCHEMA.md (no live queries):
+#   user_guided_journey_state  supabase/migrations/20260608160000_VTID_03276_guided_journey_mode_state.sql
+#   diary_entries (user_id, created_at; no tenant column)  DATABASE_SCHEMA.md "Diary"; existing gateway reads in community-autopilot/scan-runner.ts, orb-tools/diary-memory-tools-repository.ts
+#   user_active_days (user_id, active_date)  supabase/migrations/20260424400000_BOOTSTRAP_dyk_user_active_days.sql
+#   companion_messages_ledger.status / replied_at / facts  supabase/migrations/20261012200000_vtid_05099_companion_messages.sql
+#   user_proactive_pause: already honoured by services/guide/presence-pacer.ts canSurfaceProactively → pause-check.ts isPaused
+cd services/gateway && npx jest test/vtid-05099   # baseline before changes: 2 suites, 38 passed
+cd services/gateway && npx jest test/vtid-05099 test/vtid-05101 --verbose   # 3 suites, 65 passed (38 + 27) — outputs/jest-companion.txt
+cd services/gateway && npx jest test/vtid-04892-onboarding-journey-pacer.test.ts test/vtid-04892-onboarding-coach.test.ts   # 2 suites, 27 passed
+cd services/gateway && npx tsc --noEmit -p .   # no new errors (3 pre-existing: missing local libphonenumber-js / client-pinpoint-sms-voice-v2) — outputs/tsc.txt

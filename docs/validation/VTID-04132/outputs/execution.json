@@ -1,0 +1,49 @@
+{
+  "vtid": "VTID-04132",
+  "title": "Operator on-ramp: skip pre-flight scope/tests_missing safety gate for open-ended agent plans",
+  "investigation": {
+    "trigger": "Platform owner: every Operator Console task fails, demanded 20-50 self-run test tasks",
+    "source": "oasis_events (Supabase MCP execute_sql, read-only), real assistant.turn tool-call args compared against the model's own chat narration",
+    "real_failed_attempts_found": 3,
+    "failure_reason_observed": "safety gate blocked approval: tests_missing",
+    "key_finding": "the model's chat narration of its retry (pasted by the user) did not match the actual tool-call arguments it sent; the real request prose never named a literal test file path, only a directory reference"
+  },
+  "root_cause": "operator-execution-onramp.ts's triggerOperatorExecution() unconditionally runs approveAutoExecute()'s full pre-flight safety gate (via evaluateSafetyGate()) against files derived by extractFilePaths() scanning raw open-ended prose, even though the module's own doc comments already stated scope/tests_missing should be deferred to a post-hoc check on the agent's real diff (agent-scope.ts, VTID-04006) for open-ended plans. That deferral was never actually wired.",
+  "fix": {
+    "files": [
+      "services/gateway/src/services/dev-autopilot-safety.ts",
+      "services/gateway/src/services/dev-autopilot-execute.ts"
+    ],
+    "new_field": "SafetyContext.is_open_ended",
+    "mechanism": "evaluateSafetyGate() skips rule 3 (scope) and rule 4 (tests_missing) when is_open_ended is true; approveAutoExecute() derives is_open_ended from rec.spec_snapshot.intake === 'open_ended'",
+    "unaffected_rules": ["kill_switch_engaged", "risk_class_too_high", "daily_budget_exhausted", "max_auto_fix_depth_reached"]
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests_added": 8,
+    "own_suites": {
+      "files": [
+        "services/gateway/test/dev-autopilot-safety.test.ts",
+        "services/gateway/test/vtid-04132-onramp-open-ended-safety-gate.test.ts"
+      ],
+      "tests_total": 26,
+      "tests_passing": 26
+    },
+    "regression_sweep": {
+      "suites_total": 11,
+      "tests_total": 236,
+      "failures": 0
+    },
+    "full_suite": {
+      "suites_total": 1007,
+      "suites_passing": 1006,
+      "suites_skipped_preexisting": 1,
+      "tests_total": 16760,
+      "tests_passing": 16725,
+      "tests_skipped": 29,
+      "tests_todo": 6,
+      "failures": 0
+    }
+  },
+  "live_verification": "not performed — this session cannot authenticate as an Operator Console user (harness-level classifier block, unrelated to code); the next real signal is a live autopilot_run_task request against staging after deploy"
+}

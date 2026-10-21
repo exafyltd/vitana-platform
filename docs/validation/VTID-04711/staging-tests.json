@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04711",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "org-scoped Shopify authorize is mounted (rejected write probe)", "method": "POST", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/connections/00000000-0000-4000-8000-000000000001/shopify/authorize", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "org-scoped FHIR authorize is mounted (rejected write probe)", "method": "POST", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/connections/00000000-0000-4000-8000-000000000001/fhir/authorize", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "Shopify OAuth callback still answers (not configured on staging)", "path": "/api/v1/vcaop/shopify-oauth/callback", "expect_status": 503 },
+    { "kind": "http", "name": "FHIR OAuth callback still answers (not configured on staging)", "path": "/api/v1/vcaop/fhir-oauth/callback", "expect_status": 503 },
+    { "kind": "existing", "ref": "npx jest test/services/shopify-oauth.test.ts test/services/smart-fhir-oauth.test.ts test/routes/shopify-oauth-callback.test.ts test/routes/fhir-oauth-callback.test.ts test/partner-onboarding-connections.test.ts test/routes/vcaop-portal-my.test.ts", "cwd": "services/gateway",
+      "reason": "staging has no Shopify/FHIR OAuth app configured (both callbacks answer 503 not_configured), so the surface carried through state is proven by these suites: state round-trip, tamper rejection, both callbacks recording the surface, and the org-scoped authorize minting a partner_onboarding state" }
+  ]
+}

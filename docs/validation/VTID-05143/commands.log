@@ -1,0 +1,59 @@
+# VTID-05143 (builds VTID-05085 Phase 1) — commands run (real), Claude Code cloud session, 2026-10-13
+# Worktree: exafyltd/vitana-platform, branch cards-backend-05143. Nothing was run against production or staging.
+# Owner step plan: .agents/tasks/unified-card-system/plan.md (origin/docs/unified-card-system-plan), Phase 1 steps 1–4 (platform side).
+
+# --- plan record ---
+cp docs/validation/VTID-05085/plan-sparring.md docs/validation/VTID-05143/plan-sparring.md   # + one-line VTID-05143 header above the record
+python3 sha256 of the text between <!-- plan:begin --> and <!-- plan:end -->   # -> outputs/plan-hash.log: e7abbebb…a238ab7 (matches the approved hash)
+
+# --- code facts re-checked read-only before writing the resolver ---
+grep -n "is_active\|disconnected_at\|provider" supabase/migrations/20260327000000_vtid_01250_social_connections.sql   # no status column
+grep -n -A10 "CREATE TABLE.*connected_app_settings" supabase/migrations/20260923200000_vtid_04402_connected_apps.sql  # user_id, app_id (google-calendar|outlook-calendar|apple-calendar), enabled
+grep -n "revoked_at" supabase/migrations/20260803200000_vtid_03481_device_token_ownership.sql                       # user_device_tokens.revoked_at
+grep -n "CREATE TABLE public.contacts\|CREATE TABLE public.profile_posts" ../vitana-v1/supabase/migrations/*.sql     # both keyed by user_id
+grep -n "avatar_url\|cover_url\|bio\|location\|user_id" ../vitana-v1/src/integrations/supabase/types.ts (profiles Row) # profiles keyed by user_id
+ls supabase/migrations | sort | tail -2                                                                               # latest 20261013190000 -> new 20261013200000
+
+# --- Step 1: migration — Verify: migration SQL is syntactically valid (parse check) ---
+node pglite-unified-card-system-check.mjs supabase/migrations/20261013200000_vtid_05143_unified_card_system.sql
+#   (@electric-sql/pglite@0.2.17 scratch install; applies twice + RLS checks)  -> outputs/step1-pglite-migration.log
+#   RESULT: 17/17 PASS (applies, re-applies idempotently, no completed_at, 4 policies, own-row RLS, service_role all)
+
+# --- Step 2: completion resolver + repository — Verify: npx jest test/services/enrichment/completion-resolver ---
+cd services/gateway && npx jest test/services/enrichment/completion-resolver   # -> outputs/step2-completion-resolver.log
+#   RESULT: 2 suites, 25 tests pass (completion-resolver.test.ts 19, completion-resolver-repository.test.ts 6)
+
+# --- Step 3: GET /api/v1/enrichment-cards + POST /dismiss, mounted — Verify: npx jest test/routes/enrichment-cards ---
+cd services/gateway && npx jest test/routes/enrichment-cards                    # -> outputs/step3-enrichment-cards-route.log
+#   RESULT: 1 suite, 34 tests pass
+
+# --- Step 4: enrichment-card-tips (15 cards x 11 locales) — Verify: npx jest test/data/enrichment-card-tips.locale-coverage ---
+cd services/gateway && npx jest test/data/enrichment-card-tips.locale-coverage  # -> outputs/step4-enrichment-card-tips-locale-coverage.log
+#   RESULT: 1 suite, 5 tests pass
+
+# --- regression + build ---
+cd services/gateway && npm ci --ignore-scripts                                  # worktree had no node_modules
+cd services/gateway && npm run test:roles                                       # -> outputs/test-roles.log: 105 pass (atlas drift guard)
+cd services/gateway && npm run build                                            # -> outputs/gateway-build.log: exit 0 (tsc clean)
+cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards test/data/enrichment-card-tips.locale-coverage test/data/feature-tips.locale-coverage  # -> outputs/vtid-05143-suites.log: 5 suites, 66 tests pass
+cd services/gateway && npx jest --silent                                        # -> outputs/gateway-full-jest-summary.log: 1675 suites passed (2 skipped), 27098 tests passed, 0 failed
+
+# --- PR gate dry runs (local) ---
+node scripts/ci/validator-path-guard.cjs <changed-files> gateway_backend <pr-body>   # APPROVED 23 in-remit; NOT JUDGED: DATABASE_SCHEMA.md, the migration (expected)
+python3 acceptance mapping check (VALIDATOR-CHECK.yml logic)                         # 8 ACs, none unmapped
+
+# Follow-up (E11 cover photo): the app's cover library (vitana-v1 CoverLibraryDrawer) writes
+# profiles.universal_intent_cover_url, not cover_url. Read-only count on 2026-10-13:
+# cover_url set 3, universal_intent_cover_url set 4, only cover_url 2 (of 238) — both are used.
+# E11 is now done when either column is non-empty.
+cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards   # 60 passed
+npx tsc --noEmit -p .   # 0 errors
+
+# --- Phase 3, step 15: boost triggers G1–G3 (G4 out of scope, owner decision) ---
+# Sources verified read-only in code: vitana-v1 src/hooks/useProfileProgress.ts (G1 weights),
+# vitana-v1 useRealMatches/useMarkMatchesViewed (daily_matches live + viewed_at; no match_notifications table exists),
+# supabase/migrations/20260427090000_user_diary_streak_view.sql + diary-missing-relevant.ts (UTC day boundary).
+cd services/gateway && npx jest test/services/enrichment test/routes/enrichment-cards test/data/enrichment-card-tips.locale-coverage  # -> outputs/phase3-boost-suites.log: 5 suites, 132 tests pass
+# red check: the new/changed test files copied onto origin/main (cf8f3a703) -> 4 suites failed, 65 tests failed, 62 passed
+cd services/gateway && npx tsc --noEmit -p .   # only the 3 pre-existing missing-module errors (libphonenumber-js, client-pinpoint-sms-voice-v2) of the shared node_modules
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening|red-green --base origin/main --title "VTID-05143: Unified Card System Phase 3 — boost triggers G1–G3 (backend)"

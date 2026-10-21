@@ -1,0 +1,5 @@
+psql:../../../supabase/migrations/20261007200000_vtid_04965_live_room_reminder_calendar.sql:75: NOTICE:  trigger "trg_live_stream_subscription_calendar" for relation "public.live_stream_subscribers" does not exist, skipping
+psql:../../../supabase/migrations/20261008130000_vtid_04976_live_room_follows_host.sql:161: NOTICE:  trigger "trg_live_stream_host_calendar" for relation "public.community_live_streams" does not exist, skipping
+psql:../../../supabase/migrations/20261008130000_vtid_04976_live_room_follows_host.sql:168: NOTICE:  trigger "trg_live_stream_change_calendar" for relation "public.community_live_streams" does not exist, skipping
+psql:../../../supabase/migrations/20261008130000_vtid_04976_live_room_follows_host.sql:179: NOTICE:  trigger "trg_live_stream_delete_calendar" for relation "public.community_live_streams" does not exist, skipping
+PASS vtid-04976 live room host calendar

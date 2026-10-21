@@ -1,0 +1,3 @@
+npx tsc --noEmit -p services/gateway                                   # clean
+npx jest test/vtid-04612-merge-behind-without-update.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04379-branch-up-to-date.test.ts   # pass
+# mutation: canMergeBehindWithoutUpdate forced to ok:false -> the VTID-04612 "no shared files" scenario fails; restored

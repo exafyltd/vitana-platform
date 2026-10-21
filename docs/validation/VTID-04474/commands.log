@@ -1,0 +1,4 @@
+$ aws ecs describe-task-definition vitana-gateway:557 (read-only)
+no ORCHESTRATOR_* variable present
+$ node node_modules/.bin/jest <new pin test + every suite reading AWS-STAGE-DEPLOY-GATEWAY.yml>
+31 suites, 301 tests passed

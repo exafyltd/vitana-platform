@@ -1,0 +1,40 @@
+    ✓ strips both inherited values first, so a stale one cannot survive (1 ms)
+    ✓ matches the exact value AWS-PROD-DEPLOY-GATEWAY.yml pins, so staging and prod cannot silently diverge (3 ms)
+
+PASS test/orb/context/b0c-user-assistant-state-migration.test.ts
+  B0c — user_assistant_state migration
+    ✓ creates the user_assistant_state table (2 ms)
+    ✓ uses the documented composite primary key
+    ✓ enables RLS for tenant isolation (1 ms)
+    ✓ documents the forbidden ephemeral signals
+    ✓ has a touch trigger so updated_at advances on mutation
+    ✓ indexes expires_at for time-based sweeps
+
+PASS test/orb/live/latency-tracker.test.ts
+  LatencyTracker.setProvider
+    ✓ emits the constructor-time provider when setProvider is never called (2 ms)
+    ✓ overrides the provider label before finalize — the Nova-vs-Vertex mislabel fix
+    ✓ setProvider after finalize is a no-op — the emitted event is already sent
+    ✓ feature-flag off: setProvider is harmless and finalize never emits
+
+PASS test/orb/live/upstream/nova-instruction-sanitizer.test.ts
+  sanitizeInstructionForNova
+    ✓ replaces the identity-lock block and drops the filter-tripping denial list (1 ms)
+    ✓ preserves the per-surface role line (Command Hub dev co-pilot variant) (1 ms)
+    ✓ no-ops when no identity-lock block is present
+    ✓ no-ops on an unterminated block rather than corrupting the prompt
+
+PASS test/vtid-04333-staging-feedback-auto-dispatch-pinned.test.ts
+  VTID-04333: staging pins FEEDBACK_AUTO_DISPATCH_ENABLED=true
+    ✓ pins the flag to exact "true" on the staging task def (2 ms)
+    ✓ strips an inherited value first, so a stale value cannot survive a deploy (1 ms)
+    ✓ is pinned exactly once (no duplicate env entry)
+    ✓ is NOT declared on the prod gateway deploy workflow (1 ms)
+    ✓ the drafter reads it with the exact-string check (a typo is off)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1398 passed, 1398 of 1399 total
+Tests:       29 skipped, 6 todo, 22503 passed, 22538 total
+Snapshots:   109 passed, 109 total
+Time:        164.791 s, estimated 205 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

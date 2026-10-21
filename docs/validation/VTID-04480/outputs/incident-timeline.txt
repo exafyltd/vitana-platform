@@ -1,0 +1,21 @@
+Staging, read-only from oasis_events (2026-09-24). Session live-a5e6462d-34db-445c-adde-d6e44323d86e
+(origin https://preview-aws.vitanaland.com, lang en, Nova Sonic, opened on /wallet right after the
+member asked Vitana to open the wallet in the previous session).
+
+12:49:38.843 greeting_sent        wake_opener=conv_resume register=continue bucket=reconnect route=/wallet
+12:49:40.482 tool_call            get_current_screen       -> JSON {"title":"Wallet",...,"screen_id":"WALLET.OVERVIEW"}
+12:49:40.963 tool_call            get_wallet_summary
+12:49:41.865 tool_call            get_pending_rewards
+12:49:42.442 tool_call            get_referral_status
+12:49:43.160 tool_call            get_next_best_action     -> 999 chars
+12:49:44.957 tool_loop_guard      consecutive=6 dropped_tools=[get_vitana_index] -> JSON speak_guidance
+12:49:45.884 model_start_speaking
+12:50:54.572 vtid.live.session.stop (member closed the ORB) audio_out_chunks=4743 model_turns=0
+12:50:55.177 turn_complete        audio_out=4747  (one uninterrupted turn of ~70 s)
+
+Same shape earlier: session live-bcbe4645-fae2-4ffa-8b5c-602bd5d3d5c2, 2026-09-22 22:16 (Command Hub):
+conv_resume -> get_current_screen, get_vitana_index, get_day_summary, get_schedule, view_messages,
+find_community_member -> tool_loop_guard -> 70.6 s turn, audio_out 4720.
+
+Loop guards in 14 days: 4 sessions; the two with the guard in the opening turn both ran ~70 s.
+The model's words were not stored anywhere: no user turn -> no finalize, no transcript row.

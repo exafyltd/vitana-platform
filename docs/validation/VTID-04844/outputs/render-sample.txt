@@ -1,0 +1,3 @@
+YOUR SUPPLIER'S BUSINESSES (loaded as this session opened — current enough to guide from):
+- Kräuterhaus (supplier shop; the user is org admin): setting up (not yet submitted). Still open: company details, verification. Company details missing: VAT ID. Next step: company details.
+["Kräuterhaus: setting up (not yet submitted); next step company details."]

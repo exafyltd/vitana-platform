@@ -1,0 +1,9 @@
+$ cd services/gateway && npx jest test/vtid-03841-deepseek-adapter-timeout.test.ts
+PASS test/vtid-03841-deepseek-adapter-timeout.test.ts
+    ✓ resolveDeepseekTimeoutMs: env override, and a 10-minute default for unset/invalid values (194 ms)
+    ✓ every DeepSeek request carries an AbortSignal (54 ms)
+    ✓ a stalled request fails within the timeout with a named error, instead of hanging (87 ms)
+    ✓ the timeout is what lets the policy fallback engage (the stall used to make fallback unreachable) (95 ms)
+    ✓ mutation check: without a signal the same stalled request would never settle (102 ms)
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total

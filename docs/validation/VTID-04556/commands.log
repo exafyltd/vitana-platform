@@ -1,0 +1,6 @@
+## Staging reproduction
+gateway log for session live-bb7642e1: [ORB-BRAIN-CACHE] HIT 2e7528b8…|a27552a3…|community|orb (age 175782ms)
+session A saved facts at 16:48:45Z; session B built its context from the cache at 16:50:39Z
+## Local
+npx jest test/vitana-brain-cache.test.ts -> 21 passed (8 new)
+npx tsc --noEmit -> clean

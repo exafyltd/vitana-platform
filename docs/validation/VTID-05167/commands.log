@@ -1,0 +1,14 @@
+# VTID-05167 commands
+git checkout -B claude/activity-timeline-rebuild-vrtcv4 origin/main   # a74aa327
+# read-only production reads (Supabase MCP execute_sql): activity_type counts (120 d), reltuples, archive columns, pg_cron presence
+node scripts/timeline/generate-activity-catalog-seed.mjs   # seed spliced between the GENERATED markers
+PGHOST=/tmp/pgtest-05167 PGPORT=55432 PGUSER=postgres scripts/ci/sql-tests/run-activity-tiers-test.sh   -> outputs/sql-activity-tiers.txt
+(mutation: archive tier filter removed) run-activity-tiers-test.sh   -> ERROR archive must move exactly the 2 … moved 3; file restored
+aurora-restore-0{1..6} VTID-05167 blocks applied after the migration on a throwaway DB   -> outputs/aurora-mirror-check.txt
+cd services/gateway && npx jest test/vtid-05167-timeline-catalog.test.ts   -> outputs/jest-vtid-05167.txt
+(old projector restored) npx jest test/vtid-05167-timeline-catalog.test.ts   -> outputs/jest-red-old-projector.txt; file restored
+npx jest <neighbouring suites>   -> outputs/jest-neighbours.txt
+npx tsc --noEmit -p .   -> outputs/tsc.txt
+node --test scripts/ci/check-migration-drift.test.cjs   -> outputs/drift-test.txt
+staging-verify validateManifest(staging-tests.json)   -> { ok: true }
+# No RUN-MIGRATION dispatch, no production write except the VTID ledger allocation/update.

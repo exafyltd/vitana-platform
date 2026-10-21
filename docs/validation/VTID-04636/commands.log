@@ -1,0 +1,9 @@
+# live evidence (read-only SQL, Supabase)
+select vtid,status,is_terminal,terminal_outcome,metadata from vtid_ledger where vtid in ('VTID-04608','VTID-04614');
+  -> both failed, terminalized_by=self-healing-reconciler, execution_failure_status=reverted
+select id,parent_execution_id,status from dev_autopilot_executions where id in (...);
+  -> bfaf037c self_healed <- e8118eb9 completed ; d085fdd6 self_healed <- 489a1de2 completed
+# tests
+cd services/gateway && npx jest test/vtid-04465 test/vtid-04636 test/self-healing test/vtid-04628   -> 12 suites, 115 passed
+# mutation: resolveExecutionLineageTail bypassed -> vtid-04636 unit 4 failed; pipeline scenario failed (Expected false, Received true)
+npx tsc --noEmit -p .   -> clean

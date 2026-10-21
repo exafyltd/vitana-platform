@@ -1,0 +1,140 @@
+{
+  "vtid": "VTID-05023",
+  "part": 10,
+  "doc": "docs/validation/VTID-05023/rehearsal.md",
+  "purpose": "Overrides for the staging services while they run against the Aurora rehearsal clone. Applied as ONE task-definition revision per service, removed the same way. Nothing here is applied by any workflow yet: see rehearsal.md 'Workflow changes needed'.",
+  "clone": {
+    "cluster": "vitana-aurora-rehearsal",
+    "writer": "vitana-aurora-rehearsal-writer",
+    "cluster_parameter_group": "vitana-aurora-rehearsal-cluster-params",
+    "endpoint": "<filled at window prep from: bash scripts/aws/rehearsal-clone.sh status>"
+  },
+  "window_prep_secrets": [
+    {
+      "name": "vitana/aurora/rehearsal/postgrest-authenticator-uri",
+      "create_when": "after the clone exists, before the staging proxy is repointed",
+      "value": "the value of vitana/aurora/prod/postgrest-authenticator-uri with ONLY the host replaced by the clone's cluster (writer) endpoint. Same role, same password (the clone carries production's pg_authid), same database 'vitana', same sslmode.",
+      "how": "an operator with secretsmanager:CreateSecret creates it from the existing secret without printing either value (read into a variable, substitute the host, create-secret --secret-string from that variable); tag Purpose=vtid-05023-part10-rehearsal. Delete it when the clone is deleted.",
+      "note": "The task asked for '...-url'; the existing production secret is named '...-uri' (vitana/aurora/prod/postgrest-authenticator-uri), so the rehearsal one follows that spelling."
+    }
+  ],
+  "staging_proxy": {
+    "ecs_service": "vitana-postgrest-aurora-proxy",
+    "task_family": "vitana-postgrest-aurora-staging",
+    "containers": {
+      "postgrest": {
+        "secrets_set": { "PGRST_DB_URI": "vitana/aurora/rehearsal/postgrest-authenticator-uri" },
+        "environment_set": { "PGRST_DB_HOST": "<clone endpoint>" },
+        "note": "PGRST_DB_HOST is informational (PostgREST reads PGRST_DB_URI) but today it names the production writer; set it so the task definition does not lie. PGRST_JWT_SECRET stays vitana/gateway/staging/supabase-jwt-secret (members sign in on production GoTrue, whose secret it must equal)."
+      },
+      "proxy": {
+        "environment_set": { "PUBLIC_HOST": "<staging data host, e.g. data-staging.vitanaland.com — does not exist yet>" },
+        "note": "Only needed for the app half of the rehearsal (browser /rest/v1 through a public host). The image default is data.vitanaland.com; the staging task must not answer for the production host name."
+      }
+    },
+    "optional_part4": {
+      "environment_set": { "PGRST_DB_PRE_REQUEST": "public.provisioning_pre_request" },
+      "precondition": "scripts/aws/aurora-cutover-auth-bridge.sql applied to the CLONE first (PostgREST fails every request while the function is missing)."
+    }
+  },
+  "staging_gateway": {
+    "ecs_service": "vitana-gateway",
+    "task_family": "vitana-gateway",
+    "apply_order": ["secrets_unset", "secrets_set", "environment_unset", "environment_set"],
+    "secrets_unset": {
+      "SUPABASE_URL": "today vitana/supabase/staging/url (production Supabase). Replaced by the plain value below; ECS cannot carry a secret and an env var of the same name.",
+      "AURORA_DATABASE_URL": "today vitana/aurora/prod/database-url: a direct admin connection to PRODUCTION Aurora (db-i18n; DB_I18N_TARGET is unset = supabase). Removed so nothing in the rehearsal can reach the production cluster directly.",
+      "GATEWAY_INTERNAL_TOKEN": "today vitana/gateway/staging/internal-token. Removed so every EventBridge Scheduler call aimed at the staging gateway (AP-xxxx automation crons, test-contract scanners, dev-memory handoff sweep, community-autopilot scan) is rejected while staging reads the clone. Disabling those schedules is the primary control (rehearsal.md D); this is the belt."
+    },
+    "secrets_set": {
+      "AURORA_RLS_DATABASE_URL": "vitana/aurora/rehearsal/postgrest-authenticator-uri"
+    },
+    "environment_set": {
+      "SUPABASE_URL": "http://postgrest-aurora.vitana.internal:8080",
+      "SUPABASE_PUBLIC_URL": "https://inmkhvwdcuyhnxkgfvsb.supabase.co",
+
+      "REMINDERS_INPROCESS_DISPATCH_ENABLED": "false",
+      "REMINDERS_STAGING_DISPATCH_OVERRIDE": "false",
+      "AUDIOBOOK_REMINDERS_DISABLED": "true",
+      "CALENDAR_DEFAULT_REMINDERS_ENABLED": "false",
+      "CALENDAR_MAINTENANCE_ENABLED": "false",
+      "CALENDAR_GOOGLE_SYNC_ENABLED": "false",
+      "CONNECTED_APPS_SYNC_LOOP": "false",
+      "RECOMMENDATION_SCHEDULER_ENABLED": "false",
+      "PRODUCT_ANALYTICS_ROLLUP_ENABLED": "false",
+      "JEV_VOICE_BACKSTOP_CLUSTERS_MODE": "off",
+      "JEV_VOICE_SLOW_SESSION_MODE": "off",
+      "JEV_VOICE_OPENER_OUTCOMES_MODE": "off",
+      "JEV_ROOT_CAUSE_ROLLUP_MODE": "off",
+      "SELF_HEALING_RECONCILER_ENABLED": "false",
+      "IDLE_SESSION_CLOSER_ENABLED": "false",
+      "INTENT_EMBEDDING_WORKER_ENABLED": "false",
+      "OAUTH_TOKEN_REFRESHER_ENABLED": "false",
+      "ADMIN_KPI_WORKER_ENABLED": "false",
+      "DEV_AUTOPILOT_EXECUTOR_ENABLED": "false",
+      "DEV_AUTOPILOT_WATCHERS_ENABLED": "false",
+      "DEV_AUTOPILOT_WATCHER_LIVE": "false",
+      "WATCHER_OBSERVER_ENABLED": "false",
+      "LONGEVITY_NEWS_FETCHER_ENABLED": "false",
+      "OPERATOR_PLANNER_ENABLED": "false",
+      "AUTOPILOT_HEARTBEAT_ENABLED": "false",
+
+      "AUTOPILOT_LOOP_ENABLED": "false",
+      "MORNING_BRIEF_ENABLED": "false",
+      "PLAN_SPARRING_RECONCILER_ENABLED": "false",
+      "MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED": "false",
+      "EMAIL_FALLBACK_ENABLED": "false",
+      "OUTBOUND_HTTP_WORKER_ENABLED": "false",
+      "AUTH_BRIDGE_RECONCILE_ENABLED": "false",
+      "AUTH_BRIDGE_ENABLED": "false",
+      "REWARD_SWEEP_ENABLED": "false",
+      "SHOPIFY_SYNC_ENABLED": "false",
+      "AWIN_SYNC_ENABLED": "false",
+      "AWIN_CONVERSIONS_ENABLED": "false",
+      "COMMUNITY_AUTOPILOT_SCAN_ENABLED": "false",
+      "AUTOMATIONS_DELIVERY_MODE": "shadow",
+
+      "VTID_ALLOCATOR_ENABLED": "false",
+      "OPERATOR_VTID_SELF_ALLOCATE_ENABLED": "false",
+      "FEEDBACK_AUTO_DISPATCH_ENABLED": "false",
+      "OPERATOR_EXECUTION_ONRAMP_ENABLED": "false",
+      "KIRO_ENGINE_ENABLED": "false",
+      "KIRO_MCP_WRITE_ENABLED": "false",
+      "SCHEDULED_NOTIFICATIONS_AUTH_MODE": "enforce",
+      "LEDGER_WRITE_AUTH_MODE": "enforce"
+    },
+    "unchanged_on_purpose": {
+      "VITANA_ENV": "staging (keeps the hard staging blocks: email fallback, outbox worker, auth-bridge reconciler, reward sweep, reward reservation sweep)",
+      "SUPABASE_SERVICE_ROLE / SUPABASE_ANON_KEY / SUPABASE_JWT_SECRET": "production Supabase keys; PostgREST on the clone accepts them because the proxy's PGRST_JWT_SECRET is the same secret"
+    },
+    "no_switch_mitigations": {
+      "lifecycle-notification-worker": "run scripts/aws/rehearsal-clone-neutralize.sql on the clone before the overlay (marks every waiting lifecycle row notified; revokes every FCM device token on the clone)",
+      "autonomous-engine": "writes recommendations / OASIS rows on the clone only; no outbound sender found; AUTO_ACTIVATE_RECOMMENDATIONS stays unset. Accepted for the rehearsal, needs a switch before the next one",
+      "one-shot boot writes": "agents_registry PATCH, VTID-01178 ensure row, conversation.system.snapshot OASIS event: clone-only, accepted"
+    }
+  },
+  "staging_app": {
+    "repo": "exafyltd/vitana-v1",
+    "repository_variables": {
+      "VITE_DATA_API_URL_STAGING": "https://<staging data host>",
+      "VITE_REALTIME_URL_STAGING": "<unset unless a staging Realtime against the clone exists (it does not); then realtime stays on Supabase>"
+    },
+    "note": "A staging frontend build (AWS-STAGE-DEPLOY-FRONTEND.yml) bakes these in; unsetting them and rebuilding is the revert. The community-app container itself is static nginx and runs nothing server-side."
+  },
+  "eventbridge_schedules_to_disable": {
+    "why": "These Scheduler entries call the STAGING gateway (gateway_url = https://preview-aws-gateway.vitanaland.com, per scripts/aws/setup-eventbridge-cron-migration.sh defaults). Exact live list could not be read from this session (scheduler:ListSchedules denied); confirm with `aws scheduler list-schedules` and each Input's gateway_url at window prep.",
+    "names": [
+      "autopilot-daily-match-delivery", "autopilot-morning-briefing", "autopilot-diary-reminder",
+      "autopilot-weekly-community-digest", "autopilot-weekly-reflection", "autopilot-group-recommendation-push",
+      "autopilot-social-alignment", "autopilot-creator-digest", "autopilot-trending-events",
+      "autopilot-wellness-check-in", "autopilot-upcoming-events-today",
+      "autopilot-memory-routine-pattern-extraction", "autopilot-memory-relationship-graph-projection",
+      "autopilot-memory-behavior-preference-inference", "autopilot-memory-health-correlation-insights",
+      "autopilot-memory-user-model-synthesis", "autopilot-memory-own-post-capture",
+      "autopilot-memory-embedding-backfill", "autopilot-memory-daily-learning-digest",
+      "autopilot-memory-daily-learning-episode", "autopilot-memory-diary-theme-rollup",
+      "gateway-test-contracts-scheduled-run", "gateway-test-contracts-missing",
+      "gateway-dev-memory-handoff-sweep", "gateway-community-autopilot-scan"
+    ]
+  }
+}

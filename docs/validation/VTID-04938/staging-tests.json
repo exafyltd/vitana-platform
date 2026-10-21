@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04938",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "this VTID is a readiness report with no runtime change; the existing Commerce MCP suite (metadata, 401 challenge, scopes, tools) is the behaviour the report describes and must stay green."
+    }
+  ]
+}

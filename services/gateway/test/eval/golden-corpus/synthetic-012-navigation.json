@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-012-navigation",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Screen awareness + navigation (no PII, voice-driven UI control).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "What screen am I on?",
+      "expected_tool": "get_current_screen",
+      "expected_intent": "preference.screen_read"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Take me to my wallet",
+      "expected_tool": "navigate_to_screen",
+      "expected_intent": "preference.navigate"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Open the community feed",
+      "expected_tool": "navigate_to_screen",
+      "expected_intent": "preference.navigate"
+    }
+  ]
+}

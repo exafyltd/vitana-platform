@@ -1,0 +1,6 @@
+staging console 10:16 UTC: 'how many registered users' -> dev_run_sql_readonly -> column "id" does not exist -> reply: cannot re-run a corrected query (single round)
+npx jest (39 console suites) -> 38 suites / 562 tests passed unchanged
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -> 29 passed (3 new)
+mutation: operatorMaxToolRounds -> 1 => 2 of the 3 new scenarios fail
+npx jest (full gateway) -> 1314 suites / 21048 tests passed
+npx tsc --noEmit -> clean

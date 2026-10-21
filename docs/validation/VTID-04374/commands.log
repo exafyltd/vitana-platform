@@ -1,0 +1,7 @@
+$ cd services/gateway && npx tsc --noEmit -p .                      # clean
+$ npx jest test/vtid-04374-calendar-maintenance.test.ts             # 21 passed
+$ npx jest test/routes                                              # 121 suites, 1924 passed, 1 skipped
+$ npx jest test/vtid-0432 test/vtid-0433 test/vtid-0435 test/vtid-04374   # calendar neighbours green
+Live reads (Supabase MCP, read-only):
+  calendar_events past-due, open, one-off journey_task/autopilot_recommendation: total 849, last 3 days 0
+  community_meetups rows 0; community_meetup_attendance does not exist; meetup_starting_* notifications 0

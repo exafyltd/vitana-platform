@@ -1,0 +1,6 @@
+$ cd services/gateway && npx tsc --noEmit -p .        # clean
+$ npx jest test/vtid-04373-calendar-reminder-quiet-hours.test.ts test/vtid-04338-calendar-default-reminders.test.ts
+  2 suites, 34 passed
+Live read (Supabase MCP, read-only):
+  select count(*) filter (where dnd_enabled), count(*) filter (where dnd_enabled and dnd_start_time is not null and dnd_end_time is not null), count(*) from user_notification_preferences
+  → dnd_on 4, dnd_complete 0, rows 15

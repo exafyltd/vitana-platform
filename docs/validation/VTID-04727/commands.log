@@ -1,0 +1,11 @@
+$ node node_modules/.bin/jest test/vtid-04727-ledger-write-auth.test.ts      # services/gateway
+Tests: 25 passed, 25 total
+$ mutations (each restored after): gate removed from complete route -> 2 failed; token removed from one voice-tool call -> 1 failed; log mode made to block -> 1 failed
+$ node --test scripts/ci/vtid-auto-close.test.cjs
+# pass 8 # fail 0
+$ npx tsc --noEmit   # services/gateway
+exit 0
+$ node node_modules/.bin/jest <53 suites touching oasis-tasks / vtid routes / vtid-lifecycle-tools / staging workflow / auto-close> test/vtid-04465-operator-pipeline-regression.test.ts
+Tests: 601 passed, 1 failed — the failure (vtid-04018 bootstrap pack) also fails on unmodified main; fixed as VTID-04728 in this PR
+$ curl https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-04727
+200 application/json

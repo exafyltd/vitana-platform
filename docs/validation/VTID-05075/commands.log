@@ -1,0 +1,3 @@
+# VTID-05075 commands
+git checkout -B claude/quirky-archimedes-s2t1f5 origin/main
+node --test scripts/ci/staging-verify/lib.test.cjs   # 30 tests, 0 fail

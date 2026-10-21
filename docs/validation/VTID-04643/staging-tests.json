@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04643",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "launch list requires an admin", "path": "/api/v1/testing/launchable", "expect_status": 401 },
+    { "kind": "http", "name": "recent launches require an admin", "path": "/api/v1/testing/launches", "expect_status": 401 },
+    { "kind": "http", "name": "launch refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/testing/launch", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "Run Tests page is served", "path": "/command-hub/testing-qa/run-tests/",
+      "expect_status": 200, "expect_content_type": "text/html" },
+    { "kind": "existing", "ref": "npx jest test/services/testing/test-launcher.test.ts test/routes/testing-launcher.test.ts test/command-hub/vtid-04643-run-tests-tab.test.ts", "cwd": "services/gateway",
+      "reason": "pins the launch list (no deploys, read-only production), the admin gate, the reason requirement, staging-only read-only E2E, the pinned STAGING-VERIFY commit and the OASIS record" }
+  ]
+}

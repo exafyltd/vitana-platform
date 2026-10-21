@@ -1,0 +1,47 @@
+# 19 — staging provisioning + Maxina tenant bootstrap (2026-09-14, real AWS, eu-central-1, account 472838866351)
+
+## Provisioned (aws CLI, one step at a time — the script's own steps replayed verbatim)
+- secrets: vitana/erp-bridge/staging/bridge-token (…-97k8bM), vitana/erp-bridge/staging/tenants (…-03MRKa), vitana/erp-bridge/staging/tenant-db/2e7528b8-472a-4356-88da-0280d4639cce
+- sg rule: sg-0fbcf7b59b1f0d685 :8080 from itself (sgr-0893fcd2586a7a51a); :5432 on the RDS SG already existed
+- Cloud Map: namespace vitana.internal ns-6jqrbt32ltbr52c7 in vpc-05958f035e596fe64, service erp-bridge srv-ek4dc6ek4vuz5aog (A, TTL 10)
+- task def vitana-erp-bridge:1 (placeholder image) → ECS service vitana-erp-bridge desiredCount 0
+- exec-role inline policies: erp-bridge-staging-secrets (bridge-token + tenants), erp-bridge-bootstrap-<tenant> (RDS master secret + tenant-db secret)
+
+## Deploys
+- AWS-STAGE-DEPLOY-ERP-BRIDGE.yml run 34907266000 (main 1a100da) → vitana-erp-bridge:2, image staging-1a100dacc0d3
+- AWS-STAGE-DEPLOY-ERP-BRIDGE.yml run 34907780043 (this branch 6321f10) → vitana-erp-bridge:3, image staging-6321f1007a76
+- AWS-STAGE-DEPLOY-GATEWAY.yml run 34907502878 → vitana-gateway:337 now carries ERP_BRIDGE_URL=http://erp-bridge.vitana.internal:8080 + secret ERP_BRIDGE_TOKEN
+
+## Bootstrap attempt 1 (vitana-erp-bridge-bootstrap:1, image :2) — FAILED, the defect this PR fixes
+psycopg2.errors.InsufficientPrivilege: must be able to SET ROLE "erpclaw_maxina"  (CREATE DATABASE … OWNER … before GRANT … TO CURRENT_USER)
+
+## Bootstrap attempt 2 (vitana-erp-bridge-bootstrap:2, image :3) — exit 0
+overrides: tenant 2e7528b8-472a-4356-88da-0280d4639cce (Maxina), db erpclaw_maxina, company "Exafy LTD" abbr EXL, currency AED, country United Arab Emirates, coa uae_ifrs, fy-start 1
+   | [ddl] {"role_created": false, "db_created": true}
+   | [erpclaw] --action initialize-database -> rc 1
+   | [erpclaw] initialize-database: Postgres schema created (sqlite verify step ignored)
+   | [cleanup] removed empty data.sqlite left by initialize-database
+   | [erpclaw] --action migrate --user-confirmed -> rc 0
+   | [module] install erpclaw-growth -> rc 0
+   | [erpclaw] --action list-companies -> rc 0
+   | [erpclaw] --action setup-company --name Exafy LTD --abbr EXL --currency AED --country United Arab Emirates --fiscal-year-start-month 1 --user-confirmed -> rc 0
+   | [erpclaw] --action setup-chart-of-accounts --company-id a1a3c135-17d2-417b-b07e-b1389300787f --template uae_ifrs -> rc 0
+   | [erpclaw] --action seed-defaults --company-id a1a3c135-17d2-417b-b07e-b1389300787f -> rc 0
+   | BOOTSTRAP_RESULT {"accounts_created": 22, "coa_template": "uae_ifrs", "company_created": true, "company_id": "a1a3c135-17d2-417b-b07e-b1389300787f", "db_created": true, "db_host": "vitana-postgres-staging.cfk228aiedf3.eu-central-1.rds.amazonaws.com", "db_name": "erpclaw_maxina", "db_port": 5432, "db_role": "erpclaw_maxina", "module": "erpclaw-growth", "module_version": "2.10.0", "role_created": false, "sslmode": "require", "tenant_id": "2e7528b8-472a-4356-88da-0280d4639cce"}
+
+## tenants secret merged; service scaled to 1 → task RUNNING/HEALTHY, /alive 200
+
+## In-VPC probe (one-off task from vitana-erp-bridge:3, command override) against http://erp-bridge.vitana.internal:8080
+PROBE alive (200, {'ok': True, 'service': 'erp-bridge', 'catalog': 'v1', 'env': 'staging', 'erpclaw_pin': '4d32db658529', 'addons_pin': '7c1b5ae57019', 'uptime_s': 227})
+PROBE ready (200, {'ok': True, 'tenants': 1})
+PROBE catalog 200 {'version': 'v1', 'actions': 164}
+PROBE list-companies 200 {"rc": 0, "argv": ["list-companies"], "tier": "read", "actor": {"channel": "system", "user_id": "probe-vtid-03840"}, "action": "list-companies", "result": {"limit": 20, "offset": 0, "status": "ok", "has_more": false, "companies": [{"id": "a1a3c135-17d2-417b-b07e-b1389300787f", "abbr": "EXL", "name": "Exafy LTD", "tax_id": null, "country": "United Arab Emirates", "created_at": "2026-09-14 23:17:31.646594+00", "updated_at": "2026-09-14 23:17:31.646594+00", "default_currency": "AED", "perpetual_inventory": 1, "default_warehouse_id": "2dbcec50-5be8-4a43-a9da-53459cf693ff", "round_off_account_id": null, "enable_negative_stock": 0, "receipt_tolerance_pct": "0", "default_co
+PROBE list-currencies 200 {"rc": 0, "argv": ["list-currencies"], "tier": "read", "actor": {"channel": "system", "user_id": "probe-vtid-03840"}, "action": "list-currencies", "result": {"limit": 20, "offset": 0, "status": "ok", "has_more": false, "currencies": [{"code": "AED", "name": "UAE Dirham", "symbol": "AED", "enabled": 0, "decimal_places": 2}, {"code": "AUD", "name": "Australian Dollar", "symbol": "A$", "enabled": 0, "decimal_places": 2}, {"code": "BRL", "name": "Brazilian Real", "symbol": "R$", "enabled": 0, "decimal_places": 2}, {"code": "CAD", "name": "Canadian Dollar", "symbol": "CA$", "enabled": 0, "decimal_places": 2}, {"code": "CHF", "name": "Swiss Franc", "symbol": "CHF", "enabl
+
+## Currency enablement (owner ask: EUR, USD, AED)
+PROBE add-currency AED 200 {"rc": 1, "argv": ["add-currency", "--code", "AED", "--decimal-places", "2", "--enabled", "--name", "UAE Dirham", "--symbol", "AED"], "result": {"status": "error", "message": "duplicate key value violates unique constraint \"currency_pkey\"\nDETAIL:  Key (code)=(AED) already exists.\n"}, "error": null, "stderr": null}
+PROBE add-currency EUR 200 {"rc": 1, "argv": ["add-currency", "--code", "EUR", "--decimal-places", "2", "--enabled", "--name", "Euro", "--symbol", "\u20ac"], "result": {"status": "error", "message": "duplicate key value violates unique constraint \"currency_pkey\"\nDETAIL:  Key (code)=(EUR) already exists.\n"}, "error": null, "stderr": null}
+PROBE add-currency USD 200 {"rc": 1, "argv": ["add-currency", "--code", "USD", "--decimal-places", "2", "--enabled", "--name", "US Dollar", "--symbol", "$"], "result": {"status": "error", "message": "duplicate key value violates unique constraint \"currency_pkey\"\nDETAIL:  Key (code)=(USD) already exists.\n"}, "error": null, "stderr": null}
+PROBE enabled-currencies 200 [('USD', 1)]
+→ add-currency is INSERT-only (currency_pkey); seed-defaults ships 16 currencies with only USD enabled; ERPClaw's router has no enable/update-currency action.
+→ AED (company default) and EUR remain enabled=0 in the tenant DB — a one-row UPDATE per code, left for the owner (session tooling refused a direct write to the tenant DB).

@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04712",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/memory",
+      "cwd": "services/gateway",
+      "reason": "pinned by unit tests built from the live pass-7 turn; a read-only staging suite cannot speak to the voice model (the live voice suite, scripts/memory-verification/run-live.mjs, is run by hand on staging)"
+    }
+  ]
+}

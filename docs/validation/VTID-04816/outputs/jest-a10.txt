@@ -1,0 +1,6 @@
+PASS test/vtid-04816-operator-route.test.ts
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS test/vtid-04560-role-separation-regression.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.87 s)
+Test Suites: 4 passed, 4 total
+Tests:       153 passed, 153 total

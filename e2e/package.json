@@ -1,0 +1,25 @@
+{
+  "name": "vitana-e2e",
+  "private": true,
+  "scripts": {
+    "test": "npx playwright test",
+    "test:desktop": "npx playwright test --project=desktop-community --project=desktop-patient --project=desktop-professional --project=desktop-staff --project=desktop-admin --project=desktop-shared",
+    "test:mobile": "npx playwright test --project=mobile-community --project=mobile-patient --project=mobile-professional --project=mobile-staff --project=mobile-admin --project=mobile-shared",
+    "test:hub": "npx playwright test --project=hub-developer --project=hub-admin --project=hub-staff --project=hub-shared",
+    "test:community": "npx playwright test --project=desktop-community --project=mobile-community",
+    "test:shared": "npx playwright test --project=desktop-shared --project=mobile-shared --project=hub-shared",
+    "test:headed": "npx playwright test --headed",
+    "report": "npx playwright show-report",
+    "sim:doctor": "node mobile-sim/doctor.mjs",
+    "sim:doctor:android": "node mobile-sim/android/doctor.mjs",
+    "test:device": "node mobile-sim/run.mjs",
+    "test:device:ios": "node mobile-sim/run.mjs --platform ios",
+    "test:device:android": "node mobile-sim/android/run.mjs",
+    "test:device:android:sim-use": "node mobile-sim/run.mjs --platform android"
+  },
+  "devDependencies": {
+    "@playwright/test": "^1.52.0",
+    "@supabase/supabase-js": "^2.80.0",
+    "tsx": "^4.21.0"
+  }
+}

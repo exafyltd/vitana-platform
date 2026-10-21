@@ -1,0 +1,65 @@
+# VTID-03741 — commands run this session
+
+## Investigation
+- Background Explore agent af3175b77a3a54985: full click-to-first-audio
+  pipeline trace (WS + SSE, brain build, wake-brief ranker, cross-region
+  Nova hop, existing fast-start/cache/telemetry mechanisms). Findings folded
+  into the plan presented to the platform owner and into this VTID's scope.
+
+## Code changes verification
+$ cd services/gateway && npx tsc --noEmit -p .
+  -> clean, exit 0 (both before and after rebasing onto latest origin/main)
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml')); print('YAML OK')"
+  -> YAML OK
+
+$ npx jest test/services/assistant-continuation/decide-continuation.test.ts \
+    test/orb/live/upstream/staging-latency-telemetry-flag-pinned.test.ts \
+    test/orb/live/upstream/staging-fast-start-brain-cache-flags-pinned.test.ts \
+    test/orb/live/upstream/staging-cascade-flag-pinned.test.ts
+  -> 4 suites, 60 tests, all passing (see outputs/targeted-tests.txt)
+
+$ npx jest   # full gateway suite
+  -> see outputs/full-suite.txt
+
+## Governance
+- VTID-03741 self-allocated via POST /api/v1/vtid/allocate (gateway
+  reachable from this session): { ok:true, vtid:"VTID-03741", num:3741 }
+- title/summary/description/status=in_progress/spec_status=approved set via
+  direct Supabase RPC (execute_sql UPDATE vtid_ledger ... WHERE
+  vtid='VTID-03741') per CLAUDE.md §4.1 step 4 — the gateway has no PATCH
+  endpoint for vtid_ledger metadata beyond spec_markdown edits.
+
+## Branch note
+- The designated branch claude/orb-interruption-voice-comms-x3wh7s carried
+  prior (VTID-03706-era) commits whose PR #3158 was already merged into
+  main (confirmed: ORB_FULL_DUPLEX_ENABLED present in origin/main's copy of
+  AWS-STAGE-DEPLOY-GATEWAY.yml, matching PR #3158's diff). Per the
+  session's own instructions for this case, restarted the branch from
+  origin/main (git checkout -B claude/orb-interruption-voice-comms-x3wh7s
+  origin/main) and reapplied this VTID's changes on top via git stash.
+
+## Follow-up (2026-08-25) — Codex review fix (AC-4)
+
+Codex PR review flagged a real regression risk: the AC-2 generic 800ms
+per-provider timeout could mark guided-topic-narration errored on a Polly
+cache-miss, dropping an explicitly-tapped lesson in favor of a lower
+priority provider. Verified the claim by reading
+guided-topic-narration.ts:152-197 (real await on
+synthesizeGuidedTopicNarrationAudio inside produce()) and
+wake-brief-wiring.ts:597-603 (isExplicitSelection only exempts the rotation
+penalty, does not force-select or bypass the timeout).
+
+Fix: pass providerTimeoutMs:10_000 to decideContinuation whenever
+isExplicitSelection is true.
+
+$ npx tsc --noEmit -p services/gateway
+  -> clean, exit 0
+
+$ npx jest test/services/wake-brief-explicit-selection-timeout.test.ts \
+    test/services/wake-brief-wiring.test.ts
+  -> 2 suites, 20 tests, all passing (outputs/targeted-tests-ac4.txt)
+
+$ npx jest   # full gateway suite, re-run after this fix
+  -> 706/707 suites (1 pre-existing skip), 13,358 tests, 0 failures
+     (outputs/full-suite.txt)

@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05152",
+  "service": "gateway",
+  "note": "Read-only. The gateway runtime is unchanged (the diff is the plugin folder, one test and docs); the staging deploy fires only because the test sits under services/gateway/.",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04980-chatgpt-plugin-package.test.ts", "cwd": "services/gateway", "reason": "pins the single layout, the OAuth declaration, the schema URLs, the category and the absence of the legacy files" },
+    { "kind": "http", "name": "the authorization-server document is still served", "path": "/.well-known/oauth-authorization-server", "expect_status": 200 },
+    { "kind": "http", "name": "the ChatGPT resource metadata is still served", "path": "/.well-known/oauth-protected-resource/mcp/chatgpt", "expect_status": 200 }
+  ]
+}

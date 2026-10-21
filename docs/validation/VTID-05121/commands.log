@@ -1,0 +1,8 @@
+# cwd: services/gateway (node_modules symlinked to the main checkout's)
+npx jest test/vtid-05121-autopilot-prompts-not-behind-service-token.test.ts test/vtid-04530-autopilot-recommendations-not-behind-service-token.test.ts test/routes/autopilot.test.ts test/routes/autopilot-prompts.test.ts test/vtid-05048-s4-caller-identity.test.ts   -> outputs/jest.txt
+npm run test:roles      -> outputs/roles-operator.txt
+npm run test:operator   -> outputs/roles-operator.txt
+npx tsc --noEmit -p .   -> outputs/tsc.txt
+mutation (M1 gate /prompts arm removed, M2 generate limiter removed, M3 optionalAuth removed before generate limiter), each followed by npx jest test/vtid-05121 and restore -> outputs/mutation.txt
+# plan hash check
+awk '/<!-- plan:begin -->/{f=1;next}/<!-- plan:end -->/{f=0}f' docs/validation/VTID-05121/plan-sparring.md | sha256sum   -> b345adc7e7dd8bc0f52dba65c56f8aff6c7849bcdfce58bf3d1f23c986055437

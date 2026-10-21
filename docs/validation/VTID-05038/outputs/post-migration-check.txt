@@ -1,0 +1,9 @@
+# VTID-05038 — production, after RUN-MIGRATION.yml run 38046327642 (success), 2026-10-10. Read-only SQL.
+live function body: carries the VTID-05038 marker, metadata->>'cap' and the notification_test_actors guard -> true
+real primary members missing from "Alle Beisammen 🤗"                                             -> 0 (was 12)
+"Alle Beisammen 🤗" members                                                                        -> 243 (was 231)
+"🎆 FIRST 100" members                                                                             -> 100 (unchanged, capped)
+welcome_chat messages created in the 15 minutes around the migration                              -> 0 (backfill sent nothing)
+registered service/test accounts in "Alle Beisammen"                                              -> 1, pre-existing (not added by this
+  migration): a27552a3-… (the documented E2E test user, notification_test_actors). Removing it is a delete
+  outside this plan; reported to the owner, left as is.

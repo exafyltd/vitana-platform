@@ -1,0 +1,1 @@
+No CSP pattern hits in added lines.

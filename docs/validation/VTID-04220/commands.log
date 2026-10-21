@@ -1,0 +1,9 @@
+VTID-04220 — commands run this session (Claude Code)
+1. Allocated via POST /api/v1/vtid/allocate (title inline) -> VTID-04220
+2. Evidence: dev-autopilot-execute.ts reconcileVerifying default 'https://gateway-q74ibpv6ia-uc.a.run.app';
+   self-healing-probe.ts DEFAULT_GATEWAY_URL = GATEWAY_URL || 'https://gateway.vitanaland.com';
+   AWS-STAGE-DEPLOY-GATEWAY.yml: GATEWAY_URL only a workflow-level env for smoke tests, not on the task def.
+3. Code: env.ts (+GATEWAY_URLS, gatewayBaseUrl), dev-autopilot-execute.ts, self-healing-probe.ts, new test.
+4. cd services/gateway && npx tsc --noEmit -p tsconfig.json -> exit 0
+   npx jest test/vtid-04220-gateway-base-url.test.ts test/self-healing-pre-probe.test.ts \
+     test/self-healing-reconciler-autopilot-link.test.ts -> 3 suites, 35 tests, 0 failures

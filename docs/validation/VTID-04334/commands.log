@@ -1,0 +1,14 @@
+# VTID-04334 — commands run (2026-09-23)
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                   # clean
+node scripts/generate-command-hub-symbol-index.mjs                             # regenerated
+node scripts/generate-command-hub-symbol-index.mjs --check                     # in sync (785 functions across 11 files)
+git diff origin/<base> -- services/gateway/src/frontend/ > csp_diff.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_diff.txt        # No CSP pattern hits in added lines.
+node node_modules/.bin/jest test/command-hub <every suite reading app.js/styles.css/index.html/symbol index/ownership guard> test/scripts/validator-path-guard.test.ts
+                                                                                # 71 suites / 926 tests passed (outputs/jest-summary.txt)
+
+# Visual verification (local harness, nothing live)
+node docs/validation/VTID-04334/outputs/harness-server.js &
+node docs/validation/VTID-04334/outputs/harness-shoot.js > docs/validation/VTID-04334/outputs/harness-report.json
+                                                                                # desktop 1400x900 + mobile 390x844, 0 page errors, 0 overflow

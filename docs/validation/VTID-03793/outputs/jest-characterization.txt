@@ -1,0 +1,474 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+(node:1794) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/time-since.characterization.test.ts
+  A0.2 characterization: describeTimeSince
+    null / invalid input
+      ✓ "undefined" returns first-bucket sentinel (7 ms)
+      ✓ "null" returns first-bucket sentinel (1 ms)
+      ✓ "no-time-field" returns first-bucket sentinel (1 ms)
+      ✓ "invalid-time-string" returns first-bucket sentinel
+    bucket boundaries
+      ✓ "5s-ago" lands in bucket "reconnect" (1 ms)
+      ✓ "29s-ago" lands in bucket "reconnect" (1 ms)
+      ✓ "60s-ago" lands in bucket "reconnect"
+      ✓ "119s-ago" lands in bucket "reconnect"
+      ✓ "120s-ago" lands in bucket "recent" (1 ms)
+      ✓ "14m-ago" lands in bucket "recent"
+      ✓ "15m-ago" lands in bucket "same_day"
+      ✓ "1h-ago" lands in bucket "same_day" (1 ms)
+      ✓ "7h-ago" lands in bucket "same_day"
+      ✓ "8h-ago" lands in bucket "today" (33 ms)
+      ✓ "23h-ago" lands in bucket "today"
+      ✓ "25h-ago" lands in bucket "yesterday"
+      ✓ "47h-ago" lands in bucket "yesterday"
+      ✓ "2d-ago" lands in bucket "week"
+      ✓ "6d-ago" lands in bucket "week"
+      ✓ "7d-ago" lands in bucket "long"
+      ✓ "30d-ago" lands in bucket "long" (1 ms)
+    full snapshot
+      ✓ snapshots describeTimeSince across the bucket grid (3 ms)
+    wasFailure pass-through
+      ✓ preserves wasFailure=true regardless of bucket
+      ✓ preserves wasFailure=false regardless of bucket
+
+(node:1793) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/tool-catalog.characterization.test.ts
+  A0.1 characterization: buildLiveApiTools
+    mode/role matrix
+      ✓ anonymous on landing route returns no tools (10 ms)
+      ✓ anonymous on /maxina (also a landing route) returns no tools
+      ✓ anonymous on a community route gets navigator tools only (token-expired path) (2 ms)
+      ✓ authenticated community user gets the full community tool set (1 ms)
+      ✓ authenticated admin user gets community tools PLUS admin tools (53 ms)
+    snapshots
+      ✓ snapshots full catalog for anonymous-landing (2 ms)
+      ✓ snapshots full catalog for anonymous-community-route (2 ms)
+      ✓ snapshots full catalog for authenticated-community (43 ms)
+      ✓ snapshots full catalog for authenticated-admin (37 ms)
+
+(node:1787) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/system-instruction.characterization.test.ts
+  A0.1 characterization: buildLiveSystemInstruction
+    ✓ renders a stable system instruction for persona "day-1-anonymous-landing" (17 ms)
+    ✓ renders a stable system instruction for persona "day-30-warm-german" (4 ms)
+    ✓ renders a stable system instruction for persona "day-180-veteran-reconnect" (3 ms)
+    ✓ produces a different instruction when isReconnect flips (9 ms)
+    ✓ produces a different instruction when activeRole changes (42 ms)
+    ✓ produces a different instruction when language changes (3 ms)
+    per-surface persona switch
+      ✓ Command Hub route swaps the identity-lock role line (14 ms)
+      ✓ Command Hub route swaps base_identity to the engineering co-pilot framing (4 ms)
+      ✓ Command Hub route swaps tools_section to drop community-surface tools (2 ms)
+      ✓ mobile + Command Hub route still resolves to community (mobile override wins) (1 ms)
+      ✓ Command Hub route drops the EVENT LINK SHARING and Devon-handoff trailing blocks (7 ms)
+      ✓ Community route STILL contains the trailing community blocks (no regression) (10 ms)
+    MESSAGING_CONTRACT placement (BOOTSTRAP-ORB-MESSAGING-CONTRACT-TRIM-FIX)
+      ✓ is present in the rendered instruction (7 ms)
+      ✓ is positioned AFTER the navigator marker, not inside bootstrapContext (7 ms)
+      ✓ decomposeInstructionSections classifies it as scaffold (preserved), not bootstrap (trimmed first) (9 ms)
+      ✓ survives enforceInstructionBudget even when a heavy bootstrapContext forces trimming (the actual production bug) (12 ms)
+
+PASS test/orb/live/characterization/greeting-pools.characterization.test.ts
+  A0.2 characterization: greeting pools
+    SHORT_GAP_GREETING_PHRASES (frozen pool)
+      ✓ snapshots the entire pool table (2 ms)
+      ✓ declares the languages the orb officially supports for short-gap greetings (1 ms)
+      ✓ pool for "en" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "de" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "fr" has at least 8 phrases (variety floor)
+      ✓ pool for "es" has at least 8 phrases (variety floor)
+      ✓ pool for "ar" has at least 8 phrases (variety floor)
+      ✓ pool for "zh" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "ru" has at least 8 phrases (variety floor)
+      ✓ pool for "sr" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "pt" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "pl" has at least 8 phrases (variety floor)
+      ✓ pool for "tr" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "en" has no empty / whitespace-only phrases (4 ms)
+      ✓ pool for "de" has no empty / whitespace-only phrases (6 ms)
+      ✓ pool for "fr" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "es" has no empty / whitespace-only phrases (2 ms)
+      ✓ pool for "ar" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "zh" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "ru" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "sr" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "pt" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "pl" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "tr" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "en" has no duplicate phrases
+      ✓ pool for "de" has no duplicate phrases
+      ✓ pool for "fr" has no duplicate phrases
+      ✓ pool for "es" has no duplicate phrases
+      ✓ pool for "ar" has no duplicate phrases (1 ms)
+      ✓ pool for "zh" has no duplicate phrases
+      ✓ pool for "ru" has no duplicate phrases
+      ✓ pool for "sr" has no duplicate phrases
+      ✓ pool for "pt" has no duplicate phrases (1 ms)
+      ✓ pool for "pl" has no duplicate phrases
+      ✓ pool for "tr" has no duplicate phrases (1 ms)
+    pickShortGapGreetings (invariants)
+      ✓ returns at most `count` items (13 ms)
+      ✓ caps `count` at the size of the pool (never returns more than the pool has)
+      ✓ every returned phrase is a member of the requested language pool (9 ms)
+      ✓ falls back to "en" pool for an unknown language (1 ms)
+      ✓ does not mutate the underlying pool (2 ms)
+      ✓ returns deterministic-shape output: an array of strings
+      ✓ returns empty array when count is 0 (1 ms)
+
+PASS test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+  VTID-03101: GeminiLiveSession declares wakeBriefOverrideBlock
+    ✓ orb-live.ts declares the dedicated wakeBriefOverrideBlock field on the session interface (2 ms)
+  VTID-03101: controller writes the override to the dedicated field (not contextInstruction)
+    ✓ writes the picked block to session.wakeBriefOverrideBlock (1 ms)
+    ✓ does NOT mutate session.contextInstruction with the override block
+  VTID-03101: setup-message builder reads both fields when rendering system_instruction
+    ✓ orb-live.ts concatenates session.wakeBriefOverrideBlock into the bootstrap arg passed to buildLiveSystemInstruction (1 ms)
+  VTID-03786: buildVertexWakeBriefBlock does not carry known Nova-filter trigger patterns
+    ✓ does NOT assert this block overrides every other rule (1 ms)
+    ✓ does NOT quote hypothetical spoken example phrases (1 ms)
+    ✓ still instructs the model to speak the wake-brief line verbatim as its first turn (1 ms)
+  VTID-03786: LiveKit first-turn suppression directive does not carry known Nova-filter trigger patterns
+    ✓ orb-livekit.ts does NOT assert the directive overrides every other rule (3 ms)
+    ✓ orb-livekit.ts does NOT quote a hypothetical "How can I help?" example (2 ms)
+
+PASS test/orb/live/characterization/upstream-message-handler.characterization.test.ts
+  A8.3a.2: upstream-message-handler module owns the function body
+    ✓ exports the factory `createUpstreamLiveMessageHandler` (1 ms)
+    ✓ declares the inner handler with the canonical name + signature (1 ms)
+    ✓ still handles every event path (setup_complete, server_content, tool_call, interruption, turn_complete, transcripts) (1 ms)
+    ✓ invokes user callbacks via ctx.callbacks (audio, interrupted, turn-complete) (1 ms)
+    ✓ uses ctx.onSetupComplete() on the setup_complete branch (replaces inline setupComplete / clearTimeout / resolve)
+    ✓ uses writeSseEvent for SSE output (A9.2 wire helper)
+    ✓ routes all orb-live.ts-local helpers through ctx.deps.* (1 ms)
+  A8.3a.2: orb-live.ts is a thin consumer of the factory
+    ✓ imports createUpstreamLiveMessageHandler from the new module (1 ms)
+    ✓ builds the handler via the factory with session, ws, callbacks, onSetupComplete, isSetupComplete, deps (1 ms)
+    ✓ still registers via ws.on("message", handleUpstreamLiveMessage)
+    ✓ does NOT declare the message-handler body locally anymore (1 ms)
+    ✓ preserves the connectToLiveAPI Promise-closure state semantics (setupComplete + clearTimeout + resolve) (3 ms)
+    ✓ does NOT inline `new WebSocket(wsUrl, { headers: ... })` anymore (1 ms)
+    ✓ A8.3b.2: legacy raw-WebSocket scaffolding is removed from connectToLiveAPI (1 ms)
+    ✓ L1: connectToLiveAPI calls selectUpstreamProvider before constructing the upstream client (2 ms)
+    ✓ L2.1: connectToLiveAPI passes canary config + identity to the selector and emits canary OASIS events (1 ms)
+
+PASS test/orb/live/characterization/vertex-wake-opener-v2.characterization.test.ts
+  VTID-03104 / 1c: override_v2 opener lives in the brain; transport delegates
+    ✓ the override_v2 rung + its trigger shape are in the brain (2 ms)
+    ✓ the brain does NOT re-introduce the VTID-03102 phrasing that broke audio (1 ms)
+    ✓ the legacy default fallback likewise lives in the brain (1 ms)
+    ✓ orb-live.ts delegates the sync opening rungs to computeGreetingDecision (1 ms)
+    ✓ orb-live.ts no longer carries the inline override / silent / cadence branches (1 ms)
+  VTID-03609: the sync new-day branch awaits greetingFactsReady
+    ✓ the pre-guard does NOT gate on any pre-fetch-owned fact (2 ms)
+    ✓ the branch awaits greetingFactsReady BEFORE building the new-day context (1 ms)
+    ✓ the new-day context RE-READS the facts rather than inheriting the sync snapshot (1 ms)
+    ✓ both bounded waits use the same env budgets the safe-fast path uses (1 ms)
+    ✓ every non-firing outcome emits a distinguishable newday_briefing_eval (2 ms)
+
+PASS test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts
+  VTID-03622 — no hardcoded spoken wording in the ORB voice path
+    ✓ the exact regression sentence is gone, in every language it shipped in (2 ms)
+    ✓ the recovery path no longer carries per-language finished sentences (1 ms)
+    ✓ the recovery path hands the model an INTENT, not a script (1 ms)
+    ✓ the recovery prompt explicitly forbids a memorised line (1 ms)
+    ✓ no German second-person sentence is handed to the model as speech (1 ms)
+  VTID-03630 — the short-gap opener no longer hands the model a VERBATIM menu
+    ✓ compute-greeting-decision.ts never instructs the model to use a menu VERBATIM
+    ✓ compute-greeting-decision.ts hands the short-gap rungs an INTENT instead
+    ✓ voice-wake-brief.ts never instructs the model to use a menu VERBATIM
+  VTID-03742 — the anonymous MAXINA Intro speech is composed fresh, not recited from a fixed script
+    ✓ the old literal German and English scripts are gone, in full (4 ms)
+    ✓ the anonymous intro now hands the model material to paraphrase, not a script to recite (1 ms)
+    ✓ the language directive is explicit that the material is reference content, not a translation target (1 ms)
+    ✓ every required talking point survives as material, not as finished prose (3 ms)
+
+PASS test/orb/live/characterization/session-start.characterization.test.ts
+  A0.2 characterization: /live/session/start request contract
+    body fields the handler reads
+      ✓ handler reads "body.lang" (1 ms)
+      ✓ handler reads "body.voice_style"
+      ✓ handler reads "body.response_modalities" (1 ms)
+      ✓ handler reads "body.conversation_summary"
+      ✓ handler reads "body.transcript_history"
+      ✓ handler reads "body.reconnect_stage" (1 ms)
+      ✓ handler reads "body.conversation_id"
+    reconnect detection formula (VTID-02020)
+      ✓ declares isReconnectStart based on transcript_history length OR reconnect_stage (2 ms)
+      ✓ valid reconnect_stage values are exactly {idle, listening_user_speaking, thinking, speaking} (1 ms)
+      ✓ truncates transcript_history to the last 20 turns
+      ✓ rejects malformed transcript history entries (role + text type guard)
+    origin + auth gates (pre-conditions before any session is created)
+      ✓ validates origin before doing any work (1 ms)
+      ✓ rejects bearer tokens that failed JWT verification with 401 (VTID-AUTH-BACKEND-REJECT)
+
+PASS test/orb/live/characterization/websocket-setup.characterization.test.ts
+  A9.1 characterization: initializeOrbWebSocket delegates to the transport module
+    ✓ is exported (so the gateway entrypoint can wire it) (1 ms)
+    ✓ accepts an HttpServer parameter (Express HTTP server instance)
+    ✓ delegates WSS setup to mountOrbWebSocketTransport
+    ✓ passes a handleConnection wrapper that forwards to handleWebSocketConnection
+    ✓ passes an onServerError hook for server-level WebSocket errors (1 ms)
+    ✓ does NOT inline `new WebSocketServer(`, `wss.on(`, or a literal mount path
+  A8.1 update: per-session registry now lives in orb/live/session/live-session-registry.ts
+    ✓ orb-live.ts imports wsClientSessions from the registry module (not a local declaration) (1 ms)
+    ✓ orb-live.ts no longer declares wsClientSessions = new Map(...) locally (4 ms)
+  A9.1 characterization: import wiring
+    ✓ imports mountOrbWebSocketTransport from the transport module (57 ms)
+
+PASS test/orb/live/characterization/greeting-policy.characterization.test.ts
+  A4 characterization: decideGreetingPolicy stub
+    reconnect override (VTID-02637)
+      ✓ isReconnect=true forces "skip" regardless of bucket "recent" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "same_day" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "today"
+      ✓ isReconnect=true forces "skip" regardless of bucket "yesterday" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "week"
+      ✓ isReconnect=true forces "skip" regardless of bucket "long" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "first"
+    bucket → policy mapping (today's truth table)
+      ✓ bucket=reconnect with {} → skip (10 ms)
+      ✓ bucket=recent with {} → brief_resume
+      ✓ bucket=recent with {"wasFailure":true} → warm_return (1 ms)
+      ✓ bucket=same_day with {} → brief_resume
+      ✓ bucket=today with {} → warm_return
+      ✓ bucket=yesterday with {} → warm_return
+      ✓ bucket=week with {} → warm_return
+      ✓ bucket=long with {} → fresh_intro (1 ms)
+      ✓ bucket=first with {} → fresh_intro
+    unknown buckets default conservatively
+      ✓ unknown bucket "unknown" → fresh_intro (conservative default)
+      ✓ unknown bucket "" → fresh_intro (conservative default) (1 ms)
+      ✓ unknown bucket "totally-not-a-bucket" → fresh_intro (conservative default)
+      ✓ unknown bucket "reconnects" → fresh_intro (conservative default) (1 ms)
+    output domain
+      ✓ always returns one of the four declared policies (10 ms)
+
+PASS test/orb/live/characterization/sse-stream.characterization.test.ts
+  A9.2 characterization: /live/stream delegates SSE setup to the transport module
+    ✓ calls attachSseHeaders(res) for the SSE upgrade (1 ms)
+    ✓ does NOT inline raw res.setHeader calls for the SSE headers (1 ms)
+    ✓ starts the heartbeat through startSseHeartbeat (NOT setInterval) (1 ms)
+    ✓ writes the ready event through writeSseEvent (NOT raw res.write) (54 ms)
+  A9.2 characterization: ready event payload contract (unchanged)
+    ✓ emits an event with type: "ready" (1 ms)
+    ✓ includes session_id in the ready payload (1 ms)
+    ✓ includes live_api_connected boolean in the ready payload
+    ✓ includes meta.model in the ready payload (2 ms)
+    ✓ includes meta.lang in the ready payload
+    ✓ includes meta.voice in the ready payload (1 ms)
+    ✓ declares audio_out_rate (server → client TTS sample rate) (1 ms)
+    ✓ declares audio_in_rate (client → server mic sample rate)
+  A9.2 characterization: session id parameter (unchanged)
+    ✓ reads session_id from query string (1 ms)
+    ✓ rejects request with 400 when session_id is missing
+  A9.2 characterization: import wiring
+    ✓ imports the SSE helpers from the transport module (10 ms)
+
+PASS test/orb/live/characterization/stream-lifecycle.characterization.test.ts
+  A0.3 characterization: transport lifecycle cleanup
+    SSE: client-disconnect cleanup
+      ✓ registers a req.on('close', ...) handler (1 ms)
+    WebSocket: connection lifecycle (cleanup body lives in controller)
+      ✓ controller removes sessions from wsClientSessions on cleanup (1 ms)
+      ✓ controller clears intervals on cleanup (upstream ping + silence keepalive)
+      ✓ controller attempts to close the upstream websocket on cleanup
+      ✓ controller attempts to close the client websocket on cleanup (if still OPEN) (1 ms)
+      ✓ orb-live.ts runs a periodic timeout sweep over the WS session map (interval-only; body in controller)
+      ✓ uses a session timeout constant (not an inline magic number)
+    cleanup symmetry across transports
+      ✓ both SSE and WS cleanup paths exist (parity; WS body now in controller) (1 ms)
+
+PASS test/orb/live/characterization/day-close-stamp-deferred-and-gather-skip.characterization.test.ts
+  VTID-03743 P1 — day-close stamp is deferred until delivery is confirmed
+    ✓ schedulePersistDayCloseStamp only persists when transportHasShownLife is true (4 ms)
+    ✓ every stampDayCloseDate call site routes through schedulePersistDayCloseStamp, not an immediate write (3 ms)
+    ✓ the plain/legacy sync ladder (_syncDecision) and the recovery path (_recoverNS) now stamp day-close too (1 ms)
+  VTID-03743 P2 — the expensive new-day-overview gather is skipped when day-close would win anyway
+    ✓ compute-greeting-decision.ts exports tryDayCloseRung (pure, no I/O, safe to call as a pre-check)
+    ✓ both shouldAttemptNewdayOverview gather guards are gated on !tryDayCloseRung(...) (6 ms)
+    ✓ tryDayCloseRung genuinely outranks tryNewDayOverviewRung inside computeGreetingDecision (the fact that justifies the pre-check) (1 ms)
+
+PASS test/orb/live/characterization/tool-dispatcher.characterization.test.ts
+  A0.1 characterization: executeLiveApiToolInner dispatcher contract
+    top-5 tools surface (must remain reachable through the dispatcher)
+      ✓ dispatcher recognises tool name "get_current_screen" (1 ms)
+      ✓ dispatcher recognises tool name "navigate" (1 ms)
+      ✓ dispatcher recognises tool name "navigate_to_screen"
+      ✓ dispatcher recognises tool name "search_memory" (1 ms)
+      ✓ dispatcher recognises tool name "save_diary_entry"
+      ✓ "get_current_screen" appears as an if-branch OR a switch-case keyed by toolName (2 ms)
+      ✓ "navigate" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "navigate_to_screen" appears as an if-branch OR a switch-case keyed by toolName (2 ms)
+      ✓ "search_memory" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "save_diary_entry" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+    navigator early-return ordering (pre-auth path)
+      ✓ "get_current_screen" routes to its dedicated handler
+      ✓ "navigate" routes to its dedicated handler
+      ✓ "navigate_to_screen" routes to its dedicated handler (1 ms)
+      ✓ navigator tools are dispatched before the auth gate
+    handler reachability (post-auth tools call into named handlers)
+      ✓ "search_memory" has a case body in the dispatcher (1 ms)
+      ✓ "save_diary_entry" has a case body in the dispatcher
+
+PASS test/orb/live/characterization/vertex-safe-fast-ladder.characterization.test.ts
+  VTID-03366 / 1c: safe-fast ladder lives in the brain; transport gathers + delegates
+    ✓ all 6 safe-fast rungs are emitted by the brain (3 ms)
+    ✓ the lazy-gather guards are single-sourced from the brain (no divergent inline guard) (2 ms)
+    ✓ orb-live.ts delegates the safe-fast opening to computeGreetingDecision and renders effects (3 ms)
+    ✓ orb-live.ts no longer carries any inline safe-fast / conv_resume decision branch (6 ms)
+    ✓ orb-live.ts carries ZERO inline wake_opener emits (full transport delegation) (2 ms)
+
+PASS test/orb/live/characterization/vertex-autogreet-on-connect.characterization.test.ts
+  ORB-CONVERSATION-LATENCY: server-driven auto-greet on upstream connect
+    ✓ kicks off the upstream connect non-blocking and greets in its .then() resolve (2 ms)
+    ✓ routes first-time sessions to the greeting and reconnects to recovery — both server-side (1 ms)
+    ✓ greeting send is idempotent on greetingSent so a stray client trigger cannot double-greet (1 ms)
+    ✓ does NOT gate the connect-time greeting behind an inbound client message type (3 ms)
+    ✓ BOOTSTRAP-NOVA-GREETING-CADENCE: the real decideOpening() call wires wakeCadenceSkip from a fresh-open reconnect-bucket check (1 ms)
+
+PASS test/orb/live/characterization/day-close-greeting-facts-reduced-default.characterization.test.ts
+  BOOTSTRAP-ORB-DAY-CLOSE — greeting-facts prefetch selects last_day_close_date again
+    ✓ the user_journey SELECT includes both last_full_briefing_date AND last_day_close_date (2 ms)
+    ✓ greetingLastDayCloseDate is read from the fetched row and applied onto the session (1 ms)
+  BOOTSTRAP-ORB-DAY-CLOSE — the reduced opener is the permanent default, not a retry-only fallback
+    ✓ the safe-fast greeting context hardcodes dayCloseReduced: true (1 ms)
+    ✓ the normal/sync greeting context hardcodes dayCloseReduced: true (1 ms)
+    ✓ the retry flag is still consumed and cleared (no stale leak into a later close)
+
+PASS test/orb/live/characterization/upstream-greeting-reemit-suppression.characterization.test.ts
+  BOOTSTRAP-ORB-GREETING-REEMIT: structural greeting re-emit suppression
+    ✓ guards on greetingSent + the "user never spoke" counter relation (2 ms)
+    ✓ flips session.suppressCurrentTurnAudio so the existing forward gate drops the turn
+    ✓ emits a [BOOTSTRAP-ORB-GREETING-REEMIT] warn + greeting_reemit_suppressed diag
+    ✓ sets the flag inside the new-turn-start (isModelSpeaking) block, before audio is forwarded (1 ms)
+
+PASS test/orb/live/characterization/zero-turn-greeting-recovery-not-silenced.characterization.test.ts
+  VTID-03634 — zero-turn-recovery resend is never silenced as a reconnect
+    ✓ resendGreetingIfStuckAtZeroTurns sets the fresh-open override before resending (2 ms)
+    ✓ the sync opening decision honours the fresh-open override and clears it (one-shot) (2 ms)
+    ✓ _reconnectCount itself is untouched by the override (still used for MAX_RECONNECTS) (1 ms)
+  VTID-03635 — the SAME override also disables rung 9 (silenced_on_cadence)
+    ✓ silenceOnSkipEnabled is gated by the same _freshOpenAfterZeroTurnRecovery flag (1 ms)
+    ✓ the flag capture happens before the reset, so both use sites read the SAME value (1 ms)
+
+PASS test/orb/live/characterization/greeting-block-resolver.test.ts
+  R2: voice-wake-brief owns the temporal fallback pools (byte-identical to legacy)
+    ✓ exposes one template per temporal bucket (1 ms)
+    ✓ today bucket substitutes greetingTimeOfDay verbatim (1 ms)
+    ✓ reconnect bucket renders the "do not speak" guardrail verbatim (1 ms)
+    ✓ recent bucket expands the short-gap phrase menu into an INTENT, not a VERBATIM script (VTID-03630)
+    ✓ wake-brief override suppresses the short-gap phrase list (1 ms)
+    ✓ expandShortGapPhraseMenu hands the model an intent, never a finished sentence to recite (VTID-03630) (2 ms)
+    ✓ every bucket renders with no surviving placeholder tokens (4 ms)
+
+PASS test/orb/live/characterization/vertex-teacher-recovery.characterization.test.ts
+  VTID-03128: Teacher-aware reconnect recovery branch
+    ✓ reads session.teacherModeContent before composing the recovery prompt (1 ms)
+    ✓ Teacher branch references the active capability by display name AND key (1 ms)
+    ✓ Teacher branch tells Gemini to RESUME, not restart (1 ms)
+    ✓ Teacher branch emits the VTID-03128 diagnostic log + diag event (1 ms)
+    ✓ Teacher branch returns before the legacy generic recovery code runs (1 ms)
+    ✓ Teacher branch sets greetingSent so stall-recovery does not re-send
+    ✓ legacy VTID-02020 recovery path still exists for non-Teacher sessions (1 ms)
+
+PASS test/orb/live/characterization/upstream-duplicate-turn-suppression.characterization.test.ts
+  VTID-03143: duplicate-turn audio suppression
+    ✓ audio-chunk path checks session.suppressCurrentTurnAudio BEFORE forwarding (1 ms)
+    ✓ output_transcription handler compares prefix to session.recentAssistantTexts (3 ms)
+    ✓ detection emits [VTID-03143] log + diag event (1 ms)
+    ✓ turn_complete snapshots the transcript into recentAssistantTexts ring buffer (capped at 3) (1 ms)
+    ✓ turn_complete does NOT snapshot a suppressed (duplicate) turn (1 ms)
+    ✓ turn_complete resets suppressCurrentTurnAudio + chunk counter (1 ms)
+    ✓ suppression diag emitted at turn_complete when it fired
+
+PASS test/orb/live/characterization/guided-topic-cadence-skip-not-silenced.characterization.test.ts
+  VTID-03727 — a pending, unspoken guided topic is never cadence-silenced
+    ✓ _hasPendingGuidedTopicAtOpen requires BOTH a pending topic AND this session having spoken nothing yet (1 ms)
+    ✓ isReconnect is suppressed by the pending-guided-topic flag
+    ✓ wakeCadenceSkip is suppressed by the SAME flag, not a separate/independent one (1 ms)
+    ✓ the flag is computed from THIS session's own turn_count, not carried over from a prior session object (1 ms)
+    ✓ does not touch silenceOnSkipEnabled (rung 9) — that stays gated on the pre-existing zero-turn-recovery flag only (15 ms)
+
+PASS test/orb/live/characterization/vertex-cadence-silence.characterization.test.ts
+  VTID-03108 / 1c: cadence-silence lives in the brain; transport delegates
+    ✓ the silenced_on_cadence rung + the cadence-skip reason whitelist are in the brain (2 ms)
+    ✓ a silent decision renders no directive (null) and arms no watchdog — modelled in the brain (1 ms)
+    ✓ orb-live.ts no longer carries the inline cadence-silence branch (2 ms)
+
+PASS test/orb/live/characterization/guided-topic-audio-bridge.characterization.test.ts
+  VTID-03650 — sendGuidedTopicNarrationAudioBridge definition
+    ✓ is a one-shot: short-circuits once guidedTopicAudioDelivered has been set
+    ✓ reads the pre-synthesized audio off session.guidedTopicNarrationContent.narrationAudio
+    ✓ does nothing (marks delivered=false) when there is no audio to send
+    ✓ sends on BOTH transports — SSE write and WS message — with the same message shape (1 ms)
+    ✓ tags the message with source: guided_topic_narration so the client/telemetry can distinguish it
+    ✓ marks delivered=true only after a successful send, never before (1 ms)
+    ✓ emits diag + OASIS telemetry tagged VTID-03650 on a successful send
+    ✓ never throws out of a failed send — catches and marks delivered=false (1 ms)
+  VTID-03650 — call sites fire BEFORE the live model turn, on every transport
+    ✓ SSE session-start path calls the bridge right after the greeting bridge, before connectToLiveAPI (1 ms)
+    ✓ WS audio_ready primary path calls the bridge after the chime, before the greeting is sent (1 ms)
+    ✓ WS audio_ready 1s-timeout fallback path also calls the bridge before the greeting (13 ms)
+    ✓ the bridge call itself is NOT awaited (synchronous — the audio was already synthesized during wake-brief decision)
+
+PASS test/orb/live/characterization/establishment-latency-instrumentation.characterization.test.ts
+  ORB-CONVERSATION-LATENCY: establishment latency instrumentation
+    ✓ declares the four establishment phases in the LatencyPhase union (7 ms)
+    ✓ creates a turn-0 establishment tracker before opening the upstream (2 ms)
+    ✓ marks the establishment phases in path order (2 ms)
+    ✓ finalizes on first audio-out chunk and clears the tracker
+    ✓ finalizes with error on connect failure so no tracker dangles
+
+PASS test/orb/live/characterization/safe-fast-greeting-respects-pending-guided-topic.characterization.test.ts
+  VTID-03771 — the safe-fast greeting branch never hijacks a pending guided topic
+    ✓ _hasPendingGuidedTopicAtOpen is declared exactly once in the whole file (hoisted, not duplicated) (2 ms)
+    ✓ the safe-fast branch's own `if` is gated on !_hasPendingGuidedTopicAtOpen (1 ms)
+    ✓ _hasPendingGuidedTopicAtOpen is declared BEFORE the safe-fast branch's `if`, not after (14 ms)
+    ✓ the flag still requires BOTH a pending topic AND this session having spoken nothing yet (unchanged condition, just relocated) (1 ms)
+    ✓ the normal ladder's decideOpening() call still reuses the flag correctly (no regression to the VTID-03727 fix) (1 ms)
+    ✓ a session with NO pending guided topic still takes the safe-fast branch when context is unresolved (no regression to the original DEV-COMHU-0513 B2 fast path) (1 ms)
+
+PASS test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts
+  VTID-03716 — /tts-pcm-diagnostic route
+    ✓ is mounted with optionalAuth — stateless, no session required (1 ms)
+    ✓ is rate-limited — unauthenticated callers cannot repeatedly trigger paid Polly synthesis (Codex P1) (1 ms)
+    ✓ normalizes the requested language with the Polly-shape normalizer, not the live-session allowlist one (Codex P2)
+    ✓ calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes
+    ✓ does not gate on TTS_PROVIDER — imports synthesizePolly directly, not the tts-provider wrapper (1 ms)
+    ✓ returns sample_rate_hz and a matching audio/pcm;rate= mime — the exact fields the widget fix reads
+    ✓ rejects empty text with 400, not a silent empty-audio synthesis attempt (1 ms)
+    ✓ rejects oversized text with 400 before calling Polly (cost/latency guard)
+    ✓ reports a Polly-unsupported language distinctly (422), not a generic 500 (1 ms)
+    ✓ the import is the direct, unconditional Polly module, not the gated provider wrapper (1 ms)
+    ✓ imports express-rate-limit for the diagnostic limiter
+
+PASS test/orb/live/characterization/zero-turn-recovery-when-greeting-never-dispatched.characterization.test.ts
+  VTID-03687 — zero-turn recovery fires even when the greeting was never dispatched
+    ✓ gates only on turn_count === 0, not on greetingSent (2 ms)
+    ✓ still sets the one-shot fresh-open override before resending (VTID-03634 mechanism intact) (1 ms)
+    ✓ all three call sites (guided-topic fallback, same-provider retry, generic fallback) still reach this function (2 ms)
+
+PASS test/orb/live/characterization/reconnect-announcement-silent-before-first-audio.characterization.test.ts
+  VTID-03685 — reconnecting announcement silenced when nothing has been heard yet
+    ✓ computes a turn_count===0 signal alongside the existing persona-swap/rotation gates (1 ms)
+    ✓ the reconnecting message is gated on all three suppression signals
+    ✓ does not touch MAX_RECONNECTS / _reconnectCount bookkeeping (1 ms)
+    ✓ resendGreetingIfStuckAtZeroTurns (the actual recovery) still gates on turn_count===0 (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 31 passed, 31 total
+Tests:       320 passed, 320 total
+Snapshots:   9 passed, 9 total
+Time:        7.409 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

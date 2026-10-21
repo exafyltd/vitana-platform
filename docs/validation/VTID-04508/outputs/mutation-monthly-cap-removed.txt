@@ -1,0 +1,2 @@
+    ✕ stops rewarding after 10 in 30 days (attribution still recorded) (4 ms)
+Tests:       1 failed, 13 passed, 14 total

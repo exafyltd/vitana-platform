@@ -1,0 +1,3 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts   # 3 passed; guard fails with the old suites restored

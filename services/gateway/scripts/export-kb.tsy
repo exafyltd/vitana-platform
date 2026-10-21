@@ -1,0 +1,297 @@
+/**
+ * scripts/export-kb.ts
+ * 
+ * Exports vitana-docs markdown files into structured JSON for KB consumption.
+ * Generates:
+ * - kb/index.json (catalog of all docs)
+ * - kb/<doc_id>.json (individual doc snapshots with parsed sections)
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+import * as yaml from 'js-yaml';
+import matter from 'gray-matter';
+
+// ============================================================================
+// Type Definitions
+// ============================================================================
+
+interface DocsIndexFamily {
+  name: string;
+  dir: string;
+  docs: DocsIndexDoc[];
+}
+
+interface DocsIndexDoc {
+  doc_id: string;
+  title: string;
+  file: string;
+  template: string;
+  status: string;
+}
+
+interface DocsIndex {
+  families: Record<string, DocsIndexFamily>;
+}
+
+interface DocFrontmatter {
+  doc_id: string;
+  title: string;
+  version: string;
+  status: string;
+  template: string;
+  owner: string;
+  tags: string[];
+  related_vtids: string[];
+  related_docs: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface DocSection {
+  section_id: string;
+  level: number;
+  title: string;
+  anchor: string;
+  content_markdown: string;
+}
+
+interface DocSnapshot {
+  doc_id: string;
+  title: string;
+  family_id: string;
+  family_name: string;
+  version: string;
+  status: string;
+  template: string;
+  owner: string;
+  tags: string[];
+  frontmatter: DocFrontmatter;
+  sections: DocSection[];
+  raw_markdown_path: string;
+  word_count: number;
+  created_at: string;
+  updated_at: string;
+}
+
+interface KBIndexDoc {
+  doc_id: string;
+  title: string;
+  family_id: string;
+  family_name: string;
+  file: string;
+  version: string;
+  status: string;
+  template: string;
+  owner: string;
+  tags: string[];
+  related_docs: string[];
+  related_vtids: string[];
+  created_at: string;
+  updated_at: string;
+}
+
+interface KBIndex {
+  version: string;
+  generated_at: string;
+  total_docs: number;
+  families: Record<string, { name: string; dir: string; doc_count: number }>;
+  docs: KBIndexDoc[];
+}
+
+// ============================================================================
+// Main Export Function
+// ============================================================================
+
+async function exportKB(): Promise<void> {
+  const VITANA_DOCS_DIR = path.join(process.cwd(), 'vitana-docs');
+  const KB_OUTPUT_DIR = path.join(process.cwd(), 'kb');
+  
+  // Create kb/ directory if it doesn't exist
+  if (!fs.existsSync(KB_OUTPUT_DIR)) {
+    fs.mkdirSync(KB_OUTPUT_DIR, { recursive: true });
+  }
+
+  // Load docs_index.yaml
+  const docsIndex = loadDocsIndex(VITANA_DOCS_DIR);
+  
+  // Build KB index and process each doc
+  const kbIndex: KBIndex = {
+    version: '1.0.0',
+    generated_at: new Date().toISOString(),
+    total_docs: 0,
+    families: {},
+    docs: []
+  };
+
+  for (const [familyId, family] of Object.entries(docsIndex.families)) {
+    kbIndex.families[familyId] = {
+      name: family.name,
+      dir: family.dir,
+      doc_count: family.docs.length
+    };
+
+    for (const docMeta of family.docs) {
+      const docPath = path.join(VITANA_DOCS_DIR, family.dir, docMeta.file);
+      const snapshot = processDoc(docPath, familyId, family.name);
+      
+      // Add to KB index (frontmatter is source of truth)
+      kbIndex.docs.push({
+        doc_id: snapshot.frontmatter.doc_id,
+        title: snapshot.frontmatter.title,
+        family_id: snapshot.family_id,
+        family_name: snapshot.family_name,
+        file: `${family.dir}/${docMeta.file}`,
+        version: snapshot.frontmatter.version,
+        status: snapshot.frontmatter.status,
+        template: snapshot.frontmatter.template,
+        owner: snapshot.frontmatter.owner,
+        tags: snapshot.frontmatter.tags,
+        related_docs: snapshot.frontmatter.related_docs,
+        related_vtids: snapshot.frontmatter.related_vtids,
+        created_at: snapshot.frontmatter.created_at,
+        updated_at: snapshot.frontmatter.updated_at
+      });
+
+      // Write individual doc snapshot
+      const snapshotPath = path.join(KB_OUTPUT_DIR, `${snapshot.doc_id}.json`);
+      fs.writeFileSync(snapshotPath, JSON.stringify(snapshot, null, 2));
+      console.log(`✓ Exported ${snapshot.doc_id}`);
+    }
+  }
+
+  kbIndex.total_docs = kbIndex.docs.length;
+
+  // Write KB index
+  const indexPath = path.join(KB_OUTPUT_DIR, 'index.json');
+  fs.writeFileSync(indexPath, JSON.stringify(kbIndex, null, 2));
+  console.log(`✓ Exported kb/index.json (${kbIndex.total_docs} docs)`);
+}
+
+// ============================================================================
+// Helper Functions
+// ============================================================================
+
+function loadDocsIndex(vitanaDocsDir: string): DocsIndex {
+  const indexPath = path.join(vitanaDocsDir, 'docs_index.yaml');
+  
+  if (!fs.existsSync(indexPath)) {
+    throw new Error(`docs_index.yaml not found at ${indexPath}`);
+  }
+  
+  const indexContent = fs.readFileSync(indexPath, 'utf-8');
+  const loaded = yaml.load(indexContent) as DocsIndex;
+  
+  if (!loaded || !loaded.families) {
+    throw new Error('Invalid docs_index.yaml: missing families');
+  }
+  
+  return loaded;
+}
+
+function processDoc(
+  filePath: string,
+  familyId: string,
+  familyName: string
+): DocSnapshot {
+  if (!fs.existsSync(filePath)) {
+    throw new Error(`Markdown file not found: ${filePath}`);
+  }
+  
+  const fileContent = fs.readFileSync(filePath, 'utf-8');
+  const { data: frontmatter, content } = matter(fileContent);
+  
+  // Validate required frontmatter fields
+  const required = ['doc_id', 'title', 'version', 'status', 'template', 'owner', 'created_at', 'updated_at'];
+  for (const field of required) {
+    if (!frontmatter[field]) {
+      throw new Error(`Missing required frontmatter field '${field}' in ${filePath}`);
+    }
+  }
+  
+  const sections = parseMarkdownToSections(content);
+  const wordCount = countWords(content);
+  
+  return {
+    doc_id: frontmatter.doc_id,
+    title: frontmatter.title,
+    family_id: familyId,
+    family_name: familyName,
+    version: frontmatter.version,
+    status: frontmatter.status,
+    template: frontmatter.template,
+    owner: frontmatter.owner,
+    tags: frontmatter.tags || [],
+    frontmatter: frontmatter as DocFrontmatter,
+    sections,
+    raw_markdown_path: filePath.replace(process.cwd() + '/', ''),
+    word_count: wordCount,
+    created_at: frontmatter.created_at,
+    updated_at: frontmatter.updated_at
+  };
+}
+
+function parseMarkdownToSections(markdown: string): DocSection[] {
+  const sections: DocSection[] = [];
+  const lines = markdown.split('\n');
+  
+  let currentSection: Partial<DocSection> | null = null;
+  let sectionIndex = 0;
+  
+  for (const line of lines) {
+    // Match H2-H6 headings (## to ######)
+    const headingMatch = line.match(/^(#{2,6})\s+(.+)$/);
+    
+    if (headingMatch) {
+      // Save previous section
+      if (currentSection && currentSection.content_markdown !== undefined) {
+        sections.push(currentSection as DocSection);
+      }
+      
+      const level = headingMatch[1].length;
+      const title = headingMatch[2].trim();
+      const anchor = slugify(title);
+      
+      sectionIndex++;
+      
+      currentSection = {
+        section_id: String(sectionIndex),
+        level,
+        title,
+        anchor,
+        content_markdown: ''
+      };
+    } else if (currentSection !== null) {
+      currentSection.content_markdown += line + '\n';
+    }
+  }
+  
+  // Save last section
+  if (currentSection && currentSection.content_markdown !== undefined) {
+    sections.push(currentSection as DocSection);
+  }
+  
+  return sections;
+}
+
+function slugify(text: string): string {
+  return text
+    .toLowerCase()
+    .replace(/[^\w\s-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^-|-$/g, '');
+}
+
+function countWords(text: string): number {
+  return text.split(/\s+/).filter(word => word.length > 0).length;
+}
+
+// ============================================================================
+// Execute
+// ============================================================================
+
+exportKB().catch(error => {
+  console.error('❌ Export failed:', error.message);
+  process.exit(1);
+});

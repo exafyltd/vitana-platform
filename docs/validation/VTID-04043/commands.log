@@ -1,0 +1,8 @@
+# VTID-04043 — commands log (2026-09-18)
+select metadata->'verification_blast_radius' from dev_autopilot_executions where id='f8d79e6c-…'
+  -> [{"type":"vtid.lifecycle.failed","vtid":"VTID-04040"}]  (the chat cancel of the sibling execution)
+select … from oasis_events where status='error' and created_at between 07:45:30 and 07:47:20
+  -> 07:47:03 vtid.lifecycle.failed VTID-04040 "Operator on-ramp execution ff10f8ea cancelled"; 07:47:17 verification_failed f8d79e6c
+python3 patch: analyzeVerificationWindow excludes vtid.lifecycle.* and operator.execution_onramp.*
+npx jest test/dev-autopilot-watcher.test.ts   -> green (with the 2 new tests)
+npx tsc --noEmit -p services/gateway   -> exit 0

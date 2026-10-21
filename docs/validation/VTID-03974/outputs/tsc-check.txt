@@ -1,0 +1,14 @@
+admin-partner-health.ts(28,57): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+admin-partner-health.ts(29,51): error TS2307: Cannot find module '../middleware/auth-supabase-jwt' or its corresponding type declarations.
+admin-partner-health.ts(30,29): error TS2307: Cannot find module '../lib/supabase' or its corresponding type declarations.
+admin-partner-health.ts(31,32): error TS2307: Cannot find module '../services/oasis-event-service' or its corresponding type declarations.
+admin-partner-health.ts(32,48): error TS2307: Cannot find module '../services/partner-health/id-matching' or its corresponding type declarations.
+admin-partner-health.ts(33,106): error TS2307: Cannot find module '../services/partner-health/ingestion' or its corresponding type declarations.
+admin-partner-health.ts(34,30): error TS2307: Cannot find module '../services/partner-health/doctorbox-adapter' or its corresponding type declarations.
+admin-partner-health.ts(35,70): error TS2307: Cannot find module '../services/partner-health/types' or its corresponding type declarations.
+admin-partner-health.ts(42,8): error TS2307: Cannot find module '../services/partner-health/org-access' or its corresponding type declarations.
+partner-orgs.ts(19,57): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+partner-orgs.ts(20,29): error TS2591: Cannot find name 'crypto'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+partner-orgs.ts(21,51): error TS2307: Cannot find module '../middleware/auth-supabase-jwt' or its corresponding type declarations.
+partner-orgs.ts(22,29): error TS2307: Cannot find module '../lib/supabase' or its corresponding type declarations.
+partner-orgs.ts(23,32): error TS2307: Cannot find module '../services/oasis-event-service' or its corresponding type declarations.

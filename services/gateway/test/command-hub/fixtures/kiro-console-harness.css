@@ -1,0 +1,7 @@
+/* VTID-05067: harness frame only — an Operator Console chat column as app.js lays it out. */
+html, body { height: 100%; }
+body { overflow: hidden; }
+.harness-frame { display: flex; height: 100vh; min-width: 0; }
+.harness-frame .operator-chat-layout { flex: 1; min-width: 0; }
+.harness-frame .chat-container { min-width: 0; }
+@media (max-width: 640px) { .harness-frame .chat-sessions-sidebar { display: none; } }

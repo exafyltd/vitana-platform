@@ -1,0 +1,11 @@
+PASS test/vtid-05030-connection-tokens.test.ts
+PASS test/admin-partner-health.test.ts
+PASS test/health-erasure-internal.test.ts
+PASS test/partner-health-member.test.ts
+PASS test/connector-webhooks-log-user-id.test.ts
+PASS test/vtid-05054-lab-notice-and-webhook-purge.test.ts
+PASS test/vtid-05025-commerce-health-boundary.test.ts
+PASS test/partner-health/link-confirmation.test.ts
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 9 passed, 9 total
+Tests:       309 passed, 309 total

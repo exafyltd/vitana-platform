@@ -1,0 +1,51 @@
+PASS test/vtid-05025-commerce-health-boundary.test.ts
+PASS test/orb/live/session/vtid-04545-session-start-characterization.test.ts
+PASS test/vtid-05031-webhook-verification.test.ts
+PASS test/orb/latency/vtid-04542-voice-payload-identity.test.ts (6.443 s)
+PASS test/vtid-05030-connection-tokens.test.ts
+PASS test/orb/live/characterization/system-instruction.characterization.test.ts
+PASS test/orb/live/characterization/tool-catalog.characterization.test.ts
+PASS test/routes/vtid-05089-connector-webhooks-bridge.test.ts
+PASS test/orb/live/characterization/time-since.characterization.test.ts
+PASS test/vtid-05089-wearable-features-bridge.test.ts
+PASS test/orb/live/characterization/vertex-wake-brief-override.characterization.test.ts
+PASS test/routes/connector-webhooks.test.ts
+PASS test/orb/live/characterization/tool-dispatcher.characterization.test.ts
+PASS test/orb/live/characterization/greeting-pools.characterization.test.ts
+PASS test/orb/live/characterization/websocket-setup.characterization.test.ts
+PASS test/orb/live/characterization/establishment-latency-instrumentation.characterization.test.ts
+PASS test/orb/live/characterization/zero-turn-greeting-recovery-not-silenced.characterization.test.ts
+PASS test/orb/live/characterization/guided-topic-audio-bridge.characterization.test.ts
+PASS test/orb/live/characterization/upstream-message-handler.characterization.test.ts
+PASS test/orb/live/characterization/vertex-wake-opener-v2.characterization.test.ts
+PASS test/orb/live/characterization/greeting-policy.characterization.test.ts
+PASS test/orb/live/characterization/upstream-greeting-reemit-suppression.characterization.test.ts
+PASS test/orb/live/characterization/sse-stream.characterization.test.ts
+PASS test/orb/live/characterization/session-start.characterization.test.ts
+PASS test/orb/live/characterization/greeting-block-resolver.test.ts
+PASS test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts
+PASS test/orb/live/characterization/guided-topic-cadence-skip-not-silenced.characterization.test.ts
+PASS test/orb/live/characterization/stream-lifecycle.characterization.test.ts
+PASS test/orb/live/characterization/safe-fast-greeting-respects-pending-guided-topic.characterization.test.ts
+PASS test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts
+PASS test/orb/live/characterization/vertex-safe-fast-ladder.characterization.test.ts
+PASS test/orb/live/characterization/vertex-teacher-recovery.characterization.test.ts
+PASS test/orb/live/characterization/day-close-stamp-deferred-and-gather-skip.characterization.test.ts
+PASS test/orb/live/characterization/vertex-autogreet-on-connect.characterization.test.ts
+PASS test/orb/live/characterization/day-close-greeting-facts-reduced-default.characterization.test.ts
+PASS test/orb/live/characterization/zero-turn-recovery-when-greeting-never-dispatched.characterization.test.ts
+PASS test/orb/live/characterization/reconnect-announcement-silent-before-first-audio.characterization.test.ts
+PASS test/orb/live/characterization/vertex-cadence-silence.characterization.test.ts
+PASS test/orb/live/characterization/upstream-duplicate-turn-suppression.characterization.test.ts
+FAIL test/vtid-04402-connected-apps.test.ts
+FAIL test/vtid-05057-contacts-phone-matching.test.ts
+FAIL test/vtid-04449-outlook-contacts.test.ts
+FAIL test/vtid-04439-contacts-import-collisions.test.ts
+FAIL test/vtid-04402-connected-apps.test.ts
+FAIL test/vtid-05057-contacts-phone-matching.test.ts
+FAIL test/vtid-04449-outlook-contacts.test.ts
+FAIL test/vtid-04439-contacts-import-collisions.test.ts
+Test Suites: 4 failed, 2 skipped, 1638 passed, 1642 of 1644 total
+Tests:       4 failed, 26 skipped, 6 todo, 26401 passed, 26437 total
+Snapshots:   126 passed, 126 total
+4 FAIL suites: Cannot find module 'libphonenumber-js' (absent from the local symlinked node_modules; pre-existing, unrelated)

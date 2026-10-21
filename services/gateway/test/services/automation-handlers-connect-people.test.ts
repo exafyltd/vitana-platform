@@ -1,0 +1,252 @@
+/**
+ * Autopilot Automations Phase 1 — connect-people domain gap closure.
+ *
+ * AP-0106 ("People You Know Are Here" Social Proof) and AP-0110 (Opportunity
+ * Surfacing with Social Layer) were PLANNED-only entries with no handler.
+ * This pins: both are now IMPLEMENTED with a registered handler, and each
+ * handler's core behavior (notify when social overlap exists, no-op when it
+ * doesn't).
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+import {
+  AUTOMATION_REGISTRY,
+  getAutomation,
+} from '../../src/services/automation-registry';
+import { registerHandler, getHandler } from '../../src/services/automation-executor';
+import { registerConnectPeopleHandlers } from '../../src/services/automation-handlers/connect-people';
+import * as repo from '../../src/services/automation-handlers/connect-people-repository';
+import { AutomationContext } from '../../src/types/automations';
+
+registerConnectPeopleHandlers();
+
+const SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'connect-people.ts');
+const REPO_SRC = path.join(__dirname, '..', '..', 'src', 'services', 'automation-handlers', 'connect-people-repository.ts');
+
+describe('connect-people — source-level wall against never-deployed / wrong tables', () => {
+  // VTID-03702 (Aurora migration B1): the literal `.from(...)` calls this
+  // wall pins now live in the repository seam, not the handler file itself
+  // — check the combined text so the pure-move refactor doesn't break a
+  // still-valid invariant.
+  const src = fs.readFileSync(SRC, 'utf8') + '\n' + fs.readFileSync(REPO_SRC, 'utf8');
+
+  it('AP-0101/0102/0103/0105 no longer reference tables that were never deployed', () => {
+    expect(src).not.toMatch(/from\(['"]matches_daily['"]\)/);
+    expect(src).not.toMatch(/from\(['"]user_topic_profile['"]\)/);
+    expect(src).not.toMatch(/from\(['"]community_recommendations['"]\)/);
+  });
+
+  it('uses the real live tables instead', () => {
+    expect(src).toContain("from('daily_matches')");
+    expect(src).toContain("from('user_interests')");
+    expect(src).toContain("from('group_recommendations')");
+  });
+
+  it('relationship_edges queries use the real column set, not user_id/relationship_type', () => {
+    expect(src).not.toMatch(/\.eq\(['"]relationship_type['"],/);
+    expect(src).toContain("eq('edge_type', 'connected')");
+  });
+
+  it('never queries app_users or chat_messages with the wrong column names', () => {
+    expect(src).not.toMatch(/from\(['"]app_users['"]\)[\s\S]{0,150}\.eq\(['"]id['"],/);
+    expect(src).not.toMatch(/recipient_id\.eq/);
+  });
+
+  it('AP-0101 no longer references the never-deployed autopilot_prompt_prefs table', () => {
+    expect(src).not.toContain("from('autopilot_prompt_prefs')");
+    expect(src).toContain("from('user_notification_preferences')");
+  });
+});
+
+/**
+ * Minimal thenable Supabase query-builder fake. Every chain method returns
+ * `this`; resolving the chain (via await / .then) yields the configured
+ * result for that table. Enough to exercise the two handlers under test
+ * without a real Supabase client.
+ */
+function makeFakeSupabase(resultsByTable: Record<string, { data?: any; count?: number; error?: any }>) {
+  return {
+    from(table: string) {
+      const result = resultsByTable[table] || { data: [], error: null };
+      const chain: any = {
+        select: () => chain,
+        eq: () => chain,
+        neq: () => chain,
+        in: () => chain,
+        order: () => chain,
+        limit: () => chain,
+        maybeSingle: () => Promise.resolve(result),
+        single: () => Promise.resolve(result),
+        then: (resolve: any) => Promise.resolve(result).then(resolve),
+      };
+      return chain;
+    },
+  };
+}
+
+function makeCtx(supabase: any, metadata: Record<string, unknown>): { ctx: AutomationContext; notify: jest.Mock } {
+  const notify = jest.fn();
+  const ctx: AutomationContext = {
+    tenantId: 't-1',
+    targetRoles: 'all',
+    supabase,
+    run: {
+      id: 'run-1',
+      tenant_id: 't-1',
+      automation_id: 'AP-TEST',
+      trigger_type: 'event',
+      target_roles: 'all',
+      status: 'running',
+      users_affected: 0,
+      actions_taken: 0,
+      metadata,
+      started_at: new Date().toISOString(),
+    },
+    log: jest.fn(),
+    notify,
+    emitEvent: jest.fn(async () => {}),
+    queryTargetUsers: jest.fn(async () => []),
+  };
+  return { ctx, notify };
+}
+
+describe('registry — AP-0106 and AP-0110 are implemented', () => {
+  it('AP-0106 has status IMPLEMENTED and a registered handler', () => {
+    const def = getAutomation('AP-0106');
+    expect(def?.status).toBe('IMPLEMENTED');
+    expect(def?.handler).toBe('runPeopleYouKnowSocialProof');
+    expect(getHandler(def!.handler!)).toBeInstanceOf(Function);
+  });
+
+  it('AP-0110 has status IMPLEMENTED and a registered handler', () => {
+    const def = getAutomation('AP-0110');
+    expect(def?.status).toBe('IMPLEMENTED');
+    expect(def?.handler).toBe('runOpportunitySocialLayer');
+    expect(getHandler(def!.handler!)).toBeInstanceOf(Function);
+  });
+
+  it('no PLANNED automation in connect-people is missing a handler if IMPLEMENTED', () => {
+    const connectPeople = AUTOMATION_REGISTRY.filter(d => d.domain === 'connect-people');
+    for (const def of connectPeople) {
+      if (def.status === 'IMPLEMENTED' || def.status === 'LIVE') {
+        expect(def.handler).toBeTruthy();
+      }
+    }
+  });
+});
+
+describe('connect-people-repository — fetchPrimaryTenantUsers (VTID-04012 explicit return type)', () => {
+  it('returns primary tenant users with registered test/service accounts filtered out', async () => {
+    const supabase = makeFakeSupabase({
+      user_tenants: { data: [{ user_id: 'real-1' }, { user_id: 'bot-1' }], error: null },
+      service_bot_accounts: { data: [{ user_id: 'bot-1' }], error: null },
+      notification_test_actors: { data: [], error: null },
+    });
+
+    const result = await repo.fetchPrimaryTenantUsers(supabase as any, 't-1');
+
+    expect(result.error).toBeNull();
+    expect(result.data).toEqual([{ user_id: 'real-1' }]);
+  });
+
+  it('passes the query error straight through', async () => {
+    const supabase = makeFakeSupabase({
+      user_tenants: { data: null, error: { message: 'boom' } },
+      service_bot_accounts: { data: [], error: null },
+      notification_test_actors: { data: [], error: null },
+    });
+
+    const result = await repo.fetchPrimaryTenantUsers(supabase as any, 't-1');
+
+    expect(result.error).toEqual({ message: 'boom' });
+  });
+});
+
+describe('runPeopleYouKnowSocialProof (AP-0106)', () => {
+  it('notifies the viewer when connections are members of the viewed group', async () => {
+    const supabase = makeFakeSupabase({
+      relationship_edges: { data: [{ target_id: 'friend-1' }], error: null },
+      global_community_group_members: { data: [{ user_id: 'friend-1' }], error: null },
+      app_users: { data: [{ display_name: 'Alex' }], error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'viewer-1', group_id: 'group-1' });
+
+    const handler = getHandler('runPeopleYouKnowSocialProof')!;
+    const result = await handler(ctx);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls[0][0]).toBe('viewer-1');
+    expect(notify.mock.calls[0][2].body).toContain('Alex');
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('is a no-op when the viewer has no connections', async () => {
+    const supabase = makeFakeSupabase({
+      relationship_edges: { data: [], error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, { user_id: 'viewer-1', group_id: 'group-1' });
+
+    const handler = getHandler('runPeopleYouKnowSocialProof')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+
+  it('is a no-op when required payload fields are missing', async () => {
+    const supabase = makeFakeSupabase({});
+    const { ctx, notify } = makeCtx(supabase, {});
+
+    const handler = getHandler('runPeopleYouKnowSocialProof')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});
+
+describe('runOpportunitySocialLayer (AP-0110)', () => {
+  it('notifies the user when connections engaged with a similar opportunity', async () => {
+    const supabase = makeFakeSupabase({
+      relationship_edges: { data: [{ target_id: 'friend-1' }, { target_id: 'friend-2' }], error: null },
+      contextual_opportunities: {
+        data: [{ id: 'o-1', user_id: 'friend-1' }],
+        count: 1,
+        error: null,
+      },
+    });
+    const { ctx, notify } = makeCtx(supabase, {
+      user_id: 'viewer-1',
+      opportunity_id: 'opp-1',
+      opportunity_type: 'health_checkin',
+    });
+
+    const handler = getHandler('runOpportunitySocialLayer')!;
+    const result = await handler(ctx);
+
+    expect(notify).toHaveBeenCalledTimes(1);
+    expect(notify.mock.calls[0][0]).toBe('viewer-1');
+    expect(notify.mock.calls[0][2].data.opportunity_id).toBe('opp-1');
+    expect(result).toEqual({ usersAffected: 1, actionsTaken: 1 });
+  });
+
+  it('is a no-op when no connections engaged with a similar opportunity', async () => {
+    const supabase = makeFakeSupabase({
+      relationship_edges: { data: [{ target_id: 'friend-1' }], error: null },
+      contextual_opportunities: { data: [], count: 0, error: null },
+    });
+    const { ctx, notify } = makeCtx(supabase, {
+      user_id: 'viewer-1',
+      opportunity_id: 'opp-1',
+      opportunity_type: 'health_checkin',
+    });
+
+    const handler = getHandler('runOpportunitySocialLayer')!;
+    const result = await handler(ctx);
+
+    expect(notify).not.toHaveBeenCalled();
+    expect(result).toEqual({ usersAffected: 0, actionsTaken: 0 });
+  });
+});

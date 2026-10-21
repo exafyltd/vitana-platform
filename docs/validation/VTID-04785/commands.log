@@ -1,0 +1,12 @@
+# VTID-04785 — commands run in this session (services/gateway unless noted)
+(Supabase MCP, READ-ONLY SELECTs against oasis_events)                         # outputs/prod-evidence-readonly.txt
+npx tsc --noEmit -p .                                                          # clean
+npx jest test/vtid-04785-session-end-telemetry.test.ts                         # 15/15 — outputs/jest-vtid-04785.txt
+(mutation) comment out emitSseDisconnectStop(...) in orb-live.ts SSE close    # 2 wiring tests fail at orb-live.ts:17066; restored
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/vtid-04776-voice-supervisor.test.ts \
+  test/vtid-04785-session-end-telemetry.test.ts test/orb/live/session            # 42 suites, 742 tests, snapshots unchanged
+npx jest test/routes test/orb/routes test/orb/live/ws-transport-default.test.ts test/orb/live/characterization  # 172 suites pass
+npm run test:roles ; npm run test:support ; npm run test:operator              # 105 / 82 / 30 pass — outputs/jest-related-suites.txt
+npx jest (full gateway suite)                                                  # 1426 suites, 22950 tests, 0 failed — outputs/jest-full-gateway.txt
+# VTID-04542 snapshot NOT updated: no voice payload changed.
+npx jest (full gateway suite, after replacing the defaulting with a loud skip)   # 1426 suites, 22951 tests, 0 failed — outputs/jest-full-gateway.txt

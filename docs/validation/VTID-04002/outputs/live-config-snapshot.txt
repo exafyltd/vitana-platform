@@ -1,0 +1,13 @@
+dev_autopilot_config (live, 2026-09-17, read-only):
+  kill_switch=false daily_budget=500 cooldown_minutes=1 concurrency_cap=4 max_auto_fix_depth=2
+  allow_scope = services/agents/**, services/gateway/src/frontend/command-hub/**, services/gateway/src/lib/**,
+                services/gateway/src/orb/**, services/gateway/src/routes/**, services/gateway/src/services/**,
+                services/gateway/src/types/**, services/gateway/test/**, services/gateway/tests/**, services/worker-runner/**
+  deny_scope  = supabase/migrations/**, **/auth*, .github/workflows/**, services/gateway/src/lib/supabase.ts, **/.env*, **/credentials*
+
+dev_autopilot_executions (last 30 days): 7 total, 0 merged, 6 failed/reverted, 2 operator-onramp ever
+  0643b701 reverted (ci) PR #3351 — validate-pr exit 10; triage blamed branch protection
+  d9315818 completed        PR #3307 (operator-onramp, 2026-09-14)
+
+dev_agent_memory: 28 rows, categories={task_outcome}, sources={backfill,session}
+llm_routing_policy v17 (active): operator=deepseek/deepseek-flash→bedrock/claude-sonnet-4-6; worker/planner/validator=bedrock opus-4-5→sonnet-4-6

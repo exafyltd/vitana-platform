@@ -1,0 +1,3 @@
+STAGING-VERIFY gateway @ 5e30d7b (run 36436467785):
+FAIL VTID-04665 › a route whose table is missing now reads down (risk_mitigations does not exist) — ok = true, expected false; status = "healthy", expected "down"
+252 PASS

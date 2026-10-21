@@ -1,0 +1,54 @@
+VTID-04111 — commands run, in order
+
+1. curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+     -d '{"source":"claude-code","layer":"gateway","module":"operator-console"}'
+   -> 201 {"ok":true,"vtid":"VTID-04111","num":4111,"id":"14a92810-..."}
+
+2. curl -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/vtid/VTID-04111 ...
+   -> 404 (no gateway PATCH endpoint exists — confirmed, documented gap;
+      proceeding per this repo's established precedent for this exact gap)
+
+3. Investigated the live code: routes/autopilot-recommendations.ts's
+   POST /:id/activate developer/admin branch (RPC
+   activate_autopilot_recommendation + fire-and-forget
+   bridgeActivationToExecution), dev-autopilot-execute.ts's
+   bridgeActivationToExecution() (VTID-04108), and the
+   operator-approval-tools.ts (VTID-04030) mirror target's exact shape
+   (caller gate, actor convention, deps injection for tests).
+
+4. Wrote services/gateway/src/services/operator-recommendation-tools.ts.
+
+5. Wired: tool-registry.ts (registry entry + supabaseTools health-check
+   list), gemini-operator.ts (import, GEMINI_TOOL_DEFINITIONS declaration,
+   dispatch case, inline fallback prompt: Available tools bullet + When to
+   use tools bullet + CRITICAL EXECUTION RULES bullet), and the identical
+   text in ai-personality-service.ts's served operator_chat.system_prompt
+   (VTID-03838 drift rule — both sources must carry the same wording).
+
+6. npx tsc --noEmit (from services/gateway)
+   -> exit 0, no output
+
+7. npx jest test/vtid-03838-operator-prompt-lists-execute-tool.test.ts --silent
+   -> 1 suite, 14 tests, all passing (confirms the two prompt sources
+      stayed byte-identical on the execution-rules block after the edit)
+
+8. Wrote services/gateway/test/vtid-04111-operator-activate-recommendation.test.ts
+   (mirroring test/vtid-04030-operator-approval-tools.test.ts's structure:
+   mocked oasis-event-service + dev-autopilot-execute, setThreadAuth/clearThreadAuth,
+   deps injection).
+
+9. npx jest test/vtid-04111-operator-activate-recommendation.test.ts --silent
+   -> 1 suite, 15 tests, all passing (first run, no fixes needed)
+
+10. npx tsc --noEmit (from services/gateway)
+    -> exit 0, no output
+
+11. npx jest test/vtid-04111-operator-activate-recommendation.test.ts \
+        test/vtid-04030-operator-approval-tools.test.ts \
+        test/vtid-03838-operator-prompt-lists-execute-tool.test.ts --silent
+    -> 3 suites, 45 tests, all passing
+
+12. npx jest test/operator-chat-oasis.test.ts \
+        test/vtid-03926-operator-chat-userrole.test.ts \
+        test/vtid-04106-operator-chat-stick-to-bottom.test.ts --silent
+    -> 3 suites, 24 tests, all passing (wider operator-chat regression sweep)

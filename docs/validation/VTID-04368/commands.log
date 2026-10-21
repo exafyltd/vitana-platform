@@ -1,0 +1,5 @@
+$ npx tsc --noEmit -p services/gateway    # clean
+$ npx jest test/vtid-04368-retry-storm-outage-gate.test.ts   # 15 passed
+$ npx jest test/vtid-04243 test/vtid-04281 test/vtid-04280 test/vtid-04293 test/vtid-04246   # 48 passed
+$ npx jest dev-autopilot autopilot   # 62 suites, 1547 passed
+$ npx jest <48 suites referencing dev-autopilot-execute / supervisor / cicd.ts / retry-breaker>   # 731 passed

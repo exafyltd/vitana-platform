@@ -1,0 +1,68 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03844-outcomes-record-operator-onramp.test.ts
+  VTID-03844 — recordOutcome accepts every executor-lane source_type
+    ✓ records an outcome row for an operator_onramp finding (the case observed missing on staging) (3 ms)
+    ✓ still records the legacy dev_autopilot source_type (1 ms)
+    ✓ still records the legacy dev_autopilot_impact source_type
+    ✓ still skips a non-executable source_type — no INSERT is attempted (1 ms)
+    ✓ skips a null source_type and a missing finding
+  VTID-03844 — the DB CHECK constraint mirrors the executor-lane allowlist
+    ✓ migration 20260913100000 lists exactly EXECUTABLE_RECOMMENDATION_SOURCE_TYPES (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [dev-autopilot-execute] [4208c292] safety gate blocked auto-approve — snoozed 7d (Plan touches 1 file(s) outside the allow-scope.)
+
+      at approveAutoExecute (src/services/dev-autopilot-execute.ts:635:15)
+
+PASS test/vtid-03839-onramp-approved-by-uuid.test.ts
+  isUuidString (VTID-03839)
+    ✓ accepts a canonical UUID in either case (1 ms)
+    ✓ rejects the on-ramp label that broke the real INSERT, and other non-UUIDs (1 ms)
+  approveAutoExecute — approved_by must be a UUID (VTID-03839)
+    ✓ rejects a non-UUID approved_by BEFORE any DB access, naming the uuid column and the interactive alternative (2 ms)
+    ✓ interactive request with no approved_by: inserts approved_by = null and records a human "approved" outcome (3 ms)
+    ✓ a real user UUID still passes the pre-check and is written verbatim (the guard does not over-reject) (1 ms)
+    ✓ system auto-approve (no approved_by, not interactive) is unchanged: approved_by = null, outcome auto_exec (4 ms)
+    safety-gate rejection
+      ✓ interactive caller gets the violation back and the finding is NOT snoozed
+      ✓ mutation check: the same rejection WITHOUT interactive (unattended tick) still snoozes for 7 days (19 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/autopilot-executable-source-types.test.ts
+  isExecutableSourceType — the executor gate
+    ✓ accepts dev_autopilot (legacy baseline scan source) — backward compat preserved (1 ms)
+    ✓ accepts dev_autopilot_impact (impact-rule findings) — backward compat preserved
+    ✓ accepts test-contract-failure-scanner (PR-L3 recurring contract failures)
+    ✓ accepts missing-test-scanner (PR-L2 capabilities without contracts)
+    ✓ accepts operator_onramp (VTID-03820 operator-triggered DeepSeek execution on-ramp)
+    ✓ REJECTS unrelated source types so misrouted rows stay out of the executor (1 ms)
+    ✓ REJECTS empty / null / undefined / whitespace inputs
+    ✓ is case-sensitive — typos like DEV_AUTOPILOT must not be accepted
+    ✓ exports the canonical list with exactly the current five entries (lock in scope)
+  executableSourceTypesPostgrestIn — PostgREST in.() value renderer
+    ✓ produces a comma-separated list of double-quoted, URL-encoded values
+    ✓ URL-encodes hyphenated source types (test-contract-failure-scanner) without breaking the in.() syntax
+    ✓ is deterministic (same call → same output) so PostgREST filter stays cacheable (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       26 passed, 26 total
+Snapshots:   0 total
+Time:        0.629 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03844-outcomes-record-operator-onramp.test.ts|test\/vtid-03839-onramp-approved-by-uuid.test.ts|test\/autopilot-executable-source-types.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

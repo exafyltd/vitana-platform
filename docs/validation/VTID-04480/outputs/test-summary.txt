@@ -1,0 +1,7 @@
+Full gateway suite on bf4d523 (local, CI=true):
+Test Suites: 1 skipped, 1207 passed, 1207 of 1208 total
+Tests:       29 skipped, 6 todo, 19469 passed, 19504 total
+Snapshots:   53 passed, 53 total
+
+New suite: test/orb/live/session/vtid-04480-opening-turn-guard.test.ts 15/15
+tsc --noEmit: clean

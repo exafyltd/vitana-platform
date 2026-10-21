@@ -1,0 +1,67 @@
+# VTID-04049 — commands log (2026-09-18)
+
+GET https://gateway.vitanaland.com/api/v1/events?topic=orb.navigator.requested&limit=15
+  -> 200, 7 events. Event 2 (live-99f9553e-72b3-4731-8d43-797c2ab7f408, created_at 2026-09-18T09:57:41Z):
+     message: "navigate auto-redirect to DISCOVER.CART (/cart)"
+     payload.reason: "najnovije vesti otvori ekran" (Serbian, "open the latest news screen")
+     payload.screen_id: "DISCOVER.CART"
+     -> confirms the live incident: free-text `navigate` auto-redirected a news-intent query to
+        the shopping cart, with zero real relationship between query and destination.
+
+grep -n "auto-redirect" services/gateway/src/services/orb-tools-shared.ts
+  -> traced the exact message string to the `navigate` tool's auto-redirect dispatch path
+     (orb-tools-shared.ts, ~line 3832), which calls consultNavigator().
+
+Read services/gateway/src/services/navigator-consult.ts (full function, consultNavigator)
+  -> found the existing MIN_SEMANTIC_ONLY_SIMILARITY floor (0.55) and isWeakSemanticOnly guard,
+     confirmed it only demotes BELOW the floor — nothing prevented a zero-keyword match that
+     clears the floor from resolving decision:'confident'. Confirmed the caller's auto-redirect
+     branch (orb-tools-shared.ts:3716) only checks confidence !== 'low', and the `decision`
+     computation (navigator-consult.ts, confidence-bucketing block + decision block) does not
+     read keyword-support at all when deciding 'confident' vs 'ambiguous'.
+
+Edit services/gateway/src/services/navigator-consult.ts
+  -> added isPureSemanticGuess (topHybrid.keywordScore === 0 && semanticScore > 0) at function
+     scope; referenced it in both the confidence-bucketing block (caps at 'medium') and the
+     `decision` computation block (forces 'unknown' when no viable runner-up exists).
+
+Edit services/gateway/src/orb/live/tools/live-tool-catalog.ts
+  -> fixed navigate_to_screen's DISAMBIGUATION worked example: replaced the nonexistent
+     "inbox / AI feed / news" split with the real HOME.OVERVIEW / HOME.NEWS_ALL /
+     HOME.NEWS_COMMUNITY ids, and added an explicit "reuse the exact screen_id you already
+     identified" instruction.
+
+Add services/gateway/test/navigator-consult.test.ts:
+  -> "consultNavigator — pure semantic guess never auto-navigates (VTID-04049)" describe block,
+     2 new tests, using a partial jest.mock of ../src/lib/navigation-catalog (only overriding
+     areCatalogEmbeddingsReady/semanticSearchCatalog — the real keyword scorer + NAVIGATION_CATALOG
+     stay live so every pre-existing test in the file is unaffected). Query text
+     "zibblequant frostvale plombicorn — xyzzy blorptastic" chosen specifically because the real,
+     unmocked keyword scorer cannot match it against anything (mirrors the file's own pre-existing
+     "tell me a joke about gravity" no-match precedent).
+
+pnpm install --frozen-lockfile (in services/gateway)
+  -> ERR_PNPM_FETCH_403 on registry.npmjs.org for every package — this sandbox has no npm
+     registry access (403 Forbidden, no authorization header). Same documented, known
+     limitation this repo's own CLAUDE.md CHANGELOG hits repeatedly ("sandbox npm registry
+     403... CI is the verification"). Could not run `npx tsc --noEmit` or `npx jest` locally.
+
+Manual review performed instead:
+  -> confirmed `blocked_reason: 'no_match'` is a valid literal of the existing
+     NavigatorConsultResult['blocked_reason'] union type.
+  -> confirmed buildClarification(a, b, lang) is never called with a null `b` anywhere in the
+     final diff (the earlier draft that attempted this was rewritten before commit).
+  -> confirmed semanticSearchCatalog's real return type
+     (Promise<Array<{ entry: NavCatalogEntry; similarity: number }>>) matches the new tests'
+     mock shape exactly.
+  -> confirmed searchCatalog/searchCatalogEntries push only score>0 results
+     ("if (score > 0) results.push(...)", navigation-catalog.ts), so the nonsense test query
+     produces an empty keyword-scored array and cannot accidentally collide with the mocked
+     semantic hit.
+  -> hand-edited the two characterization snapshot files
+     (test/orb/live/characterization/__snapshots__/{tool-catalog,system-instruction}
+     .characterization.test.ts.snap) to match the new DISAMBIGUATION source string exactly,
+     byte-for-byte with the joined template-literal source in live-tool-catalog.ts.
+
+CI on GitHub Actions (which has full npm registry access, unlike this sandbox) is the real
+executable verification for AC-1 through AC-4.

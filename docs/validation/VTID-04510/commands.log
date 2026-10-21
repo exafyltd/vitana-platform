@@ -1,0 +1,8 @@
+# VTID-04510 — commands run
+cd services/gateway
+npx tsc --noEmit -p .                                   # clean
+npx jest test/vtid-04510                                # 29/29
+npx jest test/services/automation test/vtid-04349 test/vtid-04510 test/vtid-04505 test/vtid-04504 test/routes/automations test/i18n test/command-hub/vtid-04260   # 25 suites / 436 tests
+# mutation: remove the 3-open cap in checkProposal -> "respects the 3-open cap" fails; restored
+curl -s -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/automations/health       # 200 application/json (router mounted)
+curl -s -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/automations/supervisor   # 404 text/html before merge (route is new)

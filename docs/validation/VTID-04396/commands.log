@@ -1,0 +1,6 @@
+$ npx jest test/command-hub/vtid-04354-orchestrator-view.test.ts test/command-hub/vtid-04396-orchestrator-panels.test.ts
+$ node docs/validation/VTID-04396/outputs/harness-server.js &   # port 18484, fixtures only
+$ node docs/validation/VTID-04396/outputs/harness-shoot.js      # 1400x900 + 390x844, writes shoot-result.json
+  mobile budgets table: Key column wrapped one char per line -> added `.orch-table td.orch-mono { white-space: nowrap; }`, re-shot, horizontalOverflow=false both viewports
+$ node scripts/ci/command-hub-ownership-guard.js
+$ npx tsc --noEmit

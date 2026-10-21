@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04646",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "publish still refuses an unauthenticated caller", "method": "POST",
+      "path": "/api/v1/operator/publish", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/services/testing/publish-gate.test.ts test/vtid-04646-publish-gate-wiring.test.ts", "cwd": "services/gateway",
+      "reason": "pins the gate decision (verified only for a passing run on the exact commit, fail closed, override with a written reason) and its place in the publish flow; a real publish cannot be exercised read-only" }
+  ]
+}

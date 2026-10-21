@@ -1,0 +1,5 @@
+{"vtid":"VTID-04874","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev decision route still auth-gated","path":"/api/v1/jev/decisions/moderation_severity","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"existing","ref":"npx jest test/vtid-04874-jev-community-rate.test.ts","cwd":"services/gateway","reason":"The bucket only takes tokens for member-spend Jev calls and the member plane is closed on every gateway (JEV_COMMUNITY_ENABLED unset), so a read-only staging probe cannot reach it. The bucket, modes, rate, the shadow report and the internal exemption are proven by this suite."}
+]}

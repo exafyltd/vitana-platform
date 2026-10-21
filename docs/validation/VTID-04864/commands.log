@@ -1,0 +1,6 @@
+# VTID-04864 — commands run (2026-10-03)
+cd services/gateway && npx jest test/vtid-04864-vtna-reward-rules.test.ts <15 suites touching milestone-service, diary-streak-celebrator, invites, vtna-reward-keys, onboarding-growth, wallet routes>   # 261 passed
+npx jest test/vtid-04860-vtna-token-name.test.ts   # 3 passed
+npx tsc --noEmit -p services/gateway               # clean
+cd services/gateway && npm run build               # exit 0
+# community app (exafyltd/vitana-v1, same branch): npx vitest run  # 231 files, 1466 tests passed

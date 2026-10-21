@@ -1,0 +1,247 @@
+{
+  "summary": {
+    "label": "A-full-catalog-290tools",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "de",
+    "route": null,
+    "auth": true,
+    "trials": 10,
+    "with_audio": 10,
+    "no_audio": 0,
+    "first_audio_ms": {
+      "min": 1041,
+      "p50": 1691,
+      "p90": 1878,
+      "max": 1878
+    },
+    "first_model_audio_ms": {
+      "min": 2569,
+      "p50": 3033,
+      "p90": 7502,
+      "max": 7502
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 43,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804075239,
+      "sessionStartMs": 887,
+      "sessionId": "live-ae882444-a87a-4422-8367-fac8652c3370",
+      "sseOpenMs": 1077,
+      "firstAudioMs": 1854,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir schauen uns deine ungelesenen Nachrichten an.",
+      "firstModelAudioMs": 7502,
+      "turnCompleteMs": 8045
+    },
+    {
+      "idx": 2,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 100,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789804083535,
+      "sessionStartMs": 643,
+      "sessionId": "live-b831b68f-56f0-43f8-95f8-c027832b6d38",
+      "sseOpenMs": 776,
+      "firstAudioMs": 1436,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir setzen unsere geführte Reise fort. 5 Sessions hast du bereits abgeschlossen. Sollen wir mit der nächsten Session beginnen?",
+      "firstModelAudioMs": 2976,
+      "turnCompleteMs": 4401
+    },
+    {
+      "idx": 3,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 61,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789804088078,
+      "sessionStartMs": 983,
+      "sessionId": "live-7fd682f3-5841-4758-b6a9-4df9c26a92d9",
+      "sseOpenMs": 1130,
+      "firstAudioMs": 1878,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir schauen uns deine neuen Matches an. Möchtest du, dass ich dich dorthin bringe?",
+      "firstModelAudioMs": 3203,
+      "turnCompleteMs": 4091
+    },
+    {
+      "idx": 4,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 110,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804092311,
+      "sessionStartMs": 913,
+      "sessionId": "live-d2dc357f-596f-4eeb-b6fe-f44565f0ad06",
+      "sseOpenMs": 1060,
+      "firstAudioMs": 1748,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir machen einen kurzen Tagebucheintrag. Das bringt deinen Vitana Index nach oben, da du seit 7 Tagen keinen Eintrag mehr gemacht hast.",
+      "firstModelAudioMs": 3108,
+      "turnCompleteMs": 4576
+    },
+    {
+      "idx": 5,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 88,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804097028,
+      "sessionStartMs": 621,
+      "sessionId": "live-9c85f0ce-29b2-42f4-87d9-73714febf959",
+      "sseOpenMs": 765,
+      "firstAudioMs": 1371,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich sehe, dass du gerade zurückgekommen bist. Ich würde vorschlagen, wir schauen uns deine ungelesenen Nachrichten an und antworten darauf.",
+      "firstModelAudioMs": 2706,
+      "turnCompleteMs": 3863
+    },
+    {
+      "idx": 6,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 58,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804101030,
+      "sessionStartMs": 781,
+      "sessionId": "live-49147ee4-085d-4239-97f7-08e72bbc2e94",
+      "sseOpenMs": 916,
+      "firstAudioMs": 1571,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir setzen die geführte Reise fort und schauen uns die nächsten Schritte an.",
+      "firstModelAudioMs": 2695,
+      "turnCompleteMs": 3453
+    },
+    {
+      "idx": 7,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 490,
+        "thinking": 1,
+        "output_transcript": 4,
+        "turn_complete": 1
+      },
+      "t0": 1789804104623,
+      "sessionStartMs": 405,
+      "sessionId": "live-64dab44f-d419-4e9d-b36d-6f6a34891774",
+      "sseOpenMs": 537,
+      "firstAudioMs": 1041,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich habe einen Ernährungsplan für die nächsten 14 Tage vorbereitet, mit 6 Aktionen: 1) Mahlzeitenplanungsblock am 20. September 2026; 2) Achtsames Essen am 22. September 2026; 3) Überprüfung des Ernährungstagebuchs am 24. September 2026; 4) Mahlzeitenplanungsblock am 27. September 2026; 5) Achtsames Essen am 29. September 2026; 6) Überprüfung des Ernährungstagebuchs am 1. Oktober 2026. Möchtest du, dass ich diese Aktionen in deinen Kalender einfüge?",
+      "firstModelAudioMs": 3707,
+      "turnCompleteMs": 10525
+    },
+    {
+      "idx": 8,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 66,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804115707,
+      "sessionStartMs": 679,
+      "sessionId": "live-ff17643d-c01a-4786-96c6-ff104d689619",
+      "sseOpenMs": 815,
+      "firstAudioMs": 1699,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir machen einen kurzen Tagebucheintrag, um deinen Vitana Index zu steigern.",
+      "firstModelAudioMs": 2948,
+      "turnCompleteMs": 3832
+    },
+    {
+      "idx": 9,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 94,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804119679,
+      "sessionStartMs": 912,
+      "sessionId": "live-2a6f4aef-7425-4c9d-b9c9-ee150bd76d1b",
+      "sseOpenMs": 1058,
+      "firstAudioMs": 1691,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich sehe, dass du gerade zurückgekommen bist. Ich würde vorschlagen, wir schauen uns deine ungelesenen Nachrichten an und antworten darauf.",
+      "firstModelAudioMs": 3033,
+      "turnCompleteMs": 4294
+    },
+    {
+      "idx": 10,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 63,
+        "output_transcript": 1,
+        "turn_complete": 1
+      },
+      "t0": 1789804124114,
+      "sessionStartMs": 408,
+      "sessionId": "live-75c21af4-3004-4a2e-90c6-464621635345",
+      "sseOpenMs": 553,
+      "firstAudioMs": 1214,
+      "firstAudioSource": "activation_chime",
+      "text": "Ich würde vorschlagen, wir setzen die geführte Reise fort —  fünf Sitzungen sind bereits abgeschlossen.",
+      "firstModelAudioMs": 2569,
+      "turnCompleteMs": 3392
+    }
+  ]
+}

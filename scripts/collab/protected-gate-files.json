@@ -1,0 +1,18 @@
+{
+  "schema": "vitana.protected-gate-files/v1",
+  "description": "VTID-05276 (plan kiro-autonomy-fallback §4.3): protected gate files. A change to one never merges on a reviewer-agent accept alone; it needs a legacy claude review on the current head or the owner's instruction. Globs use scripts/collab/queue.mjs globToRegex semantics. Owned by scripts/collab/queue.mjs (compiled-in copy for single-file runs); the Project Manager mirrors it in governance.ts.",
+  "globs": [
+    "CLAUDE.md",
+    "scripts/collab/plan-spar.mjs",
+    "scripts/collab/queue.mjs",
+    "scripts/collab/protected-gate-files.json",
+    "services/gateway/src/services/plan-sparring/**",
+    "services/gateway/src/services/project-manager/governance.ts",
+    ".github/workflows/PLAN-SPAR.yml",
+    ".github/workflows/PR-GATE.yml",
+    ".github/workflows/AWS-PROD-*.yml",
+    ".kiro/agents/vitana-lane-reviewer.md",
+    "supabase/migrations/*vtid_ledger*.sql",
+    "supabase/migrations/*plan_sparring*.sql"
+  ]
+}

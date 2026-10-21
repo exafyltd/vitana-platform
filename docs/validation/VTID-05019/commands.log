@@ -1,0 +1,10 @@
+$ curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/github/safe-merge -d '{}'   (before the fix, staging)
+400   (body validation answered: the route had no auth)
+$ npx jest test/vtid-05019-cicd-pr-routes-auth.test.ts
+Tests: 18 passed, 18 total
+$ (cicd.ts reverted) npx jest test/vtid-05019-cicd-pr-routes-auth.test.ts
+Tests: 11 failed, 7 passed, 18 total
+$ npx jest test/vtid-05014 ... (route tests now send the service token)
+Tests: 13 passed, 13 total
+$ npx tsc --noEmit -p services/gateway
+(exit 0)

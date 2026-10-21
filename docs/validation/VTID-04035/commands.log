@@ -1,0 +1,18 @@
+# VTID-04035 — commands run (2026-09-18, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'operator-console');   -- VTID-04035
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04035';
+
+# gateway
+cd services/gateway
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0
+npx jest test/vtid-04035-operator-ecs-tasks.test.ts test/vtid-04020-operator-cloudwatch-logs.test.ts \
+  test/vtid-03835-operator-console-read-tools.test.ts test/vtid-04018-operator-bootstrap-pack.test.ts
+                                        # first run: 04020 + 03835 failed to LOAD — their aws-ecs-readonly mock factories lacked the new
+                                        #  exports the operator schema reads at module load → the six explicit mocks extended
+npx jest test/vtid-03835-operator-console-read-tools.test.ts test/vtid-03946-operator-cross-repo-search.test.ts \
+  test/vtid-04020-operator-cloudwatch-logs.test.ts test/vtid-04022-operator-threads.test.ts \
+  test/vtid-04023-operator-sql-readonly.test.ts test/vtid-04028-operator-turn-stream.test.ts \
+  test/vtid-04035-operator-ecs-tasks.test.ts                                        # 7 suites, 96 tests, 0 failures
+npx jest --testPathPattern 'test/(.*operator.*|.*tool-registry.*|.*dev-autopilot.*|.*autopilot-agent.*|vtid-0403[0-9].*|vtid-03838.*|vtid-03851.*|vtid-03895.*)\.test\.ts'   # broad re-run, see outputs/

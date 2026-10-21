@@ -1,0 +1,32 @@
+$ npx tsc --noEmit -p tsconfig.json
+EXIT:0
+
+$ npx jest test/vtid-04016-agent-check-guard.test.ts --silent
+PASS test/vtid-04016-agent-check-guard.test.ts
+  VTID-04016 RepeatedCheckGuard (pure)
+    ✓ allows the first attempts of a failing check, refuses once the cap is reached, and an edit resets it
+    ✓ a passing run never counts, and keys are per (kind, target)
+    ✓ never guards git_diff / git_status (inspections, not checks)
+  VTID-04163 repeated-navigation guard (pure)
+    ✓ allows the first call, refuses an exact repeat, and an edit resets it
+    ✓ different arguments (or key order) are distinct calls; unguarded tools are never refused
+  VTID-04016 guard wired through executeAgentTool
+    ✓ the third identical failing tsc is refused without running; an edit re-enables it
+    ✓ write_file and delete_file also reset the guard
+    ✓ a context without a guard behaves exactly as before (no refusals ever)
+    ✓ VTID-04163: an exact-repeat read_file is refused; a different range is not; an edit resets it
+    ✓ VTID-04163: search_text/list_dir/find_files are guarded too; write_file/finish are never guarded
+  VTID-04016 commands.log describes the executor that ran
+    ✓ default (single-shot) wording is unchanged
+    ✓ agent executor: clone, tool loop, guard, runner tsc + jest, fix rounds, push
+    ✓ records a skipped runner tsc honestly
+    ✓ applyPrContract threads executor through to the evidence pack
+
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+
+$ npx jest test/autopilot-agent-loop.test.ts test/autopilot-agent-tools.test.ts \
+    test/dev-autopilot-pr-contract.test.ts test/vtid-04029-dev-autopilot-pr-approval.test.ts \
+    test/vtid-04032-cancel-running-execution.test.ts --silent
+Test Suites: 5 passed, 5 total
+Tests:       87 passed, 87 total

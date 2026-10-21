@@ -1,0 +1,139 @@
+# npx jest <the 4 new VTID-05177 suites>
+PASS test/vtid-05177-app-config.test.ts (5.284 s)
+    ✓ 200 with the full shape, no auth header, public 60 s cache (270 ms)
+    ✓ every checked-in default flag is false and the minimum version is 0.0.0 (2 ms)
+    ✓ the response carries no member data (deep key scan) (42 ms)
+    ✓ a kill repository error answers 503 config_unavailable with no platforms (45 ms)
+    ✓ the kill read is cached for 10 s; a failed read is not cached (80 ms)
+    ✓ request 121 from one IP within a minute gets 429 JSON (1039 ms)
+    ✓ an armed kill forces its flag off on its platform only (1 ms)
+    ✓ `all` applies to both platforms; expired, disarmed and unknown keys are ignored (1 ms)
+    ✓ a kill can never turn a flag on or change a version (1 ms)
+    ✓ an unexpired kill still applies (1 ms)
+    ✓ GETs only native_app.kill.* rows and separates rows from errors (2 ms)
+    ✓ GET /api/v1/app-config is mounted exactly once, through mountRouterSync
+    ✓ the infra domain claims routes/app-config.ts (2 ms)
+PASS test/routes/notifications-token.vtid-05177.test.ts
+    ✓ web body (fcm_token + browser UA label) → today's takeover, upsert and prune, no device_type key (64 ms)
+    ✓ Appilix body (device_type "appilix" + package_name) → identical row, device_type ignored (5 ms)
+    ✓ a missing label is stored as null, as today (2 ms)
+    ✓ missing fcm_token is still 400 (3 ms)
+    ✓ device_type "IOS_NATIVE" is ignored (3 ms)
+    ✓ device_type "ios" is ignored (3 ms)
+    ✓ device_type "android" is ignored (3 ms)
+    ✓ device_type "web" is ignored (4 ms)
+    ✓ device_type "native" is ignored (6 ms)
+    ✓ device_type 42 is ignored (3 ms)
+    ✓ device_type null is ignored (3 ms)
+    ✓ ios_native stores its type, version and a server-set label (21 ms)
+    ✓ android_native stores its type, version and a server-set label (32 ms)
+    ✓ a bad app_version "1.2.3 beta" is dropped (13 ms)
+    ✓ a bad app_version "xxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxxx" is dropped (4 ms)
+    ✓ a bad app_version "1.0/2" is dropped (4 ms)
+    ✓ a bad app_version "" is dropped (5 ms)
+    ✓ a bad app_version 7 is dropped (3 ms)
+    ✓ accepts a 32-character version of [0-9A-Za-z.+-] (1 ms)
+    ✓ warns when a native token arrives while NATIVE_PUSH_DIRECT_ENABLED is off, not when on (25 ms)
+PASS test/services/native-push-golden.vtid-05177.test.ts (6.423 s)
+    ✓ every site makes exactly the recorded calls with both native switches unset (1058 ms)
+    ✓ the fixture covers the cases that matter (sanity on the recording itself) (17 ms)
+PASS test/services/native-push-routing.vtid-05177.test.ts (9.863 s)
+    ✓ notifyUser: native tokens always go straight to FCM, with and without a URL, whatever Appilix does (172 ms)
+    ✓ push-dispatch: native tokens always go straight to FCM, with and without a URL, whatever Appilix does (229 ms)
+    ✓ reminder: native tokens always go straight to FCM, with and without a URL, whatever Appilix does (96 ms)
+    ✓ notifyUser: the native pass runs first (10 ms)
+    ✓ push-dispatch: the native pass runs first (21 ms)
+    ✓ reminder: the native pass runs first (1 ms)
+    ✓ legacy behaviour over legacy tokens equals the switch-off behaviour, for every site and mix (1586 ms)
+    ✓ notifyUser: a native send does not hide a missing Appilix delivery (no-URL fallback counts legacy sends only) (4 ms)
+    ✓ push-dispatch: a native send does not hide a missing Appilix delivery (no-URL fallback counts legacy sends only) (7 ms)
+    ✓ reminder: the "FCM reached zero" Appilix fallback counts legacy sends only (5 ms)
+    ✓ suppression is read at the same point relative to the FCM sends as before (5 ms)
+    ✓ reminder: a reminder delivered only to a native token is marked delivered and counted (7 ms)
+    ✓ notifyUser: a stale native token is revoked (5 ms)
+    ✓ push-dispatch: a stale native token is revoked (10 ms)
+    ✓ reminder: a stale native token is revoked (2 ms)
+      ✓ sets aps.badge on the ios_native send only, from one unread count (5 ms)
+      ✓ reads the count once per recipient with an ios_native token, never for others (52 ms)
+      ✓ leaves the badge out when the count read fails (5 ms)
+      ✓ push-dispatch (cron path) sends no badge and reads no count (8 ms)
+      ✓ reminder (cron path) sends no badge and reads no count (8 ms)
+      ✓ notifyUser: guard switch off → Appilix is not suppressed for a native-only user (3 ms)
+      ✓ push-dispatch: guard switch off → Appilix is not suppressed for a native-only user (5 ms)
+      ✓ reminder: guard switch off → Appilix is not suppressed for a native-only user (3 ms)
+      ✓ notifyUser: guard on → Appilix suppressed only with native tokens and no "Appilix %" token (44 ms)
+      ✓ push-dispatch: guard on → Appilix suppressed only with native tokens and no "Appilix %" token (104 ms)
+      ✓ reminder: guard on → Appilix suppressed only with native tokens and no "Appilix %" token (39 ms)
+    ✓ guard on + routing off + native token present → Appilix not suppressed (R2-F9): every golden holds (625 ms)
+    ✓ a mistyped switch value ("TRUE", "1") is off: every golden holds (1185 ms)
+    ✓ hasOnlyNativeAppDevices short-circuits to false (no query) unless direct routing is on (1 ms)
+Test Suites: 4 passed, 4 total
+Tests:       64 passed, 64 total
+
+# npx jest <every test file touching notification-service / push-routing / reminders-dispatch / scheduled-notifications / routes/notifications> + vtid-04883
+PASS test/voice-send-chat-rate-limit-isolation.test.ts (5.658 s)
+PASS test/services/native-push-golden.vtid-05177.test.ts (5.601 s)
+PASS test/vtid-04892-onboarding-coach.test.ts
+PASS test/services/send-chat-message-tool-confirm-gate.test.ts
+PASS test/vtid-04905-live-enter-exit.test.ts
+PASS test/daily-pace-service.test.ts
+PASS test/services/native-push-routing.vtid-05177.test.ts (9.673 s)
+PASS test/vtid-05099-companion-messages.test.ts
+PASS test/admin-partner-health.test.ts
+PASS test/vtid-04374-calendar-maintenance.test.ts
+PASS test/orb/live/session/chat-bridge-reliability.test.ts
+PASS test/vtid-04677-scheduled-notifications-auth.test.ts
+PASS test/vtid-04674-notification-controls-wiring.test.ts
+PASS test/scheduled-notifications-whats-new.test.ts
+PASS test/vtid-05104-calendar-invite-guard.test.ts
+PASS test/scheduled-notifications-daily-feature-tip.test.ts
+PASS test/vtid-04904-live-daily-rooms.test.ts
+PASS test/scheduled-notifications-night-push.test.ts
+PASS test/vtid-04963-reminders-guided-journey-gate.test.ts
+PASS test/vtid-04962-push-dispatch-outcome.test.ts
+PASS test/services/automation-handlers-phase2.test.ts
+PASS test/vtid-05100-companion-delivery.test.ts
+PASS test/routes/notifications-token.vtid-05177.test.ts
+PASS test/routes/autopilot-recommendations.test.ts
+PASS test/admin-community-marketplace.test.ts
+PASS test/vtid-04926-chat-group-mentions.test.ts
+PASS test/routes/admin-notification-categories.test.ts
+PASS test/celebrations.test.ts
+PASS test/vtid-04917-invite-routes.test.ts
+PASS test/vtid-04883-community-ranking.test.ts
+PASS test/routes/admin-notifications.test.ts
+PASS test/chat-vitana-reply.test.ts
+PASS test/routes/autopilot-recommendations-complete.test.ts
+PASS test/admin-feature-announcements.test.ts
+PASS test/services/notification-device-ownership.test.ts
+PASS test/vtid-04918-calendar-assistant-parity.test.ts
+PASS test/vtid-04666-onramp-excluded-and-sql-contract.test.ts
+PASS test/services/automation-handlers-engagement-events-repository.test.ts
+PASS test/vtid-04320-reminders-dispatch.test.ts
+PASS test/vtid-05099-proactive-match-daily-limit.test.ts
+PASS test/routes/admin-signups.test.ts
+PASS test/vtid-04349-automation-shadow.test.ts
+PASS test/vtid-05137-chat-push-coalescing.test.ts
+PASS test/missing-test-scanner.test.ts
+PASS test/vtid-04321-calendar-backend-repair.test.ts
+PASS test/vtid-04962-push-outcome.test.ts
+PASS test/partner-health/ingestion.test.ts
+PASS test/vtid-04665-dependency-probe.test.ts
+PASS test/routes/scheduled-notifications-repository.test.ts
+PASS test/vtid-05039-onboarding-coach-shadow-start.test.ts
+PASS test/vtid-05055-member-link-migration.test.ts
+PASS test/routes/scheduled-notifications-meetup-rsvp-error-logging.test.ts
+PASS test/diary-streak-celebrator.test.ts
+PASS test/services/notification-service-user-prefs-error-logging.test.ts
+Test Suites: 54 passed, 54 total
+Tests:       955 passed, 955 total
+
+# npm run test:roles
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+# npm run test:operator
+Test Suites: 1 passed, 1 total
+Tests:       71 passed, 71 total
+# npm run test:support
+Test Suites: 4 passed, 4 total
+Tests:       87 passed, 87 total

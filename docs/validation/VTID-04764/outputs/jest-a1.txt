@@ -1,0 +1,56 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+  console.warn
+    [jev] JEV_AGENT_PROGRESS_MODE="Shadow" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at createAgentProgressGate (src/services/jev/gates/agent-progress-gate.ts:83:27)
+      at Object.<anonymous> (test/vtid-04764-agent-progress-gate.test.ts:79:40)
+  console.warn
+    [jev] agent_progress check failed at turn 10: boom
+      132 |       checks.push({ id, turn: s.turn, next_step: r.ok && r.outcome === 'decided' ? nextStep : null, outcome: r.outcome });
+      133 |     } catch (err: any) {
+    > 134 |       console.warn(`[jev] ${AGENT_PROGRESS_GATE} check failed at turn ${s.turn}: ${err?.message || err}`);
+          |               ^
+      135 |     }
+      136 |   };
+      137 |
+      at runCheck (src/services/jev/gates/agent-progress-gate.ts:134:15)
+      at Object.finish (src/services/jev/gates/agent-progress-gate.ts:164:9)
+      at Object.<anonymous> (test/vtid-04764-agent-progress-gate.test.ts:152:5)
+PASS test/vtid-04764-agent-progress-gate.test.ts
+  VTID-04764 decision
+    ✓ agent_progress_check is telemetry on the internal planes with a 4-way choice
+  VTID-04764 gate
+    ✓ off (default, or a typo): a no-op, nothing asked or written
+    ✓ shadow: asks every 10th turn, in order, with the activity window and check counts
+    ✓ the window keeps the last 30 calls only
+    ✓ agreement: predicted continue, run pr_opened → true
+    ✓ agreement: predicted commit, run awaiting_approval → true
+    ✓ agreement: predicted continue, run failed → false
+    ✓ agreement: predicted stop, run failed → true
+    ✓ agreement: predicted handoff, run failed → true
+    ✓ agreement: predicted stop, run pr_opened → false
+    ✓ a cancelled run, an abstention or a failed Jev call carries agreed = null
+    ✓ a throwing Jev client never reaches the loop
+  VTID-04764 loop hook (observe-only)
+    ✓ one snapshot per completed tool turn, with the loop action and the calls
+    ✓ a throwing hook changes nothing
+  VTID-04764 wiring and pins
+    ✓ the runner feeds every loop round to the gate and closes it in finally with the run outcome
+    ✓ both gateways pin shadow; the ECS executor is not wired yet (its role must be able to read the key first)
+Test Suites: 1 passed, 1 total
+Tests:       16 passed, 16 total
+Snapshots:   0 total
+Time:        0.668 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04764/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,235 @@
+/**
+ * Admin Notifications API — Compose, Send & Track Notifications
+ *
+ * Endpoints:
+ * - POST /compose       — Send notification to user(s) by ID, role, or all
+ * - GET  /sent          — Admin-sent notification log (filtered, paginated)
+ * - GET  /preferences/stats — Aggregate opt-in/out rates per category
+ *
+ * Security:
+ * - All endpoints require Bearer token + exafy_admin
+ */
+
+import { Router, Request, Response } from 'express';
+import { getSupabase } from '../lib/supabase';
+import { notifyUser, notifyUsersAsync, NotificationPayload } from '../services/notification-service';
+import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './admin-notifications-repository';
+
+const router = Router();
+const VTID = 'ADMIN-NOTIFICATIONS';
+
+// VTID-04674: requireAuth first — requireExafyAdmin only reads req.identity,
+// which nothing set on this router, so every call answered 401.
+router.use(requireAuth, requireExafyAdmin);
+
+// ── POST /compose — Send notification to user(s) ────────────
+
+router.post('/compose', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
+
+  const email = req.identity?.email || 'unknown';
+
+  const {
+    recipient_ids,   // string[] — specific user IDs
+    recipient_role,  // string — send to all users with this role (e.g. 'community', 'creator')
+    tenant_id,       // string — required for role/all targeting
+    send_to_all,     // boolean — send to ALL users in tenant
+    type,            // string — notification type key (from TYPE_META)
+    title,           // string — notification title
+    body,            // string — notification body
+    channel,         // string — override channel (push/inapp/push_and_inapp)
+    priority,        // string — override priority (p0-p3)
+    data,            // object — optional FCM data payload
+  } = req.body;
+
+  // Validate required fields
+  if (!title || !body) {
+    return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: 'title and body are required' });
+  }
+  if (!recipient_ids && !recipient_role && !send_to_all) {
+    return res.status(400).json({
+      ok: false,
+      error: 'INVALID_INPUT',
+      message: 'Must specify recipient_ids, recipient_role, or send_to_all',
+    });
+  }
+
+  const notificationType = type || 'welcome_to_vitana'; // fallback to system type
+  const payload: NotificationPayload = {
+    title,
+    body,
+    data: data ? Object.fromEntries(Object.entries(data).map(([k, v]) => [k, String(v)])) : undefined,
+  };
+
+  try {
+    let targetUserIds: string[] = [];
+
+    if (recipient_ids && Array.isArray(recipient_ids) && recipient_ids.length > 0) {
+      // Direct user IDs
+      targetUserIds = recipient_ids;
+    } else if (recipient_role && tenant_id) {
+      // Fetch users by role in tenant
+      const { data: members, error } = await repo.fetchTenantUserIdsByRole(supabase, tenant_id, recipient_role);
+
+      if (error) {
+        console.error(`[${VTID}] POST /compose role lookup error:`, error.message);
+        return res.status(500).json({ ok: false, error: error.message });
+      }
+      targetUserIds = (members || []).map((m: any) => m.user_id);
+    } else if (send_to_all && tenant_id) {
+      // Fetch all users in tenant
+      const { data: members, error } = await repo.fetchTenantUserIds(supabase, tenant_id);
+
+      if (error) {
+        console.error(`[${VTID}] POST /compose all-users lookup error:`, error.message);
+        return res.status(500).json({ ok: false, error: error.message });
+      }
+      targetUserIds = (members || []).map((m: any) => m.user_id);
+    }
+
+    if (targetUserIds.length === 0) {
+      return res.status(400).json({ ok: false, error: 'NO_RECIPIENTS', message: 'No users matched the specified criteria' });
+    }
+
+    // Cap at 500 users per compose to prevent runaway
+    if (targetUserIds.length > 500) {
+      return res.status(400).json({
+        ok: false,
+        error: 'TOO_MANY_RECIPIENTS',
+        message: `Found ${targetUserIds.length} users, max 500 per compose. Use filters to narrow.`,
+      });
+    }
+
+    // Determine effective tenant_id for dispatching
+    const effectiveTenantId = tenant_id || (recipient_ids?.length === 1 ? undefined : undefined);
+
+    // For single recipients, use synchronous dispatch for immediate feedback
+    if (targetUserIds.length === 1) {
+      const result = await notifyUser(
+        targetUserIds[0],
+        effectiveTenantId || '',
+        notificationType,
+        payload,
+        supabase
+      );
+      console.log(`[${VTID}] Composed notification for 1 user by ${email}: type=${notificationType}`);
+      return res.json({ ok: true, sent_to: 1, result });
+    }
+
+    // For multiple recipients, use fire-and-forget
+    notifyUsersAsync(
+      targetUserIds,
+      effectiveTenantId || '',
+      notificationType,
+      payload,
+      supabase
+    );
+
+    console.log(`[${VTID}] Composed notification for ${targetUserIds.length} users by ${email}: type=${notificationType}`);
+
+    return res.json({
+      ok: true,
+      sent_to: targetUserIds.length,
+      message: `Dispatching ${notificationType} to ${targetUserIds.length} users`,
+    });
+  } catch (err: any) {
+    console.error(`[${VTID}] POST /compose exception:`, err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── GET /sent — Admin notification log ──────────────────────
+
+router.get('/sent', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
+
+  const { limit: limitStr, offset: offsetStr, type, user_id, days: daysStr, search } = req.query;
+  const limit = Math.min(parseInt(limitStr as string) || 50, 200);
+  const offset = parseInt(offsetStr as string) || 0;
+  const days = parseInt(daysStr as string) || 30;
+
+  try {
+    const since = new Date(Date.now() - days * 86400000).toISOString();
+
+    const { data, error, count } = await repo.fetchSentNotifications(supabase, {
+      sinceIso: since,
+      offset,
+      limit,
+      type: type && typeof type === 'string' ? type : undefined,
+      userId: user_id && typeof user_id === 'string' ? user_id : undefined,
+      search: search && typeof search === 'string' ? search : undefined,
+    });
+    if (error) {
+      console.error(`[${VTID}] GET /sent error:`, error.message);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    return res.json({ ok: true, data: data || [], total: count || 0, limit, offset, days });
+  } catch (err: any) {
+    console.error(`[${VTID}] GET /sent exception:`, err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// ── GET /preferences/stats — Aggregate preference statistics ─
+
+router.get('/preferences/stats', async (req: AuthenticatedRequest, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(500).json({ ok: false, error: 'SUPABASE_UNAVAILABLE' });
+
+  const { tenant_id } = req.query;
+
+  try {
+    // Get all preferences
+    const { data: prefs, error } = await repo.fetchNotificationPreferences(
+      supabase,
+      tenant_id && typeof tenant_id === 'string' ? tenant_id : undefined,
+    );
+    if (error) {
+      console.error(`[${VTID}] GET /preferences/stats error:`, error.message);
+      return res.status(500).json({ ok: false, error: error.message });
+    }
+
+    const total = prefs?.length || 0;
+
+    // Compute aggregate stats
+    const stats = {
+      total_users_with_prefs: total,
+      push_enabled: prefs?.filter((p: any) => p.push_enabled !== false).length || 0,
+      push_disabled: prefs?.filter((p: any) => p.push_enabled === false).length || 0,
+      dnd_enabled: prefs?.filter((p: any) => p.dnd_enabled === true).length || 0,
+      categories: {
+        live_room_notifications: prefs?.filter((p: any) => p.live_room_notifications !== false).length || 0,
+        match_notifications: prefs?.filter((p: any) => p.match_notifications !== false).length || 0,
+        recommendation_notifications: prefs?.filter((p: any) => p.recommendation_notifications !== false).length || 0,
+        task_notifications: prefs?.filter((p: any) => p.task_notifications !== false).length || 0,
+        community_notifications: prefs?.filter((p: any) => p.community_notifications !== false).length || 0,
+        memory_notifications: prefs?.filter((p: any) => p.memory_notifications !== false).length || 0,
+      },
+    };
+
+    // Get total notification count (last 30 days)
+    const since = new Date(Date.now() - 30 * 86400000).toISOString();
+    const { count: notificationCount } = await repo.countNotificationsSince(supabase, since);
+
+    const { count: readCount } = await repo.countReadNotificationsSince(supabase, since);
+
+    return res.json({
+      ok: true,
+      stats,
+      delivery: {
+        total_sent_30d: notificationCount || 0,
+        total_read_30d: readCount || 0,
+        read_rate: notificationCount ? Math.round(((readCount || 0) / notificationCount) * 100) : 0,
+      },
+    });
+  } catch (err: any) {
+    console.error(`[${VTID}] GET /preferences/stats exception:`, err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+export default router;

@@ -1,0 +1,9 @@
+# dev_autopilot_config id=1 flipped 2026-09-21 16:28:12 UTC (Supabase MCP, single UPDATE guarded by kill_switch=false)
+# after: kill_switch=false auto_approve_enabled=TRUE concurrency_cap=4 daily_budget=500 auto_approve_max_effort=8 risk_classes=[low,medium]
+# preconditions held at flip time:
+#   - vitana-autopilot-executor task def rev 22 (image 2b55e03cecdb): DEV_AUTOPILOT_EXECUTOR=agent, DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true
+#     (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml run 35625291260 / #21 on main, success 16:27:26Z)
+#   - staging gateway still on task def vitana-gateway:491 (70bd61a) — AWS-STAGE-DEPLOY-GATEWAY run 508 for 2b55e03 in progress;
+#     that deploy only matters for the in-process fallback path (RunTask has been observed working since VTID-04002)
+#   - prod gateway (vitana-gateway-awsdr rev 114) has DEV_AUTOPILOT_EXECUTOR_ENABLED=false → its autoApproveTick never runs
+# DEV-AUTOPILOT.yml dispatched on main, dry_run=false, 16:28:15Z (owner: "rerun the scan")

@@ -1,0 +1,7 @@
+# read-only, after applying vtid_04500_autopilot_role_scope (2026-09-24)
+select role_scope, source_type='community' as community, user_id is null as system, count(*) from autopilot_recommendations group by 1,2,3;
+community | true  | false | 7905
+developer | false | true  | 1843
+developer | null  | true  |   25
+community | true  | true  |    1
+# rows at role_scope='any': 0

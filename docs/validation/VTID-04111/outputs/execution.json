@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04111",
+  "title": "Operator: add autopilot_activate_recommendation(recommendation_id) tool mirroring autopilot_approve_execution",
+  "predecessor": "VTID-04109 (failed — agent executor stalled: model answered with text 3 times in a row without calling finish)",
+  "files_changed": [
+    "services/gateway/src/services/operator-recommendation-tools.ts",
+    "services/gateway/src/services/tool-registry.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/ai-personality-service.ts",
+    "services/gateway/test/vtid-04111-operator-activate-recommendation.test.ts",
+    "docs/validation/VTID-04111/acceptance.md",
+    "docs/validation/VTID-04111/commands.log",
+    "docs/validation/VTID-04111/outputs/execution.json"
+  ],
+  "verification": {
+    "tsc_no_emit": "pass",
+    "jest_new_suite": "1/1 suite, 15/15 tests passing",
+    "jest_wider_regression_sweep": "5/5 suites, 69/69 tests passing, 0 regressions (84/84 combined with the new suite)"
+  },
+  "not_done": [
+    "no live staging re-verification yet",
+    "no Playwright screenshot pass (backend + operator-chat wire-schema change only, no UI/markup of its own)"
+  ]
+}

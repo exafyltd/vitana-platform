@@ -1,0 +1,921 @@
+/**
+ * Community User Analyzer - VTID-01185
+ *
+ * Per-user personalized recommendation analyzer.
+ * Generates community-focused recommendations based on:
+ * - Onboarding stage (day 0, 1, 3, 7, 14, 30+)
+ * - Health scores & weaknesses
+ * - Diary mood/energy
+ * - Connection count & group memberships
+ * - Pending matches
+ * - Diary streak
+ * - User's preferred language (8 supported)
+ *
+ * Unlike system-wide analyzers, this runs for a SINGLE user at a time.
+ */
+
+import { createHash } from 'crypto';
+import { SupabaseClient } from '@supabase/supabase-js';
+import { PILLAR_KEYS, type PillarKey } from '../../../lib/vitana-pillars';
+
+const LOG_PREFIX = '[VTID-01185:CommunityUser]';
+
+// =============================================================================
+// G2 — Canonical 5-pillar weakness detection (replaces the legacy 6-pillar
+// HealthScores/detectWeaknesses imports which referenced dropped columns).
+// =============================================================================
+
+/**
+ * Canonical 5-pillar scores from vitana_index_scores. Each value 0..200.
+ * Shape mirrors DB columns post-Phase-E cleanup.
+ */
+export type CanonicalHealthScores = Record<PillarKey, number> & {
+  score_total: number;
+};
+
+/**
+ * Weakness types the community analyzer emits. One per canonical pillar —
+ * no legacy "social_low" / "movement_low" / "stress_high" etc., but the
+ * source_refs of the WEAKNESS_TEMPLATES below remain stable so downstream
+ * autopilot_recommendations rows keep the same signal_type values and the
+ * contribution_vector trigger continues to map them correctly.
+ */
+export type CanonicalWeakness =
+  | 'nutrition_low'
+  | 'hydration_low'
+  | 'exercise_low'
+  | 'sleep_low'
+  | 'mental_low';
+
+// VTID-03138 (Phase C.8): pillar weakness threshold + decline gate now
+// resolved via PolicyResolver. Literal defaults below are the cache-cold
+// safety net.
+import { getPolicyResolver } from '../../decision-contract/policy-resolver';
+import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+import * as repo from './community-user-analyzer-repository';
+
+/** Threshold below which a pillar is considered weak and a weakness
+ *  recommendation is emitted. Each pillar scale: 0..200; threshold 80 =
+ *  below the "Building" floor for that pillar.
+ *  Legacy const kept for inspection; hot path uses
+ *  `getPillarWeaknessThreshold()`. */
+const PILLAR_WEAKNESS_THRESHOLD = 80;
+
+function getPillarWeaknessThreshold(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.ANALYZER_COMMUNITY_PILLAR_WEAKNESS_THRESHOLD,
+    { defaultValue: 80 },
+  );
+}
+
+function getDeclineTrendDropPoints(): number {
+  return getPolicyResolver().getValue<number>(
+    POLICY_KEYS.ANALYZER_COMMUNITY_DECLINE_TREND_DROP_POINTS,
+    { defaultValue: 10 },
+  );
+}
+
+/**
+ * Pure deterministic weakness detection from canonical 5-pillar scores.
+ * Returns one CanonicalWeakness per pillar that is below threshold.
+ */
+export function detectCanonicalWeaknesses(
+  scores: CanonicalHealthScores | null,
+  previous: CanonicalHealthScores | null = null,
+): CanonicalWeakness[] {
+  if (!scores) return [];
+  const out: CanonicalWeakness[] = [];
+  const weaknessThreshold = getPillarWeaknessThreshold();
+  const declineDropPoints = getDeclineTrendDropPoints();
+  for (const p of PILLAR_KEYS) {
+    const current = Number(scores[p] ?? 0);
+    if (current < weaknessThreshold) {
+      out.push(`${p}_low` as CanonicalWeakness);
+      continue;
+    }
+    // Optional trend check: if pillar dropped by ≥ declineDropPoints from
+    // previous snapshot, flag it as declining even if still above threshold.
+    if (previous) {
+      const prev = Number(previous[p] ?? 0);
+      if (prev - current >= declineDropPoints) {
+        out.push(`${p}_low` as CanonicalWeakness);
+      }
+    }
+  }
+  return out;
+}
+
+// Back-compat alias so the rest of this file (and downstream types) don't
+// need a bigger rename.
+export type WeaknessType = CanonicalWeakness;
+export type HealthScores = CanonicalHealthScores;
+
+// =============================================================================
+// i18n — 8 supported languages
+// =============================================================================
+
+export type LangCode = 'en' | 'de' | 'fr' | 'es' | 'ar' | 'zh' | 'ru' | 'sr';
+
+const LANG_NAME_TO_CODE: Record<string, LangCode> = {
+  'English': 'en', 'German': 'de', 'Deutsch': 'de',
+  'French': 'fr', 'Français': 'fr',
+  'Spanish': 'es', 'Español': 'es',
+  'Arabic': 'ar', 'Chinese': 'zh',
+  'Russian': 'ru', 'Serbian': 'sr',
+};
+
+/** Resolve full language name (from memory_facts) → 2-letter code. Default: 'en'. */
+export function resolveLanguage(factValue: string | null | undefined): LangCode {
+  if (!factValue) return 'en';
+  return LANG_NAME_TO_CODE[factValue] ?? 'en';
+}
+
+// =============================================================================
+// Translation map — key → lang → { title, summary }
+// Placeholders: {count}
+// =============================================================================
+
+const T: Record<string, Partial<Record<LangCode, { title: string; summary: string }>>> = {
+  // ── Onboarding Day 0 ──────────────────────────────────────────────
+  onboarding_profile: {
+    en: { title: 'Complete your profile', summary: 'A complete profile helps us understand you and give better recommendations.' },
+    de: { title: 'Vervollständige dein Profil', summary: 'Ein vollständiges Profil hilft uns, dich besser zu verstehen und passende Empfehlungen zu geben.' },
+    fr: { title: 'Complète ton profil', summary: 'Un profil complet nous aide à mieux te comprendre et à te donner de meilleures recommandations.' },
+    es: { title: 'Completa tu perfil', summary: 'Un perfil completo nos ayuda a entenderte mejor y darte mejores recomendaciones.' },
+    ar: { title: 'أكمل ملفك الشخصي', summary: 'يساعدنا الملف الشخصي الكامل على فهمك بشكل أفضل وتقديم توصيات أفضل.' },
+    zh: { title: '完善你的个人资料', summary: '完整的个人资料帮助我们更好地了解你，提供更好的推荐。' },
+    ru: { title: 'Заполни свой профиль', summary: 'Полный профиль помогает нам лучше понять тебя и давать лучшие рекомендации.' },
+    sr: { title: 'Popuni svoj profil', summary: 'Potpuni profil nam pomaže da te bolje razumemo i damo bolje preporuke.' },
+  },
+  onboarding_explore: {
+    en: { title: 'Explore your community', summary: 'See who is nearby and which groups exist.' },
+    de: { title: 'Entdecke deine Community', summary: 'Schau dir an, wer in deiner Nähe ist und welche Gruppen es gibt.' },
+    fr: { title: 'Explore ta communauté', summary: 'Découvre qui est près de toi et quels groupes existent.' },
+    es: { title: 'Explora tu comunidad', summary: 'Mira quién está cerca y qué grupos hay.' },
+    ar: { title: 'استكشف مجتمعك', summary: 'شاهد من بالقرب منك وأي المجموعات موجودة.' },
+    zh: { title: '探索你的社区', summary: '看看你附近有谁，有哪些群组。' },
+    ru: { title: 'Исследуй своё сообщество', summary: 'Посмотри, кто рядом и какие группы есть.' },
+    sr: { title: 'Istraži svoju zajednicu', summary: 'Pogledaj ko je u blizini i koje grupe postoje.' },
+  },
+  onboarding_maxina: {
+    en: { title: 'Say hello to Vitana', summary: 'Your AI companion Vitana is ready to get to know you. Start a conversation!' },
+    de: { title: 'Sag Hallo zu Vitana', summary: 'Deine KI-Begleiterin Vitana ist bereit, dich kennenzulernen. Starte ein Gespräch!' },
+    fr: { title: 'Dis bonjour à Vitana', summary: 'Ton assistante IA Vitana est prête à te connaître. Lance une conversation !' },
+    es: { title: 'Saluda a Vitana', summary: 'Tu compañera IA Vitana está lista para conocerte. ¡Inicia una conversación!' },
+    ar: { title: 'قل مرحباً لـVitana', summary: 'رفيقتك الذكية Vitana جاهزة للتعرف عليك. ابدأ محادثة!' },
+    zh: { title: '向Vitana问好', summary: '你的AI伙伴Vitana已准备好认识你。开始对话吧！' },
+    ru: { title: 'Поздоровайся с Vitana', summary: 'Твой ИИ-компаньон Vitana готова познакомиться с тобой. Начни разговор!' },
+    sr: { title: 'Pozdravi Vitanu', summary: 'Tvoj AI pratilac Vitana je spremna da te upozna. Započni razgovor!' },
+  },
+  onboarding_avatar: {
+    en: { title: 'Add your photo', summary: 'A profile photo helps others recognize you and builds trust in the community.' },
+    de: { title: 'Füge dein Foto hinzu', summary: 'Ein Profilfoto hilft anderen, dich zu erkennen, und stärkt das Vertrauen in der Gemeinschaft.' },
+    fr: { title: 'Ajoute ta photo', summary: 'Une photo de profil aide les autres à te reconnaître et renforce la confiance dans la communauté.' },
+    es: { title: 'Añade tu foto', summary: 'Una foto de perfil ayuda a los demás a reconocerte y genera confianza en la comunidad.' },
+    ar: { title: 'أضف صورتك', summary: 'صورة الملف الشخصي تساعد الآخرين على التعرف عليك وتعزز الثقة في المجتمع.' },
+    zh: { title: '添加你的照片', summary: '个人照片帮助他人认识你，增强社区信任。' },
+    ru: { title: 'Добавь свою фотографию', summary: 'Фото профиля помогает другим узнать тебя и укрепляет доверие в сообществе.' },
+    sr: { title: 'Dodaj svoju fotografiju', summary: 'Profilna fotografija pomaže drugima da te prepoznaju i gradi poverenje u zajednici.' },
+  },
+  onboarding_interests: {
+    en: { title: 'Share your interests', summary: 'Tell us what you enjoy so we can connect you with like-minded people.' },
+    de: { title: 'Teile deine Interessen', summary: 'Erzähl uns, was dir gefällt, damit wir dich mit Gleichgesinnten verbinden können.' },
+    fr: { title: 'Partage tes centres d\'intérêt', summary: 'Dis-nous ce que tu aimes pour que nous puissions te connecter avec des personnes qui te ressemblent.' },
+    es: { title: 'Comparte tus intereses', summary: 'Cuéntanos qué te gusta para conectarte con personas afines.' },
+    ar: { title: 'شارك اهتماماتك', summary: 'أخبرنا بما تستمتع به حتى نتمكن من ربطك بأشخاص يشبهونك.' },
+    zh: { title: '分享你的兴趣', summary: '告诉我们你喜欢什么，这样我们可以帮你找到志同道合的人。' },
+    ru: { title: 'Расскажи о своих интересах', summary: 'Расскажи нам, что тебе нравится, чтобы мы связали тебя с единомышленниками.' },
+    sr: { title: 'Podeli svoja interesovanja', summary: 'Kaži nam šta voliš kako bismo te povezali sa istomišljenicima.' },
+  },
+  onboarding_diary_day0: {
+    en: { title: 'Write your first diary entry', summary: 'Start your well-being journey by recording how you feel today.' },
+    de: { title: 'Schreibe deinen ersten Tagebucheintrag', summary: 'Beginne deine Wohlfühl-Reise, indem du festhältst, wie du dich heute fühlst.' },
+    fr: { title: 'Écris ta première entrée de journal', summary: 'Commence ton parcours bien-être en notant comment tu te sens aujourd\'hui.' },
+    es: { title: 'Escribe tu primera entrada de diario', summary: 'Comienza tu camino de bienestar registrando cómo te sientes hoy.' },
+    ar: { title: 'اكتب أول إدخال في يومياتك', summary: 'ابدأ رحلة عافيتك بتسجيل كيف تشعر اليوم.' },
+    zh: { title: '写下你的第一篇日记', summary: '通过记录今天的感受，开始你的健康之旅。' },
+    ru: { title: 'Напиши свою первую запись в дневнике', summary: 'Начни путь к благополучию, записав, как ты себя чувствуешь сегодня.' },
+    sr: { title: 'Napiši svoj prvi dnevnički unos', summary: 'Započni put ka dobrostanju beleženjem kako se danas osećaš.' },
+  },
+  onboarding_health: {
+    en: { title: 'Check your health status', summary: 'Take a quick look at your Vitana health index to get started.' },
+    de: { title: 'Prüfe deinen Gesundheitsstatus', summary: 'Wirf einen kurzen Blick auf deinen Vitana-Gesundheitsindex.' },
+    fr: { title: 'Vérifie ton état de santé', summary: 'Jette un coup d\'œil rapide à ton indice de santé Vitana.' },
+    es: { title: 'Revisa tu estado de salud', summary: 'Echa un vistazo rápido a tu índice de salud Vitana.' },
+    ar: { title: 'تحقق من حالتك الصحية', summary: 'ألقِ نظرة سريعة على مؤشر صحة فيتانا الخاص بك.' },
+    zh: { title: '查看你的健康状态', summary: '快速查看你的Vitana健康指数。' },
+    ru: { title: 'Проверь своё здоровье', summary: 'Брось быстрый взгляд на свой индекс здоровья Vitana.' },
+    sr: { title: 'Proveri svoje zdravstveno stanje', summary: 'Baci brz pogled na svoj Vitana zdravstveni indeks.' },
+  },
+  onboarding_discover_matches: {
+    en: { title: 'Discover your matches', summary: 'See who the community has matched you with based on your interests.' },
+    de: { title: 'Entdecke deine Matches', summary: 'Schau, mit wem dich die Community basierend auf deinen Interessen zusammengebracht hat.' },
+    fr: { title: 'Découvre tes matchs', summary: 'Regarde avec qui la communauté t\'a mis en relation selon tes centres d\'intérêt.' },
+    es: { title: 'Descubre tus matches', summary: 'Mira con quién te ha emparejado la comunidad según tus intereses.' },
+    ar: { title: 'اكتشف تطابقاتك', summary: 'شاهد من طابقك المجتمع بناءً على اهتماماتك.' },
+    zh: { title: '发现你的匹配', summary: '看看社区根据你的兴趣为你匹配了谁。' },
+    ru: { title: 'Открой свои совпадения', summary: 'Посмотри, с кем сообщество подобрало тебя на основе твоих интересов.' },
+    sr: { title: 'Otkrij svoja poklapanja', summary: 'Pogledaj sa kim te zajednica spojila na osnovu tvojih interesovanja.' },
+  },
+
+  // ── Onboarding Day 1 ──────────────────────────────────────────────
+  onboarding_diary: {
+    en: { title: 'Write your first diary entry', summary: 'Record how you feel today. Vitana can help you.' },
+    de: { title: 'Schreibe deinen ersten Tagebucheintrag', summary: 'Halte fest, wie du dich heute fühlst. Vitana kann dir dabei helfen.' },
+    fr: { title: 'Écris ta première entrée de journal', summary: "Note comment tu te sens aujourd'hui. Vitana peut t'aider." },
+    es: { title: 'Escribe tu primera entrada de diario', summary: 'Registra cómo te sientes hoy. Vitana puede ayudarte.' },
+    ar: { title: 'اكتب أول إدخال في يومياتك', summary: 'سجّل كيف تشعر اليوم. Vitana يمكنها مساعدتك.' },
+    zh: { title: '写下你的第一篇日记', summary: '记录你今天的感受。Vitana可以帮助你。' },
+    ru: { title: 'Напиши свою первую запись в дневнике', summary: 'Запиши, как ты себя чувствуешь сегодня. Vitana поможет тебе.' },
+    sr: { title: 'Napiši svoj prvi dnevnički unos', summary: 'Zabeleži kako se danas osećaš. Vitana ti može pomoći.' },
+  },
+  onboarding_matches: {
+    en: { title: 'Check your matches', summary: 'We found people who match you. Take a look!' },
+    de: { title: 'Schau dir deine Matches an', summary: 'Wir haben passende Personen für dich gefunden. Schau mal rein!' },
+    fr: { title: 'Regarde tes matchs', summary: 'Nous avons trouvé des personnes qui te correspondent. Jette un œil !' },
+    es: { title: 'Mira tus matches', summary: 'Encontramos personas compatibles contigo. ¡Échales un vistazo!' },
+    ar: { title: 'تحقق من تطابقاتك', summary: 'وجدنا أشخاصاً يناسبونك. ألقِ نظرة!' },
+    zh: { title: '查看你的匹配', summary: '我们为你找到了合适的人。看看吧！' },
+    ru: { title: 'Посмотри свои совпадения', summary: 'Мы нашли подходящих тебе людей. Загляни!' },
+    sr: { title: 'Pogledaj svoje poklapanja', summary: 'Pronašli smo ljude koji ti odgovaraju. Pogledaj!' },
+  },
+  onboarding_group: {
+    en: { title: 'Join a group', summary: 'Groups connect you with like-minded people. Find one that suits you.' },
+    de: { title: 'Tritt einer Gruppe bei', summary: 'Gruppen verbinden dich mit Gleichgesinnten. Finde eine, die zu dir passt.' },
+    fr: { title: 'Rejoins un groupe', summary: 'Les groupes te connectent avec des gens qui te ressemblent. Trouve celui qui te convient.' },
+    es: { title: 'Únete a un grupo', summary: 'Los grupos te conectan con personas afines. Encuentra uno que te guste.' },
+    ar: { title: 'انضم إلى مجموعة', summary: 'المجموعات تربطك بأشخاص يشبهونك في التفكير. اعثر على واحدة تناسبك.' },
+    zh: { title: '加入一个群组', summary: '群组将你与志同道合的人联系起来。找一个适合你的。' },
+    ru: { title: 'Присоединись к группе', summary: 'Группы связывают тебя с единомышленниками. Найди подходящую.' },
+    sr: { title: 'Pridruži se grupi', summary: 'Grupe te povezuju sa istomišljenicima. Pronađi onu koja ti odgovara.' },
+  },
+
+  // ── Day 3: Engagement ─────────────────────────────────────────────
+  engage_matches: {
+    en: { title: 'Respond to your matches', summary: 'You have pending match suggestions. Connect with someone!' },
+    de: { title: 'Reagiere auf deine Matches', summary: 'Du hast noch offene Match-Vorschläge. Verbinde dich mit jemandem!' },
+    fr: { title: 'Réponds à tes matchs', summary: "Tu as des suggestions de matchs en attente. Connecte-toi avec quelqu'un !" },
+    es: { title: 'Responde a tus matches', summary: 'Tienes sugerencias de matches pendientes. ¡Conéctate con alguien!' },
+    ar: { title: 'رد على تطابقاتك', summary: 'لديك اقتراحات تطابق معلقة. تواصل مع شخص ما!' },
+    zh: { title: '回应你的匹配', summary: '你有待处理的匹配建议。与某人联系吧！' },
+    ru: { title: 'Ответь на свои совпадения', summary: 'У тебя есть ожидающие предложения. Свяжись с кем-нибудь!' },
+    sr: { title: 'Odgovori na svoja poklapanja', summary: 'Imaš predloge poklapanja na čekanju. Poveži se sa nekim!' },
+  },
+  engage_meetup: {
+    en: { title: 'Attend a meetup', summary: 'Real encounters strengthen the community. Find a meetup near you.' },
+    de: { title: 'Nimm an einem Treffen teil', summary: 'Echte Begegnungen stärken die Gemeinschaft. Finde ein Treffen in deiner Nähe.' },
+    fr: { title: 'Participe à une rencontre', summary: 'Les vraies rencontres renforcent la communauté. Trouve un événement près de toi.' },
+    es: { title: 'Asiste a un encuentro', summary: 'Los encuentros reales fortalecen la comunidad. Encuentra uno cerca de ti.' },
+    ar: { title: 'احضر لقاءً', summary: 'اللقاءات الحقيقية تقوّي المجتمع. اعثر على لقاء بالقرب منك.' },
+    zh: { title: '参加聚会', summary: '真实的交流加强社区联系。找一个你附近的聚会。' },
+    ru: { title: 'Посети встречу', summary: 'Реальные встречи укрепляют сообщество. Найди встречу рядом.' },
+    sr: { title: 'Poseti okupljanje', summary: 'Pravi susreti jačaju zajednicu. Pronađi okupljanje u blizini.' },
+  },
+  engage_health: {
+    en: { title: 'Check your health scores', summary: 'Your Vitana Index gives you an overview of your well-being.' },
+    de: { title: 'Prüfe deine Gesundheitswerte', summary: 'Dein Vitana-Index gibt dir einen Überblick über dein Wohlbefinden.' },
+    fr: { title: 'Vérifie tes scores de santé', summary: 'Ton indice Vitana te donne un aperçu de ton bien-être.' },
+    es: { title: 'Revisa tus valores de salud', summary: 'Tu índice Vitana te da una visión general de tu bienestar.' },
+    ar: { title: 'تحقق من مؤشرات صحتك', summary: 'مؤشر فيتانا يمنحك نظرة عامة على صحتك.' },
+    zh: { title: '查看你的健康分数', summary: '你的Vitana指数让你了解自己的健康状况。' },
+    ru: { title: 'Проверь свои показатели здоровья', summary: 'Твой индекс Vitana даёт обзор самочувствия.' },
+    sr: { title: 'Proveri svoje zdravstvene rezultate', summary: 'Tvoj Vitana indeks ti daje pregled dobrostanja.' },
+  },
+
+  // ── Day 7: Deepening ──────────────────────────────────────────────
+  deepen_connection: {
+    en: { title: 'Deepen a connection', summary: 'Message one of your connections. Together is better!' },
+    de: { title: 'Vertiefe eine Verbindung', summary: 'Schreibe einer deiner Verbindungen eine Nachricht. Gemeinsam geht mehr!' },
+    fr: { title: 'Approfondis une connexion', summary: "Envoie un message à une de tes connexions. Ensemble, c'est mieux !" },
+    es: { title: 'Profundiza una conexión', summary: 'Envía un mensaje a una de tus conexiones. ¡Juntos es mejor!' },
+    ar: { title: 'عمّق اتصالاً', summary: 'أرسل رسالة لأحد اتصالاتك. معاً أفضل!' },
+    zh: { title: '深化一个联系', summary: '给你的联系人发条消息。一起更好！' },
+    ru: { title: 'Углуби связь', summary: 'Напиши одному из своих контактов. Вместе лучше!' },
+    sr: { title: 'Produbi vezu', summary: 'Pošalji poruku jednoj od svojih veza. Zajedno je bolje!' },
+  },
+  set_goal: {
+    en: { title: 'Set a health goal', summary: 'Define a personal goal and let Vitana guide you on the way.' },
+    de: { title: 'Setze dir ein Gesundheitsziel', summary: 'Definiere ein persönliches Ziel und lass Vitana dich auf dem Weg begleiten.' },
+    fr: { title: 'Fixe un objectif santé', summary: 'Définis un objectif personnel et laisse Vitana te guider.' },
+    es: { title: 'Establece un objetivo de salud', summary: 'Define un objetivo personal y deja que Vitana te guíe.' },
+    ar: { title: 'حدد هدفاً صحياً', summary: 'حدد هدفاً شخصياً ودع Vitana ترشدك في الطريق.' },
+    zh: { title: '设定健康目标', summary: '设定一个个人目标，让Vitana在路上指导你。' },
+    ru: { title: 'Поставь цель для здоровья', summary: 'Определи личную цель и позволь Vitana сопровождать тебя.' },
+    sr: { title: 'Postavi zdravstveni cilj', summary: 'Definiši lični cilj i pusti Vitanu da te vodi.' },
+  },
+  invite_friend: {
+    en: { title: 'Invite a friend', summary: 'Share Vitana with someone who could benefit from it.' },
+    de: { title: 'Lade einen Freund ein', summary: 'Teile Vitana mit jemandem, der davon profitieren könnte.' },
+    fr: { title: 'Invite un ami', summary: "Partage Vitana avec quelqu'un qui pourrait en profiter." },
+    es: { title: 'Invita a un amigo', summary: 'Comparte Vitana con alguien que pueda beneficiarse.' },
+    ar: { title: 'ادعُ صديقاً', summary: 'شارك فيتانا مع شخص يمكن أن يستفيد منها.' },
+    zh: { title: '邀请朋友', summary: '与可能受益的人分享Vitana。' },
+    ru: { title: 'Пригласи друга', summary: 'Поделись Vitana с тем, кому это может быть полезно.' },
+    sr: { title: 'Pozovi prijatelja', summary: 'Podeli Vitanu sa nekim ko bi mogao da ima koristi.' },
+  },
+
+  // ── Day 14 ─────────────────────────────────────────────────────────
+  share_expertise: {
+    en: { title: 'Share your knowledge', summary: 'You have experience that can help others. Start a discussion in a group.' },
+    de: { title: 'Teile dein Wissen', summary: 'Du hast Erfahrung, die anderen helfen kann. Starte eine Diskussion in einer Gruppe.' },
+    fr: { title: 'Partage tes connaissances', summary: "Tu as de l'expérience qui peut aider les autres. Lance une discussion dans un groupe." },
+    es: { title: 'Comparte tu conocimiento', summary: 'Tienes experiencia que puede ayudar a otros. Inicia una discusión en un grupo.' },
+    ar: { title: 'شارك معرفتك', summary: 'لديك خبرة يمكن أن تساعد الآخرين. ابدأ نقاشاً في مجموعة.' },
+    zh: { title: '分享你的知识', summary: '你的经验可以帮助其他人。在群组中发起讨论。' },
+    ru: { title: 'Поделись знаниями', summary: 'У тебя есть опыт, который может помочь другим. Начни обсуждение в группе.' },
+    sr: { title: 'Podeli svoje znanje', summary: 'Imaš iskustvo koje može pomoći drugima. Započni diskusiju u grupi.' },
+  },
+  start_streak: {
+    en: { title: 'Start a wellness streak', summary: 'Consistency brings results. Begin a 7-day challenge!' },
+    de: { title: 'Starte eine Wellness-Serie', summary: 'Regelmäßigkeit bringt Ergebnisse. Beginne eine 7-Tage-Challenge!' },
+    fr: { title: 'Commence une série bien-être', summary: 'La régularité apporte des résultats. Lance un défi de 7 jours !' },
+    es: { title: 'Comienza una racha de bienestar', summary: 'La constancia trae resultados. ¡Empieza un reto de 7 días!' },
+    ar: { title: 'ابدأ سلسلة عافية', summary: 'الانتظام يجلب النتائج. ابدأ تحدي ٧ أيام!' },
+    zh: { title: '开始健康连续打卡', summary: '坚持带来成果。开始7天挑战！' },
+    ru: { title: 'Начни серию для здоровья', summary: 'Регулярность приносит результаты. Начни 7-дневный челлендж!' },
+    sr: { title: 'Započni wellness seriju', summary: 'Redovnost donosi rezultate. Započni izazov od 7 dana!' },
+  },
+
+  // ── Day 30+ ────────────────────────────────────────────────────────
+  mentor_new: {
+    en: { title: 'Become a mentor for newcomers', summary: 'Your experience is valuable. Help new members get started.' },
+    de: { title: 'Werde Mentor für Neue', summary: 'Deine Erfahrung ist wertvoll. Hilf neuen Mitgliedern beim Einstieg.' },
+    fr: { title: 'Deviens mentor pour les nouveaux', summary: 'Ton expérience est précieuse. Aide les nouveaux membres à démarrer.' },
+    es: { title: 'Sé mentor para los nuevos', summary: 'Tu experiencia es valiosa. Ayuda a los nuevos miembros a empezar.' },
+    ar: { title: 'كن مرشداً للجدد', summary: 'خبرتك قيّمة. ساعد الأعضاء الجدد في البداية.' },
+    zh: { title: '成为新成员的导师', summary: '你的经验很宝贵。帮助新成员入门。' },
+    ru: { title: 'Стань наставником для новичков', summary: 'Твой опыт ценен. Помоги новым участникам начать.' },
+    sr: { title: 'Postani mentor novim članovima', summary: 'Tvoje iskustvo je dragoceno. Pomozi novim članovima da počnu.' },
+  },
+  organize_meetup: {
+    en: { title: 'Organize a meetup', summary: 'Bring your community together. Plan a meetup on a topic you care about.' },
+    de: { title: 'Organisiere ein Treffen', summary: 'Bringe deine Community zusammen. Plane ein Treffen zu einem Thema, das dir wichtig ist.' },
+    fr: { title: 'Organise une rencontre', summary: 'Rassemble ta communauté. Organise une rencontre sur un sujet qui te tient à cœur.' },
+    es: { title: 'Organiza un encuentro', summary: 'Reúne a tu comunidad. Planea un encuentro sobre un tema que te importe.' },
+    ar: { title: 'نظّم لقاءً', summary: 'اجمع مجتمعك معاً. خطط للقاء حول موضوع يهمك.' },
+    zh: { title: '组织一次聚会', summary: '把你的社区聚在一起。策划一个你关心的话题的聚会。' },
+    ru: { title: 'Организуй встречу', summary: 'Собери своё сообщество. Запланируй встречу на важную тему.' },
+    sr: { title: 'Organizuj okupljanje', summary: 'Okupi svoju zajednicu. Isplaniraj okupljanje na temu koja ti je važna.' },
+  },
+
+  // ── Weakness-driven ────────────────────────────────────────────────
+  weakness_movement: {
+    en: { title: 'Plan some exercise', summary: 'Your activity score is low. Even a short walk can make a big difference!' },
+    de: { title: 'Bewegung einplanen', summary: 'Dein Bewegungswert ist niedrig. Ein kurzer Spaziergang kann schon viel bewirken!' },
+    fr: { title: "Prévois de l'exercice", summary: "Ton score d'activité est bas. Même une courte marche peut faire la différence !" },
+    es: { title: 'Planifica ejercicio', summary: 'Tu puntuación de actividad es baja. ¡Un paseo corto puede marcar la diferencia!' },
+    ar: { title: 'خطط لبعض التمارين', summary: 'مؤشر نشاطك منخفض. حتى المشي القصير يمكن أن يحدث فرقاً كبيراً!' },
+    zh: { title: '计划一些运动', summary: '你的活动分数偏低。即使短暂散步也能带来很大改善！' },
+    ru: { title: 'Запланируй движение', summary: 'Твой показатель активности низкий. Даже короткая прогулка поможет!' },
+    sr: { title: 'Isplaniraj vežbanje', summary: 'Tvoj rezultat aktivnosti je nizak. Čak i kratka šetnja može mnogo pomoći!' },
+  },
+  weakness_stress: {
+    en: { title: '2-minute breathing exercise', summary: 'Your stress level is elevated. Try a short breathing exercise.' },
+    de: { title: '2-Minuten Atemübung', summary: 'Dein Stresslevel ist erhöht. Probiere eine kurze Atemübung aus.' },
+    fr: { title: 'Exercice de respiration de 2 min', summary: 'Ton niveau de stress est élevé. Essaie un court exercice de respiration.' },
+    es: { title: 'Ejercicio de respiración de 2 min', summary: 'Tu nivel de estrés está elevado. Prueba un breve ejercicio de respiración.' },
+    ar: { title: 'تمرين تنفس لمدة دقيقتين', summary: 'مستوى التوتر لديك مرتفع. جرب تمرين تنفس قصير.' },
+    zh: { title: '2分钟呼吸练习', summary: '你的压力水平偏高。试试短暂的呼吸练习。' },
+    ru: { title: '2-минутное дыхательное упражнение', summary: 'Твой уровень стресса повышен. Попробуй короткую дыхательную практику.' },
+    sr: { title: 'Vežba disanja od 2 minuta', summary: 'Tvoj nivo stresa je povišen. Probaj kratku vežbu disanja.' },
+  },
+  weakness_social: {
+    en: { title: 'Message a connection', summary: 'Social contacts boost your well-being. Say hello to someone!' },
+    de: { title: 'Schreibe einer Verbindung', summary: 'Soziale Kontakte stärken dein Wohlbefinden. Sag jemandem Hallo!' },
+    fr: { title: 'Écris à une connexion', summary: "Les contacts sociaux renforcent ton bien-être. Dis bonjour à quelqu'un !" },
+    es: { title: 'Escribe a una conexión', summary: 'Los contactos sociales mejoran tu bienestar. ¡Saluda a alguien!' },
+    ar: { title: 'أرسل رسالة لأحد معارفك', summary: 'التواصل الاجتماعي يعزز صحتك. قل مرحباً لشخص ما!' },
+    zh: { title: '给联系人发消息', summary: '社交联系增进你的幸福感。向某人问好！' },
+    ru: { title: 'Напиши кому-нибудь', summary: 'Общение укрепляет самочувствие. Поздоровайся с кем-нибудь!' },
+    sr: { title: 'Piši nekoj vezi', summary: 'Socijalni kontakti jačaju tvoje blagostanje. Pozdravi nekoga!' },
+  },
+  weakness_nutrition: {
+    en: { title: 'Track your meals', summary: 'Your nutrition score has potential. Note down what you eat today.' },
+    de: { title: 'Mahlzeiten dokumentieren', summary: 'Dein Ernährungswert hat Potenzial. Halte heute fest, was du isst.' },
+    fr: { title: 'Note tes repas', summary: "Ton score nutritionnel a du potentiel. Note ce que tu manges aujourd'hui." },
+    es: { title: 'Registra tus comidas', summary: 'Tu puntuación nutricional tiene potencial. Anota lo que comes hoy.' },
+    ar: { title: 'تتبع وجباتك', summary: 'مؤشر التغذية لديك يمتلك إمكانية. دوّن ما تأكله اليوم.' },
+    zh: { title: '记录你的饮食', summary: '你的营养分数还有提升空间。记录今天吃了什么。' },
+    ru: { title: 'Запиши приёмы пищи', summary: 'Твой показатель питания имеет потенциал. Запиши, что ешь сегодня.' },
+    sr: { title: 'Dokumentuj obroke', summary: 'Tvoj rezultat ishrane ima potencijal. Zabeleži šta jedeš danas.' },
+  },
+  weakness_sleep: {
+    en: { title: 'Set up an evening routine', summary: 'Your sleep quality is declining. A consistent evening routine can help.' },
+    de: { title: 'Abendroutine einrichten', summary: 'Deine Schlafqualität sinkt. Eine feste Abendroutine kann helfen.' },
+    fr: { title: 'Établis une routine du soir', summary: 'Ta qualité de sommeil diminue. Une routine du soir régulière peut aider.' },
+    es: { title: 'Establece una rutina nocturna', summary: 'Tu calidad de sueño está bajando. Una rutina nocturna constante puede ayudar.' },
+    ar: { title: 'أنشئ روتيناً مسائياً', summary: 'جودة نومك في انخفاض. روتين مسائي ثابت يمكن أن يساعد.' },
+    zh: { title: '建立晚间习惯', summary: '你的睡眠质量在下降。固定的晚间习惯有助于改善。' },
+    ru: { title: 'Создай вечерний ритуал', summary: 'Качество сна снижается. Регулярный вечерний ритуал поможет.' },
+    sr: { title: 'Uvedi večernju rutinu', summary: 'Kvalitet tvog sna opada. Redovna večernja rutina može pomoći.' },
+  },
+
+  // ── Mood-driven ────────────────────────────────────────────────────
+  mood_support: {
+    en: { title: 'Talk to Vitana', summary: 'You had a tough day. Vitana is here to listen.' },
+    de: { title: 'Sprich mit Vitana', summary: 'Du hattest einen schwierigen Tag. Vitana ist da, um dir zuzuhören.' },
+    fr: { title: 'Parle à Vitana', summary: "Tu as eu une journée difficile. Vitana est là pour t'écouter." },
+    es: { title: 'Habla con Vitana', summary: 'Tuviste un día difícil. Vitana está aquí para escucharte.' },
+    ar: { title: 'تحدث مع Vitana', summary: 'كان يومك صعباً. Vitana هنا لتستمع إليك.' },
+    zh: { title: '和Vitana聊聊', summary: '你今天过得不太好。Vitana在这里倾听你。' },
+    ru: { title: 'Поговори с Vitana', summary: 'У тебя был трудный день. Vitana готова выслушать.' },
+    sr: { title: 'Razgovaraj sa Vitanom', summary: 'Imao/la si težak dan. Vitana je tu da te sasluša.' },
+  },
+  mood_energy: {
+    en: { title: 'Use your energy', summary: "You're full of energy! How about a community activity?" },
+    de: { title: 'Nutze deine Energie', summary: 'Du bist voller Energie! Wie wäre es mit einer Community-Aktivität?' },
+    fr: { title: 'Utilise ton énergie', summary: "Tu es plein d'énergie ! Que dirais-tu d'une activité communautaire ?" },
+    es: { title: 'Usa tu energía', summary: '¡Estás lleno de energía! ¿Qué tal una actividad comunitaria?' },
+    ar: { title: 'استغل طاقتك', summary: 'أنت مليء بالطاقة! ما رأيك بنشاط مجتمعي؟' },
+    zh: { title: '利用你的能量', summary: '你充满活力！来一次社区活动怎么样？' },
+    ru: { title: 'Используй свою энергию', summary: 'Ты полон энергии! Как насчёт активности в сообществе?' },
+    sr: { title: 'Iskoristi svoju energiju', summary: 'Pun/a si energije! Šta kažeš na aktivnost u zajednici?' },
+  },
+
+  // ── Streak (dynamic: {count}) ──────────────────────────────────────
+  streak_celebration: {
+    en: { title: '{count}-day streak! Keep it up!', summary: "You've been journaling for {count} days. That's amazing!" },
+    de: { title: '{count}-Tage-Serie! Weiter so!', summary: 'Du schreibst seit {count} Tagen Tagebuch. Das ist großartig!' },
+    fr: { title: 'Série de {count} jours ! Continue !', summary: "Tu tiens ton journal depuis {count} jours. C'est incroyable !" },
+    es: { title: '¡Racha de {count} días! ¡Sigue así!', summary: 'Llevas {count} días escribiendo tu diario. ¡Increíble!' },
+    ar: { title: 'سلسلة {count} يوم! استمر!', summary: 'لقد كتبت يومياتك لمدة {count} يوماً. هذا رائع!' },
+    zh: { title: '{count}天连续打卡！继续加油！', summary: '你已经连续写了{count}天日记。太棒了！' },
+    ru: { title: 'Серия {count} дней! Так держать!', summary: 'Ты ведёшь дневник уже {count} дней. Потрясающе!' },
+    sr: { title: 'Serija od {count} dana! Nastavi tako!', summary: 'Pišeš dnevnik {count} dana zaredom. Sjajno!' },
+  },
+  streak_continue: {
+    en: { title: '{count}-day streak! Stay with it!', summary: '{count} days in a row. Keep going today!' },
+    de: { title: '{count}-Tage-Serie! Bleib dran!', summary: 'Schon {count} Tage in Folge. Mach heute weiter!' },
+    fr: { title: 'Série de {count} jours ! Tiens bon !', summary: "{count} jours d'affilée. Continue aujourd'hui !" },
+    es: { title: '¡Racha de {count} días! ¡No pares!', summary: '{count} días seguidos. ¡Sigue hoy!' },
+    ar: { title: 'سلسلة {count} يوم! لا تتوقف!', summary: '{count} يوماً متتالياً. واصل اليوم!' },
+    zh: { title: '{count}天连续！坚持住！', summary: '已经连续{count}天了。今天继续！' },
+    ru: { title: 'Серия {count} дней! Не останавливайся!', summary: 'Уже {count} дней подряд. Продолжай сегодня!' },
+    sr: { title: 'Serija od {count} dana! Drži se!', summary: '{count} dana zaredom. Nastavi danas!' },
+  },
+};
+
+/** Resolve translation with optional variable substitution. Fallback: English → key.
+ *  Exported so the onboarding-seed parity test can assert the DB seed copy
+ *  matches the canonical day0 strings. */
+export function t(key: string, lang: LangCode, vars?: Record<string, string | number>): { title: string; summary: string } {
+  const entry = T[key]?.[lang] ?? T[key]?.['en'] ?? { title: key, summary: '' };
+  if (!vars) return { ...entry };
+  let { title, summary } = entry;
+  for (const [k, v] of Object.entries(vars)) {
+    const ph = `{${k}}`;
+    title = title.split(ph).join(String(v));
+    summary = summary.split(ph).join(String(v));
+  }
+  return { title, summary };
+}
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export type OnboardingStage = 'day0' | 'day1' | 'day3' | 'day7' | 'day14' | 'day30plus';
+
+export interface CommunityUserSignal {
+  title: string;
+  summary: string;
+  domain: string;
+  priority: 'low' | 'medium' | 'high' | 'critical';
+  impact_score: number;
+  effort_score: number;
+  time_estimate_seconds: number;
+  signal_type: string;
+  source_detail: string;
+}
+
+export interface UserContext {
+  userId: string;
+  tenantId: string;
+  userName: string | null;
+  language: LangCode;
+  createdAt: Date;
+  onboardingStage: OnboardingStage;
+  healthScores: HealthScores | null;
+  previousHealthScores: HealthScores | null;
+  weaknesses: WeaknessType[];
+  diaryMood: string | null;
+  diaryEnergy: string | null;
+  diaryStreak: number;
+  connectionCount: number;
+  groupCount: number;
+  pendingMatchCount: number;
+  memoryGoals: string[];
+  memoryInterests: string[];
+}
+
+export interface CommunityUserAnalysisResult {
+  ok: boolean;
+  signals: CommunityUserSignal[];
+  user_context: {
+    stage: OnboardingStage;
+    weaknesses: WeaknessType[];
+    diary_mood: string | null;
+    connection_count: number;
+    diary_streak: number;
+    language: LangCode;
+  };
+  error?: string;
+}
+
+// =============================================================================
+// Onboarding Stage Detection
+// =============================================================================
+
+export function detectOnboardingStage(createdAt: Date): OnboardingStage {
+  const daysSinceCreation = Math.floor((Date.now() - createdAt.getTime()) / 86400000);
+
+  // VTID-03138 (Phase C.8): 5 stage boundaries now policy-driven.
+  const r = getPolicyResolver();
+  const d1 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY1_AFTER_DAYS, { defaultValue: 1 });
+  const d3 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY3_AFTER_DAYS, { defaultValue: 3 });
+  const d7 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY7_AFTER_DAYS, { defaultValue: 7 });
+  const d14 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY14_AFTER_DAYS, { defaultValue: 14 });
+  const d30 = r.getValue<number>(POLICY_KEYS.ANALYZER_COMMUNITY_STAGE_DAY30PLUS_AFTER_DAYS, { defaultValue: 30 });
+
+  if (daysSinceCreation < d1) return 'day0';
+  if (daysSinceCreation < d3) return 'day1';
+  if (daysSinceCreation < d7) return 'day3';
+  if (daysSinceCreation < d14) return 'day7';
+  if (daysSinceCreation < d30) return 'day14';
+  return 'day30plus';
+}
+
+// =============================================================================
+// User Context Gathering
+// =============================================================================
+
+export async function gatherUserContext(
+  userId: string,
+  tenantId: string,
+  supabase: SupabaseClient
+): Promise<UserContext> {
+  // Run all queries in parallel
+  const [
+    healthResult,
+    memoryFactsResult,
+    diaryResult,
+    connectionResult,
+    groupResult,
+    matchResult,
+    userResult,
+    diaryStreakResult,
+  ] = await Promise.all([
+    // Latest 2 Vitana Index rows for trend (canonical 5-pillar schema).
+    repo.fetchRecentVitanaIndexScores(supabase, userId),
+
+    // Memory facts (name, goals, interests, language)
+    repo.fetchProfileMemoryFacts(supabase, userId),
+
+    // Recent diary entries (last 3 days for mood/energy)
+    repo.fetchRecentDiaryEntries(supabase, userId, 3),
+
+    // Connection count
+    repo.countConnectedRelationshipEdges(supabase, userId, tenantId),
+
+    // Group memberships
+    repo.countGroupRelationshipEdges(supabase, userId, tenantId),
+
+    // Pending matches
+    repo.countPendingDailyMatches(supabase, userId, tenantId),
+
+    // Account info
+    repo.fetchAppUserAccountInfo(supabase, userId),
+
+    // Diary streak (consecutive days with diary entries)
+    repo.fetchDiaryStreakDates(supabase, userId, 30),
+  ]);
+
+  // Parse canonical 5-pillar health scores (G2: was querying dropped 6-pillar
+  // columns, query returned nulls, no weakness ever fired).
+  const healthRows = (healthResult.data || []) as Array<{
+    score_total: number | null;
+    score_nutrition: number | null;
+    score_hydration: number | null;
+    score_exercise: number | null;
+    score_sleep: number | null;
+    score_mental: number | null;
+  }>;
+  const toCanonical = (r: typeof healthRows[number] | undefined): CanonicalHealthScores | null =>
+    r ? {
+      score_total: Number(r.score_total ?? 0),
+      nutrition: Number(r.score_nutrition ?? 0),
+      hydration: Number(r.score_hydration ?? 0),
+      exercise:  Number(r.score_exercise  ?? 0),
+      sleep:     Number(r.score_sleep     ?? 0),
+      mental:    Number(r.score_mental    ?? 0),
+    } : null;
+  const currentScores = toCanonical(healthRows[0]);
+  const previousScores = toCanonical(healthRows[1]);
+
+  // Detect weaknesses against the canonical 5-pillar schema.
+  const weaknesses = detectCanonicalWeaknesses(currentScores, previousScores);
+
+  // Parse memory facts
+  const facts = memoryFactsResult.data || [];
+  const userName = facts.find((f: any) => f.fact_key === 'display_name' || f.fact_key === 'name')?.fact_value || null;
+  const goals = facts.filter((f: any) => f.fact_key === 'goals').map((f: any) => f.fact_value);
+  const interests = facts.filter((f: any) => f.fact_key === 'interests' || f.fact_key === 'hobbies').map((f: any) => f.fact_value);
+  const langFact = facts.find((f: any) => f.fact_key === 'preferred_language')?.fact_value;
+  const language = resolveLanguage(langFact);
+
+  // Parse diary mood/energy from most recent entry
+  const diaryEntries = diaryResult.data || [];
+  let diaryMood: string | null = null;
+  let diaryEnergy: string | null = null;
+  if (diaryEntries.length > 0) {
+    const latest = diaryEntries[0];
+    const meta = latest.metadata as any;
+    const tags = latest.tags as string[] || [];
+    diaryMood = meta?.mood || tags.find((t: string) => ['happy', 'sad', 'anxious', 'calm', 'stressed', 'energetic', 'tired', 'neutral'].includes(t)) || null;
+    diaryEnergy = meta?.energy || tags.find((t: string) => ['high_energy', 'low_energy', 'medium_energy'].includes(t)) || null;
+  }
+
+  // Calculate diary streak
+  let diaryStreak = 0;
+  const streakEntries = diaryStreakResult.data || [];
+  if (streakEntries.length > 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let checkDate = new Date(today);
+
+    for (const entry of streakEntries) {
+      const entryDate = new Date(entry.created_at);
+      entryDate.setHours(0, 0, 0, 0);
+
+      if (entryDate.getTime() === checkDate.getTime()) {
+        diaryStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else if (entryDate.getTime() < checkDate.getTime()) {
+        // Gap found — check if yesterday
+        if (checkDate.getTime() - entryDate.getTime() <= 86400000) {
+          checkDate = new Date(entryDate);
+          diaryStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  // Parse user info
+  const createdAt = userResult.data?.created_at ? new Date(userResult.data.created_at) : new Date();
+  const displayName = userResult.data?.display_name || userName;
+
+  return {
+    userId,
+    tenantId,
+    userName: displayName,
+    language,
+    createdAt,
+    onboardingStage: detectOnboardingStage(createdAt),
+    healthScores: currentScores,
+    previousHealthScores: previousScores,
+    weaknesses,
+    diaryMood,
+    diaryEnergy,
+    diaryStreak,
+    connectionCount: connectionResult.count || 0,
+    groupCount: groupResult.count || 0,
+    pendingMatchCount: matchResult.count || 0,
+    memoryGoals: goals,
+    memoryInterests: interests,
+  };
+}
+
+// =============================================================================
+// Recommendation Templates (key-based, resolved via t())
+// =============================================================================
+
+// Exported alongside STAGE_TEMPLATES so the emitted .d.ts can name the type
+// (declaration:true would otherwise fail with TS4025 on the exported const).
+export interface RecommendationTemplate {
+  key: string;
+  domain: string;
+  priority: 'low' | 'medium' | 'high';
+  impact_score: number;
+  effort_score: number;
+  time_estimate_seconds: number;
+  signal_type: string;
+  condition?: (ctx: UserContext) => boolean;
+}
+
+// Exported so the DB onboarding-seed migration
+// (supabase/migrations/..._seed_community_onboarding_autopilot.sql) can be
+// parity-checked against day0 here — see
+// test/autopilot-onboarding-seed-bundle.test.ts. The seed mirrors day0 and the
+// test fails if the two ever drift.
+export const STAGE_TEMPLATES: Record<OnboardingStage, RecommendationTemplate[]> = {
+  day0: [
+    { key: 'onboarding_profile', domain: 'community', priority: 'high', impact_score: 9, effort_score: 2, time_estimate_seconds: 120, signal_type: 'onboarding_profile' },
+    { key: 'onboarding_avatar', domain: 'community', priority: 'high', impact_score: 9, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_avatar' },
+    { key: 'onboarding_explore', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_explore' },
+    { key: 'onboarding_interests', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_interests' },
+    { key: 'onboarding_diary_day0', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'onboarding_diary_day0' },
+    { key: 'onboarding_health', domain: 'health', priority: 'medium', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_health' },
+    { key: 'onboarding_maxina', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_maxina' },
+    { key: 'onboarding_discover_matches', domain: 'community', priority: 'medium', impact_score: 6, effort_score: 1, time_estimate_seconds: 30, signal_type: 'onboarding_discover_matches' },
+  ],
+  day1: [
+    { key: 'onboarding_diary', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'onboarding_diary', condition: (ctx) => ctx.diaryStreak === 0 },
+    { key: 'onboarding_matches', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'onboarding_matches', condition: (ctx) => ctx.pendingMatchCount > 0 },
+    { key: 'onboarding_group', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 2, time_estimate_seconds: 60, signal_type: 'onboarding_group', condition: (ctx) => ctx.groupCount === 0 },
+  ],
+  day3: [
+    { key: 'engage_matches', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_matches', condition: (ctx) => ctx.pendingMatchCount > 0 },
+    { key: 'engage_meetup', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 3, time_estimate_seconds: 300, signal_type: 'engage_meetup' },
+    { key: 'engage_health', domain: 'health', priority: 'medium', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_health', condition: (ctx) => ctx.healthScores === null },
+  ],
+  day7: [
+    { key: 'deepen_connection', domain: 'community', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'deepen_connection', condition: (ctx) => ctx.connectionCount > 0 },
+    { key: 'set_goal', domain: 'health', priority: 'medium', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'set_goal', condition: (ctx) => ctx.memoryGoals.length === 0 },
+    { key: 'invite_friend', domain: 'community', priority: 'low', impact_score: 6, effort_score: 1, time_estimate_seconds: 30, signal_type: 'invite_friend' },
+  ],
+  day14: [
+    { key: 'share_expertise', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 3, time_estimate_seconds: 300, signal_type: 'share_expertise', condition: (ctx) => ctx.groupCount > 0 },
+    { key: 'start_streak', domain: 'health', priority: 'high', impact_score: 8, effort_score: 3, time_estimate_seconds: 120, signal_type: 'start_streak', condition: (ctx) => ctx.diaryStreak < 3 },
+  ],
+  day30plus: [
+    { key: 'engage_health', domain: 'health', priority: 'medium', impact_score: 7, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_health' },
+    { key: 'start_streak', domain: 'health', priority: 'high', impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'start_streak', condition: (ctx) => ctx.diaryStreak < 7 },
+    { key: 'deepen_connection', domain: 'community', priority: 'medium', impact_score: 7, effort_score: 2, time_estimate_seconds: 120, signal_type: 'deepen_connection', condition: (ctx) => ctx.connectionCount > 0 },
+    { key: 'engage_matches', domain: 'community', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 60, signal_type: 'engage_matches', condition: (ctx) => ctx.pendingMatchCount > 0 },
+    { key: 'invite_friend', domain: 'community', priority: 'low', impact_score: 6, effort_score: 1, time_estimate_seconds: 30, signal_type: 'invite_friend' },
+  ],
+};
+
+// =============================================================================
+// Weakness-driven Templates
+// =============================================================================
+
+// G2: keyed by canonical 5-pillar weakness types. signal_type values stay
+// stable so the autopilot_recommendations.contribution_vector trigger keeps
+// mapping them via vitana_contribution_vector_from_source_ref().
+const WEAKNESS_TEMPLATES: Record<CanonicalWeakness, RecommendationTemplate> = {
+  exercise_low:  { key: 'weakness_movement',   domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_movement' },
+  mental_low:    { key: 'weakness_stress',     domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 1, time_estimate_seconds: 120, signal_type: 'weakness_stress' },
+  nutrition_low: { key: 'weakness_nutrition',  domain: 'health',    priority: 'medium', impact_score: 6, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_nutrition' },
+  sleep_low:     { key: 'weakness_sleep',      domain: 'health',    priority: 'high',   impact_score: 8, effort_score: 2, time_estimate_seconds: 120, signal_type: 'weakness_sleep' },
+  hydration_low: { key: 'weakness_hydration',  domain: 'health',    priority: 'medium', impact_score: 6, effort_score: 1, time_estimate_seconds:  60, signal_type: 'weakness_hydration' },
+};
+
+// =============================================================================
+// Mood-driven Templates
+// =============================================================================
+
+function getMoodTemplates(ctx: UserContext): RecommendationTemplate[] {
+  const templates: RecommendationTemplate[] = [];
+
+  if (ctx.diaryMood === 'sad' || ctx.diaryMood === 'anxious' || ctx.diaryMood === 'stressed') {
+    templates.push({ key: 'mood_support', domain: 'health', priority: 'high', impact_score: 8, effort_score: 1, time_estimate_seconds: 120, signal_type: 'mood_support' });
+  }
+
+  if (ctx.diaryEnergy === 'high_energy' || ctx.diaryMood === 'energetic') {
+    templates.push({ key: 'mood_energy', domain: 'community', priority: 'medium', impact_score: 6, effort_score: 2, time_estimate_seconds: 120, signal_type: 'mood_energy' });
+  }
+
+  return templates;
+}
+
+// =============================================================================
+// Streak Celebration Templates
+// =============================================================================
+
+function getStreakTemplates(ctx: UserContext): RecommendationTemplate[] {
+  const templates: RecommendationTemplate[] = [];
+
+  if (ctx.diaryStreak >= 7) {
+    templates.push({ key: 'streak_celebration', domain: 'health', priority: 'low', impact_score: 5, effort_score: 1, time_estimate_seconds: 30, signal_type: 'streak_celebration' });
+  } else if (ctx.diaryStreak >= 3) {
+    templates.push({ key: 'streak_continue', domain: 'health', priority: 'low', impact_score: 5, effort_score: 1, time_estimate_seconds: 30, signal_type: 'streak_continue' });
+  }
+
+  return templates;
+}
+
+// =============================================================================
+// Fingerprint Generation — language-agnostic
+// =============================================================================
+
+export function generateCommunityUserFingerprint(userId: string, signalType: string): string {
+  return createHash('sha256')
+    .update(`community:${userId}:${signalType}`)
+    .digest('hex')
+    .slice(0, 16);
+}
+
+// =============================================================================
+// Main Analyzer
+// =============================================================================
+
+export async function analyzeCommunityUser(
+  userId: string,
+  tenantId: string,
+  supabase: SupabaseClient
+): Promise<CommunityUserAnalysisResult> {
+  try {
+    console.log(`${LOG_PREFIX} Analyzing user ${userId.slice(0, 8)}...`);
+
+    const ctx = await gatherUserContext(userId, tenantId, supabase);
+    const signals: CommunityUserSignal[] = [];
+
+    // 1. Stage-based templates
+    const stageTemplates = STAGE_TEMPLATES[ctx.onboardingStage] || [];
+    for (const template of stageTemplates) {
+      if (template.condition && !template.condition(ctx)) continue;
+      const { title, summary } = t(template.key, ctx.language);
+      signals.push({
+        title,
+        summary,
+        domain: template.domain,
+        priority: template.priority,
+        impact_score: template.impact_score,
+        effort_score: template.effort_score,
+        time_estimate_seconds: template.time_estimate_seconds,
+        signal_type: template.signal_type,
+        source_detail: `stage:${ctx.onboardingStage}`,
+      });
+    }
+
+    // 2. Weakness-driven templates
+    for (const weakness of ctx.weaknesses) {
+      const template = WEAKNESS_TEMPLATES[weakness];
+      if (!template) continue;
+      const { title, summary } = t(template.key, ctx.language);
+      signals.push({
+        title,
+        summary,
+        domain: template.domain,
+        priority: template.priority,
+        impact_score: template.impact_score,
+        effort_score: template.effort_score,
+        time_estimate_seconds: template.time_estimate_seconds,
+        signal_type: template.signal_type,
+        source_detail: `weakness:${weakness}`,
+      });
+    }
+
+    // 3. Mood-driven templates
+    for (const template of getMoodTemplates(ctx)) {
+      const { title, summary } = t(template.key, ctx.language);
+      signals.push({
+        title,
+        summary,
+        domain: template.domain,
+        priority: template.priority,
+        impact_score: template.impact_score,
+        effort_score: template.effort_score,
+        time_estimate_seconds: template.time_estimate_seconds,
+        signal_type: template.signal_type,
+        source_detail: `mood:${ctx.diaryMood || 'unknown'}`,
+      });
+    }
+
+    // 4. Streak templates (with {count} variable)
+    for (const template of getStreakTemplates(ctx)) {
+      const { title, summary } = t(template.key, ctx.language, { count: ctx.diaryStreak });
+      signals.push({
+        title,
+        summary,
+        domain: template.domain,
+        priority: template.priority,
+        impact_score: template.impact_score,
+        effort_score: template.effort_score,
+        time_estimate_seconds: template.time_estimate_seconds,
+        signal_type: template.signal_type,
+        source_detail: `streak:${ctx.diaryStreak}`,
+      });
+    }
+
+    // Sort by impact descending, take top 8
+    signals.sort((a, b) => b.impact_score - a.impact_score);
+    const topSignals = signals.slice(0, 8);
+
+    console.log(
+      `${LOG_PREFIX} User ${userId.slice(0, 8)}: stage=${ctx.onboardingStage}, ` +
+      `lang=${ctx.language}, weaknesses=${ctx.weaknesses.length}, signals=${topSignals.length}`
+    );
+
+    return {
+      ok: true,
+      signals: topSignals,
+      user_context: {
+        stage: ctx.onboardingStage,
+        weaknesses: ctx.weaknesses,
+        diary_mood: ctx.diaryMood,
+        connection_count: ctx.connectionCount,
+        diary_streak: ctx.diaryStreak,
+        language: ctx.language,
+      },
+    };
+  } catch (error) {
+    const msg = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Error analyzing user ${userId.slice(0, 8)}:`, msg);
+    return { ok: false, signals: [], user_context: { stage: 'day0', weaknesses: [], diary_mood: null, connection_count: 0, diary_streak: 0, language: 'en' }, error: msg };
+  }
+}

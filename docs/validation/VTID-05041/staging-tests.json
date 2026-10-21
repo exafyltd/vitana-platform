@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05041",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05041-definer-lockdown.test.ts test/vtid-04981-consume-credits-lockdown.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The change is a database permission + return-shape migration and a CI guard; no gateway code changes. Staging shares the production database, so the permissions and the profile shape are checked read-only after RUN-MIGRATION (docs/validation/VTID-05041/post-apply-checks.sql)."
+    }
+  ]
+}

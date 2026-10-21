@@ -1,0 +1,16 @@
+PASS  VTID-04651  recommendations service is up
+PASS  VTID-04651  lineup answers from its own member gate, not the pipeline service-token gate (VTID-04530)
+PASS  VTID-04651  badge count answers from its own member gate (VTID-04530)
+PASS  VTID-04651  history requires a login
+PASS  VTID-04651  activate refuses an unauthenticated caller
+PASS  VTID-04651  draft refuses an unauthenticated caller
+PASS  VTID-04651  snooze refuses an unauthenticated caller
+PASS  VTID-04651  reject refuses an unauthenticated caller
+PASS  VTID-04651  complete refuses an unauthenticated caller
+PASS  VTID-04651  the scan tick refuses a caller without the internal token
+PASS  VTID-04651  reminder Mark-done (closes a linked Autopilot slot) refuses an unauthenticated caller
+PASS  VTID-04651  invite link lookup is public and answers for an unknown code
+PASS  VTID-04651  own invite link requires a login
+PASS  VTID-04651  invite claim refuses an unauthenticated caller
+PASS  VTID-04651  automation supervisor view is admin-only
+PASS  VTID-04650  the scan tick that applies retirement is deployed and refuses a caller without the internal token

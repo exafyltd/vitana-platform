@@ -1,0 +1,223 @@
+# =============================================================================
+# Skill: Worker Memory Preview Migration - VTID-01164
+# =============================================================================
+# Dry-run migration sanity checks. Parse SQL for dangerous operations,
+# missing transaction guards, and naming convention violations.
+# =============================================================================
+
+skill_id: worker.memory.preview_migration
+name: Preview Migration
+description: |
+  Dry-run migration sanity checks. Parses SQL for dangerous operations
+  (DROP TABLE, DROP COLUMN without notes), missing transaction guards,
+  and naming convention violations. Provides structured warnings before apply.
+version: 1.0.0
+category: worker
+domain: memory
+vtid: VTID-01164
+
+provider:
+  type: internal
+  module: services/agents/workforce/skills/previewMigration
+  function: previewMigration
+  timeout_ms: 30000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  migration_content:
+    type: string
+    required: false
+    description: SQL migration content to preview
+
+  file_path:
+    type: string
+    required: false
+    description: Path to migration file
+    examples:
+      - "supabase/migrations/20260104150000_vtid_01164_add_skills.sql"
+
+  check_naming:
+    type: boolean
+    required: false
+    default: true
+    description: Verify migration follows naming conventions
+
+  check_reversibility:
+    type: boolean
+    required: false
+    default: true
+    description: Check if migration can be reversed
+
+  check_transactions:
+    type: boolean
+    required: false
+    default: true
+    description: Verify transaction guards are present
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether preview completed successfully
+
+  safe_to_apply:
+    type: boolean
+    description: Whether migration is safe to apply
+
+  warnings:
+    type: array
+    description: Non-blocking warnings found
+    items:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [warning, info]
+        category:
+          type: string
+        message:
+          type: string
+        line_number:
+          type: integer
+
+  blockers:
+    type: array
+    description: Blocking issues that prevent apply
+    items:
+      type: object
+      properties:
+        severity:
+          type: string
+          enum: [critical, error]
+        category:
+          type: string
+        message:
+          type: string
+        line_number:
+          type: integer
+        recommendation:
+          type: string
+
+  operations_detected:
+    type: array
+    description: SQL operations found in migration
+    items:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [CREATE_TABLE, ALTER_TABLE, DROP_TABLE, CREATE_INDEX, DROP_INDEX, CREATE_FUNCTION, DROP_FUNCTION, CREATE_POLICY, INSERT, UPDATE, DELETE]
+        target:
+          type: string
+        line_number:
+          type: integer
+        is_destructive:
+          type: boolean
+
+  naming_check:
+    type: object
+    properties:
+      valid:
+        type: boolean
+      expected_pattern:
+        type: string
+      actual_filename:
+        type: string
+      issues:
+        type: array
+        items:
+          type: string
+
+  transaction_check:
+    type: object
+    properties:
+      has_begin:
+        type: boolean
+      has_commit:
+        type: boolean
+      has_rollback_handler:
+        type: boolean
+      recommendation:
+        type: string
+
+  summary:
+    type: object
+    properties:
+      total_operations:
+        type: integer
+      destructive_operations:
+        type: integer
+      warnings_count:
+        type: integer
+      blockers_count:
+        type: integer
+
+  error:
+    type: string
+    description: Error message if preview failed
+
+guardrails:
+  # Migration naming convention
+  naming_pattern: "^\\d{14}_vtid_\\d{5}_.*\\.sql$"
+
+  # Dangerous operations that require explicit approval
+  dangerous_operations:
+    - DROP TABLE
+    - DROP COLUMN
+    - TRUNCATE
+    - DROP DATABASE
+    - DROP SCHEMA
+
+  # Operations that should have transaction guards
+  require_transaction:
+    - ALTER TABLE
+    - DROP
+    - UPDATE
+    - DELETE
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_memory.preview_migration.start
+    - vtid.stage.worker_memory.preview_migration.success
+    - vtid.stage.worker_memory.preview_migration.failed
+    - vtid.stage.worker_memory.preview_migration.blocker_found
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - operations_detected
+    - warnings_count
+    - blockers_count
+    - safe_to_apply
+
+usage:
+  roles:
+    - worker
+    - validator
+  primary_role: worker
+  use_cases:
+    - Preview migration before applying
+    - Detect dangerous operations
+    - Validate naming conventions
+    - Ensure transaction safety
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 1000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    PARSE_ERROR:
+      description: Could not parse SQL migration
+      recoverable: false
+
+    FILE_NOT_FOUND:
+      description: Migration file does not exist
+      recoverable: false
+
+    INVALID_FORMAT:
+      description: Migration file format is invalid
+      recoverable: false

@@ -1,0 +1,133 @@
+/**
+ * new-route-without-auth-middleware
+ *
+ * Diff-aware version of route-auth-scanner-v1: checks ONLY the new handlers
+ * added in this PR, not the baseline. Prevents regressions without
+ * re-flagging long-standing gaps.
+ *
+ * Heuristic: a handler added in this PR (`router.METHOD(...)` appearing in
+ * the diff as an added line) that doesn't reference any known auth
+ * middleware in its argument chain. File-level `router.use(requireXxx)`
+ * at the top of the file is honored, matching the baseline scanner's
+ * semantics.
+ */
+
+import { extractAddedLines, readFileAtRepo } from './_shared.mjs';
+
+export const meta = {
+  rule: 'new-route-without-auth-middleware',
+  category: 'semantic',
+  severity: 'warning',
+};
+
+const AUTH_NAMES = [
+  'requireAuth', 'requireAdmin', 'requireDevRole', 'requirePlatformAdmin',
+  'optionalAuth', 'requireTenant', 'requireTenantAdmin', 'requireAuthOptional',
+  'requireServiceRole', 'requireApiKey', 'requireScanToken',
+  // requireAuthWithTenant: authenticated + tenant-scoped middleware used across
+  // orb-livekit.ts (voice-config, commit-memory). It IS auth — was missing here.
+  'requireAuthWithTenant',
+  // requireExafyAdmin: admin-role gate (middleware/auth-supabase-jwt) used by the
+  // admin routes (notifications, orb-tools selfcheck). It IS auth.
+  'requireExafyAdmin',
+  // requireAdminAuth: the module's own documented "requireAuth + requireExafyAdmin"
+  // convenience combinator (middleware/auth-supabase-jwt) — strictly STRONGER than
+  // either name already on this list, yet it was absent, so every route using it
+  // was reported as unauthenticated. 48 call sites across 8+ route files
+  // (admin-health, admin-intent-engine, admin-navigator, admin-users-lookup,
+  // awareness-config, media-hub, operator, orb-livekit). It IS auth.
+  'requireAdminAuth',
+  // requireSessionToken (routes/watcher.ts, VTID-03460): shared-bearer-secret gate
+  // on POST /api/v1/watcher/session-step. Its caller is a Claude Code session hook,
+  // not a logged-in human, so no JWT middleware on this list can apply. Same shape
+  // as requireScanToken above (already accepted here): compares the presented
+  // Bearer against a deployment-scoped secret and 401s on mismatch — and 503s when
+  // the secret is unset, so the endpoint is CLOSED by default rather than open.
+  // It IS auth.
+  'requireSessionToken',
+  // requireServiceOrAdmin / requireAdminOnly: canonical control-plane gates
+  // (middleware/require-service-or-admin) used by the self-healing router.
+  // requireServiceOrAdmin = GATEWAY_SERVICE_TOKEN or exafy_admin JWT;
+  // requireAdminOnly = exafy_admin JWT only. Both ARE auth.
+  'requireServiceOrAdmin', 'requireAdminOnly',
+  // requireDevRoleForStream (routes/dev-autopilot.ts, VTID-03897): wraps
+  // requireDevRole for the one SSE route whose EventSource client can't set
+  // an Authorization header, accepting the bearer token via ?access_token=
+  // instead. The word-boundary match on 'requireDevRole' above does NOT
+  // match inside 'requireDevRoleForStream' (no boundary between 'e' and
+  // 'F'), so this name needs its own explicit entry. It IS auth — strictly
+  // the same requireDevRole check, just with an extra token source.
+  'requireDevRoleForStream',
+  // requireDevMemoryAccess / requireDevMemoryWriter (routes/dev-memory.ts,
+  // VTID-04408): X-Gateway-Internal, else requireAdminAuth; the Access variant
+  // also accepts the read-only X-Dev-Memory-Token (closed unless configured).
+  // Both ARE auth.
+  'requireDevMemoryAccess', 'requireDevMemoryWriter',
+  // requireInternalOrAdmin (routes/automations.ts, VTID-04349): the
+  // scheduler's X-Gateway-Internal token or a verified exafy_admin session,
+  // the same contract as test-contracts-scheduled.ts. It IS auth.
+  'requireInternalOrAdmin',
+  // requireLedgerWriteAuth (middleware/ledger-write-auth, VTID-04727): the VTID
+  // ledger's write gate — GATEWAY_SERVICE_TOKEN or an exafy_admin JWT, same rule
+  // as requireServiceOrAdmin, with a log-only rollout mode.
+  'requireLedgerWriteAuth',
+  // requireServiceToken (routes/auth-bridge.ts, VTID-05023): the auth.users
+  // webhook's machine gate — GATEWAY_SERVICE_TOKEN only (timing-safe, fail
+  // closed when unset; admin JWTs deliberately not accepted). It IS auth.
+  'requireServiceToken',
+  // requireSupervisorAccess (routes/voice-supervisor.ts, VTID-04776/VTID-04780):
+  // requireAuth, then exafy_admin (all tenants) or a tenant admin forced to
+  // their own tenant; everyone else 403. It IS auth.
+  'requireSupervisorAccess',
+  // requireScheduledNotificationsAuth (middleware/scheduled-notifications-auth,
+  // VTID-04677): the scheduler's X-Gateway-Internal token, timing-safe compare,
+  // with a log-only rollout mode like requireLedgerWriteAuth. It IS auth.
+  'requireScheduledNotificationsAuth',
+];
+const ROUTE_PREFIX_RE = /^\s*router\.(get|post|put|patch|delete)\s*\(/;
+
+export async function check({ diff, repoRoot }) {
+  const added = extractAddedLines(diff, /^services\/gateway\/src\/routes\/.+\.(ts|tsx)$/);
+  const byFile = new Map();
+  for (const l of added) {
+    if (!ROUTE_PREFIX_RE.test(l.text)) continue;
+    if (!byFile.has(l.file)) byFile.set(l.file, []);
+    byFile.get(l.file).push(l.text);
+  }
+  if (byFile.size === 0) return [];
+
+  const findings = [];
+  for (const [file, lines] of byFile) {
+    const src = readFileAtRepo(repoRoot, file);
+    if (!src) continue;
+    // File-level auth short-circuit — mirrors baseline scanner.
+    const fileLevelAuth = new RegExp(`router\\.use\\(\\s*(?:${AUTH_NAMES.join('|')})\\b`).test(src);
+    if (fileLevelAuth) continue;
+    // Line-level: added handler that DOES include an auth name is fine.
+    const authRe = new RegExp(`\\b(?:${AUTH_NAMES.join('|')})\\b`);
+    const unauthedLines = lines.filter(t => !authRe.test(t));
+    if (unauthedLines.length === 0) continue;
+    // Public-route sentinel on the added line itself — OR a route that
+    // authenticates inline (Bearer token -> createUserSupabaseClient ->
+    // RLS/me_context), the same established pattern `health.ts`'s
+    // POST /lab-reports/ingest already uses. That pattern has no named
+    // middleware to match on the router.METHOD(...) line — the check
+    // happens inside the handler body — so it needs its own sentinel
+    // rather than a false "public-route" label, which would misdescribe
+    // a route that genuinely 401s on a missing/invalid token.
+    const trulyUnauth = unauthedLines.filter(t =>
+      !/\/\/\s*public[-\s]?route\b/i.test(t) && !/\/\/\s*inline-bearer-auth\b/i.test(t));
+    if (trulyUnauth.length === 0) continue;
+
+    findings.push({
+      rule: meta.rule,
+      severity: meta.severity,
+      file_path: file,
+      line_number: null,
+      message: `${file} has ${trulyUnauth.length} newly-added handler(s) without auth middleware and no file-level router.use(requireXxx).`,
+      suggested_action: `For each new handler, either wrap with requireAuth / requireAdmin / requireDevRole / requireTenant, apply \`router.use(requireXxx)\` at the top of the file, or add \`// public-route\` above the line if the handler is intentionally anonymous.`,
+      raw: { handler_count: trulyUnauth.length },
+    });
+  }
+  return findings;
+}

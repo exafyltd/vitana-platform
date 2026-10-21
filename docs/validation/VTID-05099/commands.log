@@ -1,0 +1,9 @@
+# read-only, production (allowed: reads only): live pacer CHECK and surfaces before writing the CHECK migration
+select pg_get_constraintdef(oid) from pg_constraint where conname='user_proactive_touches_surface_check';  # 12 surfaces
+select array_agg(distinct surface) from user_proactive_touches;  # did_you_know_card, priority_card, voice_opener_initiative, voice_opener_tour, welcome_banner
+node docs/validation/VTID-05099/pglite-companion-messages-check.mjs supabase/migrations/20261012200000_vtid_05099_companion_messages.sql   # 31 PASS (outputs/pglite-companion-messages.txt)
+cd services/gateway && npm run test:companion   # 38 passed
+npx jest test/vtid-04560-role-separation-regression.test.ts test/vtid-04892-onboarding-coach.test.ts test/vtid-04892-onboarding-journey-pacer.test.ts test/scheduled-notifications-*.test.ts test/vtid-04677-scheduled-notifications-auth.test.ts   # 7 suites, 185 passed
+npx jest test/vtid-04226-eventbridge-test-contract-schedules.test.ts   # 12 passed (job count 31 → 32)
+npx tsc --noEmit -p .   # no new errors (3 pre-existing: missing local libphonenumber-js / client-pinpoint-sms-voice-v2)
+IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs   # 0 findings

@@ -1,0 +1,19 @@
+VTID-04369 — commands run
+
+1. Allocated VTID-04369 via POST https://gateway.vitanaland.com/api/v1/vtid/allocate;
+   set title/summary, status=in_progress, spec_status=approved on vtid_ledger.
+
+2. Read-only measurement (Supabase execute_sql, production, no writes):
+   SELECT regexp_replace(metadata->>'diagnostic','^RequestId=[0-9a-f-]+ : ','') msg, count(*)
+   FROM oasis_events WHERE topic='orb.live.diag' AND metadata->>'stage'='upstream_error'
+     AND metadata->>'code'='nova_validation' AND created_at > now()-interval '30 days'
+   GROUP BY 1 ORDER BY 2 DESC;
+   -> idle timeout 55s 90, idle timeout 295s 4, "All contents must be closed" 38,
+      content filters 34 + 3 (Error(s) prefix).
+
+3. tsc --noEmit (services/gateway) -> exit 0
+
+4. Tests (services/gateway):
+   jest test/orb/live/vtid-04369-failure-kind-and-monitor-fields.test.ts -> 23 passed
+   jest test/orb test/routes test/services/conversation -> 355 suites, 5952 tests passed
+   (one pre-existing characterization pin updated to the wrapped emit form)

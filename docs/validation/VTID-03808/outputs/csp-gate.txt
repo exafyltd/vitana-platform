@@ -1,0 +1,20 @@
+=== VTID-03808 — CSP gate (validator-path-guard.cjs --csp-added-lines) ===
+
+--- 1. CI failure on the FIRST push of this branch (inline cssText form) ---
+PR #3264, job 102507433368, validate-pr:
+  REJECTED: CSP pattern hit in an added line :: /\.style\b/
+    .style
+  ##[error]Process completed with exit code 50.
+
+--- 2. After moving the declaration into the .vtorb-overlay stylesheet rule ---
+$ git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_diff.txt
+No CSP pattern hits in added lines.
+  exit=0
+
+--- 3. Mutation check: the inline form STILL trips the gate ---
+(so the 'keeps it out of inline cssText' test pins a real constraint, not a preference)
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines csp_mutant.txt
+REJECTED: CSP pattern hit in an added line :: /\.style\b/
+  .style
+  exit=1

@@ -1,0 +1,40 @@
+# Manual tsc check (no node_modules available in this sandbox — no npm registry access)
+# Command: tsc --noEmit -p tsconfig.json --ignoreDeprecations 6.0
+# Grepped for errors touching the two files this PR edits:
+
+62:src/routes/orb-live.ts(2141,18): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+64:src/routes/orb-live.ts(2175,112): error TS18047: 'cachedChimePcmB64' is possibly 'null'.
+65:src/routes/orb-live.ts(2176,3): error TS2322: Type 'string | null' is not assignable to type 'string'.
+357:src/routes/orb-live.ts(9106,21): error TS7006: Parameter 'error' implicitly has an 'any' type.
+362:src/routes/orb-live.ts(9148,21): error TS7006: Parameter 'code' implicitly has an 'any' type.
+363:src/routes/orb-live.ts(9148,27): error TS7006: Parameter 'reason' implicitly has an 'any' type.
+415:src/routes/orb-live.ts(10455,155): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+435:src/routes/orb-live.ts(11274,19): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+436:src/routes/orb-live.ts(11279,21): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+463:src/routes/orb-live.ts(11834,56): error TS2304: Cannot find name 'AbortSignal'.
+471:src/routes/orb-live.ts(11977,52): error TS2304: Cannot find name 'URL'.
+520:src/routes/orb-live.ts(12901,20): error TS2339: Property 'body' does not exist on type 'AuthenticatedRequest'.
+580:src/routes/orb-live.ts(14232,28): error TS2339: Property 'headers' does not exist on type 'AuthenticatedRequest'.
+581:src/routes/orb-live.ts(14236,33): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+582:src/routes/orb-live.ts(14237,32): error TS2339: Property 'get' does not exist on type 'AuthenticatedRequest'.
+590:src/routes/orb-live.ts(14441,23): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+591:src/routes/orb-live.ts(14442,25): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+592:src/routes/orb-live.ts(14443,21): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+593:src/routes/orb-live.ts(14482,15): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+608:src/routes/orb-live.ts(14744,24): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+636:src/routes/orb-live.ts(15340,23): error TS2339: Property 'body' does not exist on type 'AuthenticatedRequest'.
+637:src/routes/orb-live.ts(15392,32): error TS2339: Property 'params' does not exist on type 'AuthenticatedRequest'.
+639:src/routes/orb-live.ts(15480,25): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+640:src/routes/orb-live.ts(15481,21): error TS2339: Property 'query' does not exist on type 'AuthenticatedRequest'.
+656:src/routes/orb-live.ts(15826,7): error TS2339: Property 'on' does not exist on type 'AuthenticatedRequest'.
+660:src/routes/orb-live.ts(15946,20): error TS2339: Property 'body' does not exist on type 'AuthenticatedRequest'.
+664:src/routes/orb-live.ts(16075,22): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+665:src/routes/orb-live.ts(16077,9): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+668:src/routes/orb-live.ts(16168,20): error TS2339: Property 'body' does not exist on type 'AuthenticatedRequest'.
+670:src/routes/orb-live.ts(16257,66): error TS2339: Property 'body' does not exist on type 'AuthenticatedRequest'.
+674:src/routes/orb-live.ts(16368,20): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+675:src/routes/orb-live.ts(16370,13): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+695:src/routes/orb-live.ts(16760,33): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+699:src/routes/orb-live.ts(16830,19): error TS7006: Parameter 'code' implicitly has an 'any' type.
+700:src/routes/orb-live.ts(16830,25): error TS7006: Parameter 'reason' implicitly has an 'any' type.
+703:src/routes/orb-live.ts(16838,19): error TS7006: Parameter 'error' implicitly has an 'any' type.

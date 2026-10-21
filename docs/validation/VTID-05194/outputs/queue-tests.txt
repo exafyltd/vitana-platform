@@ -1,0 +1,112 @@
+TAP version 13
+# Subtest: parseFrontMatter: scalars, inline lists, block lists, comments
+ok 1 - parseFrontMatter: scalars, inline lists, block lists, comments
+  ---
+  duration_ms: 3.354824
+  type: 'test'
+  ...
+# Subtest: classifyPath
+ok 2 - classifyPath
+  ---
+  duration_ms: 0.819772
+  type: 'test'
+  ...
+# Subtest: validatePlan: valid passes, each bad field is named
+ok 3 - validatePlan: valid passes, each bad field is named
+  ---
+  duration_ms: 3.613377
+  type: 'test'
+  ...
+# Subtest: validateLane: plan-only states rejected, vtid required once working, deps must exist
+ok 4 - validateLane: plan-only states rejected, vtid required once working, deps must exist
+  ---
+  duration_ms: 1.496443
+  type: 'test'
+  ...
+# Subtest: checkTransition: plan and lane tables, done terminal, parked returns only where it came from
+ok 5 - checkTransition: plan and lane tables, done terminal, parked returns only where it came from
+  ---
+  duration_ms: 0.899984
+  type: 'test'
+  ...
+# Subtest: sessionId format
+ok 6 - sessionId format
+  ---
+  duration_ms: 0.957997
+  type: 'test'
+  ...
+# Subtest: queue: empty repo → no rows; one row per lane; blocked dependency; newest version across branches wins
+ok 7 - queue: empty repo → no rows; one row per lane; blocked dependency; newest version across branches wins
+  ---
+  duration_ms: 693.83201
+  type: 'test'
+  ...
+# Subtest: queue: a spec without lanes is one implicit lane "main"
+ok 8 - queue: a spec without lanes is one implicit lane "main"
+  ---
+  duration_ms: 388.328186
+  type: 'test'
+  ...
+# Subtest: claims: atomic — second session is refused; release by holder; stale break only after 24 h; nested refs listed
+ok 9 - claims: atomic — second session is refused; release by holder; stale break only after 24 h; nested refs listed
+  ---
+  duration_ms: 750.696994
+  type: 'test'
+  ...
+# Subtest: validate: a correct lane PR passes
+ok 10 - validate: a correct lane PR passes
+  ---
+  duration_ms: 568.418031
+  type: 'test'
+  ...
+# Subtest: validate: foreign lane file, branch/lane mismatch, claimed_by ≠ session, missing trailers, two lanes, illegal transition all fail
+ok 11 - validate: foreign lane file, branch/lane mismatch, claimed_by ≠ session, missing trailers, two lanes, illegal transition all fail
+  ---
+  duration_ms: 1005.505398
+  type: 'test'
+  ...
+# Subtest: validate: reviewer may append a log entry with Collab-Review, but not change front matter
+ok 12 - validate: reviewer may append a log entry with Collab-Review, but not change front matter
+  ---
+  duration_ms: 745.924946
+  type: 'test'
+  ...
+# Subtest: validate: new plan must start drafted unless --allow-initial; _plan may create lanes but not edit them
+ok 13 - validate: new plan must start drafted unless --allow-initial; _plan may create lanes but not edit them
+  ---
+  duration_ms: 715.750058
+  type: 'test'
+  ...
+# Subtest: validate: PR without spec changes and without trailers passes untouched
+ok 14 - validate: PR without spec changes and without trailers passes untouched
+  ---
+  duration_ms: 481.625513
+  type: 'test'
+  ...
+# Subtest: seat session ids: generated with a seat, old form still valid, bad seat refused
+ok 15 - seat session ids: generated with a seat, old form still valid, bad seat refused
+  ---
+  duration_ms: 1.068519
+  type: 'test'
+  ...
+# Subtest: lane seat: valid seat passes, malformed seat fails
+ok 16 - lane seat: valid seat passes, malformed seat fails
+  ---
+  duration_ms: 0.404754
+  type: 'test'
+  ...
+# Subtest: queue rows carry seat; a seat-session lane PR validates
+ok 17 - queue rows carry seat; a seat-session lane PR validates
+  ---
+  duration_ms: 626.36517
+  type: 'test'
+  ...
+1..17
+# tests 17
+# suites 0
+# pass 17
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6141.042907

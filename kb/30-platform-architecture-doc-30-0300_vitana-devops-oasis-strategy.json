@@ -1,0 +1,476 @@
+{
+  "doc_id": "30-platform-architecture-doc-30-0300_vitana-devops-oasis-strategy",
+  "title": "Vitana DevOps, OASIS & Autonomous Infrastructure Strategy",
+  "family_id": "platform-architecture",
+  "family_name": "Platform Architecture",
+  "status": "canonical",
+  "version": "0.1.0",
+  "tags": [
+    "devops",
+    "oasis",
+    "infrastructure",
+    "vtid",
+    "autopilot",
+    "agents"
+  ],
+  "last_updated": "2025-11-04T15:23:15.312Z",
+  "word_count": 2887,
+  "sections": [
+    {
+      "section_id": "vitana-devops-oasis-autonomous-infrastructure-strategy",
+      "id": "vitana-devops-oasis-autonomous-infrastructure-strategy",
+      "level": 1,
+      "title": "Vitana DevOps, OASIS & Autonomous Infrastructure Strategy",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "executive-summary",
+      "id": "executive-summary",
+      "level": 2,
+      "title": "Executive Summary",
+      "content": "This document defines the **infrastructure and operational architecture** that powers the Vitana ecosystem (Maxina, AlKalma, Earthlings). Unlike DOC-00-0001 (which describes what Vitana is for members), this document explains **how Vitana operates internally** from a technical and DevOps perspective.\n\n**Core Components:**\n- **OASIS** (Operational Audit & State Integration System) – Single source of truth for all events and state\n- **VTID** (Vitana Task Identifier) – Work tracking system for infrastructure and product development\n- **Autonomous Agents** – AI-powered services that execute approved tasks (deployments, PR merges, monitoring)\n- **Gateway** – Central API routing and authentication layer\n- **CI/CD Pipelines** – Automated testing, building, and deployment workflows\n\n**Key Principle:** Infrastructure autonomy within bounded safety limits—agents can execute routine tasks but escalate when uncertain or outside defined boundaries.\n\n---",
+      "content_markdown": "This document defines the **infrastructure and operational architecture** that powers the Vitana ecosystem (Maxina, AlKalma, Earthlings). Unlike DOC-00-0001 (which describes what Vitana is for members), this document explains **how Vitana operates internally** from a technical and DevOps perspective.\n\n**Core Components:**\n- **OASIS** (Operational Audit & State Integration System) – Single source of truth for all events and state\n- **VTID** (Vitana Task Identifier) – Work tracking system for infrastructure and product development\n- **Autonomous Agents** – AI-powered services that execute approved tasks (deployments, PR merges, monitoring)\n- **Gateway** – Central API routing and authentication layer\n- **CI/CD Pipelines** – Automated testing, building, and deployment workflows\n\n**Key Principle:** Infrastructure autonomy within bounded safety limits—agents can execute routine tasks but escalate when uncertain or outside defined boundaries.\n\n---",
+      "word_count": 126
+    },
+    {
+      "section_id": "1-purpose-scope",
+      "id": "1-purpose-scope",
+      "level": 2,
+      "title": "1. Purpose & Scope",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "what-this-document-covers",
+      "id": "what-this-document-covers",
+      "level": 3,
+      "title": "What This Document Covers",
+      "content": "- **OASIS architecture:** Event ledger, state tracking, audit trails\n- **VTID system:** How work items are tracked across infrastructure and product development\n- **Autonomous agent framework:** GitHub Agent, Deployment Agent, Monitoring Agent capabilities and boundaries\n- **CI/CD patterns:** Automated testing, deployment, rollback procedures\n- **DevOps principles:** Uptime targets, incident response, escalation protocols",
+      "content_markdown": "- **OASIS architecture:** Event ledger, state tracking, audit trails\n- **VTID system:** How work items are tracked across infrastructure and product development\n- **Autonomous agent framework:** GitHub Agent, Deployment Agent, Monitoring Agent capabilities and boundaries\n- **CI/CD patterns:** Automated testing, deployment, rollback procedures\n- **DevOps principles:** Uptime targets, incident response, escalation protocols",
+      "word_count": 52
+    },
+    {
+      "section_id": "what-this-document-does-not-cover",
+      "id": "what-this-document-does-not-cover",
+      "level": 3,
+      "title": "What This Document Does NOT Cover",
+      "content": "- **Member-facing product features** → See DOC-00-0001 (Vitana Vision)\n- **Autopilot modes** → See DOC-95-9500 (Autopilot Modes Overview)\n- **Detailed API specifications** → See DOC-30-03XX series (future docs)\n- **Tenant-specific architecture** → See DOC-20-02XX series (Maxina, AlKalma, Earthlings)",
+      "content_markdown": "- **Member-facing product features** → See DOC-00-0001 (Vitana Vision)\n- **Autopilot modes** → See DOC-95-9500 (Autopilot Modes Overview)\n- **Detailed API specifications** → See DOC-30-03XX series (future docs)\n- **Tenant-specific architecture** → See DOC-20-02XX series (Maxina, AlKalma, Earthlings)",
+      "word_count": 38
+    },
+    {
+      "section_id": "audience",
+      "id": "audience",
+      "level": 3,
+      "title": "Audience",
+      "content": "- **CTO, VP Engineering, Infrastructure Team**\n- **DevOps engineers and SREs**\n- **Autonomous agents (Claude, future AI systems)**\n- **External auditors (security, compliance)**\n\n---",
+      "content_markdown": "- **CTO, VP Engineering, Infrastructure Team**\n- **DevOps engineers and SREs**\n- **Autonomous agents (Claude, future AI systems)**\n- **External auditors (security, compliance)**\n\n---",
+      "word_count": 24
+    },
+    {
+      "section_id": "2-oasis-single-source-of-truth",
+      "id": "2-oasis-single-source-of-truth",
+      "level": 2,
+      "title": "2. OASIS: Single Source of Truth",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "what-oasis-is",
+      "id": "what-oasis-is",
+      "level": 3,
+      "title": "What OASIS Is",
+      "content": "**OASIS** (Operational Audit & State Integration System) is the central event ledger and state tracker for all Vitana infrastructure operations. Every significant action—deployments, PR merges, service health checks, VTID state changes—is logged as an event in OASIS.\n\n**Key Properties:**\n- **Immutable event log:** Events are append-only, never deleted or modified\n- **Queryable:** SQL-based queries for auditing, debugging, and analytics\n- **Cross-service:** All services (Gateway, Agents, Tenants) emit events to OASIS\n- **Real-time:** Events are indexed within seconds for near-real-time visibility",
+      "content_markdown": "**OASIS** (Operational Audit & State Integration System) is the central event ledger and state tracker for all Vitana infrastructure operations. Every significant action—deployments, PR merges, service health checks, VTID state changes—is logged as an event in OASIS.\n\n**Key Properties:**\n- **Immutable event log:** Events are append-only, never deleted or modified\n- **Queryable:** SQL-based queries for auditing, debugging, and analytics\n- **Cross-service:** All services (Gateway, Agents, Tenants) emit events to OASIS\n- **Real-time:** Events are indexed within seconds for near-real-time visibility",
+      "word_count": 80
+    },
+    {
+      "section_id": "database-schema",
+      "id": "database-schema",
+      "level": 3,
+      "title": "Database Schema",
+      "content": "**Primary Tables:**\n\n1. **events** – All system events\n```sql\n   CREATE TABLE events (\n     id UUID PRIMARY KEY,\n     event_type TEXT NOT NULL,\n     source_service TEXT NOT NULL,\n     vtid TEXT,\n     actor TEXT NOT NULL,\n     metadata JSONB NOT NULL,\n     timestamp TIMESTAMP NOT NULL,\n     environment TEXT NOT NULL\n   );\n```\n\n2. **vtid_tracking** – VTID lifecycle states\n```sql\n   CREATE TABLE vtid_tracking (\n     id UUID PRIMARY KEY,\n     vtid TEXT UNIQUE NOT NULL,\n     domain TEXT NOT NULL,\n     category TEXT NOT NULL,\n     number INTEGER NOT NULL,\n     state TEXT NOT NULL,\n     created_at TIMESTAMP NOT NULL,\n     updated_at TIMESTAMP NOT NULL,\n     assigned_to TEXT,\n     metadata JSONB\n   );\n```\n\n3. **deployments** – Deployment history\n```sql\n   CREATE TABLE deployments (\n     id UUID PRIMARY KEY,\n     service_name TEXT NOT NULL,\n     version TEXT NOT NULL,\n     environment TEXT NOT NULL,\n     status TEXT NOT NULL,\n     initiated_by TEXT NOT NULL,\n     initiated_at TIMESTAMP NOT NULL,\n     completed_at TIMESTAMP,\n     rollback_of UUID REFERENCES deployments(id),\n     metadata JSONB\n   );\n```\n\n4. **service_health** – Real-time service health\n```sql\n   CREATE TABLE service_health (\n     id UUID PRIMARY KEY,\n     service_name TEXT NOT NULL,\n     environment TEXT NOT NULL,\n     status TEXT NOT NULL,\n     last_check TIMESTAMP NOT NULL,\n     response_time_ms INTEGER,\n     metadata JSONB,\n     UNIQUE (service_name, environment)\n   );\n```",
+      "content_markdown": "**Primary Tables:**\n\n1. **events** – All system events\n```sql\n   CREATE TABLE events (\n     id UUID PRIMARY KEY,\n     event_type TEXT NOT NULL,\n     source_service TEXT NOT NULL,\n     vtid TEXT,\n     actor TEXT NOT NULL,\n     metadata JSONB NOT NULL,\n     timestamp TIMESTAMP NOT NULL,\n     environment TEXT NOT NULL\n   );\n```\n\n2. **vtid_tracking** – VTID lifecycle states\n```sql\n   CREATE TABLE vtid_tracking (\n     id UUID PRIMARY KEY,\n     vtid TEXT UNIQUE NOT NULL,\n     domain TEXT NOT NULL,\n     category TEXT NOT NULL,\n     number INTEGER NOT NULL,\n     state TEXT NOT NULL,\n     created_at TIMESTAMP NOT NULL,\n     updated_at TIMESTAMP NOT NULL,\n     assigned_to TEXT,\n     metadata JSONB\n   );\n```\n\n3. **deployments** – Deployment history\n```sql\n   CREATE TABLE deployments (\n     id UUID PRIMARY KEY,\n     service_name TEXT NOT NULL,\n     version TEXT NOT NULL,\n     environment TEXT NOT NULL,\n     status TEXT NOT NULL,\n     initiated_by TEXT NOT NULL,\n     initiated_at TIMESTAMP NOT NULL,\n     completed_at TIMESTAMP,\n     rollback_of UUID REFERENCES deployments(id),\n     metadata JSONB\n   );\n```\n\n4. **service_health** – Real-time service health\n```sql\n   CREATE TABLE service_health (\n     id UUID PRIMARY KEY,\n     service_name TEXT NOT NULL,\n     environment TEXT NOT NULL,\n     status TEXT NOT NULL,\n     last_check TIMESTAMP NOT NULL,\n     response_time_ms INTEGER,\n     metadata JSONB,\n     UNIQUE (service_name, environment)\n   );\n```",
+      "word_count": 183
+    },
+    {
+      "section_id": "event-types",
+      "id": "event-types",
+      "level": 3,
+      "title": "Event Types",
+      "content": "**Infrastructure Events:**\n- `ci.workflow_started` / `ci.workflow_completed`\n- `cd.deployment_started` / `cd.deployment_completed`\n- `cd.rollback_initiated` / `cd.rollback_completed`\n\n**VTID Events:**\n- `vtid.created` / `vtid.state_changed` / `vtid.closed`\n\n**Service Events:**\n- `service.started` / `service.stopped`\n- `service.health_check` / `service.error`\n\n**Agent Events:**\n- `agent.task_started` / `agent.task_completed`\n- `agent.escalation` / `agent.recovery_attempted`\n\n**GitHub Events:**\n- `github.pr_opened` / `github.pr_merged` / `github.pr_closed`\n- `github.commit_pushed`",
+      "content_markdown": "**Infrastructure Events:**\n- `ci.workflow_started` / `ci.workflow_completed`\n- `cd.deployment_started` / `cd.deployment_completed`\n- `cd.rollback_initiated` / `cd.rollback_completed`\n\n**VTID Events:**\n- `vtid.created` / `vtid.state_changed` / `vtid.closed`\n\n**Service Events:**\n- `service.started` / `service.stopped`\n- `service.health_check` / `service.error`\n\n**Agent Events:**\n- `agent.task_started` / `agent.task_completed`\n- `agent.escalation` / `agent.recovery_attempted`\n\n**GitHub Events:**\n- `github.pr_opened` / `github.pr_merged` / `github.pr_closed`\n- `github.commit_pushed`",
+      "word_count": 52
+    },
+    {
+      "section_id": "oasis-api-endpoints",
+      "id": "oasis-api-endpoints",
+      "level": 3,
+      "title": "OASIS API Endpoints",
+      "content": "```\nPOST   /events                 → Emit new event\nGET    /events                 → Query events (filterable by vtid, type, service, time range)\nGET    /vtids/:vtid            → Get VTID details + event history\nPOST   /vtids                  → Create new VTID\nPATCH  /vtids/:vtid            → Update VTID state\nGET    /deployments            → List deployment history\nGET    /health/services        → Current service health status\n```",
+      "content_markdown": "```\nPOST   /events                 → Emit new event\nGET    /events                 → Query events (filterable by vtid, type, service, time range)\nGET    /vtids/:vtid            → Get VTID details + event history\nPOST   /vtids                  → Create new VTID\nPATCH  /vtids/:vtid            → Update VTID state\nGET    /deployments            → List deployment history\nGET    /health/services        → Current service health status\n```",
+      "word_count": 54
+    },
+    {
+      "section_id": "integration-with-devops-chat",
+      "id": "integration-with-devops-chat",
+      "level": 3,
+      "title": "Integration with DevOps Chat",
+      "content": "All events in OASIS trigger notifications to the **DevOps Chat** channel (Slack, Discord, or Teams):\n\n**Notification Priority:**\n- **Critical** (immediate alert): Production outages, security issues, deployment failures\n- **High** (within 5 min): PR merges, staging deployments, agent escalations\n- **Medium** (batched every 15 min): VTID state changes, dev deployments\n- **Low** (daily digest): Health checks, routine tasks\n\n**Example Notification:**\n```\n🔔 OASIS Event\nType: cd.deployment_completed\nService: gateway\nEnvironment: production\nStatus: success\nVTID: OPS-INFRA-0142\nDuration: 3m 42s\nActor: deployment-agent\nTime: 2025-11-03 14:22 UTC\n```\n\n---",
+      "content_markdown": "All events in OASIS trigger notifications to the **DevOps Chat** channel (Slack, Discord, or Teams):\n\n**Notification Priority:**\n- **Critical** (immediate alert): Production outages, security issues, deployment failures\n- **High** (within 5 min): PR merges, staging deployments, agent escalations\n- **Medium** (batched every 15 min): VTID state changes, dev deployments\n- **Low** (daily digest): Health checks, routine tasks\n\n**Example Notification:**\n```\n🔔 OASIS Event\nType: cd.deployment_completed\nService: gateway\nEnvironment: production\nStatus: success\nVTID: OPS-INFRA-0142\nDuration: 3m 42s\nActor: deployment-agent\nTime: 2025-11-03 14:22 UTC\n```\n\n---",
+      "word_count": 84
+    },
+    {
+      "section_id": "3-vtid-system-work-tracking",
+      "id": "3-vtid-system-work-tracking",
+      "level": 2,
+      "title": "3. VTID System: Work Tracking",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "what-vtids-are",
+      "id": "what-vtids-are",
+      "level": 3,
+      "title": "What VTIDs Are",
+      "content": "**VTID** (Vitana Task Identifier) is a unique identifier for every unit of infrastructure or product work. Unlike member-facing work (which is tracked in tenant apps), VTIDs track **internal development, operations, and infrastructure tasks**.\n\n**Format:** `{DOMAIN}-{CATEGORY}-{NUMBER}`",
+      "content_markdown": "**VTID** (Vitana Task Identifier) is a unique identifier for every unit of infrastructure or product work. Unlike member-facing work (which is tracked in tenant apps), VTIDs track **internal development, operations, and infrastructure tasks**.\n\n**Format:** `{DOMAIN}-{CATEGORY}-{NUMBER}`",
+      "word_count": 35
+    },
+    {
+      "section_id": "vtid-domains",
+      "id": "vtid-domains",
+      "level": 3,
+      "title": "VTID Domains",
+      "content": "- **DEV** – Development work (features, refactoring, tech debt)\n- **OPS** – Operations work (deployments, infrastructure, monitoring)\n- **BUG** – Bug fixes\n- **SEC** – Security issues\n- **DOC** – Documentation",
+      "content_markdown": "- **DEV** – Development work (features, refactoring, tech debt)\n- **OPS** – Operations work (deployments, infrastructure, monitoring)\n- **BUG** – Bug fixes\n- **SEC** – Security issues\n- **DOC** – Documentation",
+      "word_count": 31
+    },
+    {
+      "section_id": "vtid-categories",
+      "id": "vtid-categories",
+      "level": 3,
+      "title": "VTID Categories",
+      "content": "- **CICDL** – CI/CD pipelines, automation\n- **API** – API development, endpoints\n- **DB** – Database schema changes, migrations\n- **INFRA** – Infrastructure, GCP resources, networking\n- **AGENT** – Autonomous agent development\n- **GATEWAY** – Gateway service development\n\n**Examples:**\n- `DEV-CICDL-0031` – Development work on CI/CD, task #31\n- `OPS-INFRA-0142` – Operations infrastructure task #142\n- `BUG-API-0099` – API bug fix #99",
+      "content_markdown": "- **CICDL** – CI/CD pipelines, automation\n- **API** – API development, endpoints\n- **DB** – Database schema changes, migrations\n- **INFRA** – Infrastructure, GCP resources, networking\n- **AGENT** – Autonomous agent development\n- **GATEWAY** – Gateway service development\n\n**Examples:**\n- `DEV-CICDL-0031` – Development work on CI/CD, task #31\n- `OPS-INFRA-0142` – Operations infrastructure task #142\n- `BUG-API-0099` – API bug fix #99",
+      "word_count": 62
+    },
+    {
+      "section_id": "vtid-lifecycle-states",
+      "id": "vtid-lifecycle-states",
+      "level": 3,
+      "title": "VTID Lifecycle States",
+      "content": "1. **created** – VTID registered, work not started\n2. **in_progress** – Active development\n3. **testing** – Validation phase\n4. **review** – PR open, awaiting review\n5. **merged** – PR merged to target branch\n6. **deployed** – Changes live in environment\n7. **verified** – Post-deployment validation complete\n8. **closed** – Work complete, VTID archived",
+      "content_markdown": "1. **created** – VTID registered, work not started\n2. **in_progress** – Active development\n3. **testing** – Validation phase\n4. **review** – PR open, awaiting review\n5. **merged** – PR merged to target branch\n6. **deployed** – Changes live in environment\n7. **verified** – Post-deployment validation complete\n8. **closed** – Work complete, VTID archived",
+      "word_count": 53
+    },
+    {
+      "section_id": "vtid-in-github-workflow",
+      "id": "vtid-in-github-workflow",
+      "level": 3,
+      "title": "VTID in GitHub Workflow",
+      "content": "**Branch naming:**\n```\nfeature/DEV-CICDL-0031-phase2a-validation\nbugfix/BUG-API-0099-auth-token\nops/OPS-INFRA-0142-cloudrun-scaling\n```\n\n**PR titles:**\n```\n[DEV-CICDL-0031] Add Phase 2A validation workflow\n[BUG-API-0099] Fix authentication token expiration\n[OPS-INFRA-0142] Optimize Cloud Run auto-scaling\n```\n\n**Commit messages:**\n```\nfeat(cicd): add validation workflow\n\n- Add lint job\n- Add unit test job\n- Emit OASIS events\n\nVTID: DEV-CICDL-0031\n```",
+      "content_markdown": "**Branch naming:**\n```\nfeature/DEV-CICDL-0031-phase2a-validation\nbugfix/BUG-API-0099-auth-token\nops/OPS-INFRA-0142-cloudrun-scaling\n```\n\n**PR titles:**\n```\n[DEV-CICDL-0031] Add Phase 2A validation workflow\n[BUG-API-0099] Fix authentication token expiration\n[OPS-INFRA-0142] Optimize Cloud Run auto-scaling\n```\n\n**Commit messages:**\n```\nfeat(cicd): add validation workflow\n\n- Add lint job\n- Add unit test job\n- Emit OASIS events\n\nVTID: DEV-CICDL-0031\n```",
+      "word_count": 50
+    },
+    {
+      "section_id": "auto-labeling",
+      "id": "auto-labeling",
+      "level": 3,
+      "title": "Auto-Labeling",
+      "content": "GitHub Actions automatically applies labels to PRs based on VTID:\n- Domain label: `dev`, `ops`, `bug`, `sec`, `doc`\n- Category label: `cicd`, `api`, `infra`, `gateway`, `agent`\n- VTID label: `vtid:DEV-CICDL-0031`\n\n---",
+      "content_markdown": "GitHub Actions automatically applies labels to PRs based on VTID:\n- Domain label: `dev`, `ops`, `bug`, `sec`, `doc`\n- Category label: `cicd`, `api`, `infra`, `gateway`, `agent`\n- VTID label: `vtid:DEV-CICDL-0031`\n\n---",
+      "word_count": 31
+    },
+    {
+      "section_id": "4-autonomous-agent-framework",
+      "id": "4-autonomous-agent-framework",
+      "level": 2,
+      "title": "4. Autonomous Agent Framework",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "philosophy-bounded-autonomy",
+      "id": "philosophy-bounded-autonomy",
+      "level": 3,
+      "title": "Philosophy: Bounded Autonomy",
+      "content": "**Autonomous agents** (powered by Claude or similar AI systems) can execute approved tasks without human intervention, but only within defined safety boundaries. When uncertain or outside boundaries, agents **must escalate** to CTO, VP Engineering, or on-call engineer.\n\n**Key Principle (from DOC-00-0003):**\n> \"AI agents execute routine tasks autonomously but escalate decisions requiring human judgment, creativity, or ethical considerations. Agents never pretend to be human and always identify themselves.\"",
+      "content_markdown": "**Autonomous agents** (powered by Claude or similar AI systems) can execute approved tasks without human intervention, but only within defined safety boundaries. When uncertain or outside boundaries, agents **must escalate** to CTO, VP Engineering, or on-call engineer.\n\n**Key Principle (from DOC-00-0003):**\n> \"AI agents execute routine tasks autonomously but escalate decisions requiring human judgment, creativity, or ethical considerations. Agents never pretend to be human and always identify themselves.\"",
+      "word_count": 68
+    },
+    {
+      "section_id": "agent-types",
+      "id": "agent-types",
+      "level": 3,
+      "title": "Agent Types",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "4-1-github-agent",
+      "id": "4-1-github-agent",
+      "level": 4,
+      "title": "4.1 GitHub Agent",
+      "content": "**Purpose:** Automate GitHub operations (PRs, merges, branch management)\n\n**Autonomous Capabilities:**\n- Create feature branches from `main` or `develop`\n- Open pull requests with VTID in title\n- Merge PRs after CI passes + approvals received\n- Delete merged branches\n- Apply labels automatically\n- Post PR comments with status updates\n- Close stale PRs (after 30 days of inactivity)\n\n**Escalation Triggers:**\n- CI checks fail repeatedly (>3 attempts)\n- Merge conflicts that can't be auto-resolved\n- PR requires manual security review\n- Breaking changes detected in API schemas\n\n**Configuration:**\n```yaml\ngithub_agent:\n  auto_merge:\n    enabled: true\n    require_ci_pass: true\n    require_approvals: 1\n    delete_branch_after: true\n  auto_label:\n    enabled: true\n  stale_pr_policy:\n    days_until_stale: 30\n    auto_close: false  # Always escalate before closing\n```",
+      "content_markdown": "**Purpose:** Automate GitHub operations (PRs, merges, branch management)\n\n**Autonomous Capabilities:**\n- Create feature branches from `main` or `develop`\n- Open pull requests with VTID in title\n- Merge PRs after CI passes + approvals received\n- Delete merged branches\n- Apply labels automatically\n- Post PR comments with status updates\n- Close stale PRs (after 30 days of inactivity)\n\n**Escalation Triggers:**\n- CI checks fail repeatedly (>3 attempts)\n- Merge conflicts that can't be auto-resolved\n- PR requires manual security review\n- Breaking changes detected in API schemas\n\n**Configuration:**\n```yaml\ngithub_agent:\n  auto_merge:\n    enabled: true\n    require_ci_pass: true\n    require_approvals: 1\n    delete_branch_after: true\n  auto_label:\n    enabled: true\n  stale_pr_policy:\n    days_until_stale: 30\n    auto_close: false  # Always escalate before closing\n```",
+      "word_count": 114
+    },
+    {
+      "section_id": "4-2-deployment-agent",
+      "id": "4-2-deployment-agent",
+      "level": 4,
+      "title": "4.2 Deployment Agent",
+      "content": "**Purpose:** Orchestrate Cloud Run deployments across environments\n\n**Autonomous Capabilities:**\n- Deploy to **dev** environment (on merge to `develop`)\n- Deploy to **staging** environment (on merge to `main`)\n- Run pre-deployment health checks\n- Execute smoke tests post-deployment\n- Monitor error rates for 15 minutes post-deployment\n- Auto-rollback if error rate >5% for 5 consecutive minutes\n- Update OASIS deployment records\n- Notify DevOps chat\n\n**Escalation Triggers:**\n- Production deployments (always require manual approval)\n- Rollback fails (manual intervention needed)\n- Smoke tests fail in staging\n- Database migrations detected (require manual review)\n- GCP permission errors\n\n**Deployment Flow:**\n```\n1. Receive deployment request (VTID, service, environment, version)\n2. Check service health in target environment\n3. Build Docker image (if not already built)\n4. Push to GCP Container Registry\n5. Deploy to Cloud Run\n   - Dev: Rolling update (zero-downtime)\n   - Staging: Blue-green deployment (gradual traffic shift)\n   - Prod: Manual approval required (agent cannot deploy)\n6. Run smoke tests\n7. Monitor error rates (15 min window)\n8. Update OASIS (success/failure)\n9. Notify DevOps chat\n10. If failure → initiate rollback (auto for dev/staging, escalate for prod)\n```\n\n**Configuration:**\n```yaml\ndeployment_agent:\n  auto_deploy:\n    dev: true       # Auto-deploy on merge to develop\n    staging: true   # Auto-deploy on merge to main\n    prod: false     # Always require manual approval\n  smoke_tests:\n    enabled: true\n    timeout: 60s\n  monitoring:\n    duration: 900s  # 15 minutes\n    error_threshold: 5  # percent\n  rollback:\n    auto_rollback_on_failure: true\n    max_retry_attempts: 2\n```",
+      "content_markdown": "**Purpose:** Orchestrate Cloud Run deployments across environments\n\n**Autonomous Capabilities:**\n- Deploy to **dev** environment (on merge to `develop`)\n- Deploy to **staging** environment (on merge to `main`)\n- Run pre-deployment health checks\n- Execute smoke tests post-deployment\n- Monitor error rates for 15 minutes post-deployment\n- Auto-rollback if error rate >5% for 5 consecutive minutes\n- Update OASIS deployment records\n- Notify DevOps chat\n\n**Escalation Triggers:**\n- Production deployments (always require manual approval)\n- Rollback fails (manual intervention needed)\n- Smoke tests fail in staging\n- Database migrations detected (require manual review)\n- GCP permission errors\n\n**Deployment Flow:**\n```\n1. Receive deployment request (VTID, service, environment, version)\n2. Check service health in target environment\n3. Build Docker image (if not already built)\n4. Push to GCP Container Registry\n5. Deploy to Cloud Run\n   - Dev: Rolling update (zero-downtime)\n   - Staging: Blue-green deployment (gradual traffic shift)\n   - Prod: Manual approval required (agent cannot deploy)\n6. Run smoke tests\n7. Monitor error rates (15 min window)\n8. Update OASIS (success/failure)\n9. Notify DevOps chat\n10. If failure → initiate rollback (auto for dev/staging, escalate for prod)\n```\n\n**Configuration:**\n```yaml\ndeployment_agent:\n  auto_deploy:\n    dev: true       # Auto-deploy on merge to develop\n    staging: true   # Auto-deploy on merge to main\n    prod: false     # Always require manual approval\n  smoke_tests:\n    enabled: true\n    timeout: 60s\n  monitoring:\n    duration: 900s  # 15 minutes\n    error_threshold: 5  # percent\n  rollback:\n    auto_rollback_on_failure: true\n    max_retry_attempts: 2\n```",
+      "word_count": 233
+    },
+    {
+      "section_id": "4-3-monitoring-agent",
+      "id": "4-3-monitoring-agent",
+      "level": 4,
+      "title": "4.3 Monitoring Agent",
+      "content": "**Purpose:** Continuous health monitoring and auto-recovery\n\n**Autonomous Capabilities:**\n- Execute health checks every 60 seconds (all services, all environments)\n- Detect service degradation (response time >1s, error rate >1%)\n- Attempt auto-recovery:\n  - Restart service (Cloud Run revision rollback)\n  - Scale up instances (+1 if at min capacity)\n  - Check dependencies (database, external APIs)\n- Update OASIS `service_health` table\n- Alert DevOps chat on anomalies\n\n**Escalation Triggers:**\n- Service down >5 minutes despite recovery attempts\n- Database connection failures\n- GCP API errors (quota, permissions)\n- Production outage (always escalate + page on-call)\n\n**Auto-Recovery Decision Tree:**\n```\nIssue: Service not responding\nActions:\n  1. Check last deployment (if <10 min ago, may be rolling update → wait)\n  2. Attempt service restart (rollback to previous Cloud Run revision)\n  3. Scale up instances (+1)\n  4. Check database connectivity\n  5. If still failing after 3 attempts → ESCALATE\n\nIssue: High error rate (>5%)\nActions:\n  1. Check recent deployments (if new deployment in last 30 min → consider rollback)\n  2. Query OASIS for similar incidents\n  3. If error pattern matches known issue → apply fix\n  4. If unknown pattern → ESCALATE\n\nIssue: High latency (p95 >1s)\nActions:\n  1. Check instance count (if at max → ESCALATE for capacity increase)\n  2. Scale up instances\n  3. Check database slow queries\n  4. If persistent → ESCALATE\n```\n\n**Configuration:**\n```yaml\nmonitoring_agent:\n  health_check:\n    interval: 60s\n    timeout: 5s\n    failure_threshold: 3\n  auto_recovery:\n    enabled: true\n    max_attempts: 3\n  alerting:\n    dev: devops-chat\n    staging: devops-chat + email\n    prod: devops-chat + email + pagerduty\n```\n\n---",
+      "content_markdown": "**Purpose:** Continuous health monitoring and auto-recovery\n\n**Autonomous Capabilities:**\n- Execute health checks every 60 seconds (all services, all environments)\n- Detect service degradation (response time >1s, error rate >1%)\n- Attempt auto-recovery:\n  - Restart service (Cloud Run revision rollback)\n  - Scale up instances (+1 if at min capacity)\n  - Check dependencies (database, external APIs)\n- Update OASIS `service_health` table\n- Alert DevOps chat on anomalies\n\n**Escalation Triggers:**\n- Service down >5 minutes despite recovery attempts\n- Database connection failures\n- GCP API errors (quota, permissions)\n- Production outage (always escalate + page on-call)\n\n**Auto-Recovery Decision Tree:**\n```\nIssue: Service not responding\nActions:\n  1. Check last deployment (if <10 min ago, may be rolling update → wait)\n  2. Attempt service restart (rollback to previous Cloud Run revision)\n  3. Scale up instances (+1)\n  4. Check database connectivity\n  5. If still failing after 3 attempts → ESCALATE\n\nIssue: High error rate (>5%)\nActions:\n  1. Check recent deployments (if new deployment in last 30 min → consider rollback)\n  2. Query OASIS for similar incidents\n  3. If error pattern matches known issue → apply fix\n  4. If unknown pattern → ESCALATE\n\nIssue: High latency (p95 >1s)\nActions:\n  1. Check instance count (if at max → ESCALATE for capacity increase)\n  2. Scale up instances\n  3. Check database slow queries\n  4. If persistent → ESCALATE\n```\n\n**Configuration:**\n```yaml\nmonitoring_agent:\n  health_check:\n    interval: 60s\n    timeout: 5s\n    failure_threshold: 3\n  auto_recovery:\n    enabled: true\n    max_attempts: 3\n  alerting:\n    dev: devops-chat\n    staging: devops-chat + email\n    prod: devops-chat + email + pagerduty\n```\n\n---",
+      "word_count": 249
+    },
+    {
+      "section_id": "5-ci-cd-pipeline-architecture",
+      "id": "5-ci-cd-pipeline-architecture",
+      "level": 2,
+      "title": "5. CI/CD Pipeline Architecture",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "pipeline-stages",
+      "id": "pipeline-stages",
+      "level": 3,
+      "title": "Pipeline Stages",
+      "content": "**Stage 1: Validation** (on PR open/update)\n```yaml\njobs:\n  lint:\n    - Run ESLint + Prettier\n    - Emit: ci.lint_completed\n  type-check:\n    - Run TypeScript compiler\n    - Emit: ci.typecheck_completed\n  unit-tests:\n    - Run Jest unit tests\n    - Require: >80% coverage\n    - Emit: ci.unit_tests_completed\n  integration-tests:\n    - Spin up test database\n    - Run integration tests\n    - Emit: ci.integration_tests_completed\n  security-scan:\n    - Run Trivy for vulnerabilities\n    - Fail if: Critical or High vulnerabilities found\n    - Emit: ci.security_scan_completed\n```\n\n**Stage 2: Build** (on merge to `develop` or `main`)\n```yaml\njobs:\n  build-image:\n    - Build Docker image\n    - Tag: gcr.io/PROJECT/SERVICE:COMMIT_SHA\n    - Tag: gcr.io/PROJECT/SERVICE:latest\n    - Push to GCP Container Registry\n    - Emit: ci.build_completed\n```\n\n**Stage 3: Deploy** (automatic for dev/staging, manual for prod)\n```yaml\njobs:\n  deploy-dev:\n    if: branch == 'develop'\n    - Deploy to Cloud Run (dev environment)\n    - Run smoke tests\n    - Monitor error rates (5 min)\n    - Emit: cd.deployment_completed\n  \n  deploy-staging:\n    if: branch == 'main'\n    - Deploy to Cloud Run (staging environment)\n    - Run smoke tests\n    - Monitor error rates (15 min)\n    - Emit: cd.deployment_completed\n  \n  deploy-prod:\n    if: manual trigger + approval\n    - Wait for manual approval (CTO or VP Engineering)\n    - Deploy to Cloud Run (production environment)\n    - Blue-green traffic shift (10% → 50% → 100% over 30 min)\n    - Monitor error rates (30 min)\n    - Emit: cd.deployment_completed\n```\n\n**Stage 4: Monitor** (post-deployment)\n```yaml\njobs:\n  post-deploy-monitoring:\n    - Query Cloud Logging for errors (15 min window)\n    - Check p95/p99 latency\n    - If error_rate >5%: Trigger rollback\n    - If latency >1s: Alert DevOps team\n    - Emit: cd.monitoring_completed\n```",
+      "content_markdown": "**Stage 1: Validation** (on PR open/update)\n```yaml\njobs:\n  lint:\n    - Run ESLint + Prettier\n    - Emit: ci.lint_completed\n  type-check:\n    - Run TypeScript compiler\n    - Emit: ci.typecheck_completed\n  unit-tests:\n    - Run Jest unit tests\n    - Require: >80% coverage\n    - Emit: ci.unit_tests_completed\n  integration-tests:\n    - Spin up test database\n    - Run integration tests\n    - Emit: ci.integration_tests_completed\n  security-scan:\n    - Run Trivy for vulnerabilities\n    - Fail if: Critical or High vulnerabilities found\n    - Emit: ci.security_scan_completed\n```\n\n**Stage 2: Build** (on merge to `develop` or `main`)\n```yaml\njobs:\n  build-image:\n    - Build Docker image\n    - Tag: gcr.io/PROJECT/SERVICE:COMMIT_SHA\n    - Tag: gcr.io/PROJECT/SERVICE:latest\n    - Push to GCP Container Registry\n    - Emit: ci.build_completed\n```\n\n**Stage 3: Deploy** (automatic for dev/staging, manual for prod)\n```yaml\njobs:\n  deploy-dev:\n    if: branch == 'develop'\n    - Deploy to Cloud Run (dev environment)\n    - Run smoke tests\n    - Monitor error rates (5 min)\n    - Emit: cd.deployment_completed\n  \n  deploy-staging:\n    if: branch == 'main'\n    - Deploy to Cloud Run (staging environment)\n    - Run smoke tests\n    - Monitor error rates (15 min)\n    - Emit: cd.deployment_completed\n  \n  deploy-prod:\n    if: manual trigger + approval\n    - Wait for manual approval (CTO or VP Engineering)\n    - Deploy to Cloud Run (production environment)\n    - Blue-green traffic shift (10% → 50% → 100% over 30 min)\n    - Monitor error rates (30 min)\n    - Emit: cd.deployment_completed\n```\n\n**Stage 4: Monitor** (post-deployment)\n```yaml\njobs:\n  post-deploy-monitoring:\n    - Query Cloud Logging for errors (15 min window)\n    - Check p95/p99 latency\n    - If error_rate >5%: Trigger rollback\n    - If latency >1s: Alert DevOps team\n    - Emit: cd.monitoring_completed\n```",
+      "word_count": 243
+    },
+    {
+      "section_id": "branch-protection-rules",
+      "id": "branch-protection-rules",
+      "level": 3,
+      "title": "Branch Protection Rules",
+      "content": "**`main` branch:**\n- Require PR before merge\n- Require 1 approval\n- Require status checks: `lint`, `type-check`, `unit-tests`, `integration-tests`, `security-scan`\n- Require linear history\n- Automatically delete merged branches\n\n**`develop` branch:**\n- Require PR before merge\n- Require status checks: `lint`, `type-check`, `unit-tests`\n- Approvals optional (for speed)",
+      "content_markdown": "**`main` branch:**\n- Require PR before merge\n- Require 1 approval\n- Require status checks: `lint`, `type-check`, `unit-tests`, `integration-tests`, `security-scan`\n- Require linear history\n- Automatically delete merged branches\n\n**`develop` branch:**\n- Require PR before merge\n- Require status checks: `lint`, `type-check`, `unit-tests`\n- Approvals optional (for speed)",
+      "word_count": 48
+    },
+    {
+      "section_id": "rollback-procedure",
+      "id": "rollback-procedure",
+      "level": 3,
+      "title": "Rollback Procedure",
+      "content": "**Automatic Rollback (dev/staging):**\n```\n1. Detect failure (error rate >5% for 5 min, or smoke tests fail)\n2. Identify last known good revision (query OASIS deployments table)\n3. Execute Cloud Run traffic shift to previous revision (100% traffic)\n4. Verify service recovery (health check + error rate check)\n5. Emit OASIS event: cd.rollback_completed\n6. Notify DevOps chat\n7. Create incident report (VTID auto-created: BUG-INFRA-XXXX)\n```\n\n**Manual Rollback (production):**\n```\n1. On-call engineer triggers rollback via GitHub Actions workflow_dispatch\n2. Select target revision (from dropdown of last 5 revisions)\n3. Confirm rollback (requires reason in text field)\n4. Execute traffic shift (immediate 100% to selected revision)\n5. Monitor for 30 minutes\n6. Emit OASIS event: cd.rollback_completed\n7. Post-mortem required within 24 hours\n```\n\n---",
+      "content_markdown": "**Automatic Rollback (dev/staging):**\n```\n1. Detect failure (error rate >5% for 5 min, or smoke tests fail)\n2. Identify last known good revision (query OASIS deployments table)\n3. Execute Cloud Run traffic shift to previous revision (100% traffic)\n4. Verify service recovery (health check + error rate check)\n5. Emit OASIS event: cd.rollback_completed\n6. Notify DevOps chat\n7. Create incident report (VTID auto-created: BUG-INFRA-XXXX)\n```\n\n**Manual Rollback (production):**\n```\n1. On-call engineer triggers rollback via GitHub Actions workflow_dispatch\n2. Select target revision (from dropdown of last 5 revisions)\n3. Confirm rollback (requires reason in text field)\n4. Execute traffic shift (immediate 100% to selected revision)\n5. Monitor for 30 minutes\n6. Emit OASIS event: cd.rollback_completed\n7. Post-mortem required within 24 hours\n```\n\n---",
+      "word_count": 123
+    },
+    {
+      "section_id": "6-infrastructure-components",
+      "id": "6-infrastructure-components",
+      "level": 2,
+      "title": "6. Infrastructure Components",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "6-1-gateway-service",
+      "id": "6-1-gateway-service",
+      "level": 3,
+      "title": "6.1 Gateway Service",
+      "content": "**Purpose:** Central API entry point for all Vitana services\n\n**Responsibilities:**\n- Request routing to backend services (OASIS, Maxina, AlKalma, Earthlings)\n- Authentication & authorization (JWT validation)\n- Rate limiting (per-user, per-IP)\n- Request/response logging\n- OpenAPI specification hosting\n- CORS handling\n\n**Technology:**\n- Framework: Express.js\n- Language: TypeScript\n- Deployment: Cloud Run (GCP)\n- Port: 8080\n\n**Scaling:**\n- Dev: Min 0, Max 2\n- Staging: Min 1, Max 5\n- Prod: Min 2, Max 10",
+      "content_markdown": "**Purpose:** Central API entry point for all Vitana services\n\n**Responsibilities:**\n- Request routing to backend services (OASIS, Maxina, AlKalma, Earthlings)\n- Authentication & authorization (JWT validation)\n- Rate limiting (per-user, per-IP)\n- Request/response logging\n- OpenAPI specification hosting\n- CORS handling\n\n**Technology:**\n- Framework: Express.js\n- Language: TypeScript\n- Deployment: Cloud Run (GCP)\n- Port: 8080\n\n**Scaling:**\n- Dev: Min 0, Max 2\n- Staging: Min 1, Max 5\n- Prod: Min 2, Max 10",
+      "word_count": 75
+    },
+    {
+      "section_id": "6-2-oasis-service",
+      "id": "6-2-oasis-service",
+      "level": 3,
+      "title": "6.2 OASIS Service",
+      "content": "**Purpose:** Event ledger and state tracker (described in Section 2)\n\n**Technology:**\n- Database: PostgreSQL (Supabase)\n- ORM: Prisma\n- API Framework: Express.js\n- Deployment: Cloud Run (GCP)\n\n**Scaling:**\n- Dev: Min 0, Max 2\n- Staging: Min 1, Max 3\n- Prod: Min 1, Max 5",
+      "content_markdown": "**Purpose:** Event ledger and state tracker (described in Section 2)\n\n**Technology:**\n- Database: PostgreSQL (Supabase)\n- ORM: Prisma\n- API Framework: Express.js\n- Deployment: Cloud Run (GCP)\n\n**Scaling:**\n- Dev: Min 0, Max 2\n- Staging: Min 1, Max 3\n- Prod: Min 1, Max 5",
+      "word_count": 46
+    },
+    {
+      "section_id": "6-3-agent-services",
+      "id": "6-3-agent-services",
+      "level": 3,
+      "title": "6.3 Agent Services",
+      "content": "**Deployment:**\n- GitHub Agent: Cloud Run (min 0, max 2)\n- Deployment Agent: Cloud Run (min 1, max 2) – always ready\n- Monitoring Agent: Cloud Run (min 1, max 1) – singleton\n\n**Triggers:**\n- GitHub Agent: Webhook from GitHub Actions\n- Deployment Agent: GitHub Actions + OASIS API calls\n- Monitoring Agent: Cron (every 60 seconds)",
+      "content_markdown": "**Deployment:**\n- GitHub Agent: Cloud Run (min 0, max 2)\n- Deployment Agent: Cloud Run (min 1, max 2) – always ready\n- Monitoring Agent: Cloud Run (min 1, max 1) – singleton\n\n**Triggers:**\n- GitHub Agent: Webhook from GitHub Actions\n- Deployment Agent: GitHub Actions + OASIS API calls\n- Monitoring Agent: Cron (every 60 seconds)",
+      "word_count": 57
+    },
+    {
+      "section_id": "6-4-notification-service",
+      "id": "6-4-notification-service",
+      "level": 3,
+      "title": "6.4 Notification Service",
+      "content": "**Purpose:** Dispatch notifications to DevOps chat\n\n**Responsibilities:**\n- Listen for OASIS events (via webhook)\n- Format messages per channel (Slack, Discord, Teams)\n- Batch non-critical events (every 15 min)\n- Immediate dispatch for critical events\n\n---",
+      "content_markdown": "**Purpose:** Dispatch notifications to DevOps chat\n\n**Responsibilities:**\n- Listen for OASIS events (via webhook)\n- Format messages per channel (Slack, Discord, Teams)\n- Batch non-critical events (every 15 min)\n- Immediate dispatch for critical events\n\n---",
+      "word_count": 36
+    },
+    {
+      "section_id": "7-security-compliance",
+      "id": "7-security-compliance",
+      "level": 2,
+      "title": "7. Security & Compliance",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "authentication-authorization",
+      "id": "authentication-authorization",
+      "level": 3,
+      "title": "Authentication & Authorization",
+      "content": "**Service-to-Service:**\n- GCP Service Accounts with scoped IAM roles\n- JWT tokens for API calls (short-lived, 1-hour expiry)\n- Secrets stored in GCP Secret Manager (rotated quarterly)\n\n**External APIs:**\n- GitHub: Personal Access Token (PAT) with repo scope\n- Supabase: Service role key (never exposed to clients)",
+      "content_markdown": "**Service-to-Service:**\n- GCP Service Accounts with scoped IAM roles\n- JWT tokens for API calls (short-lived, 1-hour expiry)\n- Secrets stored in GCP Secret Manager (rotated quarterly)\n\n**External APIs:**\n- GitHub: Personal Access Token (PAT) with repo scope\n- Supabase: Service role key (never exposed to clients)",
+      "word_count": 47
+    },
+    {
+      "section_id": "network-security",
+      "id": "network-security",
+      "level": 3,
+      "title": "Network Security",
+      "content": "**Cloud Run Services:**\n- Internal-only by default (except Gateway)\n- Gateway: Public, but behind Cloud Armor (DDoS protection)\n- Supabase: IP whitelist (Cloud Run NAT IPs only)",
+      "content_markdown": "**Cloud Run Services:**\n- Internal-only by default (except Gateway)\n- Gateway: Public, but behind Cloud Armor (DDoS protection)\n- Supabase: IP whitelist (Cloud Run NAT IPs only)",
+      "word_count": 27
+    },
+    {
+      "section_id": "audit-trails",
+      "id": "audit-trails",
+      "level": 3,
+      "title": "Audit Trails",
+      "content": "**OASIS events provide complete audit trail:**\n- Who: `actor` field (human username or `deployment-agent`)\n- What: `event_type` + `metadata`\n- When: `timestamp` (UTC)\n- Where: `environment` + `source_service`\n\n**Retention:**\n- Dev events: 30 days\n- Staging events: 90 days\n- Production events: 7 years (compliance requirement)",
+      "content_markdown": "**OASIS events provide complete audit trail:**\n- Who: `actor` field (human username or `deployment-agent`)\n- What: `event_type` + `metadata`\n- When: `timestamp` (UTC)\n- Where: `environment` + `source_service`\n\n**Retention:**\n- Dev events: 30 days\n- Staging events: 90 days\n- Production events: 7 years (compliance requirement)",
+      "word_count": 46
+    },
+    {
+      "section_id": "incident-response",
+      "id": "incident-response",
+      "level": 3,
+      "title": "Incident Response",
+      "content": "**Severity Levels:**\n- **P0 (Critical):** Production down, data breach, security incident\n  - Response time: 15 minutes\n  - Escalation: Page on-call + notify CTO\n- **P1 (High):** Staging down, deployment failures, performance degradation\n  - Response time: 1 hour\n  - Escalation: DevOps chat + email\n- **P2 (Medium):** Non-critical bugs, minor outages in dev\n  - Response time: 4 hours\n  - Escalation: DevOps chat only\n- **P3 (Low):** Nice-to-have fixes, documentation updates\n  - Response time: 1 week\n  - Escalation: None (VTID created, added to backlog)\n\n---",
+      "content_markdown": "**Severity Levels:**\n- **P0 (Critical):** Production down, data breach, security incident\n  - Response time: 15 minutes\n  - Escalation: Page on-call + notify CTO\n- **P1 (High):** Staging down, deployment failures, performance degradation\n  - Response time: 1 hour\n  - Escalation: DevOps chat + email\n- **P2 (Medium):** Non-critical bugs, minor outages in dev\n  - Response time: 4 hours\n  - Escalation: DevOps chat only\n- **P3 (Low):** Nice-to-have fixes, documentation updates\n  - Response time: 1 week\n  - Escalation: None (VTID created, added to backlog)\n\n---",
+      "word_count": 83
+    },
+    {
+      "section_id": "8-operational-metrics-slos",
+      "id": "8-operational-metrics-slos",
+      "level": 2,
+      "title": "8. Operational Metrics & SLOs",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "service-level-objectives-slos",
+      "id": "service-level-objectives-slos",
+      "level": 3,
+      "title": "Service Level Objectives (SLOs)",
+      "content": "**Uptime:**\n- Production: 99.9% (43 minutes downtime/month allowed)\n- Staging: 99% (7 hours downtime/month allowed)\n- Dev: Best effort (no SLO)\n\n**Latency:**\n- p50: <200ms\n- p95: <500ms\n- p99: <1000ms\n\n**Error Rate:**\n- Production: <0.1%\n- Staging: <1%",
+      "content_markdown": "**Uptime:**\n- Production: 99.9% (43 minutes downtime/month allowed)\n- Staging: 99% (7 hours downtime/month allowed)\n- Dev: Best effort (no SLO)\n\n**Latency:**\n- p50: <200ms\n- p95: <500ms\n- p99: <1000ms\n\n**Error Rate:**\n- Production: <0.1%\n- Staging: <1%",
+      "word_count": 39
+    },
+    {
+      "section_id": "key-metrics-tracked-in-oasis",
+      "id": "key-metrics-tracked-in-oasis",
+      "level": 3,
+      "title": "Key Metrics (Tracked in OASIS)",
+      "content": "**Deployment Frequency:**\n- Target: 10+ deployments/day (dev), 5+ deployments/week (staging), 2+ deployments/week (prod)\n\n**Change Failure Rate:**\n- Target: <5% (deployments requiring rollback)\n\n**Mean Time to Recovery (MTTR):**\n- Target: <15 minutes (automatic rollback in dev/staging)\n\n**Mean Time Between Failures (MTBF):**\n- Target: >7 days (no P0 incidents for a week)",
+      "content_markdown": "**Deployment Frequency:**\n- Target: 10+ deployments/day (dev), 5+ deployments/week (staging), 2+ deployments/week (prod)\n\n**Change Failure Rate:**\n- Target: <5% (deployments requiring rollback)\n\n**Mean Time to Recovery (MTTR):**\n- Target: <15 minutes (automatic rollback in dev/staging)\n\n**Mean Time Between Failures (MTBF):**\n- Target: >7 days (no P0 incidents for a week)",
+      "word_count": 50
+    },
+    {
+      "section_id": "monitoring-dashboards",
+      "id": "monitoring-dashboards",
+      "level": 3,
+      "title": "Monitoring Dashboards",
+      "content": "**Real-Time Dashboard (Grafana):**\n- Service health (all environments)\n- Error rates (last 1 hour, 24 hours, 7 days)\n- Latency (p50, p95, p99)\n- Deployment timeline\n\n**OASIS Analytics Dashboard:**\n- VTID completion rate (% closed within 7 days)\n- Agent escalation rate (% of tasks requiring human intervention)\n- CI/CD pipeline duration (median, p95)\n\n---",
+      "content_markdown": "**Real-Time Dashboard (Grafana):**\n- Service health (all environments)\n- Error rates (last 1 hour, 24 hours, 7 days)\n- Latency (p50, p95, p99)\n- Deployment timeline\n\n**OASIS Analytics Dashboard:**\n- VTID completion rate (% closed within 7 days)\n- Agent escalation rate (% of tasks requiring human intervention)\n- CI/CD pipeline duration (median, p95)\n\n---",
+      "word_count": 55
+    },
+    {
+      "section_id": "9-agent-escalation-protocols",
+      "id": "9-agent-escalation-protocols",
+      "level": 2,
+      "title": "9. Agent Escalation Protocols",
+      "content": "",
+      "content_markdown": "",
+      "word_count": 0
+    },
+    {
+      "section_id": "when-agents-must-escalate",
+      "id": "when-agents-must-escalate",
+      "level": 3,
+      "title": "When Agents Must Escalate",
+      "content": "**GitHub Agent:**\n- Merge conflicts requiring manual resolution\n- CI failures after 3 retry attempts\n- Security vulnerabilities detected (Critical or High severity)\n- Breaking API changes in PR\n\n**Deployment Agent:**\n- Production deployment requests (always manual approval)\n- Rollback failures\n- Database migrations detected\n- GCP quota exceeded or permission errors\n\n**Monitoring Agent:**\n- Service down >5 minutes (despite recovery attempts)\n- Production outage (any duration)\n- Database connection failures\n- Unknown error patterns",
+      "content_markdown": "**GitHub Agent:**\n- Merge conflicts requiring manual resolution\n- CI failures after 3 retry attempts\n- Security vulnerabilities detected (Critical or High severity)\n- Breaking API changes in PR\n\n**Deployment Agent:**\n- Production deployment requests (always manual approval)\n- Rollback failures\n- Database migrations detected\n- GCP quota exceeded or permission errors\n\n**Monitoring Agent:**\n- Service down >5 minutes (despite recovery attempts)\n- Production outage (any duration)\n- Database connection failures\n- Unknown error patterns",
+      "word_count": 75
+    },
+    {
+      "section_id": "escalation-channels",
+      "id": "escalation-channels",
+      "level": 3,
+      "title": "Escalation Channels",
+      "content": "**DevOps Chat:**\n- All escalations posted here immediately\n- Format: `🚨 AGENT ESCALATION | {service} | {reason} | {vtid}`\n\n**Email:**\n- CTO, VP Engineering, on-call engineer\n- Only for P0 (critical) incidents\n\n**PagerDuty:**\n- Production outages only\n- Automatically pages on-call engineer\n\n**OASIS Event:**\n- `agent.escalation` event emitted with full context\n- Queryable for post-incident analysis\n\n---",
+      "content_markdown": "**DevOps Chat:**\n- All escalations posted here immediately\n- Format: `🚨 AGENT ESCALATION | {service} | {reason} | {vtid}`\n\n**Email:**\n- CTO, VP Engineering, on-call engineer\n- Only for P0 (critical) incidents\n\n**PagerDuty:**\n- Production outages only\n- Automatically pages on-call engineer\n\n**OASIS Event:**\n- `agent.escalation` event emitted with full context\n- Queryable for post-incident analysis\n\n---",
+      "word_count": 57
+    },
+    {
+      "section_id": "10-future-enhancements",
+      "id": "10-future-enhancements",
+      "level": 2,
+      "title": "10. Future Enhancements",
+      "content": "**Q2 2026:**\n- Multi-region deployment (US West, US East, EU)\n- Advanced observability (OpenTelemetry, distributed tracing)\n- Chaos engineering (automated fault injection testing)\n\n**Q3 2026:**\n- Agent self-learning (agents learn from past escalations, reduce future escalations)\n- Predictive rollback (ML model predicts deployment failures before they happen)\n\n**Q4 2026:**\n- Multi-cloud (AWS + GCP for redundancy)\n- Edge deployments (Cloudflare Workers for <50ms latency)\n\n---",
+      "content_markdown": "**Q2 2026:**\n- Multi-region deployment (US West, US East, EU)\n- Advanced observability (OpenTelemetry, distributed tracing)\n- Chaos engineering (automated fault injection testing)\n\n**Q3 2026:**\n- Agent self-learning (agents learn from past escalations, reduce future escalations)\n- Predictive rollback (ML model predicts deployment failures before they happen)\n\n**Q4 2026:**\n- Multi-cloud (AWS + GCP for redundancy)\n- Edge deployments (Cloudflare Workers for <50ms latency)\n\n---",
+      "word_count": 65
+    },
+    {
+      "section_id": "conclusion",
+      "id": "conclusion",
+      "level": 2,
+      "title": "Conclusion",
+      "content": "Vitana's infrastructure is designed for **autonomous operation within safety boundaries**. Agents handle routine tasks (deployments, PR merges, health checks), freeing humans to focus on strategic work. OASIS provides complete visibility and auditability. VTIDs ensure every task is tracked from creation to closure.\n\n**Core Principles:**\n1. **Automate the routine, escalate the complex**\n2. **Immutable audit trail (OASIS) for all actions**\n3. **Bounded autonomy (agents operate within defined limits)**\n4. **Default-safe behavior (when uncertain, escalate)**\n5. **Transparency (all agent actions visible in DevOps chat + OASIS)**\n\n---\n\n**Owner:** CTO  \n**Review Cadence:** Quarterly  \n**Feedback:** DevOps chat or email cto@vitana.com",
+      "content_markdown": "Vitana's infrastructure is designed for **autonomous operation within safety boundaries**. Agents handle routine tasks (deployments, PR merges, health checks), freeing humans to focus on strategic work. OASIS provides complete visibility and auditability. VTIDs ensure every task is tracked from creation to closure.\n\n**Core Principles:**\n1. **Automate the routine, escalate the complex**\n2. **Immutable audit trail (OASIS) for all actions**\n3. **Bounded autonomy (agents operate within defined limits)**\n4. **Default-safe behavior (when uncertain, escalate)**\n5. **Transparency (all agent actions visible in DevOps chat + OASIS)**\n\n---\n\n**Owner:** CTO  \n**Review Cadence:** Quarterly  \n**Feedback:** DevOps chat or email cto@vitana.com",
+      "word_count": 96
+    }
+  ],
+  "metadata": {
+    "doc_id": "DOC-30-0300",
+    "title": "Vitana DevOps, OASIS & Autonomous Infrastructure Strategy",
+    "version": "0.1.0",
+    "status": "canonical",
+    "template": "concept",
+    "owner": "CTO",
+    "tags": [
+      "devops",
+      "oasis",
+      "infrastructure",
+      "vtid",
+      "autopilot",
+      "agents"
+    ],
+    "related_vtids": [],
+    "related_docs": [
+      "DOC-00-0001",
+      "DOC-00-0003",
+      "DOC-95-9500"
+    ],
+    "created_at": "2025-11-03",
+    "updated_at": "2025-11-03"
+  }
+}

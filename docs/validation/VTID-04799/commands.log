@@ -1,0 +1,5 @@
+# VTID-04799 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04799-selfheal-pretriage.test.ts test/vtid-04759-selfheal-jev-gates.test.ts   # 43 tests (outputs/jest-b3.txt)
+npx jest (full gateway suite)                                          # 1440 suites, 23109 tests, 0 failed (outputs/jest-full.txt)

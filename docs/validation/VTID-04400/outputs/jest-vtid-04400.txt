@@ -1,0 +1,17 @@
+    ✓ only the exact string true enables it (4 ms)
+    ✓ off: no target, no tools, commerce catalog unchanged, the tool refuses (5 ms)
+    ✓ commerce catalog declares the three tools exactly once, beside navigation (9 ms)
+    ✓ member, command-hub and anonymous catalogs do not get the commerce specialist (2 ms)
+    ✓ the budget priority list ranks it with the other flag-gated tools
+    ✓ stored org roles resolve to a ceiling; no membership is none (1 ms)
+    ✓ the dispatcher passes the caller memberships to the policy (2 ms)
+    ✓ target is commerce/read on the commerce surface only (1 ms)
+    ✓ pickMembership resolves only among the caller’s memberships (1 ms)
+    ✓ every read is pinned to the caller; invites only for an org_admin (2 ms)
+    ✓ errors and cancellation come back as tool errors, never throws (1 ms)
+    ✓ the run uses the triage stage and three read tools and bounds the findings (1 ms)
+    ✓ a member of an organization gets the findings
+    ✓ a caller with no organization is refused by policy; a load failure surfaces (1 ms)
+    ✓ orb-live dispatches ask_commerce_specialist to the delegation module (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total

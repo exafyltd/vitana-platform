@@ -1,0 +1,781 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OasisEvent {
+  id        String   @id @default(cuid())
+  rid       String? // external request/event id (optional)
+  service   String
+  event     String? // Event name (legacy field)
+  tenant    String? // "system" | "maxina" | "earthlings" | "alkalma" | etc.
+  status    String // "start" | "success" | "fail" | "blocked" | "info" | "warning" | "error"
+  notes     String?  @db.Text
+  gitSha    String?  @map("git_sha")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // VTID-0522: Fields for event ingest API (/api/v1/events/ingest)
+  vtid    String? // VTID reference (e.g., "VTID-0521-TEST-0001")
+  topic   String? // Event type (e.g., "deployment_succeeded")
+  message String? @db.Text // Event message
+  role    String? // Role (e.g., "API", "claude")
+  model   String? // Model name (e.g., "event-ingestion-api")
+  link    String? // Optional link
+  source  String? // Event source (alternative to service)
+
+  // Projection tracking (DEV-OASIS-0010)
+  projected Boolean @default(false)
+
+  // VTID-01260: Actor identification and surface tracking
+  actorId            String? @map("actor_id") // User/system identifier
+  actorEmail         String? @map("actor_email") // Human-readable email
+  actorRole          String? @map("actor_role") // user, operator, admin, system, agent
+  surface            String? // orb, operator, command-hub, cicd, system, api
+  conversationTurnId String? @map("conversation_turn_id") // Groups conversation events
+
+  @@index([projected, createdAt], map: "idx_oasis_events_projected_created")
+  @@index([createdAt], map: "idx_oasis_events_created_at")
+  @@index([service, createdAt], map: "idx_oasis_events_service_created")
+  @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
+  @@index([status, createdAt], map: "idx_oasis_events_status_created")
+  @@index([vtid], map: "idx_oasis_events_vtid")
+  @@map("oasis_events")
+}
+
+model VtidLedger {
+  id          String   @id @default(cuid())
+  vtid        String   @unique // VTID-YYYY-NNNN format
+  taskFamily  String   @map("task_family") // e.g., "governance", "deployment", "analysis"
+  taskType    String   @map("task_type") // e.g., "migration", "test", "review"
+  description String   @db.Text
+  status      String // "pending" | "active" | "complete" | "blocked" | "cancelled"
+  assignedTo  String?  @map("assigned_to") // Optional: who/what is executing
+  tenant      String // "system" | "maxina" | "earthlings" | etc.
+  metadata    Json? // Additional task-specific metadata
+  parentVtid  String?  @map("parent_vtid") // For subtasks
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // VTID-0521: Event tracking columns for automatic ledger sync
+  lastEventId String?   @map("last_event_id") // ID of last OASIS event that updated this VTID
+  lastEventAt DateTime? @map("last_event_at") // Timestamp of last event
+  service     String? // Service that triggered the update (e.g., "gateway", "oasis-projector")
+  environment String?   @default("dev") // Environment (dev, staging, prod)
+
+  // VTID-0522: Additional columns for tasks API compatibility
+  layer   String? // High-level category (maps to taskFamily for compatibility)
+  module  String? // Module name (maps to taskType for compatibility)
+  title   String? // Short display title
+  summary String? @db.Text // Summary text for display
+
+  @@index([createdAt], map: "idx_vtid_created_at")
+  @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
+  @@index([status, createdAt], map: "idx_vtid_status_created")
+  @@index([tenant, createdAt], map: "idx_vtid_tenant_created")
+  @@index([vtid], map: "idx_vtid_lookup")
+  @@index([lastEventAt(sort: Desc)], map: "idx_vtid_last_event_at")
+  @@index([service], map: "idx_vtid_service")
+  @@map("vtid_ledger")
+}
+
+// Projection Offsets - tracks projection progress (DEV-OASIS-0010)
+model ProjectionOffset {
+  id              String    @id @default(cuid())
+  projectorName   String    @unique @map("projector_name")
+  lastEventId     String?   @map("last_event_id")
+  lastEventTime   DateTime? @map("last_event_time")
+  lastProcessedAt DateTime  @default(now()) @updatedAt @map("last_processed_at")
+  eventsProcessed Int       @default(0) @map("events_processed")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([projectorName], map: "idx_projection_offsets_projector")
+  @@map("projection_offsets")
+}
+
+// ============================================================================
+// VCAOP — Vitanaland Commerce & Account-Operations Platform (CTRL-SCHEMA-0002)
+// Runbook Sec. 4.1–4.7. Extends the OASIS schema in place (do NOT fork).
+// Every mutating op appends an OasisEvent (reused above) in the same tx.
+// Secrets are stored ONLY as *_ref / *_hash (no-credential-store guardrail);
+// PII columns are RLS-protected and never emitted to logs/prompts/OASIS.
+// user_id / tenant_id are external references (Supabase auth/app_users) stored
+// as text — no cross-schema FK, matching the OasisEvent.tenant convention.
+// ============================================================================
+
+// Sec. 4.1 — single canonical Exafy business record (supply side L1).
+model BusinessIdentity {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  legalName         String   @map("legal_name")
+  entityType        String   @map("entity_type")
+  registrationNo    String?  @map("registration_no")
+  vatEori           String?  @map("vat_eori")
+  ein               String?
+  registeredAddress String?  @map("registered_address")
+  officerName       String?  @map("officer_name") // PII — RLS-only, never to forbidden sinks
+  officerIdRef      String?  @map("officer_id_ref") // vaulted ID reference, not a value
+  licenseRefs       Json?    @map("license_refs")
+  documentRefs      Json?    @map("document_refs") // vault paths
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  @@index([tenantId], map: "idx_business_identity_tenant")
+  @@map("business_identity")
+}
+
+// Sec. 4.2 — provider catalog (supplier/marketplace). policy JSON gates actions (Sec. 4.3).
+model Provider {
+  id                String   @id @default(cuid())
+  name              String
+  category          String
+  connectorMode     String   @map("connector_mode") // api|oauth|scim|browser|manual
+  supportsBulk      Boolean  @default(false) @map("supports_bulk")
+  supportsMfa       Boolean  @default(false) @map("supports_mfa")
+  supportsRotation  Boolean  @default(false) @map("supports_rotation")
+  jurisdiction      String?
+  tosRiskLevel      String?  @map("tos_risk_level")
+  connectorConfig   Json?    @map("connector_config") // non-secret only
+  policy            Json // Sec. 4.3 per-provider policy (default-deny if absent)
+  kybRequired       Boolean  @default(true) @map("kyb_required")
+  requiredDocuments Json?    @map("required_documents")
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  accounts ProviderAccount[]
+
+  @@index([category], map: "idx_provider_category")
+  @@map("provider")
+}
+
+// Sec. 4.2 — Exafy's account at a provider. Credentials live in vault; only refs here.
+model ProviderAccount {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  providerId     String   @map("provider_id")
+  status         String   @default("discovered") // discovered|policy_approved|data_prepared|registration_submitted|kyb_pending|verification_pending|active|degraded|suspended|retired|failed
+  credentialRef  String?  @map("credential_ref")
+  mfaSeedRef     String?  @map("mfa_seed_ref")
+  aliasMailbox   String?  @map("alias_mailbox")
+  currentAgentId String?  @map("current_agent_id")
+  createdAt      DateTime @default(now()) @map("created_at")
+  updatedAt      DateTime @updatedAt @map("updated_at")
+
+  provider        Provider                @relation(fields: [providerId], references: [id], onDelete: Cascade)
+  jobs            ProvisioningJob[]
+  healthSnapshots AccountHealthSnapshot[]
+
+  @@index([tenantId, providerId], map: "idx_provider_account_tenant_provider")
+  @@index([status], map: "idx_provider_account_status")
+  @@map("provider_account")
+}
+
+// Sec. 4.2 — provisioning/operations job and its decomposition.
+model ProvisioningJob {
+  id                String   @id @default(cuid())
+  tenantId          String   @map("tenant_id")
+  providerAccountId String   @map("provider_account_id")
+  status            String   @default("queued") // queued|running|blocked|completed|failed
+  connectorTier     String?  @map("connector_tier") // api|oauth|scim|browser|manual
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+  steps           JobStep[]
+
+  @@index([providerAccountId], map: "idx_provisioning_job_account")
+  @@index([status], map: "idx_provisioning_job_status")
+  @@map("provisioning_job")
+}
+
+model JobStep {
+  id        String   @id @default(cuid())
+  jobId     String   @map("job_id")
+  stepType  String   @map("step_type")
+  sequence  Int      @default(0)
+  status    String   @default("pending") // pending|running|blocked|done|failed
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  job      ProvisioningJob @relation(fields: [jobId], references: [id], onDelete: Cascade)
+  attempts JobAttempt[]
+
+  @@index([jobId], map: "idx_job_step_job")
+  @@map("job_step")
+}
+
+model JobAttempt {
+  id         String    @id @default(cuid())
+  stepId     String    @map("step_id")
+  attemptNo  Int       @default(1) @map("attempt_no")
+  status     String    @default("running") // running|success|failed
+  error      String?   @db.Text
+  startedAt  DateTime  @default(now()) @map("started_at")
+  finishedAt DateTime? @map("finished_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  step      JobStep       @relation(fields: [stepId], references: [id], onDelete: Cascade)
+  artifacts JobArtifact[]
+
+  @@index([stepId], map: "idx_job_attempt_step")
+  @@map("job_attempt")
+}
+
+// Sec. 4.2 — artifacts are scrubbed of PII/secrets (only refs/scrubbed blobs).
+model JobArtifact {
+  id        String   @id @default(cuid())
+  attemptId String   @map("attempt_id")
+  kind      String
+  ref       String? // vault/scrubbed-artifact reference
+  scrubbed  Boolean  @default(true)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  attempt JobAttempt @relation(fields: [attemptId], references: [id], onDelete: Cascade)
+
+  @@index([attemptId], map: "idx_job_artifact_attempt")
+  @@map("job_artifact")
+}
+
+// Sec. 4.2 — human-gate task. payload is secret/PII-free (else vault refs).
+model HumanTask {
+  id           String    @id @default(cuid())
+  tenantId     String    @map("tenant_id")
+  type         String // KYB|LIVENESS|CAPTCHA|PAYOUT_BANK_LINK|PRIVILEGE_ESCALATION|IRREVERSIBLE_SUBMIT|TRANSFER
+  assignee     String? // named officer
+  providerId   String?   @map("provider_id")
+  jobId        String?   @map("job_id")
+  payload      Json?
+  status       String    @default("open") // open|in_progress|approved|rejected|completed
+  sla          DateTime?
+  evidenceRefs Json?     @map("evidence_refs")
+  createdAt    DateTime  @default(now()) @map("created_at")
+  updatedAt    DateTime  @updatedAt @map("updated_at")
+
+  @@index([tenantId, status], map: "idx_human_task_tenant_status")
+  @@index([type], map: "idx_human_task_type")
+  @@map("human_task")
+}
+
+model AccountHealthSnapshot {
+  id                String   @id @default(cuid())
+  providerAccountId String   @map("provider_account_id")
+  healthStatus      String   @map("health_status")
+  detail            Json?
+  computedAt        DateTime @default(now()) @map("computed_at")
+
+  providerAccount ProviderAccount @relation(fields: [providerAccountId], references: [id], onDelete: Cascade)
+
+  @@index([providerAccountId, computedAt], map: "idx_account_health_account_time")
+  @@map("account_health_snapshot")
+}
+
+// Sec. 4.6 — affiliate program (demand side L2). same allow/deny policy discipline.
+model AffiliateProgram {
+  id                       String   @id @default(cuid())
+  network                  String
+  merchant                 String
+  commissionTerms          Json?    @map("commission_terms")
+  affiliateCashbackAllowed Boolean? @map("affiliate_cashback_allowed")
+  policy                   Json
+  source                   String // aggregator|direct
+  createdAt                DateTime @default(now()) @map("created_at")
+  updatedAt                DateTime @updatedAt @map("updated_at")
+
+  commissions CommissionEvent[]
+
+  @@index([network], map: "idx_affiliate_program_network")
+  @@map("affiliate_program")
+}
+
+// Sec. 4.6 — commission attributed via per-user SubID. pending->confirmed->reversed.
+model CommissionEvent {
+  id                 String   @id @default(cuid())
+  affiliateProgramId String   @map("affiliate_program_id")
+  subId              String   @map("sub_id")
+  userId             String   @map("user_id")
+  merchant           String
+  orderRef           String?  @map("order_ref")
+  grossCommission    Decimal  @default(0) @map("gross_commission") @db.Decimal(18, 4)
+  currency           String   @default("EUR")
+  status             String   @default("pending") // pending|confirmed|reversed
+  postbackRef        String?  @map("postback_ref")
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  affiliateProgram AffiliateProgram @relation(fields: [affiliateProgramId], references: [id], onDelete: Cascade)
+  rewards          RewardsLedger[]
+
+  @@index([userId, status], map: "idx_commission_event_user_status")
+  @@index([subId], map: "idx_commission_event_subid")
+  @@map("commission_event")
+}
+
+// Sec. 4.6 — per-user accrual ledger. Wallet balance is a projection of this.
+model RewardsLedger {
+  id                String   @id @default(cuid())
+  userId            String   @map("user_id")
+  commissionEventId String?  @map("commission_event_id")
+  amount            Decimal  @default(0) @db.Decimal(18, 4)
+  currency          String   @default("EUR")
+  state             String   @default("pending") // pending|confirmed|redeemable|redeemed
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  commissionEvent CommissionEvent? @relation(fields: [commissionEventId], references: [id], onDelete: SetNull)
+
+  @@index([userId, state], map: "idx_rewards_ledger_user_state")
+  @@map("rewards_ledger")
+}
+
+// Sec. 4.6 — consented read-only loyalty link. SCHEMA-ENFORCED: no password/secret field.
+model UserRewardLink {
+  id                  String   @id @default(cuid())
+  userId              String   @map("user_id")
+  program             String
+  memberId            String?  @map("member_id") // user-provided, optional — NOT a credential
+  consentRef          String?  @map("consent_ref")
+  officialApiTokenRef String?  @map("official_api_token_ref") // Secret Manager ref, never a value
+  readOnly            Boolean  @default(true) @map("read_only")
+  createdAt           DateTime @default(now()) @map("created_at")
+  updatedAt           DateTime @updatedAt @map("updated_at")
+
+  @@index([userId], map: "idx_user_reward_link_user")
+  @@map("user_reward_link")
+}
+
+// Sec. 4.6 — Universal Cart order + per-merchant routing through the checkout ladder.
+model CartOrder {
+  id          String   @id @default(cuid())
+  userId      String   @map("user_id")
+  status      String   @default("open") // open|routed|completed|cancelled
+  totalAmount Decimal? @map("total_amount") @db.Decimal(18, 4)
+  currency    String   @default("EUR")
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  routes      MerchantRoute[]
+  disclosures Disclosure[]
+
+  @@index([userId, status], map: "idx_cart_order_user_status")
+  @@map("cart_order")
+}
+
+model MerchantRoute {
+  id                 String   @id @default(cuid())
+  cartOrderId        String   @map("cart_order_id")
+  merchant           String
+  checkoutConnector  String?  @map("checkout_connector") // ucp|shopify_agent|violet|rye|skyvern
+  affiliateProgramId String?  @map("affiliate_program_id")
+  subId              String?  @map("sub_id")
+  lineItems          Json?    @map("line_items")
+  status             String   @default("pending") // pending|routed|confirmed|failed
+  createdAt          DateTime @default(now()) @map("created_at")
+  updatedAt          DateTime @updatedAt @map("updated_at")
+
+  cartOrder CartOrder @relation(fields: [cartOrderId], references: [id], onDelete: Cascade)
+
+  @@index([cartOrderId], map: "idx_merchant_route_cart")
+  @@map("merchant_route")
+}
+
+// ============================================================================
+// COMMERCE MESH — Connector Factory persistence (VTID-03535, ADR-002/003).
+// Additive to the VCAOP schema above. Manifests store secret REFERENCES only
+// (validated in services/vcaop/src/factory/manifest.ts before any row is
+// written). IntegrationVersion.document is the full manifest JSON — immutable
+// once a ConnectorCertification row marks it certified.
+// ============================================================================
+
+model PartnerTenant {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  name         String
+  status       String   @default("discovered") // CONNECTION_STATES (manifest.ts)
+  jurisdiction String?
+  ownerUserId  String?  @map("owner_user_id") // VTID-03553: self-service owner
+  ownerEmail   String?  @map("owner_email")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  // VTID-04471: owning partner organization (Supabase-managed table, FK in migration 0007)
+  partnerOrganizationId String? @map("partner_organization_id") @db.Uuid
+
+  manifests IntegrationManifest[]
+
+  @@index([tenantId], map: "idx_partner_tenant_tenant")
+  @@index([status], map: "idx_partner_tenant_status")
+  @@index([ownerUserId], map: "idx_partner_tenant_owner")
+  @@index([partnerOrganizationId], map: "idx_partner_tenant_partner_org")
+  @@map("partner_tenant")
+}
+
+model IntegrationManifest {
+  id              String   @id @default(cuid())
+  partnerTenantId String   @map("partner_tenant_id")
+  connectorId     String   @map("connector_id") // kebab-case slug
+  providerId      String   @map("provider_id") // policy-engine provider row that gates every call
+  connectionType  String   @map("connection_type") // mcp|openapi|oauth_api|rest|graphql|webhook|platform_install|scim|edi_sftp|browser|manual
+  riskLevel       String   @map("risk_level")
+  status          String   @default("discovered") // CONNECTION_STATES
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  partnerTenant PartnerTenant        @relation(fields: [partnerTenantId], references: [id], onDelete: Cascade)
+  versions      IntegrationVersion[]
+  capabilities  PartnerCapability[]
+
+  @@unique([partnerTenantId, connectorId], map: "uq_integration_manifest_partner_connector")
+  @@index([status], map: "idx_integration_manifest_status")
+  @@map("integration_manifest")
+}
+
+model IntegrationVersion {
+  id                  String   @id @default(cuid())
+  manifestId          String   @map("manifest_id")
+  version             String // semver
+  document            Json // full ConnectorManifest JSON — secret refs only, never values
+  documentHash        String   @map("document_hash")
+  certificationStatus String   @default("draft") @map("certification_status")
+  createdAt           DateTime @default(now()) @map("created_at")
+
+  manifest       IntegrationManifest      @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+  schemaSources  SchemaSource[]
+  schemaMappings SchemaMapping[]
+  certifications ConnectorCertification[]
+
+  @@unique([manifestId, version], map: "uq_integration_version_manifest_version")
+  @@index([certificationStatus], map: "idx_integration_version_cert_status")
+  @@map("integration_version")
+}
+
+model PartnerCapability {
+  id          String   @id @default(cuid())
+  manifestId  String   @map("manifest_id")
+  key         String
+  kind        String // read|action|event
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  manifest IntegrationManifest @relation(fields: [manifestId], references: [id], onDelete: Cascade)
+
+  @@index([manifestId], map: "idx_partner_capability_manifest")
+  @@map("partner_capability")
+}
+
+model SchemaSource {
+  id        String   @id @default(cuid())
+  versionId String   @map("version_id")
+  name      String
+  fields    Json // [{name,type,required,sensitive}]
+  hash      String // drift detection anchor
+  createdAt DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId], map: "idx_schema_source_version")
+  @@map("schema_source")
+}
+
+model SchemaMapping {
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  sourceSchema    String   @map("source_schema")
+  sourceField     String   @map("source_field")
+  canonicalEntity String   @map("canonical_entity")
+  canonicalField  String   @map("canonical_field")
+  transform       String?
+  confidence      Float
+  decidedBy       String   @map("decided_by") // ai|human
+  sensitive       Boolean  @default(false)
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  version   IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+  decisions MappingDecision[]
+
+  @@index([versionId], map: "idx_schema_mapping_version")
+  @@index([sensitive, confidence], map: "idx_schema_mapping_review_queue")
+  @@map("schema_mapping")
+}
+
+model MappingDecision {
+  id        String   @id @default(cuid())
+  mappingId String   @map("mapping_id")
+  decision  String // approve|reject
+  decidedBy String   @map("decided_by") // human reviewer id — never an AI identity
+  reason    String?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  mapping SchemaMapping @relation(fields: [mappingId], references: [id], onDelete: Cascade)
+
+  @@index([mappingId], map: "idx_mapping_decision_mapping")
+  @@map("mapping_decision")
+}
+
+model ConnectorCertification {
+  id              String   @id @default(cuid())
+  versionId       String   @map("version_id")
+  status          String // certified|approval_required|failed
+  testResults     Json     @map("test_results")
+  pendingMappings Json     @map("pending_mappings")
+  reasons         Json
+  certifiedBy     String?  @map("certified_by")
+  createdAt       DateTime @default(now()) @map("created_at")
+
+  version IntegrationVersion @relation(fields: [versionId], references: [id], onDelete: Cascade)
+
+  @@index([versionId, createdAt], map: "idx_connector_certification_version_time")
+  @@map("connector_certification")
+}
+
+// ============================================================================
+// COMMERCE MESH — Durable event workflows (VTID-03537, brief Sec. 9).
+// Additive. NormalizedEvent ids are deterministic content hashes — the
+// idempotent-consumption anchor. WorkflowRun.idempotency_key is unique — the
+// idempotent-command anchor. Canonical payloads are mapped fields only
+// (data minimization); dropped partner fields are listed, never stored.
+// ============================================================================
+
+model EventSubscription {
+  id           String   @id @default(cuid())
+  tenantId     String   @map("tenant_id")
+  connectorId  String   @map("connector_id")
+  eventKey     String   @map("event_key")
+  workflowName String   @map("workflow_name")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  @@unique([tenantId, connectorId, eventKey, workflowName], map: "uq_event_subscription_route")
+  @@index([connectorId, eventKey, active], map: "idx_event_subscription_lookup")
+  @@map("event_subscription")
+}
+
+model NormalizedEvent {
+  id             String   @id // deterministic content hash — dedup anchor
+  tenantId       String   @map("tenant_id")
+  connectorId    String   @map("connector_id")
+  eventKey       String   @map("event_key")
+  entityType     String   @map("entity_type")
+  sourceNativeId String   @map("source_native_id")
+  correlationId  String   @map("correlation_id")
+  canonical      Json // mapped canonical fields ONLY
+  droppedFields  Json     @map("dropped_fields")
+  processed      Boolean  @default(false)
+  receivedAt     DateTime @default(now()) @map("received_at")
+
+  @@index([correlationId], map: "idx_normalized_event_correlation")
+  @@index([processed, receivedAt], map: "idx_normalized_event_backlog")
+  @@map("normalized_event")
+}
+
+model WorkflowDefinition {
+  id          String   @id @default(cuid())
+  name        String   @unique
+  description String?
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  versions WorkflowVersion[]
+
+  @@map("workflow_definition")
+}
+
+model WorkflowVersion {
+  id           String   @id @default(cuid())
+  definitionId String   @map("definition_id")
+  version      String
+  steps        Json // declarative step metadata (keys, retries, timeouts, compensations)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  definition WorkflowDefinition @relation(fields: [definitionId], references: [id], onDelete: Cascade)
+
+  @@unique([definitionId, version], map: "uq_workflow_version")
+  @@map("workflow_version")
+}
+
+model WorkflowRun {
+  id                String   @id @default(cuid())
+  definitionName    String   @map("definition_name")
+  definitionVersion String   @map("definition_version")
+  status            String // running|completed|compensated|failed|stuck
+  correlationId     String   @map("correlation_id")
+  tenantId          String   @map("tenant_id")
+  idempotencyKey    String   @unique @map("idempotency_key")
+  input             Json
+  cursor            Int      @default(0)
+  createdAt         DateTime @default(now()) @map("created_at")
+  updatedAt         DateTime @updatedAt @map("updated_at")
+
+  steps WorkflowStepRecord[]
+
+  @@index([status, updatedAt], map: "idx_workflow_run_reconciler")
+  @@index([correlationId], map: "idx_workflow_run_correlation")
+  @@index([tenantId, status], map: "idx_workflow_run_tenant_status")
+  @@map("workflow_run")
+}
+
+model WorkflowStepRecord {
+  id       String  @id @default(cuid())
+  runId    String  @map("run_id")
+  key      String
+  sequence Int     @default(0)
+  status   String // completed|failed|compensated|compensation_failed
+  attempts Int     @default(1)
+  result   Json?
+  error    String?
+
+  run WorkflowRun @relation(fields: [runId], references: [id], onDelete: Cascade)
+
+  @@index([runId, sequence], map: "idx_workflow_step_run_seq")
+  @@map("workflow_step")
+}
+
+model DeadLetterEvent {
+  id        String   @id @default(cuid())
+  reason    String
+  runId     String?  @map("run_id")
+  event     Json? // the normalized event (canonical fields only) when event-sourced
+  replayed  Boolean  @default(false)
+  createdAt DateTime @default(now()) @map("created_at")
+
+  @@index([replayed, createdAt], map: "idx_dead_letter_backlog")
+  @@map("dead_letter_event")
+}
+
+// ============================================================================
+// COMMERCE MESH — settlement + usage metering (VTID-03540, sandbox-only per
+// BLK-010) and consent/health isolation (VTID-03541, DORMANT per BLK-009).
+// Health tables carry their own access-policy note: service_role-only +
+// dedicated RLS at live-apply time; NEVER joined into general query paths.
+// ============================================================================
+
+model SettlementInstructionRecord {
+  id            String   @id // caller-supplied — the idempotency anchor
+  type          String
+  tenantId      String   @map("tenant_id")
+  fromAccount   String   @map("from_account")
+  toAccount     String   @map("to_account")
+  amountMinor   BigInt   @map("amount_minor")
+  ref           String?
+  memo          String?
+  receiptId     String?  @map("receipt_id")
+  configVersion String   @map("config_version")
+  status        String   @default("accepted") // accepted|settled|rejected
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  @@index([tenantId, createdAt], map: "idx_settlement_instruction_tenant_time")
+  @@index([status], map: "idx_settlement_instruction_status")
+  @@map("settlement_instruction")
+}
+
+model ConnectorUsageRecord {
+  id             String   @id @default(cuid())
+  tenantId       String   @map("tenant_id")
+  connectorId    String   @map("connector_id")
+  toolOrAction   String   @map("tool_or_action")
+  callerClientId String?  @map("caller_client_id")
+  outcome        String // ok|error|denied
+  durationMs     Int      @map("duration_ms")
+  occurredAt     DateTime @default(now()) @map("occurred_at")
+
+  @@index([tenantId, connectorId, occurredAt], map: "idx_connector_usage_tenant_connector_time")
+  @@map("connector_usage_record")
+}
+
+model ConsentGrantRecord {
+  id              String    @id @default(cuid())
+  tenantId        String    @map("tenant_id")
+  userId          String    @map("user_id")
+  grantee         String
+  purpose         String
+  permittedClaims Json      @map("permitted_claims")
+  validFrom       DateTime  @map("valid_from")
+  validTo         DateTime  @map("valid_to")
+  jurisdiction    String
+  rewardMinor     BigInt    @map("reward_minor")
+  status          String    @default("proposed") // proposed|active|revoked|expired
+  retentionUntil  DateTime? @map("retention_until")
+  createdAt       DateTime  @default(now()) @map("created_at")
+  updatedAt       DateTime  @updatedAt @map("updated_at")
+
+  receipts     ConsentReceiptRecord[]
+  attestations HealthDataAttestationRecord[]
+  quotes       InsuranceQuoteRecord[]
+
+  @@index([userId, status], map: "idx_consent_grant_user_status")
+  @@index([grantee, status], map: "idx_consent_grant_grantee_status")
+  @@map("consent_grant")
+}
+
+model ConsentReceiptRecord {
+  id       String   @id @default(cuid())
+  grantId  String   @map("grant_id")
+  kind     String // granted|revoked|attestation_issued|access_denied|quote_submitted|quote_denied|quote_selected
+  accessor String   @default("unknown") // F8: who asked — part of the audit record
+  detail   Json // metadata only — claim names/grantee/purpose, NEVER metric values
+  at       DateTime @default(now())
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Restrict)
+
+  @@index([grantId, at], map: "idx_consent_receipt_grant_time")
+  @@map("consent_receipt")
+}
+
+model HealthDataAttestationRecord {
+  id               String    @id @default(cuid())
+  grantId          String    @map("grant_id")
+  claim            String
+  period           String
+  met              Boolean
+  confidenceBand   String    @map("confidence_band") // low|medium|high — F6: never the exact ratio
+  issuer           String    @default("Vitanaland")
+  rawDataDisclosed Boolean   @default(false) @map("raw_data_disclosed")
+  issuedAt         DateTime  @default(now()) @map("issued_at")
+  deletedAt        DateTime? @map("deleted_at") // revocation cascade marker
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@unique([grantId, claim, period], map: "uq_health_attestation_grant_claim_period")
+  @@index([grantId], map: "idx_health_attestation_grant")
+  @@map("health_data_attestation")
+}
+
+model InsuranceQuoteRecord {
+  id            String    @id @default(cuid())
+  grantId       String    @map("grant_id")
+  insurer       String
+  product       String
+  premiumMinor  BigInt    @map("premium_minor")
+  discountBps   Int       @map("discount_bps")
+  basedOnClaims Json      @map("based_on_claims")
+  expiresAt     DateTime  @map("expires_at")
+  selectedAt    DateTime? @map("selected_at")
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  grant ConsentGrantRecord @relation(fields: [grantId], references: [id], onDelete: Cascade)
+
+  @@index([grantId], map: "idx_insurance_quote_grant")
+  @@map("insurance_quote")
+}
+
+// Sec. 4.6 — FTC-style affiliate disclosure; non-dismissible at checkout.
+model Disclosure {
+  id          String    @id @default(cuid())
+  cartOrderId String?   @map("cart_order_id")
+  kind        String    @default("ftc_affiliate")
+  text        String    @db.Text
+  dismissible Boolean   @default(false)
+  shownAt     DateTime? @map("shown_at")
+  createdAt   DateTime  @default(now()) @map("created_at")
+
+  cartOrder CartOrder? @relation(fields: [cartOrderId], references: [id], onDelete: SetNull)
+
+  @@index([cartOrderId], map: "idx_disclosure_cart")
+  @@map("disclosure")
+}

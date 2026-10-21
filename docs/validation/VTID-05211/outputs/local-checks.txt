@@ -1,0 +1,220 @@
+# VTID-05211 local checks — 2026-10-15T15:06Z, Kiro session kiro-202610151240-0371
+# branch kiro/profile-vitana-cards/gateway-profile-list, base 2673d36c2fd5c64b2adff6f9f97b6de897f668db, head 13ddd0cf5cb206a47693a1c5529e07cfb539fb2a
+
+## $ (cd services/gateway && npx jest test/routes/enrichment-cards.test.ts test/services/enrichment)
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/enrichment/completion-resolver-repository.test.ts
+  ✓ profiles: the five enrichment fields of the caller (8 ms)
+  ✓ social_connections: is_active + disconnected_at IS NULL, instagram/facebook, no status column (1 ms)
+  ✓ connected_app_settings: enabled calendar apps only (1 ms)
+  ✓ user_device_tokens: not revoked, token present
+  ✓ profile_posts and contacts: one row is enough (2 ms)
+  ✓ dismissal upsert writes only the caller row and never cooldown_days (1 ms)
+  ✓ G1 profiles: every field useProfileProgress weighs, the caller only (10 ms)
+  ✓ G2 daily_matches: a head count of the caller's live, untouched, unseen matches (2 ms)
+  ✓ G3 diary_entries: the caller's entry times since the look-back, newest first, bounded (3 ms)
+
+PASS test/services/enrichment/completion-resolver.test.ts
+  computeCompletions — each E-check
+    ✓ a member with nothing done has E1–E11 all false (4 ms)
+    ✓ E1 avatar: set → true, empty string → false
+    ✓ E2 bio: trimmed length must be > 50
+    ✓ E3 post (1 ms)
+    ✓ E4 interests: non-empty slugs → true; [] or blanks → false (1 ms)
+    ✓ E5 location
+    ✓ E6/E7 instagram and facebook independently (1 ms)
+    ✓ E8 calendar, E9 contacts, E10 device token (1 ms)
+    ✓ E11 cover (1 ms)
+  resolveCompletions — through the repository
+    ✓ maps every source to its card and reads only the caller (4 ms)
+    ✓ a member with no profile row and no data has every card incomplete
+    ✓ loadEnrichmentCardState returns the dismissal rows and a computed trigger for each of G1–G3 (1 ms)
+    ✓ a read error in fetchProfileEnrichmentFields throws EnrichmentDataError naming profiles (17 ms)
+    ✓ a read error in fetchAnyProfilePost throws EnrichmentDataError naming profile_posts (1 ms)
+    ✓ a read error in fetchActiveSocialConnections throws EnrichmentDataError naming social_connections (1 ms)
+    ✓ a read error in fetchEnabledCalendarApp throws EnrichmentDataError naming connected_app_settings (1 ms)
+    ✓ a read error in fetchAnyContact throws EnrichmentDataError naming contacts (1 ms)
+    ✓ a read error in fetchActiveDeviceToken throws EnrichmentDataError naming user_device_tokens
+    ✓ a read error in fetchEnrichmentCardStates throws EnrichmentDataError naming user_enrichment_cards (1 ms)
+    ✓ a read error in fetchProfileProgressFields throws EnrichmentDataError naming profiles.profile_progress
+    ✓ a read error in countUnseenLiveMatches throws EnrichmentDataError naming daily_matches (1 ms)
+    ✓ a read error in fetchRecentDiaryEntryTimes throws EnrichmentDataError naming diary_entries
+
+PASS test/services/enrichment/boost-triggers.test.ts
+  G1 — weighted profile completion (useProfileProgress.ts)
+    ✓ uses the same eight sections and weights as the frontend, summing to 100 (18 ms)
+    ✓ a complete profile is 100 %, no profile row is 0 % (1 ms)
+    ✓ identity needs both display_name and handle → missing that section's weight (1 ms)
+    ✓ identity: blank display_name → missing that section's weight
+    ✓ avatar → missing that section's weight
+    ✓ about: bio of exactly 50 trimmed characters → missing that section's weight
+    ✓ location → missing that section's weight
+    ✓ links: empty array → missing that section's weight (1 ms)
+    ✓ links: not an array → missing that section's weight
+    ✓ cover: neither cover field → missing that section's weight
+    ✓ languages: only blanks → missing that section's weight
+    ✓ services: no offers → missing that section's weight
+    ✓ services: empty object (column default) → missing that section's weight (1 ms)
+    ✓ the cover library field counts as a cover (same rule as E11) (4 ms)
+    ✓ fires below 80 %, not at 80 % (1 ms)
+  G2 — unseen live matches
+    ✓ 0 unseen matches → fired false, count returned (1 ms)
+    ✓ 1 unseen matches → fired true, count returned
+    ✓ 4 unseen matches → fired true, count returned (1 ms)
+  G3 — streak at risk (UTC days)
+    ✓ a 4-day streak ending the day before yesterday, nothing yesterday or today → fires with 4 (1 ms)
+    ✓ a 3-day streak is not > 3 → does not fire
+    ✓ an entry yesterday → not at risk (the streak is alive) (1 ms)
+    ✓ an entry today → not at risk
+    ✓ a long streak that ended 3+ days ago is already lost → does not fire (1 ms)
+    ✓ several entries on one day count as one day; a gap ends the run
+    ✓ uses the UTC day boundary: 23:30 UTC two days ago is still that day
+    ✓ no entries or unparsable timestamps → does not fire (1 ms)
+    ✓ is returned through computeBoostTriggers with the streak count
+  resolveBoostTriggers — through the repository
+    ✓ reads only the caller, once each, and computes all three triggers (2 ms)
+    ✓ a member with a full profile, no unseen matches and a live streak → nothing fires
+    ✓ a read error in fetchProfileProgressFields throws EnrichmentDataError naming profiles.profile_progress (never a silent "no card") (20 ms)
+    ✓ a read error in countUnseenLiveMatches throws EnrichmentDataError naming daily_matches (never a silent "no card") (1 ms)
+    ✓ a read error in fetchRecentDiaryEntryTimes throws EnrichmentDataError naming diary_entries (never a silent "no card") (1 ms)
+  eligibleBoostCards — screens, urgency, cooldown
+    ✓ urgency is G3 → G2 → G1 (1 ms)
+    ✓ screen=home shows ["G3", "G2", "G1"] (1 ms)
+    ✓ screen=profile shows ["G1"]
+    ✓ screen=longevity-journey shows ["G3"]
+    ✓ screen=vitana-index shows ["G3"]
+    ✓ screen=calendar shows [] (1 ms)
+    ✓ screen=autopilot shows ["G3"]
+    ✓ screen=community shows []
+    ✓ screen=make-a-post shows [] (1 ms)
+    ✓ screen=talk-to-vitana shows []
+    ✓ screen=messenger shows []
+    ✓ screen=nope shows []
+    ✓ every screen of the catalog is mapped (1 ms)
+    ✓ a trigger that did not fire, or is missing, is not shown
+    ✓ a dismissal hides the boost card for 7 days, then it is back (1 ms)
+    ✓ G1–G3 are dismissible; G4 and unknown types are not (1 ms)
+
+PASS test/routes/enrichment-cards.test.ts
+  auth and validation
+    ✓ GET without a token → 401 JSON (18 ms)
+    ✓ POST /dismiss without a token → 401 JSON, nothing written (9 ms)
+    ✓ GET with unknown screen "nope" → 400 JSON (3 ms)
+    ✓ GET with unknown screen "" → 400 JSON (3 ms)
+    ✓ GET with unknown screen "HOME" → 400 JSON (2 ms)
+    ✓ GET without a screen → 400 (2 ms)
+    ✓ POST /dismiss with card_type "E12" → 400, nothing written (2 ms)
+    ✓ POST /dismiss with card_type "G4" → 400, nothing written (3 ms)
+    ✓ POST /dismiss with card_type "G5" → 400, nothing written (3 ms)
+    ✓ POST /dismiss with card_type "F1" → 400, nothing written (2 ms)
+    ✓ POST /dismiss with card_type "" → 400, nothing written (1 ms)
+    ✓ POST /dismiss with card_type 7 → 400, nothing written (2 ms)
+  GET — screen filtering, priority, completion
+    ✓ home: every incomplete card in static priority order, localized, with profile_completion_pct (4 ms)
+    ✓ screen=profile returns ["E1", "E2", "E3", "E6", "E7", "E4", "E5", "E11"] (2 ms)
+    ✓ screen=messenger returns ["E1", "E2", "E3", "E6", "E7", "E8", "E9", "E4", "E5", "E10", "E11"] (2 ms)
+    ✓ screen=calendar returns ["E8"] (4 ms)
+    ✓ screen=longevity-journey returns ["E4", "E5"] (2 ms)
+    ✓ screen=autopilot returns ["E10"] (2 ms)
+    ✓ screen=community returns ["E3", "E6", "E7"] (2 ms)
+    ✓ screen=make-a-post returns ["E3"] (1 ms)
+    ✓ screen=vitana-index returns [] (2 ms)
+    ✓ screen=talk-to-vitana returns [] (2 ms)
+    ✓ completed cards are excluded and profile_completion_pct reflects them (2 ms)
+    ✓ a member with everything done gets an empty list (not an error) (2 ms)
+    ✓ ?locale= wins over the stored locale (no lookup) (1 ms)
+    ✓ an unsupported ?locale= falls back to the stored locale (1 ms)
+  GET — dismissal cooldown (7 days)
+    ✓ a card dismissed now is hidden for 7 days and back on day 8 (6 ms)
+    ✓ the stored cooldown_days is honoured; a row without dismissed_at hides nothing (4 ms)
+  GET — errors
+    ✓ a database read error → 500 JSON, never an empty list (2 ms)
+    ✓ no Supabase client → 500 JSON (1 ms)
+  POST /dismiss
+    ✓ upserts only the caller row with now() and returns dismissed_until = now + cooldown (2 ms)
+    ✓ a failing OASIS emit never fails the dismiss (2 ms)
+    ✓ a write error → 500 JSON (2 ms)
+  GET — boost cards G1–G3 (Phase 3)
+    ✓ home: boost cards follow the enrichment cards, G3 → G2 → G1, with their data and localized text (2 ms)
+    ✓ screen=profile shows boost cards ["G1"] (2 ms)
+    ✓ screen=longevity-journey shows boost cards ["G3"] (1 ms)
+    ✓ screen=vitana-index shows boost cards ["G3"] (2 ms)
+    ✓ screen=calendar shows boost cards [] (2 ms)
+    ✓ screen=messenger shows boost cards [] (1 ms)
+    ✓ no boost card when no trigger fires (80 % profile, 0 unseen matches, entry yesterday) (2 ms)
+    ✓ a dismissed boost card is hidden for 7 days (same cooldown table) (5 ms)
+    ✓ a boost read error → 500 JSON, never a list without the card (2 ms)
+    ✓ POST /dismiss accepts G1 and writes the caller row (2 ms)
+    ✓ POST /dismiss accepts G2 and writes the caller row (2 ms)
+    ✓ POST /dismiss accepts G3 and writes the caller row (2 ms)
+  eligibleEnrichmentCards — the shared rule (route + Messenger companion)
+    ✓ is the same rule the route serves
+    ✓ an unknown screen or an unknown completion state shows nothing
+    ✓ a dismissal hides the card until dismissed_at + cooldown_days (1 ms)
+  E6/E7 need the Meta OAuth clients (no dead cards)
+    ✓ screen=home without either client: neither E6 nor E7 (1 ms)
+    ✓ screen=profile without either client: neither E6 nor E7 (2 ms)
+    ✓ screen=community without either client: neither E6 nor E7 (2 ms)
+    ✓ screen=messenger without either client: neither E6 nor E7 (1 ms)
+    ✓ screen=home with only Facebook configured: E7 but not E6 (2 ms)
+    ✓ screen=profile with only Facebook configured: E7 but not E6 (2 ms)
+    ✓ screen=community with only Facebook configured: E7 but not E6 (1 ms)
+    ✓ screen=messenger with only Facebook configured: E7 but not E6 (2 ms)
+    ✓ a client id without its secret does not count as configured (1 ms)
+    ✓ once the clients exist the cards come back without anything else changing (3 ms)
+    ✓ profile_completion_pct still counts E6/E7 (unchanged by what is shown) (3 ms)
+    ✓ eligibleEnrichmentCards drops the unavailable set and keeps the rest in priority order
+
+Test Suites: 4 passed, 4 total
+Tests:       139 passed, 139 total
+Snapshots:   0 total
+Time:        1.455 s
+Ran all test suites matching /test\/routes\/enrichment-cards.test.ts|test\/services\/enrichment/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0
+
+## $ (cd services/gateway && npx tsc --noEmit -p tsconfig.json)
+exit=0
+
+## $ PR_TITLE='VTID-05211 (profile-vitana-cards/gateway-profile-list): profile card list E1–E7/E11, hide E6/E7 without Meta OAuth' node scripts/ci/pr-gate/gate.mjs scope --base 2673d36c2fd5c64b2adff6f9f97b6de897f668db --head 13ddd0cf5cb206a47693a1c5529e07cfb539fb2a
+✅ **scope** — 9 changed file(s), all inside the scope of VTID-05211
+exit=0
+
+## $ PR_TITLE='VTID-05211 (profile-vitana-cards/gateway-profile-list): profile card list E1–E7/E11, hide E6/E7 without Meta OAuth' node scripts/ci/pr-gate/gate.mjs sparring --base 2673d36c2fd5c64b2adff6f9f97b6de897f668db --head 13ddd0cf5cb206a47693a1c5529e07cfb539fb2a
+✅ **sparring record** — present and approved for VTID-05211
+exit=0
+
+## $ PR_TITLE='VTID-05211 (profile-vitana-cards/gateway-profile-list): profile card list E1–E7/E11, hide E6/E7 without Meta OAuth' node scripts/ci/pr-gate/gate.mjs weakening --base 2673d36c2fd5c64b2adff6f9f97b6de897f668db --head 13ddd0cf5cb206a47693a1c5529e07cfb539fb2a
+✅ **test weakening** — 1 changed test file(s), none weakened without a declaration
+exit=0

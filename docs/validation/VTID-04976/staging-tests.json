@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04976",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04976-live-room-host-calendar-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the platform part of VTID-04976 is a database migration (a live room's calendar entries follow the room) with no gateway code. Its behaviour is proven on a throwaway Postgres (CI SQL-LIVE-ROOM-HOST-CALENDAR, two mutation checks); this suite pins the safety properties. Staging shares the production Supabase project, so verification never creates, edits or cancels a room."
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+== statements are one per line
+== rollback refuses without a snapshot
+ok
+== forward twice, checks, rollback twice
+psql:/home/user/vitana-platform/scripts/aws/test/reverse-cdc/checks.sql:14: NOTICE:  ok: every public user trigger disabled, FK and non-public triggers untouched, snapshot kept
+psql:/home/user/vitana-platform/scripts/aws/test/reverse-cdc/checks.sql:23: NOTICE:  ok: replicated rows fire no trigger and keep their values
+psql:/home/user/vitana-platform/scripts/aws/supabase-cutover-reverse-cdc-triggers-rollback.sql:8: NOTICE:  VTID-05023: public user triggers restored to the snapshot
+psql:/home/user/vitana-platform/scripts/aws/supabase-cutover-reverse-cdc-triggers-rollback.sql:8: NOTICE:  VTID-05023: public user triggers restored to the snapshot
+psql:/home/user/vitana-platform/scripts/aws/test/reverse-cdc/after-rollback.sql:8: NOTICE:  ok: rollback restored every trigger state exactly (O, D and A)
+psql:/home/user/vitana-platform/scripts/aws/test/reverse-cdc/after-rollback.sql:13: NOTICE:  ok: notifications fire again after rollback
+== aurora-to-supabase-cdc.sh: dry run
+ok
+== aurora-to-supabase-cdc.sh --apply against a fake aws
+ok: endpoints from 0600 temp files (deleted), CDC-only task created, not started, no password on a command line
+PASS vtid-05023 reverse cdc

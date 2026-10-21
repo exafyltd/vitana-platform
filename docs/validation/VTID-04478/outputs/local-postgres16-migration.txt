@@ -1,0 +1,23 @@
+## prereq stub: partner_organizations(id), is_partner_org_member(uuid), roles anon/authenticated
+## apply migration (run 1)
+exit=0
+## apply migration (run 2)
+exit=0
+## constraint checks
+INSERT 0 1
+INSERT 0 1
+ERROR:  duplicate key value violates unique constraint "partner_terms_acceptances_org_version_uidx"
+DETAIL:  Key (partner_organization_id, terms_version)=(8de72763-61f9-4ea4-9636-5c6a67e0632a, v1) already exists.
+INSERT 0 1
+ERROR:  new row for relation "partner_onboarding_steps" violates check constraint "partner_onboarding_steps_step_key_check"
+DETAIL:  Failing row contains (8de72763-61f9-4ea4-9636-5c6a67e0632a, company, done, {}, null, 2026-09-24 12:58:29.84188+00, 2026-09-24 12:58:29.84188+00).
+ERROR:  new row for relation "partner_onboarding_steps" violates check constraint "partner_onboarding_steps_status_check"
+DETAIL:  Failing row contains (8de72763-61f9-4ea4-9636-5c6a67e0632a, tracking_test, bogus, {}, null, 2026-09-24 12:58:29.842141+00, 2026-09-24 12:58:29.842141+00).
+relname|relrowsecurity
+partner_onboarding_steps|t
+partner_terms_acceptances|t
+(2 rows)
+tablename|policyname|cmd|roles
+partner_onboarding_steps|partner_onboarding_steps_select|SELECT|{authenticated}
+partner_terms_acceptances|partner_terms_acceptances_select|SELECT|{authenticated}
+(2 rows)

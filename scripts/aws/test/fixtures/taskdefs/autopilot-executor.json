@@ -1,0 +1,117 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "autopilot-executor",
+      "image": "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/autopilot-executor:310173dd0b43",
+      "cpu": 0,
+      "portMappings": [],
+      "essential": true,
+      "environment": [
+        {
+          "name": "BEDROCK_ROLE_ARN",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "DEV_AUTOPILOT_REPO_OWNER",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "production"
+        },
+        {
+          "name": "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DEV_AUTOPILOT_REPO_REF",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ENV",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AWS_BEDROCK_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_EXECUTOR",
+          "value": "agent"
+        },
+        {
+          "name": "DEV_AUTOPILOT_REPO_NAME",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AGENT_MEMORY_CONTEXT_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "AGENT_DEADLINE_MS",
+          "value": "2100000"
+        },
+        {
+          "name": "DEV_AUTOPILOT_GITHUB_REPO",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AGENT_MAX_TURNS",
+          "value": "120"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "SUPABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/url-OKnsxz"
+        },
+        {
+          "name": "SUPABASE_SERVICE_ROLE",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-GfBpSP"
+        },
+        {
+          "name": "GITHUB_SAFE_MERGE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI"
+        },
+        {
+          "name": "DEEPSEEK_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-iErwBo"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/vitana/autopilot-executor",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "vitana-autopilot-executor",
+  "taskRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "2048",
+  "memory": "4096"
+}

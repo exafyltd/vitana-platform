@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04657",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "recommendations health answers JSON", "path": "/api/v1/autopilot/recommendations/health", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04657-activate-reaches-execution.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "Activate writes a VTID, a spec and an execution; staging writes to the production database, so the activation itself is proven by the suites, not by a staging write" }
+  ]
+}

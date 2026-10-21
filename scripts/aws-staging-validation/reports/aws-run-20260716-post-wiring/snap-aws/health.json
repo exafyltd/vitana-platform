@@ -1,0 +1,8 @@
+{
+  "ok": true,
+  "env": "production",
+  "supabase_host": "inmkhvwdcuyhnxkgfvsb.supabase.co",
+  "cloud_run_service": null,
+  "cloud_run_revision": null,
+  "booted_at": "2026-07-16T16:07:25.233Z"
+}

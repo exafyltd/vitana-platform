@@ -1,0 +1,19 @@
+$ npx jest test/command-hub/t10-r3-keyboard-clickable-rows.test.ts
+PASS test/command-hub/t10-r3-keyboard-clickable-rows.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+
+$ npx jest test/command-hub/
+Test Suites: 10 passed, 10 total
+Tests:       174 passed, 174 total
+
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npm run build
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+(exit 0)
+
+$ node --check src/frontend/command-hub/app.js
+(exit 0 — SYNTAX OK)

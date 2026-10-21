@@ -1,0 +1,13 @@
+# VTID-05146 — local checks (2026-10-13)
+cd services/gateway && npx tsc --noEmit -p .                                  # clean
+npx jest                                                                      # 1660/1661 suites; the 1 failure was vtid-04231's fail-open pin -> updated to fail-closed (plan C3), 15/15
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts                 # 71/71 (64 existing + 7 Phase C scenarios)
+npx jest test/vtid-05146-overlap-guard.test.ts                                # 12/12
+npx jest test/vtid-03853-llm-merge-review.test.ts test/vtid-04231-validator-tools.test.ts   # fail-open pins -> fail-closed (plan C3)
+npx jest test/vtid-04268-dev-autopilot-config-writable.test.ts               # 33/33
+node --test scripts/ci/staging-verify/lib.test.cjs                            # 39/39
+node -e "lib.validateManifest(docs/validation/VTID-05146/staging-tests.json)" # ok
+# Mutation check (each reverted after):
+#   merge-time hold disabled      -> 2 Phase C scenarios red
+#   claim-time hold disabled      -> "before the claim" red
+#   review fail-closed disabled   -> "pre-merge LLM review fail-closed" red

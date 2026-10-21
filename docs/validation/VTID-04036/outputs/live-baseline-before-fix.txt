@@ -1,0 +1,30 @@
+# Baseline (BEFORE the fix) — staging on 7c8c6009 (id-less envelope), 2026-09-18 06:59 UTC
+# node scripts/orb/verify-vertex-serbian-bridge.mjs --mode=authenticated --trials=2 --utterance-pcm=<Polly 'What is my Vitana index today?' 16k PCM>
+
+##### VTID-04036 BEFORE v2 silence-ended turn (staging still on the id-less envelope), 2026-09-18T06:59:07Z #####
+{"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"7c8c6009e0aae25b77bafa3b246e654db598f492","booted_at":"2026-09-18T01:07:46.247Z","marker":"7c8c6009e0aa"}
+--- trial 1/2 ---
+  "sessionId": "live-d7c15536-8876-4fc6-8a60-de424c92e3ef",
+  "turnsCompleted": 1,
+  "turnCompleted": true,
+  "utteranceSentAt": 1789714763144,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "utteranceDoneAt": 1789714772413,
+--- trial 2/2 ---
+  "sessionId": "live-0af30344-36c1-4ed6-94af-68550e1bc014",
+  "turnsCompleted": 1,
+  "turnCompleted": true,
+  "utteranceSentAt": 1789714852893,
+  "utteranceChunks": 38,
+  "utteranceSendErrors": [],
+  "inputTranscriptText": " What is my vitaminx today?",
+  "replyTranscriptText": "**Retrieving Vitana Index**\n\nI've determined that the `get_day_summary` tool is the correct one to use for the user's request. It explicitly provides the \"Vitana Index reading for today\" along with a 7-day trend, aligning perfectly with the prompt. Therefore, I will now proceed to call `get_day_summary` to fulfill the user's needs.\n\n\n",
+  "utteranceDoneAt": 1789714862538,
+==================== SUMMARY (authenticated) ====================
+VTID-04036 user turn: utterance sent on 2/2, reply audio on 0, reply turn_complete on 0, errors after utterance: 0
+Trials: 2, session/start OK: 2, SSE 200: 2, Got audio: 2, turn_complete: 2
+##### DONE #####
+
+# First attempt (06:54 UTC) used --end-turn semantics: client_content{turn_complete:true} closed the socket 1007 at turn 1 on 2/2 — a test artifact (the widget never sends it), which is why the script now ends the turn with trailing silence.

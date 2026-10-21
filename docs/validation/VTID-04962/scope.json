@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-04962",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/notification-service.ts",
+    "services/gateway/src/services/notification-service-repository.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/routes/ops-health-checks.ts",
+    "services/gateway/src/services/dev-autopilot/context-loader.ts",
+    "services/gateway/test/vtid-04962-*.test.ts",
+    "services/gateway/test/vtid-04883-community-ranking.test.ts",
+    "supabase/migrations/20261007190000_vtid_04962_user_notifications_push_outcome.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04962/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

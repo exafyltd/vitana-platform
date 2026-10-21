@@ -1,0 +1,9 @@
+project_id           = "lovable-vitana-vers1"
+region               = "us-central1"
+zone                 = "us-central1-a"
+zone_b               = "us-central1-b"
+ha_enabled           = false           # ramp: single node ~$310/mo
+instance_size        = "c2-standard-4"
+redis_memory_size_gb = 1
+redis_tier           = "BASIC"
+domain_name          = "livekit-dev.vitana.dev"

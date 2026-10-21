@@ -1,0 +1,47 @@
+Read-only against production Supabase (inmkhvwdcuyhnxkgfvsb). No writes.
+
+-- Which rung spoke, and in which language, per ru session:
+with ru as (
+  select distinct metadata->>'session_id' as sess
+  from oasis_events
+  where created_at > now() - interval '10 days'
+    and topic = 'vtid.live.session.start'
+    and metadata->>'lang' like 'ru%'
+)
+select e.created_at, right(e.metadata->>'session_id',12) as sess,
+       e.metadata->>'stage' as stage,
+       left(e.metadata->>'output_preview',240) as output_preview
+from oasis_events e join ru on ru.sess = e.metadata->>'session_id'
+where e.topic='orb.live.diag' and e.metadata->>'stage'='turn_complete'
+order by e.created_at desc;
+
+-- joined against each session's wake_opener:
+select right(metadata->>'session_id',12) as sess,
+       metadata->>'wake_opener' as wake_opener,
+       metadata->>'prompt_len' as plen
+from oasis_events
+where topic='orb.live.diag' and metadata->>'stage'='greeting_sent'
+  and metadata->>'lang' like 'ru%' and created_at > now() - interval '10 days';
+
+RESULT (2026-09-27, one member, nine lang:'ru' sessions in ten minutes,
+all provider:'cascade/polly'):
+
+  sess          wake_opener           plen   reply language
+  1e70fc5d4596  resume_thread         591    GERMAN  "Wir waren gerade dabei, den Bereich mit Podcasts, Musik und Reels zu finden — soll ich ihn jetzt direkt für dich aufrufen?"
+  fd39f7846738  resume_thread         591    GERMAN  "Soll ich den Bereich mit Podcasts, Musik und Reels jetzt für dich aufrufen?"
+  defb21a5f703  resume_thread         591    GERMAN  "Soll ich den Media Hub mit Podcasts, Musik und Reels jetzt direkt für dich öffnen?"
+  0569d392dba5  resume_thread         591    GERMAN  "Wir waren gerade dabei, den Media Hub ... zu öffnen — soll ich das jetzt direkt für dich aufrufen?"
+  b85968d59e59  resume_thread         591    russian "Мы остановились на поиске раздела с подкастами, музыкой и рилсами — открыть его сейчас?"
+  8ec097442767  resume_thread         591    russian "Мы остановились на поиске раздела с подкастами, музыкой и рилсами — открыть его сейчас?"
+  49f57e5ea3fc  legacy_default         83    russian "Добрый день! Как здорово, что вы здесь..."
+  7bdcacc241af  safe_fast_proactive   640    russian "Добрый день, Мариia! ..."   (2026-09-28)
+  + 3 more safe_fast_proactive sessions on 2026-09-25, all russian
+
+  resume_thread:        4 German / 6
+  safe_fast_proactive:  0 German / 5
+  legacy_default:       0 German / 1
+
+`lang` was 'ru' on every one. The split is by RUNG, not by provider or tag.
+
+POST-DEPLOY SIGNAL: re-run the two queries above and expect resume_thread's
+German count to fall toward its siblings' 0.

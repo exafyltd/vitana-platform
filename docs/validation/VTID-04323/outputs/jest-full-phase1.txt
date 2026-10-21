@@ -1,0 +1,2 @@
+Test Suites: 1 skipped, 1099 passed, 1099 of 1100 total
+Tests:       29 skipped, 6 todo, 17799 passed, 17834 total

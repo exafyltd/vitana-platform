@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05018",
+  "files": [
+    "services/gateway/src/services/kiro/kiro-turn.ts",
+    "services/gateway/src/services/kiro/acp-client.ts",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/test/vtid-05018-kiro-thread-memory.test.ts",
+    "services/gateway/test/vtid-05005-kiro-dev-tools-mcp.test.ts",
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts",
+    "docs/validation/VTID-05018/**"
+  ]
+}

@@ -1,0 +1,6 @@
+PASS test/vtid-04667-auto-approve-gates.test.ts
+PASS test/vtid-04667-executable-source-types-drift.test.ts
+PASS test/vtid-04667-approval-gates.test.ts
+PASS test/vtid-04667-scanner-breaker.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       48 passed, 48 total

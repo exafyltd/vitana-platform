@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04108",
+  "title": "Recommendation activation bridge, Part 1: manual-only source_type widening (community/health) + activation audit event",
+  "part": "1 of 3",
+  "files_changed": [
+    "services/gateway/src/services/autopilot-executable-source-types.ts",
+    "services/gateway/src/services/dev-autopilot-execute.ts",
+    "services/gateway/src/routes/autopilot-recommendations.ts",
+    "services/gateway/test/vtid-04108-manual-activation-source-types.test.ts",
+    "services/gateway/test/vtid-04108-manual-activation-call-sites.test.ts",
+    "docs/validation/VTID-04108/acceptance.md",
+    "docs/validation/VTID-04108/commands.log",
+    "docs/validation/VTID-04108/outputs/execution.json"
+  ],
+  "hazards_found_and_corrected": [
+    "autopilot_actions has a category CHECK constraint (health/community/media/discover/calendar) and a user_id NOT NULL FK with ON DELETE CASCADE to auth.users - it is a not-yet-launched user-facing recommended-action-card table, not an orphaned audit table; writing activation-audit rows there was rejected in favor of enriching the existing dev_autopilot.execution.bridged OASIS event.",
+    "isExecutableSourceType() is the same allowlist autoApproveTick() polls for autonomous execution; widening it directly would have armed the autonomous loop against 307 existing community/health recommendations (measured live) with no code review gate. Fixed by introducing a separate, wider allowlist used only by the human-triggered activation path."
+  ],
+  "verification": {
+    "tsc_no_emit": "pass",
+    "jest_regression_sweep": "11 suites, 138/138 tests passing (9 pre-existing suites unmodified, 2 new)",
+    "mutation_verified": true
+  },
+  "not_done": [
+    "Part 2: autopilot_activate_recommendation(recommendation_id) operator tool",
+    "Part 3: live verification against a real community/health recommendation on staging/production"
+  ]
+}

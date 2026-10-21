@@ -1,0 +1,6 @@
+# VTID-04923 commands
+python3 (yaml.safe_load + bash -n on every run step, size check) > outputs/local-checks.txt
+jq strip-then-add simulations on sample task-definition JSON (prod step; staging connected-apps merge)
+node -e "<emulated jest assertions>"   # 13/13 true; jest runs in CI (npm registry unreachable from session)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"   # {"ok":true,"errors":[]}
+# owner stored the secrets; the session never read a secret value (no AWS access from the session)

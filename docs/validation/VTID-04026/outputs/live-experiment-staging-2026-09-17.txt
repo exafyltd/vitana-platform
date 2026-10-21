@@ -1,0 +1,83 @@
+##### BASELINE (default route) #####
+--- trial 1/8 ---
+  "sessionId": "live-00d01260-16aa-42ba-b225-96215c9e9538",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland“. Želiš da objavimo kratko obaveštenje za zajednicu? Ti izdiktiraj, a ja ću objaviti.",
+  "firstAudioAt": 1789683214716,
+  "turnCompleted": true,
+--- trial 2/8 ---
+  "sessionId": "live-4debb839-32d9-4606-8c5c-71388cd1b535",
+  "transcriptText": "",
+  "firstAudioAt": 1789683231338,
+--- trial 3/8 ---
+  "sessionId": "live-3198a7e2-0048-4622-80f1-01d69ff8a6b6",
+  "transcriptText": "",
+  "firstAudioAt": 1789683275118,
+--- trial 4/8 ---
+  "sessionId": "live-1752ecc1-3fff-4aca-a319-8b7a3105baf7",
+  "transcriptText": "",
+  "firstAudioAt": 1789683318729,
+--- trial 5/8 ---
+  "sessionId": "live-c98b266d-ee42-44b3-88bd-880bc10c561c",
+  "transcriptText": "",
+  "firstAudioAt": 1789683362333,
+--- trial 6/8 ---
+  "sessionId": "live-1a2c5f7e-eef6-4881-8684-62a56a2cc174",
+  "transcriptText": "",
+  "firstAudioAt": 1789683405565,
+--- trial 7/8 ---
+  "sessionId": "live-4589f34f-8f5f-496e-95fc-3ba97b7e4d8a",
+  "transcriptText": "Zdravo, e2etest33. Poslednji put smo radili na temi \"Šta je Vitanaland\". Želiš li da ti pronađem partnera za aktivnost? Ja ću se pobrinuti za to.",
+  "firstAudioAt": 1789683449985,
+  "turnCompleted": true,
+--- trial 8/8 ---
+  "sessionId": "live-fa6aeadc-2853-4fd2-aee9-20d0b9e7250b",
+  "transcriptText": "",
+  "firstAudioAt": 1789683465065,
+==================== SUMMARY (authenticated) ====================
+Trials: 8, session/start OK: 8, SSE 200: 8, Got audio: 8, turn_complete: 2
+Latency ms: 1988, 1787, 1449, 1623, 1362, 1542, 1730, 1431
+##### ADMIN ROUTE (134 tools) #####
+--- trial 1/8 ---
+  "sessionId": "live-f8e1ae13-40df-498f-929c-1f8bd5c1af0a",
+  "transcriptText": "**Initiating Collaboration on Vitanaland**\n\nDobar dan, E2E. Prošlog puta smo radili na temi 'Šta je Vitanaland'. Hajde da postavimo brzu ažuriranu informaciju zajednici? Vi diktirate, ja postavljam.\n\n\n**Proposing an Update to Community**\n\nDobar dan, e2etest33. Prošlog puta smo radili na temi 'Šta je Vitanaland'. Hajde da postavimo brzu ažuriranu informaciju zajednici? Vi diktirate, ja postavljam.\n\n\n**Proposing Community Update**\n\nDobro veče, e2etest33. Prošli put smo radili na 'Šta je Vitanaland'. Da objavimo brzo obaveštenje zajednici? Vi diktirate, a ja ću objaviti.\n\n\n**Suggesting Next Steps**\n\nDobro veče, e2etest33. Prošlo veče smo radili na temi 'Šta je Vitanaland'. Predlažem da objavimo brzo obaveštenje zajednici. Vi ga diktirajte, a ja ću ga postaviti.\n\n\nDobro veče, e2etest33. Prošli put smo radili na \"Šta je Vitanaland\". Predlažem da objavimo brzo obaveštenje zajednici. Vi diktirate, a ja ću objaviti.",
+  "firstAudioAt": 1789683507592,
+  "turnCompleted": true,
+--- trial 2/8 ---
+  "sessionId": "live-4495530b-7b96-4a2b-b1a3-def29cb4bee8",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland“. Sledeća je „ORB glas“ — recite reč i vodiću vas.",
+  "firstAudioAt": 1789683527489,
+  "turnCompleted": true,
+--- trial 3/8 ---
+  "sessionId": "live-6f4fdcdf-a17a-4af9-bc17-0ffaf3a13b5d",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland?“. Želite li da objavimo brzo ažuriranje za zajednicu? Vi diktirate, ja objavljujem.",
+  "firstAudioAt": 1789683543567,
+  "turnCompleted": true,
+--- trial 4/8 ---
+  "sessionId": "live-34dc7473-3414-4115-b5c6-b7c55a52d371",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland?“. Želite li da objavimo brzo ažuriranje za zajednicu? Vi diktirate, ja objavljujem.",
+  "firstAudioAt": 1789683558810,
+  "turnCompleted": true,
+--- trial 5/8 ---
+  "sessionId": "live-fb3d32f0-d911-417a-b35e-c3bcc681c6b5",
+  "transcriptText": "Dobar dan, e2etest33. Poslednji put smo radili na temi „Šta je Vitanaland\". Sledeća je „ORB glas\" – samo recite i ja ću vas voditi.",
+  "firstAudioAt": 1789683574960,
+  "turnCompleted": true,
+--- trial 6/8 ---
+  "sessionId": "live-58846ac3-7ea8-4e0d-9980-ae2b5bf88a42",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland?“. Želite li da objavimo brzo ažuriranje za zajednicu? Vi diktirate, ja objavljujem.",
+  "firstAudioAt": 1789683589422,
+  "turnCompleted": true,
+--- trial 7/8 ---
+  "sessionId": "live-bc2a52c2-4458-445f-91d3-0db6b68a40de",
+  "transcriptText": "Dobar dan, E2E. Poslednji put smo radili na „Šta je Vitanaland“. Sledeća tema je „ORB glas“ – samo recite reč i ja ću vas voditi.",
+  "firstAudioAt": 1789683604723,
+  "turnCompleted": true,
+--- trial 8/8 ---
+  "sessionId": "live-53f6e8c7-a4f4-4f21-8cc9-26b1836b6326",
+  "transcriptText": "Dobar dan, E2E. Poslednji put smo radili na temi „Šta je Vitanaland“. Želite li da kratko ažuriramo zajednicu? Vi diktirate, ja postavljam.",
+  "firstAudioAt": 1789683618903,
+  "turnCompleted": true,
+==================== SUMMARY (authenticated) ====================
+Trials: 8, session/start OK: 8, SSE 200: 8, Got audio: 8, turn_complete: 8
+Latency ms: 1143, 1243, 1468, 1049, 1155, 1407, 1413, 1081
+##### DONE #####

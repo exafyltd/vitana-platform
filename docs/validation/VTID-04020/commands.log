@@ -1,0 +1,8 @@
+# VTID-04020 — commands run (Claude Code session, 2026-09-17)
+npm install @aws-sdk/client-cloudwatch-logs@^3.1094.0 --save            -> resolved ^3.1135.0 (package.json + package-lock.json; DEPENDENCY_CHANGE declared on the PR)
+npx jest test/vtid-04020-operator-cloudwatch-logs.test.ts test/vtid-03835-operator-console-read-tools.test.ts \
+         test/vtid-04018-operator-bootstrap-pack.test.ts                -> 3 suites, 47 tests passing (12 new)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json  -> exit 0
+python3 boto3 iam.list_attached_role_policies(vitana-ecs-task-role)     -> AccessDenied for this session's user (the task role's logs:* grant is unverifiable from here)
+NOT run here: a live FilterLogEvents from the staging gateway (first dev_cloudwatch_logs call on staging is the exercise).
+npx pnpm@9.0.0 install --lockfile-only --ignore-scripts (services/gateway)  -> pnpm-lock.yaml gains @aws-sdk/client-cloudwatch-logs@3.1135.0 (+ nested-clients 3.997.34 deduped to the already-present 3.997.45); TEST-SUITE.yml installs with pnpm --frozen-lockfile and had failed ERR_PNPM_OUTDATED_LOCKFILE on the first push

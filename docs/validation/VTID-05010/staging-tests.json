@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05010",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05010-voice-diary-episode-repair.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The change is a data fix-up applied with RUN-MIGRATION.yml after merge (owner-approved for these two rows); nothing in it deploys, and proving it on staging would need a write. The SQL harness (scripts/ci/test-vtid-05010-diary-repair.sh, run before merge, see commands.log) proves it on a throwaway Postgres: inserts 2, a second run inserts 0, shape matches writeDiaryEpisode(), guard aborts without writing. This suite pins the fix-up to the two rows and that shape."
+    }
+  ]
+}

@@ -1,0 +1,355 @@
+openapi: 3.0.3
+info:
+  title: Vitana Gateway API
+  version: 1.0.0
+  description: |
+    Vitana Platform Gateway API - Central orchestration layer for VTID-based task execution,
+    event streaming, and system integration.
+    
+    ## Key Features
+    - **VTID Management**: Create, track, and query VTIDs
+    - **Event Streaming**: Real-time SSE feed for DevHub Live Console
+    - **Webhook Integration**: GitHub events, GCP deployments, agent heartbeats
+    - **OASIS Query**: Query normalized events from all sources
+    
+    ## Authentication
+    Most endpoints are currently unauthenticated for internal use. Production deployments
+    should implement appropriate authentication mechanisms.
+    
+  contact:
+    name: Vitana Platform Team
+    url: https://github.com/exafyltd/vitana-platform
+  license:
+    name: Proprietary
+
+servers:
+  - url: https://vitana-gateway-86804897789.us-central1.run.app
+    description: Production Gateway (Cloud Run)
+  - url: http://localhost:8080
+    description: Local Development
+
+tags:
+  - name: VTID
+    description: VTID management and queries
+  - name: DevHub
+    description: Real-time event streaming for Live Console
+  - name: OASIS
+    description: Normalized event query API
+  - name: Webhooks
+    description: External event ingestion endpoints
+  - name: Health
+    description: Service health and status endpoints
+
+paths:
+  /health:
+    get:
+      summary: Gateway Health Check
+      tags: [Health]
+      responses:
+        '200':
+          description: Gateway is healthy
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                    example: true
+                  service:
+                    type: string
+                    example: "vitana-gateway"
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/v1/vtid:
+    get:
+      summary: Get VTID Information
+      description: Retrieve information about a specific VTID
+      tags: [VTID]
+      parameters:
+        - name: vtid
+          in: query
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+            example: "DEV-CICDL-0031"
+      responses:
+        '200':
+          description: VTID information retrieved successfully
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/VTIDInfo'
+        '404':
+          description: VTID not found
+
+  /api/v1/devhub/feed:
+    get:
+      summary: DevHub SSE Event Stream
+      description: |
+        Server-Sent Events (SSE) endpoint that streams real-time ticker events to the Live Console.
+        
+        **Behavior:**
+        - On connection: Replays last 20 cached events
+        - Real-time: Streams new events as they occur (2s polling)
+        - Keepalive: Sends heartbeat every 15 seconds
+      tags: [DevHub]
+      responses:
+        '200':
+          description: SSE stream established
+          content:
+            text/event-stream:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/SSEConnectionEvent'
+                  - $ref: '#/components/schemas/SSETickerEvent'
+                  - $ref: '#/components/schemas/SSEHeartbeat'
+              examples:
+                connection:
+                  value: 'data: {"type":"connected","ts":"2025-10-29T22:45:30.123Z"}\n\n'
+                ticker:
+                  value: 'data: {"ts":"2025-10-29T22:45:30.123Z","vtid":"DEV-CICDL-0031","layer":"CICDL","module":"CORE","source":"oasis.events","kind":"workflow_run","status":"success","title":"CICDL-CORE-WORKFLOW-RUN","ref":"vt/DEV-CICDL-0031-workflow-run","link":"https://github.com/..."}\n\n'
+                heartbeat:
+                  value: 'data: {"type":"heartbeat","ts":"2025-10-29T22:45:45.123Z"}\n\n'
+
+  /api/v1/devhub/health:
+    get:
+      summary: DevHub Feed Health
+      tags: [DevHub, Health]
+      responses:
+        '200':
+          description: DevHub feed status
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  service:
+                    type: string
+                    example: "devhub-feed"
+                  cache_size:
+                    type: integer
+                    example: 20
+                  timestamp:
+                    type: string
+                    format: date-time
+
+  /api/v1/oasis/events:
+    get:
+      summary: Query OASIS Events
+      description: |
+        Query normalized events from all sources (GitHub, GCP, agents).
+        Supports filtering by VTID, source, kind, status, and layer.
+      tags: [OASIS]
+      parameters:
+        - name: vtid
+          in: query
+          schema:
+            type: string
+            pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+          example: "DEV-CICDL-0031"
+        - name: limit
+          in: query
+          schema:
+            type: integer
+            minimum: 1
+            maximum: 1000
+            default: 50
+        - name: offset
+          in: query
+          schema:
+            type: integer
+            minimum: 0
+            default: 0
+        - name: source
+          in: query
+          schema:
+            type: string
+            enum: [github.actions, gcp.deploy, agent.ping, oasis.events]
+        - name: kind
+          in: query
+          schema:
+            type: string
+            example: "workflow_run"
+        - name: status
+          in: query
+          schema:
+            type: string
+            enum: [success, failure, in_progress, info, cancelled]
+        - name: layer
+          in: query
+          schema:
+            type: string
+            pattern: '^[A-Z]+$'
+            example: "CICDL"
+      responses:
+        '200':
+          description: Events retrieved successfully
+          headers:
+            X-VTID:
+              schema:
+                type: string
+              description: Echo of VTID query parameter if provided
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/OASISEvent'
+
+  /webhooks/github:
+    post:
+      summary: GitHub Webhook Endpoint
+      description: |
+        Receives webhook events from GitHub (workflow_run, check_run, pull_request, push).
+        Verifies HMAC SHA-256 signature, extracts VTID, and persists to OASIS.
+      tags: [Webhooks]
+      security:
+        - GitHubWebhookSignature: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: GitHub webhook payload (varies by event type)
+      responses:
+        '200':
+          description: Webhook processed successfully
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  ok:
+                    type: boolean
+                  message:
+                    type: string
+        '401':
+          description: Invalid signature
+        '400':
+          description: Invalid payload
+
+  /webhooks/health:
+    get:
+      summary: Webhook Endpoint Health
+      tags: [Webhooks, Health]
+      responses:
+        '200':
+          description: Webhook endpoint is healthy
+
+components:
+  schemas:
+    VTIDInfo:
+      type: object
+      properties:
+        vtid:
+          type: string
+          pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+          example: "DEV-CICDL-0031"
+        layer:
+          type: string
+          pattern: '^[A-Z]+$'
+          example: "CICDL"
+        status:
+          type: string
+          example: "active"
+        created_at:
+          type: string
+          format: date-time
+    
+    OASISEvent:
+      type: object
+      required: [ts, source, kind, status, title]
+      properties:
+        id:
+          type: integer
+          description: Unique event ID
+        ts:
+          type: string
+          format: date-time
+          description: Event timestamp (ISO 8601)
+        vtid:
+          type: string
+          pattern: '^[A-Z]+-[A-Z]+-[0-9]+$'
+          nullable: true
+          description: Associated VTID
+        layer:
+          type: string
+          pattern: '^[A-Z]+$'
+          nullable: true
+          description: Extracted layer from VTID
+        module:
+          type: string
+          pattern: '^[A-Z]+$'
+          nullable: true
+          description: Service/module name in UPPERCASE
+        source:
+          type: string
+          enum: [github.actions, gcp.deploy, agent.ping, oasis.events]
+          description: Event source system
+        kind:
+          type: string
+          example: "workflow_run"
+          description: Event type
+        status:
+          type: string
+          enum: [success, failure, in_progress, info, cancelled]
+          description: Event status
+        title:
+          type: string
+          pattern: '^[A-Z-]+$'
+          example: "CICDL-CORE-WORKFLOW-RUN"
+          description: UPPERCASE event title (LAYER-MODULE-ACTION)
+        ref:
+          type: string
+          nullable: true
+          example: "vt/DEV-CICDL-0031-workflow-run"
+          description: Reference identifier (branch, tag, etc.)
+        link:
+          type: string
+          format: uri
+          nullable: true
+          description: URL to related resource
+        meta:
+          type: object
+          nullable: true
+          description: Additional metadata (varies by event type)
+    
+    SSEConnectionEvent:
+      type: object
+      required: [type, ts]
+      properties:
+        type:
+          type: string
+          enum: [connected]
+        ts:
+          type: string
+          format: date-time
+    
+    SSEHeartbeat:
+      type: object
+      required: [type, ts]
+      properties:
+        type:
+          type: string
+          enum: [heartbeat]
+        ts:
+          type: string
+          format: date-time
+    
+    SSETickerEvent:
+      allOf:
+        - $ref: '#/components/schemas/OASISEvent'
+
+  securitySchemes:
+    GitHubWebhookSignature:
+      type: apiKey
+      in: header
+      name: X-Hub-Signature-256
+      description: HMAC SHA-256 signature of the payload using the webhook secret

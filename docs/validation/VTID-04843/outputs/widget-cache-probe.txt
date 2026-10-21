@@ -1,0 +1,3 @@
+# 2026-10-02 11:13 UTC, read-only GETs
+cached ?v=20261002-vtid-04840-commerce-setup → startCommerceSetup count: 0
+origin (uncached probe) → startCommerceSetup count: 1

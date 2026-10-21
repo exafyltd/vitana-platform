@@ -1,0 +1,2 @@
+applyDiscoveryCors / setupCors transpiled and run against 12 cases with stubbed express+cors: all as planned.
+jest / tsc: not available in the build session; CI is the first run.

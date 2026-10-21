@@ -1,0 +1,34 @@
+$ curl -s -m 15 -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"backend","module":"partner-health-notifications"}'
+{"ok":true,"vtid":"VTID-03901","num":3901,"id":"09e21279-bd1d-4dcc-b115-93d16363b155"}
+
+$ grep -n "CREATE TABLE\|ALTER TABLE\|type TEXT\|CHECK" supabase/migrations/20260225000000_notification_system.sql
+28:  type TEXT NOT NULL,        -- e.g. 'live_room_starting', 'new_match', 'task_completed'
+(no CHECK constraint or enum on this column anywhere in the migration set
+for user_notifications — confirmed by reading both notification_system
+migrations in full)
+
+$ git diff -- services/gateway/src/services/notification-service.ts \
+             services/gateway/src/services/partner-health/ingestion.ts \
+             services/gateway/test/partner-health/ingestion.test.ts
+(reviewed — see the PR diff; matches AC-1/AC-2/AC-3/AC-5 exactly, no other
+TYPE_META rows or health-wellness.ts touched)
+
+$ cd services/gateway && /opt/node22/bin/tsc --noEmit --ignoreDeprecations 6.0 \
+    --skipLibCheck --ignoreConfig --target es2020 --module esnext \
+    --moduleResolution bundler \
+    src/services/notification-service.ts src/services/partner-health/ingestion.ts
+(No node_modules in this sandbox, so this cannot fully type-check against
+real dependency types. Output is dominated by expected missing-module/
+missing-global-type noise: @supabase/supabase-js, firebase-admin, express,
+jose, zod not installed; `process`/`crypto` globals unresolved without
+@types/node. One pre-existing implicit-any at notification-service.ts:319
+(`tokens.filter((t) => ...)`) is unrelated to this change — same root cause
+(no @supabase/supabase-js types to infer `tokens` from), not introduced by
+this diff. No new errors attributable to the two edited files' own content.)
+
+$ node -e "..." (not run — no node_modules, jest cannot execute in this
+sandbox; ingestion.test.ts's updated assertion was reviewed by inspection
+against the unchanged test scaffolding/mocks in the same file, which were
+not touched)

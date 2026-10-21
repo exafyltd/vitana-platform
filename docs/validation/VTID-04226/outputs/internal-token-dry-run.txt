@@ -1,0 +1,7 @@
+Region:  eu-central-1
+Secret:  vitana/gateway/staging/internal-token
+Apply:   false
+DRY RUN — would run:
+  aws secretsmanager create-secret --region eu-central-1 --name vitana/gateway/staging/internal-token --description 'Gateway X-Gateway-Internal token (VTID-04226)' --secret-string <64-hex-token>
+  (or, if it already exists) aws secretsmanager put-secret-value --secret-id vitana/gateway/staging/internal-token --secret-string <64-hex-token>
+Then: redeploy the staging gateway (AWS-STAGE-DEPLOY-GATEWAY.yml picks the secret up automatically on staging).

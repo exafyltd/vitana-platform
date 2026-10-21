@@ -1,0 +1,19 @@
+# VTID-04033 — commands run (2026-09-18, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'operator-console');   -- VTID-04033
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04033';
+
+# gateway
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                        # ok
+node ../../scripts/ci/validator-path-guard.cjs --csp-added-lines <git diff origin/main -- services/gateway/src/frontend/>   # No CSP pattern hits in added lines.
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0
+npx jest test/vtid-04033-operator-execution-follow.test.ts test/vtid-04028-operator-turn-stream.test.ts \
+  test/vtid-04031-operator-turn-cost.test.ts test/vtid-04032-cancel-running-execution.test.ts \
+  test/vtid-03947-message-copy-timestamp.test.ts                                    # first run: the 04031 + 04032 suites pinned the exact cache-bust string → relaxed to at-or-after
+npx jest test/vtid-03822-operator-chat-threads.test.ts test/vtid-03949-operator-sessions-sidebar-rename.test.ts test/command-hub   # 3 suites, 38 tests, 0 failures
+
+# visual verification (local harness, nothing live)
+PORT=18435 node docs/validation/VTID-04033/outputs/harness-server.js &              # statics + scripted chat/stream turn + scripted executions/:id/stream
+node docs/validation/VTID-04033/outputs/harness-shoot.js                            # Playwright: send, wait for the live panel (3 steps), then the terminal frame; 1400x900 + 390x844

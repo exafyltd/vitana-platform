@@ -1,0 +1,45 @@
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (4 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree (1 ms)
+    ✓ approves evidence docs alongside source (1 ms)
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile
+    ✓ says out loud which files it did not judge (1 ms)
+    ✓ does not present "not judged" as approval of those trees (1 ms)
+    ✓ .env.example is NOT treated as a committed .env
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit (1 ms)
+    ✓ rejects a bare .env at the repo root (1 ms)
+    ✓ rejects an unknown profile
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change
+    ✓ approves the same change once declared
+    ✓ still reports the dependency change when declared (1 ms)
+    ✓ catches yarn.lock too, not just npm and pnpm
+    ✓ ranks a committed .env above an undeclared lockfile
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (2 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route (1 ms)
+    ✓ ignores removed and context lines (4 ms)
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ requires evidence if any added line registers a route, among many that do not
+    ✓ treats an empty diff as not requiring evidence
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations
+    ✓ does not scan gateway backend source — it is not served to a browser
+    ✓ picks the frontend files out of a mixed change set (1 ms)
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace
+    ✓ approves an empty change set rather than throwing
+
+Test Suites: 1 passed, 1 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        0.527 s, estimated 1 s
+Ran all test suites matching /test\/scripts\/validator-path-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04060",
+  "execution_id": "4b58fa35-eeb0-44f1-8909-16637c206a69",
+  "finding_id": "e4ed8c37-0a90-41fa-af5a-515fd287d304",
+  "plan_version": 1,
+  "branch": "dev-autopilot/4b58fa35",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "scripts/ci/command-hub-ownership-guard.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/dead-code-workflows-removed.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-18T11:39:13.637Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

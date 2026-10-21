@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05104",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/calendar-invite-guard.ts",
+    "services/gateway/src/routes/chat.ts",
+    "services/gateway/src/routes/chat-groups.ts",
+    "services/gateway/src/services/orb-tools/messaging-depth-tools.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/de.json",
+    "services/gateway/src/i18n/locales/en.json",
+    "services/gateway/src/i18n/locales/es.json",
+    "services/gateway/src/i18n/locales/sr.json",
+    "services/gateway/src/i18n/locales/fr.json",
+    "services/gateway/src/i18n/locales/pt.json",
+    "services/gateway/src/i18n/locales/ru.json",
+    "services/gateway/src/i18n/locales/pl.json",
+    "services/gateway/src/i18n/locales/zh.json",
+    "services/gateway/src/i18n/locales/tr.json",
+    "services/gateway/test/vtid-05104-calendar-invite-guard.test.ts",
+    "services/gateway/test/vtid-04917-invite-routes.test.ts",
+    "services/gateway/test/calendar/manifest.json",
+    "services/gateway/package.json",
+    "docs/design/VTID-04998-calendar-invites.md",
+    "docs/validation/VTID-05104/**"
+  ],
+  "weakens_tests": [
+    "services/gateway/test/vtid-04917-invite-routes.test.ts: the send guard is now mocked to allow in this file (its assertions are unchanged), because the real guard needs relationship and allowlist data this route-shape test does not model; the guard has its own suite, test/vtid-05104-calendar-invite-guard.test.ts, which runs the real guard through the same routes"
+  ],
+  "red_green_exempt": []
+}

@@ -1,0 +1,22 @@
+phrasings 7500  top1 71.5%  top5 93.4%  confident 31.5%  confident-wrong-page 55
+en  top1 89.3%  top5 98.8%  wrong-page 5
+de  top1 82.3%  top5 96.8%  wrong-page 2
+es  top1 84.2%  top5 98.6%  wrong-page 0
+fr  top1 77.2%  top5 97.9%  wrong-page 2
+sr  top1 51.5%  top5 82.1%  wrong-page 12
+pl  top1 76.6%  top5 96.5%  wrong-page 3
+pt  top1 78.4%  top5 98.3%  wrong-page 1
+ru  top1 71.0%  top5 93.8%  wrong-page 4
+tr  top1 63.6%  top5 91.9%  wrong-page 12
+ar  top1 61.7%  top5 88.6%  wrong-page 6
+zh  top1 74.1%  top5 97.9%  wrong-page 8
+weakest screens (top5 share):
+DEVHUB.GOVERNANCE.HISTORY 0.67
+DEVHUB.ASSISTANT.OVERVIEW 0.71
+DEVHUB.TESTING.OVERVIEW 0.71
+DISCOVER.CART 0.74
+DEVHUB.COMMERCE.OVERVIEW 0.75
+DEVHUB.VOICE.OVERVIEW 0.75
+AI.INSIGHTS 0.76
+COMM.OVERVIEW 0.79
+Tests:       4 passed, 4 total

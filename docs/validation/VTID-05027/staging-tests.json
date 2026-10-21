@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05027",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "push-dispatch health reports active-member reach (push_reach_active migrated, loader live)",
+      "target": "gateway",
+      "path": "/api/v1/ops/health/push-dispatch",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "\"active_reach_7d\":"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05027-push-reach-health.test.ts test/vtid-04962-push-health.test.ts test/vtid-04663-ops-health-checks.test.ts",
+      "cwd": "services/gateway",
+      "reason": "The degraded threshold (active_member_reach_low) depends on live member data that staging must not alter (shared production database); the Jest suites prove every threshold branch and the omit-on-error path. The read-only check on staging is that the field is present."
+    }
+  ]
+}

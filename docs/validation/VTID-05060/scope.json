@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05060",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/dev-memory/resume-pack.ts",
+    "services/gateway/src/routes/dev-memory.ts",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/services/github-service.ts",
+    "services/gateway/src/services/jev/gates/operator-route-gate.ts",
+    "services/gateway/src/services/kiro/kiro-mcp-tools.ts",
+    "services/gateway/src/services/kiro/kiro-turn.ts",
+    "services/gateway/test/vtid-05060-resume-and-model-pick.test.ts",
+    "services/gateway/test/vtid-05018-kiro-thread-memory.test.ts",
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts",
+    "scripts/dev/resume-vtid.sh",
+    ".github/pull_request_template.md",
+    "CLAUDE.md",
+    "docs/validation/VTID-05060/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05060/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

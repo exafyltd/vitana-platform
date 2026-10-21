@@ -1,0 +1,13 @@
+{
+ "numTotalTestSuites": 1515,
+ "numPassedTestSuites": 1514,
+ "numFailedTestSuites": 0,
+ "numPendingTestSuites": 1,
+ "numTotalTests": 24147,
+ "numPassedTests": 24116,
+ "numFailedTests": 0,
+ "numPendingTests": 25,
+ "numTodoTests": 6,
+ "success": true,
+ "snapshots_total": 126
+}

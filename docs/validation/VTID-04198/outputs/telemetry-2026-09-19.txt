@@ -1,0 +1,76 @@
+VTID-04198 — production oasis_events evidence (read-only SELECTs).
+
+=== The reporting device ===
+user_agent on vtid.live.session.start, 2026-09-19 10:28-10:29 UTC:
+  Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) App96
+  AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1
+  origin: https://vitanaland.com    user: 67c971fc-48f3-49ce-aaa8-cddb6fa9e63a
+
+Reported sequence de -> de -> sr -> ru -> ru is present verbatim:
+  10:28:15 58373903 de
+  10:28:27 750b9490 de
+  10:28:46 e703e2d5 sr
+  10:29:09 ff004e73 ru
+  10:29:19 542847ae ru      <- "I tried a second time"
+
+=== Audio actually emitted per session (max audio_out / outputSpeechTokens) ===
+  sid       t0        lang  chunks  speech_tokens
+  021189a8  10:26:10  ru      118     239           (Android, different user)
+  ca722224  10:26:31  de      196     397           (Android, different user)
+  58373903  10:28:15  de      315     643   <- iPhone, HEALTHY, user heard nothing
+  750b9490  10:28:27  de       22      45   <- iPhone
+  e703e2d5  10:28:46  sr       82       -   <- iPhone
+  ff004e73  10:29:09  ru       16      33   <- iPhone, ~one word
+  542847ae  10:29:19  ru       15      31   <- iPhone, ~one word
+
+315 chunks left the gateway for 58373903. The device played none of them.
+
+=== Russian voice substitution (all three ru sessions) ===
+stage=nova_voice_fallback  voice="tina"  reason="no_native_nova_voice"
+
+nova-sonic-voice.ts:
+  "`tina` is Nova's GERMAN voice. Substituting it for Russian, Polish or
+   Serbian is a real compromise..."
+  export const NOVA_SONIC_FALLBACK_VOICE: NovaSonicVoiceId = 'tina';
+
+=== Why ru reaches Nova at all — live prod gateway, commit a4dd71a ===
+GET https://gateway.vitanaland.com/api/v1/orb/nova-sonic/health
+  "supported_languages": ["en","de"],
+  "region": "eu-north-1",
+  "cascade": {
+    "enabled": false,
+    "vertex_live_unavailable": true,
+    "effective": false,
+    "languages": { "ru": "cascade:ru-RU", "sr": "no:no_polly_voice", ... }
+  }
+
+ru IS cascade-eligible (ru-RU) but the cascade is OFF in production, so ru is
+forced onto Nova, which speaks only en/de. Staging pins
+ORB_CASCADED_VOICE_ENABLED=true, which is why this never reproduced there.
+
+=== Rejected hypotheses (kept, because they shaped the fix) ===
+
+(1) "the missing wake_opener causes the truncation" — 7 days:
+      opener state            sessions  avg_chunks  <40 chunks
+      newday_overview              120         156        78
+      NO wake_opener               109         741        40
+      conv_resume                   52         202         3
+    No-opener sessions average MORE audio than any opener cohort. Rejected.
+
+(2) "the Nova content-filter block causes it" — 7 days:
+      state                   sessions  avg  median  <40     %
+      clean connect                381  315      80  177  46.5
+      content-filter BLOCKED        21  275     196    9  42.9
+    Blocked sessions are marginally LESS truncated than clean ones. Rejected.
+    (The blocks are real and chronic — 7 on 09-19, 5 on 09-18, 5 on 09-15 —
+     they are simply not this defect.)
+
+(3) A session with session.start and ZERO orb.live.diag events at 10:18:07
+    looked like a perfect "never connected" match. user_agent: curl/8.5.0,
+    no origin — a synthetic probe, not the reporting device. Discarded.
+
+=== The client-side fault is invisible here, by construction ===
+_announceAudioBlocked() sets the orb to 'paused', shows a tap-to-hear caption,
+and sends NOTHING to the gateway. That is why every server-side diagnostic for
+58373903 reports a healthy session while the user heard silence — and it is
+what VTID-04198 changes.

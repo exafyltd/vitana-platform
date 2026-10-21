@@ -1,0 +1,3 @@
+# VTID-04940 — commands run (local jest; nothing against Supabase or production)
+cd services/gateway && npx jest test/vtid-04940-commerce-mcp-supplier-data.test.ts test/commerce-mcp.test.ts test/vtid-04890-commerce-business-type.test.ts test/vtid-04897-prod-commerce-mcp-pin.test.ts
+  -> Test Suites: 4 passed, 4 total; Tests: 63 passed, 63 total

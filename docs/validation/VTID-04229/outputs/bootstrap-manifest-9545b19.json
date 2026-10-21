@@ -1,0 +1,19 @@
+{
+  "format": 1,
+  "repo": "exafyltd/vitana-platform",
+  "sha": "9545b1904a00111d47b5f8be73b92488b8e74a7e",
+  "built_at": "2026-09-21T14:50:08.229Z",
+  "files": {
+    "graph": "graph-index.json.gz",
+    "risk": "risk-index.json.gz"
+  },
+  "counts": {
+    "nodes": 46800,
+    "edges": 88760,
+    "relations": 16,
+    "risk_files": 2736,
+    "hotspots": 50,
+    "dead_code_files": 859,
+    "decisions": 13
+  }
+}

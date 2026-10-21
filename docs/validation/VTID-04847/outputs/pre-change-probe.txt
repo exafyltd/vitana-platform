@@ -1,0 +1,1 @@
+2026-10-02 pre-change probe: /mcp 404, /.well-known/oauth-protected-resource 404, mcp.vitanaland.com has no DNS

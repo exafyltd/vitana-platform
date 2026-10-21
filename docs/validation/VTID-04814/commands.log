@@ -1,0 +1,10 @@
+# VTID-04814 — commands run (session-local, read-only against shared systems)
+node: extracted NAVIGATION_CONFIG from src/frontend/command-hub/app.js        # 24 sections, 134 tabs
+npx tsx (scratch): dumped the 67 legacy /command-hub entries of lib/navigation-catalog.ts
+supabase (read-only): nav_catalog has no /command-hub and no /admin|/staff|… rows
+python3 gen-hub.py -> src/navigation/data/command-hub-screens.json            # 134 screens, 65 legacy ids + 2 formerIds
+AWS_BEDROCK_REGION=eu-central-1 BEDROCK_ROLE_ARN=local npx tsx test/nav-golden/build-embeddings.ts   # Titan embeddings, 10155 vectors
+npx jest test/navigation/vtid-04814-command-hub-navigation.test.ts            # 54 passed
+npx jest test/nav-golden/nav-registry-loo.test.ts                             # 4 passed (top5 93.5%)
+npx jest test/navigation test/nav-golden test/nav-redirect test/orb/live/tools ...  # see PR
+npx tsc --noEmit -p services/gateway                                          # clean

@@ -1,0 +1,5 @@
+Read-only, 2026-10-10, information_schema.role_table_grants / column_privileges on public.user_connections:
+  anon:           REFERENCES, SELECT, TRIGGER, TRUNCATE (column SELECT on access_token, refresh_token)
+  authenticated:  DELETE, INSERT, REFERENCES, SELECT, TRIGGER, TRUNCATE, UPDATE (column SELECT/INSERT/UPDATE on both token columns)
+  service_role:   all
+Rows: 1 total, 0 with access_token, 0 with refresh_token (connector claude, category ai_assistant).

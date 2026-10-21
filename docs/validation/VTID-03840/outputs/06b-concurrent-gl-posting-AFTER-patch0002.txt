@@ -1,0 +1,11 @@
+# 06b — concurrent GL posting AFTER patch 0002: 12 parallel add+submit journal entries (Cash / Sales / Output VAT), separate subprocesses, one PG16
+ok=12/12 wall=1247ms per-entry min=957 max=1209ms (serial estimate ~4320ms)
+# 06b — concurrent GL posting AFTER patch 0002: 24 parallel add+submit journal entries (Cash / Sales / Output VAT), separate subprocesses, one PG16
+ok=24/24 wall=2498ms per-entry min=1777 max=2441ms (serial estimate ~8640ms)
+gl_entry (count, sum debit, sum credit) before: (66, Decimal('8312.00'), Decimal('8312.00')) after: (174, Decimal('49892.00'), Decimal('49892.00'))
+new gl rows=108 (expected 108); debit-credit delta of new rows = 0.00 (expected 0)
+submitted JEs with 'concurrent3' remark: 36 (expected 36)
+duplicate naming_series: none
+unbalanced JEs: 0
+orphan gl rows: 0
+submitted JEs with != 3 GL rows: none

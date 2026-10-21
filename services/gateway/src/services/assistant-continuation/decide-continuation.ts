@@ -1,0 +1,346 @@
+/**
+ * VTID-02913 (B0d.1) — decide-continuation orchestrator.
+ *
+ * Single entry point for picking a continuation. Every assistant turn
+ * that wants one calls this and receives an `AssistantContinuationDecision`
+ * — never a raw null, never a thrown exception masking a no-fire path.
+ *
+ * Flow:
+ *   1. Capture `decisionStartedAt`.
+ *   2. Find every provider for the requested surface.
+ *   3. Invoke each provider. Tolerate throws → record as `errored`.
+ *   4. Collect ProviderResult rows (one per provider, even on no-fire).
+ *   5. Rank the `returned` candidates by priority (descending), stable.
+ *   6. If at least one candidate exists → that's the selected continuation.
+ *   7. Otherwise → build `selectedContinuation = null` with a derived
+ *      `suppressionReason`, AND emit the rolled-up reason as a
+ *      `kind: 'none_with_reason'` continuation that callers can render
+ *      uniformly (B0d.3 logs both forms; B0d.4 renders the rolled-up
+ *      reason on the wake timeline panel).
+ *   8. Capture `decisionFinishedAt` and return the carrier.
+ *
+ * Design notes (load-bearing):
+ *   - `none_with_reason` is FIRST-CLASS: when no provider returns a
+ *     candidate, the rolled-up suppression is itself a continuation
+ *     (kind=`none_with_reason`) AND the decision's `selectedContinuation`
+ *     is null. Both views are populated so:
+ *       (a) renderers that ALWAYS expect a continuation can use
+ *           `materializedNone()` to get one;
+ *       (b) renderers that gate on selection can read `null` directly.
+ *     Either way, the Continuation Inspector sees the full provider
+ *     evidence in `sourceProviderResults`.
+ *   - `sourceProviderResults` is ALWAYS populated when providers ran —
+ *     including on no-fire paths. This is review-checklist item #3.
+ *   - The contract carrier (`AssistantContinuationDecision`) ALREADY has
+ *     timing + provider evidence in B0d.1. B0d.3 only populates / surfaces.
+ */
+
+import { randomUUID } from 'crypto';
+import type {
+  AssistantContinuation,
+  AssistantContinuationDecision,
+  ContinuationDecisionContext,
+  ContinuationProvider,
+  ContinuationSurface,
+  ProviderResult,
+  DecisionTelemetryContext,
+} from './types';
+import {
+  makeNoneWithReason,
+  validateContinuationCandidate,
+} from './types';
+import {
+  defaultProviderRegistry,
+  type ContinuationProviderRegistry,
+} from './provider-registry';
+
+// ---------------------------------------------------------------------------
+// Public API
+// ---------------------------------------------------------------------------
+
+export interface DecideContinuationOptions {
+  /** Surface that needs a continuation. */
+  surface: ContinuationSurface;
+  /** Decision context forwarded verbatim to each provider. */
+  context: Omit<ContinuationDecisionContext, 'surface'>;
+  /** Override the registry. Tests pass a fresh one; production uses default. */
+  registry?: ContinuationProviderRegistry;
+  /** Injected for testability. Defaults to `Date.now`. */
+  now?: () => Date;
+  /** Injected for testability. Defaults to `randomUUID`. */
+  newId?: () => string;
+  /**
+   * VTID-03301 — opener dedupe keys this user was recently served, MOST-RECENT
+   * FIRST. The ranker demotes any candidate whose `dedupeKey` is in this list so
+   * the same opener does not win session after session (the "complete your
+   * profile every time" defect). It is a soft penalty, not exclusion: a single
+   * genuinely-high-priority item (e.g. a due reminder) can still win if nothing
+   * fresher is comparable.
+   */
+  recentlyServedDedupeKeys?: ReadonlyArray<string>;
+  /** Penalty applied to a recently-served candidate's effective priority. */
+  recencyPenalty?: number;
+  /**
+   * VTID-03741 — per-provider timeout in ms for the parallel ranker.
+   * Defaults to DEFAULT_PROVIDER_TIMEOUT_MS. Tests pass a small value to
+   * exercise the timeout path without a real slow provider.
+   */
+  providerTimeoutMs?: number;
+}
+
+/** Default soft penalty — large enough to flip ties between same-tier providers. */
+export const DEFAULT_RECENCY_PENALTY = 30;
+
+/**
+ * VTID-03741 — per-provider timeout for the parallel ranker below. Real
+ * providers observed 55-350ms in production (oasis_events); this leaves
+ * generous headroom while still bounding the worst case now that a hung
+ * provider can no longer stall every provider after it in a serial chain.
+ * Env-tunable so an incident can raise/lower it without a redeploy.
+ */
+export const DEFAULT_PROVIDER_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.WAKE_BRIEF_PROVIDER_TIMEOUT_MS);
+  return Number.isFinite(raw) && raw > 0 ? raw : 800;
+})();
+
+/**
+ * VTID-03301 — effective priority after the rotation penalty. The exact opener
+ * served LAST time is demoted hardest (×1.5) so it almost never repeats
+ * back-to-back; anything else in the recent window gets the base penalty.
+ * Returns the unchanged priority when the key is fresh.
+ */
+export function effectivePriority(
+  basePriority: number,
+  dedupeKey: string,
+  recentlyServed: ReadonlyArray<string>,
+  penalty: number,
+): number {
+  if (recentlyServed.length === 0) return basePriority;
+  if (recentlyServed[0] === dedupeKey) return basePriority - penalty * 1.5;
+  if (recentlyServed.includes(dedupeKey)) return basePriority - penalty;
+  return basePriority;
+}
+
+/**
+ * Pick a continuation for the given surface. Always returns a decision
+ * — never throws on a missing provider, never returns raw null.
+ */
+export async function decideContinuation(
+  opts: DecideContinuationOptions,
+): Promise<AssistantContinuationDecision> {
+  const registry = opts.registry ?? defaultProviderRegistry;
+  const now = opts.now ?? (() => new Date());
+  const newId = opts.newId ?? (() => randomUUID());
+
+  const decisionId = newId();
+  const startedAt = now();
+  const decisionStartedAt = startedAt.toISOString();
+
+  const fullContext: ContinuationDecisionContext = {
+    ...opts.context,
+    surface: opts.surface,
+  };
+
+  const providers = registry.forSurface(opts.surface);
+  // VTID-03741: providers are already isolated (invokeProviderSafely never
+  // throws, each does its own independent read) and selection below is
+  // priority-based, not first-to-finish — so running them concurrently
+  // instead of one-await-at-a-time is a pure latency win with no change to
+  // *which* candidate wins. Promise.all preserves input order, so `results`
+  // still lines up 1:1 with `providers` for the registration-order tie-break
+  // in the ranker below, exactly as the old sequential loop did.
+  const providerTimeoutMs = opts.providerTimeoutMs ?? DEFAULT_PROVIDER_TIMEOUT_MS;
+  const results: ProviderResult[] = await Promise.all(
+    providers.map((provider) => invokeProviderWithTimeout(provider, fullContext, now, providerTimeoutMs)),
+  );
+
+  // Rank: only `returned` candidates are eligible. Stable sort by descending
+  // EFFECTIVE priority (base priority minus the VTID-03301 rotation penalty for
+  // recently-served openers), then registration order on ties. The penalty is
+  // what stops the same provider+step ("journey_guide:life_compass") winning
+  // every session and lets reminders / continuity / a different step rotate in.
+  const recentlyServed = opts.recentlyServedDedupeKeys ?? [];
+  const penalty = opts.recencyPenalty ?? DEFAULT_RECENCY_PENALTY;
+  const candidates = results
+    .filter((r): r is ProviderResult & { candidate: AssistantContinuation } =>
+      r.status === 'returned' && r.candidate !== undefined,
+    )
+    .map((r, idx) => ({
+      result: r,
+      idx,
+      eff: effectivePriority(r.candidate.priority, r.candidate.dedupeKey, recentlyServed, penalty),
+    }))
+    .sort((a, b) => {
+      const dp = b.eff - a.eff;
+      return dp !== 0 ? dp : a.idx - b.idx;
+    });
+
+  let selectedContinuation: AssistantContinuation | null = null;
+  let suppressionReason: string | undefined;
+
+  if (candidates.length > 0) {
+    selectedContinuation = candidates[0].result.candidate;
+  } else {
+    suppressionReason = rollUpSuppressionReason(results, providers.length);
+  }
+
+  const finishedAt = now();
+  const decisionFinishedAt = finishedAt.toISOString();
+
+  const telemetryContext: DecisionTelemetryContext = {
+    sessionId: opts.context.sessionId,
+    userId: opts.context.userId,
+    tenantId: opts.context.tenantId,
+    surface: opts.surface,
+    envelopeJourneySurface: opts.context.envelopeJourneySurface,
+  };
+
+  const decision: AssistantContinuationDecision = {
+    decisionId,
+    selectedContinuation,
+    decisionStartedAt,
+    decisionFinishedAt,
+    sourceProviderResults: results,
+    telemetryContext,
+  };
+  if (suppressionReason !== undefined) {
+    decision.suppressionReason = suppressionReason;
+  }
+  return decision;
+}
+
+// ---------------------------------------------------------------------------
+// Helpers — internal but exported for tests.
+// ---------------------------------------------------------------------------
+
+/**
+ * If no provider returned a candidate, derive a single concise reason
+ * that names WHY (e.g. "no_providers_registered" / "all_providers_suppressed" /
+ * "all_providers_errored"). The full per-provider story lives in
+ * `sourceProviderResults`; this string is just the headline.
+ */
+export function rollUpSuppressionReason(
+  results: ReadonlyArray<ProviderResult>,
+  providerCount: number,
+): string {
+  if (providerCount === 0) return 'no_providers_registered';
+  const counts = {
+    returned: 0,
+    skipped: 0,
+    suppressed: 0,
+    errored: 0,
+  };
+  for (const r of results) counts[r.status] += 1;
+  if (counts.returned > 0) {
+    // Should never happen if caller filtered correctly, but be defensive.
+    return 'unknown_selected_continuation_should_exist';
+  }
+  if (counts.errored === providerCount) return 'all_providers_errored';
+  if (counts.suppressed === providerCount) return 'all_providers_suppressed';
+  if (counts.skipped === providerCount) return 'all_providers_skipped';
+  // Mixed no-fire outcome.
+  return 'no_provider_returned_a_candidate';
+}
+
+/**
+ * Build a materialized `none_with_reason` continuation for a decision
+ * where `selectedContinuation` is null. Renderers that always need a
+ * continuation can call this; renderers that gate on `selectedContinuation`
+ * can ignore it.
+ *
+ * Kept as a small helper (not embedded inside `decideContinuation`)
+ * because some callers prefer the null form and we don't want to pay
+ * the allocation when they don't.
+ */
+export function materializedNone(
+  decision: AssistantContinuationDecision,
+): AssistantContinuation {
+  if (decision.selectedContinuation) {
+    throw new Error(
+      'materializedNone: called on a decision that already has a selected continuation',
+    );
+  }
+  return makeNoneWithReason({
+    surface: decision.telemetryContext.surface,
+    reason: decision.suppressionReason ?? 'unknown_with_context',
+    dedupeKey: `decision-${decision.decisionId}`,
+  });
+}
+
+async function invokeProviderSafely(
+  provider: ContinuationProvider,
+  ctx: ContinuationDecisionContext,
+  now: () => Date,
+): Promise<ProviderResult> {
+  const t0 = now().getTime();
+  try {
+    const result = await provider.produce(ctx);
+    // Latency policy: provider-supplied wins ONLY when it's a strictly
+    // positive number. Otherwise (absent, zero, negative, non-finite)
+    // we use the orchestrator's wall-clock measurement. A zero from a
+    // provider is treated as missing — B0d.3 relies on this evidence
+    // to diagnose wake delay; a silent 0 would lie.
+    const measuredLatencyMs = now().getTime() - t0;
+    const reportedLatencyMs =
+      typeof result.latencyMs === 'number' &&
+      Number.isFinite(result.latencyMs) &&
+      result.latencyMs > 0
+        ? result.latencyMs
+        : measuredLatencyMs;
+
+    // Invariant validation for returned candidates. A malformed
+    // candidate (missing/extra `suppressReason`, unknown kind, non-
+    // object) is downgraded to `status: 'errored'` with the validator's
+    // specific reason. The bad candidate NEVER reaches the ranker.
+    if (result.status === 'returned' && result.candidate !== undefined) {
+      const guard = validateContinuationCandidate(result.candidate);
+      if (!guard.ok) {
+        return {
+          providerKey: provider.key,
+          status: 'errored',
+          latencyMs: reportedLatencyMs,
+          reason: guard.reason,
+        };
+      }
+    }
+
+    return { ...result, latencyMs: reportedLatencyMs };
+  } catch (err) {
+    return {
+      providerKey: provider.key,
+      status: 'errored',
+      latencyMs: now().getTime() - t0,
+      reason: err instanceof Error ? err.message : String(err),
+    };
+  }
+}
+
+/**
+ * VTID-03741 — races a provider against a timeout so one slow/hung provider
+ * can no longer inflate (or, worse, indefinitely stall) the now-parallel
+ * ranker. `invokeProviderSafely` never rejects (everything is caught
+ * internally), so the loser of the race is simply abandoned — it keeps
+ * running in the background and its eventual result is discarded, never
+ * surfacing as an unhandled rejection.
+ */
+function invokeProviderWithTimeout(
+  provider: ContinuationProvider,
+  ctx: ContinuationDecisionContext,
+  now: () => Date,
+  timeoutMs: number,
+): Promise<ProviderResult> {
+  const providerPromise = invokeProviderSafely(provider, ctx, now);
+  const timeoutPromise = new Promise<ProviderResult>((resolve) => {
+    setTimeout(
+      () =>
+        resolve({
+          providerKey: provider.key,
+          status: 'errored',
+          latencyMs: timeoutMs,
+          reason: 'provider_timeout',
+        }),
+      timeoutMs,
+    ).unref?.();
+  });
+  return Promise.race([providerPromise, timeoutPromise]);
+}

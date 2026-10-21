@@ -1,0 +1,6 @@
+$ E2E_READONLY=1 playwright test --list                     # Total: 1011 tests in 17 files
+$ playwright test -c _guardcheck/pw.config.ts               # 2 passed (guard + control)
+  guard on : ['BLOCKED','BLOCKED','BLOCKED','200','200','200']
+  guard off: ['200','200','200','200','200','200']
+$ select role, updated_at from role_preferences where user_id = <test user>
+  → developer, 2026-09-28 11:16:36.75547+00 (inside read-only run 36414594812)

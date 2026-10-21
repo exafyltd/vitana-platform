@@ -1,0 +1,40 @@
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/capability-awareness/capability-awareness-service-repository.test.ts
+  capability-awareness-service-repository
+    advanceCapabilityAwareness
+      ✓ calls the advance_capability_awareness RPC with the exact params passed (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/routes/scheduled-notifications-meetup-rsvp-error-logging.test.ts
+  routes/scheduled-notifications.ts — fetchMeetupRsvps error logging
+    ✓ has exactly the two known call sites (meetup_starting_soon + meetup_starting_now) (1 ms)
+    ✓ every call site destructures `error` from the call, not just `data`
+    ✓ every call site logs the error via console.warn when present, before falling back to an empty array
+
+PASS test/orb/full-duplex-sse-live-api-ready.test.ts
+  VTID-03706 follow-up: SSE live_api_ready carries full_duplex
+    ✓ includes full_duplex: isFullDuplexEnabled() in the live_api_ready SSE payload (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/routes/role-admin-error-logging.test.ts
+  lib/tenant-role-auth.ts — verifyAuth me_context RPC error logging
+    ✓ destructures `error` from the me_context RPC and logs it before the unchanged fail-closed fallbacks (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1101 passed, 1101 of 1102 total
+Tests:       29 skipped, 6 todo, 17858 passed, 17893 total
+Snapshots:   42 passed, 42 total
+Time:        93.13 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

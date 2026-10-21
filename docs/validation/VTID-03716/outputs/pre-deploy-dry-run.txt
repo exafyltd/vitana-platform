@@ -1,0 +1,71 @@
+[verify-cascade-audio-timing] endpoint=https://preview-aws-gateway.vitanaland.com/api/v1/orb/tts-pcm-diagnostic
+
+[verify-cascade-audio-timing] loaded REAL _pcmRateFromMime from orb-widget.js (not reimplemented)
+
+--- ru ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+--- pl ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+--- ar ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+--- zh ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+--- de ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+--- en ---
+  FAIL: non-JSON response (status=404, content-type=text/html; charset=utf-8) — the route likely isn't deployed on this target yet: <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+  RESULT: FAIL
+
+=== 0/6 languages passed ===

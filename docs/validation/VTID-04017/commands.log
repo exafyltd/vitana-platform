@@ -1,0 +1,7 @@
+# VTID-04017 — commands run (Claude Code session, 2026-09-17)
+npx jest test/vtid-04017-fix-mode.test.ts test/dev-autopilot-bridge.test.ts test/vtid-04006-selfheal-child-inherits-executor.test.ts \
+         test/vtid-03843-selfheal-child-inherits-onramp-override.test.ts test/autopilot-agent-scope-validate.test.ts \
+         test/vtid-04016-agent-check-guard.test.ts test/dev-autopilot-execute.test.ts test/dev-autopilot-runexec-pr-flood-guard.test.ts \
+         test/vtid-03844-outcomes-record-operator-onramp.test.ts        -> 9 suites, 96 tests passing (16 new)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json  -> exit 0
+NOT run here: a live fix-mode retry on staging (needs an agent PR with red CI; executor image rebuilt from this commit).

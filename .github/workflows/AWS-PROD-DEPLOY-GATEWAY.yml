@@ -1,0 +1,1801 @@
+# AWS-PROD-DEPLOY-GATEWAY — promote the gateway to the AWS Production ECS
+# service `vitana-gateway-awsdr` (VTID-03398, promotion mode VTID-03420).
+#
+# Since the VTID-03419 cutover, `gateway.vitanaland.com` is served by this
+# AWS stack — it is the canonical production for the gateway. This workflow
+# is the ONLY path that updates it, and it NEVER runs on push.
+#
+# Three modes (`deploy_mode` input):
+# - promote-staging (DEFAULT, VTID-03420): ship the EXACT ECR image the AWS
+#   staging service (`vitana-gateway`) is currently running — no rebuild.
+#   Staging and prod share the `vitana/gateway` ECR repo, so promotion is
+#   just re-registering staging's image on the awsdr task definition. The
+#   run verifies staging actually SERVES that commit over HTTP first
+#   (build-info — never ECS status fields), and the optional
+#   `expected_commit` input pins the promotion to the commit an operator
+#   was shown (the Command Hub PUBLISH button always sets it): if staging
+#   moved in between, the run fails before touching the service.
+# - rebuild-main: the original from-source path — build `main` HEAD, push,
+#   roll. Kept as the explicit fallback (e.g. staging is broken and a fix
+#   must ship directly), not the routine path.
+# - env-only (VTID-03961): re-register the CURRENT prod image and commit
+#   stamp UNCHANGED — the only thing that can differ is env_overrides (or
+#   another dispatch-input override). Exists because neither mode above can
+#   express "ship nothing code-wise, just flip a task-def env var": both
+#   always re-derive the image from staging's or main's current HEAD, which
+#   means a routine env tweak would also promote every app-code commit that
+#   happened to land on staging/main since prod's last real promotion —
+#   exactly the risk CLAUDE.md's Part 1 IF-THEN rule 26 says to avoid
+#   shipping silently. Use this when the sole intent is a task-def env var.
+#
+# Design choices:
+# - workflow_dispatch ONLY, with a REQUIRED `reason` input. There is no
+#   `on: push` trigger of any kind — mirrors how GCP prod is gated
+#   post-cutover (CLAUDE.md §16: auto = staging, prod = deliberate manual
+#   action with a recorded reason). This is the single most important
+#   property of this file; do not add a push trigger.
+# - The existing `vitana-gateway-awsdr` task definition is PRESERVED: only
+#   the container image and the commit-stamp env vars (GIT_COMMIT_SHA /
+#   COMMIT_SHA / BUILD_INFO_MARKER) are replaced, same pattern as staging.
+#   In promote mode NOTHING else is taken from the staging task def — env
+#   vars/secrets stay the awsdr ones (the image is env-agnostic).
+# - Smoke gate mirrors AWS-STAGE-DEPLOY-GATEWAY.yml: /api/v1/admin/health
+#   must report env=production AND /api/v1/admin/build-info must report
+#   the deployed commit — otherwise the job fails loudly (CLAUDE.md §15).
+# - OASIS event + software_versions row are emitted best-effort via
+#   Supabase REST when SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets
+#   exist, so the Command Hub CLOCK history sees AWS-DR prod deploys.
+#
+# Required repository secrets:
+#   AWS_PROD_ROLE_ARN — GitHub OIDC deploy role (see scripts/aws/README.md
+#   for the federation pattern; a dedicated role/trust-policy for this
+#   workflow still needs to be created by an operator with IAM admin
+#   rights — see docs/AWS-PRODUCTION-BUILD-LOG.md for the exact one-time
+#   setup commands. Deliberately NOT a static-key IAM user.)
+# Optional repository secrets (for OASIS/CLOCK visibility):
+#   SUPABASE_URL / SUPABASE_SERVICE_ROLE
+
+name: AWS Prod Deploy Gateway (ECS, DR)
+
+on:
+  workflow_dispatch:
+    inputs:
+      # BOOTSTRAP-NOVA-SONIC-VOICE: optional Nova canary levers. EMPTY inputs
+      # PRESERVE whatever NOVA_SONIC_* values the current task definition
+      # carries — a routine prod deploy never flips Nova state either way.
+      # Providing nova_sonic_enabled replaces the full Nova env block
+      # (enabled + pinned region/model + allowlists) on the new revision.
+      nova_sonic_enabled:
+        description: 'Set NOVA_SONIC_ENABLED (true/false; EMPTY = preserve current task-def state). Canary user/tenant allowlists moved to env_overrides (VTID-03958, see below) once this file hit the 25-input ceiling.'
+        required: false
+        default: ''
+      # VTID-03560: the two levers that actually move the Gemini API bill.
+      # Both are independent of nova_sonic_enabled and are EMPTY-preserving
+      # for the same reason the Nova block is — a routine prod deploy must
+      # never flip voice routing or a cost budget as a side effect.
+      #
+      # These live here, as upserted deploy inputs, rather than as a hand-edit
+      # to the live task definition ON PURPOSE. VTID-03513 cost four days of
+      # staging downtime precisely because task-def state existed only in AWS
+      # and never in this repo: one bad value cloned itself forward through
+      # every subsequent deploy and was invisible to code review. Anything
+      # that changes runtime behaviour belongs in a file someone can diff.
+      nova_sonic_global_enabled:
+        description: 'Set NOVA_SONIC_GLOBAL_ENABLED — true promotes Nova OFF the canary allowlist to ALL sessions (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      orb_idle_no_engagement_ms:
+        description: 'Set ORB_IDLE_NO_ENGAGEMENT_MS — reap budget for a live session with zero engagement (default 300000; EMPTY = preserve)'
+        required: false
+        default: ''
+      orb_newday_overview_rung_enabled:
+        description: 'Set ORB_NEWDAY_OVERVIEW_RUNG_ENABLED — false kills the rich new-day briefing opener and falls back to the wake-brief line (false/true; EMPTY = preserve, code default is ON)'
+        required: false
+        default: ''
+      # VTID-03683: the cascaded voice pipeline (Transcribe -> Bedrock -> Polly)
+      # for the languages Nova Sonic cannot speak at all (ru/pl/ar/zh). These
+      # are declared here rather than left to a hand-edit of the live task def
+      # for the reason the block above this one already records: that is exactly
+      # how VTID-03513 cost four days of staging downtime.
+      #
+      # ORDERING IS LOAD-BEARING, same shape as BEDROCK_ROLE_ARN below. The
+      # gateway task role needs transcribe:StartStreamTranscription AND
+      # polly:SynthesizeSpeech before this is switched on. Without them the
+      # cascade fails per-turn instead of failing to start — and VTID-03665
+      # already found Polly failing silently in one environment from exactly
+      # this kind of missing grant. Verify the IAM first, then flip.
+      orb_cascaded_voice_enabled:
+        description: 'Set ORB_CASCADED_VOICE_ENABLED — true routes Nova-unsupported languages (ru/pl/ar/zh) to the Transcribe->Bedrock->Polly cascade instead of forcing them onto Nova. Needs transcribe+polly IAM FIRST (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_transcribe_region:
+        description: 'Set AWS_TRANSCRIBE_REGION — region for Transcribe streaming; falls back to AWS_REGION then eu-central-1 (EMPTY = preserve)'
+        required: false
+        default: ''
+      # BOOTSTRAP-POLLY-NARRATION-CACHE: guided-topic lesson audio was
+      # re-synthesized on EVERY My Journey tap (~1800 chars, ~2000 distinct
+      # assets across 254 topics x 8 languages). These two turn that into a
+      # per-asset cost. `s3` REQUIRES the bucket + the s3 grant on
+      # vitana-ecs-task-role — run scripts/aws/setup-narration-audio-cache.sh
+      # first. Setting `s3` with no bucket logs an error and falls back to the
+      # in-process cache rather than silently disabling caching.
+      # VTID-03697 — narration_audio_cache / narration_audio_bucket REMOVED.
+      #
+      # GitHub allows a maximum of 25 `workflow_dispatch` inputs. Adding these
+      # two took this file from 24 to 26, and GitHub then refuses to parse the
+      # workflow AT ALL:
+      #
+      #   failed to parse workflow: you may only define up to 25 `inputs`
+      #   for a `workflow_dispatch` event
+      #
+      # That is not a degraded input — it makes the whole workflow
+      # undispatchable, which took production deploys offline entirely,
+      # including the Command Hub PUBLISH button (it dispatches this same
+      # workflow). Nothing caught it because this workflow is
+      # `workflow_dispatch`-only: no push exercises it, so the breakage
+      # surfaces at the exact moment someone needs to ship.
+      #
+      # Removing these two is safe for every known caller. PUBLISH
+      # (`routes/operator.ts`) passes only reason/deploy_mode/expected_commit,
+      # and `scripts/deploy/publish-to-prod.sh` passes only its own service /
+      # vtid / environment / health_path / canary / initiator set. Neither has
+      # ever passed a narration input.
+      #
+      # Nothing is lost operationally today: NARRATION_AUDIO_CACHE defaults to
+      # `memory` in code when unset, which is the intended production value,
+      # and the s3 leg is explicitly unaccepted (the bucket does not exist and
+      # the task role has no s3 grant — CLAUDE.md §2c-cache).
+      #
+      # TO SET THEM LATER: this file is at the ceiling, so a new env toggle
+      # cannot simply be appended. Either retire an obsolete input first, or
+      # replace the one-input-per-env-var pattern with a single JSON
+      # `env_overrides` input. A guard test now fails if any workflow exceeds
+      # the limit, so this cannot silently recur.
+      #
+      # VTID-03958: `env_overrides` (below, near the bottom of this inputs
+      # block) is now that escape hatch. It retired nova_canary_user_ids/
+      # nova_canary_tenant_ids (net -2 named inputs) to make room, and is the
+      # place any FUTURE one-off env var flag should go — not a new named
+      # input. See its own description for the generic upsert mechanism.
+      # VTID-03649: GCP project billing was disabled, permanently killing
+      # Vertex Live. Without this, sessions whose language/runtime fail
+      # Nova's gates (and Nova's own premature-close recovery) still degrade
+      # to Vertex — now a guaranteed connection failure, not a real fallback.
+      vertex_live_unavailable:
+        description: 'Set VERTEX_LIVE_UNAVAILABLE — true forces Nova through the runtime/language gates instead of degrading to a dead Vertex Live (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03563: Claude-always-on-Bedrock is standing governance (CLAUDE.md
+      # ALWAYS 10a). These exist so the activation gate lives in a diffable
+      # file instead of only in live AWS state — the failure mode VTID-03513
+      # paid four days of staging downtime for, where task-def wiring existed
+      # nowhere in git and got cloned forward through every later deploy.
+      bedrock_role_arn:
+        description: 'Set BEDROCK_ROLE_ARN — THE activation gate for Claude-on-Bedrock. Unset = adapter reports not_configured and the router SILENTLY serves the fallback. (EMPTY = preserve)'
+        required: false
+        default: ''
+      bedrock_model_id:
+        description: 'Set BEDROCK_MODEL_ID — must be a resolved cross-region INFERENCE PROFILE id (e.g. eu.anthropic.claude-sonnet-4-6-v1:0), NOT a bare on-demand model id (EMPTY = preserve)'
+        required: false
+        default: ''
+      aws_bedrock_region:
+        description: 'Set AWS_BEDROCK_REGION — must be a region where the chosen Claude profile is actually offered; a wrong region fails with an opaque model-not-found (EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03579: the autopilot background executor. Unlike every other lever
+      # here, this one is DANGEROUS BY DEFAULT: the gate in index.ts reads
+      # `!== 'false'`, so leaving it unset ENABLES the executor. On 2026-08-11
+      # it ran 990 planner LLM calls in a day — the same 12 findings replanned
+      # every 30s, because lazyPlanTick's only dedupe guard is "skip if a plan
+      # row exists" and generatePlanVersion was never writing one. It billed
+      # 863 of those to Gemini (preview models skip Vertex and hit AI Studio),
+      # which is what took the Gemini API line to $173 MTD.
+      #
+      # Setting this to 'false' is therefore not a tuning knob, it is a
+      # circuit breaker, and it must be settable from a diffable file rather
+      # than by hand-editing live AWS state (the VTID-03513 lesson).
+      dev_autopilot_executor_enabled:
+        description: "Set DEV_AUTOPILOT_EXECUTOR_ENABLED — 'false' STOPS the autopilot background executor (lazyPlanTick every 30s). NOTE: unset means ENABLED, the code gate is !== 'false'. (EMPTY = preserve)"
+        required: false
+        default: ''
+      # VTID-03578: the remaining two Google seams. The adapters have existed
+      # since VTID-03495/03497 and both default to the Google provider, so the
+      # code has shipped to prod repeatedly while changing nothing — the switch
+      # was only ever reachable by hand-editing the live task definition, i.e.
+      # the exact mechanism VTID-03513 cost four days of staging downtime for.
+      # Same EMPTY-preserving shape as every lever above.
+      tts_provider:
+        description: 'Set TTS_PROVIDER (google|polly) — polly routes all 4 gateway TTS call sites to Amazon Polly. NOTE: sr has no Polly voice in any engine and still falls back to Google (EMPTY = preserve)'
+        required: false
+        default: ''
+      tts_polly_strict:
+        description: 'Set TTS_POLLY_STRICT — true DISABLES the polly→google fallback, so an unservable request returns no audio instead of quietly reaching back to GCP. Use to prove a shutdown is clean; it will take Serbian TTS down (true/false; EMPTY = preserve)'
+        required: false
+        default: ''
+      image_provider:
+        description: 'Set IMAGE_PROVIDER (vertex|bedrock) — bedrock routes cover-image generation/outpainting to Amazon Titan. Run scripts/images/verify-titan-image.ts FIRST; outpaint mask polarity is still unverified (EMPTY = preserve)'
+        required: false
+        default: ''
+      # VTID-03958: the general escape hatch, added once this file hit
+      # GitHub's 25-input ceiling (see the block above bedrock_role_arn).
+      # A JSON object of {ENV_VAR_NAME: "value"} pairs, upserted onto
+      # .containerDefinitions[0].environment generically (any key works, no
+      # code change needed to add a new one later). EMPTY = no-op — every
+      # key already on the task def is left exactly as it is; this never
+      # clears anything on its own. Malformed JSON fails the deploy loudly
+      # rather than silently no-op'ing or corrupting the task definition.
+      # Prefer this over adding a new named input for a one-off/rare flag —
+      # this file is at (or near) the ceiling again with it in place.
+      #
+      # Deliberately no example env var name in this description: whatever
+      # name is used here becomes literal text in this file, and at least
+      # one existing test keys off of that ("is this flag name anywhere in
+      # AWS-PROD-DEPLOY-GATEWAY.yml?") as a "not promoted to prod yet"
+      # signal for a specific staging-only flag. Passing a value through
+      # this input at DISPATCH time (e.g.
+      # `-f env_overrides='{"SOME_FLAG":"true"}'`) does not add that string
+      # to this file at all — it only appears in that one run's dispatch
+      # inputs/logs, exactly as intended for a deliberate, one-off,
+      # human-triggered change, not a standing pin.
+      env_overrides:
+        description: 'JSON object of extra env vars to upsert onto the task def, e.g. {"SOME_ENV_VAR":"value"} (EMPTY = no-op; the general escape hatch now that this file is at the 25-input ceiling — prefer this over a new named input)'
+        required: false
+        default: ''
+      reason:
+        description: 'Reason for this AWS production gateway deploy — required'
+        required: true
+      deploy_mode:
+        description: 'promote-staging = ship the exact image AWS staging runs (default); rebuild-main = build main HEAD from source; env-only = keep the CURRENT prod image/commit unchanged, apply only env_overrides (no app-code change at all)'
+        required: false
+        type: choice
+        options:
+          - promote-staging
+          - rebuild-main
+          - env-only
+        default: 'promote-staging'
+      # VTID-05023 part 9: input 25 of 25 (GitHub's ceiling) — retire one before adding another.
+      data_backend:
+        description: 'keep (default) = leave SUPABASE_URL as the live task def has it; aurora = SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy + SUPABASE_PUBLIC_URL; supabase = original refs (rollback)'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
+      expected_commit:
+        description: 'promote-staging only: full commit SHA the operator expects staging to be serving — run fails if staging moved (set automatically by the Command Hub PUBLISH button)'
+        required: false
+        default: ''
+      staging_url:
+        description: 'AWS staging gateway URL used to verify what staging actually serves before promoting'
+        required: false
+        default: 'https://preview-aws-gateway.vitanaland.com'
+      gateway_url:
+        description: 'Public gateway URL for post-deploy verification (canonical hostname since VTID-03419)'
+        required: false
+        default: 'https://gateway.vitanaland.com'
+      aws_region:
+        description: 'AWS region'
+        required: false
+        default: 'eu-central-1'
+      ecr_repository:
+        description: 'ECR repository name for the gateway image'
+        required: false
+        default: 'vitana/gateway'
+      ecs_cluster:
+        description: 'ECS cluster name'
+        required: false
+        default: 'Vitana-ECS-Cluster'
+      ecs_service:
+        description: 'ECS service name'
+        required: false
+        default: 'vitana-gateway-awsdr'
+
+permissions:
+  contents: read
+  id-token: write # required for aws-actions/configure-aws-credentials OIDC
+
+concurrency:
+  group: aws-prod-deploy-gateway
+  cancel-in-progress: false
+
+jobs:
+  build-push-deploy:
+    runs-on: ubuntu-latest
+    env:
+      GATEWAY_URL: ${{ inputs.gateway_url }}
+      TARGET_AWS_REGION: ${{ inputs.aws_region }}
+      ECR_REPOSITORY: ${{ inputs.ecr_repository }}
+      ECS_CLUSTER: ${{ inputs.ecs_cluster }}
+      ECS_SERVICE: ${{ inputs.ecs_service }}
+      DEPLOY_REASON: ${{ inputs.reason }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Resolve commit metadata + refresh BUILD_INFO
+        id: commit
+        run: |
+          SHORT="$(git rev-parse --short=12 HEAD)"
+          {
+            echo "sha=$GITHUB_SHA"
+            echo "short=$SHORT"
+          } >> "$GITHUB_OUTPUT"
+          {
+            echo "$GITHUB_SHA"
+            echo "Build: $(date -u +%Y-%m-%dT%H:%M:%SZ)"
+          } > services/gateway/BUILD_INFO
+
+      - name: Configure AWS credentials (GitHub OIDC — no static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ secrets.AWS_PROD_ROLE_ARN }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+
+      - name: Login to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Preflight — verify ECR repo + ECS service exist
+        run: |
+          set -e
+          if ! aws ecr describe-repositories --repository-names "${{ env.ECR_REPOSITORY }}" >/dev/null 2>&1; then
+            echo "::error::ECR repository '${{ env.ECR_REPOSITORY }}' not found."
+            exit 1
+          fi
+          if ! aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+               --query 'services[0].status' --output text 2>/dev/null | grep -q ACTIVE; then
+            echo "::error::ECS service '${{ env.ECS_SERVICE }}' not ACTIVE in cluster '${{ env.ECS_CLUSTER }}'. Services:"
+            aws ecs list-services --cluster "${{ env.ECS_CLUSTER }}" --output table
+            exit 1
+          fi
+          # Guardrail: this workflow must only ever touch the AWS-DR prod
+          # service, never the staging one. Refuse to run against
+          # 'vitana-gateway' (staging) even if someone passes it as an input.
+          if [ "${{ env.ECS_SERVICE }}" = "vitana-gateway" ]; then
+            echo "::error::Refusing to deploy — 'vitana-gateway' is the AWS STAGING service. This workflow targets 'vitana-gateway-awsdr' (prod DR) only."
+            exit 1
+          fi
+
+      # VTID-03420: decide WHAT ships. promote-staging resolves the exact
+      # image + commit AWS staging (`vitana-gateway`) is running and verifies
+      # staging actually serves it over HTTP; rebuild-main falls through to
+      # the build step below with this checkout's HEAD.
+      - name: Resolve deploy source (promote-staging vs rebuild-main)
+        id: source
+        env:
+          DEPLOY_MODE: ${{ inputs.deploy_mode || 'promote-staging' }}
+          EXPECTED_COMMIT: ${{ inputs.expected_commit }}
+          STAGING_URL: ${{ inputs.staging_url || 'https://preview-aws-gateway.vitanaland.com' }}
+        run: |
+          set -e
+          if [ "$DEPLOY_MODE" = "env-only" ]; then
+            # VTID-03961: echo back the task def's OWN current image/commit,
+            # so the next step's image+commit-stamp rewrite is a byte-for-byte
+            # no-op — only step (2/2)'s env_overrides (or another dispatch
+            # input) can actually change anything on this path.
+            CURRENT_TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+              --query 'services[0].taskDefinition' --output text)
+            IMAGE=$(aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+              --query 'taskDefinition.containerDefinitions[0].image' --output text)
+            SHA=$(aws ecs describe-task-definition --task-definition "$CURRENT_TD" \
+              --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT_SHA`].value | [0]' --output text)
+            if [ -z "$IMAGE" ] || [ "$IMAGE" = "None" ]; then
+              echo "::error::Could not resolve the current image on '$CURRENT_TD' — refusing env-only mode without a known image to preserve."
+              exit 1
+            fi
+            if [ -z "$SHA" ] || [ "$SHA" = "None" ]; then
+              SHA="unknown"
+            fi
+            {
+              echo "mode=env-only"
+              echo "sha=$SHA"
+              echo "short=$(echo "$SHA" | cut -c1-12)"
+              echo "image=$IMAGE"
+            } >> "$GITHUB_OUTPUT"
+            echo "Mode: env-only — re-registering '$CURRENT_TD' with its CURRENT image ($IMAGE) and commit ($SHA) unchanged; only dispatch-input overrides differ."
+            exit 0
+          fi
+
+          if [ "$DEPLOY_MODE" != "promote-staging" ]; then
+            echo "mode=rebuild-main" >> "$GITHUB_OUTPUT"
+            echo "sha=${{ steps.commit.outputs.sha }}" >> "$GITHUB_OUTPUT"
+            echo "short=${{ steps.commit.outputs.short }}" >> "$GITHUB_OUTPUT"
+            echo "image=" >> "$GITHUB_OUTPUT"
+            echo "Mode: rebuild-main — building ${{ steps.commit.outputs.short }} from source."
+            exit 0
+          fi
+
+          # 1) What does ECS say staging runs?
+          STAGING_TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services vitana-gateway \
+            --query 'services[0].taskDefinition' --output text)
+          IMAGE=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].image' --output text)
+          SHA=$(aws ecs describe-task-definition --task-definition "$STAGING_TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT_SHA`].value | [0]' --output text)
+          echo "Staging task def: $STAGING_TD"
+          echo "Staging image:    $IMAGE"
+          echo "Staging commit:   $SHA"
+          case "$IMAGE" in
+            *"/${{ env.ECR_REPOSITORY }}:"*) ;;
+            *) echo "::error::Staging image '$IMAGE' is not from ECR repo '${{ env.ECR_REPOSITORY }}' — refusing to promote an ungoverned image."; exit 1 ;;
+          esac
+          if [ -z "$SHA" ] || [ "$SHA" = "None" ]; then
+            echo "::error::Staging task def has no GIT_COMMIT_SHA env var — cannot pin the promotion. Deploy staging via AWS-STAGE-DEPLOY-GATEWAY first."
+            exit 1
+          fi
+
+          # 2) Does staging actually SERVE that commit? (functional check —
+          # ECS state alone produced false greens during VTID-03419.)
+          LIVE=$(curl -fsS "$STAGING_URL/api/v1/admin/build-info" | jq -r '.git_commit // empty')
+          if [ "$LIVE" != "$SHA" ]; then
+            echo "::error::AWS staging serves commit '$LIVE' but its task def says '$SHA' — staging is mid-deploy or drifted. Retry when stable."
+            exit 1
+          fi
+
+          # 3) Operator pin: fail if staging moved since the PUBLISH click.
+          if [ -n "$EXPECTED_COMMIT" ] && [ "$EXPECTED_COMMIT" != "$SHA" ]; then
+            echo "::error::expected_commit=$EXPECTED_COMMIT but staging is serving $SHA — staging changed between the operator's confirmation and this run. Re-publish from the Command Hub."
+            exit 1
+          fi
+
+          {
+            echo "mode=promote-staging"
+            echo "sha=$SHA"
+            echo "short=$(echo "$SHA" | cut -c1-12)"
+            echo "image=$IMAGE"
+          } >> "$GITHUB_OUTPUT"
+          echo "Mode: promote-staging — shipping $IMAGE ($SHA) with NO rebuild."
+
+      - name: Build and push image (rebuild-main only)
+        id: build
+        if: ${{ (inputs.deploy_mode || 'promote-staging') == 'rebuild-main' }}
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -e
+          IMAGE="$REGISTRY/${{ env.ECR_REPOSITORY }}:${{ steps.source.outputs.short }}"
+          docker build -t "$IMAGE" -t "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest" services/gateway
+          docker push "$IMAGE"
+          docker push "$REGISTRY/${{ env.ECR_REPOSITORY }}:awsdr-latest"
+          echo "image=$IMAGE" >> "$GITHUB_OUTPUT"
+          echo "Pushed $IMAGE"
+
+      - name: Build task-definition (1/2 — image, commit stamp, always-pinned flags)
+        # VTID-03709: this used to be ONE step covering the whole task-def
+        # build through the final register+roll. It grew, dispatch-input by
+        # dispatch-input, VTID after VTID (Nova/Vertex/Bedrock/TTS/Titan/
+        # narration-cache/cascade), until its `run:` body hit 24,989
+        # characters — over GitHub Actions' real per-step limit for a step
+        # containing `${{ }}` expressions (~21,000). Past that point the
+        # workflow does not merely fail to run, it fails to PARSE: every
+        # dispatch attempt (and every push to `main`, since GitHub tries to
+        # parse every workflow file on every push to check applicability)
+        # errored "Exceeded max expression length 21000" and the run showed
+        # up in the Actions list under the literal FILE PATH instead of the
+        # workflow name — the exact same signature VTID-03505/VTID-03521
+        # documented for a parse failure, this time from sheer step size
+        # rather than a YAML syntax trap. The ONLY governed path to
+        # production gateway deploys was broken for an unknown number of
+        # pushes before this was caught.
+        #
+        # Fix: split the one step into two, handing the in-progress task-def
+        # JSON between them via a file on the runner's filesystem (steps in
+        # the same job share it — no artifact needed). This step does the
+        # image swap, commit stamp, and the always-pinned flags that apply
+        # unconditionally on every deploy; the next step applies the
+        # optional dispatch-input overrides and does the actual
+        # register+roll. No behavior change — same jq passes, same order,
+        # just split at a natural boundary (before the first `if [ -n
+        # "$..._INPUT" ]` conditional override block).
+        env:
+          MARKETPLACE_SYNC_SECRET_VALUE: ${{ secrets.MARKETPLACE_SYNC_SECRET }}
+        # VTID-04230 — Operator Console / Dev Autopilot capability flags,
+        # declared on PROD to match staging (docs/AGENT-REGISTRY.md finding
+        # 4: "production runs a different operator than staging — rev 114
+        # pins one flag"). Every value below is the exact value
+        # AWS-STAGE-DEPLOY-GATEWAY.yml pins, verified live on staging
+        # (VTID-04037 pass, the VTID-04221 end-to-end completions), so the
+        # prod console gets the same bootstrap pack, threads, turn memory,
+        # read tools, codebase index and maker-checker approval hold.
+        #
+        # What this does NOT do:
+        #   - It does not deploy. This workflow is workflow_dispatch-only;
+        #     declaring the pins here changes nothing until the next PUBLISH
+        #     or manual dispatch (CLAUDE.md §16). VTID-04230 was merged
+        #     WITHOUT dispatching this workflow, on the platform owner's
+        #     explicit "declare, do not dispatch".
+        #   - The Dev Autopilot loop flags (watcher-live, use-job, job-cloud,
+        #     llm-review, executor-enabled) are NOT declared in this block:
+        #     the loop-flags block directly above declares them. This block
+        #     is the Operator Console surface only.
+        #   - It does not wire the read-only SQL tool (dev_run_sql_readonly, its
+        #     switch + database-URL secret, VTID-04023/04037): that needs a Secrets
+        #     Manager reference, this workflow carries the task def forward
+        #     without a secrets loop, and the prod deploy role has no
+        #     secretsmanager:Describe* (VTID-03880). A literal ARN to a
+        #     secret that does not exist fails ECS provisioning before the
+        #     container starts — so the tool stays not_configured on prod
+        #     until scripts/aws/setup-operator-sql-readonly-secret.sh has
+        #     been run for a prod path and the reference added deliberately.
+        #   - It does not add the DeepSeek key secret. The operator stage's primary
+        #     (deepseek/deepseek-flash, policy v17) is unavailable on prod
+        #     for that reason and the router serves the Bedrock fallback;
+        #     wiring the secret (VTID-03880 shape) is the owner's call
+        #     because a secret the task role cannot read also fails
+        #     provisioning.
+        # Rollback for any flag: value -> "false" here, no code revert.
+        # CODEINTEL_*_REPO_DIR are NOT pinned: the CLI bridge cannot work on
+        # this image (lancedb, VTID-04222 §3); OPERATOR_CODEINTEL_ENABLED
+        # alone gates the S3 code-index tools (VTID-04229).
+        run: |
+          set -e
+          # VTID-03420: promote mode ships staging's image; rebuild mode ships
+          # the image built above.
+          IMAGE="${{ steps.source.outputs.image }}"
+          if [ -z "$IMAGE" ]; then IMAGE="${{ steps.build.outputs.image }}"; fi
+          if [ -z "$IMAGE" ]; then echo "::error::No image resolved from either mode."; exit 1; fi
+          SHA="${{ steps.source.outputs.sha }}"
+          SHORT="${{ steps.source.outputs.short }}"
+          TD_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          echo "Current task definition: $TD_ARN"
+          NEW_DEF=$(aws ecs describe-task-definition --task-definition "$TD_ARN" --query taskDefinition \
+            | jq --arg IMG "$IMAGE" --arg SHA "$SHA" --arg SHORT "$SHORT" '
+                .containerDefinitions[0].image = $IMG
+                | .containerDefinitions[0].environment |=
+                    ( [ .[] | select(.name | IN("GIT_COMMIT_SHA","COMMIT_SHA","BUILD_INFO_MARKER") | not) ]
+                      + [ {name:"GIT_COMMIT_SHA", value:$SHA},
+                          {name:"COMMIT_SHA", value:$SHA},
+                          {name:"BUILD_INFO_MARKER", value:$SHORT} ] )
+                | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                      .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          # BOOTSTRAP-ORB-FASTSTART-DRIFT: pin the production feature flags that
+          # MUST be live on this stack, every deploy, unconditionally.
+          #
+          # Why this exists: the task def is otherwise carried forward verbatim
+          # (that is deliberate — see the header), so a flag that was never
+          # copied across the VTID-03419 GCP→AWS cutover stays missing forever.
+          # `FEATURE_ORB_FAST_START_ENV` was exactly that. Worse, the value is
+          # not a boolean: `isFeatureLive` maps 'staging-only' → `isStaging`, so
+          # even copying staging's value verbatim leaves the flag DEAD in prod.
+          # It must be the literal 'staging+prod' here.
+          #
+          # Consequence when it is missing: `shouldDeferWakeWork()` returns
+          # false, the ORB wake-brief/journey assembly runs INLINE on the
+          # session/start response, and a cold authenticated start measured
+          # 9.5s against the orb widget's 8s fetch abort — the first connect
+          # after login hung on "Verbinden..." with no retry. Anonymous
+          # sessions were unaffected (they skip wake-brief), which is why
+          # logged-out ORB looked healthy throughout.
+          #
+          # Only flags with MEASURED evidence for this stack belong here. Do not
+          # add one speculatively — a wrongly-enabled flag is a new outage, not
+          # a fix. Verify first via GET /api/v1/admin/feature-flags (admin) on
+          # both stacks and compare `live`, not merely whether the var is set.
+          #
+          # VTID-03504 adds FEATURE_ORB_BRAIN_CACHE_ENV on the same reasoning
+          # and with the same kind of evidence. `vitana_brain_orb_enabled` is
+          # TRUE in system_controls, so every ORB session builds its context
+          # through `buildBrainSystemInstructionCached` — which, with this flag
+          # off, was a passthrough: no TTL cache AND (until VTID-03504) no
+          # concurrent-build de-dupe. `warmBrainCache()` (the prewarm endpoint's
+          # whole purpose) was likewise a no-op, so /live/session/prewarm warmed
+          # only the legacy path the brain path never reads. Measured on prod
+          # 2026-08-05: orb.live.context.bootstrap ran a 2.0s p50 all day, then
+          # 17.4s p50 / 119.7s max between 14:14 and 14:22 UTC as one user's
+          # reconnects stacked builds on each other — and it degraded two
+          # uninvolved users on the same task. Turning this on restores the
+          # 5-min TTL reuse so a retry lands on a warm entry instead of paying
+          # a fresh ~4.4s build. Staleness contract is identical to the legacy
+          # VERTEX_BOOTSTRAP_CACHE that is already live here.
+          # VTID-04098 — two MORE flags pinned here, and one live bug fixed by
+          # pinning them.
+          #
+          # Read off the LIVE production task definition (rev 108) on
+          # 2026-09-19, not off this file:
+          #   FEATURE_LATENCY_TELEMETRY_ENV     = "production"
+          #   FEATURE_ORB_SAFE_FAST_GREETING_ENV = "production"
+          # `production` is NOT one of the three values feature-flags.ts
+          # accepts ('off' | 'staging-only' | 'staging+prod'), so both resolved
+          # to OFF. Production has therefore had NO phase-level voice latency
+          # telemetry (`voice.latency.measured` never emitted) and NO
+          # greeting-facts prefetch, while the task def read as though both
+          # were on. VTID-04098 also makes that class of typo log loudly and
+          # surface as `invalid_value` on /admin/health/feature-flags; pinning
+          # the correct values here is what actually repairs the live state,
+          # because this strip-then-add block overwrites whatever is there.
+          #
+          # LATENCY_TELEMETRY is the one that has to go first: without it there
+          # is no way to measure a voice latency change in production at all,
+          # which is why every measurement in VTID-04096/04097 had to be taken
+          # on staging. It emits one OASIS event per session establishment.
+          #
+          # VTID-04128 — FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is REMOVED from
+          # this unconditional pin. It reverses VTID-04100 (2026-09-19), which
+          # pinned it to "staging+prod" here on every single deploy — a
+          # standing, self-reasserting rule, not a one-time setting.
+          #
+          # That shape is exactly what caused a real production incident: the
+          # double-voice pre-login greeting (one voice speaks a filler phrase
+          # synthesized by a different engine, then the real upstream voice
+          # continues with different content) was fixed live via VTID-04120's
+          # `env_overrides` escape hatch — but that override applies to a
+          # SINGLE dispatch only. The very next unrelated prod deploy
+          # (VTID-04126, flipping an unrelated cascade-voice flag) re-ran this
+          # unconditional block, which silently re-pinned the flag back to
+          # "staging+prod" and reintroduced the exact bug that had just been
+          # fixed, with no one having asked for that and no code having
+          # changed. The platform owner rejected the double-voice seam a
+          # second time (VTID-04127) and asked why a fix that should be
+          # permanent kept reverting — this is that root cause, removed.
+          #
+          # This flag is now UNPINNED, matching every other genuinely-optional
+          # flag in this workflow (see the `if [ -n "$…INPUT" ]` pattern
+          # below): a deploy that does not explicitly ask to change it leaves
+          # whatever value is currently on the live task definition alone.
+          # "Off" (VTID-04127's current state) now actually stays off across
+          # future deploys, until someone deliberately turns it back on via
+          # an explicit env_overrides dispatch — never as an automatic side
+          # effect of an unrelated deploy again.
+
+          # VTID-04934: WS transport OFF on prod. VTID-04866's "ws" pin broke
+          # member Orb sessions 2026-10-04..07 (0 user turns in ~190 WS
+          # sessions); prod is back on SSE. Re-enabling needs a new VTID with a
+          # device-verified widget fix. NOVA_PREWARM/GREETING_PREBUFFER stay
+          # unpinned (WS-only, inert with WS off).
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_LATENCY_TELEMETRY_ENV","FEATURE_ORB_SAFE_FAST_GREETING_ENV","FEATURE_ORB_WS_TRANSPORT_ENV") | not) ]
+                + [ {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
+                    {name:"FEATURE_LATENCY_TELEMETRY_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_SAFE_FAST_GREETING_ENV", value:"staging+prod"},
+                    {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"off"} ] )')
+
+          # VTID-04227 — the Dev Autopilot loop's five operating flags, DECLARED
+          # here instead of living only in whatever the live task def happens
+          # to carry (the VTID-03513 lesson). Read off vitana-gateway-awsdr rev
+          # 114 on 2026-09-21: DEV_AUTOPILOT_JOB_CLOUD=aws and
+          # DEV_AUTOPILOT_EXECUTOR_ENABLED=false were present; the other three
+          # were ABSENT, which means:
+          #   - DEV_AUTOPILOT_WATCHER_LIVE unset -> dev-autopilot-watcher.ts
+          #     ran in DRY_RUN and FABRICATED ci_passed/pr_merged/deployed on
+          #     rows it never checked against GitHub (VTID-04003, gap analysis
+          #     §7 — it did this to a STAGING row before VTID-04005's
+          #     env-ownership stamp). "true" makes it poll real GitHub state.
+          #   - DEV_AUTOPILOT_USE_JOB unset -> a claimed execution would run
+          #     in-process inside this gateway task (VTID-03841: no token,
+          #     20-minute watchdog death). "true"+"aws" dispatch it to the
+          #     vitana-autopilot-executor Fargate task via ecs:RunTask.
+          #   - DEV_AUTOPILOT_LLM_REVIEW_ENABLED unset -> off by default.
+          # DEV_AUTOPILOT_EXECUTOR_ENABLED is declared "true" because the loop
+          # is the point (the 2026-08-11 planner-storm this breaker was built
+          # for was fixed at the root — lazyPlanTick's plan-row dedupe, and
+          # dev_autopilot_config.auto_approve_enabled is itself a DB-side
+          # gate). The per-dispatch `dev_autopilot_executor_enabled` input in
+          # step 2/2 runs AFTER this block and still wins for that dispatch;
+          # a durable "off" belongs in this file, not in live state.
+          # This block runs on every prod dispatch — it is the declaration, not
+          # the promotion: nothing changes on prod until an owner dispatches
+          # this workflow (IF-THEN 26). Pinned by
+          # test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("DEV_AUTOPILOT_WATCHER_LIVE","DEV_AUTOPILOT_USE_JOB","DEV_AUTOPILOT_JOB_CLOUD","DEV_AUTOPILOT_LLM_REVIEW_ENABLED","DEV_AUTOPILOT_EXECUTOR_ENABLED") | not) ]
+                + [ {name:"DEV_AUTOPILOT_WATCHER_LIVE", value:"true"},
+                    {name:"DEV_AUTOPILOT_USE_JOB", value:"true"},
+                    {name:"DEV_AUTOPILOT_JOB_CLOUD", value:"aws"},
+                    {name:"DEV_AUTOPILOT_LLM_REVIEW_ENABLED", value:"true"},
+                    {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:"true"} ] )')
+          # VTID-04230 — Operator Console capability flags, prod parity with staging.
+          # Rationale + the deliberate absences are in this step's header comment
+          # (moved out of the run: body for the VTID-03788 20,000-char guard).
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("OPERATOR_EXECUTION_ONRAMP_ENABLED",
+                                          "OPERATOR_ONRAMP_EXECUTOR",
+                                          "OPERATOR_CODEBASE_READ_ENABLED",
+                                          "OPERATOR_DB_READONLY_ENABLED",
+                                          "OPERATOR_AWS_READONLY_ENABLED",
+                                          "OPERATOR_BOOTSTRAP_PACK_ENABLED","OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+                                          "OPERATOR_VTID_SELF_ALLOCATE_ENABLED","OPERATOR_PR_APPROVAL_REQUIRED",
+                                          "OPERATOR_THREADS_ENABLED","OPERATOR_TURN_MEMORY_ENABLED",
+                                          "OPERATOR_CODEINTEL_ENABLED",
+                                          "OPERATOR_PLANNER_ENABLED") | not) ]
+                + [ {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"},
+                    {name:"OPERATOR_ONRAMP_EXECUTOR", value:"agent"},
+                    {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+                    {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_AWS_READONLY_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_PACK_ENABLED", value:"true"},
+                    {name:"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS", value:"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info"},
+                    {name:"OPERATOR_VTID_SELF_ALLOCATE_ENABLED", value:"true"},
+                    {name:"OPERATOR_PR_APPROVAL_REQUIRED", value:"true"},
+                    {name:"OPERATOR_THREADS_ENABLED", value:"true"},
+                    {name:"OPERATOR_TURN_MEMORY_ENABLED", value:"true"},
+                    {name:"OPERATOR_CODEINTEL_ENABLED", value:"true"},
+                    {name:"OPERATOR_PLANNER_ENABLED", value:"true"} ] )')
+          # VTID-04258 — NAV_CONTINUATION_BIND, prod parity, declared not
+          # dispatched (see docs/validation/VTID-04258/). Fail-open, one-shot
+          # accept gate; pinned by test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("NAV_CONTINUATION_BIND") | not) ]
+                + [ {name:"NAV_CONTINUATION_BIND", value:"true"} ] )')
+          # VTID-04541 registry navigator; VTID-04880 strips NAV_V2_ENABLED.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("NAV_V2_ENABLED","NAV_REGISTRY_URL") | not) ]
+                + [ {name:"NAV_REGISTRY_URL", value:"https://vitanaland.com/nav-registry.json"} ] )')
+
+          # VTID-03618: same class of bug as FEATURE_ORB_FAST_START_ENV above —
+          # a value the GCP deploy pipeline (EXEC-DEPLOY.yml) has always passed
+          # unconditionally as a plain env var (`--update-env-vars=
+          # MARKETPLACE_SYNC_SECRET=...`) but was never carried across the
+          # VTID-03419 GCP→AWS cutover, because the AWS task def was built by
+          # cloning forward whatever GCP happened to have wired at build time,
+          # not by mirroring every GCP env var. Confirmed live 2026-08-12: the
+          # gateway answered `/api/v1/internal/marketplace/sync/all` with
+          # HTTP 500 "MARKETPLACE_SYNC_SECRET not configured on gateway" — the
+          # cron's own secret is correct (it's the same GH secret sourced
+          # below), the gateway simply never had it. Pinned unconditionally,
+          # not behind a dispatch input, because this is a required credential
+          # for a route that already exists in prod code, not an optional
+          # feature lever — the same reasoning FEATURE_ORB_FAST_START_ENV
+          # above uses. A plain env var, not a Secrets Manager reference,
+          # matching GCP's existing shape for this exact value.
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$MARKETPLACE_SYNC_SECRET_VALUE" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MARKETPLACE_SYNC_SECRET") ]
+                + [ {name:"MARKETPLACE_SYNC_SECRET", value:$S} ] )')
+
+          # VTID-03584: the new-day greeting was suppressed on 100% of
+          # authenticated production sessions from 2026-08-04 onward. Measured:
+          # `greeting_context_pending` + `safe_fast_greeting` fired on every
+          # session (0 on 08-03 across 1,631 ORB events / 20 users, then 22, 35,
+          # 27, 24, 43, ... every day after).
+          #
+          # Mechanism: with fast-start deferral on (pinned above),
+          # `contextReadyResolved` starts false and the greeting builder waits
+          # ORB_CONTEXT_READY_GATE_TIMEOUT_MS for the wake-brief + journey
+          # assembly. `safeFastApplies()` (compute-greeting-decision.ts) then
+          # takes the short generic opener whenever that gate expires. The rich
+          # new-day payload — unread messages, Vitana index, Life Compass,
+          # calendar, reminders (`newdayHasContent`) — needs several Supabase
+          # round-trips and never completes inside 300ms, so the greeting was
+          # timed out before it could ever speak.
+          #
+          # 300 is the STAGING experiment value (see STAGE-DEPLOY.yml, which
+          # sets it next to FEATURE_ORB_SAFE_FAST_GREETING_ENV=staging-only). It
+          # was carried onto the prod task def, where the flag is 'production' —
+          # i.e. the experiment's fallback became prod's default path.
+          #
+          # The code default is 4000 (orb-live.ts). Pin it so prod cannot
+          # silently inherit a staging tuning value again. Safe-fast remains a
+          # real fallback for genuinely slow starts; it is no longer the norm.
+          #
+          # VTID-03625 — P0 REVERT, 2026-08-13: the 4000 value above is what
+          # actually shipped from Aug 11 14:54 UTC onward, and it correlates
+          # EXACTLY with a new, previously-nonexistent nova_validation failure
+          # class: 0 errors Aug 6-10 at the prior 300ms value, first error 47
+          # minutes after this deploy, escalating to 17/day by Aug 12. Bedrock
+          # kills a Nova Sonic stream after ~55s of no audio/interactive
+          # content; waiting up to 4s longer to assemble a heavier
+          # multi-Supabase-round-trip "new-day" payload (unread messages,
+          # Vitana index, Life Compass, calendar, reminders) before the
+          # greeting can even start is pushing a growing share of Nova
+          # sessions past that deadline — a dead, unrecoverable ORB session,
+          # not merely a downgraded greeting.
+          #
+          # Reverting to 300 (the exact value proven error-free Aug 6-10)
+          # rather than guessing a middle value, because a total connection
+          # kill is strictly worse than the greeting-downgrade problem 300 was
+          # originally raised to fix. The greeting-downgrade tradeoff is
+          # KNOWINGLY reinstated by this revert — see VTID-03584 above for
+          # what that looks like — pending a Nova-aware follow-up (a much
+          # tighter gate specifically for nova_sonic sessions, since Vertex
+          # sessions show no matching failure class and can likely keep a
+          # longer wait). Do not re-raise this value without first confirming
+          # via a real Bedrock invoke that the greeting-assembly path finishes
+          # well inside Nova's 55s budget, not just inside the gate timeout.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "ORB_CONTEXT_READY_GATE_TIMEOUT_MS") ]
+                + [ {name:"ORB_CONTEXT_READY_GATE_TIMEOUT_MS", value:"300"} ] )')
+
+          # VTID-04048: activate the Vertex Serbian voice bridge in production.
+          # The bridge (VTID-04000, tool-catalog fix VTID-04026, function-call
+          # id fix VTID-04036) shipped to staging only — CLAUDE.md
+          # §2e-vertex-serbian-bridge and every one of those PRs deliberately
+          # left this file untouched, on the reasoning that promoting a new
+          # GCP dependency to prod needed a separate, explicit decision given
+          # this platform's prior Gemini cost incident. That decision was
+          # made explicitly in conversation (VTID-04048) — not a side effect
+          # of a routine deploy.
+          #
+          # Wired unconditionally, mirroring AWS-STAGE-DEPLOY-GATEWAY.yml's
+          # own strip/re-add block byte-for-byte (same GCP_CRED_CONFIG
+          # value): confirmed live via `aws ecs describe-task-definition`
+          # that `vitana-gateway-awsdr` (this service) and `vitana-gateway`
+          # (staging) share the identical taskRoleArn
+          # (arn:aws:iam::472838866351:role/vitana-ecs-task-role) — the GCP
+          # Workload Identity Federation binding trusts that ROLE ARN, not a
+          # specific ECS service or task-def name, so the STS token exchange
+          # a running prod task performs resolves to the exact same trusted
+          # AWS principal staging already uses. No additional GCP-side grant
+          # was needed or made.
+          #
+          # `sr`+`ru` only (VTID-04813: own switch each), same narrow
+          # selector gate as staging
+          # (upstream-provider-selector.ts's tryVertexBridgeRescue, checked
+          # before the cascade at all 5 call sites) — every other language
+          # and every other Vitana process is unaffected.
+          GCP_CRED_CONFIG='{"universe_domain":"googleapis.com","type":"external_account","audience":"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider","subject_token_type":"urn:ietf:params:aws:token-type:aws4_request","token_url":"https://sts.googleapis.com/v1/token","credential_source":{"environment_id":"aws1","region_url":"http://169.254.169.254/latest/meta-data/placement/availability-zone","url":"http://169.254.169.254/latest/meta-data/iam/security-credentials","regional_cred_verification_url":"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15"},"service_account_impersonation_url":"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken"}'
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg CRED "$GCP_CRED_CONFIG" '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("GOOGLE_CLOUD_PROJECT","VERTEX_AI_LOCATION",
+                                          "VERTEX_SERBIAN_BRIDGE_ENABLED",
+                                          "VERTEX_RUSSIAN_BRIDGE_ENABLED",
+                                          "GCP_SERVICE_ACCOUNT_JSON") | not) ]
+                + [ {name:"GOOGLE_CLOUD_PROJECT", value:"project-da3eb05a-c86e-47cb-85f"},
+                    {name:"VERTEX_AI_LOCATION", value:"global"},
+                    {name:"VERTEX_SERBIAN_BRIDGE_ENABLED", value:"true"},
+                    {name:"VERTEX_RUSSIAN_BRIDGE_ENABLED", value:"true"},
+                    {name:"GCP_SERVICE_ACCOUNT_JSON", value:$CRED} ] )')
+
+          # VTID-03709: hand off to the next step via the runner's filesystem.
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Wrote partial task definition to /tmp/vitana-new-task-def.json ($(wc -c < /tmp/vitana-new-task-def.json) bytes)"
+
+      # VTID-04647: record what production runs BEFORE this deploy touches the
+      # service, so a failed post-deploy check can put it back. Read-only.
+      - name: Capture rollback target (task definition live before this deploy)
+        id: prev
+        run: |
+          set -e
+          PREV_ARN=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          PREV_SHA=$(aws ecs describe-task-definition --task-definition "$PREV_ARN" \
+            --query "taskDefinition.containerDefinitions[0].environment[?name=='GIT_COMMIT_SHA'].value | [0]" --output text)
+          if [ -z "$PREV_ARN" ] || [ "$PREV_ARN" = "None" ]; then
+            echo "::error::Could not read the live task definition; refusing to deploy without a rollback target."
+            exit 1
+          fi
+          echo "arn=$PREV_ARN" >> "$GITHUB_OUTPUT"
+          echo "sha=$PREV_SHA" >> "$GITHUB_OUTPUT"
+          echo "Rollback target: $PREV_ARN (commit $PREV_SHA)"
+
+      - name: Build task-definition (Jev gates)
+        # VTID-04824: its own step so a new gate pin never pushes step 2/2 past
+        # GitHub's 20,000-char run limit. Reads the partial task definition
+        # step 1/2 wrote and writes it back; step 2/2 (env_overrides last)
+        # can still override anything set here. Every deploy mode.
+        env:
+          # VTID-04754: the TypeSafe key (shared with staging, owner decision
+          # 2026-09-30). A full ARN: the prod deploy role has no
+          # secretsmanager:Describe*, so a bare name cannot be resolved.
+          JEV_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/typesafe-api-key-YElucz
+        run: |
+          set -e
+          NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
+          # VTID-04754: Jev (TypeSafe System One) decisions, internal roles
+          # only. Declared here so prod no longer relies on the live task def
+          # carrying rev 140's manual edit forward. JEV_COMMUNITY_ENABLED is
+          # never set (community plane stays off).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg J "$JEV_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "TYPESAFE_API_KEY") ]
+                + [ {name:"TYPESAFE_API_KEY", valueFrom:$J} ] )
+            | .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "JEV_DECISIONS_ENABLED" and (.name | test("^JEV_.*_MODE$") | not)) ]
+                + [ {name:"JEV_DECISIONS_ENABLED", value:"true"},
+                    {name:"JEV_SELFHEAL_PROVIDER_FAILURE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_INCIDENT_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_AGENT_PROGRESS_MODE", value:"shadow"},
+                    {name:"JEV_CLAIM_FEASIBILITY_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SESSION_OUTCOME_MODE", value:"shadow"},
+                    {name:"JEV_CRM_LEAD_SCORE_MODE", value:"shadow"},
+                    {name:"JEV_CRM_ACCOUNT_CLASSIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_FINDING_DEDUPE_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_PRETRIAGE_MODE", value:"shadow"},
+                    {name:"JEV_CI_FAILURE_ROUTING_MODE", value:"shadow"},
+                    {name:"JEV_REPEAT_RUN_GUARD_MODE", value:"shadow"},
+                    {name:"JEV_SELFHEAL_DEPLOY_CAUSE_MODE", value:"shadow"},
+                    {name:"JEV_FIX_VERIFICATION_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_BACKSTOP_CLUSTERS_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_SLOW_SESSION_MODE", value:"shadow"},
+                    {name:"JEV_PLANNABILITY_MODE", value:"shadow"},
+                    {name:"JEV_TEST_SELECTION_MODE", value:"shadow"},
+                    {name:"JEV_PR_CLASH_MODE", value:"shadow"},
+                    {name:"JEV_CRM_DUPLICATE_ACCOUNT_MODE", value:"shadow"},
+                    {name:"JEV_APPROVAL_RISK_MODE", value:"shadow"},
+                    {name:"JEV_CHANGE_RISK_MODE", value:"shadow"},
+                    {name:"JEV_OPERATOR_ROUTE_MODE", value:"shadow"},
+                    {name:"JEV_VOICE_OPENER_OUTCOMES_MODE", value:"shadow"},
+                    {name:"JEV_LESSON_NOVELTY_MODE", value:"shadow"},
+                    {name:"JEV_PAYMENT_INVOICE_MATCH_MODE", value:"shadow"},
+                    {name:"JEV_PARTNER_ONBOARDING_TRIAGE_MODE", value:"shadow"},
+                    {name:"JEV_COMPANY_DOC_RELEVANCE_MODE", value:"shadow"},
+                    {name:"JEV_DOCUMENT_TYPE_ROUTING_MODE", value:"shadow"},
+                    {name:"JEV_ROOT_CAUSE_ROLLUP_MODE", value:"shadow"} ] )')
+          # Jev gates (one VTID each, docs/JEV-INTEGRATION-PLAN.md §10.4): shadow only; enforce per gate after agreement data.
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Jev secret and $(echo "$NEW_DEF" | jq '[.containerDefinitions[0].environment[] | select(.name | test("^JEV_.*_MODE$"))] | length') gate switches set"
+
+      - name: Build task-definition (drop dead secret refs)
+        # VTID-04849: the live task def carried DB_PASSWORD from the Aurora
+        # managed secret rds!cluster-eba8a4f2-…; vitana-aurora-prod no longer has
+        # a managed master secret, so that secret is gone and every new task
+        # failed with ResourceInitializationError (ResourceNotFoundException) —
+        # no deploy, rollback or task restart could start. The gateway never
+        # reads DB_PASSWORD. Dropped here so it is not cloned forward. Every mode.
+        run: |
+          set -e
+          NEW_DEF=$(jq '.containerDefinitions[0].secrets |= [ (. // [])[] | select(.name != "DB_PASSWORD") ]' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Secrets now: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[].name]')"
+
+      - name: Build task-definition (internal token)
+        # VTID-04677: GATEWAY_INTERNAL_TOKEN is the X-Gateway-Internal token the
+        # EventBridge Lambdas and the gateway's own automation handlers present
+        # to /api/v1/scheduled-notifications/*. Created 2026-10-05 by
+        # scripts/aws/setup-gateway-internal-token.sh --env prod. Full ARN, for
+        # the same reason as JEV_SECRET_ARN above: this role has no
+        # secretsmanager:Describe*. The execution role reads vitana/* already.
+        # SCHEDULED_NOTIFICATIONS_AUTH_MODE is deliberately NOT set here: prod
+        # stays in the default log mode until enforce is approved separately.
+        # Its own step so step 2/2 stays under GitHub's 20,000-char run limit.
+        env:
+          INTERNAL_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/internal-token-tv24hp
+        run: |
+          set -e
+          NEW_DEF=$(jq --arg T "$INTERNAL_TOKEN_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "GATEWAY_INTERNAL_TOKEN") ]
+                + [ {name:"GATEWAY_INTERNAL_TOKEN", valueFrom:$T} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Internal token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "GATEWAY_INTERNAL_TOKEN") | .name]')"
+
+      - name: Build task-definition (Live Rooms Daily key)
+        # VTID-04923: DAILY_API_KEY for Live Rooms video (VTID-04904). Stored by
+        # the owner 2026-10-06 as vitana/gateway/prod/daily-api-key (same value
+        # as staging's). Full ARN, for the same reason as JEV_SECRET_ARN above:
+        # this role has no secretsmanager:Describe*. The execution role reads
+        # vitana/* already. Takes effect only on an owner-approved prod deploy.
+        env:
+          DAILY_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/daily-api-key-9wlfyX
+        run: |
+          set -e
+          NEW_DEF=$(jq --arg D "$DAILY_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DAILY_API_KEY") ]
+                + [ {name:"DAILY_API_KEY", valueFrom:$D} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
+
+      - name: Build task-definition (Kiro runner)
+        # VTID-05003: the Operator's Kiro engine on the PRODUCTION kiro-runner
+        # (vitana-kiro-runner-awsdr, scripts/aws/setup-kiro-runner.sh --env production).
+        # This role has no secretsmanager:Describe*, so presence is the repository
+        # variable KIRO_RUNNER_PROD_TOKEN_ARN (the full ARN the setup script prints).
+        # Set => KIRO_RUNNER_URL (production runner only) + KIRO_RUNNER_TOKEN +
+        # KIRO_ENGINE_ENABLED=true. Unset => KIRO_ENGINE_ENABLED=false and no runner
+        # refs, so a deploy never points production at a runner that is not there.
+        # Never the staging runner (guarded by test/vtid-05003-kiro-default-engine.test.ts).
+        # VTID-05005: KIRO_MCP_ENABLED follows the engine — Kiro sessions get the Operator's read tools.
+        # VTID-05006: Kiro WRITES follow the engine too (owner decision 2026-10-09, "ship and turn on
+        # writes", after STAGING-VERIFY 37977916422). Each write still needs an open VTID and the user's
+        # Allow in the thread. Off-switch: dispatch with env_overrides {"KIRO_MCP_WRITE_ENABLED":"false"}.
+        env:
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
+        run: |
+          set -e
+          case "$KIRO_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/runner-token-*) ;;
+            *) echo "::error::KIRO_RUNNER_PROD_TOKEN_ARN is not the production runner token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$KIRO_TOKEN_ARN" '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("KIRO_ENGINE_ENABLED","KIRO_MCP_ENABLED","KIRO_MCP_WRITE_ENABLED","KIRO_RUNNER_URL") | not) ]
+                + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"} ]
+                    else [ {name:"KIRO_ENGINE_ENABLED", value:"true"},
+                           {name:"KIRO_MCP_ENABLED", value:"true"},
+                           {name:"KIRO_MCP_WRITE_ENABLED", value:"true"},
+                           {name:"KIRO_RUNNER_URL", value:"http://kiro-runner-prod.vitana.internal:8080"} ] end ) )
+            | .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "KIRO_RUNNER_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Kiro wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("KIRO_"))] + [.containerDefinitions[0].secrets[] | select(.name | startswith("KIRO_")) | {name}]')"
+
+      - name: Build task-definition (dev-memory pack token)
+        # VTID-05009: DEV_MEMORY_PACK_TOKEN for the developer morning pack
+        # (VTID-04408). Kiro pattern: this role has no secretsmanager:Describe*,
+        # so presence is the repository variable DEV_MEMORY_PACK_TOKEN_PROD_ARN
+        # (full ARN of vitana/gateway/prod/dev-memory-pack-token). Unset => no
+        # ref, so a deploy never points at a secret that does not exist.
+        env:
+          PACK_TOKEN_ARN: ${{ vars.DEV_MEMORY_PACK_TOKEN_PROD_ARN }}
+        run: |
+          set -e
+          case "$PACK_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/dev-memory-pack-token-*) ;;
+            *) echo "::error::DEV_MEMORY_PACK_TOKEN_PROD_ARN is not the prod dev-memory pack token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$PACK_TOKEN_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DEV_MEMORY_PACK_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Dev-memory pack token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DEV_MEMORY_PACK_TOKEN") | .name]')"
+
+      - name: Build task-definition (reward payouts on)
+        # VTID-04896 pinned the VTNA reward sweep (VTID-04878) off in production
+        # until the owner approved it; VTID-04899 did the same for the immediate
+        # Autopilot completion reward. VTID-04944, owner decision 2026-10-07:
+        # both stay ON in production, so a publish without overrides keeps
+        # paying (two publishes on 2026-10-07 had silently switched them off).
+        # Turning payouts off is one dispatch with
+        # env_overrides={"REWARD_SWEEP_ENABLED":"false","AUTOPILOT_ACTION_REWARD_ENABLED":"false"}
+        # (applied in 2/2, after this step). "Verify reward sweep setting" below
+        # checks the live task definition after the roll.
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "REWARD_SWEEP_ENABLED") ]
+                + [ {name:"REWARD_SWEEP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Reward sweep pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REWARD_SWEEP_ENABLED")]')"
+          # VTID-04899/VTID-04944: the immediate Autopilot completion reward
+          # (autopilot_action_done) pays only when exactly "true"; on in
+          # production, off with env_overrides.
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "AUTOPILOT_ACTION_REWARD_ENABLED") ]
+                + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
+
+      - name: Build task-definition (routine runner on)
+        # VTID-05103 (sparred plan, owner approved 2026-10-12): the deterministic
+        # daily routines run inside the gateway (services/routine-runner), once
+        # per UTC day each, exactly once across tasks. Pinned "true" here like
+        # the reward sweep so a publish never silently drops it. Off: dispatch
+        # with env_overrides={"ROUTINE_RUNNER_ENABLED":"false"} (applied in 2/2).
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "ROUTINE_RUNNER_ENABLED") ]
+                + [ {name:"ROUTINE_RUNNER_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Routine runner pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "ROUTINE_RUNNER_ENABLED")]')"
+
+      - name: Build task-definition (onboarding coach shadow mode on)
+        # VTID-05039 (sparred plan, owner approved 2026-10-10): the Vitana
+        # Onboarding Assistant's coach (VTID-04892) runs in SHADOW mode in
+        # production — once a day it records what Vitana would do for each new
+        # member and sends nothing. Pinned here so a publish never loses or
+        # resurrects it by accident (the VTID-03513/04127 lesson).
+        #   FEATURE_ONBOARDING_ASSISTANT_ENV  staging+prod; staging still
+        #     resolves disabled-on-staging first (it shares this database).
+        #   VOA_ROLLOUT_DATE  ONE-TIME OWNER DECISION, not a per-deploy toggle:
+        #     the cohort anchor (members who joined from this date - 30 days).
+        #     Changing it changes who is in the cohort.
+        #   VOA_MODE is deliberately NOT set (= shadow; there is no live mode).
+        # Off: dispatch with env_overrides={"FEATURE_ONBOARDING_ASSISTANT_ENV":"off"}
+        # (applied in 2/2, after this step). The daily schedule then still
+        # fires and gets {mode:"off"}; full silence also needs
+        # scripts/aws/setup-eventbridge-cron-migration.sh --only gateway-onboarding-coach-tick --delete
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE") | not) ]
+                + [ {name:"FEATURE_ONBOARDING_ASSISTANT_ENV", value:"staging+prod"},
+                    {name:"VOA_ROLLOUT_DATE", value:"2026-10-10"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Onboarding coach pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE","VOA_MODE"))]')"
+
+      - name: Build task-definition (reminders dispatch on)
+        # VTID-04963: production runs the reminders tick + sweeper (and the
+        # audiobook daily reminder) in-process. Until now only STAGING did —
+        # the EventBridge reminders jobs were never created — so real
+        # members' reminders were fired by the staging gateway, which shares
+        # this database. Both claim functions use FOR UPDATE SKIP LOCKED, so
+        # prod and staging running together cannot double-fire. Turning it
+        # off is one dispatch with deploy_mode=env-only and
+        # env_overrides={"REMINDERS_INPROCESS_DISPATCH_ENABLED":"false"}
+        # (applied in 2/2, after this step).
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "REMINDERS_INPROCESS_DISPATCH_ENABLED") ]
+                + [ {name:"REMINDERS_INPROCESS_DISPATCH_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Reminders dispatch pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "REMINDERS_INPROCESS_DISPATCH_ENABLED")]')"
+
+      - name: Build task-definition (Commerce MCP)
+        # VTID-04897: Commerce MCP (VTID-04847) on in production, after the
+        # first production release with the reward sweep off was verified
+        # (VTID-04896). The resource URL comes from the request host
+        # (gateway.vitanaland.com), the authorization server is the shared
+        # Supabase project's /auth/v1, portal links map to vitanaland.com and
+        # the OAuth consent page has been in the production frontend since
+        # VTID-04848. Rollback = "false".
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "COMMERCE_MCP_ENABLED") ]
+                + [ {name:"COMMERCE_MCP_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Commerce MCP pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "COMMERCE_MCP_ENABLED")]')"
+
+      - name: Build task-definition (calendar gates)
+        # VTID-04914 (owner decision 2026-10-06): the calendar loops run in
+        # production, not only on staging (AWS-STAGE-DEPLOY-GATEWAY.yml pins
+        # the same two). Staging already runs them against the shared
+        # Supabase project; reminder rows upsert on (calendar_event_id,
+        # calendar_occurrence_start, reminder_offset_minutes) with
+        # ignore-duplicates and the dispatch claim uses SKIP LOCKED, so a
+        # second reconciler adds redundancy, not duplicate reminders.
+        #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338)
+        #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374)
+        #   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04372) -- with no Google OAuth
+        #     client the sync reports not_configured and does nothing.
+        # Google OAuth client: the deploy role has no secretsmanager:Describe*
+        # (VTID-03880), so the full ARNs come from repository variables the
+        # operator sets after scripts/aws/setup-connected-apps-oauth-secrets.sh
+        # --env prod provision --apply. Empty variable -> not wired: a
+        # valueFrom pointing at a missing secret stops every new task from
+        # starting (VTID-04849). Rollback: change a pin to "false" here.
+        env:
+          GOOGLE_ID_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_ID_ARN }}
+          GOOGLE_SECRET_ARN: ${{ vars.PROD_GOOGLE_OAUTH_CLIENT_SECRET_ARN }}
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("CALENDAR_DEFAULT_REMINDERS_ENABLED","CALENDAR_MAINTENANCE_ENABLED","CALENDAR_GOOGLE_SYNC_ENABLED") | not) ]
+                + [ {name:"CALENDAR_DEFAULT_REMINDERS_ENABLED", value:"true"},
+                    {name:"CALENDAR_MAINTENANCE_ENABLED", value:"true"},
+                    {name:"CALENDAR_GOOGLE_SYNC_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          if [ -n "$GOOGLE_ID_ARN" ] && [ -n "$GOOGLE_SECRET_ARN" ]; then
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$GOOGLE_ID_ARN" --arg S "$GOOGLE_SECRET_ARN" '
+              .containerDefinitions[0].secrets |=
+                ( [ (. // [])[] | select(.name | IN("GOOGLE_OAUTH_CLIENT_ID","GOOGLE_OAUTH_CLIENT_SECRET") | not) ]
+                  + [ {name:"GOOGLE_OAUTH_CLIENT_ID", valueFrom:$I},
+                      {name:"GOOGLE_OAUTH_CLIENT_SECRET", valueFrom:$S} ] )')
+            echo "Google OAuth client wired from repository variables"
+          else
+            echo "Google OAuth client not wired (PROD_GOOGLE_OAUTH_CLIENT_ID_ARN / _SECRET_ARN unset); sync stays not_configured"
+          fi
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
+
+      - name: Build task-definition (data backend — VTID-05023)
+        # VTID-05023 part 9 (Supabase -> Aurora, option B). One shared script,
+        # scripts/aws/taskdef-data-backend.py (tests: scripts/aws/test/
+        # test_taskdef_data_backend.py), used by every prod deploy workflow.
+        #   keep (default; PUBLISH never passes this input): the file is passed
+        #     through byte for byte, so whatever backend the live task def is on
+        #     is carried forward.
+        #   aurora: SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy (value:
+        #     the INTERNAL proxy, http://postgrest-aurora-prod.vitana.internal:8080
+        #     — /rest/v1 from Aurora, /auth /storage /functions /realtime passed
+        #     through to Supabase) and SUPABASE_PUBLIC_URL=https://inmkhvwdcuyhnxkgfvsb.supabase.co
+        #     for every member-visible URL (R1(b), src/lib/supabase-public-url.ts).
+        #   supabase: the original vitana/supabase/prod/url ref, SUPABASE_PUBLIC_URL
+        #     removed (rollback).
+        # Applied to the file derived from THIS service's (vitana-gateway-awsdr)
+        # live task def in every deploy mode — promote-staging takes only the
+        # image from staging; the script refuses any other task family.
+        # This role has no secretsmanager:Describe* (VTID-03880): the script
+        # tries describe-secret and on AccessDenied uses the repository variable
+        # SUPABASE_URL_AURORA_PROXY_PROD_ARN; a secret that does not exist, or
+        # neither, fails here before anything is registered.
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_PROD_ARN }}
+        run: |
+          set -euo pipefail
+          F=/tmp/vitana-new-task-def.json
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ ! -f "$DB_SCRIPT" ]; then
+            if [ "$DATA_BACKEND" != keep ]; then echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this ref predates"; exit 1; fi
+            echo "data_backend=keep (script not in this ref) - task definition unchanged"; exit 0
+          fi
+          python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service gateway --resolve \
+            --summary "$GITHUB_STEP_SUMMARY" < "$F" > "$F.next"
+          mv "$F.next" "$F"
+
+      - name: Build task-definition (phone verification)
+        # VTID-05127: phone verification by SMS code (VTID-05095) ships off.
+        # The owner switches it on with two repository variables after
+        # scripts/aws/setup-phone-verify-sms.sh --env prod --apply and the AWS
+        # SMS sandbox exit (docs/validation/VTID-05127/SWITCH-ON.md):
+        #   PHONE_VERIFY_HMAC_SECRET_PROD_ARN  full ARN (this role has no
+        #     secretsmanager:Describe*); empty = no secret ref
+        #   PHONE_VERIFY_PROD_ENABLED          exact 'true' = on
+        # On without the ARN fails here. Logic: scripts/ci/phone-verify-wiring.sh.
+        # Off-switch without touching the variables: env_overrides
+        # {"PHONE_VERIFY_ENABLED":"false"} (step 2/2 runs after this one).
+        env:
+          PHONE_VERIFY_ARN: ${{ vars.PHONE_VERIFY_HMAC_SECRET_PROD_ARN }}
+          PHONE_VERIFY_ENABLED_VAR: ${{ vars.PHONE_VERIFY_PROD_ENABLED }}
+        run: bash scripts/ci/phone-verify-wiring.sh /tmp/vitana-new-task-def.json
+
+      - name: Build task-definition (2/2 — optional overrides) + register + roll the service
+        id: roll
+        env:
+          # VTID-04573: the gateway's GitHub token. vitana/github/token (last
+          # set 2026-08-26) returns 401 since 2026-09-25 ~10:00 UTC (30-day
+          # token expiry); vitana/github/pat is the secret the autopilot
+          # executor already uses under the same execution role. Full ARN,
+          # hardcoded for the same reason as the executor workflow's
+          # DEEPSEEK_SECRET_ARN: this role has no secretsmanager:Describe*,
+          # and ECS only accepts a bare name for SSM parameters. An ARN is
+          # not a credential. If the secret is ever recreated, update it here.
+          # Permanent (owner decision 2026-09-25, VTID-04583): vitana/github/token
+          # is retired.
+          # Applied unconditionally below, in every deploy mode (env-only too),
+          # in this step because step 1/2 is at the 20,000-char run limit.
+          GITHUB_TOKEN_SECRET_ARN: arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI
+          NOVA_ENABLED_INPUT: ${{ inputs.nova_sonic_enabled }}
+          NOVA_GLOBAL_INPUT: ${{ inputs.nova_sonic_global_enabled }}
+          ORB_IDLE_NO_ENGAGEMENT_INPUT: ${{ inputs.orb_idle_no_engagement_ms }}
+          ORB_NEWDAY_RUNG_INPUT: ${{ inputs.orb_newday_overview_rung_enabled }}
+          ORB_CASCADED_VOICE_INPUT: ${{ inputs.orb_cascaded_voice_enabled }}
+          AWS_TRANSCRIBE_REGION_INPUT: ${{ inputs.aws_transcribe_region }}
+          VERTEX_LIVE_UNAVAILABLE_INPUT: ${{ inputs.vertex_live_unavailable }}
+          BEDROCK_ROLE_ARN_INPUT: ${{ inputs.bedrock_role_arn }}
+          BEDROCK_MODEL_ID_INPUT: ${{ inputs.bedrock_model_id }}
+          AWS_BEDROCK_REGION_INPUT: ${{ inputs.aws_bedrock_region }}
+          DEV_AUTOPILOT_EXECUTOR_INPUT: ${{ inputs.dev_autopilot_executor_enabled }}
+          TTS_PROVIDER_INPUT: ${{ inputs.tts_provider }}
+          TTS_POLLY_STRICT_INPUT: ${{ inputs.tts_polly_strict }}
+          IMAGE_PROVIDER_INPUT: ${{ inputs.image_provider }}
+          NARRATION_AUDIO_CACHE_INPUT: ${{ inputs.narration_audio_cache }}
+          NARRATION_AUDIO_BUCKET_INPUT: ${{ inputs.narration_audio_bucket }}
+          ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+        run: |
+          set -e
+          NEW_DEF="$(cat /tmp/vitana-new-task-def.json)"
+          # VTID-04605 orchestrator specialists on prod (staging: VTID-04474); rollback = "false".
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED","ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED","ORCHESTRATOR_DELEGATION_PERSIST_ENABLED") | not) ]
+                + [ {name:"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED", value:"true"},
+                    {name:"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED", value:"true"},
+                    {name:"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED", value:"true"} ] )')
+
+          # BOOTSTRAP-NOVA-SONIC-VOICE: only when explicitly requested, replace
+          # the Nova env block (region/model stay pinned — never inputs).
+          #
+          # VTID-03958: the canary user/tenant allowlist upsert that used to
+          # live here (NOVA_SONIC_CANARY_USER_IDS / NOVA_SONIC_CANARY_TENANT_IDS,
+          # fed by their own dedicated inputs) was removed to make room under
+          # GitHub's 25-input ceiling — retired, not lost. If a canary
+          # allowlist is ever needed again, set it via the generic
+          # `env_overrides` JSON input below instead of restoring a dedicated
+          # input; this block no longer touches those two keys at all, so a
+          # value set that way survives untouched across ordinary deploys
+          # (this block only ever upserts the three names below).
+          if [ -n "$NOVA_ENABLED_INPUT" ]; then
+            echo "Applying Nova env override: enabled=$NOVA_ENABLED_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg E "$NOVA_ENABLED_INPUT" '
+                .containerDefinitions[0].environment |=
+                  ( [ .[] | select(.name | IN("NOVA_SONIC_ENABLED","NOVA_SONIC_REGION","NOVA_SONIC_MODEL_ID") | not) ]
+                    + [ {name:"NOVA_SONIC_ENABLED", value:$E},
+                        {name:"NOVA_SONIC_REGION", value:"eu-north-1"},
+                        {name:"NOVA_SONIC_MODEL_ID", value:"amazon.nova-2-sonic-v1:0"} ] )')
+          fi
+
+          # VTID-03560: Nova GLOBAL promotion. Deliberately a separate branch
+          # from the canary block above — promoting Nova to every session and
+          # editing the canary allowlist are different decisions, and coupling
+          # them would mean you could not do one without restating the other.
+          #
+          # isNovaSonicIdentityAllowed() short-circuits on the exact string
+          # "true"; anything else leaves the allowlist semantics untouched, so
+          # setting this back to false restores the prior canary population
+          # with no allowlist edits. Promotion widens WHO gets Nova, never what
+          # it runs on — the enabled/language/aws-ecs gates all still bite.
+          if [ -n "$NOVA_GLOBAL_INPUT" ]; then
+            echo "Applying Nova GLOBAL promotion: NOVA_SONIC_GLOBAL_ENABLED=$NOVA_GLOBAL_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg G "$NOVA_GLOBAL_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NOVA_SONIC_GLOBAL_ENABLED") ]
+                  + [ {name:"NOVA_SONIC_GLOBAL_ENABLED", value:$G} ] )')
+          fi
+
+          # VTID-03649: forces Nova through the runtime/language gates instead
+          # of degrading to a permanently-dead Vertex Live.
+          if [ -n "$VERTEX_LIVE_UNAVAILABLE_INPUT" ]; then
+            echo "Applying VERTEX_LIVE_UNAVAILABLE=$VERTEX_LIVE_UNAVAILABLE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg V "$VERTEX_LIVE_UNAVAILABLE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "VERTEX_LIVE_UNAVAILABLE") ]
+                  + [ {name:"VERTEX_LIVE_UNAVAILABLE", value:$V} ] )')
+          fi
+
+          # VTID-03560: idle reap budget for a live session that never engaged.
+          # This is the single biggest remaining lever on the Gemini Live bill
+          # (billed per second of open stream). VTID-03510 set it to 5 min and
+          # cut billed minutes ~80%; the residual is 26 abandoned sessions a
+          # day still burning the full 5 min each before the sweep takes them.
+          #
+          # Do NOT push this below ~60s without checking classifyIdleSession
+          # tests: a session is created with lastActivity = now, so the budget
+          # must survive the greeting plus the seconds a user spends deciding
+          # to speak. Reaping a user mid-thought is a worse failure than the
+          # cost it saves, and it is invisible to anyone but that user.
+          if [ -n "$ORB_IDLE_NO_ENGAGEMENT_INPUT" ]; then
+            echo "Applying ORB idle budget: ORB_IDLE_NO_ENGAGEMENT_MS=$ORB_IDLE_NO_ENGAGEMENT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$ORB_IDLE_NO_ENGAGEMENT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_IDLE_NO_ENGAGEMENT_MS") ]
+                  + [ {name:"ORB_IDLE_NO_ENGAGEMENT_MS", value:$I} ] )')
+          fi
+
+          # VTID-03646: the kill switch for the rich new-day briefing opener.
+          #
+          # Deliberately an EMPTY-preserving INPUT and not pinned like the two
+          # flags above, because it is not the same kind of thing. Those pin a
+          # value prod must always have; this is an emergency OFF for a rung
+          # whose code default is now ON. Pinning "true" here would make the
+          # switch unreachable without a PR — the opposite of why it exists.
+          #
+          # Read as `!== 'false'` (orb-live.ts, module load), so any value
+          # other than the exact string "false" leaves the briefing enabled.
+          #
+          # When you would set this to false: the briefing is speaking content
+          # that trips Bedrock's Nova content filter at turn_count=0, and the
+          # session is stuck in the "einen Moment, ich verbinde mich neu" retry
+          # loop (VTID-03628's symptom). Note that was diagnosed once already
+          # and the rung was NOT the cause — it had never fired in production
+          # at all (its guard rejected on a missing first name, VTID-03646),
+          # and the filter blocks continued for days after it was disabled.
+          # So check `orb.live.diag` / `stage=upstream_error` against
+          # `wake_opener` before reaching for this: if the blocked sessions are
+          # not reporting `newday_overview`, turning this off costs you the
+          # briefing and fixes nothing.
+          if [ -n "$ORB_NEWDAY_RUNG_INPUT" ]; then
+            echo "Applying new-day briefing rung: ORB_NEWDAY_OVERVIEW_RUNG_ENABLED=$ORB_NEWDAY_RUNG_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg N "$ORB_NEWDAY_RUNG_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_NEWDAY_OVERVIEW_RUNG_ENABLED") ]
+                  + [ {name:"ORB_NEWDAY_OVERVIEW_RUNG_ENABLED", value:$N} ] )')
+          fi
+
+          # VTID-03683: cascaded voice (Transcribe -> Bedrock -> Polly) for the
+          # languages Nova Sonic cannot speak. Unset, the selector is
+          # byte-for-byte the existing forced-Nova path, so a deploy that omits
+          # this input changes no routing at all.
+          #
+          # Do NOT set this to true before the gateway task role actually has
+          # transcribe:StartStreamTranscription and polly:SynthesizeSpeech.
+          # The eligibility gate refuses a language it cannot serve, but it
+          # cannot see an IAM denial — that surfaces per turn, as a session
+          # that connects and then produces nothing, which is the same
+          # invisible shape as VTID-03480 and VTID-03665.
+          if [ -n "$ORB_CASCADED_VOICE_INPUT" ]; then
+            echo "Applying cascaded voice: ORB_CASCADED_VOICE_ENABLED=$ORB_CASCADED_VOICE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg C "$ORB_CASCADED_VOICE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "ORB_CASCADED_VOICE_ENABLED") ]
+                  + [ {name:"ORB_CASCADED_VOICE_ENABLED", value:$C} ] )')
+          fi
+
+          # VTID-03683: its own var rather than inheriting AWS_REGION blindly,
+          # for the same reason AWS_TITAN_IMAGE_REGION is (§2d) — Transcribe
+          # streaming is not offered in every region, and a wrong region fails
+          # with an opaque error rather than a named one. Falls back to
+          # AWS_REGION then eu-central-1 in code, so leaving it EMPTY is fine.
+          if [ -n "$AWS_TRANSCRIBE_REGION_INPUT" ]; then
+            echo "Applying AWS_TRANSCRIBE_REGION=$AWS_TRANSCRIBE_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_TRANSCRIBE_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_TRANSCRIBE_REGION") ]
+                  + [ {name:"AWS_TRANSCRIBE_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03563: Claude-always-on-Bedrock (CLAUDE.md ALWAYS 10a).
+          #
+          # BEDROCK_ROLE_ARN is THE activation gate. Until it is set, the
+          # adapter reports not_configured and llm-router SKIPS bedrock — so a
+          # policy row pointing at 'bedrock' quietly serves its FALLBACK
+          # instead. That is not a hypothetical: the direct-Anthropic stages
+          # have been failing on a zero credit balance and silently landing on
+          # Gemini since 2026-05, which is the whole reason this rule exists.
+          # Set and VERIFY this before flipping llm_routing_policy, never after.
+          if [ -n "$BEDROCK_ROLE_ARN_INPUT" ]; then
+            echo "Applying Bedrock activation: BEDROCK_ROLE_ARN=<set>"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg B "$BEDROCK_ROLE_ARN_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_ROLE_ARN") ]
+                  + [ {name:"BEDROCK_ROLE_ARN", value:$B} ] )')
+          fi
+
+          # Must be a resolved cross-region INFERENCE PROFILE id, not a bare
+          # on-demand model id — see CLAUDE.md §2b. A bare id fails at call
+          # time, not at deploy time, so a green deploy proves nothing here.
+          if [ -n "$BEDROCK_MODEL_ID_INPUT" ]; then
+            echo "Applying Bedrock model: BEDROCK_MODEL_ID=$BEDROCK_MODEL_ID_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg M "$BEDROCK_MODEL_ID_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "BEDROCK_MODEL_ID") ]
+                  + [ {name:"BEDROCK_MODEL_ID", value:$M} ] )')
+          fi
+
+          # Its own var rather than inheriting AWS_REGION blindly: Claude
+          # inference profiles are not offered in every region, and the rest of
+          # this estate is eu-central-1 while Nova Sonic runs in eu-north-1 —
+          # so "the region the account uses" is already not a single answer.
+          if [ -n "$AWS_BEDROCK_REGION_INPUT" ]; then
+            echo "Applying Bedrock region: AWS_BEDROCK_REGION=$AWS_BEDROCK_REGION_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg R "$AWS_BEDROCK_REGION_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "AWS_BEDROCK_REGION") ]
+                  + [ {name:"AWS_BEDROCK_REGION", value:$R} ] )')
+          fi
+
+          # VTID-03579: autopilot executor circuit breaker. Deliberately the
+          # same upsert shape as the levers above, but read the gate carefully
+          # before using it: index.ts starts the executor when the var is
+          # `!== 'false'`, so PRESERVING an unset value leaves it RUNNING. The
+          # only value that stops it is the literal string 'false'.
+          if [ -n "$DEV_AUTOPILOT_EXECUTOR_INPUT" ]; then
+            echo "Applying autopilot executor gate: DEV_AUTOPILOT_EXECUTOR_ENABLED=$DEV_AUTOPILOT_EXECUTOR_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg E "$DEV_AUTOPILOT_EXECUTOR_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "DEV_AUTOPILOT_EXECUTOR_ENABLED") ]
+                  + [ {name:"DEV_AUTOPILOT_EXECUTOR_ENABLED", value:$E} ] )')
+          fi
+
+          # VTID-03578: TTS provider. tts-provider.ts falls back to google on
+          # an unrecognised value rather than failing closed, so a typo here
+          # degrades to the status quo instead of taking voice down — but it
+          # also means a typo is SILENT. Read the deploy log line below to
+          # confirm what was actually applied; do not infer it from a green run.
+          #
+          # Serbian: Polly has no sr voice in ANY engine, so with this set to
+          # polly the sr path still reaches Google. That is deliberate (fluent
+          # wrong-language audio is worse than a fallback) and it is the one
+          # thing standing between this and a clean GCP TTS shutdown.
+          if [ -n "$TTS_PROVIDER_INPUT" ]; then
+            echo "Applying TTS provider: TTS_PROVIDER=$TTS_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg P "$TTS_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_PROVIDER") ]
+                  + [ {name:"TTS_PROVIDER", value:$P} ] )')
+          fi
+
+          # Strict mode removes the polly→google safety net. It exists to PROVE
+          # no hidden Google dependency remains before a shutdown — turning it
+          # on in normal operation converts every Polly gap into silence for
+          # that user, starting with every Serbian one.
+          if [ -n "$TTS_POLLY_STRICT_INPUT" ]; then
+            echo "Applying Polly strict mode: TTS_POLLY_STRICT=$TTS_POLLY_STRICT_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg S "$TTS_POLLY_STRICT_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "TTS_POLLY_STRICT") ]
+                  + [ {name:"TTS_POLLY_STRICT", value:$S} ] )')
+          fi
+
+          # Image generation. Titan's outpaint mask polarity is INVERTED vs
+          # Imagen and has never been confirmed against the live API — get it
+          # backwards and the subject is regenerated while the margins are
+          # kept, which produces a plausible-looking and completely wrong
+          # image that no automated check will flag. Run
+          # scripts/images/verify-titan-image.ts before setting this.
+          if [ -n "$IMAGE_PROVIDER_INPUT" ]; then
+            echo "Applying image provider: IMAGE_PROVIDER=$IMAGE_PROVIDER_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$IMAGE_PROVIDER_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "IMAGE_PROVIDER") ]
+                  + [ {name:"IMAGE_PROVIDER", value:$I} ] )')
+          fi
+          # BOOTSTRAP-POLLY-NARRATION-CACHE
+          if [ -n "$NARRATION_AUDIO_CACHE_INPUT" ]; then
+            echo "Applying narration cache: NARRATION_AUDIO_CACHE=$NARRATION_AUDIO_CACHE_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_CACHE_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_CACHE") ]
+                  + [ {name:"NARRATION_AUDIO_CACHE", value:$I} ] )')
+          fi
+          if [ -n "$NARRATION_AUDIO_BUCKET_INPUT" ]; then
+            echo "Applying narration bucket: NARRATION_AUDIO_BUCKET=$NARRATION_AUDIO_BUCKET_INPUT"
+            NEW_DEF=$(echo "$NEW_DEF" | jq --arg I "$NARRATION_AUDIO_BUCKET_INPUT" '
+              .containerDefinitions[0].environment |=
+                ( [ .[] | select(.name != "NARRATION_AUDIO_BUCKET") ]
+                  + [ {name:"NARRATION_AUDIO_BUCKET", value:$I} ] )')
+          fi
+
+          # VTID-04573: GITHUB_SAFE_MERGE_TOKEN <- vitana/github/pat (see env).
+          NEW_DEF=$(echo "$NEW_DEF" | jq --arg GH "$GITHUB_TOKEN_SECRET_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "GITHUB_SAFE_MERGE_TOKEN") ]
+                + [ {name:"GITHUB_SAFE_MERGE_TOKEN", valueFrom:$GH} ] )')
+
+          # VTID-04824: the Jev secret and gate switches are set in their own step,
+          # "Build task-definition (Jev gates)", before this one.
+
+          # VTID-04784: memory plan phase 2. One counts-only '[VTID-04784]
+          # recall-shadow' line per session compares recall() with the legacy
+          # ORB memory read. VTID-05007 (owner, 2026-10-09, 72 h prod shadow:
+          # facts 293/296 equal, 0 failed reads): prod now SERVES recall()
+          # and the shadow keeps logging the legacy read for the 2-week watch.
+          # Off: env-only dispatch, env_overrides={"MEMORY_ORB_RECALL_ENABLED":"false"}.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name | IN("MEMORY_ORB_RECALL_SHADOW","MEMORY_ORB_RECALL_ENABLED") | not) ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
+                    {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"} ] )')
+
+          # VTID-04786: AP-0910 memory embedding backfill runs here from its own
+          # in-process loop (every 30 min, one task per interval via
+          # automation_runs). Its scheduler died with GCP; the job only writes
+          # embeddings onto members' own memory rows. Maxina holds 97% of the
+          # backlog. The general heartbeat loop stays off on prod.
+          NEW_DEF=$(echo "$NEW_DEF" | jq '
+            .containerDefinitions[0].environment |=
+              ( [ .[] | select(.name != "MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED" and .name != "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS") ]
+                + [ {name:"MEMORY_EMBEDDING_BACKFILL_LOOP_ENABLED", value:"true"},
+                    {name:"MEMORY_EMBEDDING_BACKFILL_TENANT_IDS", value:"2e7528b8-472a-4356-88da-0280d4639cce"} ] )')
+
+          # VTID-03958: the generic escape hatch. Runs LAST, after every
+          # named-input override above, so it can override anything they set
+          # or add anything new — deliberately the opposite precedence of an
+          # unset named input (which preserves current state), because
+          # supplying env_overrides is an explicit ask to apply exactly these
+          # keys, whatever else was requested on the same dispatch.
+          #
+          # Validates the JSON FIRST and fails the whole step loudly on a
+          # malformed value — this must never silently no-op (a typo'd
+          # override would look like it worked) and must never corrupt
+          # NEW_DEF (a bad `jq` mid-pipeline here would poison every
+          # override applied above it too).
+          if [ -n "$ENV_OVERRIDES_INPUT" ]; then
+            if ! echo "$ENV_OVERRIDES_INPUT" | jq -e . >/dev/null 2>&1; then
+              echo "::error::env_overrides is not valid JSON: $ENV_OVERRIDES_INPUT"
+              exit 1
+            fi
+            if [ "$(echo "$ENV_OVERRIDES_INPUT" | jq -r 'type')" != "object" ]; then
+              echo "::error::env_overrides must be a JSON OBJECT of {\"NAME\":\"value\"} pairs, got: $(echo "$ENV_OVERRIDES_INPUT" | jq -r 'type')"
+              exit 1
+            fi
+            echo "Applying env_overrides: $(echo "$ENV_OVERRIDES_INPUT" | jq -c 'keys')"
+            # Generic upsert over every key in the object — no key names
+            # hardcoded here, so a brand-new flag needs no workflow change.
+            # Remove-then-add per key (same upsert shape as every named
+            # override above), applied one key at a time via jq's own
+            # to_entries/reduce so an arbitrary-length object works without
+            # a fixed arity.
+            NEW_DEF=$(echo "$NEW_DEF" | jq --argjson OVR "$ENV_OVERRIDES_INPUT" '
+              .containerDefinitions[0].environment as $env
+              | ($OVR | to_entries) as $overrides
+              | .containerDefinitions[0].environment =
+                  ( ( $env | map(select(.name as $n | ($overrides | map(.key) | index($n)) | not)) )
+                    + ( $overrides | map({name: .key, value: (.value | tostring)}) ) )')
+          fi
+
+          NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
+            --query 'taskDefinition.taskDefinitionArn' --output text)
+          echo "Registered $NEW_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$NEW_ARN" >/dev/null
+          echo "Waiting for service to stabilize (up to ~10 min)…"
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          echo "Service stable on $NEW_ARN"
+
+      - name: Smoke — env=production + deployed commit live
+        id: smoke
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          SHA="${{ steps.source.outputs.sha }}"
+          for i in 1 2 3 4 5 6; do
+            HEALTH=$(curl -fsS "$URL/api/v1/admin/health" 2>/dev/null || echo '')
+            BUILD=$(curl -fsS "$URL/api/v1/admin/build-info" 2>/dev/null || echo '')
+            ALIVE=$(curl -fsS -o /dev/null -w "%{http_code}" "$URL/alive" 2>/dev/null || echo '')
+            ENV=$(echo "$HEALTH" | jq -r '.env // empty')
+            COMMIT=$(echo "$BUILD" | jq -r '.git_commit // empty')
+            if [ "$ENV" = "production" ] && [ "$COMMIT" = "$SHA" ] && [ "$ALIVE" = "200" ]; then
+              echo "✓ env=production, git_commit=$COMMIT, /alive=200"
+              exit 0
+            fi
+            echo "Attempt $i: env='$ENV' commit='$COMMIT' alive='$ALIVE' (want production/$SHA/200) — retry in 15s"
+            sleep 15
+          done
+          echo "::error::Smoke failed — health/build-info/alive did not report env=production with the deployed commit"
+          exit 1
+
+      # VTID-04896/VTID-04944: read-only. The live service's task definition
+      # must carry REWARD_SWEEP_ENABLED=true (the pin above), unless this
+      # dispatch's env_overrides set the key explicitly (e.g. "false" to turn
+      # payouts off). A mismatch fails the job, which rolls the service back
+      # (VTID-04647).
+      - name: Verify reward sweep setting (live task definition)
+        id: sweepcheck
+        env:
+          ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
+        run: |
+          set -e
+          EXPECTED=true
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("REWARD_SWEEP_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.REWARD_SWEEP_ENABLED | tostring')
+            echo "::warning::env_overrides sets REWARD_SWEEP_ENABLED=$EXPECTED for this deploy"
+          fi
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text)
+          LIVE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`REWARD_SWEEP_ENABLED`].value | [0]' --output text)
+          echo "Live task definition: $TD"
+          echo "REWARD_SWEEP_ENABLED=$LIVE (expected $EXPECTED)"
+          if [ "$LIVE" != "$EXPECTED" ]; then
+            echo "::error::REWARD_SWEEP_ENABLED is '$LIVE' on the live task definition, expected '$EXPECTED'"
+            exit 1
+          fi
+          # VTID-04899: same check for the immediate Autopilot completion reward.
+          EXPECTED_AP=true
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("AUTOPILOT_ACTION_REWARD_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_AP=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.AUTOPILOT_ACTION_REWARD_ENABLED | tostring')
+            echo "::warning::env_overrides sets AUTOPILOT_ACTION_REWARD_ENABLED=$EXPECTED_AP for this deploy"
+          fi
+          LIVE_AP=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`AUTOPILOT_ACTION_REWARD_ENABLED`].value | [0]' --output text)
+          echo "AUTOPILOT_ACTION_REWARD_ENABLED=$LIVE_AP (expected $EXPECTED_AP)"
+          if [ "$LIVE_AP" != "$EXPECTED_AP" ]; then
+            echo "::error::AUTOPILOT_ACTION_REWARD_ENABLED is '$LIVE_AP' on the live task definition, expected '$EXPECTED_AP'"
+            exit 1
+          fi
+          # VTID-05003: Kiro is on exactly when the production runner token variable is set.
+          EXPECTED_KIRO=false
+          [ -n "$KIRO_TOKEN_ARN" ] && EXPECTED_KIRO=true
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("KIRO_ENGINE_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_KIRO=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.KIRO_ENGINE_ENABLED | tostring')
+          fi
+          LIVE_KIRO=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`KIRO_ENGINE_ENABLED`].value | [0]' --output text)
+          echo "KIRO_ENGINE_ENABLED=$LIVE_KIRO (expected $EXPECTED_KIRO)"
+          if [ "$LIVE_KIRO" != "$EXPECTED_KIRO" ]; then
+            echo "::error::KIRO_ENGINE_ENABLED is '$LIVE_KIRO' on the live task definition, expected '$EXPECTED_KIRO'"
+            exit 1
+          fi
+
+      # VTID-04647: read-only post-deploy verification. GET requests only, no
+      # auth, nothing written — production gets read-only checks (owner rule
+      # 2026-09-26). Only long-standing routes, so an env-only redeploy of an
+      # older image cannot trip it. Each path must answer JSON below 500,
+      # three attempts each.
+      - name: Post-deploy verification (read-only)
+        id: postverify
+        run: |
+          set -e
+          URL="${{ env.GATEWAY_URL }}"
+          FAIL=0
+          for P in /api/v1/admin/health /api/v1/admin/build-info /api/v1/orb/health; do
+            OK=0
+            for i in 1 2 3; do
+              OUT=$(curl -sS -o /dev/null -m 15 -w "%{http_code} %{content_type}" "$URL$P" 2>/dev/null || echo "000 none")
+              CODE=${OUT%% *}; CT=${OUT#* }
+              if [ "$CODE" -lt 500 ] && [ "$CODE" != "000" ] && echo "$CT" | grep -qi 'application/json'; then OK=1; break; fi
+              echo "Attempt $i: GET $P -> $OUT"; sleep 10
+            done
+            if [ "$OK" = 1 ]; then echo "✓ GET $P -> $OUT"; else echo "::error::GET $P failed post-deploy ($OUT)"; FAIL=1; fi
+          done
+          [ "$FAIL" = 0 ]
+
+      # VTID-04904: read-only, never fails the deploy. Live Rooms need
+      # DAILY_API_KEY on the gateway task definition — an owner prerequisite
+      # this workflow does not place. Reports whether the live task definition
+      # carries it (as env or secret NAME — values are never read or printed)
+      # as a warning annotation when it is missing.
+      - name: Report DAILY_API_KEY presence (live task definition, read-only)
+        continue-on-error: true
+        run: |
+          set +e
+          TD=$(aws ecs describe-services --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}" \
+            --query 'services[0].taskDefinition' --output text 2>/dev/null)
+          WHERE=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].{env:environment[].name,sec:secrets[].name}' --output json 2>/dev/null \
+            | jq -r '[(if ((.env // []) | index("DAILY_API_KEY")) != null then "env" else empty end), (if ((.sec // []) | index("DAILY_API_KEY")) != null then "secret" else empty end)] | join(",")' 2>/dev/null)
+          if [ -n "$WHERE" ]; then
+            echo "DAILY_API_KEY present on $TD ($WHERE)"
+          else
+            echo "::warning::DAILY_API_KEY is not on the live gateway task definition ($TD) - Live Rooms cannot open video (owner prerequisite, VTID-04904)"
+          fi
+          exit 0
+
+      # VTID-04647: automatic rollback. Runs when the service was rolled and a
+      # later step failed (stabilize, smoke or post-deploy verification). It
+      # re-points the service at the task definition captured before the
+      # deploy and waits for it to serve the previous commit again. Kill switch:
+      # repository variable PROD_AUTO_ROLLBACK_DISABLED=true (the dispatch form
+      # is at the 25-input ceiling, so it cannot be an input).
+      - name: Roll back to the previous task definition
+        id: rollback
+        if: ${{ failure() && steps.prev.outputs.arn != '' && steps.roll.outcome != 'skipped' && vars.PROD_AUTO_ROLLBACK_DISABLED != 'true' }}
+        env:
+          PREV_ARN: ${{ steps.prev.outputs.arn }}
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
+        run: |
+          set -e
+          echo "::warning::Post-deploy checks failed — rolling back to $PREV_ARN"
+          aws ecs update-service --cluster "${{ env.ECS_CLUSTER }}" --service "${{ env.ECS_SERVICE }}" \
+            --task-definition "$PREV_ARN" >/dev/null
+          aws ecs wait services-stable --cluster "${{ env.ECS_CLUSTER }}" --services "${{ env.ECS_SERVICE }}"
+          LIVE=""
+          for i in 1 2 3 4 5 6; do
+            LIVE=$(curl -fsS "${{ env.GATEWAY_URL }}/api/v1/admin/build-info" 2>/dev/null | jq -r '.git_commit // empty' || true)
+            if [ -z "$PREV_SHA" ] || [ "$PREV_SHA" = "None" ] || [ "$LIVE" = "$PREV_SHA" ]; then break; fi
+            sleep 15
+          done
+          echo "rolled_back=true" >> "$GITHUB_OUTPUT"
+          echo "live_commit=$LIVE" >> "$GITHUB_OUTPUT"
+          echo "Rolled back: service on $PREV_ARN, build-info reports '$LIVE'"
+          # The job still fails: a rolled-back deploy is not a successful deploy.
+
+      - name: Emit OASIS event + software_versions row (best-effort)
+        if: always()
+        env:
+          # VTID-05023 part 9: REST base. Repo variable DATA_REST_URL (unset =
+          # unchanged) is https://data.vitanaland.com after the Aurora flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          SHA: ${{ steps.source.outputs.sha }}
+          SHORT: ${{ steps.source.outputs.short }}
+          OUTCOME: ${{ job.status }}
+          REASON: ${{ inputs.reason }}
+          ROLLED_BACK: ${{ steps.rollback.outputs.rolled_back }}
+          PREV_SHA: ${{ steps.prev.outputs.sha }}
+        run: |
+          set +e
+          if [ -z "$SUPABASE_URL" ] || [ -z "$SUPABASE_SVC" ]; then
+            echo "::notice::SUPABASE_URL / SUPABASE_SERVICE_ROLE repo secrets not set — skipping OASIS/CLOCK emission (deploy itself unaffected)."
+            exit 0
+          fi
+          STATUS=$([ "$OUTCOME" = "success" ] && echo success || echo error)
+          TOPIC=$([ "$OUTCOME" = "success" ] && echo prod.deploy.completed || echo prod.deploy.failed)
+          if [ "$ROLLED_BACK" = "true" ]; then TOPIC=prod.deploy.rolled_back; fi
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/software_versions" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg st "$STATUS" \
+              '{service:"vitana-gateway-aws-dr", git_commit:$sha, deploy_type:"normal", initiator:"agent", status:$st, environment:"production"}')" \
+            || echo "::warning::software_versions insert failed; continuing."
+          curl -fsS -X POST "$SUPABASE_URL/rest/v1/oasis_events" \
+            -H "Content-Type: application/json" -H "apikey: $SUPABASE_SVC" \
+            -H "Authorization: Bearer $SUPABASE_SVC" -H "Prefer: return=minimal" \
+            -d "$(jq -nc --arg sha "$SHA" --arg short "$SHORT" --arg st "$STATUS" --arg topic "$TOPIC" --arg reason "$REASON" --arg rb "$ROLLED_BACK" --arg prev "$PREV_SHA" '{
+              vtid: "VTID-03398",
+              topic: $topic,
+              service: "vitana-gateway-aws-dr",
+              role: "CICD",
+              model: "aws-prod-deploy",
+              status: $st,
+              message: ("AWS-PROD-DEPLOY-GATEWAY: " + $short + " (" + $reason + ")"),
+              metadata: { env: "production", platform: "aws-ecs-dr", git_commit: $sha, workflow: "AWS-PROD-DEPLOY-GATEWAY.yml", reason: $reason, rolled_back: ($rb == "true"), rolled_back_to: $prev }
+            }')" || echo "::warning::oasis_events insert failed; continuing."
+
+      - name: Summary
+        if: success()
+        run: |
+          {
+            echo "## AWS Production (DR) gateway deploy"
+            echo "- Mode: ${{ steps.source.outputs.mode }}"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }} (resulting refs: see the data backend lines above)"
+            echo "- Image: \`${{ steps.source.outputs.image || steps.build.outputs.image }}\`"
+            echo "- Commit: \`${{ steps.source.outputs.sha }}\`"
+            echo "- Verified live at: ${{ env.GATEWAY_URL }}"
+            echo "- Reason: ${{ env.DEPLOY_REASON }}"
+            echo "- VTID: VTID-03398"
+          } >> "$GITHUB_STEP_SUMMARY"

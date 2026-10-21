@@ -1,0 +1,4 @@
+$ npx jest test/vtid-04450-apple-mail-send.test.ts test/vtid-04402-connected-apps.test.ts test/vtid-04449-outlook-contacts.test.ts test/routes/connected-apps.test.ts
+Test Suites: 4 passed, 4 total
+Tests:       61 passed, 61 total
+$ npx tsc --noEmit -p .        # clean

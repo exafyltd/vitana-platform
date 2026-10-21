@@ -1,0 +1,9 @@
+# VTID-05153 local checks (2026-10-13), branch based on the VTID-05148 PR branch (origin/claude/vitanaland-loop-engineering-30pws3)
+tsx canonicalPlanHash(phase5-plan.md) and canonicalPlanHash(docs/validation/VTID-05153/plan-sparring.md)   # both 0123933248f7b3c7728e19cef7fe3cb5fa539b082f5a6a008320c2cdd2b6f261
+./node_modules/.bin/tsc --noEmit -p services/gateway                                     # no errors in changed code (only TS2742 portability notes from the worktree's symlinked node_modules, in untouched discover/notification/reward repository files)
+npx jest (services/gateway, full suite)                                                  # 1688 suites passed, 2 skipped; 27362 tests passed, 26 skipped, 6 todo (no tracked file modified as a side effect)
+npx jest test/vtid-05153 test/vtid-05148 test/partner test/vtid-04478 test/vtid-04486 test/vtid-04953 test/vtid-04971 test/commerce test/vtid-04933 test/vtid-04837 test/vtid-04838 test/vtid-04840 test/vtid-04847 test/vtid-04890 test/vtid-04940 test/vtid-04941 test/vtid-04969 test/routes/vcaop-portal test/routes/supplier test/routine-runner test/loop-catalog.test.ts test/routes/autonomy-loops.test.ts test/command-hub test/vtid-04696   # all green after routines/supplier-catalog-check.md was added
+psql (throwaway local PG16, unix socket only, server as nobody) -f docs/validation/VTID-05153/migration-test.sql   # all assertions passed (outputs/migration-test.out); server stopped and data dir removed
+node: staging-verify lib.validateManifest over every docs/validation/*/staging-tests.json  # 334 manifests, 0 invalid
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs                      # regenerated after the loops-catalog.js change (1122 functions across 16 files)
+PR_TITLE="VTID-05153: Loop Engineering Phase 5 — L9 Supplier catalog wave 1" node scripts/ci/command-hub-ownership-guard.js   # PASSED (allowlisted marker)

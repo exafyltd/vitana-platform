@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04677",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "scheduled-notifications health stays open and reports log mode",
+      "path": "/api/v1/scheduled-notifications/health", "expect_status": 200,
+      "expect_json": { "service": "scheduled-notifications", "auth_mode": "log" },
+      "expect_body_contains": "\"internal_token_configured\":" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04677-scheduled-notifications-auth.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts", "cwd": "services/gateway",
+      "reason": "proves the token check in all three modes (enforce rejects 401/403/503, log passes and never logs the header, off skips), /health open, every gateway self-call sending the token, the prod/staging workflow wiring and the four scheduler scripts. No POST is ever sent on staging: in log mode an anonymous POST would run a real dispatch against the shared production database" }
+  ]
+}

@@ -1,0 +1,16 @@
+# VTID-04435 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04435; vtid_ledger in_progress / approved.
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+npx jest test/services/conversation/vtid-04435-personal-weights.test.ts -> 17 passed
+  (first run: the "changes the shadow pick" scenario already favoured the lower-priority provider under the shared
+   weights, so it proved nothing — the priority gap was widened until the shared weights pick the other provider)
+  (the random-history bound check now uses a seeded LCG, so a failure reproduces)
+npx jest (full gateway suite) -> 1161 suites passed (1 skipped), 18754 tests passed, 0 failures
+node scripts/generate-command-hub-symbol-index.mjs -> regenerated
+docs/validation/VTID-04435/outputs: PORT=18528 node harness-server.js & HARNESS_URL=http://127.0.0.1:18528 node harness-shoot.js
+  -> Simulator inspector: "Personal weights from 60 settled offers: outcome ×2, freshness ×1 · shared weights would pick login_briefing"
+  -> Monitor: "PERSONAL WEIGHTS | 14 | 3 changed the shadow pick"; 1400x900 + 390x844, no overflow, no page errors
+  (the Monitor "Could not load … first_audio_ms_p50" banner on the desktop shot is the harness: its catch-all
+   returns no hourly rollup; not part of this change)
+Not run: live staging (ECS cannot place tasks).

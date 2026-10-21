@@ -1,0 +1,66 @@
+name: VOICE-TOOLS-MANIFEST-RECONCILE
+
+# PR 1.B-9 / VTID-02844 — keeps tool-manifest.json honest.
+#
+# Walks the three sources of truth (ORB_TOOL_REGISTRY, Vertex case arms,
+# LiveKit all_tool_names()) and verifies that every manifest entry has the
+# correct status + wired_in fields. Catches three classes of drift:
+#   1. A new tool was wired but the manifest entry's wired_in still says
+#      "[]" (operator forgot to update the catalogue).
+#   2. A manifest entry claims status=live but neither pipeline implements
+#      the tool (false advertising — the original 1950 fix avoided this).
+#   3. The shared registry / Vertex / LiveKit moved out of step with the
+#      manifest's per-pipeline tracking.
+#
+# REPORT-ONLY for now: posts the report to PR comments + writes to the job
+# summary, but does NOT fail the build. Promote to a hard gate after the
+# voice-tools team has had a cycle to react to the new visibility.
+
+on:
+  pull_request:
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+      - 'services/gateway/src/services/tool-manifest.json'
+      - 'services/agents/orb-agent/src/orb_agent/tools.py'
+      - 'scripts/voice-tools-manifest-reconcile.mjs'
+      - '.github/workflows/VOICE-TOOLS-MANIFEST-RECONCILE.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+      - 'services/gateway/src/services/tool-manifest.json'
+      - 'services/agents/orb-agent/src/orb_agent/tools.py'
+  workflow_dispatch: {}
+
+jobs:
+  reconcile:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Run manifest reconciler (report-only)
+        run: |
+          set +e
+          node scripts/voice-tools-manifest-reconcile.mjs --check > reconcile-report.md 2>&1
+          status=$?
+          set -e
+          {
+            echo '# voice-tools-manifest-reconcile'
+            echo ''
+            cat reconcile-report.md
+            echo ''
+            if [ "$status" -ne 0 ]; then
+              echo "**status: drift detected (report-only — not failing build).**"
+              echo ""
+              echo "Run \`node scripts/voice-tools-manifest-reconcile.mjs --apply\` locally and commit the result."
+            else
+              echo "**status: clean.**"
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+          # Always exit 0 in this initial rollout.
+          exit 0

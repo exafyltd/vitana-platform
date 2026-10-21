@@ -1,0 +1,57 @@
+src/env.ts(16,10): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/env.ts(30,15): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/env.ts(44,10): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/env.ts(52,10): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/i18n/server-locale-repository.ts(17,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/i18n/server-locale.ts(15,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/lib/supabase.ts(1,46): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/lib/supabase.ts(8,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/lib/supabase.ts(9,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/lib/supabase.ts(9,64): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt-repository.ts(23,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/middleware/auth-supabase-jwt.ts(25,49): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/middleware/auth-supabase-jwt.ts(26,23): error TS2307: Cannot find module 'jose' or its corresponding type declarations.
+src/middleware/auth-supabase-jwt.ts(131,26): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(132,25): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(162,15): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(186,18): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(188,18): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(188,48): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(203,18): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(204,18): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(204,48): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/middleware/auth-supabase-jwt.ts(338,32): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/routes/admin-partner-health.ts(28,57): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/routes/partner-orgs.ts(19,57): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/routes/partner-orgs.ts(20,29): error TS2591: Cannot find name 'crypto'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/guide/active-usage-repository.ts(13,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/notification-service-repository.ts(26,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/notification-service.ts(16,24): error TS2307: Cannot find module 'firebase-admin' or its corresponding type declarations.
+src/services/notification-service.ts(17,32): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/notification-service.ts(315,22): error TS7006: Parameter 't' implicitly has an 'any' type.
+src/services/notification-service.ts(440,7): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(440,38): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(441,46): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(441,83): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(443,7): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(443,42): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(444,42): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(444,83): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/notification-service.ts(482,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/oasis-event-service.ts(6,28): error TS2591: Cannot find name 'crypto'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/oasis-event-service.ts(37,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/oasis-event-service.ts(38,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/oasis-event-service.ts(1243,25): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/oasis-event-service.ts(1244,25): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/partner-health/consent.ts(15,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/id-matching.ts(21,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/id-matching.ts(61,14): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/services/partner-health/id-matching.ts(62,11): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/services/partner-health/ingestion.ts(19,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/org-access.ts(13,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/timeline-projector.ts(17,28): error TS2591: Cannot find name 'crypto'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/timeline-projector.ts(19,28): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/timeline-projector.ts(101,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/timeline-projector.ts(102,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/services/timeline-projector.ts(102,64): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/types/cicd.ts(6,19): error TS2307: Cannot find module 'zod' or its corresponding type declarations.

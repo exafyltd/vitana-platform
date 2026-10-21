@@ -1,0 +1,8 @@
+# VTID-04923 local checks 2026-10-06T14:13:41.483216Z
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml: step "Resolve Live Rooms Daily key" 879 chars, bash -n ok
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml: yaml ok, 16 run steps, bash -n failures=0, max run chars=19872 (cap 20000)
+.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml: step "Build task-definition (Live Rooms Daily key)" 409 chars, bash -n ok
+.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml: yaml ok, 20 run steps, bash -n failures=0, max run chars=19937 (cap 20000)
+jq simulation (prod strip-then-add on a task def already carrying DAILY_API_KEY): exactly one DAILY_API_KEY, new ARN
+jq simulation (staging connected-apps merge over an old DAILY_API_KEY): exactly one DAILY_API_KEY, staging ARN
+node emulation of vtid-04923-daily-key-wiring.test.ts assertions: 13/13 true (jest runs in CI)

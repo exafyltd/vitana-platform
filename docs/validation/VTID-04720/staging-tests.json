@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04720",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "User Preferences health reads ok:true (its data layer exists)",
+      "path": "/api/v1/user-preferences/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "User Preferences health probes user_explicit_preferences",
+      "path": "/api/v1/user-preferences/health",
+      "expect_body_contains": "user_explicit_preferences"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04716-feature-data-layers.test.ts",
+      "cwd": "services/gateway",
+      "reason": "shipped in the VTID-04716 PR; migration contracts for User Preferences live there"
+    }
+  ]
+}

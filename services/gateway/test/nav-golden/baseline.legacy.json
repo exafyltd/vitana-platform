@@ -1,0 +1,172 @@
+{
+  "resolver": "legacy consultNavigator (keyword-only)",
+  "overall": {
+    "total": 167,
+    "correct": 43,
+    "reaches_right_screen": 73,
+    "wrong_screen": 3,
+    "forbidden_hits": 0,
+    "false_action": 4,
+    "silent": 41,
+    "clarified_with_right_option": 43,
+    "right_screen_wrong_behaviour": 33
+  },
+  "by_lang": {
+    "sr": {
+      "total": 15,
+      "correct": 1,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 11,
+      "clarified_with_right_option": 3,
+      "right_screen_wrong_behaviour": 0
+    },
+    "en": {
+      "total": 68,
+      "correct": 22,
+      "reaches_right_screen": 37,
+      "wrong_screen": 1,
+      "forbidden_hits": 0,
+      "false_action": 2,
+      "silent": 1,
+      "clarified_with_right_option": 26,
+      "right_screen_wrong_behaviour": 16
+    },
+    "de": {
+      "total": 49,
+      "correct": 17,
+      "reaches_right_screen": 34,
+      "wrong_screen": 2,
+      "forbidden_hits": 0,
+      "false_action": 2,
+      "silent": 1,
+      "clarified_with_right_option": 10,
+      "right_screen_wrong_behaviour": 17
+    },
+    "es": {
+      "total": 13,
+      "correct": 1,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 11,
+      "clarified_with_right_option": 1,
+      "right_screen_wrong_behaviour": 0
+    },
+    "fr": {
+      "total": 8,
+      "correct": 1,
+      "reaches_right_screen": 1,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 4,
+      "clarified_with_right_option": 3,
+      "right_screen_wrong_behaviour": 0
+    },
+    "pl": {
+      "total": 3,
+      "correct": 1,
+      "reaches_right_screen": 1,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    },
+    "pt": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    },
+    "ru": {
+      "total": 3,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 3,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    },
+    "tr": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    },
+    "ar": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    },
+    "zh": {
+      "total": 2,
+      "correct": 0,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 2,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    }
+  },
+  "by_intent": {
+    "open": {
+      "total": 107,
+      "correct": 40,
+      "reaches_right_screen": 40,
+      "wrong_screen": 1,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 37,
+      "clarified_with_right_option": 29,
+      "right_screen_wrong_behaviour": 0
+    },
+    "where": {
+      "total": 53,
+      "correct": 0,
+      "reaches_right_screen": 33,
+      "wrong_screen": 2,
+      "forbidden_hits": 0,
+      "false_action": 0,
+      "silent": 4,
+      "clarified_with_right_option": 14,
+      "right_screen_wrong_behaviour": 33
+    },
+    "none": {
+      "total": 7,
+      "correct": 3,
+      "reaches_right_screen": 0,
+      "wrong_screen": 0,
+      "forbidden_hits": 0,
+      "false_action": 4,
+      "silent": 0,
+      "clarified_with_right_option": 0,
+      "right_screen_wrong_behaviour": 0
+    }
+  }
+}

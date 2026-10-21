@@ -1,0 +1,10 @@
+# VTID-04818 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_LESSON_NOVELTY_MODE "04818 F"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04818 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-f.txt
+npx jest $(grep -rlE "operator-turn-memory|agent-memory-context" test)  # memory suites (outputs/jest-memory.txt)
+# Evidence (production, read-only SQL): dev_agent_memory rows by source/category in 30 days — session incident 39,
+# decision 39, gotcha 34, convention 33; autopilot convention 25, gotcha 25, incident 21, decision 9 (plus 47
+# autopilot task_outcome status rows, which are not extracted lessons and are not checked).
+npx jest (full gateway suite, merged with origin/main d5e5692)          # 1457 suites, 23353 passed, 0 failed (outputs/jest-full.txt)

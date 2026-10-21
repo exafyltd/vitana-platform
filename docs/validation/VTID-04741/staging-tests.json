@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04741",
+  "service": "gateway",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/services/credit-recommender.test.ts", "cwd": "services/gateway",
+      "reason": "holding, confirming and reversing commissions writes money rows into the shared production database, so it is proven by this suite, not on staging" }
+  ]
+}

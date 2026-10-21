@@ -1,0 +1,309 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://vitana.io/schemas/vtid-spec-v1.json",
+  "title": "VTID Specification Schema v1",
+  "description": "Canonical JSON Schema for validating VTID specifications (VTID-01191)",
+  "type": "object",
+  "required": [
+    "identity",
+    "classification",
+    "intent",
+    "surfaces",
+    "memory",
+    "workflow",
+    "constraints",
+    "acceptance"
+  ],
+  "additionalProperties": false,
+  "properties": {
+    "identity": {
+      "type": "object",
+      "description": "2.1 Identity - Core VTID identification",
+      "required": ["vtid", "title", "owner_role", "tenant_scope"],
+      "additionalProperties": false,
+      "properties": {
+        "vtid": {
+          "type": "string",
+          "pattern": "^VTID-\\d{4,5}$",
+          "description": "Unique VTID identifier (e.g., VTID-01191)"
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 80,
+          "description": "Short imperative title (max 80 chars)"
+        },
+        "owner_role": {
+          "type": "string",
+          "enum": ["dev_admin", "admin", "system"],
+          "description": "Role responsible for this VTID"
+        },
+        "tenant_scope": {
+          "type": "string",
+          "enum": ["vitana", "maxina", "alkalma", "multi"],
+          "description": "Tenant scope for this VTID"
+        }
+      }
+    },
+    "classification": {
+      "type": "object",
+      "description": "2.2 Classification - Routing root for execution",
+      "required": ["primary_domain", "system_surface", "execution_mode"],
+      "additionalProperties": false,
+      "properties": {
+        "primary_domain": {
+          "type": "string",
+          "enum": ["frontend", "backend", "ai", "memory", "workflow", "integration"],
+          "description": "Primary execution domain (exactly one)"
+        },
+        "secondary_domains": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "enum": ["frontend", "backend", "ai", "memory", "workflow", "integration"]
+          },
+          "uniqueItems": true,
+          "description": "Optional secondary domains"
+        },
+        "system_surface": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["vitana_dev", "vitana_admin", "vitana_community", "vitana_professional"]
+          },
+          "uniqueItems": true,
+          "description": "System surfaces affected (at least one required)"
+        },
+        "execution_mode": {
+          "type": "string",
+          "enum": ["autonomous", "semi_autonomous", "manual"],
+          "description": "Execution mode for this VTID"
+        }
+      }
+    },
+    "intent": {
+      "type": "object",
+      "description": "2.3 Intent - Human and AI readable purpose",
+      "required": ["problem_statement", "desired_outcome", "non_goals"],
+      "additionalProperties": false,
+      "properties": {
+        "problem_statement": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What is broken or missing"
+        },
+        "desired_outcome": {
+          "type": "string",
+          "minLength": 1,
+          "description": "What must be true when done"
+        },
+        "non_goals": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          },
+          "description": "Explicit exclusions (empty array allowed)"
+        }
+      }
+    },
+    "surfaces": {
+      "type": "object",
+      "description": "2.4 Affected Surfaces - All blocks must exist",
+      "required": ["frontend", "backend", "ai", "integrations"],
+      "additionalProperties": false,
+      "properties": {
+        "frontend": {
+          "type": "object",
+          "required": ["screens", "components"],
+          "additionalProperties": false,
+          "properties": {
+            "screens": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Screen IDs or paths"
+            },
+            "components": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Component names or paths"
+            }
+          }
+        },
+        "backend": {
+          "type": "object",
+          "required": ["services", "endpoints"],
+          "additionalProperties": false,
+          "properties": {
+            "services": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Service names"
+            },
+            "endpoints": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Endpoint paths"
+            }
+          }
+        },
+        "ai": {
+          "type": "object",
+          "required": ["agents"],
+          "additionalProperties": false,
+          "properties": {
+            "agents": {
+              "type": "array",
+              "items": { "type": "string" },
+              "description": "Agent identifiers"
+            }
+          }
+        },
+        "integrations": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "External system names"
+        }
+      }
+    },
+    "memory": {
+      "type": "object",
+      "description": "2.5 Memory & Data Impact - MANDATORY (omission = validator failure)",
+      "required": ["reads", "writes", "categories", "retention"],
+      "additionalProperties": false,
+      "properties": {
+        "reads": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Data/state this VTID reads"
+        },
+        "writes": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "Data/state this VTID writes"
+        },
+        "categories": {
+          "type": "array",
+          "minItems": 1,
+          "items": {
+            "type": "string",
+            "enum": ["system", "governance", "user", "health", "workflow"]
+          },
+          "uniqueItems": true,
+          "description": "Memory categories (at least one required)"
+        },
+        "retention": {
+          "type": "string",
+          "enum": ["permanent", "bounded"],
+          "description": "Data retention policy"
+        }
+      }
+    },
+    "workflow": {
+      "type": "object",
+      "description": "2.6 Workflow & Automation",
+      "required": ["triggers", "autopilot", "verification"],
+      "additionalProperties": false,
+      "properties": {
+        "triggers": {
+          "type": "array",
+          "items": { "type": "string" },
+          "description": "What initiates this VTID"
+        },
+        "autopilot": {
+          "type": "object",
+          "required": ["enabled", "requires_spec_snapshot"],
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether autopilot can execute this VTID"
+            },
+            "requires_spec_snapshot": {
+              "type": "boolean",
+              "description": "Autopilot must snapshot spec before execution"
+            }
+          }
+        },
+        "verification": {
+          "type": "object",
+          "required": ["acceptance_assertions"],
+          "additionalProperties": false,
+          "properties": {
+            "acceptance_assertions": {
+              "type": "boolean",
+              "description": "Machine-checkable acceptance required"
+            }
+          }
+        }
+      }
+    },
+    "constraints": {
+      "type": "object",
+      "description": "2.7 Constraints & Guardrails",
+      "required": ["csp", "additive_only", "breaking_change", "governance_rules"],
+      "additionalProperties": false,
+      "properties": {
+        "csp": {
+          "type": "string",
+          "enum": ["strict", "relaxed", "none"],
+          "description": "Content Security Policy level"
+        },
+        "additive_only": {
+          "type": "boolean",
+          "description": "No breaking changes to existing interfaces"
+        },
+        "breaking_change": {
+          "type": "boolean",
+          "description": "Explicit flag for breaking changes"
+        },
+        "governance_rules": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "pattern": "^(GOV-|SYS-RULE-)"
+          },
+          "description": "Referenced governance rule IDs"
+        }
+      }
+    },
+    "acceptance": {
+      "type": "array",
+      "description": "2.8 Acceptance Criteria - Machine-checkable",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "required": ["type", "description"],
+        "additionalProperties": false,
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": ["condition", "test", "manual_verification"],
+            "description": "Type of acceptance criterion"
+          },
+          "description": {
+            "type": "string",
+            "minLength": 1,
+            "description": "What must pass"
+          }
+        }
+      }
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "properties": {
+        "schema_version": {
+          "const": "1.0"
+        },
+        "vtid_reference": {
+          "const": "VTID-01191"
+        },
+        "status": {
+          "const": "FROZEN"
+        }
+      }
+    }
+  }
+}

@@ -1,0 +1,2 @@
+Exemption removed (condition replaced by `false`): 5 of 9 VTID-04530 tests fail
+(the four member routes + the no-token hand-off). Restored: 9/9 pass.

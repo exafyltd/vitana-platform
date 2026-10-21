@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04891",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04891-identity-drift-supabase-count.test.ts",
+      "cwd": "services/gateway",
+      "reason": "workflow-only change; nothing deploys to staging, the fix is proven by the pin test and the post-merge workflow run"
+    }
+  ]
+}

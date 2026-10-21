@@ -1,0 +1,24 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04868-plan-sparring-session-layer.test.ts
+  VTID-04868 Plan Sparring Gate — session layer
+    ✓ CLAUDE.md carries rules 51-55 and puts allocation after sparring (26 ms)
+    ✓ the partner agent is read-only and pinned to Opus 4.6 (1 ms)
+    ✓ the skill defines >=2 passes, round caps and the record location (1 ms)
+    ✓ hook reminds on an allocation without a sparring id (32 ms)
+    ✓ hook also catches /vtid/allocate and direct ledger inserts (61 ms)
+    ✓ hook is silent when a sparring id is passed, and on unrelated commands (53 ms)
+    ✓ settings.json registers the hook for Bash and execute_sql
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        0.926 s
+Ran all test suites matching /test\/vtid-04868-plan-sparring-session-layer.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

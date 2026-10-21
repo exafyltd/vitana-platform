@@ -1,0 +1,70 @@
+# VTID-03928 — commands run during this change
+
+## Investigation
+$ grep -n "writeDevMemory\|write_dev_memory" -r services/gateway/src/services/*.ts services/gateway/src/routes/*.ts | grep -v dev-agent-memory.ts
+-> only orb-live.ts's unrelated writeDevMemoryItem (different module,
+   orb-memory-bridge.ts) — confirmed writeDevMemory (dev-agent-memory.ts)
+   is called from nowhere in the live Operator path.
+
+$ SELECT count(*) FROM dev_agent_memory;  -- via Supabase MCP
+-> 26 rows, all source='backfill' (confirmed via a follow-up SELECT).
+
+Confirmed the read side already works correctly against real staging
+traffic before writing any code: ran `recall_dev_memory(p_query_embedding
+:= (SELECT embedding FROM dev_agent_memory WHERE vtid='VTID-03817'...))`
+directly — self-match similarity 1.0, related rows ranked 0.57/0.43/...
+descending. The relevance-selection mechanism the platform owner asked
+for already exists; only the write side was missing.
+
+## Fix
+Added `recordSessionOutcomeMemory()` to services/gateway/src/routes/operator.ts,
+called fire-and-forget (`.catch()`, never awaited inline) right before the
+/chat handler's response is sent. Writes a `task_outcome` dev_agent_memory
+row for: (a) a non-duplicate created task, (b) any SIGNIFICANT_OUTCOME_TOOLS
+tool call whose response.ok === true.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03928-operator-cross-session-memory.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 905 passed, 905 of 906 total
+Tests:       29 skipped, 6 todo, 14978 passed, 15013 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"operator-cross-session-memory"}'
+{"ok":true,"vtid":"VTID-03928","num":3928,"id":"9f061d7c-803a-4779-b55c-4b2fd764dd1a"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb, the
+platform's own VTID ledger, not a community-content write) to set
+title/summary, status='in_progress', spec_status='approved' — the user
+directly instructed this work in conversation (standing approval per
+CLAUDE.md IF-THEN rule "task moved to in_progress manually -> explicit
+consent").
+
+## Explicitly declined in this VTID
+Did NOT flip OPERATOR_AWS_READONLY_ENABLED on staging. Read
+aws-ecs-readonly.ts's own header comment first: the "read-only" AWS tool
+currently shares the SAME broad IAM role as the gateway's task-launching
+path (ecs:RunTask) because the narrower STS-assumed role was never built.
+Flipping it on would let the Operator's tool-calling LLM (DeepSeek by
+default per VTID-03817) operate under a role that can also launch
+arbitrary ECS tasks — a real privilege-escalation surface, not a dormant
+flag. Scoping the actual IAM fix is a separate VTID.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/routes/operator.ts,
+services/gateway/test/vtid-03928-operator-cross-session-memory.test.ts,
+docs/validation/VTID-03928/** — all within the gateway_backend profile's
+allowed paths.

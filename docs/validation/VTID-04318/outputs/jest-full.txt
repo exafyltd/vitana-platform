@@ -1,0 +1,60 @@
+      ✓ should validate required fields (2 ms)
+      ✓ should handle deploy orchestrator failure (3 ms)
+      ✓ should include workflow URL in response (2 ms)
+
+PASS test/vtid-04220-gateway-base-url.test.ts
+  VTID-04220: gatewayBaseUrl
+    ✓ follows VITANA_ENV when GATEWAY_URL is unset
+    ✓ prefers an explicit GATEWAY_URL and strips a trailing slash
+    ✓ never names a GCP Cloud Run host
+  VTID-04220: the two probe sites use it (source contract)
+    ✓ dev-autopilot-execute.ts no longer carries the dead run.app default (1 ms)
+    ✓ self-healing-probe.ts defaults through gatewayBaseUrl at call time
+  VTID-04220: probeEndpoint on a staging process targets staging
+    ✓ joins a relative endpoint onto preview-aws-gateway when VITANA_ENV=staging and GATEWAY_URL is unset (1 ms)
+
+PASS test/routes/discover-recommendations-public.test.ts
+  BOOTSTRAP-PUBLIC-BUSINESS-PROFILE — public recommendations route
+    ✓ returns 401 when unauthenticated (4 ms)
+    authenticated
+      ✓ returns 503 when Supabase is unavailable (2 ms)
+      ✓ returns 404 when the vitanaId does not resolve to a profile (2 ms)
+      ✓ returns 404 when the resolved profile is not visible (3 ms)
+      ✓ maps rows to the public shape and never includes owner-private stats fields (2 ms)
+      ✓ strips a leading @ and lowercases the vitanaId before resolving (3 ms)
+
+PASS test/voice-synthetic-probe.test.ts
+  VTID-01961: Synthetic Voice Probe
+    ✓ all health flags true → ok=true, no failure_mode_code (1 ms)
+    ✓ gemini_configured=false → gemini_not_configured (1 ms)
+    ✓ tts_client_ready=false → tts_not_ready
+    ✓ voice_conversation_enabled=false → voice_disabled
+    ✓ fallback_chat_tts.available=false → fallback_chat_tts_unavailable
+    ✓ non-2xx response → health_non_2xx (1 ms)
+    ✓ fetch throws → health_unreachable
+    ✓ malformed JSON → health_malformed_json
+    ✓ chime-only would-pass simulation: this v1 probe is config/auth-focused
+    ✓ probe records duration_ms (1 ms)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.219 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (7 ms)
+    ✓ 400 when autopilot_execution_id is missing (36 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (2 ms)
+    ✓ 403 when worker does not hold the claim (2 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (2 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (3 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (2 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60028 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (4 ms)
+
+(node:1059) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1081 passed, 1081 of 1082 total
+Tests:       29 skipped, 6 todo, 17550 passed, 17585 total
+Snapshots:   42 passed, 42 total
+Time:        93.523 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

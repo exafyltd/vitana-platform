@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04746",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "catalogue CSV import is still mounted (rejected write probe)", "method": "POST", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/catalogue/products/import", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/services/partner-catalogue-csv.test.ts test/partner-onboarding-catalogue.test.ts", "cwd": "services/gateway",
+      "reason": "an import writes products into the shared production Supabase project, so it cannot run on staging; these suites prove every file and row error carries its stable code and params" }
+  ]
+}

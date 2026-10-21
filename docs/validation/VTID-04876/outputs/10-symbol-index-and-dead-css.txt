@@ -1,0 +1,8 @@
+✓ in sync (908 functions across 11 files)
+✓ 1996 classes referenced in styles.css
+✓ 265 dead candidates (zero JS/HTML occurrence, not a dynamic-affix match)
+✓ 3 rule(s) removable (entire selector list is simple + all-dead)
+  (remaining candidates share a rule with a live class, or have a compound/complex selector — left untouched, needs a human read)
+✗ out of sync — styles.css has removable dead rules. Run with --fix to remove them.
+# base branch (faa3a92e) has the same .orb-config-value-* rules the matcher flags:
+3

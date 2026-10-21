@@ -1,0 +1,7 @@
+# VTID-04042 — commands log (2026-09-18)
+GET /api/v1/dev-autopilot/executions/a5289ad8-31b7-41c0-bcff-1210e87dbdf3/steps
+  -> 125 steps; turn 7/13/16 read_file: "file too large to read (2625600 bytes)"; turns 17-60 tmp-read-slice.test.ts loop; execution.failed "agent hit the 60-turn cap"
+grep -an TEXT_FILE_MAX_BYTES services/gateway/src/services/autopilot-agent/agent-tools.ts   -> cap applied before the start_line/end_line window; search_text `continue`s on the same cap
+python3 patch: streamLines()/readWindowStreaming() + READ_FILE_HARD_MAX_BYTES; read_file and search_text large-file branches
+npx jest test/autopilot-agent-tools.test.ts test/dev-autopilot-watcher.test.ts   -> 2 suites, 44 tests, 0 failures
+npx tsc --noEmit -p services/gateway   -> exit 0

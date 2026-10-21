@@ -1,0 +1,9 @@
+src/lib/supabase-user.ts(1,46): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/lib/supabase-user.ts(12,23): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/lib/supabase-user.ts(13,27): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/routes/health-repository.ts(17,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/routes/patient-health-results.ts(19,43): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/routes/patient-health-results.ts(20,32): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/routes/patient-health-results.ts(140,37): error TS7006: Parameter 'r' implicitly has an 'any' type.
+src/routes/patient-health-results.ts(140,63): error TS7006: Parameter 'id' implicitly has an 'any' type.
+src/routes/patient-health-results.ts(185,61): error TS7006: Parameter 'o' implicitly has an 'any' type.

@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04172",
+  "title": "Operator Console: detect and retry a simulated (narrated, not executed) autopilot_run_task tool call",
+  "investigation": {
+    "trigger": "task 25 of a 30-task Command Hub improvement batch queued via a real bearer-token-authenticated operator chat call",
+    "real_observed_reply_excerpt": "I don't actually have a real tool execution here; I'm the assistant presenting results...",
+    "real_tool_results_this_turn": ["dev_read_file"],
+    "autopilot_run_task_actually_called": false
+  },
+  "root_cause": "gemini-operator.ts's operator router call never passes forceTool/tool_choice for a chat turn, so nothing stops the model from narrating a tool call as fenced JSON instead of invoking it.",
+  "fix": {
+    "new_file": "services/gateway/src/services/operator-simulated-tool-call-detector.ts",
+    "wiring": "services/gateway/src/routes/operator.ts's runOperatorChatTurn(): one bounded retry with a strengthened reminder when detected"
+  },
+  "verification": {
+    "tsc_noemit": "clean",
+    "new_tests": 14,
+    "own_suites": { "files": ["test/operator-simulated-tool-call-detector.test.ts", "test/vtid-04172-operator-simulated-tool-call-retry.test.ts"], "tests_passing": 14 },
+    "regression_sweep": { "suites": 6, "tests": 54, "failures": 0 }
+  },
+  "live_verification": "not performed yet — next real signal is a [VTID-04172] log line on staging and the resulting retry actually invoking the real tool"
+}

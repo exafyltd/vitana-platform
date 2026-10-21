@@ -1,0 +1,12 @@
+# VTID-04009 — commands run (Claude Code session, 2026-09-17)
+# Evidence from the live run (staging, execution 47a4d6eb, ECS task dabb2bb6, task def vitana-autopilot-executor:9, 2 vCPU / 4 GB):
+#   oasis_events dev_autopilot.agent.tool turn 12: run_check exit_code=1 "<--- Last few GCs ---> ... Scavenge (reduce) 2039.3 (2082.2) -> 2038.7 (2082.7) MB ... allocation failure" (140 s)
+#   turn 13: same, 128 s; turn 17: same, 126 s; turns 21-23: agent deleted core.50 / core.57 / core.88 it found via git_diff
+python3 (poll /proc/<pid>/status VmHWM) node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json
+                                                     -> exit 0, elapsed 47.0 s, peak RSS 2497 MB  (outputs/tsc-heap-measurement.json)
+npx jest test/autopilot-agent-scope-validate.test.ts test/autopilot-agent-tools.test.ts test/autopilot-agent-loop.test.ts
+                                                     -> 3 suites, 28 tests passing (3 new: checkHeapMb / checkNodeOptions / runTsc env)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json   (after the change)
+                                                     -> exit 0 (clean)
+NOT run here: a real agent execution on the rebuilt image — the re-run of Test Run #4 (VTID-04008) after
+             AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml is dispatched from this commit.

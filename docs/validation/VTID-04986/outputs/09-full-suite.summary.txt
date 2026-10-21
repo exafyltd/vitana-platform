@@ -1,0 +1,12 @@
+# npx jest --ci (full gateway suite), AWS credentials unset
+Test Suites: 1 failed, 1 skipped, 1561 passed, 1562 of 1563 total
+Tests:       1 failed, 25 skipped, 6 todo, 24919 passed, 24951 total
+Snapshots:   126 passed, 126 total
+Time:        219.638 s
+exit=1
+Test suite failed to run: 0
+
+FAIL test/command-hub/vtid-04975-kiro-operator-ui.test.ts
+
+The one failure is the pre-existing ordering artifact: find-dead-css-classes.test.ts runs --fix on the real styles.css and deletes the .kiro-approval--* rules; vtid-04975 then fails on the mutated file. With styles.css restored it passes alone:
+Tests:       15 passed, 15 total

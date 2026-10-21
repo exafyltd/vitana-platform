@@ -1,0 +1,11 @@
+{
+  "label": "aws",
+  "gateway": "https://preview-aws-gateway.vitanaland.com",
+  "frontend": "https://preview-aws.vitanaland.com",
+  "captured_at": "2026-07-17T07:47:05Z",
+  "health_meta": {
+    "http_code": 200,
+    "content_type": "application/json; charset=utf-8",
+    "time_total": 0.791014
+  }
+}

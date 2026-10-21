@@ -1,0 +1,45 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [GroupEnrollment] Added member-1 to Alle Beisammen (g-all)
+
+      at addUserToSystemGroups (src/services/community-group-enrollment.ts:106:15)
+
+  console.warn
+    [GroupEnrollment] Exclusion lookup failed, skipping enrollment: boom
+
+      45 |     const excluded = await fetchExcludedTestServiceAccountIdsStrict(supabase);
+      46 |     if (!excluded.ok) {
+    > 47 |       console.warn(`${tag} Exclusion lookup failed, skipping enrollment: ${excluded.error}`);
+         |               ^
+      48 |       skipped.push({ group_id: '*', reason: 'exclusion_lookup_failed' });
+      49 |       return { added, skipped };
+      50 |     }
+
+      at addUserToSystemGroups (src/services/community-group-enrollment.ts:47:15)
+      at Object.<anonymous> (test/vtid-05038-alle-beisammen-enrollment.test.ts:105:15)
+
+PASS test/vtid-05038-alle-beisammen-enrollment.test.ts
+  VTID-05038: welcome trigger keeps the Alle Beisammen shape (drift guard)
+    ✓ guards both allowlists before anything else touches chat or groups (3 ms)
+    ✓ enrolls before the welcome_chat_sent and > 1000 early returns (1 ms)
+    ✓ reads the cap from metadata (NULL = uncapped), never a hard-coded 100 (1 ms)
+    ✓ leaves the welcome DM text unchanged (1 ms)
+  VTID-05038: login-time enrollment skips service/test accounts
+    ✓ enrolls a real member (6 ms)
+    ✓ never enrolls a registered service/test account (1 ms)
+    ✓ fails closed when the allowlists cannot be read (3 ms)
+    ✓ still respects a numeric cap
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        0.465 s, estimated 1 s
+Ran all test suites matching /test\/vtid-05038-alle-beisammen-enrollment.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

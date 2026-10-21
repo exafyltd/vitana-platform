@@ -1,0 +1,32 @@
+    ✓ round-trips a valid metadata object
+    ✓ encodes every field as a string (Stripe metadata contract) (1 ms)
+    ✓ rejects null / undefined input
+    ✓ rejects an unknown schema_version (forward-compat guard)
+    ✓ rejects metadata missing required fields (1 ms)
+    ✓ rejects an unsupported currency
+    ✓ accepts USD
+    ✓ defaults environment to "unknown" when missing
+
+PASS test/vtid-03853-watcher-review-wiring.test.ts
+  ciWatcherTick LLM review wiring (VTID-03853, source check)
+    ✓ imports the review gate from dev-autopilot-llm-review (1 ms)
+    ✓ the review gate sits after the risk-class gate and before mergePullRequest (1 ms)
+    ✓ a blocked review transitions merging -> failed and bridges to self-healing, same shape as the risk-class decline
+    ✓ emits an OASIS event for both the passed and blocked outcomes (1 ms)
+
+PASS test/self-healing-metrics.test.ts
+  aggregateSelfHealingMetrics
+    ✓ returns zeroed rates and empty breakdowns for no data (no divide-by-zero) (4 ms)
+    ✓ tallies outcomes and computes the self-healing resolved-rate (fixed / terminal) (2 ms)
+    ✓ surfaces the Step-2 actionable split and non-actionable reasons (2 ms)
+    ✓ averages triage confidence per outcome (calibration sanity check) (1 ms)
+    ✓ computes autopilot success-rate and failure-stage breakdown (4 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 903 passed, 903 of 904 total
+Tests:       29 skipped, 6 todo, 14965 passed, 15000 total
+Snapshots:   44 passed, 44 total
+Time:        61.956 s, estimated 69 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

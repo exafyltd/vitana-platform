@@ -1,0 +1,364 @@
+{
+  "vtid": "VTID-04173",
+  "execution_id": "546373b0-3824-4372-a7aa-aaf70f7e62dd",
+  "finding_id": "f25b28d4-dec9-4c13-9943-61d375ec7d1a",
+  "plan_version": 1,
+  "branch": "dev-autopilot/c5a4f0bf",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "docs/AURORA-CUTOVER-RUNBOOK-2026-09-20.md",
+      "action": "modify"
+    },
+    {
+      "path": "docs/AURORA-MIGRATION-STATUS-2026-09-10.md",
+      "action": "modify"
+    },
+    {
+      "path": "docs/validation/VTID-04148/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04148/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04148/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04164/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04164/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04164/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04165/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04165/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04165/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04173/acceptance.md",
+      "action": "modify"
+    },
+    {
+      "path": "docs/validation/VTID-04173/commands.log",
+      "action": "modify"
+    },
+    {
+      "path": "docs/validation/VTID-04173/outputs/execution.json",
+      "action": "modify"
+    },
+    {
+      "path": "docs/validation/VTID-04181/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04181/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04181/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04183/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04183/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04183/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04184/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04184/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04184/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04185/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04185/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04185/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04186/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04186/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04186/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04187/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04187/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04187/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04189/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04189/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04189/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04193/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04193/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04193/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04198/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04198/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04198/outputs/curl-route-before-deploy.txt",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04198/outputs/jest-new-tests.txt",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04198/outputs/telemetry-2026-09-19.txt",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04212/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04212/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04212/outputs/tsc-and-jest.txt",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04215/acceptance.md",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04215/commands.log",
+      "action": "delete"
+    },
+    {
+      "path": "docs/validation/VTID-04215/outputs/execution.json",
+      "action": "delete"
+    },
+    {
+      "path": "scripts/ci/command-hub-ownership-guard.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/orb-widget.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/routes/orb-live.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/autopilot-agent/agent-check-guard.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/autopilot-agent/agent-tools.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/autopilot-agent/run-agent-execution.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-deploy-topics.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-execute.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-pr-contract.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/dev-autopilot-watcher.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/operator-approval-tools.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/operator-bootstrap-pack.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/operator-execution-onramp.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/services/operator-onramp-rate-limit.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/src/services/operator-threads.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/types/cicd.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/__mocks__/setup-tests.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/vtid-04148-autopilot-live-status-aria-live.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-02-onramp-rate-limit.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-03-reject-reason-required.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-10-bootstrap-buildinfo-warn.test.ts",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/console-task-12-bootstrap-flag-visibility.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-19-unpriced-model-cost.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-20-test-only-plan-safety-gate.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-21-bootstrap-all-sources-fail.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-22-extractfilepaths-empty-heading.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-23-thread-marker-ttl-expiry.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-25-non-uuid-identity-threads.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/console-task-29-vtid-selfalloc-failure-mode.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/frontend/orb-widget-gesture-audio-unlock.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/frontend/orb-widget-ios-audio-blocked.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/routes/orb-audio-blocked-route.test.ts",
+      "action": "delete"
+    },
+    {
+      "path": "services/gateway/test/vtid-04016-agent-check-guard.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04022-operator-threads.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04215-deploy-event-contract.test.ts",
+      "action": "delete"
+    }
+  ],
+  "generated_at": "2026-09-21T14:14:22.579Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

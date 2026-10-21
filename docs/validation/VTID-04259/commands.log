@@ -1,0 +1,58 @@
+# VTID-04259 — commands run by this Claude Code session (interactive, not the Dev Autopilot executor)
+
+# Investigated with a background research agent first: read
+# services/gateway/src/frontend/command-hub/app.js (fetch interceptor,
+# access-control block, idle-logout session monitor), routes/auth.ts,
+# middleware/auth-supabase-jwt.ts to find the exact existing timeout
+# mechanism and its role gate before touching anything.
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+# SYNTAX OK
+
+$ grep -rln "DEV_IDLE_LOGOUT_MS|isDeveloperSession|active_role === 'developer'" services/gateway/test/
+# services/gateway/test/console-task-17-cost-badge-tooltip.test.ts (cache-bust assertion only)
+
+$ cd services/gateway && node_modules/.bin/jest test/command-hub/t2-no-zero-caller-functions.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts test/console-task-17-cost-badge-tooltip.test.ts
+# 1 pre-existing-unrelated failure found: the cache-bust guard requires
+# styles.css?v= and app.js?v= to carry the identical marker string —
+# bumped styles.css's marker to match even though styles.css itself was
+# not otherwise touched, then re-ran: 3/3 suites, 64/64 tests passing.
+
+$ node scripts/ci/command-hub-ownership-guard.js
+# PASSED (no Command Hub *ownership-tracked* pattern touched)
+
+$ cd services/gateway && node_modules/.bin/jest test/command-hub/
+# 17/17 suites, 259/259 tests passing
+
+$ git diff HEAD~1 -- services/gateway/src/frontend/command-hub/app.js \
+    services/gateway/src/frontend/command-hub/index.html \
+  | grep -E '^\+' | grep -Ei '<script|style *=|\.style\b|eval\(|new Function\(|unsafe-inline|https?://.*\.(js|css)'
+# NO CSP PATTERN MATCHES (checked against the same pattern list the CSP
+# Governance Gate scans, before pushing)
+
+# New test file added: services/gateway/test/vtid-04259-session-timeout.test.ts
+$ cd services/gateway && node_modules/.bin/jest test/vtid-04259-session-timeout.test.ts
+# 1/1 suite, 6/6 tests passing
+
+$ cd services/gateway && node_modules/.bin/jest test/command-hub/ test/vtid-04259-session-timeout.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts test/console-task-17-cost-badge-tooltip.test.ts
+# 20/20 suites, 284/284 tests passing, 0 regressions
+
+# services/gateway/specs/command-hub-symbol-index.json is regenerated as a
+# side effect of running generate-command-hub-symbol-index.test.ts, and was
+# found to already drift massively from a CLEAN checkout of this same
+# branch before any of the above edits (confirmed by stashing this PR's
+# changes and re-running the same test alone: same ~4500-line diff
+# appeared). That drift pre-dates this PR and is unrelated to this change,
+# so it is deliberately left out of this PR's diff rather than committed
+# as unrelated churn — `git checkout -- services/gateway/specs/command-hub-symbol-index.json`
+# after every local test run.
+
+$ npm run build   # services/gateway — no tsc errors touching app.js (plain JS, not compiled)
+
+$ git add services/gateway/src/frontend/command-hub/app.js
+$ git add services/gateway/src/frontend/command-hub/index.html
+$ git add services/gateway/test/vtid-04259-session-timeout.test.ts
+$ git commit
+$ git push -u origin claude/gateway-session-timeout-uxbai8

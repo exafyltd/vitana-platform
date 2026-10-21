@@ -1,0 +1,6 @@
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04661-service-health-panel.test.ts test/routes/screen-load-health.test.ts test/routes/admin-health-registry.test.ts test/command-hub/t12-health-registry-backend-fed.test.ts   # 4 suites green
+node node_modules/.bin/jest test/command-hub test/frontend   # 670/670
+npx tsc --noEmit -p .   # clean
+node --check src/frontend/command-hub/app.js   # ok
+node harness.js   # local Playwright harness, stubbed APIs; 1400x900 + 390x844 screenshots

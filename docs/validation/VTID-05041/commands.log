@@ -1,0 +1,37 @@
+# VTID-05041 — commands run (worktree trackS/VTID-05041, local only; nothing applied to any shared database)
+
+# Live facts, read-only SELECTs against inmkhvwdcuyhnxkgfvsb (2026-10-10) → outputs/live-baseline-2026-10-10.txt
+SELECT oid::regprocedure, prosecdef, pg_get_function_result(oid), has_function_privilege(<role>, oid, 'EXECUTE') … WHERE proname IN (<six functions>)
+SELECT pg_get_functiondef('public.get_user_profile_by_identifier(text)'::regprocedure), proacl …
+SELECT … FROM pg_depend WHERE refobjid = 'public.get_user_profile_by_identifier(text)'::regprocedure AND deptype <> 'i'   -- 0 rows
+
+# SQL harness (local PostgreSQL 16, throwaway cluster) → outputs/sql-harness.txt
+$ bash scripts/ci/test-vtid-05041-definer-lockdown.sh
+order guard: S2 refused before VTID-04981 and rolled back
+VTID-05041: all assertions passed
+
+# Mutations (copies of the migration passed via VTID_05041_MIGRATION) → outputs/mutations.txt
+# 1) REVOKE line commented out → ERROR: VTID-05041: … must not be executable by members (authenticated/anon)
+# 2) email + p.email re-added   → ERROR: VTID-05041: get_user_profile_by_identifier must not return email
+
+# CI guard mutation (temporary migration 20261099000000_mutation_probe.sql with an un-revoked SECURITY DEFINER
+# function and a GRANT write_fact TO authenticated; removed afterwards) → outputs/ci-guard-mutation.txt
+$ npx jest test/vtid-05041-definer-lockdown.test.ts -t "later|newer"     # 2 failed (expected)
+
+# Rollback (local, after fixture + 04981 + S2): Block A + Block B applied
+#   anon lookup → display_name 'Visible Member', email IS NULL = t; write_fact: authenticated t, anon f
+
+# Jest (services/gateway) → outputs/jest.txt
+$ npx jest test/vtid-05041-definer-lockdown.test.ts                       # 8 passed, 8 total
+$ npx jest $(grep -rl "supabase/migrations" test)                         # 88 suites: 1280 passed, 7 failed —
+#   the 7 failures are local-Postgres harnesses of other VTIDs (04809/04859/04868/04878/04981/04982/04988) that
+#   cannot read their fixture as the postgres OS user from this session's scratch checkout ("Permission denied");
+#   the VTID-04981 harness passes when run from a readable copy. Environmental, not caused by this change.
+
+# Typecheck (services/gateway). No gateway src file changes in this PR; test/ is excluded by tsconfig.
+$ npx tsc --noEmit -p .        # exit 2: 39 errors, all TS2742 ("inferred type cannot be named without a
+#   reference to …/home/user/vitana-platform/services/gateway/node_modules/@supabase/postgrest-js") — an artefact
+#   of this scratch worktree's symlinked node_modules; 0 errors of any other kind. CI runs it on a real install.
+
+# Post-apply (orchestrator, after the owner-approved RUN-MIGRATION of 04981 then S2):
+#   run docs/validation/VTID-05041/post-apply-checks.sql read-only and paste the result here.

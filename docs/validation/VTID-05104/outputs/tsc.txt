@@ -1,0 +1,4 @@
+src/services/connected-apps/contacts-import.ts(24,82): error TS2307: Cannot find module 'libphonenumber-js' or its corresponding type declarations.
+src/services/phone-verification/service.ts(19,62): error TS2307: Cannot find module 'libphonenumber-js/max' or its corresponding type declarations.
+src/services/phone-verification/sms-sender.ts(12,8): error TS2307: Cannot find module '@aws-sdk/client-pinpoint-sms-voice-v2' or its corresponding type declarations.
+exit 2

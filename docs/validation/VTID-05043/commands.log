@@ -1,0 +1,26 @@
+# Read-only live facts (project inmkhvwdcuyhnxkgfvsb, 2026-10-10) — SELECT only
+$ SELECT pg_get_functiondef(p.oid), p.proacl FROM pg_proc p ... WHERE proname = 'switch_to_tenant_by_slug'
+  -> captured in live-before.sql (reads tenant_record.id; ACL PUBLIC, anon, authenticated, service_role, migrate)
+$ SELECT tgname, tgenabled, pg_get_triggerdef(oid) FROM pg_trigger WHERE tgrelid = 'public.user_tenants'::regclass AND NOT tgisinternal
+  -> 4 rows, all 'O', all WHEN ((new.is_primary = true)) -> live-before.sql
+$ information_schema.columns / pg_constraint for tenants, memberships, user_tenants, role_preferences, audit_events
+  -> tenants PK tenant_id (no id); user_tenants UNIQUE (tenant_id, user_id), user_id FK app_users
+$ drift count (active memberships without user_tenants) by tenant
+  -> maxina 11, alkalma 4 = 15; 12 without auth.users/app_users (deleted accounts); 3 alkalma with an existing primary
+$ bad claims (active_tenant_id without membership, exafy excluded) -> 0
+$ auth.users without app_users -> 0 (of 238)
+
+# PGlite dry run (A, B, C + rollbacks)
+$ node run.mjs <repo>     (run.mjs = docs/validation/VTID-05043/pglite-migration-check.mjs, @electric-sql/pglite 0.5.8)
+  -> 69 ok, ALL MIGRATION CHECKS PASSED (outputs/pglite-migration-check.txt)
+
+# Gateway (services/gateway)
+$ npx jest test/vtid-05043-s3-migrations.test.ts
+  -> Tests: 36 passed, 36 total (outputs/jest-migrations.txt)
+$ npx tsc --noEmit -p .
+  -> only TS2742 "inferred type cannot be named" in untouched repository files, caused by this worktree's
+     node_modules being a symlink to another checkout; no other error
+$ npx tsc --noEmit -p . --declaration false --declarationMap false
+  -> exit 0
+
+# Nothing was applied. Apply order at the production step: A -> B -> C via RUN-MIGRATION, then post-apply-checks.sql.

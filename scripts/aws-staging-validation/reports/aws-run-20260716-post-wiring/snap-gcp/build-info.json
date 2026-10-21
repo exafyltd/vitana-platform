@@ -1,0 +1,9 @@
+{
+  "ok": true,
+  "env": "staging",
+  "cloud_run_service": "gateway-staging",
+  "cloud_run_revision": "gateway-staging-00473-ttj",
+  "git_commit": "06242d29327ad75241cb778a83b0bb8f8b301fe1",
+  "booted_at": "2026-07-15T11:54:31.324Z",
+  "marker": "06242d29327a"
+}

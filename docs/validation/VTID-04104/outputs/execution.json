@@ -1,0 +1,34 @@
+{
+  "vtid": "VTID-04104",
+  "found_during": "user reported live, mid-session, watching VTID-04102's fix confirmed working: renamed a task title, then the Operator Console showed the still-running Dev Autopilot execution (22cbc22f, VTID-04103) as if it had stopped",
+  "root_cause": "switchOperatorThread() and initOperatorChatSession() (page-load bootstrap) both rebuild state.chatMessages from the persisted state.operatorChatHistory, which only ever stored {role, content, ts} — followExecIds (VTID-04033) was set only on the in-memory-only state.chatMessages push in sendChatMessage(), never persisted, so a thread switch or reload permanently lost the live follow panel for a still-running execution",
+  "live_evidence": {
+    "execution_id": "22cbc22f-1ccb-45e9-a00e-f86f48e4227e",
+    "execution_status_at_report_time": "running",
+    "last_agent_turn_at_report_time": 86,
+    "last_event_age_seconds": 1,
+    "vtid_ledger_row": "VTID-04103",
+    "vtid_ledger_updated_at_unchanged_since_creation": true,
+    "conclusion": "backend never stopped; the defect is purely client-side display state"
+  },
+  "fix": [
+    "app.js sendChatMessage(): followExecIds now persisted on assistantHistoryEntry (var turnFollowExecIds computed once, reused for both the persisted history entry and the in-memory chatMessages push)",
+    "app.js: new reattachFollowedExecutions(chatMessages) helper — reopens followOperatorExecution(execId) for every restored message's followExecIds",
+    "app.js switchOperatorThread(): carries followExecIds through history.map(), closes the outgoing thread's follows first, reattaches the incoming thread's follows",
+    "app.js initOperatorChatSession(): same restore-and-reattach on page-load bootstrap",
+    "scripts/ci/command-hub-ownership-guard.js: VTID-04104 added to ALLOWED_VTID_PATTERN",
+    "index.html: app.js/styles.css cache-bust bumped to 20260919-vtid-04104-exec-follow-persist"
+  ],
+  "verification": {
+    "tsc_noemit": "pass",
+    "node_check": "pass (app.js, command-hub-ownership-guard.js)",
+    "test_suites": "4/4 passing, 29/29 tests (vtid-04104-operator-follow-persist.test.ts, vtid-04033-operator-execution-follow.test.ts, command-hub-ownership-guard.test.ts, vtid-04102-operator-truncated-reply.test.ts)",
+    "mutation_verified": true,
+    "mutation_result": "reverting app.js reproduces the exact reported symptom: 4/5 new tests fail (no persisted followExecIds, no reattach wiring in either restore function)"
+  },
+  "not_done": [
+    "not re-verified against a live staging session post-deploy",
+    "no Playwright screenshot pass — no markup/CSS changed, only when the existing already-verified panel attaches",
+    "the two flicker/collapsed-turns UX complaints raised in the same conversation are a separate, still-open ask needing their own VTID"
+  ]
+}

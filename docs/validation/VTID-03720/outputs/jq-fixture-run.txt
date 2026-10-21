@@ -1,0 +1,10 @@
+# The jq env-rebuild filter, extracted from the workflow and RUN against a
+# fixture whose inherited task def carries a STALE value.
+#
+# input:  environment: [{name: ORB_CASCADED_VOICE_ENABLED, value: "STALE"}]
+# output: ORB_CASCADED_VOICE_ENABLED entries: [{'name': 'ORB_CASCADED_VOICE_ENABLED', 'value': 'true'}]
+#         stale value survived? False
+#
+# Proves both halves: the strip removes the inherited entry (no duplicate
+# key, no ambiguity about which wins) and the re-add pins the exact string
+# 'true' that isCascadedVoiceEnabled() compares against.

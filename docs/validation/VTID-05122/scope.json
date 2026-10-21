@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05122",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/command-hub/**",
+    "services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05122/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05122/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

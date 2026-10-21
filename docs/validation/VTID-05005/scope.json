@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05005",
+  "files": [
+    "services/gateway/src/routes/operator-kiro-mcp.ts",
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/services/gemini-operator.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/test/vtid-05005-*.test.ts",
+    "services/kiro-runner/**",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
+    ".github/workflows/AWS-STAGE-DEPLOY-KIRO-RUNNER.yml",
+    ".github/workflows/AWS-PROD-DEPLOY-KIRO-RUNNER.yml",
+    "docs/validation/VTID-05005/**"
+  ]
+}

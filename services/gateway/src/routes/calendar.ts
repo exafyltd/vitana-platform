@@ -1,0 +1,1167 @@
+/**
+ * Intelligent Calendar — REST API Routes
+ *
+ * Mounted at: /api/v1/calendar
+ *
+ * Provides server-side calendar CRUD so the assistant, autopilot,
+ * and background services can read/write calendar events.
+ * All endpoints are role-aware via X-Vitana-Active-Role header.
+ *
+ * The frontend continues using its existing direct Supabase access
+ * for real-time subscriptions; this API is for server-side producers.
+ */
+
+import { Router, Request, Response } from 'express';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { getSupabase } from '../lib/supabase';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import {
+  CreateCalendarEventSchema,
+  UpdateCalendarEventSchema,
+  ListCalendarEventsSchema,
+  CompleteEventSchema,
+} from '../types/calendar';
+import * as repo from './calendar-repository';
+import {
+  listCalendarEvents,
+  getUserUpcomingEvents,
+  getUserTodayEvents,
+  getUserCalendarHistory,
+  getCalendarGaps,
+  findConflicts,
+  findFreeSlots,
+  createCalendarEvent,
+  bulkCreateCalendarEvents,
+  updateCalendarEvent,
+  markEventCompleted,
+  softDeleteEvent,
+  toSummary,
+  listCalendarWindow,
+  moveBlockReason,
+  getOwnCalendarEvent,
+  rescheduleEvent,
+} from '../services/calendar-service';
+import { completeSourceForCalendarEvent } from '../services/calendar-producers';
+import { z } from 'zod';
+import { addSharedEntryToCalendar, CARD_TITLE_MAX, entryShareRefOf, isSensitiveEntry, isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, SHARE_TEXT_MAX } from '../services/calendar-share';
+import { buildInviteFromEntry, getInviteState, respondToInvite, INVITE_RESPONSES } from '../services/calendar-invite';
+
+// Pillar keys — must match the 5 canonical Vitana pillars.
+const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
+type PillarKey = typeof PILLAR_KEYS[number];
+
+/**
+ * Read prior vitana_index_scores row, invoke the admin-callable recompute RPC,
+ * diff the results, emit an index.recomputed OASIS event, and return the new
+ * row + per_pillar_delta. Best-effort — errors are logged and swallowed so a
+ * failed recompute never blocks a successful calendar completion.
+ */
+async function recomputeVitanaIndexForUser(
+  userId: string,
+  eventMetadata: Record<string, unknown> = {},
+): Promise<{ new_index?: Record<string, number>; per_pillar_delta?: Record<PillarKey, number>; delta_total?: number } | null> {
+  const admin = getSupabase();
+  if (!admin) return null;
+  const today = new Date().toISOString().slice(0, 10);
+  const eventId = typeof eventMetadata.event_id === 'string' ? eventMetadata.event_id : null;
+
+  try {
+    // Snapshot prior row (if any) — used only until the VTID-05168 migration is
+    // applied; afterwards the recorded movement is the source of the delta.
+    const { data: priorRow } = await repo.fetchVitanaIndexScoresForUserDate(admin, userId, today);
+
+    // VTID-05168: locked + recorded. The calendar_events trigger has usually
+    // recomputed (and recorded) this completion already, so this call finds
+    // nothing new; the movement recorded for this event carries the delta.
+    const { data: newResult, error: rpcErr } = await repo.recordCalendarIndexRecompute(admin, userId, today, eventId);
+    if (rpcErr || !(newResult as any)?.ok) {
+      console.warn('[Calendar] recompute RPC failed:', rpcErr?.message || (newResult as any)?.error);
+      return null;
+    }
+    const n = newResult as any;
+
+    let per_pillar_delta: Record<PillarKey, number>;
+    let delta_total: number;
+    let priorTotal: number;
+    const recorded = eventId ? (await repo.fetchIndexMovementForSource(admin, userId, 'calendar_event', eventId)).data : null;
+    if (recorded) {
+      const dp = (recorded as any).delta_pillars ?? {};
+      per_pillar_delta = {
+        nutrition: Number(dp.nutrition ?? 0), hydration: Number(dp.hydration ?? 0),
+        exercise: Number(dp.exercise ?? 0), sleep: Number(dp.sleep ?? 0), mental: Number(dp.mental ?? 0),
+      };
+      delta_total = Number((recorded as any).delta_total ?? 0);
+      priorTotal = Number((recorded as any).before?.score_total ?? 0);
+    } else {
+      const prior = (priorRow as any) ?? {
+        score_total: 0, score_nutrition: 0, score_hydration: 0,
+        score_exercise: 0, score_sleep: 0, score_mental: 0,
+      };
+      per_pillar_delta = {
+        nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
+        hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
+        exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
+        sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
+        mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
+      };
+      delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+      priorTotal = prior.score_total ?? 0;
+    }
+
+    emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'index.recomputed' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Vitana Index recomputed: ${priorTotal} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      // VTID-05168: the member is the actor, so the profiler's last_movement finds it.
+      actor_id: userId,
+      payload: {
+        user_id: userId,
+        date: today,
+        new_score_total: n.score_total,
+        prior_score_total: priorTotal,
+        delta_total,
+        per_pillar_delta,
+        subscores: n.subscores,
+        balance_factor: n.balance_factor,
+        trigger: eventMetadata,
+      },
+    }).catch(() => {});
+
+    return {
+      new_index: {
+        score_total: n.score_total,
+        score_nutrition: n.score_nutrition,
+        score_hydration: n.score_hydration,
+        score_exercise: n.score_exercise,
+        score_sleep: n.score_sleep,
+        score_mental: n.score_mental,
+      },
+      per_pillar_delta,
+      delta_total,
+    };
+  } catch (err: any) {
+    console.warn('[Calendar] recomputeVitanaIndexForUser error:', err.message);
+    return null;
+  }
+}
+
+const router = Router();
+const LOG_PREFIX = '[Calendar]';
+
+// VTID-LIVEKIT-TOOLS: apply optionalAuth so Bearer JWTs populate req.identity.
+router.use(optionalAuth);
+
+// SECURITY (post-audit hardening): require a verified identity on every
+// route except /health. This router used to accept a bare X-User-ID /
+// X-Vitana-User header or ?user_id= query param with no verification at
+// all — any caller could read/write another user's calendar by setting
+// that header. The orb-agent's GatewayClient (the one real caller with a
+// legitimate reason to hit this API server-side) already sends a real
+// Supabase-signed user JWT as the Bearer token in the common case — see
+// gateway_client.py / session.py, which documents that anonymous sessions
+// (no user_jwt) getting 401 from tool endpoints is expected/acceptable.
+const OPEN_PATHS = new Set(['/health']);
+// VTID-04358: /feed/<token>.ics is read by external calendar apps, which
+// cannot send a bearer. The secret token in the path is the credential.
+const isFeedPath = (p: string) => p.startsWith('/feed/');
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path) || isFeedPath(req.path)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
+
+// =============================================================================
+// Helpers
+// =============================================================================
+
+function getUserId(req: Request): string | null {
+  return (req as AuthenticatedRequest).identity?.user_id ?? null;
+}
+
+function getActiveRole(req: Request): string | null {
+  return (req.query.role as string) || req.get('X-Vitana-Active-Role') || null;
+}
+
+// =============================================================================
+// VTID-04358 — private iCalendar subscription feed
+//   GET    /subscription            → is a link active, created/last used
+//   POST   /subscription            → create a new link (replaces the old one)
+//   DELETE /subscription            → revoke it
+//   GET    /feed/<token>.ics        → the feed (no bearer; the token is the key)
+// The plain token is returned once, on POST; only its hash is stored.
+// =============================================================================
+router.get('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { getFeedStatus } = await import('../services/calendar-ics-feed');
+    return res.json({ ok: true, data: await getFeedStatus(userId) });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { rotateFeedToken } = await import('../services/calendar-ics-feed');
+    const token = await rotateFeedToken(userId);
+    // The token never goes into the event: only that a link now exists.
+    emitOasisEvent({
+      vtid: 'VTID-04358',
+      type: 'calendar.feed.link_created' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar subscription link created',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    // A path, not a URL: the client prefixes the gateway base it already uses.
+    return res.status(201).json({ ok: true, data: { feed_path: `/api/v1/calendar/feed/${token}.ics` } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.delete('/subscription', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { revokeFeedToken } = await import('../services/calendar-ics-feed');
+    await revokeFeedToken(userId);
+    emitOasisEvent({
+      vtid: 'VTID-04358',
+      type: 'calendar.feed.link_revoked' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar subscription link turned off',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    return res.json({ ok: true });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} DELETE /subscription error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// VTID-04372 — Google Calendar two-way sync (built, switched off)
+//   GET  /google          → availability + this member's sync state
+//   POST /google/enable   → turn on (needs a Google connection with the sync scopes)
+//   POST /google/disable  → turn off; pulled busy times are removed
+// =============================================================================
+router.get('/google', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { googleSyncAvailability, getSyncState, GOOGLE_SYNC_CONNECT_URL } = await import('../services/calendar-google-sync');
+    const availability = googleSyncAvailability();
+    const state = availability === 'ready' ? await getSyncState(userId) : null;
+    return res.json({
+      ok: true,
+      data: {
+        availability,
+        enabled: state?.enabled === true,
+        last_push_at: state?.last_push_at ?? null,
+        last_pull_at: state?.last_pull_at ?? null,
+        last_error: state?.last_error ?? null,
+        connect_url: GOOGLE_SYNC_CONNECT_URL,
+      },
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /google error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/google/enable', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { enableGoogleSync } = await import('../services/calendar-google-sync');
+    const r = await enableGoogleSync(userId);
+    if (!r.ok) {
+      if (r.error === 'not_configured') return res.status(503).json({ ok: false, error: 'not_configured' });
+      return res.status(409).json({ ok: false, error: 'not_connected', connect_url: r.connect_url });
+    }
+    emitOasisEvent({
+      vtid: 'VTID-04372',
+      type: 'calendar.google_sync.enabled' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Google Calendar sync turned on',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    return res.json({ ok: true, data: { enabled: true } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /google/enable error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.post('/google/disable', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { disableGoogleSync } = await import('../services/calendar-google-sync');
+    await disableGoogleSync(userId);
+    emitOasisEvent({
+      vtid: 'VTID-04372',
+      type: 'calendar.google_sync.disabled' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Google Calendar sync turned off',
+      payload: { user_id: userId },
+    }).catch(() => {});
+    return res.json({ ok: true, data: { enabled: false } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /google/disable error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/feed/:file', async (req: Request, res: Response) => { // public-route — no user JWT; the 256-bit token in the path is the credential (hash-checked)
+  try {
+    const m = /^([A-Za-z0-9_-]+)\.ics$/.exec(String(req.params.file ?? ''));
+    const { resolveFeedToken, buildFeedForUser } = await import('../services/calendar-ics-feed');
+    const userId = m ? await resolveFeedToken(m[1]) : null;
+    // One answer for malformed, unknown and revoked tokens: nothing to probe.
+    if (!userId) return res.status(404).type('text/plain').send('Not found');
+    const body = await buildFeedForUser(userId);
+    res.set('Cache-Control', 'private, max-age=900');
+    res.set('X-Robots-Tag', 'noindex');
+    return res.type('text/calendar; charset=utf-8').send(body);
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /feed error:`, err.message);
+    return res.status(500).type('text/plain').send('Error');
+  }
+});
+
+// =============================================================================
+// GET /events — List events (role-filtered, paginated)
+// =============================================================================
+router.get('/events', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+    const parsed = ListCalendarEventsSchema.safeParse(req.query);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues });
+    }
+
+    const { data, count } = await listCalendarEvents(userId, role, parsed.data);
+    return res.json({ ok: true, data, count, limit: parsed.data.limit, offset: parsed.data.offset });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/window?from&to[&include_busy=false][&include_work=true] — VTID-04331
+// Everything the calendar shows in a date range for the active role:
+// recurring entries expanded into occurrences, entries from other lenses as
+// grey busy blocks (time only). Max 62 days per request.
+// =============================================================================
+const WINDOW_MAX_MS = 62 * 86_400_000;
+
+router.get('/events/window', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const from = String(req.query.from ?? '');
+    const to = String(req.query.to ?? '');
+    const fromMs = Date.parse(from);
+    const toMs = Date.parse(to);
+    if (Number.isNaN(fromMs) || Number.isNaN(toMs) || toMs <= fromMs) {
+      return res.status(400).json({ ok: false, error: 'from and to must be ISO timestamps with to > from' });
+    }
+    if (toMs - fromMs > WINDOW_MAX_MS) {
+      return res.status(400).json({ ok: false, error: 'window may span at most 62 days' });
+    }
+
+    const role = getActiveRole(req);
+    const includeBusy = req.query.include_busy !== 'false';
+    let userTimezone: string | undefined;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const { getUserTimezone } = await import('../services/daily-pace-service');
+      if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE) {
+        userTimezone = await getUserTimezone(
+          createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE) as any,
+          userId,
+        );
+      }
+    } catch {
+      // fall back to the service default inside listCalendarWindow
+    }
+
+    const items = await listCalendarWindow(
+      userId,
+      role,
+      { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() },
+      { includeBusy, userTimezone },
+    );
+    // VTID-04351: the calendar screen shows each entry's emoji and the
+    // reminders it will actually get — computed by the same rules the
+    // reminder loop uses, so the screen can never promise a different time.
+    const { reminderRules, entryEmoji } = await import('../services/calendar-reminders');
+    const data = items.map((it) =>
+      it.event
+        ? {
+            ...it,
+            display_emoji: entryEmoji(it.event as any),
+            reminders: reminderRules(it.event as any),
+            // VTID-04374: may this member move it from the entry screen?
+            movable: !it.busy && it.occurrence_index === null && moveBlockReason(it.event as any) === null,
+          }
+        : it,
+    );
+    // VTID-04357: developer/admin work lenses — computed live, read-only,
+    // Exafy staff only (verified claim; the role header only picks the lens).
+    // VTID-04680: opt-in. Work is not the member's own calendar, so it is
+    // left out unless the caller asks for it (the app's folded "Work" line).
+    const { workLensesFor, listWorkItems, mergeWorkItems } = await import('../services/calendar-work-lens');
+    const lenses = req.query.include_work !== 'true'
+      ? []
+      : workLensesFor(role, (req as AuthenticatedRequest).identity?.exafy_admin === true);
+    const work = lenses.length
+      ? (await listWorkItems(userId, lenses, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() }))
+          .map((it) => ({ ...it, display_emoji: it.event?.emoji ?? '📌', reminders: [] as unknown[] }))
+      : [];
+    // VTID-04372: busy times pulled from the member's external calendars —
+    // times only. VTID-04402: Google, Outlook and iCloud all write the same
+    // table, and only while that app is switched on (turning it off deletes
+    // its rows), so no per-provider gate is needed here.
+    let external: any[] = [];
+    if (includeBusy) {
+      const { listExternalBusy } = await import('../services/calendar-google-sync');
+      external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
+    }
+    // VTID-04916/05126: can this entry be shared to the feed and invited to
+    // (any own upcoming entry, VTID-05126), and was it already shared?
+    const nowDate = new Date();
+    const refIds = data
+      .map((it: any) => (it.event && !it.busy ? entryShareRefOf(it.event)?.ref_id : null))
+      .filter((id: string | null | undefined): id is string => !!id);
+    let shared = new Map<string, string>();
+    if (refIds.length) {
+      try {
+        shared = await listSharedPostIds(userId, refIds);
+      } catch (e: any) {
+        console.warn(`${LOG_PREFIX} shared-post lookup failed (window still served): ${e?.message}`);
+      }
+    }
+    const decorated = data.map((it: any) => {
+      if (!it.event || it.busy) return it;
+      const ref = entryShareRefOf(it.event);
+      const open = isShareableEntry(it.event, nowDate) && (it.occurrence_index ?? null) === null;
+      return {
+        ...it,
+        shareable: open,
+        invitable: open,
+        sensitive: isSensitiveEntry(it.event),
+        shared_post_id: ref ? shared.get(ref.ref_id) ?? null : null,
+      };
+    });
+    const merged = mergeWorkItems<any>([...decorated, ...external], work);
+    return res.json({ ok: true, data: merged, count: merged.length, timezone: userTimezone ?? null, work_lenses: lenses });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/window error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/upcoming — Next N events (for assistant context)
+// =============================================================================
+router.get('/events/upcoming', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+    const limit = Math.min(parseInt(req.query.limit as string) || 20, 100);
+    const events = await getUserUpcomingEvents(userId, role, limit);
+    return res.json({ ok: true, data: events.map(toSummary), count: events.length });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/upcoming error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/today — Today's events
+// =============================================================================
+router.get('/events/today', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+    const timezone = (req.query.timezone as string) || 'UTC';
+    const events = await getUserTodayEvents(userId, role, timezone);
+    return res.json({ ok: true, data: events.map(toSummary), count: events.length });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/today error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/history — Past events for adaptive suggestions
+// =============================================================================
+router.get('/events/history', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+    const daysBack = Math.min(parseInt(req.query.days as string) || 30, 365);
+    const limit = Math.min(parseInt(req.query.limit as string) || 100, 500);
+    const events = await getUserCalendarHistory(userId, role, daysBack, limit);
+    return res.json({ ok: true, data: events, count: events.length });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/history error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /events/gaps — Free time slots for a given day
+// =============================================================================
+router.get('/events/gaps', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+
+    // VTID-04996: "find a time". Any of duration/from/to/limit switches to slot
+    // search over the same busy time the calendar shows, inside the member's
+    // waking hours. Without them the day-gap answer is unchanged.
+    const q = req.query;
+    if (q.duration !== undefined || q.from !== undefined || q.to !== undefined || q.limit !== undefined) {
+      const durationMin = q.duration === undefined ? 60 : Number(q.duration);
+      const limit = q.limit === undefined ? 3 : Number(q.limit);
+      const from = q.from === undefined ? new Date() : new Date(String(q.from));
+      const to = q.to === undefined ? new Date(from.getTime() + 7 * 86_400_000) : new Date(String(q.to));
+      if (
+        !Number.isFinite(durationMin) || durationMin < 5 || durationMin > 12 * 60 ||
+        !Number.isInteger(limit) || limit < 1 || limit > 10 ||
+        Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) ||
+        to <= from || to.getTime() - from.getTime() > 14 * 86_400_000
+      ) {
+        return res.status(400).json({ ok: false, error: 'duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required' });
+      }
+      const slots = await findFreeSlots(userId, role, { from, to, durationMin, limit, userTimezone: await resolveUserTimezone(userId) });
+      return res.json({ ok: true, data: slots, count: slots.length, mode: 'slots' });
+    }
+
+    const dateStr = req.query.date as string;
+    const date = dateStr ? new Date(dateStr) : new Date();
+    const gaps = await getCalendarGaps(userId, role, date);
+    return res.json({ ok: true, data: gaps, count: gaps.length });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/gaps error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+/** The member's time zone for calendar reads, or undefined (the service default applies). */
+async function resolveUserTimezone(userId: string): Promise<string | undefined> {
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const { getUserTimezone } = await import('../services/daily-pace-service');
+    if (process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE) {
+      return await getUserTimezone(
+        createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE) as any,
+        userId,
+      );
+    }
+  } catch {
+    // fall back to the service default inside listCalendarWindow
+  }
+  return undefined;
+}
+
+// =============================================================================
+// GET /conflicts — Check conflicts for proposed window
+// =============================================================================
+router.get('/conflicts', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const role = getActiveRole(req);
+    const startTime = req.query.start_time as string;
+    const endTime = req.query.end_time as string;
+    if (!startTime || !endTime) {
+      return res.status(400).json({ ok: false, error: 'start_time and end_time required' });
+    }
+
+    const startMs = Date.parse(startTime);
+    const endMs = Date.parse(endTime);
+    if (Number.isNaN(startMs) || Number.isNaN(endMs) || endMs <= startMs) {
+      return res.status(400).json({ ok: false, error: 'start_time and end_time must be ISO timestamps with end_time > start_time' });
+    }
+    const excludeEventId = typeof req.query.exclude_event_id === 'string' ? req.query.exclude_event_id : undefined;
+    // VTID-04995: same composition as the calendar screen (recurrence expanded,
+    // other lenses and connected calendars as title-less busy time).
+    const conflicts = await findConflicts(userId, role, startTime, endTime, {
+      excludeEventId,
+      userTimezone: await resolveUserTimezone(userId),
+    });
+    return res.json({
+      ok: true,
+      data: conflicts.filter((c) => c.kind === 'own'),
+      conflicts,
+      has_conflicts: conflicts.length > 0,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /conflicts error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events — Create a calendar event
+// =============================================================================
+router.post('/events', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const parsed = CreateCalendarEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues });
+    }
+
+    // Auto-tag role_context from active role if not explicitly set
+    const role = getActiveRole(req);
+    const input = { ...parsed.data };
+    if (!req.body.role_context && role) {
+      if (role === 'developer' || role === 'infra' || role === 'DEV') {
+        input.role_context = 'developer';
+      } else if (role === 'admin' || role === 'staff') {
+        input.role_context = 'admin';
+      }
+      // community is the default
+    }
+
+    const event = await createCalendarEvent(userId, input);
+    if (!event) {
+      return res.status(500).json({ ok: false, error: 'Failed to create event' });
+    }
+
+    emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'calendar.event.created' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar event created: ${event.title}`,
+      payload: { event_id: event.id, user_id: userId, event_type: event.event_type, role_context: event.role_context },
+    }).catch(() => {});
+
+    return res.status(201).json({ ok: true, data: event });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events/bulk — Bulk-create events (journey initialization)
+// =============================================================================
+router.post('/events/bulk', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const events = req.body.events;
+    if (!Array.isArray(events) || events.length === 0) {
+      return res.status(400).json({ ok: false, error: 'events array required' });
+    }
+
+    if (events.length > 200) {
+      return res.status(400).json({ ok: false, error: 'Maximum 200 events per batch' });
+    }
+
+    // Validate each event
+    const validated: any[] = [];
+    for (let i = 0; i < events.length; i++) {
+      const parsed = CreateCalendarEventSchema.safeParse(events[i]);
+      if (!parsed.success) {
+        return res.status(400).json({ ok: false, error: `Event ${i}: ${JSON.stringify(parsed.error.issues)}` });
+      }
+      validated.push(parsed.data);
+    }
+
+    const created = await bulkCreateCalendarEvents(userId, validated);
+
+    console.log(`${LOG_PREFIX} Bulk created ${created.length} events for user ${userId.slice(0, 8)}...`);
+
+    return res.status(201).json({ ok: true, created_count: created.length, data: created.map(toSummary) });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/bulk error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// PATCH /events/:id — Update a calendar event
+// =============================================================================
+router.patch('/events/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const { id } = req.params;
+    const parsed = UpdateCalendarEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues });
+    }
+
+    const event = await updateCalendarEvent(id, userId, parsed.data);
+    if (!event) {
+      return res.status(404).json({ ok: false, error: 'Event not found or update failed' });
+    }
+
+    return res.json({ ok: true, data: event });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} PATCH /events/:id error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events/:id/move — a member moves their own entry (VTID-04374)
+//   body: { start_time, end_time? } — end_time defaults to the same length.
+//   409 { error: 'NOT_MOVABLE', reason } when the entry belongs to its source
+//   (booking, lab order, invite, plan step…), is done, cancelled or a series.
+// =============================================================================
+const MOVE_MAX_AHEAD_MS = 400 * 86_400_000;
+
+router.post('/events/:id/move', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const { id } = req.params;
+    if (id.startsWith('work:')) return res.status(400).json({ ok: false, error: 'WORK_ITEM_READ_ONLY' });
+
+    const startMs = Date.parse(String(req.body?.start_time ?? ''));
+    const endRaw = req.body?.end_time;
+    const endMs = endRaw == null ? NaN : Date.parse(String(endRaw));
+    if (Number.isNaN(startMs)) return res.status(400).json({ ok: false, error: 'start_time must be an ISO timestamp' });
+    if (endRaw != null && (Number.isNaN(endMs) || endMs <= startMs)) {
+      return res.status(400).json({ ok: false, error: 'end_time must be after start_time' });
+    }
+    if (startMs < Date.now() - 86_400_000 || startMs > Date.now() + MOVE_MAX_AHEAD_MS) {
+      return res.status(400).json({ ok: false, error: 'start_time out of range' });
+    }
+
+    const event = await getOwnCalendarEvent(id, userId);
+    if (!event) return res.status(404).json({ ok: false, error: 'Event not found' });
+    const blocked = moveBlockReason(event);
+    if (blocked) return res.status(409).json({ ok: false, error: 'NOT_MOVABLE', reason: blocked });
+
+    const oldStart = Date.parse(event.start_time);
+    const oldEnd = event.end_time ? Date.parse(event.end_time) : NaN;
+    const duration = Number.isNaN(oldEnd) || oldEnd < oldStart ? 30 * 60_000 : oldEnd - oldStart;
+    const newEnd = Number.isNaN(endMs) ? startMs + duration : endMs;
+
+    const moved = await rescheduleEvent(id, userId, new Date(startMs).toISOString(), new Date(newEnd).toISOString());
+    if (!moved) return res.status(500).json({ ok: false, error: 'Move failed' });
+
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.event.moved' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar entry moved by its owner',
+      payload: { event_id: id, user_id: userId, from: event.start_time, to: moved.start_time },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: moved });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/:id/move error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events/:id/complete — Mark event as completed/skipped/partial
+// =============================================================================
+router.post('/events/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const { id } = req.params;
+    // VTID-04357: work-lens items are computed from their own tables, not
+    // calendar rows — they are finished where they live, never here.
+    if (id.startsWith('work:')) {
+      return res.status(400).json({ ok: false, error: 'work items are read-only in the calendar' });
+    }
+    const parsed = CompleteEventSchema.safeParse(req.body);
+    if (!parsed.success) {
+      return res.status(400).json({ ok: false, error: parsed.error.issues });
+    }
+
+    const event = await markEventCompleted(
+      id, userId, parsed.data.completion_status, parsed.data.completion_notes,
+    );
+    if (!event) {
+      return res.status(404).json({ ok: false, error: 'Event not found' });
+    }
+
+    emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'calendar.event.completed' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar event ${parsed.data.completion_status}: ${event.title}`,
+      payload: {
+        event_id: id,
+        user_id: userId,
+        completion_status: parsed.data.completion_status,
+        wellness_tags: event.wellness_tags ?? [],
+        event_type: event.event_type,
+        source_type: event.source_type,
+        source_ref_type: event.source_ref_type,
+      },
+    }).catch(() => {});
+
+    // VTID-04331: ticking the entry off completes the thing it came from
+    // (an Autopilot recommendation today). Best-effort; never fails the call.
+    let sourceCompletion: Awaited<ReturnType<typeof completeSourceForCalendarEvent>> | null = null;
+    if (parsed.data.completion_status === 'completed') {
+      sourceCompletion = await completeSourceForCalendarEvent(event, userId).catch(() => null);
+    }
+
+    // Recompute the Vitana Index for this user (only if the event was
+    // actually completed — skips/partials don't yet feed the Index).
+    let indexDelta: Awaited<ReturnType<typeof recomputeVitanaIndexForUser>> = null;
+    if (parsed.data.completion_status === 'completed') {
+      indexDelta = await recomputeVitanaIndexForUser(userId, {
+        event_id: id,
+        wellness_tags: event.wellness_tags ?? [],
+        event_type: event.event_type,
+      });
+    }
+
+    return res.json({
+      ok: true,
+      data: event,
+      vitana_index: indexDelta,
+      source_completed: sourceCompletion?.completed ?? false,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/:id/complete error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /events/:id/share-to-feed — VTID-04916
+//   body: { text?: string, is_public?: boolean } (nothing else accepted)
+//   The post's author is the verified caller, never a body field.
+//   200 { post_id } · 404 NOT_FOUND · 409 NOT_SHAREABLE{reason} |
+//   ALREADY_SHARED{post_id} | DUPLICATE_POST · 429 SHARE_LIMIT | RATE_LIMITED · 403 USER_SUSPENDED
+// =============================================================================
+const ShareToFeedSchema = z
+  .object({
+    text: z.string().max(SHARE_TEXT_MAX).optional(),
+    is_public: z.boolean().optional(),
+    // VTID-05126: for an own entry, the title others see and whether the place is shown.
+    card_title: z.string().max(CARD_TITLE_MAX).optional(),
+    include_location: z.boolean().optional(),
+  })
+  .strict();
+
+router.post('/events/:id/share-to-feed', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const parsed = ShareToFeedSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY', issues: parsed.error.issues });
+
+    const entry = await getOwnCalendarEvent(req.params.id, userId);
+    const result = await shareCalendarEntryToFeed(userId, entry as any, parsed.data);
+    if (!result.ok) {
+      return res.status(result.status).json({
+        ok: false,
+        error: result.error,
+        ...(result.reason ? { reason: result.reason } : {}),
+        ...(result.post_id ? { post_id: result.post_id } : {}),
+      });
+    }
+
+    emitOasisEvent({
+      vtid: 'VTID-04916',
+      type: 'calendar.shared_to_feed' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar entry shared to the feed (${result.ref.ref_type})`,
+      payload: { user_id: userId, entry_id: req.params.id, post_id: result.post_id, ref_type: result.ref.ref_type, ref_id: result.ref.ref_id },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: { post_id: result.post_id } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /events/:id/share-to-feed error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// VTID-04917 — invites sent through the messenger
+//   GET  /events/:id/invite-preview → can this entry be invited to, and the
+//        card it would make (the app shows it before sending; nothing is sent)
+//   GET  /invites/:messageId        → { my_response, counts, is_sender }
+//   POST /invites/:messageId/respond { response: accepted|maybe|declined }
+//        → { response, action, path? }   (action: joined | open_event |
+//          open_room | added | removed | recorded)
+// The invite itself is sent with the chat send routes (message_type
+// 'calendar_invite', content_data { entry_id }); its card is built on the
+// server from the sender's own entry. Only the DM recipient or a member of
+// the group can answer, never the sender.
+// =============================================================================
+// =============================================================================
+// POST /feed-posts/:postId/add — VTID-05126 "In meinen Kalender"
+//   A member adds another member's shared own entry (a public calendar_entry
+//   post) to their calendar: title, times, the place only if the author
+//   showed it. The post's current card is read on the server; a cancelled or
+//   finished entry answers 409 NOT_OPEN. Idempotent.
+//   200 { action: added|already, event_id } · 404 NOT_FOUND · 409 OWN_POST | NOT_OPEN
+// =============================================================================
+router.post('/feed-posts/:postId/add', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const result = await addSharedEntryToCalendar(userId, req.params.postId);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+    if (result.action === 'added') {
+      emitOasisEvent({
+        vtid: 'VTID-05126',
+        type: 'calendar.feed_post.added' as any,
+        source: 'calendar-api',
+        status: 'info',
+        message: 'Shared calendar entry added from the feed',
+        payload: { user_id: userId, post_id: req.params.postId, event_id: result.event_id },
+      }).catch(() => {});
+    }
+    return res.json({ ok: true, data: { action: result.action, event_id: result.event_id } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /feed-posts/:postId/add error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/events/:id/invite-preview', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const entry = await getOwnCalendarEvent(req.params.id, userId);
+    const result = await buildInviteFromEntry(userId, entry as any);
+    if (!result.ok) {
+      return res.status(result.status).json({ ok: false, error: result.error, ...(result.reason ? { reason: result.reason } : {}) });
+    }
+    return res.json({ ok: true, data: result.metadata });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/:id/invite-preview error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/invites/:messageId', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const state = await getInviteState(userId, req.params.messageId);
+    if (!state) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    return res.json({ ok: true, data: state });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /invites/:messageId error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+const InviteRespondSchema = z.object({ response: z.enum(INVITE_RESPONSES) }).strict();
+
+router.post('/invites/:messageId/respond', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const parsed = InviteRespondSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY', issues: parsed.error.issues });
+
+    const result = await respondToInvite(userId, req.params.messageId, parsed.data.response);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+
+    emitOasisEvent({
+      vtid: 'VTID-04917',
+      type: 'calendar.invite.responded' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar invite ${result.response} (${result.action})`,
+      payload: { user_id: userId, message_id: req.params.messageId, response: result.response, action: result.action },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: { response: result.response, action: result.action, ...(result.path ? { path: result.path } : {}) } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /invites/:messageId/respond error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// DELETE /events/:id — Soft-delete (status → cancelled)
+// =============================================================================
+router.delete('/events/:id', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const { id } = req.params;
+    const event = await softDeleteEvent(id, userId);
+    if (!event) {
+      return res.status(404).json({ ok: false, error: 'Event not found' });
+    }
+
+    return res.json({ ok: true, data: event });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} DELETE /events/:id error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// POST /journey/initialize — Pre-populate 90-day journey calendar
+// =============================================================================
+router.post('/journey/initialize', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+
+    const tenantId = req.get('X-Vitana-Tenant') || 'default';
+    const language = (req.body.language as string) || 'en';
+
+    const { initializeJourneyCalendar } = await import('../services/journey-calendar-mapper');
+    const result = await initializeJourneyCalendar(userId, tenantId, new Date(), language);
+
+    return res.status(result.ok ? 201 : 500).json(result);
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /journey/initialize error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /reschedule — Run smart rescheduler (staff only; normally in-process)
+// =============================================================================
+// VTID-04374: these run a job over EVERY user's calendar, so a signed-in
+// member must not be able to trigger them. Exafy staff only; the in-process
+// maintenance loop (CALENDAR_MAINTENANCE_ENABLED) is the normal caller.
+function requireStaff(req: Request, res: Response): boolean {
+  if ((req as AuthenticatedRequest).identity?.exafy_admin === true) return true;
+  res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  return false;
+}
+
+router.post('/reschedule', async (req: Request, res: Response) => {
+  if (!requireStaff(req, res)) return;
+  try {
+    const { rescheduleUnactivatedTasks } = await import('../services/calendar-rescheduler');
+    const result: any = await rescheduleUnactivatedTasks();
+    // A staff member ran a job over every member's calendar: record who and what.
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.maintenance.manual_run' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar reschedule run by staff',
+      payload: {
+        job: 'reschedule',
+        run_by: (req as AuthenticatedRequest).identity?.user_id ?? null,
+        rescheduled: result?.rescheduled ?? null,
+        cancelled: result?.cancelled ?? null,
+        users_processed: result?.users_processed ?? null,
+        total_updated: result?.total_updated ?? null,
+        errors: result?.errors ?? result?.total_errors ?? null,
+      },
+    }).catch(() => {});
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /reschedule error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// POST /reprioritize — Run dynamic prioritizer (staff only; normally in-process)
+// =============================================================================
+router.post('/reprioritize', async (req: Request, res: Response) => {
+  if (!requireStaff(req, res)) return;
+  try {
+    const { reprioritizeAllUsers } = await import('../services/calendar-prioritizer');
+    const result: any = await reprioritizeAllUsers();
+    // A staff member ran a job over every member's calendar: record who and what.
+    emitOasisEvent({
+      vtid: 'VTID-04374',
+      type: 'calendar.maintenance.manual_run' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: 'Calendar reprioritize run by staff',
+      payload: {
+        job: 'reprioritize',
+        run_by: (req as AuthenticatedRequest).identity?.user_id ?? null,
+        rescheduled: result?.rescheduled ?? null,
+        cancelled: result?.cancelled ?? null,
+        users_processed: result?.users_processed ?? null,
+        total_updated: result?.total_updated ?? null,
+        errors: result?.errors ?? result?.total_errors ?? null,
+      },
+    }).catch(() => {});
+    return res.json({ ok: true, ...result });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /reprioritize error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// GET /health — Health check
+// =============================================================================
+router.get('/health', (_req: Request, res: Response) => {
+  res.json({
+    ok: true,
+    service: 'intelligent-calendar',
+    phases: [1, 2, 3, 4, 5, 6, 7, 8],
+    features: [
+      'role-aware-filtering',
+      'crud-operations',
+      'conflict-detection',
+      'gap-analysis',
+      'bulk-create',
+      'completion-tracking',
+      'rsvp-sync-triggers',
+      'autopilot-calendar-bridge',
+      '90-day-journey-package',
+      'd-layer-memory-integration',
+      'conversational-nl-parser',
+      'smart-rescheduler',
+      'dynamic-prioritizer',
+      'pattern-evolution',
+    ],
+  });
+});
+
+export default router;

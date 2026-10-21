@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04976",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261008130000_vtid_04976_live_room_follows_host.sql",
+    "scripts/ci/sql-tests/*live-room-host-calendar*",
+    ".github/workflows/SQL-LIVE-ROOM-HOST-CALENDAR.yml",
+    "services/gateway/test/vtid-04976-*.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04976/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

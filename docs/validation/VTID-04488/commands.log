@@ -1,0 +1,13 @@
+# VTID-04488 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint); ledger row set in_progress/approved with a real title
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04488"}
+
+# Read-only live checks (Supabase): merchants has created_at, is_active, storefront_url,
+# partner_organization_id, owner_user_id, source_network, source_merchant_id, currencies,
+# merchant_country, affiliate_*, avg_delivery_days_*; the owner_user_id index is not unique;
+# active catalog_verticals include diagnostics and services (the defaults used here).
+
+# Jest and full tsc: NOT runnable here (npm registry 403, no node_modules). CI is the first real
+# run of test/partner-onboarding-catalogue.test.ts and the build.

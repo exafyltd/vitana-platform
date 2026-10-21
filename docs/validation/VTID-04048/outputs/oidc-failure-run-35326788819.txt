@@ -1,0 +1,21 @@
+Run: https://github.com/exafyltd/vitana-platform/actions/runs/35326788819
+Dispatched: ref=vertex-serbian-bridge-prod-backport, deploy_mode=rebuild-main
+Job: build-push-deploy — conclusion: failure
+
+Step "Configure AWS credentials (GitHub OIDC — no static keys)" — FAILED:
+  Assuming role with OIDC (retried ~12x over ~97s)
+  ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+
+All subsequent steps skipped: Login to ECR, Preflight, Resolve deploy
+source, Build and push image, Build task-definition 1/2, Build
+task-definition 2/2 (register+roll), Smoke gate. Nothing in AWS was
+touched — confirmed via a fresh curl of gateway.vitanaland.com/api/v1/
+admin/build-info immediately after (git_commit still 7ba9a8e...) and
+/alive (status: ok).
+
+Root cause (docs/AWS-PRODUCTION-BUILD-LOG.md line ~198):
+  "StringLike": { "token.actions.githubusercontent.com:sub":
+    "repo:exafyltd/vitana-platform:ref:refs/heads/main" }
+The prod deploy role's trust policy only accepts an OIDC token whose
+`sub` claim is exactly the main branch ref — dispatching against any
+other branch or tag can never satisfy it.

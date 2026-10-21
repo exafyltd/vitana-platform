@@ -1,0 +1,4 @@
+# staging build-info after the #3529 deploy (rev vitana-gateway:491), sampled 2026-09-21T15:19:25Z
+     10 {"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"70bd61a4582df629d3e9bd1570604286c3e9a039","booted_at":"2026-09-21T15:17:51.052Z","marker":"70bd61a4582d"}
+
+# task def vitana-gateway:491 (values not read): DEV_AUTOPILOT_SCAN_TOKEN present+non-empty = yes; GATEWAY_SERVICE_TOKEN -> vitana/supabase/prod/service-role-key (same ARN as prod); GATEWAY_INTERNAL_TOKEN -> absent (secret not provisioned yet, VTID-04226)

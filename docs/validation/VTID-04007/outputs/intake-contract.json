@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04007",
+  "tool": "autopilot_run_task",
+  "input": { "request": "string (required, the user's words)", "title": "string (optional)" },
+  "gates_in_order": ["thread exafy_admin marker (VTID-03851)", "governance operator.autopilot.run_task A2", "OPERATOR_EXECUTION_ONRAMP_ENABLED=true", "OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true", "allocate_global_vtid + ledger register in_progress/approved", "approveAutoExecute safety gate (kill switch, budget, depth)", "agent runner post-hoc: allow/deny globs on git status, test-coverage rule, tsc, paired jest"],
+  "row_metadata": { "executor": "agent", "intake": "open_ended", "llm_on_ramp_override": { "provider": "deepseek", "model": "deepseek-flash" } },
+  "staging_state_at_merge": { "OPERATOR_EXECUTION_ONRAMP_ENABLED": "true", "OPERATOR_ONRAMP_EXECUTOR": "agent", "OPERATOR_VTID_SELF_ALLOCATE_ENABLED": "unset (owner flip)" }
+}

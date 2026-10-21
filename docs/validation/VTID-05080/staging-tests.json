@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05080",
+  "service": "gateway",
+  "note": "Standing VTID for the automated screens-catalog sync PRs. Read-only. Holds only checks that do not depend on whether a later catalog sync has landed: the sync check itself runs in the REGEN-SCREENS-CATALOG workflow before it pushes (and as the opt-in npm run test:screens-catalog-sync).",
+  "tests": [
+    { "kind": "existing", "ref": "npx jest test/vtid-04986-screen-inventory-in-sync.test.ts test/vtid-05080-dev-frontend-spec-valid.test.ts", "cwd": "services/gateway", "reason": "the generated screen catalog lists no retired tabs and the spec validator accepts it" },
+    { "kind": "http", "name": "the Command Hub navigation config is served", "path": "/command-hub/navigation-config.js", "expect_status": 200 }
+  ]
+}

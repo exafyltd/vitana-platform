@@ -1,0 +1,6 @@
+# VTID-04241 — commands
+2026-09-21T18:1xZ  aws s3 ls s3://vitana-code-index/exafyltd/vitana-platform/   → prefixes 9545b19/ d7849e6/ f36e40f/ latest/
+2026-09-21T18:1xZ  aws s3 cp …/latest/manifest.json -                            → sha d7849e6, built 2026-09-21T17:16:54Z
+2026-09-21T18:1xZ  actions: CODEINTEL-INDEX runs 3 (c815249), 4 (7e57461), 5 (636f105) → conclusion=cancelled; run 6 (e09fa6f) in_progress
+2026-09-21T18:1xZ  edit .github/workflows/CODEINTEL-INDEX.yml  cancel-in-progress: true → false (+ rationale comment)
+2026-09-21T18:1xZ  npx jest test/vtid-04241-codeintel-index-queues.test.ts test/vtid-04229 (see outputs/jest.txt)

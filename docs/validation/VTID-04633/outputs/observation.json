@@ -1,0 +1,7 @@
+{
+  "publish_failures": ["VTID-04630", "VTID-04631", "VTID-04632"],
+  "staging_commit": "375401c8c37de230971dce481e6d6f3f2c0a97e1",
+  "error": "GitHub API error: 403 - Forbidden",
+  "last_successful_publish": {"vtid": "VTID-04529", "at": "2026-09-25T09:06:31Z"},
+  "token_switch_run": "https://github.com/exafyltd/vitana-platform/actions/runs/36178789515"
+}

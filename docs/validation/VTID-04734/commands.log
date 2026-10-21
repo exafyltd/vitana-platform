@@ -1,0 +1,6 @@
+# VTID-04734
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate ... -> VTID-04734 (ledger in_progress/approved)
+grep commission|payout|earning over the guarded modules -> only false positives ("learning") and the VAEA select column
+node outputs/guard-dry-run.js (same logic as the jest test, no jest available in the sandbox):
+  files 50 true / vaea [] / planted 5 / clean [] / bad 0
+mutation: append `export const __x = (p: any) => p.commission_rate;` to src/services/feed-ranker.ts -> bad 1; file restored

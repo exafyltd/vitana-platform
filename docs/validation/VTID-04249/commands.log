@@ -1,0 +1,47 @@
+VTID-04249 — commands run
+
+1. Read the flagged defect: CLAUDE.md CHANGE LOG row for VTID-04223/04229
+   ("dev_autopilot_runs never finalizes (`cf77d23c` still `ingesting`,
+   `new_finding_count 0`, un-checked PATCH)").
+
+2. Located the code: grep "dev_autopilot_runs" in
+   services/gateway/src/services/dev-autopilot-synthesis.ts — found the
+   step-4 finalize PATCH at (then) line 539, result discarded, no
+   try/catch around the function body.
+
+3. Read supaRequest() (the internal fetch wrapper) to confirm it never
+   throws — it catches its own errors and returns {ok:false, ...} — so the
+   only way ingestScan itself could throw is from synchronous code between
+   awaits (e.g. JSON.stringify on a circular object), or a future change
+   introducing a throwing helper. Confirmed against the migration
+   (supabase/migrations/20260416100000_dev_autopilot.sql) that the
+   'failed' status is already a valid CHECK-constraint value.
+
+4. Fix: extracted the ingestion body into ingestScanBody(), wrapped in
+   try/catch inside ingestScan(); the finalize PATCH itself now checks
+   .ok and logs loudly on failure without flipping the overall result.
+
+5. `cd services/gateway && npx tsc --noEmit -p tsconfig.json` — exit 0.
+
+6. Added 4 new tests to test/dev-autopilot-synthesis.test.ts, mocking
+   global.fetch per this repo's established pattern (matches
+   test/routes/dev-autopilot.test.ts's setFetchRoutes/jsonRes style).
+
+7. `npx jest test/dev-autopilot-synthesis.test.ts --silent` — 18/18 green
+   (first run: 17/18, one assertion ordering bug — `errSpy.mockRestore()`
+   was called before the `toHaveBeenCalled()` assertion, which clears the
+   spy's call history; fixed by asserting first).
+
+8. `npx jest test/routes/dev-autopilot.test.ts --silent` — 146/146 green,
+   no regression.
+
+9. `npx jest --testPathPattern="dev-autopilot" --silent` — 25 suites,
+   576 tests, all green.
+
+10. `npx tsc --noEmit -p tsconfig.json` (full re-check) — exit 0.
+
+Model/provider: this session (Claude Sonnet 5, via Claude Code Web).
+No production writes. Two Supabase writes: allocate_global_vtid RPC
+(mints VTID-04249) and one UPDATE vtid_ledger to register title/status —
+both against the ledger, per CLAUDE.md §4.1's standard self-service
+allocation path, not against any user-facing table.

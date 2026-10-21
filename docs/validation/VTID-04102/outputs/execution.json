@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04102",
+  "found_during": "dispatching the Command Hub Autopilot reactivation task (Part 1) into the Operator Console on staging",
+  "root_cause": "callVertexWithTools() (gemini-operator.ts) hardcoded maxTokens:4096 for the operator plan call; a real turn exhausted the cap with tool_calls:0 and empty content, and the function returned { reply: '' } unconditionally on ok:true, with no distinction between 'nothing to say' and 'truncated mid-turn'",
+  "live_evidence": {
+    "operator_thread_id": "9295ba36-f8a9-4905-9fc9-db247068abb3",
+    "llm_call_provider": "deepseek",
+    "llm_call_model": "deepseek-flash",
+    "input_tokens": 18874,
+    "output_tokens": 4096,
+    "output_tokens_equals_old_cap": true,
+    "cost_usd": 0.005289,
+    "tool_calls_returned": 0,
+    "operator_messages_assistant_content_len": 0,
+    "command_hub_rendered": "No response received"
+  },
+  "fix": [
+    "services/gateway/src/services/gemini-operator.ts: maxTokens 4096 -> 8000 at both callViaRouter('operator', ...) call sites",
+    "services/gateway/src/services/gemini-operator.ts: an ok:true response with empty text and no tool calls now throws instead of returning { reply: '' }, routing through the existing catch -> processLocalRouting() fallback"
+  ],
+  "verification": {
+    "tsc_noemit": "pass",
+    "test_suites": "4/4 passing, 37/37 tests (vtid-04102-operator-truncated-reply.test.ts, vtid-04028-operator-turn-stream.test.ts, vtid-03926-operator-chat-userrole.test.ts, operator-chat-oasis.test.ts)",
+    "mutation_verified": true,
+    "mutation_result": "reverting the fix reproduces the exact reported symptom: res.reply === '' and the maxTokens assertion reads 4096"
+  },
+  "not_done": [
+    "not re-verified against a live staging turn post-deploy",
+    "did not investigate whether DeepSeek returns a separate reasoning_content field the adapter's typed shape drops",
+    "did not audit other callViaRouter call sites for the same hardcoded-cap/silent-empty-reply shape"
+  ]
+}

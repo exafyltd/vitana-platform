@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-04728",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04018-operator-bootstrap-pack.test.ts", "cwd": "services/gateway", "reason": "the bootstrap pack is only rendered inside an authenticated Operator Console turn; the suite reads the real docs/CHANGELOG.md and CLAUDE.md" }
+  ]
+}

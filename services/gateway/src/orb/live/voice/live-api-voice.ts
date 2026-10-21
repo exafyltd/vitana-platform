@@ -1,0 +1,90 @@
+// Phase D.3 (decision-contract refactor) — VTID-03126.
+//
+// Live API voice resolver. Externalizes the `LIVE_API_VOICES` Record
+// that previously lived inline in `routes/orb-live.ts:1341`. Each
+// language's policy row carries `{voice_name, fallback_lang}` so the
+// accessor can emit telemetry when the selected voice is NOT native to
+// the requested language. This closes the audit's "silent
+// Arabic → English Aoede" finding — the fallback is still served (so
+// behaviour is byte-identical at rollout) but it's now visible in logs.
+//
+// Future: when a native voice ships for ar/zh/ru/sr, update the DB row
+// to `fallback_lang: null` and the warning stops firing automatically.
+
+import { getPolicyResolver } from '../../../services/decision-contract/policy-resolver';
+
+interface LiveApiVoiceConfig {
+  voice_name: string;
+  fallback_lang: string | null;
+}
+
+// Byte-identical to the LIVE_API_VOICES Record at the time of writing.
+// Used as the cache-cold safety net by the accessor; production source
+// of truth is the seeded `decision_policy` rows.
+const LIVE_API_VOICE_FALLBACKS: Record<string, LiveApiVoiceConfig> = {
+  en: { voice_name: 'Aoede', fallback_lang: null },
+  de: { voice_name: 'Kore', fallback_lang: null },
+  // VTID-04445 — Vitana's voice is female in every language: fr was Charon
+  // and es was Fenrir, both male Gemini voices. Leda/Autonoe are female
+  // (`GEMINI_VOICE_GENDER`); the matching decision_policy rows moved too.
+  fr: { voice_name: 'Leda', fallback_lang: null },
+  es: { voice_name: 'Autonoe', fallback_lang: null },
+  ar: { voice_name: 'Aoede', fallback_lang: 'en' },
+  zh: { voice_name: 'Kore', fallback_lang: 'de' },
+  ru: { voice_name: 'Aoede', fallback_lang: 'en' },
+  sr: { voice_name: 'Aoede', fallback_lang: 'en' },
+  // VTID-03681. `fallback_lang: null` for both, unlike ar/zh/ru/sr above:
+  // Zephyr and Despina are the voices this codebase pairs with pt-BR and
+  // pl-PL respectively (see LIVE_LANGUAGE_VOICE_FALLBACKS), not borrowed from
+  // another language, so there is nothing to warn about. Setting a
+  // `fallback_lang` here would emit a `[voice-fallback]` line on every pt/pl
+  // session claiming a native voice is missing when one was chosen — noise
+  // that would train readers to ignore the warning that matters.
+  pt: { voice_name: 'Zephyr', fallback_lang: null },
+  pl: { voice_name: 'Despina', fallback_lang: null },
+  // VTID-03730. Same reasoning as pt/pl above — this field is only ever
+  // read into a legacy `meta.voice` telemetry field now (the real audio
+  // path is Nova Sonic / the cascade, never Vertex — see orb-live.ts's own
+  // VTID-03704 comment at the call sites), but an omission here still
+  // falls back to `LIVE_API_VOICE_FALLBACKS['en']` silently, which is
+  // exactly the "looks native, isn't" gap this table exists to make loud.
+  // VTID-04445 — was Puck (male); Vitana speaks with a female voice.
+  tr: { voice_name: 'Erinome', fallback_lang: null },
+};
+
+// Dedup log lines so a hot per-session loop doesn't spam the logger.
+// One emission per (lang, fallback_lang) pair per process lifetime.
+const loggedFallbacks = new Set<string>();
+
+function livePolicyKeyForVoice(lang: string): string {
+  return `voice.live_api.voice.${lang}`;
+}
+
+function logFallbackOnce(lang: string, cfg: LiveApiVoiceConfig): void {
+  if (!cfg.fallback_lang) return;
+  const tag = `${lang}:${cfg.fallback_lang}:${cfg.voice_name}`;
+  if (loggedFallbacks.has(tag)) return;
+  loggedFallbacks.add(tag);
+  // eslint-disable-next-line no-console
+  console.warn(
+    `[voice-fallback] live_api: lang="${lang}" using "${cfg.fallback_lang}" voice "${cfg.voice_name}" — native voice not yet shipped for "${lang}"`,
+  );
+}
+
+export function getLiveApiVoice(lang: string): string {
+  const safeLang = typeof lang === 'string' && lang.length > 0 ? lang : 'en';
+  const fallback = LIVE_API_VOICE_FALLBACKS[safeLang] ?? LIVE_API_VOICE_FALLBACKS['en'];
+  const cfg = getPolicyResolver().getValue<LiveApiVoiceConfig | null>(
+    livePolicyKeyForVoice(safeLang),
+    { defaultValue: fallback },
+  );
+  const resolved = cfg ?? fallback;
+  logFallbackOnce(safeLang, resolved);
+  return resolved.voice_name;
+}
+
+// ---- test support ------------------------------------------------------
+// Tests can reset the dedup set so each test sees a fresh log state.
+export function __resetLiveApiVoiceFallbackLogForTests(): void {
+  loggedFallbacks.clear();
+}

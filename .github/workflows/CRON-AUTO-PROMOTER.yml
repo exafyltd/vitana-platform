@@ -1,0 +1,67 @@
+name: Cron Auto-Promoter
+
+# Phase 1 W1 (VTID-03179 FINETUNES) — hourly auto-promoter. Reads rolling
+# 24h eval.shadow.compared events from STAGING, computes per-feature
+# rollups, emits auto_promote.proposed / auto_promote.rejected events.
+#
+# W1 runs in DRY mode (AUTO_PROMOTER_DRY_RUN=1 default): emits events but
+# does NOT open a PR to flip FEATURE_*_ENV. W2+ flips to AUTO_PROMOTER_DRY_RUN=0
+# once the first auto-promotion has been reviewed by a human and the
+# promoter has demonstrated sane decisions for >=48h.
+
+on:
+  schedule:
+    # Hourly on the half-hour.
+    - cron: '30 * * * *'
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: 'Dry mode (emit events only, no PR)'
+        required: false
+        default: 'true'
+        type: choice
+        options: [ 'true', 'false' ]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cron-auto-promoter
+  cancel-in-progress: false
+
+jobs:
+  promote:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+          cache-dependency-path: services/gateway/package-lock.json
+      - working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      # VTID-03608: this job's WIF service account has been denied
+      # secretmanager.versions.access on STAGING_SUPABASE_URL since before
+      # the earliest run in this workflow's history (2 months of 100%
+      # failures, PERMISSION_DENIED, every hourly run — checked back to
+      # 2026-06-13). Rather than chase a GCP IAM grant this session can't
+      # make, use the repo secrets that already work: CLAUDE.md documents
+      # repeatedly that "staging" and "prod" share the SAME Supabase
+      # project throughout this codebase (gateway-staging talks to prod
+      # Supabase — BOOTSTRAP-ORB-STAGING-SUPABASE-ALIGN; AWS staging same,
+      # VTID-03513), so STAGING_SUPABASE_URL/KEY were never a genuinely
+      # different value from SUPABASE_URL/SUPABASE_SERVICE_ROLE — just an
+      # extra GCP Secret Manager hop to the identical credential, and the
+      # one hop that was broken.
+      - name: Run auto-promoter
+        working-directory: services/gateway
+        env:
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          STAGING_SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
+          STAGING_SUPABASE_SERVICE_ROLE_KEY: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          AUTO_PROMOTER_DRY_RUN: ${{ inputs.dry_run == 'false' && '0' || '1' }}
+        run: npx tsx scripts/auto-promoter.ts

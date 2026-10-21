@@ -1,0 +1,1 @@
+server: awselb/2.0

@@ -1,0 +1,100 @@
+VTID-04272 — commands run to build and verify this change
+
+1. Queried live Supabase (`autopilot_recommendations`, `dev_autopilot_config`,
+   `dev_autopilot_executions`) to confirm the real backlog size (18 rows,
+   not the Command Hub's "30 NEW FINDINGS" aggregate stat) and to identify
+   the one `auto_exec_eligible:true` finding — `9e1bdb97-d4ec-449d-a00b-
+   5ec70428cada` ("CVE: package.json") — and its prior failure history
+   (5+ failed agent-executor attempts, stranded PR #3543).
+
+2. `cd services/gateway && npm audit --omit=dev 2>&1 | tail -20` (and the
+   full, non---omit=dev run) — baseline: 41 vulnerabilities
+   (2 low, 14 moderate, 21 high, 4 critical).
+
+3. `cd services/gateway && npm audit fix` (non-force)
+   -> `git status --short` confirmed only `package-lock.json` changed
+      (947 lines: 608 insertions, 339 deletions); `package.json` untouched.
+   -> Re-ran `npm audit`: 16 vulnerabilities remaining (9 moderate, 7 high),
+      all 4 criticals resolved (handlebars, protobufjs, sanitize-html,
+      websocket-driver). Remaining 16 all require a major version bump
+      (firebase-admin, @anthropic-ai/sdk, sharp) — deliberately deferred,
+      not attempted in this pass (AC-1).
+
+4. `cd services/gateway && npx tsc --noEmit` -> clean, no output.
+
+5. `cd services/gateway && npx jest --silent` -> 97 test suites FAILED:
+   `SyntaxError: Cannot use import statement outside a module` at
+   `node_modules/sanitize-html/node_modules/htmlparser2/dist/index.js:1`.
+
+6. Root-caused: step 3's audit fix bumped sanitize-html's own recorded
+   dependency on htmlparser2 from ^10.1.0 (CJS) to ^12.0.0 (ESM-only,
+   "type":"module"), nested at
+   node_modules/sanitize-html/node_modules/htmlparser2/ (npm did not hoist
+   it, because a different top-level consumer still needs the older,
+   CJS-compatible version at node_modules/htmlparser2/).
+
+   Confirmed NOT a production runtime bug:
+   `node -e "require('sanitize-html')"` -> works fine (Node's own
+   package.json "exports"/CJS interop resolves it). This is purely a Jest
+   transform-config gap — Jest's default config skips transforming
+   node_modules/ files, and the pre-existing transformIgnorePatterns regex
+   only matched an allow-listed package name appearing immediately after
+   the FIRST node_modules/ segment in a path, so an unanchored .test()
+   against the nested path matched (at the "sanitize-html" segment, via
+   the alternation group itself) before ever reaching "htmlparser2" deeper
+   in the string.
+
+7. Verified the fix in isolation first with a standalone Node script
+   (scratchpad, not committed) before touching the real file:
+   `new RegExp("node_modules/(?!(.*/)?(\\.pnpm/)?(node-fetch|...|htmlparser2|...)/)")`
+   -> confirmed: matches false (WILL transform) on both the top-level and
+      the nested sanitize-html/node_modules/htmlparser2 path; matches true
+      (WILL ignore) on an unrelated package (lodash) at any depth.
+
+8. Applied the verified fix to `services/gateway/jest.config.js`'s
+   `transformIgnorePatterns` — added an optional `(.*/)? ` group before
+   the `(\\.pnpm/)?` group and a trailing `/` after the alternation.
+
+9. `cd services/gateway && npx jest --silent` -> 1058/1059 suites (1
+   pre-existing skip), 17,283/17,318 tests passing, 0 failures. All 97
+   previously-failing suites now pass.
+
+10. `cd services/gateway && npx tsc --noEmit` -> clean again after the
+    jest.config.js edit.
+
+11. `git status --short` -> also showed `specs/command-hub-symbol-index.json`
+    modified (a side effect of one of the test suites invoking its own
+    generator script, `scripts/generate-command-hub-symbol-index.mjs`,
+    unrelated to this VTID) — reverted with
+    `git checkout -- specs/command-hub-symbol-index.json` to keep this
+    commit scoped to the CVE fix (AC-1/AC-2).
+
+12. Wrote `services/gateway/test/vtid-04272-jest-transform-ignore-nested-
+    node-modules.test.ts` (5 tests) pinning the exact real-world regression:
+    a top-level allow-listed package still transforms, the nested
+    sanitize-html/node_modules/htmlparser2 path now transforms (the actual
+    bug), a pnpm-nested path transforms, an unrelated package (lodash) at
+    any depth is still ignored, and the raw pattern source requires the
+    trailing-slash/optional-prefix shape.
+
+13. `cd services/gateway && node node_modules/.bin/jest
+    test/vtid-04272-jest-transform-ignore-nested-node-modules.test.ts`
+    -> 5/5 passing.
+
+14. Mutation verification: temporarily reverted jest.config.js's
+    transformIgnorePatterns to the pre-fix (buggy) regex, re-ran the new
+    test file -> 3 of 5 tests correctly FAILED (proving the test catches
+    the regression), then restored the fix and re-ran -> 5/5 passing again.
+
+15. `cd services/gateway && npx tsc --noEmit` (final) -> clean, no output.
+
+16. `cd services/gateway && npx jest --silent` (final, with the new test
+    file included) -> 1059/1060 suites (1 pre-existing skip), 17,288/17,323
+    tests passing (29 skipped, 6 todo, both pre-existing), 0 failures,
+    42/42 snapshots passing.
+
+No AWS/GCP/Supabase mutation was made from this session for this VTID
+beyond the initial read-only queries in step 1. Marking the
+`autopilot_recommendations` rows resolved and closing stranded PR #3543
+are deliberately left for after this PR merges and deploys (see
+acceptance.md's "Not yet independently confirmed live" section).

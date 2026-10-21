@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<title>Intent Engine Moderation · Vitana Command Hub</title>
+<meta name="viewport" content="width=device-width,initial-scale=1" />
+<link rel="stylesheet" href="/command-hub/styles.css?v=20260504" />
+<link rel="stylesheet" href="/command-hub/intent-moderation.css?v=20260504" />
+</head>
+<body>
+<header class="ch-header">
+  <div class="ch-brand">Vitana Command Hub</div>
+  <nav class="ch-nav">
+    <a href="/command-hub/">Operator</a>
+    <a href="/command-hub/intent-engine.html">Intent KPI</a>
+    <a href="/command-hub/intent-moderation.html" class="active">Moderation</a>
+    <a href="/command-hub/voice-lab/">Voice Lab</a>
+  </nav>
+</header>
+
+<main class="ch-main">
+  <h1>Intent Engine — Moderation</h1>
+  <p class="ch-sub">Operator-only. All actions audited via OASIS.</p>
+
+  <section class="card">
+    <h2>Recent disputes</h2>
+    <div id="disputes-empty" class="muted">Loading…</div>
+    <table id="disputes-table" hidden>
+      <thead><tr><th>Time</th><th>Match</th><th>Raised by</th><th>Reason</th><th>Status</th><th>Action</th></tr></thead>
+      <tbody></tbody>
+    </table>
+  </section>
+
+  <section class="card">
+    <h2>Force-close intent</h2>
+    <p class="muted">Use this to terminate a runaway or violating intent post. Sets status='closed' and emits an audit event.</p>
+    <form id="force-close-form" class="row">
+      <input type="text" name="intent_id" placeholder="intent_id (UUID)" required />
+      <input type="text" name="reason" placeholder="Reason (audit log)" />
+      <button type="submit">Force close</button>
+    </form>
+    <div id="force-close-result" class="muted"></div>
+  </section>
+
+  <section class="card">
+    <h2>Recompute matches</h2>
+    <p class="muted">Re-run compute_intent_matches() for an intent (e.g. after a fix to the score function).</p>
+    <form id="recompute-form" class="row">
+      <input type="text" name="intent_id" placeholder="intent_id (UUID)" required />
+      <button type="submit">Recompute</button>
+    </form>
+    <div id="recompute-result" class="muted"></div>
+  </section>
+
+  <section class="card">
+    <h2>Trust-tier flip</h2>
+    <p class="muted">Manually upgrade a community member's trust tier. Used until Persona/Onfido integration lands.</p>
+    <form id="trust-tier-form" class="row">
+      <input type="text" name="vitana_id" placeholder="@vitana-id (without @)" required />
+      <select name="tier" required>
+        <option value="community_verified">community_verified</option>
+        <option value="pro_verified">pro_verified</option>
+        <option value="id_verified">id_verified</option>
+        <option value="unverified">unverified (downgrade)</option>
+      </select>
+      <input type="text" name="reason" placeholder="Reason (audit log)" />
+      <button type="submit">Apply</button>
+    </form>
+    <div id="trust-tier-result" class="muted"></div>
+  </section>
+
+  <section class="card">
+    <h2>Engine stats (24h)</h2>
+    <div id="stats" class="stats-grid">
+      <div class="stat"><div class="label">Intents posted</div><div id="stat-intents" class="value">—</div></div>
+      <div class="stat"><div class="label">Matches created</div><div id="stat-matches" class="value">—</div></div>
+      <div class="stat"><div class="label">Disputes open</div><div id="stat-disputes" class="value">—</div></div>
+      <div class="stat"><div class="label">Direct shares</div><div id="stat-shares" class="value">—</div></div>
+    </div>
+  </section>
+</main>
+
+<script src="/command-hub/intent-moderation.js?v=20260504"></script>
+</body>
+</html>

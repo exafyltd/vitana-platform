@@ -1,0 +1,22 @@
+cd services/gateway
+npx jest test/orb-tools/discovery-tools.test.ts test/vtid-05156-marketplace-compass-goal.test.ts test/vtid-05156-people-match-health-boundary.test.ts test/routes/health.test.ts
+#   red check: with src/ reset to origin/main (orb-tools-shared.ts, discovery-tools.ts, discovery-tools-repository.ts, routes/health.ts) -> 4 suites FAIL, 14 failed / 116
+#   green on head -> 4 suites PASS
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/orb/live/characterization/system-instruction.characterization.test.ts test/orb/live/characterization/tool-catalog.characterization.test.ts -u
+#   5 snapshots updated: find_perfect_match description + ask parameter lines and the tool-catalog hash/bytes only (227351 -> 227322); no instruction hash changed
+node ../../scripts/voice-tools-manifest-reconcile.mjs --check   # (run from repo root) 2 drifts, identical on origin/main (remember_fact, share_calendar_entry_to_feed/start_autopilot_slot entries) — pre-existing; tool-manifest.json not changed (its find_perfect_match description never mentioned the pillar)
+npx jest test/vtid-04456-customer-support-pipeline-regression.test.ts test/feedback-pipeline.test.ts test/vtid-04332-report-to-specialist-status-contract.test.ts test/vtid-04445-persona-voice-gender.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04560-role-separation-regression.test.ts test/vtid-04968-delegation-guard.test.ts test/vtid-05025-commerce-health-boundary.test.ts test/vtid-05041-definer-lockdown.test.ts test/orb-tools/discovery-tools.test.ts test/vtid-05156-marketplace-compass-goal.test.ts test/vtid-05156-people-match-health-boundary.test.ts test/routes/health.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/orb/live/characterization
+#   45 suites, 805/805, 65 snapshots (= test:support + test:operator + test:roles + delegation guard + definer lockdown + changed suites)
+npx tsc --noEmit -p .
+#   3 errors, all environmental and outside the change: libphonenumber-js (contacts-import.ts, phone-verification/service.ts), @aws-sdk/client-pinpoint-sms-voice-v2 (sms-sender.ts)
+npx jest --silent --maxWorkers=3
+#   1670/1689 suites, 27072 passed; 19 suites fail to load on missing libphonenumber-js (local node_modules gap) — outputs/full-gateway-jest-summary.txt
+cd ../..
+bash scripts/ci/sql-tests/run-wearable-samples-rpc-revoke-test.sh   # throwaway local Postgres 16 (initdb, socket only), ok 1..6, PASS vtid-05156 wearable samples rpc revoke
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base $(git merge-base origin/main HEAD) --head HEAD --title "VTID-05156: …"
+#   -> [staging-verify] ✓ change suite present and valid for VTID-05156
+IMPACT_SCAN_DRY_RUN=true IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs   # blocker=0 warning=0 info=0
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base <merge-base> --head HEAD --title "VTID-05156: …"
+#   scope ✅ (23 files), sparring ✅, weakening ✅ (routes/health.test.ts declared in scope.json: retired ingest tests replaced)
+#   migrations: lintMigration [] (transactional, idempotent); libpg-query not installed locally — the file was executed on real Postgres 16 above
+# plan hash: sha256 of the text strictly between the plan markers in plan-sparring.md = 9453a891f1ee854ffd413e7c61be22b8feca71d4ead4b65d036cecaaed17d125, bytes identical to the approved plan

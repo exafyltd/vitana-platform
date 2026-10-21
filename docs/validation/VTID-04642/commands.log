@@ -1,0 +1,14 @@
+# VTID-04642 — commands run
+node services/gateway/scripts/validate-dev-frontend-spec.mjs            # FRONTEND SPEC OK — 20 modules / 115 screens
+VITANA_V1_ROOT=../vitana-v1 node services/gateway/scripts/regen-screens-catalog.mjs   # fails on main too: ReferenceError: Inbox is not defined (vitana-v1 admin-navigation.ts); inventory edited by hand
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs     # regenerated
+node --check services/gateway/src/frontend/command-hub/app.js            # OK
+npx jest test/command-hub                                                # 347 passed
+npx jest test/navigation test/nav-golden                                 # 329 passed
+npx jest test/vtid-04560-role-separation-regression.test.ts             # 97 passed
+node scripts/test-catalog/build.mjs --platform . --frontend ../vitana-v1 --out catalog.json   # real catalog for the harness
+CATALOG_JSON=catalog.json node docs/validation/VTID-04642/outputs/harness-server.js &
+node docs/validation/VTID-04642/outputs/harness-shoot.js                # desktop + mobile: errors [], no overflow, neverRunRows 9, filesShown 10, failureRows 8 (0 non-failures), old URL → "Test catalog"
+# First shot found two defects, fixed before commit: five pill colour rules were
+# written as blank lines (pills rendered unstyled) and table headers were centred;
+# the "E2e" tab label now reads "E2E".

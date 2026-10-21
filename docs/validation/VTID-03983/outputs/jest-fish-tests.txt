@@ -1,0 +1,34 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/tts/fish-provider.test.ts
+  VTID-03970 Fish Audio voice resolution
+    ✓ resolves Serbian to the curated official Fish Audio voice, never the flagged NSFW one (4 ms)
+    ✓ normalizes region-tagged locale codes the same way every other table in this codebase does (1 ms)
+    ✓ returns null for a language with no curated voice, never a wrong-language guess
+    ✓ defaults to disabled — deploying this file changes nothing
+    ✓ is enabled only by the exact string "true" (1 ms)
+  VTID-03970 synthesizeFish gating and request shape
+    ✓ returns null without ever calling fetch when the feature flag is off (2 ms)
+    ✓ returns null without calling fetch when enabled but no API key is set
+    ✓ returns null for a language with no curated voice, without calling fetch
+    ✓ sends the reviewed reference_id, bearer key, and explicit model header (5 ms)
+    ✓ requests an explicit sample rate for pcm format and reports it back authoritatively (1 ms)
+    ✓ an override model is honoured (CLAUDE.md: never left to the provider default) (1 ms)
+    ✓ degrades to null on a non-2xx response, logging the real error body (e.g. insufficient credit) (7 ms)
+    ✓ degrades to null rather than hanging when the request never resolves on its own (9 ms)
+    ✓ returns null for empty text without calling fetch (1 ms)
+
+PASS test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts
+  VTID-03970: cascade eligibility with Fish fallback
+    ✓ sr stays ineligible (no_polly_voice) when Fish is unconfigured — the pre-existing default (1 ms)
+    ✓ sr stays ineligible when the flag is set but no API key is configured
+    ✓ sr becomes eligible, routed to Fish, once explicitly enabled AND keyed (1 ms)
+    ✓ a language Polly already covers stays on Polly even with Fish enabled
+    ✓ a language with no curated Fish voice either stays ineligible even with Fish enabled
+
+Test Suites: 2 passed, 2 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        0.971 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

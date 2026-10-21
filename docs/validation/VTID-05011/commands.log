@@ -1,0 +1,6 @@
+$ cd services/gateway && npx jest <every test reading AWS-PROD/STAGE-DEPLOY-GATEWAY.yml, .claude/settings.json or setup-eventbridge-cron-migration.sh>
+Test Suites: 113 passed, 113 total
+Tests:       1368 passed, 1368 total
+$ node scripts/conversation/generate-flag-pins.mjs   # clean, only MEMORY_ORB_RECALL_ENABLED prod null -> "true"
+$ node scripts/ci/validator-path-guard.cjs <changed> gateway_backend <body>   # APPROVED: 16 in-remit files; 6 not judged
+$ node -e "<staging-verify lib validate>" docs/validation/VTID-0500{7,9}, VTID-0501{0,1}/staging-tests.json   # ok:true x4

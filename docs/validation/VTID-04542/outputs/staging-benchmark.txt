@@ -1,0 +1,88 @@
+# ORB first-audio benchmark (scripts/orb/measure-orb-first-audio.mjs), staging, SSE, n=6/6/6/4
+# BEFORE = 458a1dc (main before #3701), 18:16-18:24 UTC; AFTER = 1a80874, 18:34-18:42 UTC
+## BEFORE
+=== ORB first-audio benchmark: anon-de ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=de route=(default) auth=false trials=6
+  trial  1  start=1089ms  sse= 1588ms  firstAudio=   2052ms model=3219ms  src=activation_chime
+  trial  2  start= 598ms  sse=  745ms  firstAudio=   1060ms model=2460ms  src=activation_chime
+  trial  3  start= 785ms  sse= 1128ms  firstAudio=   1537ms model=2532ms  src=activation_chime
+  trial  4  start= 507ms  sse=  665ms  firstAudio=   1033ms model=2258ms  src=activation_chime
+  trial  5  start= 216ms  sse=  360ms  firstAudio=    775ms model=2070ms  src=activation_chime
+  trial  6  start= 498ms  sse=  641ms  firstAudio=    904ms model=2453ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=775 p50=1060 p90=2052 max=2052
+  first MODEL audio min=2070 p50=2460 p90=3219 max=3219
+=== ORB first-audio benchmark: auth-de ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=de route=(default) auth=true trials=6
+  trial  1  start= 861ms  sse= 1168ms  firstAudio=   1959ms model=4150ms  src=activation_chime
+  trial  2  start= 715ms  sse=  931ms  firstAudio=   1448ms model=3982ms  src=activation_chime
+  trial  3  start= 704ms  sse=  863ms  firstAudio=   1418ms model=4149ms  src=activation_chime
+  trial  4  start= 709ms  sse=  858ms  firstAudio=   1377ms model=3801ms  src=activation_chime
+  trial  5  start= 719ms  sse=  859ms  firstAudio=   1368ms model=4490ms  src=activation_chime
+  trial  6  start= 708ms  sse=  863ms  firstAudio=   1299ms model=3642ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=1299 p50=1418 p90=1959 max=1959
+  first MODEL audio min=3642 p50=4149 p90=4490 max=4490
+=== ORB first-audio benchmark: auth-en ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=en route=(default) auth=true trials=6
+  trial  1  start= 473ms  sse=  636ms  firstAudio=   1247ms model=3484ms  src=activation_chime
+  trial  2  start= 699ms  sse=  888ms  firstAudio=   1464ms model=3489ms  src=activation_chime
+  trial  3  start= 798ms  sse=  959ms  firstAudio=   1384ms model=3651ms  src=activation_chime
+  trial  4  start= 413ms  sse=  556ms  firstAudio=    996ms model=35806ms  src=activation_chime
+  trial  5  start= 764ms  sse=  925ms  firstAudio=   1366ms model=3446ms  src=activation_chime
+  trial  6  start= 958ms  sse= 1116ms  firstAudio=   1747ms model=3617ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=996 p50=1384 p90=1747 max=1747
+  first MODEL audio min=3446 p50=3617 p90=35806 max=35806
+=== ORB first-audio benchmark: auth-en-commandhub ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=en route=/command-hub auth=true trials=4
+  trial  1  start= 689ms  sse=  966ms  firstAudio=   1510ms model=3331ms  src=activation_chime
+  trial  2  start= 745ms  sse=  899ms  firstAudio=   3340ms model=5291ms  src=activation_chime
+  trial  3  start= 700ms  sse=  853ms  firstAudio=   1398ms model=4496ms  src=activation_chime
+  trial  4  start= 462ms  sse=  629ms  firstAudio=   1211ms model=4004ms  src=activation_chime
+  audio in 4/4 trials
+  first ANY audio   min=1211 p50=1510 p90=3340 max=3340
+  first MODEL audio min=3331 p50=4496 p90=5291 max=5291
+## AFTER
+=== ORB first-audio benchmark: anon-de ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=de route=(default) auth=false trials=6
+  trial  1  start= 927ms  sse= 1518ms  firstAudio=   1997ms model=2980ms  src=activation_chime
+  trial  2  start=2590ms  sse= 2963ms  firstAudio=   3418ms model=4458ms  src=activation_chime
+  trial  3  start= 173ms  sse=  331ms  firstAudio=    649ms model=1973ms  src=activation_chime
+  trial  4  start= 220ms  sse=  365ms  firstAudio=    772ms model=2228ms  src=activation_chime
+  trial  5  start=1141ms  sse= 1299ms  firstAudio=   1686ms model=2753ms  src=activation_chime
+  trial  6  start= 230ms  sse=  390ms  firstAudio=    782ms model=2138ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=649 p50=1686 p90=3418 max=3418
+  first MODEL audio min=1973 p50=2753 p90=4458 max=4458
+=== ORB first-audio benchmark: auth-de ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=de route=(default) auth=true trials=6
+  trial  1  start= 748ms  sse= 1044ms  firstAudio=   1975ms model=5854ms  src=activation_chime
+  trial  2  start= 699ms  sse=  856ms  firstAudio=   1454ms model=3971ms  src=activation_chime
+  trial  3  start=2548ms  sse= 2708ms  firstAudio=   3249ms model=5639ms  src=activation_chime
+  trial  4  start= 537ms  sse=  698ms  firstAudio=   1251ms model=3616ms  src=activation_chime
+  trial  5  start= 610ms  sse=  778ms  firstAudio=   1249ms model=3111ms  src=activation_chime
+  trial  6  start= 531ms  sse=  700ms  firstAudio=   1320ms model=3519ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=1249 p50=1454 p90=3249 max=3249
+  first MODEL audio min=3111 p50=3971 p90=5854 max=5854
+=== ORB first-audio benchmark: auth-en ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=en route=(default) auth=true trials=6
+  trial  1  start= 673ms  sse=  846ms  firstAudio=   1710ms model=5011ms  src=activation_chime
+  trial  2  start= 538ms  sse=  713ms  firstAudio=   1232ms model=3870ms  src=activation_chime
+  trial  3  start= 530ms  sse=  684ms  firstAudio=   1139ms model=3876ms  src=activation_chime
+  trial  4  start= 722ms  sse=  888ms  firstAudio=   1581ms model=3419ms  src=activation_chime
+  trial  5  start= 572ms  sse=  720ms  firstAudio=   1331ms model=4174ms  src=activation_chime
+  trial  6  start= 483ms  sse=  627ms  firstAudio=   1124ms model=3646ms  src=activation_chime
+  audio in 6/6 trials
+  first ANY audio   min=1124 p50=1331 p90=1710 max=1710
+  first MODEL audio min=3419 p50=3876 p90=5011 max=5011
+=== ORB first-audio benchmark: auth-en-commandhub ===
+gateway=https://preview-aws-gateway.vitanaland.com lang=en route=/command-hub auth=true trials=4
+  trial  1  start= 693ms  sse=  978ms  firstAudio=   1623ms model=3061ms  src=activation_chime
+  trial  2  start= 454ms  sse=  608ms  firstAudio=   1085ms model=5208ms  src=activation_chime
+  trial  3  start= 559ms  sse=  821ms  firstAudio=   1187ms model=2990ms  src=activation_chime
+  trial  4  start= 425ms  sse=  621ms  firstAudio=   1143ms model=3270ms  src=activation_chime
+  audio in 4/4 trials
+  first ANY audio   min=1085 p50=1187 p90=1623 max=1623
+  first MODEL audio min=2990 p50=3270 p90=5208 max=5208

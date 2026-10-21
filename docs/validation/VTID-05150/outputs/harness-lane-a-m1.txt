@@ -1,0 +1,25 @@
+lane A M1: 20261014000100_vtid_05149_tenants_default_platform_flags.sql
+psql:20261014000400_vtid_05150_tenant_brand_pack.sql:246: NOTICE:  VTID-05150: maxina backfill skipped (already done or tenant absent)
+psql:20261014000400_vtid_05150_tenant_brand_pack.sql:246: NOTICE:  VTID-05150: alkalma backfill skipped (already done or tenant absent)
+migrations: both applied twice
+ok: migration 1 backfill, reserved slugs, grants
+ok: authenticated EXECUTE denied
+ok: anon EXECUTE denied
+ok: every refusal raised its code word
+ok: refusals wrote nothing
+ok: create — 1 tenant, settings, 16 controls, 2 policies, autopilot, group + bot, 1 invitation
+ok: re-run — created:false, same tenant, same invitation, no duplicates; other name → SLUG_TAKEN
+ok: maxina/alkalma unchanged (md5 of every row), zero member-facing writes
+ok: trigger rejects bad timezone, unknown locale, foreign/.. paths; accepts paths under <slug>/
+ok: tenant-admin style upsert of profile/branding still succeeds on a legacy row
+ok: feature_flags merge keeps jev for tenant admins, exafy_admin may change it
+ok: a new CROSS JOIN type is in the computed baseline
+ok: no default tenant → NO_DEFAULT_TENANT, nothing written
+VTID-05150: all assertions passed
+rollback: stopped before dropping columns (2 provisioned tenants backed up)
+rollback-complete: columns dropped, backup kept
+order guard: M2 refused before Lane A M1 and left nothing behind
+rollback (no provisioned tenant): everything dropped, pre-existing settings byte-identical
+re-apply after rollback: ok
+VTID-05150: harness passed
+exit 0

@@ -1,0 +1,4 @@
+Local verification limits (session network policy: registry.npmjs.org, developers.openai.com, learn.chatgpt.com blocked):
+- Syntax check of all changed TypeScript files: ok.
+- jest / tsc / vitest: not runnable locally; CI is the first run.
+- No production endpoint was probed (CLAUDE.md absolute rule).

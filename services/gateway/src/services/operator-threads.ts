@@ -1,0 +1,417 @@
+/**
+ * VTID-04022 (operator agent W4b): server-side Operator Console threads.
+ *
+ * Gap analysis §4.3 "Memory that actually accrues". Until now the console's
+ * transcript lived in the browser (localStorage, VTID-03822) and its memory
+ * recall (VTID-03892) ran against the raw current message only. This module:
+ *
+ *   recordOperatorTurn   — after every /api/v1/operator/chat turn, upsert the
+ *                          thread row and append the user + assistant (+ tool)
+ *                          messages. Fire-and-forget from the route.
+ *   maybeSummarizeThread — every OPERATOR_THREAD_SUMMARY_EVERY turns, rewrite
+ *                          the thread's rolling summary from its recent
+ *                          messages via the `memory` routing stage (Bedrock
+ *                          primary, DeepSeek fallback — never Google).
+ *   getThreadSummary     — read the summary so the turn's dev_agent_memory
+ *                          recall can run against summary + current message
+ *                          (buildRecallQuery), not the raw message alone.
+ *
+ * Everything is fail-open: a missing table (the migration ships as a file
+ * and is applied on the owner's go), a Supabase error, or a router failure
+ * logs once and never blocks or degrades the chat reply. Gated on
+ * OPERATOR_THREADS_ENABLED=true (default off).
+ */
+
+import { callViaRouter } from './llm-router';
+
+const LOG_PREFIX = '[operator-threads]';
+export const DEFAULT_SUMMARY_EVERY = 10;
+export const SUMMARY_MESSAGE_WINDOW = 30;
+export const SUMMARY_MAX_CHARS = 1_600;
+export const MESSAGE_MAX_CHARS = 6_000;
+export const RECALL_SUMMARY_MAX_CHARS = 1_200;
+export const TITLE_MAX_CHARS = 80;
+
+export function isOperatorThreadsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return env.OPERATOR_THREADS_ENABLED === 'true';
+}
+
+export function summaryEvery(env: NodeJS.ProcessEnv = process.env): number {
+  const n = Number.parseInt(env.OPERATOR_THREAD_SUMMARY_EVERY || '', 10);
+  return Number.isFinite(n) && n >= 2 ? n : DEFAULT_SUMMARY_EVERY;
+}
+
+interface SupaConfig { url: string; key: string }
+
+function getSupa(): SupaConfig | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  return url && key ? { url, key } : null;
+}
+
+let missingTableWarned = false;
+let nonUuidUserIdLogged = false;
+
+async function rest<T>(s: SupaConfig, path: string, init: { method?: string; body?: unknown; prefer?: string } = {}): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  try {
+    const res = await fetch(`${s.url}/rest/v1/${path}`, {
+      method: init.method || 'GET',
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+        'Content-Type': 'application/json',
+        Prefer: init.prefer || (init.method && init.method !== 'GET' ? 'return=minimal' : 'return=representation'),
+      },
+      ...(init.body !== undefined ? { body: JSON.stringify(init.body) } : {}),
+    });
+    if (!res.ok) {
+      const text = await res.text().catch(() => '');
+      if (res.status === 404 || /relation .* does not exist|PGRST205/.test(text)) {
+        if (!missingTableWarned) {
+          missingTableWarned = true;
+          console.warn(`${LOG_PREFIX} operator_threads/operator_messages not found — apply supabase/migrations/20260917230000_vtid_04022_operator_threads.sql; recording nothing until then`);
+        }
+      }
+      return { ok: false, status: res.status, error: text.slice(0, 200) };
+    }
+    if (res.status === 204) return { ok: true, status: 204 };
+    const text = await res.text();
+    return { ok: true, status: res.status, data: text ? (JSON.parse(text) as T) : undefined };
+  } catch (err) {
+    return { ok: false, status: 0, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/** Reset the once-per-process warning (tests). */
+export function resetOperatorThreadsWarning(): void { missingTableWarned = false; nonUuidUserIdLogged = false; }
+
+// ---------------------------------------------------------------------------
+// Pure helpers
+// ---------------------------------------------------------------------------
+
+export function deriveThreadTitle(firstUserText: string): string {
+  const line = (firstUserText || '').split('\n').map((l) => l.trim()).find((l) => l.length > 0) || 'Operator thread';
+  return line.length > TITLE_MAX_CHARS ? `${line.slice(0, TITLE_MAX_CHARS - 1)}…` : line;
+}
+
+export function clipMessage(text: string, max = MESSAGE_MAX_CHARS): string {
+  const t = text || '';
+  return t.length > max ? `${t.slice(0, max)}\n…[clipped]` : t;
+}
+
+/** Recall runs against the thread summary + the current message (§4.1/§4.3). */
+export function buildRecallQuery(summary: string | null | undefined, text: string): string {
+  const s = (summary || '').trim();
+  if (!s) return text;
+  const bounded = s.length > RECALL_SUMMARY_MAX_CHARS ? s.slice(0, RECALL_SUMMARY_MAX_CHARS) : s;
+  return `Conversation so far: ${bounded}\n\nCurrent message: ${text}`;
+}
+
+export interface ThreadMessage { role: 'user' | 'assistant' | 'tool'; content: string; tool_name?: string | null; created_at?: string }
+
+/** English instructions to the model — not user-facing text (CLAUDE.md §13b). */
+export function buildSummaryPrompt(messages: ThreadMessage[], priorSummary: string | null | undefined): string {
+  const transcript = messages
+    .map((m) => `${m.role === 'tool' ? `tool(${m.tool_name || '?'})` : m.role}: ${clipMessage(m.content, 1_200).replace(/\s+/g, ' ')}`)
+    .join('\n');
+  return [
+    'You maintain a rolling summary of an internal engineering operator conversation (the Vitana Command Hub Operator Console).',
+    'Rewrite the summary so a future turn can pick the conversation up with no other context. Keep: the goal, decisions taken, VTIDs / PRs / services / files named, what was tried and what failed, and what is still open. Drop pleasantries and repetition.',
+    `Hard limit: ${SUMMARY_MAX_CHARS} characters. Plain prose, no headings, English.`,
+    priorSummary ? `\nPrevious summary:\n${priorSummary}` : '',
+    `\nRecent messages (oldest first):\n${transcript}`,
+    '\nWrite the new summary now.',
+  ].join('\n');
+}
+
+export function shouldSummarize(turns: number, summaryTurns: number, every: number): boolean {
+  return turns > 0 && turns % every === 0 && turns > summaryTurns;
+}
+
+/**
+ * VTID-04189: `operator_threads.user_id` is a UUID column. Non-standard
+ * callers can carry a non-UUID identity string (a service name, a handle…),
+ * and a raw insert then fails the whole thread write — the failure was only
+ * ever swallowed by the generic try/catch, silently no-oping the first-turn
+ * bookkeeping. Normalise anything that isn't UUID-shaped to null so the row
+ * still lands (the thread is bookkeeping; the identity is not essential).
+ */
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
+export function isUuidShapedUserId(value: unknown): value is string {
+  return typeof value === 'string' && UUID_RE.test(value);
+}
+
+/** UUID-shaped identity → itself; anything else → null (logged once per process). */
+function normalizeUserId(userId: string | null | undefined): string | null {
+  const raw = userId || null;
+  if (raw === null || isUuidShapedUserId(raw)) return raw;
+  if (!nonUuidUserIdLogged) {
+    nonUuidUserIdLogged = true;
+    console.log(`${LOG_PREFIX} non-UUID identity user_id normalised to null for thread bookkeeping (operator_threads.user_id is a uuid column)`);
+  }
+  return null;
+}
+
+// ---------------------------------------------------------------------------
+// Persistence
+// ---------------------------------------------------------------------------
+
+/** VTID-04975: which engine answers a thread. Set at creation, never updated. */
+export type OperatorThreadEngine = 'llm' | 'kiro';
+
+export interface RecordTurnInput {
+  threadId: string;
+  identity?: { user_id?: string | null; tenant_id?: string | null; role?: string | null } | null;
+  userText: string;
+  reply: string;
+  /** Tool calls the turn made, with a compact rendering of each result. */
+  tools?: Array<{ name: string; result: string }>;
+  meta?: Record<string, unknown>;
+  /** VTID-04975: engine for a NEW thread; ignored for an existing one (engine never changes). */
+  engine?: OperatorThreadEngine;
+}
+
+interface ThreadRow { id: string; turns: number; summary: string | null; summary_turns: number; title: string | null }
+
+/**
+ * Upsert the thread and append this turn's messages. Returns the thread's
+ * new turn count (0 when disabled or unavailable) so the caller can decide
+ * on summarisation. Never throws.
+ */
+export async function recordOperatorTurn(input: RecordTurnInput, env: NodeJS.ProcessEnv = process.env): Promise<{ recorded: boolean; turns: number }> {
+  if (!isOperatorThreadsEnabled(env)) return { recorded: false, turns: 0 };
+  const s = getSupa();
+  if (!s) return { recorded: false, turns: 0 };
+  try {
+    const id = encodeURIComponent(input.threadId);
+    const existing = await rest<ThreadRow[]>(s, `operator_threads?id=eq.${id}&select=id,turns,summary,summary_turns,title&limit=1`);
+    if (!existing.ok) return { recorded: false, turns: 0 };
+    const row = existing.data && existing.data[0];
+    const now = new Date().toISOString();
+    const turns = (row?.turns || 0) + 1;
+    const write = row
+      ? await rest(s, `operator_threads?id=eq.${id}`, { method: 'PATCH', body: { turns, updated_at: now, last_message_at: now } })
+      : await rest(s, 'operator_threads', {
+        method: 'POST',
+        body: {
+          id: input.threadId,
+          user_id: normalizeUserId(input.identity?.user_id),
+          tenant_id: input.identity?.tenant_id || null,
+          role: input.identity?.role || null,
+          title: deriveThreadTitle(input.userText),
+          // Only sent for kiro so an LLM thread insert never depends on the new column.
+          ...(input.engine === 'kiro' ? { engine: 'kiro' } : {}),
+          turns,
+          created_at: now,
+          updated_at: now,
+          last_message_at: now,
+        },
+      });
+    if (!write.ok) return { recorded: false, turns: 0 };
+    // VTID-04095: every object in a PostgREST bulk-insert array must carry the
+    // exact same key set (PGRST102 "All object keys must match") — a
+    // tool-role message with `tool_name` alongside user/assistant messages
+    // without it fails the whole insert outright. `tool_name: null` on the
+    // non-tool rows keeps every object's keys identical.
+    // VTID-04309: a voice turn can carry only one side (the greeting has no
+    // user text), so empty user/assistant rows are dropped.
+    const messages: Array<Record<string, unknown>> = [
+      ...(input.userText && input.userText.trim()
+        ? [{ thread_id: input.threadId, role: 'user', tool_name: null, content: clipMessage(input.userText), meta: input.meta || {} }] : []),
+      ...(input.tools || []).map((t) => ({ thread_id: input.threadId, role: 'tool', tool_name: t.name, content: clipMessage(t.result, 2_000), meta: {} })),
+      ...(input.reply && input.reply.trim()
+        ? [{ thread_id: input.threadId, role: 'assistant', tool_name: null, content: clipMessage(input.reply), meta: input.meta || {} }] : []),
+    ];
+    if (messages.length === 0) return { recorded: false, turns };
+    const ins = await rest(s, 'operator_messages', { method: 'POST', body: messages });
+    if (!ins.ok) console.warn(`${LOG_PREFIX} message insert failed (${ins.status}): ${ins.error}`);
+    return { recorded: ins.ok, turns };
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} recordOperatorTurn error:`, err instanceof Error ? err.message : err);
+    return { recorded: false, turns: 0 };
+  }
+}
+
+/**
+ * VTID-05064: create the thread row when the message is SENT (turns 0, no messages), so a
+ * reload while the first turn still runs keeps the thread in the server list. An existing row
+ * is left untouched (ignore-duplicates). recordOperatorTurn stays the only writer of messages
+ * and of the turn count. Never throws.
+ */
+export async function ensureOperatorThread(input: Pick<RecordTurnInput, 'threadId' | 'identity' | 'userText' | 'engine'>, env: NodeJS.ProcessEnv = process.env): Promise<boolean> {
+  if (!isOperatorThreadsEnabled(env)) return false;
+  const s = getSupa();
+  if (!s) return false;
+  try {
+    const now = new Date().toISOString();
+    const r = await rest(s, 'operator_threads?on_conflict=id', {
+      method: 'POST',
+      prefer: 'resolution=ignore-duplicates,return=minimal',
+      body: {
+        id: input.threadId,
+        user_id: normalizeUserId(input.identity?.user_id),
+        tenant_id: input.identity?.tenant_id || null,
+        role: input.identity?.role || null,
+        title: deriveThreadTitle(input.userText),
+        ...(input.engine === 'kiro' ? { engine: 'kiro' } : {}),
+        turns: 0,
+        created_at: now,
+        updated_at: now,
+        last_message_at: now,
+      },
+    });
+    return r.ok;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} ensureOperatorThread error:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}
+
+export interface StoredThreadMessage {
+  id: string;
+  role: 'user' | 'assistant' | 'tool';
+  content: string;
+  tool_name: string | null;
+  meta: Record<string, unknown> | null;
+  created_at: string;
+}
+
+/**
+ * VTID-04309: read a thread's messages for the Operator Console, so turns
+ * recorded server-side (voice) show up in the console transcript. The
+ * thread must belong to the caller — a thread with another owner reads as
+ * not found. `sinceIso` returns only newer messages (incremental sync).
+ */
+export async function listOperatorThreadMessages(
+  threadId: string,
+  opts: { userId: string | null; sinceIso?: string | null; limit?: number },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: true; messages: StoredThreadMessage[] } | { ok: false; error: 'disabled' | 'not_found' | 'unavailable' }> {
+  if (!isOperatorThreadsEnabled(env)) return { ok: false, error: 'disabled' };
+  const s = getSupa();
+  if (!s) return { ok: false, error: 'unavailable' };
+  const id = encodeURIComponent(threadId);
+  const thread = await rest<Array<{ id: string; user_id: string | null }>>(s, `operator_threads?id=eq.${id}&select=id,user_id&limit=1`);
+  if (!thread.ok) return { ok: false, error: 'unavailable' };
+  const row = thread.data && thread.data[0];
+  if (!row) return { ok: true, messages: [] };
+  const owner = normalizeUserId(opts.userId);
+  if (row.user_id && row.user_id !== owner) return { ok: false, error: 'not_found' };
+  const limit = Math.max(1, Math.min(opts.limit ?? 200, 500));
+  const since = opts.sinceIso ? `&created_at=gt.${encodeURIComponent(opts.sinceIso)}` : '';
+  const msgs = await rest<StoredThreadMessage[]>(s,
+    `operator_messages?thread_id=eq.${id}${since}&select=id,role,content,tool_name,meta,created_at&order=created_at.asc&limit=${limit}`);
+  if (!msgs.ok) return { ok: false, error: 'unavailable' };
+  return { ok: true, messages: msgs.data || [] };
+}
+
+export interface OperatorThreadListItem {
+  id: string;
+  title: string | null;
+  summary: string | null;
+  turns: number;
+  last_message_at: string | null;
+  created_at: string;
+  /** VTID-04975 */
+  engine?: OperatorThreadEngine;
+}
+
+export const THREAD_LIST_SUMMARY_CHARS = 280;
+
+/**
+ * VTID-04409: the caller's own Operator threads, newest activity first, so
+ * the console can reopen a thread started on another device or by voice.
+ * A null/non-UUID caller has no threads (voice and machine turns are
+ * recorded without an owner and are not listed).
+ */
+export async function listOperatorThreads(
+  opts: { userId: string | null; limit?: number },
+  env: NodeJS.ProcessEnv = process.env,
+): Promise<{ ok: true; threads: OperatorThreadListItem[] } | { ok: false; error: 'disabled' | 'unavailable' }> {
+  if (!isOperatorThreadsEnabled(env)) return { ok: false, error: 'disabled' };
+  const s = getSupa();
+  if (!s) return { ok: false, error: 'unavailable' };
+  const owner = normalizeUserId(opts.userId);
+  if (!owner) return { ok: true, threads: [] };
+  const limit = Math.max(1, Math.min(opts.limit ?? 30, 100));
+  const listPath = (cols: string) => `operator_threads?user_id=eq.${encodeURIComponent(owner)}&select=${cols}&order=last_message_at.desc.nullslast&limit=${limit}`;
+  let r = await rest<OperatorThreadListItem[]>(s, listPath('id,title,summary,turns,last_message_at,created_at,engine'));
+  // VTID-04975: fail-open if the engine column is not there yet.
+  if (!r.ok) r = await rest<OperatorThreadListItem[]>(s, listPath('id,title,summary,turns,last_message_at,created_at'));
+  if (!r.ok) return { ok: false, error: 'unavailable' };
+  const threads = (r.data || []).map((t) => ({
+    ...t,
+    turns: t.turns || 0,
+    summary: t.summary ? clipMessage(t.summary, THREAD_LIST_SUMMARY_CHARS) : null,
+  }));
+  return { ok: true, threads };
+}
+
+/**
+ * VTID-04975: the engine a thread was created with, or null when the thread is
+ * unknown (no row yet, threads disabled, column missing, any error) so the
+ * caller falls back to the engine the request asks for. An existing thread's
+ * engine always wins over the request.
+ */
+export async function getThreadEngine(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<OperatorThreadEngine | null> {
+  if (!isOperatorThreadsEnabled(env)) return null;
+  const s = getSupa();
+  if (!s) return null;
+  try {
+    const r = await rest<Array<{ engine: string | null }>>(s, `operator_threads?id=eq.${encodeURIComponent(threadId)}&select=engine&limit=1`);
+    const row = r.ok && r.data ? r.data[0] : undefined;
+    if (!row) return null;
+    return row.engine === 'kiro' ? 'kiro' : 'llm';
+  } catch {
+    return null;
+  }
+}
+
+export async function getThreadSummary(threadId: string, env: NodeJS.ProcessEnv = process.env): Promise<string | null> {
+  if (!isOperatorThreadsEnabled(env)) return null;
+  const s = getSupa();
+  if (!s) return null;
+  const r = await rest<Array<{ summary: string | null }>>(s, `operator_threads?id=eq.${encodeURIComponent(threadId)}&select=summary&limit=1`);
+  const summary = r.ok && r.data && r.data[0] ? r.data[0].summary : null;
+  return summary && summary.trim() ? summary : null;
+}
+
+export type Summarizer = (prompt: string) => Promise<string | null>;
+
+const routerSummarizer: Summarizer = async (prompt) => {
+  const r = await callViaRouter('memory', prompt, { service: 'operator-threads', maxTokens: 600 });
+  if (!r.ok || !r.text) {
+    console.warn(`${LOG_PREFIX} summary generation failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty'}`);
+    return null;
+  }
+  return r.text.trim().slice(0, SUMMARY_MAX_CHARS);
+};
+
+/**
+ * Rewrite the thread summary when `turns` hits the cadence. Never throws;
+ * returns whether a summary was written.
+ */
+export async function maybeSummarizeThread(threadId: string, turns: number, opts: { summarize?: Summarizer; env?: NodeJS.ProcessEnv } = {}): Promise<boolean> {
+  const env = opts.env || process.env;
+  if (!isOperatorThreadsEnabled(env)) return false;
+  const s = getSupa();
+  if (!s) return false;
+  try {
+    const id = encodeURIComponent(threadId);
+    const t = await rest<ThreadRow[]>(s, `operator_threads?id=eq.${id}&select=id,turns,summary,summary_turns,title&limit=1`);
+    const row = t.ok && t.data && t.data[0];
+    if (!row || !shouldSummarize(turns, row.summary_turns || 0, summaryEvery(env))) return false;
+    const m = await rest<ThreadMessage[]>(s, `operator_messages?thread_id=eq.${id}&select=role,content,tool_name,created_at&order=created_at.desc&limit=${SUMMARY_MESSAGE_WINDOW}`);
+    const messages = (m.ok && m.data ? m.data : []).slice().reverse();
+    if (messages.length === 0) return false;
+    const summary = await (opts.summarize || routerSummarizer)(buildSummaryPrompt(messages, row.summary));
+    if (!summary) return false;
+    const w = await rest(s, `operator_threads?id=eq.${id}`, { method: 'PATCH', body: { summary, summary_turns: turns, updated_at: new Date().toISOString() } });
+    if (w.ok) console.log(`${LOG_PREFIX} thread ${threadId.slice(0, 8)} summarised at turn ${turns} (${summary.length} chars)`);
+    return w.ok;
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} maybeSummarizeThread error:`, err instanceof Error ? err.message : err);
+    return false;
+  }
+}

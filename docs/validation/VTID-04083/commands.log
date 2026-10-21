@@ -1,0 +1,88 @@
+# VTID-04083 — commands run, verbatim (trimmed of unrelated noise)
+
+## Initial scan (before any edit)
+
+$ node /tmp/scan-zero-caller.mjs
+total function declarations: 865
+zero-caller candidates (count<=1): 19
+installAuthFetchInterceptor fetchVtidsList fetchVtidLedger approveApprovalItem
+denyApprovalItem grantDevAccess revokeDevAccess refreshMemoryGarden
+renderMemoryGardenView renderKnowledgeGraphView renderEmbeddingsView
+renderRecallView renderInspectorView toggleHeartbeatSession
+fetchOperatorHistory ensureLineageLoaded ensureStepsStreamOpened
+renderDevAutopilotLineageView renderDevAutopilotStepsView
+
+## Cross-checked each candidate against sibling JS/HTML/tests
+
+$ grep -rln "\b<name>\b" --include="*.js" --include="*.ts" --include="*.html" . \
+    | grep -v node_modules | grep -v src/frontend/command-hub/app.js
+(only services/gateway/dist/frontend/command-hub/app.js — the build copy —
+for every one of the 12 real dead functions; nothing for the 6 Memory
+Garden names either, confirming they too have no external caller, but
+those are deliberately left in place per T1b's gate)
+
+$ grep -n "installAuthFetchInterceptor" services/gateway/src/frontend/command-hub/app.js
+46:(function installAuthFetchInterceptor() {
+(leading `(` confirms IIFE — self-invoking, not dead)
+
+## Deleted 12 functions (individually re-verified zero-occurrence after removal)
+
+fetchVtidsList, fetchVtidLedger (+ VTID_LEDGER_LIMIT const, only used inside it),
+approveApprovalItem, denyApprovalItem, grantDevAccess, revokeDevAccess,
+toggleHeartbeatSession, fetchOperatorHistory, ensureLineageLoaded,
+ensureStepsStreamOpened, renderDevAutopilotLineageView, renderDevAutopilotStepsView
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+(exit 0)
+$ for f in <the 12 names>; do grep -c "\b$f\b" app.js; done
+(all 0)
+
+## Re-scan surfaced a cascade
+
+$ node /tmp/scan-zero-caller.mjs
+zero-caller candidates (count<=1): 11
+installAuthFetchInterceptor extractLayer fetchAdminDevUsers refreshMemoryGarden
+renderMemoryGardenView renderKnowledgeGraphView renderEmbeddingsView
+renderRecallView renderInspectorView stopOperatorSse closeStepsStream
+
+$ git diff services/gateway/src/frontend/command-hub/app.js | grep -E "^-.*\b(extractLayer|fetchAdminDevUsers|stopOperatorSse|closeStepsStream)\b"
+-                    layer: extractLayer(event.vtid),
+-        await fetchAdminDevUsers();
+-        await fetchAdminDevUsers();
+-            stopOperatorSse();
+-        closeStepsStream(execId);
+(confirms each one's only caller was inside a function already deleted)
+
+## Deleted the 4 cascaded functions (+ orphaned "Admin Dev Users" section header comment)
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+(exit 0)
+$ for f in extractLayer fetchAdminDevUsers stopOperatorSse closeStepsStream; do grep -c "\b$f\b" app.js; done
+(all 0)
+
+## Third scan — stable
+
+$ node /tmp/scan-zero-caller.mjs
+zero-caller candidates (count<=1): 7
+installAuthFetchInterceptor refreshMemoryGarden renderMemoryGardenView
+renderKnowledgeGraphView renderEmbeddingsView renderRecallView renderInspectorView
+(no further cascade — IIFE + the 6 T1b-gated names, matches the guard test's allowlist exactly)
+
+## Cleaned up 3-4 consecutive blank-line artifacts left by adjacent deletions
+
+$ node /tmp/collapse-blanks.mjs
+lines before/after: 54568 54555
+$ awk '/^$/{c++; if(c>2) print NR": "c" consecutive blanks"} !/^$/{c=0}' app.js
+(no output — no runs of 3+ blank lines remain)
+
+## Full verification
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+(exit 0)
+$ cd services/gateway && node_modules/.bin/tsc --noEmit
+(exit 0)
+$ npm run build
+(exit 0)
+$ npx jest test/command-hub/
+Test Suites: 10 passed, 10 total
+Tests:       180 passed, 180 total

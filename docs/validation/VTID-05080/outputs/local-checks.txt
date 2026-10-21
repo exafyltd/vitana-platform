@@ -1,0 +1,25 @@
+    ✓ the inventory lists no retired Overview tab: live-metrics (9 ms)
+    ✓ the inventory lists no retired Overview tab: recent-events (1 ms)
+    ✓ the inventory lists no retired Overview tab: errors-violations (1 ms)
+    ✓ the inventory lists no retired Overview tab: release-feed (1 ms)
+    ✓ navigation-config.js lists no retired Overview tab: live-metrics (1 ms)
+    ✓ navigation-config.js lists no retired Overview tab: recent-events
+    ✓ navigation-config.js lists no retired Overview tab: errors-violations
+    ✓ navigation-config.js lists no retired Overview tab: release-feed (1 ms)
+    ✓ the Overview keeps its live system view (1 ms)
+    ✓ validate-dev-frontend-spec.mjs passes on the committed catalog (116 ms)
+    ✓ a date-only difference is "no change": nothing is rewritten, --check passes (2371 ms)
+    ✓ a real difference regenerates the spec AND stamps today (2209 ms)
+    ✓ publish fails loudly, before touching anything, when the PAT secret is missing (336 ms)
+    ✓ first publish: branch absent -> pushed, one PR created with the standing VTID and validator markers, auto-merge on (325 ms)
+    ✓ second publish: branch exists, PR open -> head moves, NO second PR (460 ms)
+    ✓ merged-then-rerun: branch kept after the merge, no open PR -> a new PR opens (434 ms)
+    ✓ a branch that moved underneath the run is never silently overwritten (lease) (2340 ms)
+    ✓ API failure listing PRs is a warning, not a failure, and creates nothing (645 ms)
+    ✓ auto-merge that cannot be enabled is a warning, not a failure (342 ms)
+    ✓ cleanup: an open rolling PR is closed with a comment and its branch deleted (232 ms)
+    ✓ cleanup: nothing open -> nothing closed, and no PAT is needed (249 ms)
+Test Suites: 4 passed, 4 total
+Tests:       21 passed, 21 total
+    ✓ regen-screens-catalog.mjs --check exits 0 (DEV rows, navigation-config.js, overrides) (744 ms)
+Tests:       1 passed, 1 total

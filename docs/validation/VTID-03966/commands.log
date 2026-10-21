@@ -1,0 +1,100 @@
+$ curl -sS -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"UIUX","module":"command-hub-operator-console"}'
+{"ok":true,"vtid":"VTID-03966","num":3966,"id":"7a063b51-4dfc-4d01-9f81-9ca96fc8d8c3"}
+
+# --- Live reproduction, BEFORE the fix, via a local static server + Playwright ---
+# (rename mechanism is 100% client-side, no network calls — reproducible
+# without a live gateway session)
+
+$ cd services/gateway/src/frontend && python3 -m http.server 8934
+Serving HTTP on 0.0.0.0 port 8934 ...
+
+$ node repro.js   # loads command-hub/index.html, seeds state.authToken +
+                    # state.operatorThreads directly, exercises the real
+                    # startRenamingOperatorThread()/dblclick/kebab paths
+rows found: 2
+inline input count after dblclick: 0
+!!! NO INLINE INPUT APPEARED AFTER DOUBLE-CLICK !!!
+kebab button count: 2
+menu items: [ 'Rename', 'Share', 'Archive', 'Delete' ]
+inline input count after kebab Rename click: 0
+!!! NO INLINE INPUT APPEARED AFTER KEBAB RENAME CLICK !!!
+
+# Instrumented directly: renamingThreadId correctly becomes the target
+# thread id immediately, then reverts to null one requestAnimationFrame
+# later, with domInputCount:2 observed in between — root cause found (see
+# acceptance.md): two simultaneously-rendered rename <input> instances
+# (sidebar row + title bar, since this is the ACTIVE thread) each schedule
+# their own setTimeout(() => input.focus()); the second to fire steals
+# focus from the first, firing a genuine (not involuntary-removal) blur
+# that commits/closes the rename.
+
+# Confirmed renaming a NON-active thread (single instance) works fine —
+# isolates the defect to the dual-render case.
+
+# --- Fix applied: _renameAutoFocusClaimedForThreadId (app.js) ---
+
+$ cd services/gateway && node --check src/frontend/command-hub/app.js
+(syntax OK)
+
+# --- Live re-verification AFTER the fix, same harness ---
+
+$ node repro-fixed.js
+TEST 1 (non-active thread, single instance, direct call) input count: 1
+TEST 1 title after Enter: FOUND (success)
+TEST 2 (dblclick active thread title, dual instance) input count after 250ms: 2
+TEST 2 both input values: ["Renamed active thread via dblclick","First thread"]
+TEST 2 title after Enter: Renamed active thread via dblclick
+TEST 3 (VTID-03953 regression check — simulated background renderApp() mid-edit) input count after: 1
+# Screenshots saved to docs/validation/VTID-03966/outputs/ — see its own README.md
+
+$ pkill -f "http.server 8934"
+
+$ cd services/gateway && npx jest \
+    test/vtid-03822-operator-chat-threads.test.ts \
+    test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts \
+    test/vtid-03947-message-copy-timestamp.test.ts \
+    test/vtid-03949-operator-sessions-sidebar-rename.test.ts \
+    test/vtid-03960-operator-thread-menu.test.ts \
+    test/vtid-03966-operator-rename-dual-instance-focus.test.ts
+Test Suites: 6 passed, 6 total
+Tests:       103 passed, 103 total
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, no output)
+
+$ cd services/gateway && npm run build
+(clean — tsc + copy-frontend + copy-data all succeeded)
+
+$ cd services/gateway && node --check src/frontend/command-hub/app.js && node --check dist/frontend/command-hub/app.js
+(both syntax OK)
+
+$ diff services/gateway/src/frontend/command-hub/app.js services/gateway/dist/frontend/command-hub/app.js
+(no output — src/dist identical)
+
+$ diff services/gateway/src/frontend/command-hub/index.html services/gateway/dist/frontend/command-hub/index.html
+(no output — src/dist identical)
+
+$ node scripts/ci/command-hub-golden-fingerprint.js
+==========================================
+VTID-0302: Command Hub Golden Fingerprint
+==========================================
+  FOUND: Golden VTID marker
+  FOUND: Task Board class
+  FOUND: Task Column class
+  FOUND: Task Card class
+  FOUND: ORB idle element
+  FOUND: Header toolbar
+All golden markers verified.
+Fingerprint check PASSED.
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+(syntax OK — VTID-03966 added to ALLOWED_VTID_PATTERN)
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff_03966.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_03966.txt
+No CSP pattern hits in added lines.
+
+$ python3 -c "<simulate the Acceptance Mapping Gate's own AC-N/TEST: regex against acceptance.md>"
+Acceptance mapping OK, AC count: 6

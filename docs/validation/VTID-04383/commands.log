@@ -1,0 +1,8 @@
+# commands run (local, services/gateway)
+npx tsc --noEmit                                   # exit 0
+npx jest test/orb-tools test/vtid-04384-feedback-answer-drafter.test.ts \
+         test/vtid-04311-feedback-spec-drafter.test.ts \
+         test/vtid-04312-feedback-reporter-notify.test.ts \
+         test/vtid-04382-typed-ticket-context.test.ts   # all passed
+npx jest                                           # 1105 suites passed / 1 skipped; 17894 tests passed, 29 skipped, 0 failed
+# Not run live: staging ECS is blocked by the AWS account block.

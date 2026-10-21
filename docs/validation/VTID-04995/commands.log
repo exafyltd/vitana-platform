@@ -1,0 +1,3 @@
+# VTID-04995 — commands run and their results (offline unit and contract tests; no database touched)
+$ cd services/gateway && npx jest test/vtid-04995-calendar-conflicts.test.ts test/calendar   (outputs/jest.txt)
+$ cd services/gateway && npx tsc --noEmit -p .   -> no errors

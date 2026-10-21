@@ -1,0 +1,9 @@
+# VTID-04731 commands
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'  -> VTID-04731
+# ledger row set in_progress/approved (Supabase execute_sql)
+# live schema check (read-only): information_schema.columns for public.products — every column a CSV row may omit is nullable with NULL default; images/attributes/availability are NOT NULL with defaults and always sent
+# local: npm registry unavailable in this sandbox (no jest, zod or express installed)
+ts-node (transpile-only) csvcheck.ts with ProductSchema stubbed  -> ok: parser assertions passed (quoting, BOM, semicolons, price forms, file errors, row errors, limits, the route test's fixtures)
+typescript.transpileModule on the 4 changed files                   -> 0 diagnostics each
+curl (read-only, no token) staging probes                          -> outputs/staging-probe-before.txt
+# CI Gateway Jest runs the real suites with the real zod schema

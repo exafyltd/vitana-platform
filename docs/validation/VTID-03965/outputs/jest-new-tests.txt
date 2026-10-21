@@ -1,0 +1,200 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/routes/autopilot.test.ts
+  VTID-01170 deprecation guard
+    ✓ blocks POST /tasks/:vtid/plan with 400 DEPRECATED when the bypass header is absent (26 ms)
+    ✓ blocks POST /tasks/:vtid/work/complete with 400 DEPRECATED regardless of bypass (4 ms)
+    ✓ allows POST /tasks/:vtid/plan through when X-BYPASS-ORCHESTRATOR: EMERGENCY-BYPASS is set (3 ms)
+    ✓ does NOT bypass on a near-miss header value (2 ms)
+  EXECUTION_DISARMED gate — POST /tasks/:vtid/plan
+    ✓ BLOCKS plan submission with 403 + error_code EXECUTION_DISARMED when disarmed (4 ms)
+    ✓ PROCEEDS to submit the plan when armed (3 ms)
+    ✓ checks the governance gate before validating the request body (gate is checked first) (2 ms)
+  EXECUTION_DISARMED gate — POST /tasks/:vtid/work/start
+    ✓ BLOCKS work start with 403 + error_code EXECUTION_DISARMED when disarmed (3 ms)
+    ✓ PROCEEDS to start work when armed (4 ms)
+  POST /tasks/:vtid/work/complete — no governance gate present
+    ✓ completes work even when isAutopilotExecutionArmed() would report disarmed (2 ms)
+  POST /tasks/:vtid/plan — request validation (armed)
+    ✓ 400s on a missing plan object (2 ms)
+    ✓ 400s on a missing plan.summary (2 ms)
+    ✓ 400s when plan.steps is not an array (2 ms)
+    ✓ 400s on a missing metadata object (2 ms)
+    ✓ 400s on a missing metadata.plannerModel (1 ms)
+    ✓ defaults plannerRole to PLANNER when omitted (2 ms)
+    ✓ surfaces a submitPlan ok:false result as 400 (2 ms)
+    ✓ returns 500 when submitPlan throws (2 ms)
+  POST /tasks/:vtid/work/start — request validation (armed)
+    ✓ 400s when step_id is missing/invalid (1 ms)
+    ✓ 400s when step_index is missing/invalid (2 ms)
+    ✓ 400s when label is missing/invalid (1 ms)
+    ✓ 400s when agent is missing/invalid (2 ms)
+    ✓ 400s when executor_type is missing/invalid (1 ms)
+    ✓ maps worker.invalid_transition errors to 409 (1 ms)
+    ✓ maps other worker errors (e.g. worker.step_not_found) to 400 (1 ms)
+    ✓ returns 500 when startWork throws (2 ms)
+  POST /tasks/:vtid/work/complete — request validation
+    ✓ 400s on an invalid status value (1 ms)
+    ✓ accepts status=failed (1 ms)
+    ✓ maps worker.invalid_transition to 409 (2 ms)
+  POST /tasks/:vtid/validate
+    ✓ defaults mode to auto and override to null (2 ms)
+    ✓ maps validator.internal_error to 500, other errors to 400 (3 ms)
+    ✓ is NOT blocked by the deprecation guard even without the bypass header (1 ms)
+  GET /tasks/:vtid/status
+    ✓ returns 404 when the task does not exist (2 ms)
+    ✓ merges planner/worker/validator sections when found (2 ms)
+    ✓ falls back to a pending worker state when getWorkerState reports not-ok (2 ms)
+  GET /tasks/pending-plan
+    ✓ returns the pending plan tasks (2 ms)
+    ✓ returns 500 when the service throws (3 ms)
+  Controller endpoints — VTID format validation
+    ✓ GET /controller/runs/:vtid 400s on "not-a-vtid" (2 ms)
+    ✓ GET /controller/runs/:vtid 400s on "VTID-1" (2 ms)
+    ✓ GET /controller/runs/:vtid 400s on "vtid-01234" (1 ms)
+    ✓ GET /controller/runs/:vtid 400s on "" (1 ms)
+    ✓ GET /controller/runs/:vtid 404s when no run exists for a well-formed VTID (1 ms)
+    ✓ GET /controller/runs/:vtid 200s with the run for a well-formed VTID (2 ms)
+    ✓ POST /controller/runs/:vtid/start requires title and spec_content (1 ms)
+    ✓ POST /controller/runs/:vtid/start 201s on success (1 ms)
+    ✓ POST /controller/runs/:vtid/verify requires service (2 ms)
+    ✓ POST /controller/runs/:vtid/verify returns 422 when verification fails (2 ms)
+    ✓ POST /controller/runs/:vtid/verify returns 200 when verification passes (2 ms)
+    ✓ POST /controller/runs/:vtid/validate requires pr_number (1 ms)
+    ✓ POST /controller/runs/:vtid/validate returns 422 when the merge check fails (3 ms)
+    ✓ GET /spec/:vtid 404s when no snapshot exists (2 ms)
+    ✓ GET /spec/:vtid 200s with integrity_valid computed (1 ms)
+    ✓ GET /validation/:vtid 404s when no result exists (9 ms)
+  GET /controller/status, GET /controller/runs
+    ✓ returns controller status (2 ms)
+    ✓ lists active runs with only the summarized fields (2 ms)
+  Event loop endpoints
+    ✓ GET /loop/status forwards the service result (2 ms)
+    ✓ POST /loop/start reports started:false when disabled by config (not an error) (1 ms)
+    ✓ POST /loop/stop 200s (1 ms)
+    ✓ GET /loop/history clamps limit between 1 and 500 (4 ms)
+    ✓ POST /loop/cursor/reset requires a timestamp (2 ms)
+    ✓ POST /loop/cursor/reset accepts "now" without Date.parse validation (1 ms)
+    ✓ POST /loop/cursor/reset rejects an unparsable timestamp (2 ms)
+    ✓ POST /loop/cursor/reset accepts a valid ISO timestamp with a custom reason (1 ms)
+  GET /health
+    ✓ reports healthy when the loop is running with no errors (2 ms)
+    ✓ reports degraded (still HTTP 200) when the loop is enabled but not running (2 ms)
+    ✓ reports ok_governance_limited (ok:true) when the loop is disarmed by config (2 ms)
+    ✓ reports error status with the loop error message when the loop IS running but unhealthy (1 ms)
+    ✓ reports "not running" as the reason even when both is_running=false AND error is set (2 ms)
+    ✓ degrades gracefully (does not 500) when getEventLoopStatus throws (1 ms)
+  requireServiceToken health-check exemptions (no Authorization header)
+    ✓ does not 401 an unauthenticated /prompts/health request (3 ms)
+    ✓ does not 401 an unauthenticated /recommendations/health request (2 ms)
+    ✓ still 401s an unauthenticated request to a real gated route (1 ms)
+  GET /pipeline/health
+    ✓ returns 500 when Supabase env vars are missing (2 ms)
+    ✓ aggregates loop status, task counts, and stuck tasks (2 ms)
+    ✓ passes an AbortSignal on every direct Supabase fetch (2 ms)
+    ✓ gives each of the three direct Supabase fetches its own independent AbortSignal (2 ms)
+    ✓ bounds hanging Supabase fetches instead of hanging the route past its timeout budget (2504 ms)
+    ✓ degrades one field instead of 500ing the whole route when a response body fails to parse (3 ms)
+  GET /pipeline/summary
+    ✓ returns 500 when Supabase env vars are missing (2 ms)
+    ✓ computes a funnel + success rate from the aggregated queries (3 ms)
+
+PASS test/services/autopilot-loop-store.test.ts (6.289 s)
+  missing Supabase credentials
+    ✓ short-circuits without calling fetch when SUPABASE_URL is unset (9 ms)
+    ✓ short-circuits without calling fetch when SUPABASE_SERVICE_ROLE is unset (2 ms)
+  getLoopState
+    ✓ returns the first row when the query succeeds with data (5 ms)
+    ✓ returns null when the query succeeds but returns no rows (1 ms)
+    ✓ returns null when the query fails (1 ms)
+  setLoopRunning
+    ✓ sets is_running=true and stamps started_at (not stopped_at) (1 ms)
+    ✓ sets is_running=false and stamps stopped_at (not started_at)
+    ✓ propagates failure
+  updateLoopCursor
+    ✓ PATCHes cursor + timestamp fields (1 ms)
+  resetLoopCursor
+    ✓ generates a reset-<timestamp> cursor sentinel and sets the target timestamp (1 ms)
+    ✓ returns false and does not throw when the PATCH fails (1 ms)
+  incrementProcessedCount
+    ✓ sends a minimal-return PATCH and reports success
+  recordLoopError
+    ✓ stamps last_error and last_error_at
+  getLoopStats
+    ✓ returns the RPC result directly when the RPC succeeds with data (1 ms)
+    ✓ falls back to a derived stats object from getLoopState when the RPC fails (1 ms)
+    ✓ falls back and returns null when the RPC fails AND no loop state row exists (1 ms)
+    ✓ falls back when the RPC succeeds but returns an empty array
+    ✓ caps total time at ~3s even when both the primary RPC and its fallback each hang to their own bound (3002 ms)
+  isEventProcessed
+    ✓ returns true when a matching row exists
+    ✓ returns false when no matching row exists (1 ms)
+    ✓ returns false (fail-safe, not throw) when the query errors
+    ✓ URL-encodes the event id
+  recordProcessedEvent
+    ✓ defaults optional fields to null and uses ignore-duplicates resolution (1 ms)
+    ✓ passes through all provided optional fields (1 ms)
+  getProcessedEventHistory
+    ✓ defaults to limit=100
+    ✓ honors a custom limit
+    ✓ returns [] (not throw) on query failure
+  getRunState
+    ✓ returns the first matching row
+    ✓ returns null when no run exists for the VTID
+  upsertRunState
+    ✓ POSTs with merge-duplicates resolution and stamps updated_at (1 ms)
+  updateRunState
+    ✓ PATCHes the run scoped by vtid and stamps updated_at (1 ms)
+  transitionRunState
+    ✓ does not stamp completed_at for a non-terminal target state (1 ms)
+    ✓ stamps completed_at when transitioning to completed
+    ✓ stamps completed_at when transitioning to failed
+  isRunLocked
+    ✓ returns false when there is no run state (1 ms)
+    ✓ returns false when lock_until is null
+    ✓ returns true when lock_until is in the future
+    ✓ returns false when lock_until is in the past (expired lock)
+  acquireRunLock — RPC (atomic) path
+    ✓ returns true and sends p_vtid/p_locked_by/p_lock_duration_ms (default 30000ms) when the RPC grants the lock (1 ms)
+    ✓ honors a custom lock duration
+    ✓ returns false when the RPC explicitly denies the lock (already held elsewhere) (1 ms)
+    ✓ returns false without a second call when the RPC succeeds but returns no rows
+  acquireRunLock — direct-update fallback (non-atomic, single-writer assumption)
+    ✓ falls back to a direct read-then-write when the RPC is unavailable, and succeeds when unlocked (1 ms)
+    ✓ does NOT write a new lock when the fallback finds the run already locked (respects single-writer invariant)
+    ✓ returns false when the fallback finds no run state at all (1 ms)
+    ✓ acquires the fallback lock when a previous lock has expired
+  releaseRunLock
+    ✓ clears both lock_until and locked_by (1 ms)
+  setBackoffLock (exponential backoff)
+    ✓ uses base delay (2000ms) for attempt 1
+    ✓ doubles the delay per attempt (attempt 3 -> 8000ms with default base) (1 ms)
+    ✓ honors a custom base delay
+  incrementActionAttempt
+    ✓ returns 0 without writing when there is no run state (1 ms)
+    ✓ increments the specific counter and preserves the others
+  canAttemptAction
+    ✓ returns false when there is no run state
+    ✓ returns true when attempts are below max_attempts (1 ms)
+    ✓ returns false once attempts reach max_attempts
+  getActiveRuns
+    ✓ queries excluding completed/failed states
+    ✓ returns [] on query failure rather than throwing (1 ms)
+  markRunFailed
+    ✓ sets state=failed with error, error_code, and both timestamp fields (1 ms)
+    ✓ defaults error_code to null when omitted
+  markRunCompleted (VTID-01208: recovery from failed state)
+    ✓ sets state=completed and clears error fields, allowing recovery from a prior failed state (2 ms)
+  supabaseRequest timeout (VTID-03954)
+    ✓ passes an AbortSignal on every request (1 ms)
+    ✓ bounds a hanging fetch instead of waiting on it forever (3002 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       142 passed, 142 total
+Snapshots:   0 total
+Time:        6.788 s, estimated 7 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

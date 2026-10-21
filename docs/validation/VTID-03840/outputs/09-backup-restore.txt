@@ -1,0 +1,12 @@
+# 09 — backup/restore proof (pg_dump custom format -> fresh DB -> pg_restore -> row-count + GL-sum comparison)
+pg_dump (PostgreSQL) 16.13 (Ubuntu 16.13-0ubuntu0.24.04.1)
+public tables|216
+dump bytes: 626798
+dump sha256: 864707a7f2af931fdfd61008a7c0fe002063aff70d384db97c9707ac344304b7
+pg_restore exit=0
+columns: company|account|journal_entry|gl_entry|sum(debit)|sum(credit)|tax_template_line|schema_migration|public tables
+source : 1|22|23|42|2042.00|2042.00|4|0|216
+restore: 1|22|23|42|2042.00|2042.00|4|0|216
+MATCH: restored DB equals source on row counts and GL sums
+restored DB usable through ERPClaw CLI (list-companies against erpclaw_restore):
+  1 company: Vitanaland Spike LLC

@@ -1,0 +1,10 @@
+# VTID-04825 — commands (services/gateway unless noted)
+# Evidence (read-only SQL, prod Supabase, 2026-10-02): dev_autopilot_executions by status — completed 48, reverted 17,
+# failed 10, self_healed 8, failed_escalated 6, cancelled 3 (last 7 days: 4 / 2 / 5 / 2 / 1 / 2). Of the last 12 bad
+# endings: 3 × "Bedrock invoke_failed: Too many tokens per day", 1 × scope violation on the generated
+# services/gateway/specs/command-hub-symbol-index.json, 1 × "mergeable_state=dirty", deploy/verification/CI stages.
+python3 add_pin.py JEV_ROOT_CAUSE_ROLLUP_MODE "VTID-04825 F"   (repo root, scratch helper)   # staging + prod Jev step pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04825 test/vtid-04759 test/vtid-04754 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax test/vtid-04818   # 170 passed (outputs/jest-f-rollup.txt)
+npx jest (full gateway suite, on VTID-04824 bb56fba + this change; main fa23aaa is the same tree)   # 1465 suites passed, 23545 tests, 0 failed (outputs/jest-full.txt)

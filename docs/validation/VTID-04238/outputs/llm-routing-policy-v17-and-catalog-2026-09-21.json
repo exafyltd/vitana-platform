@@ -1,0 +1,25 @@
+{
+  "read_at": "2026-09-21T17:55Z",
+  "source": "Supabase MCP read-only SQL against llm_routing_policy (is_active=true), llm_allowed_models, llm_allowed_providers",
+  "policy": { "version": 17, "environment": "DEV", "is_active": true,
+    "stages": {
+      "memory":     { "primary": "bedrock/eu.anthropic.claude-sonnet-4-6",                 "fallback": "deepseek/deepseek-chat" },
+      "triage":     { "primary": "bedrock/eu.anthropic.claude-sonnet-4-6",                 "fallback": "deepseek/deepseek-chat" },
+      "classifier": { "primary": "bedrock/eu.anthropic.claude-sonnet-4-6",                 "fallback": "deepseek/deepseek-chat" },
+      "vision":     { "primary": "bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",     "fallback": "bedrock/eu.anthropic.claude-sonnet-4-6" },
+      "worker":     { "primary": "bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",     "fallback": "bedrock/eu.anthropic.claude-sonnet-4-6" },
+      "planner":    { "primary": "bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",     "fallback": "bedrock/eu.anthropic.claude-sonnet-4-6" },
+      "validator":  { "primary": "bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0",     "fallback": "bedrock/eu.anthropic.claude-sonnet-4-6" },
+      "operator":   { "primary": "deepseek/deepseek-flash",                                "fallback": "bedrock/eu.anthropic.claude-sonnet-4-6" }
+    } },
+  "llm_allowed_models_active": {
+    "anthropic": ["claude-3-5-sonnet-20241022*", "claude-3-haiku-20240307", "claude-3-opus-20240229", "claude-haiku-4-5", "claude-opus-4-7*", "claude-sonnet-4-6"],
+    "bedrock": ["eu.anthropic.claude-opus-4-5-20251101-v1:0", "eu.anthropic.claude-sonnet-4-5-20250929-v1:0", "eu.anthropic.claude-sonnet-4-6*"],
+    "claude_subscription": ["claude-opus-4-7*"],
+    "deepseek": ["deepseek-chat", "deepseek-flash*", "deepseek-reasoner*"],
+    "openai": ["gpt-4o", "gpt-4o-mini", "gpt-5*"],
+    "vertex": ["gemini-1.5-flash*", "gemini-1.5-pro", "gemini-2.5-flash", "gemini-2.5-pro", "gemini-3.1-pro*", "gemini-3.1-pro-preview*"],
+    "_note": "* = is_recommended"
+  },
+  "llm_allowed_providers_active": ["anthropic", "bedrock", "claude_subscription", "deepseek", "openai", "vertex"]
+}

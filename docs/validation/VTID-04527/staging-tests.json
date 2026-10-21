@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04527",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "org-scoped connection read is mounted and requires auth", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/connections/00000000-0000-4000-8000-000000000001", "expect_status": 401 },
+    { "kind": "http", "name": "org-scoped activation summary is mounted and requires auth", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/connections/00000000-0000-4000-8000-000000000001/activation-summary", "expect_status": 401 },
+    { "kind": "http", "name": "org-scoped revoke is mounted (rejected write probe)", "method": "POST", "path": "/api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/connections/00000000-0000-4000-8000-000000000001/revoke", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "owner-scoped connection routes unchanged (requires auth)", "path": "/api/v1/vcaop/portal/my/connections/00000000-0000-4000-8000-000000000001", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/partner-onboarding-connections.test.ts test/routes/vcaop-portal-my.test.ts", "cwd": "services/gateway",
+      "reason": "pins the shared connection routes under both the owner scope and the org scope" }
+  ]
+}

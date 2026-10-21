@@ -1,0 +1,10 @@
+{
+  "name": "vitana-cognito-user-migration",
+  "version": "1.0.0",
+  "private": true,
+  "description": "Cognito User Migration Lambda trigger — verifies legacy Supabase Auth (GoTrue) credentials on first sign-in/forgot-password (VTID-03827). See ../README.md before deploying.",
+  "main": "index.js",
+  "dependencies": {
+    "@aws-sdk/client-secrets-manager": "^3.600.0"
+  }
+}

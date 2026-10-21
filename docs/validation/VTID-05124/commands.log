@@ -1,0 +1,26 @@
+# Read-only live facts (project inmkhvwdcuyhnxkgfvsb, 2026-10-12) — SELECT only
+$ SELECT counts of memberships, orphans (no auth.users and no app_users), FK dependents (pg_constraint confrelid),
+  triggers, information_schema.columns, tenant_role labels, pg_constraint for memberships, admin_system_health
+  -> total 235, orphans 12, fk_dependents 0, triggers 0; 7 columns (id, user_id, tenant_id, role tenant_role,
+     status, created_at, updated_at); constraints pkey / status check / UNIQUE (user_id, tenant_id) / tenants FK;
+     tenant_role = community,patient,professional,reseller,staff,admin,backoffice,developer,infra
+$ SELECT pk/fk of app_users, profiles, user_tenants
+  -> app_users.user_id -> auth.users; profiles PK id, profiles.user_id -> auth.users; user_tenants.user_id -> app_users
+$ SELECT profiles id = user_id count; orphans with a profiles row (user_id or id); orphans by tenant
+  -> 0 of 238 profiles have id = user_id; 0 orphans with a profile; maxina 11, alkalma 1
+$ live-before.sql queries 1, 3, 4, 5 (+ the 12 rows, truncated ids)
+  -> total 235, orphans 12, fk_dependents 0, live_identities 0, archive_table NULL,
+     total_memberships 235, active_memberships 235;
+     rows: fabf5609/alkalma/community, 2f8a7363/maxina/reseller, 4ff64983, 27f7fabd, 719384c1, 85a06581,
+     c58d9a65, 7991f567, cdecbdd8, 1d69bb22, 59eb8d06, 89ccdbb5 (maxina/community); all updated_at = created_at
+
+# Timestamp: newest migration on origin/main 20261012200000 (vtid_05103); open PRs use 20261012200000 (x2).
+#   Chosen 20261012214500 — no collision.
+
+# PGlite dry run (migration + rollback)
+$ node run.mjs <repo>     (run.mjs = docs/validation/VTID-05124/pglite-migration-check.mjs, @electric-sql/pglite 0.5.8)
+  -> 30 ok, ALL MIGRATION CHECKS PASSED (outputs/pglite-migration-check.txt)
+
+# Nothing was applied. At the production step: re-run live-before.sql, then RUN-MIGRATION.yml with
+#   migration_file = supabase/migrations/data-fixups/20261012214500_vtid_05124_delete_orphan_memberships.sql,
+#   then post-apply-checks.sql.

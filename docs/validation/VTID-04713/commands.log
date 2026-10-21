@@ -1,0 +1,3 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/services/guide test/services/memory   # 639 passed

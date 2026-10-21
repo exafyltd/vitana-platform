@@ -1,0 +1,10 @@
+{
+  "enforce": false,
+  "note": "VTID-04950: PR-GATE starts report-only (plan rollout: 3 days on real PRs). Set enforce=true by PR to block on failures; set it back to false as the owner's kill switch.",
+  "report_only_since": "2026-10-07",
+  "red_green": {
+    "test_pattern": "^services/gateway/test/.*\\.test\\.ts$",
+    "cwd": "services/gateway",
+    "cmd": ["npx", "jest"]
+  }
+}

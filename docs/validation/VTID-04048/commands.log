@@ -1,0 +1,91 @@
+# VTID-04048 — commands log
+
+## Discover production's real state
+
+  curl -s https://gateway.vitanaland.com/api/v1/admin/build-info
+  → {"env":"production","git_commit":"7ba9a8eebad1...","booted_at":"2026-09-16T17:01:38Z"}
+
+  git fetch origin main
+  git log --oneline 7ba9a8ee..0b24cd8ea4b0 | wc -l   → 50
+  git log --oneline 7ba9a8ee..0b24cd8ea4b0 -- services/gateway/src/routes/orb-live.ts \
+    scripts/orb/verify-vertex-serbian-bridge.mjs
+  → 0b24cd8 (VTID-04036), d58b4ce (VTID-04026), 5e08ad7 (VTID-04021 handoff),
+    a47dca0 (VTID-04000) — the entire bridge history missing from prod
+
+## Attempt 1: scoped backport (abandoned, see acceptance.md)
+
+  git checkout -b vertex-serbian-bridge-prod-backport 7ba9a8ee
+  git cherry-pick -x a47dca0e   # VTID-04000 — conflicts on CLAUDE.md,
+                                 # fish.ts/fish-provider.test.ts (dropped:
+                                 # prod never had Fish Audio, bridge has no
+                                 # dependency on it, confirmed by grep)
+  git cherry-pick -x d58b4ce4   # VTID-04026 — conflicts on CLAUDE.md,
+                                 # HANDOFF doc, verify script (all additive,
+                                 # resolved by taking theirs)
+  git cherry-pick -x 0b24cd8e   # VTID-04036 — clean
+
+  cd services/gateway && npx tsc --noEmit -p tsconfig.json   → exit 0
+  npx jest (7 bridge suites)          → 7/7 suites, 160/160 tests
+  npx jest (full suite)               → 933/934 suites (1 pre-existing skip),
+                                          15298/15333 tests, 0 failures
+
+  # then added the prod-workflow GCP wiring (AWS-PROD-DEPLOY-GATEWAY.yml,
+  # mirroring AWS-STAGE-DEPLOY-GATEWAY.yml byte-for-byte) + updated the
+  # one "NOT wired on prod" test assertion; re-ran the wiring/bash-syntax
+  # tests → 9 suites / 44 tests green
+
+  python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))"
+  → parses OK
+  bash -n <extracted step 1/2 run: block, GH expressions stripped>
+  → syntax OK
+
+  git push -u origin vertex-serbian-bridge-prod-backport
+
+  # AWS role ARN comparison (this session's own boto3 credentials —
+  # confirms no additional GCP-side WIF grant is needed):
+  python3 -c "
+  import boto3
+  c = boto3.client('ecs', region_name='eu-central-1')
+  print(c.describe_task_definition(taskDefinition='vitana-gateway-awsdr')['taskDefinition']['taskRoleArn'])
+  print(c.describe_task_definition(taskDefinition='vitana-gateway')['taskDefinition']['taskRoleArn'])
+  "
+  → both arn:aws:iam::472838866351:role/vitana-ecs-task-role
+
+  # Dispatch via GitHub MCP actions_run_trigger, ref=backport branch,
+  # deploy_mode=rebuild-main
+  → run 35326788819, job "build-push-deploy" step "Configure AWS
+    credentials (GitHub OIDC)" FAILS:
+    "Could not assume role with OIDC: Not authorized to perform
+    sts:AssumeRoleWithWebIdentity"
+  → every later step skipped (build/push/register/roll/smoke never ran)
+  → confirmed prod untouched: build-info still reports 7ba9a8e, /alive ok
+
+  grep -n "StringLike.*sub" docs/AWS-PRODUCTION-BUILD-LOG.md
+  → "token.actions.githubusercontent.com:sub":
+     "repo:exafyltd/vitana-platform:ref:refs/heads/main"
+  → confirms the trust policy is hard-scoped to main; a branch or tag ref
+    can never satisfy it
+
+  python3 -c "import boto3; boto3.client('iam').list_roles()"
+  → AccessDenied: explicit deny in permissions boundary
+    claude-code-aws-agent-boundary — this session cannot read or change
+    IAM, confirming the workaround path is genuinely closed from here
+
+## Attempt 2 (this PR): merge the activation to main, promote in full
+
+  git checkout -b vertex-serbian-bridge-prod-activation origin/main
+  git cherry-pick -x 485917e   # just the prod-workflow wiring commit
+  → clean, no conflicts (main had not touched this file)
+
+  cd services/gateway && npx jest \
+    test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts \
+    test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  → 2 suites, 17 tests, green
+
+  git push -u origin vertex-serbian-bridge-prod-activation
+  # PR #3418 opened; CI running
+
+## AC-3 (post-merge, to be filled after the promotion dispatch)
+
+  curl -s https://gateway.vitanaland.com/api/v1/admin/build-info
+  → expect git_commit = the squash-merge SHA of this PR

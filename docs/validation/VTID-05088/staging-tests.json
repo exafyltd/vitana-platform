@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05088",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05088-memory-health-speech-input.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the change is a CI-only SQL function and one workflow step, not gateway code; nothing on staging serves it. The workflow-logic test, the local Postgres harness and the read-only RPC call + morning check after apply are the gate"
+    }
+  ]
+}

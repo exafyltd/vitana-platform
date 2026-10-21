@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04930",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04930-executor-deploy-drops-dead-db-secret.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts test/vtid-04237-executor-agent-hold-pinned.test.ts", "cwd": "services/gateway",
+      "reason": "the change is to the executor deploy workflow, which has no staging service; its read-only proof is post-deploy: the new task-definition revision has no DB_PASSWORD and the next dispatched executor task reaches RUNNING" }
+  ]
+}

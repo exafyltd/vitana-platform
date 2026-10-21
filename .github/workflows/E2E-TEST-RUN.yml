@@ -1,0 +1,145 @@
+name: E2E Test Run
+
+# VTID-04613: this workflow defaulted to https://vitanaland.com, and its
+# repository_dispatch path (wired to vitana-v1 DEPLOY.yml's production job)
+# ran with the write-capable setup enabled — i.e. tests against production,
+# which exafyltd/vitana-v1 CLAUDE.md forbids absolutely. It now targets staging by
+# default, refuses every production host, and a repository_dispatch run is
+# always read-only. Post-deploy verification is STAGING-VERIFY.yml.
+
+on:
+  repository_dispatch:
+    types: [community-app-deployed]
+  workflow_dispatch:
+    inputs:
+      projects:
+        description: 'Comma-separated Playwright project names (e.g. hub-shared,desktop-shared)'
+        required: true
+        type: string
+      spec_filter:
+        description: 'Optional spec file filter (e.g. orb-widget.spec.ts)'
+        required: false
+        type: string
+        default: ''
+      community_url:
+        description: 'Community app URL to test against (staging by default; production hosts are refused)'
+        required: false
+        type: string
+        default: 'https://preview-aws.vitanaland.com'
+      read_only:
+        description: 'Read-only run (VTID-04482): no test-user reset, no /me/active-role write'
+        required: false
+        type: boolean
+        default: true
+
+concurrency:
+  group: e2e-run-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  e2e-test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install E2E dependencies
+        working-directory: e2e
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: e2e
+        run: npx playwright install chromium --with-deps
+
+      - name: Build Playwright command
+        id: cmd
+        run: |
+          # Support both workflow_dispatch inputs and repository_dispatch payload
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PROJECTS="${{ github.event.client_payload.projects }}"
+            SPEC=""
+          else
+            PROJECTS="${{ inputs.projects }}"
+            SPEC="${{ inputs.spec_filter }}"
+          fi
+          CMD="npx playwright test"
+          # Add each project as --project flag
+          IFS=',' read -ra PROJ_ARRAY <<< "$PROJECTS"
+          for proj in "${PROJ_ARRAY[@]}"; do
+            proj=$(echo "$proj" | xargs)  # trim whitespace
+            CMD="$CMD --project=$proj"
+          done
+          # Add spec filter if provided
+          if [ -n "$SPEC" ]; then
+            CMD="$CMD $SPEC"
+          fi
+          echo "cmd=$CMD" >> $GITHUB_OUTPUT
+          echo "Running: $CMD"
+
+      - name: Refuse production targets
+        env:
+          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://preview-aws.vitanaland.com' }}
+        run: |
+          # Parse, don't slice: VITANALAND.COM, :443 and ?x=1 must all resolve
+          # to the same hostname before the comparison (VTID-04613 review).
+          HOST=$(node -e 'try { console.log(new URL(process.argv[1]).hostname.toLowerCase().replace(/\.$/, "")) } catch { console.log("INVALID") }' "$COMMUNITY_URL")
+          if [ "$HOST" = "INVALID" ]; then echo "::error::COMMUNITY_URL is not a URL: $COMMUNITY_URL"; exit 1; fi
+          case "$HOST" in
+            vitanaland.com|www.vitanaland.com|gateway.vitanaland.com|dr-app.vitanaland.com|dr-gateway.vitanaland.com)
+              echo "::error::Refusing to run E2E against production host $HOST — never test against production (vitana-v1 CLAUDE.md). Use https://preview-aws.vitanaland.com."
+              exit 1 ;;
+          esac
+          echo "Target: $COMMUNITY_URL"
+
+      - name: Run E2E tests
+        working-directory: e2e
+        run: ${{ steps.cmd.outputs.cmd }}
+        env:
+          HUB_URL: https://preview-aws-gateway.vitanaland.com
+          COMMUNITY_URL: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.community_url || inputs.community_url || 'https://preview-aws.vitanaland.com' }}
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          # VTID-04482: a read-only run gets no service-role key at all, so
+          # global-setup cannot write to the test user even if the guard fails.
+          # A repository_dispatch run has no inputs, so `inputs.read_only` was
+          # empty there and the write-capable setup ran — on the production
+          # deploy path. Dispatched runs are now always read-only.
+          E2E_READONLY: ${{ (github.event_name == 'repository_dispatch' || inputs.read_only) && '1' || '' }}
+          SUPABASE_SERVICE_ROLE: ${{ github.event_name != 'repository_dispatch' && !inputs.read_only && secrets.SUPABASE_SERVICE_ROLE || '' }}
+
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: |
+          if [ -z "$SERVICE_TOKEN" ]; then
+            echo "::warning::GATEWAY_SERVICE_TOKEN not set — self-healing report skipped"
+            exit 0
+          fi
+          # Determine which projects failed from the input
+          PROJECTS="${{ github.event_name == 'repository_dispatch' && github.event.client_payload.projects || inputs.projects }}"
+          curl -sS -X POST "$GATEWAY_URL/api/v1/self-healing/report" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H "Content-Type: application/json" \
+            -d '{
+              "timestamp": "'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'",
+              "total": 1,
+              "live": 0,
+              "services": [{
+                "name": "e2e-test-run",
+                "endpoint": "/api/v1/e2e/health",
+                "status": "down",
+                "http_status": 0,
+                "response_body": "E2E tests failed for projects: '"$PROJECTS"'",
+                "response_time_ms": 0,
+                "error_message": "Playwright E2E test suite failed — user-facing flows are broken"
+              }]
+            }' || echo "::warning::Self-healing report POST failed (non-fatal)"
+
+      # Playwright trace/video artifact upload removed — never used for
+      # debugging. Re-add temporarily if investigating a specific failure.

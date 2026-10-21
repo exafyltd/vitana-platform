@@ -1,0 +1,4 @@
+PASS test/vtid-04668-scoring-service-and-listing.test.ts
+PASS test/vtid-04668-priority-score.test.ts
+Test Suites: 2 passed, 2 total
+Tests:       27 passed, 27 total

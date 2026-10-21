@@ -1,0 +1,17 @@
+{
+  "workflow": "RUN-MIGRATION.yml",
+  "run_id": 35202068003,
+  "run_number": 503,
+  "event": "workflow_dispatch",
+  "head_branch": "claude/two-chats-display-dgr5z0",
+  "inputs": {
+    "migration_file": "supabase/migrations/20260917084341_vtid_03990_service_bot_accounts_skip_welcome_chat.sql"
+  },
+  "status": "completed",
+  "conclusion": "success",
+  "html_url": "https://github.com/exafyltd/vitana-platform/actions/runs/35202068003",
+  "post_apply_verification": {
+    "to_regclass_public_service_bot_accounts": "service_bot_accounts",
+    "fire_welcome_chat_on_membership_contains_guard": true
+  }
+}

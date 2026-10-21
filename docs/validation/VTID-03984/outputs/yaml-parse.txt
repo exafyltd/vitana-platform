@@ -1,0 +1,1 @@
+YAML parses OK (python3 yaml.safe_load, exit 0)

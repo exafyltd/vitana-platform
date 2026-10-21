@@ -1,0 +1,24 @@
+    ✓ get /api/v1/testing/results/summary: 401 anonymous, 403 non-admin (25 ms)
+    ✓ get /api/v1/testing/results/runs: 401 anonymous, 403 non-admin (13 ms)
+    ✓ post /api/v1/testing/results/sync: 401 anonymous, 403 non-admin (7 ms)
+    ✓ returns workflow health, environment roll-ups and the latest STAGING-VERIFY per service (7 ms)
+    ✓ still answers from the stored runs when the sync fails (3 ms)
+    ✓ filters by environment, workflow and conclusion (9 ms)
+    ✓ forces a sync and returns its per-repository results (3 ms)
+    ✓ answers 503 with the reason when the sync cannot run (2 ms)
+    ✓ indexes only result-bearing workflow kinds, keyed by full repository name (1 ms)
+    ✓ reads the workflow file from the run path, including a ref suffix (1 ms)
+    ✓ stores a completed run of a catalogued workflow with its environments and duration
+    ✓ skips runs still in progress, deploy jobs and workflows the catalog does not know (1 ms)
+    ✓ reports health, pass rates, the failing streak and last success per workflow (1 ms)
+    ✓ calls a workflow flaky when one commit both passed and failed (1 ms)
+    ✓ marks a workflow with no verdict in 30 days as having no recent runs
+    ✓ rolls workflows up per environment (1 ms)
+    ✓ stores catalogued runs with their jobs and records the cursor per repository (3 ms)
+    ✓ resumes from the cursor minus the overlap, and does not re-fetch jobs for stored runs (2 ms)
+    ✓ replaces a stored verdict when the run was re-run (1 ms)
+    ✓ records one repository failing (e.g. no token for vitana-v1) and still syncs the other (12 ms)
+    ✓ skips the sync while every repository was synced within the max age, and forces on request (3 ms)
+    ✓ syncs when any repository is stale, and concurrent callers share one sync (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       22 passed, 22 total

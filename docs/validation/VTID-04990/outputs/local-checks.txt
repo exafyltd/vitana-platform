@@ -1,0 +1,1 @@
+json parse + python syntax checks only; jest runs in CI

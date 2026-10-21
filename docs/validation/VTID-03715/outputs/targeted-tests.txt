@@ -1,0 +1,14 @@
+      ✓ labels every emitted chunk with the Polly PCM rate (3 ms)
+      ✓ passes event.mimeType through to onAudioResponse (1 ms)
+      ✓ no longer calls onAudioResponse with the payload alone
+      ✓ declares the second parameter on both callback contracts
+      ✓ SSE and WS both send the chunk mime with a named fallback
+      ✓ both audio callbacks accept the mime parameter
+      ✓ names the fallback rather than scattering a bare literal
+      ✓ stores mime alongside the payload (1 ms)
+      ✓ types the buffer as pairs, not bare strings
+      ✓ destructures both fields when replaying
+      ✓ is synthesized at 24000 locally
+      ✓ every surviving hardcoded rate belongs to a chime send (4 ms)
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total

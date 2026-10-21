@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04038",
+  "execution_id": "f8d79e6c-1158-4cd0-9988-b8f8ace08d60",
+  "finding_id": "d733d4a0-36d0-4a6b-b22b-d0bdaa554a9a",
+  "plan_version": 1,
+  "branch": "dev-autopilot/f8d79e6c",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/aws-ecs-readonly.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-04035-operator-ecs-tasks.test.ts",
+      "action": "modify"
+    }
+  ],
+  "generated_at": "2026-09-18T07:39:38.213Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

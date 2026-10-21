@@ -1,0 +1,15 @@
+        c         |                                                                                        ci_welcome_greeting_health                                                                                        
+------------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ test-only window | {"trigger_present" : false, "trigger_enabled" : false, "function_present" : false, "function_secdef" : false, "trigger_table" : null, "signups_24h" : 0, "greeted_senders_24h" : 0, "unflagged_24h" : 0}
+(1 row)
+
+       c        |                                                                                        ci_welcome_greeting_health                                                                                        
+----------------+----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------
+ real ungreeted | {"trigger_present" : false, "trigger_enabled" : false, "function_present" : false, "function_secdef" : false, "trigger_table" : null, "signups_24h" : 1, "greeted_senders_24h" : 0, "unflagged_24h" : 1}
+(1 row)
+
+     c     | anon_exec | sr_exec 
+-----------+-----------+---------
+ reapplied | f         | t
+(1 row)
+

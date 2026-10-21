@@ -1,0 +1,3357 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/orb/live/session/live-session-controller.ts:106:1)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:39:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/orb/live/session/live-session-controller.ts:106:1)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:39:1)
+
+  console.log
+    [ORB-LIVE] Session expired: expired
+
+      at cleanupExpiredSessions (src/orb/live/session/live-session-controller.ts:257:15)
+
+  console.log
+    [ORB-LIVE] Session expired: expired
+
+      at cleanupExpiredSessions (src/orb/live/session/live-session-controller.ts:257:15)
+
+  console.log
+    [ORB-LIVE] Session expired: expired
+
+      at cleanupExpiredSessions (src/orb/live/session/live-session-controller.ts:257:15)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: s1
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: s1
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: s1
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-456
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-789
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-999
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01222] WebSocket session cleaned up: ws-123
+
+      at cleanupWsSession (src/orb/live/session/live-session-controller.ts:424:11)
+
+  console.log
+    [VTID-01219] End of turn sent to Live API: session=s1
+
+      at handleLiveStreamEndTurn (src/orb/live/session/live-session-controller.ts:493:15)
+
+  console.log
+    [VTID-01219] End of turn (no Live API): session=s1
+
+      at handleLiveStreamEndTurn (src/orb/live/session/live-session-controller.ts:498:11)
+
+  console.log
+    [VTID-01219] End of turn (no Live API): session=s1
+
+      at handleLiveStreamEndTurn (src/orb/live/session/live-session-controller.ts:498:11)
+
+  console.log
+    [VTID-01219] End of turn sent to Live API: session=s1
+
+      at handleLiveStreamEndTurn (src/orb/live/session/live-session-controller.ts:493:15)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.warn
+    [VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401
+
+      656 |   const authHeader = req.headers.authorization;
+      657 |   if (authHeader && authHeader.startsWith('Bearer ') && !req.identity) {
+    > 658 |     console.warn('[VTID-AUTH-BACKEND-REJECT] Bearer token provided but JWT failed verification — returning 401');
+          |             ^
+      659 |     return res.status(401).json({
+      660 |       ok: false,
+      661 |       error: 'AUTH_TOKEN_INVALID',
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:658:13)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:726:33)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-9b88bd77-3a4c-468d-a707-11f551f6269d: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-9b88bd77-3a4c-468d-a707-11f551f6269d — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.vad.silence_duration_ms" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getVadSilenceDurationMs (src/orb/upstream/constants.ts:113:30)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1429:63)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:739:5)
+
+  console.log
+    [VTID-ORBC] Live session created: live-9b88bd77-3a4c-468d-a707-11f551f6269d (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (f3a46e57-d314-49c1-89df-b48bffdf198f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'de' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-da3f3d16-6a54-494f-91d4-c8649be13ba2: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: de (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:853:13)
+
+  console.log
+    [VTID-ANON] Anonymous session live-da3f3d16-6a54-494f-91d4-c8649be13ba2 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-da3f3d16-6a54-494f-91d4-c8649be13ba2 (user=anonymous, tenant=none, lang=de, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (63a6c086-f33f-430b-933d-ad565dd85454)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'fr' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-65fdf484-4121-46ee-9624-6584a2198c31: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Using client-requested language: fr (user's UI selection)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:853:13)
+
+  console.log
+    [VTID-ANON] Anonymous session live-65fdf484-4121-46ee-9624-6584a2198c31 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-65fdf484-4121-46ee-9624-6584a2198c31 (user=anonymous, tenant=none, lang=fr, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (33f2b828-d083-4fc6-be99-6a9fcc05e567)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-b13b37ff-ce4a-4f9f-a33c-a9b9a8da1ad5: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-b13b37ff-ce4a-4f9f-a33c-a9b9a8da1ad5 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-b13b37ff-ce4a-4f9f-a33c-a9b9a8da1ad5 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (57fa6647-3bb5-41be-b140-0c3915837a76)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-02020] Reconnect session start: stage=idle, history=2 turns, conversation_id=8afc1a03-44fb-458a-b269-b949a0d0ff7d (incoming=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:776:13)
+
+  console.log
+    [VTID-ANON] Session live-da2557f4-52d7-4358-a472-c8bdb6e68e73: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-da2557f4-52d7-4358-a472-c8bdb6e68e73 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-da2557f4-52d7-4358-a472-c8bdb6e68e73 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (593ceefa-f854-4253-ad33-13c470724717)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-02020] Reconnect session start: stage=idle, history=0 turns, conversation_id=e03a6b8f-6d5b-4269-a03a-e82d65ffc351 (incoming=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:776:13)
+
+  console.log
+    [VTID-ANON] Session live-83a17615-936e-4e39-9e55-1198720976ad: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-83a17615-936e-4e39-9e55-1198720976ad — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-83a17615-936e-4e39-9e55-1198720976ad (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (a6da2afd-b76d-419d-bfc2-44bd872a4a05)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-0a9c3e31-3b67-45f8-90ec-3c7b1a75fbec: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-0a9c3e31-3b67-45f8-90ec-3c7b1a75fbec — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-0a9c3e31-3b67-45f8-90ec-3c7b1a75fbec (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (dac60eb1-8be4-4eb4-927a-0d5b0e3fd384)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-160c4b88-36e1-449b-bc3c-74169c4bae28: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-160c4b88-36e1-449b-bc3c-74169c4bae28 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-160c4b88-36e1-449b-bc3c-74169c4bae28 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (e8ea4acb-2823-45ed-871b-19d997380339)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-eb5cfaaf-a74b-4bc0-afc7-6e8fb382f763: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-eb5cfaaf-a74b-4bc0-afc7-6e8fb382f763 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-eb5cfaaf-a74b-4bc0-afc7-6e8fb382f763 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (8ccf9b53-88ae-4160-9f97-92e2e9f7b6b0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-c230efda-b359-48e8-be70-7043a55bfd96: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-c230efda-b359-48e8-be70-7043a55bfd96 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-c230efda-b359-48e8-be70-7043a55bfd96 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (6a284544-80e3-400f-9b54-43726b4d7944)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-8f5479d4-2c72-42de-839f-062150b743d0: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-8f5479d4-2c72-42de-839f-062150b743d0 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-8f5479d4-2c72-42de-839f-062150b743d0 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (6622f52a-057f-4566-88cd-5a8a1b87d45b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=00000000-0000-0000-0000-000000000099, orbIdentity.user_id=00000000-0000-0000-0000-000000000099, bootstrapIdentity=00000000
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44 user=00000000... (DEV_IDENTITY fallback)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:979:13)
+
+  console.log
+    [ORB-BRAIN-CACHE] MISS 00000000-0000-0000-0000-000000000001|00000000-0000-0000-0000-000000000099|community|orb — building
+
+      at buildBrainSystemInstructionCached (src/services/vitana-brain-cache.ts:133:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://localhost:54321/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=40&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.00000000-0000-0000-0000-000000000099&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:393:13)
+          at async Promise.all (index 5)
+
+  console.warn
+    [VTID-01180] listCommunityAutopilotRecommendations failed (non-fatal): rows is not iterable
+
+      1008 |     }));
+      1009 |   } catch (err: any) {
+    > 1010 |     console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+           |             ^
+      1011 |     return [];
+      1012 |   }
+      1013 | }
+
+      at listCommunityAutopilotRecommendations (src/routes/autopilot-recommendations.ts:1010:13)
+      at Object.buildAutopilotOfferBlock (src/routes/autopilot-recommendations.ts:1093:18)
+          at async Promise.all (index 5)
+
+  console.warn
+    [Calendar] Context fetch failed (non-fatal): events.filter is not a function
+
+      1034 |           };
+      1035 |         } catch (calErr: any) {
+    > 1036 |           console.warn(`[Calendar] Context fetch failed (non-fatal): ${calErr.message}`);
+           |                   ^
+      1037 |         }
+      1038 |       })()
+      1039 |     );
+
+      at src/services/context-pack-builder.ts:1036:19
+          at async Promise.all (index 4)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (2adf0969-34b4-4dd2-a330-6a93be18155e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (70d7537c-7d47-4fc5-8ef3-a0692bd4fc72)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [admin-briefing] fetch failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      69 |       .limit(20);
+      70 |     if (error) {
+    > 71 |       console.warn(`${LOG_PREFIX} fetch failed: ${error.message}`);
+         |               ^
+      72 |       return null;
+      73 |     }
+      74 |     if (!data || data.length === 0) return null;
+
+      at fetchAdminBriefingBlock (src/services/admin-scanners/briefing.ts:71:15)
+          at async Promise.all (index 4)
+
+  console.error
+    [VTID-01192] Fact retrieval failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      281 |
+      282 |     if (error) {
+    > 283 |       console.error(`[${VTID}] Fact retrieval failed:`, error.message);
+          |               ^
+      284 |       return { ok: false, facts: [], error: error.message };
+      285 |     }
+      286 |
+
+      at getCurrentFacts (src/services/memory-facts-service.ts:283:15)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:276:26)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [VTID-01952] identity-guardrail: app_users select error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      83 |
+      84 |     if (error) {
+    > 85 |       console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
+         |               ^
+      86 |       return '';
+      87 |     }
+      88 |     row = (data as unknown) as IdentityRow | null;
+
+      at buildIdentityGuardrailBlock (src/services/identity-guardrail-block.ts:85:15)
+          at async Promise.all (index 3)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (6313e41c-4b7f-402c-8cf0-7bdbfe8b07fb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-01216] Semantic search failed (non-fatal): embedding_failed
+
+      312 |       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+      313 |     } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+    > 314 |       console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
+          |               ^
+      315 |     }
+      316 |
+      317 |     // --- Tier 3: General facts (confidence + recency sorted) ---
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:314:15)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] structured facts: 0 identity core + 0 semantic + 0 general = 0 total
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:342:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [MEMORY-ORCHESTRATOR] fetchActiveGoals failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      235 |     }));
+      236 |   } catch (err: any) {
+    > 237 |     console.warn(`${LOG_PREFIX} fetchActiveGoals failed: ${err.message}`);
+          |             ^
+      238 |     throw err;
+      239 |   }
+      240 | }
+
+      at fetchActiveGoals (src/services/memory-orchestrator.ts:237:13)
+          at async Promise.allSettled (index 1)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: exclusions_read_failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      71 |     excl = await fetchExclusions(input.user_id);
+      72 |   } catch (err: any) {
+    > 73 |     console.error(
+         |             ^
+      74 |       `[SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: ${err?.message}`,
+      75 |     );
+      76 |     return emptyPack(startTime, ['exclusions_fail_closed'], [
+
+      at buildSocialContextPack (src/services/social-memory/social-context-builder.ts:73:13)
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:59:16)
+      at src/services/memory-orchestrator.ts:595:22
+          at async Promise.allSettled (index 4)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [SOCIAL-MEMORY] context built in 173ms — intent=[general_social] follows=0/0 matches=0 posts=0 events=0 person=no degraded=[exclusions_fail_closed]
+
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:102:11)
+          at async Promise.allSettled (index 4)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.social.context_built for BOOTSTRAP-SOCIAL-MEMORY (5cb70317-e98a-4088-8a6b-5378403ea7ae)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [VTID-02026] relationship_edges query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      827 |
+      828 |   if (error) {
+    > 829 |     console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
+          |             ^
+      830 |     return { block: null, latency_ms: Date.now() - t0 };
+      831 |   }
+      832 |
+
+      at fetchNetworkBlock (src/services/memory-broker.ts:829:13)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:451:18)
+          at async Promise.all (index 2)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] relationship graph returned 0 connections (NETWORK block)
+
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:466:13)
+          at async Promise.all (index 2)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224-FIX] fetchDiaryHits: 0 diary entries found
+
+      at fetchDiaryHits (src/services/context-pack-builder.ts:413:13)
+          at async Promise.all (index 3)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day1_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:533:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:716:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:220:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day3_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:534:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:716:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:220:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day7_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:535:16)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:716:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:220:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day14_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:536:17)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:716:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:220:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="analyzer.community.onboarding_stage.day30plus_after_days" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at detectOnboardingStage (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:537:17)
+      at gatherUserContext (src/services/recommendation-engine/analyzers/community-user-analyzer.ts:716:22)
+      at safeGatherUserContext (src/services/guide/awareness-context.ts:220:12)
+          at async Promise.all (index 0)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Guide:feature-introductions] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      68 |
+      69 |   if (error) {
+    > 70 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      71 |     return [];
+      72 |   }
+      73 |   return (data || []) as FeatureIntroduction[];
+
+      at getFeatureIntroductions (src/services/guide/feature-introductions.ts:70:13)
+          at async Promise.all (index 4)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Guide:session-summaries] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      81 |
+      82 |   if (error) {
+    > 83 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      84 |     return [];
+      85 |   }
+      86 |   return (data || []) as SessionSummary[];
+
+      at getRecentSessionSummaries (src/services/guide/session-summaries.ts:83:13)
+          at async Promise.all (index 5)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Guide:pattern-extractor] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      68 |
+      69 |   if (error) {
+    > 70 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      71 |     return [];
+      72 |   }
+      73 |   return (data || []) as RoutineRow[];
+
+      at getUserRoutines (src/services/guide/pattern-extractor.ts:70:13)
+          at async Promise.all (index 7)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [journey-service] getJourneyState DB error for 00000000: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
+          |               ^
+      151 |       return null;
+      152 |     }
+      153 |
+
+      at getJourneyState (src/services/journey/user-journey-service.ts:150:15)
+          at async Promise.all (index 10)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [VTID-02026] mem_episodes query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      504 |       }
+      505 |     } else {
+    > 506 |       console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
+          |               ^
+      507 |     }
+      508 |   }
+      509 |
+
+      at fetchEpisodicBlock (src/services/memory-broker.ts:506:15)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (dc9e97bd-e4c8-4dc8-9136-3aa1023d36e1)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-02026] memory_items REST query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      621 |
+      622 |   if (error) {
+    > 623 |     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
+          |             ^
+      624 |     return { ok: false, block: null };
+      625 |   }
+      626 |
+
+      at fetchEpisodicLegacyRest (src/services/memory-broker.ts:623:13)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:526:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-03156] Broker EPISODIC: 0 hits (328ms)
+
+      at fetchMemoryHits (src/services/context-pack-builder.ts:168:13)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01955] REDIS_URL not set — Tier 0 Redis disabled (legacy in-process buffer in use)
+
+      at getRedisClient (src/services/redis-client.ts:40:13)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: conversation.context_pack.built for VTID-01216 (72d300d3-0fe5-4df4-82dd-7299554d68dd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [MEMORY-ORCHESTRATOR] context built in 337ms — hits=0 facts=0 goals=0 prefs=0 dnr=0 degraded=[goals]
+
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:710:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.orchestrator.context_built for MEMORY-ORCHESTRATOR (53f3a07b-200c-4147-a27b-6f2f915aa5c5)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (7c6a58bb-91dd-42ae-86e9-e8dc916074c4)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (36ba69a7-97c6-4091-80f3-89d5dc3ff69b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (109c1769-9421-4139-a85e-ec2513e613f3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (baa6a42a-a819-495a-9835-d17fe6e5ae2c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (0acebb80-0705-42b9-97a3-bf62af838a20)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (ddf3df4c-b1fe-4f0c-9795-a4bd6b0694d3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (ffa368d0-0b98-4e6c-867d-9a2bd1e77107)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (e1b6579d-939d-4038-a1a9-769a35bedd5f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [REAL-LIFE-INVITE] user=00000000 lang=en activity=walk pillar=default
+
+      at Object.produce (src/services/assistant-continuation/providers/real-life-invite-provider.ts:98:15)
+          at async Promise.all (index 11)
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=54aceb96-2e8a-4ea2-87fa-d7f67eac2f45, source=voice_wake_brief, block_chars=1116)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1864:15)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (87743052-53fa-48ef-b5b6-810b561da596)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [Guide:opener-mvp] default-goal seed failed for user 00000000-0000-0000-0000-000000000099: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      117 |
+      118 |     if (seedErr) {
+    > 119 |       console.warn(`${LOG_PREFIX} default-goal seed failed for user ${input.user_id}:`, seedErr.message);
+          |               ^
+      120 |     } else if (seeded) {
+      121 |       goal = seeded as LifeCompassRow;
+      122 |       goalIsSystemSeeded = true;
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:119:15)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:619:17)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [journey-service] getJourneyState DB error for 00000000: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
+          |               ^
+      151 |       return null;
+      152 |     }
+      153 |
+
+      at getJourneyState (src/services/journey/user-journey-service.ts:150:15)
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1948:25)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2125:25)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:925:5)
+
+  console.log
+    [wake-decision] {"tag":"wake_decision","transport":"vertex","session_id":"live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44","decision_id":"54aceb96-2e8a-4ea2-87fa-d7f67eac2f45","winner":{"provider_key":"login_briefing","kind":"wake_brief","source_kind":null,"dedupe_key":"login-briefing:2026-08-29:orient","line_present":true,"line_chars":159},"suppression_reason":null,"providers":[{"key":"voice_wake_brief","status":"suppressed","reason":"no_grounded_line_grounded_or_silent","latency_ms":5},{"key":"contextual_next_action","status":"suppressed","reason":"all_sources_skipped","latency_ms":17},{"key":"feature_discovery_teacher","status":"skipped","reason":"no_teacher_inputs","latency_ms":5},{"key":"new_day_return","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":13},{"key":"first_time_welcome","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":13},{"key":"goal_completion_inquiry","status":"errored","reason":"life_compass_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":12},{"key":"journey_guide","status":"returned","reason":null,"latency_ms":42},{"key":"guided_topic_narration","status":"skipped","reason":"no_topic_tapped","latency_ms":3},{"key":"login_briefing","status":"returned","reason":null,"latency_ms":85},{"key":"unread_messages_announce","status":"errored","reason":"exclusions_read_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":11},{"key":"conversation_flow_v3","status":"suppressed","reason":"nothing_to_surface:greeting","latency_ms":34},{"key":"real_life_invite","status":"returned","reason":null,"latency_ms":47}],"turn1_blocks":{"wake_brief_override":true,"teacher_mode_content":false,"journey_greeting":false},"turn1_block_count":1,"turn1_collision":false,"first_name":{"present":false,"source":"none","len":0},"lang":"en","bucket":"first_time","is_reconnect":false,"timezone_present":true}
+
+      at logWakeDecisionSnapshot (src/orb/live/instruction/wake-decision-snapshot.ts:194:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44 (user=00000000-0000-0000-0000-000000000099, tenant=00000000-0000-0000-0000-000000000001, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.warn
+    [VTID-03081] recordWakeBriefEmitted failed (non-fatal): SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      745 |       if (!res.ok) {
+      746 |         // eslint-disable-next-line no-console
+    > 747 |         console.warn(
+          |                 ^
+      748 |           `[VTID-03081] recordWakeBriefEmitted failed (non-fatal): ${res.reason}`,
+      749 |         );
+      750 |       }
+
+      at src/services/wake-brief-wiring.ts:747:17
+
+  console.log
+    [Guide:opener-mvp] no candidate available for user 00000000-0000-0000-0000-000000000099 (no Life Compass goal set)
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:268:11)
+          at async Promise.all (index 2)
+
+  console.log
+    [OASIS Event] Emitted: guide.opener.no_candidate for PROACTIVE-GUIDE (90965b4a-c57d-4172-876f-dee3e1f9379f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.error
+    [Guide:pause-check] query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      56 |
+      57 |   if (error) {
+    > 58 |     console.error(`${LOG_PREFIX} query failed:`, error.message);
+         |             ^
+      59 |     return { paused: false };
+      60 |   }
+      61 |
+
+      at isPaused (src/services/guide/pause-check.ts:58:13)
+      at pickConversationFocus (src/services/guide/conversation-focus.ts:263:19)
+      at buildJourneyConversationV2Block (src/services/guide/journey-conversation-v2.ts:52:17)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:851:23)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-1656ae42-9752-4c34-b3de-c748777b8279: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=real-user-uuid, orbIdentity.user_id=real-user-uuid, bootstrapIdentity=real-use
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-1656ae42-9752-4c34-b3de-c748777b8279 user=real-use...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:979:13)
+
+  console.log
+    [OASIS Event] Emitted: guide.focus.selected for PROACTIVE-GUIDE (42968fea-424c-438b-b209-183acf23ac94)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VITANA-BRAIN] System instruction built in 443ms (18486 chars, 0 memory hits, calendar=false, compass=on, guide=on, identity=off)
+
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:442:11)
+
+  console.log
+    [VTID-SESSION-LIMIT] Terminated 2 existing session(s) for user=real-use... before starting live-1656ae42-9752-4c34-b3de-c748777b8279
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:1475:15)
+
+  console.log
+    [VITANA-BRAIN] ORB context built in 1528ms (18486 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1005:23
+          at async Promise.all (index 0)
+
+  console.log
+    [ORB-BRAIN-CACHE] MISS tenant-uuid|real-user-uuid|community|orb — building
+
+      at buildBrainSystemInstructionCached (src/services/vitana-brain-cache.ts:133:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://localhost:54321/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=40&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.real-user-uuid&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:393:13)
+          at async Promise.all (index 5)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44: 1528ms, chars=18486
+
+      at src/orb/live/session/live-session-controller.ts:1075:19
+
+  console.warn
+    [VTID-01180] listCommunityAutopilotRecommendations failed (non-fatal): rows is not iterable
+
+      1008 |     }));
+      1009 |   } catch (err: any) {
+    > 1010 |     console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+           |             ^
+      1011 |     return [];
+      1012 |   }
+      1013 | }
+
+      at listCommunityAutopilotRecommendations (src/routes/autopilot-recommendations.ts:1010:13)
+      at Object.buildAutopilotOfferBlock (src/routes/autopilot-recommendations.ts:1093:18)
+          at async Promise.all (index 5)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Calendar] Context fetch failed (non-fatal): events.filter is not a function
+
+      1034 |           };
+      1035 |         } catch (calErr: any) {
+    > 1036 |           console.warn(`[Calendar] Context fetch failed (non-fatal): ${calErr.message}`);
+           |                   ^
+      1037 |         }
+      1038 |       })()
+      1039 |     );
+
+      at src/services/context-pack-builder.ts:1036:19
+          at async Promise.all (index 4)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (9415fcbd-6d46-401c-a1d2-e8e18ef41650)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [admin-briefing] fetch failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      69 |       .limit(20);
+      70 |     if (error) {
+    > 71 |       console.warn(`${LOG_PREFIX} fetch failed: ${error.message}`);
+         |               ^
+      72 |       return null;
+      73 |     }
+      74 |     if (!data || data.length === 0) return null;
+
+      at fetchAdminBriefingBlock (src/services/admin-scanners/briefing.ts:71:15)
+          at async Promise.all (index 4)
+
+  console.error
+    [VTID-01192] Fact retrieval failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      281 |
+      282 |     if (error) {
+    > 283 |       console.error(`[${VTID}] Fact retrieval failed:`, error.message);
+          |               ^
+      284 |       return { ok: false, facts: [], error: error.message };
+      285 |     }
+      286 |
+
+      at getCurrentFacts (src/services/memory-facts-service.ts:283:15)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:276:26)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [VTID-01952] identity-guardrail: app_users select error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      83 |
+      84 |     if (error) {
+    > 85 |       console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
+         |               ^
+      86 |       return '';
+      87 |     }
+      88 |     row = (data as unknown) as IdentityRow | null;
+
+      at buildIdentityGuardrailBlock (src/services/identity-guardrail-block.ts:85:15)
+          at async Promise.all (index 3)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (9550bf03-7930-4249-9d31-b09c9d44a7ab)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-01216] Semantic search failed (non-fatal): embedding_failed
+
+      312 |       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+      313 |     } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+    > 314 |       console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
+          |               ^
+      315 |     }
+      316 |
+      317 |     // --- Tier 3: General facts (confidence + recency sorted) ---
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:314:15)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] structured facts: 0 identity core + 0 semantic + 0 general = 0 total
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:342:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [MEMORY-ORCHESTRATOR] fetchActiveGoals failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      235 |     }));
+      236 |   } catch (err: any) {
+    > 237 |     console.warn(`${LOG_PREFIX} fetchActiveGoals failed: ${err.message}`);
+          |             ^
+      238 |     throw err;
+      239 |   }
+      240 | }
+
+      at fetchActiveGoals (src/services/memory-orchestrator.ts:237:13)
+          at async Promise.allSettled (index 1)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [VTID-02026] relationship_edges query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      827 |
+      828 |   if (error) {
+    > 829 |     console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
+          |             ^
+      830 |     return { block: null, latency_ms: Date.now() - t0 };
+      831 |   }
+      832 |
+
+      at fetchNetworkBlock (src/services/memory-broker.ts:829:13)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:451:18)
+          at async Promise.all (index 2)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] relationship graph returned 0 connections (NETWORK block)
+
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:466:13)
+          at async Promise.all (index 2)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224-FIX] fetchDiaryHits: 0 diary entries found
+
+      at fetchDiaryHits (src/services/context-pack-builder.ts:413:13)
+          at async Promise.all (index 3)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: exclusions_read_failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      71 |     excl = await fetchExclusions(input.user_id);
+      72 |   } catch (err: any) {
+    > 73 |     console.error(
+         |             ^
+      74 |       `[SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: ${err?.message}`,
+      75 |     );
+      76 |     return emptyPack(startTime, ['exclusions_fail_closed'], [
+
+      at buildSocialContextPack (src/services/social-memory/social-context-builder.ts:73:13)
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:59:16)
+      at src/services/memory-orchestrator.ts:595:22
+          at async Promise.allSettled (index 4)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [SOCIAL-MEMORY] context built in 34ms — intent=[general_social] follows=0/0 matches=0 posts=0 events=0 person=no degraded=[exclusions_fail_closed]
+
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:102:11)
+          at async Promise.allSettled (index 4)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.social.context_built for BOOTSTRAP-SOCIAL-MEMORY (2919f033-6a09-4301-a428-9560d447ffc3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [Guide:feature-introductions] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      68 |
+      69 |   if (error) {
+    > 70 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      71 |     return [];
+      72 |   }
+      73 |   return (data || []) as FeatureIntroduction[];
+
+      at getFeatureIntroductions (src/services/guide/feature-introductions.ts:70:13)
+          at async Promise.all (index 4)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Guide:session-summaries] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      81 |
+      82 |   if (error) {
+    > 83 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      84 |     return [];
+      85 |   }
+      86 |   return (data || []) as SessionSummary[];
+
+      at getRecentSessionSummaries (src/services/guide/session-summaries.ts:83:13)
+          at async Promise.all (index 5)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Guide:pattern-extractor] read failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      68 |
+      69 |   if (error) {
+    > 70 |     console.warn(`${LOG_PREFIX} read failed:`, error.message);
+         |             ^
+      71 |     return [];
+      72 |   }
+      73 |   return (data || []) as RoutineRow[];
+
+      at getUserRoutines (src/services/guide/pattern-extractor.ts:70:13)
+          at async Promise.all (index 7)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [journey-service] getJourneyState DB error for real-use: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
+          |               ^
+      151 |       return null;
+      152 |     }
+      153 |
+
+      at getJourneyState (src/services/journey/user-journey-service.ts:150:15)
+          at async Promise.all (index 10)
+      at getAwarenessContext (src/services/guide/awareness-context.ts:102:7)
+          at async Promise.allSettled (index 0)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:570:41)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-9a42a41b-8b9e-4c9e-abaa-7dfd6be8dd44 in 1585ms (role=developer, chars=18486)
+
+      at src/orb/live/session/live-session-controller.ts:1121:17
+
+  console.log
+    [OASIS Event] Emitted: orb.live.context.bootstrap for VTID-01224 (724620f9-84e8-4b11-ba1c-7a5ae15aabbe)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [VTID-02026] mem_episodes query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      504 |       }
+      505 |     } else {
+    > 506 |       console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
+          |               ^
+      507 |     }
+      508 |   }
+      509 |
+
+      at fetchEpisodicBlock (src/services/memory-broker.ts:506:15)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (3eccde22-3f58-41e6-a7dc-b06c2056bad1)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-02026] memory_items REST query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      621 |
+      622 |   if (error) {
+    > 623 |     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
+          |             ^
+      624 |     return { ok: false, block: null };
+      625 |   }
+      626 |
+
+      at fetchEpisodicLegacyRest (src/services/memory-broker.ts:623:13)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:526:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-03156] Broker EPISODIC: 0 hits (66ms)
+
+      at fetchMemoryHits (src/services/context-pack-builder.ts:168:13)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: conversation.context_pack.built for VTID-01216 (bc1a13d4-2c0a-4c06-a249-cd3862f807b9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [MEMORY-ORCHESTRATOR] context built in 68ms — hits=0 facts=0 goals=0 prefs=0 dnr=0 degraded=[goals]
+
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:710:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.orchestrator.context_built for MEMORY-ORCHESTRATOR (5129ee74-1de6-4668-9255-67405db70775)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (e840f19c-db65-410e-8d12-3a4a2b2634a3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (868d686c-aa37-4a42-8211-6ba3cef3bdee)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (d8ca2ccc-31cd-4366-a957-34be4d1891bf)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (ef4cdf61-6f84-4d24-b3c8-7a2543c0a592)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (c12bfd60-9b7b-4b65-83d8-e948080b2190)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (d889e9a9-b022-4a64-8a4b-f790b34fd2ca)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (ab4fd077-7b88-449e-a537-734b32d71ba9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (2d45d31d-8adc-4273-a78d-212b1c408fb3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [REAL-LIFE-INVITE] user=real-use lang=en activity=walk pillar=default
+
+      at Object.produce (src/services/assistant-continuation/providers/real-life-invite-provider.ts:98:15)
+          at async Promise.all (index 11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (d9470d2c-155e-4236-a4ca-ce23758ac2a8)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=417535b8-1b4a-4009-845f-748837898e6d, source=voice_wake_brief, block_chars=1116)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1864:15)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (daba4083-ab17-4a16-a9ba-62d7d9ef72f0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [Guide:opener-mvp] default-goal seed failed for user real-user-uuid: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      117 |
+      118 |     if (seedErr) {
+    > 119 |       console.warn(`${LOG_PREFIX} default-goal seed failed for user ${input.user_id}:`, seedErr.message);
+          |               ^
+      120 |     } else if (seeded) {
+      121 |       goal = seeded as LifeCompassRow;
+      122 |       goalIsSystemSeeded = true;
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:119:15)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:619:17)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [journey-service] getJourneyState DB error for real-use: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
+          |               ^
+      151 |       return null;
+      152 |     }
+      153 |
+
+      at getJourneyState (src/services/journey/user-journey-service.ts:150:15)
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1948:25)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2125:25)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:944:5)
+
+  console.log
+    [wake-decision] {"tag":"wake_decision","transport":"vertex","session_id":"live-1656ae42-9752-4c34-b3de-c748777b8279","decision_id":"417535b8-1b4a-4009-845f-748837898e6d","winner":{"provider_key":"login_briefing","kind":"wake_brief","source_kind":null,"dedupe_key":"login-briefing:2026-08-29:orient","line_present":true,"line_chars":159},"suppression_reason":null,"providers":[{"key":"voice_wake_brief","status":"suppressed","reason":"no_grounded_line_grounded_or_silent","latency_ms":1},{"key":"contextual_next_action","status":"suppressed","reason":"all_sources_skipped","latency_ms":6},{"key":"feature_discovery_teacher","status":"skipped","reason":"no_teacher_inputs","latency_ms":1},{"key":"new_day_return","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":4},{"key":"first_time_welcome","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":3},{"key":"goal_completion_inquiry","status":"errored","reason":"life_compass_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":3},{"key":"journey_guide","status":"returned","reason":null,"latency_ms":13},{"key":"guided_topic_narration","status":"skipped","reason":"no_topic_tapped","latency_ms":0},{"key":"login_briefing","status":"returned","reason":null,"latency_ms":15},{"key":"unread_messages_announce","status":"errored","reason":"exclusions_read_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":4},{"key":"conversation_flow_v3","status":"suppressed","reason":"nothing_to_surface:greeting","latency_ms":12},{"key":"real_life_invite","status":"returned","reason":null,"latency_ms":14}],"turn1_blocks":{"wake_brief_override":true,"teacher_mode_content":false,"journey_greeting":false},"turn1_block_count":1,"turn1_collision":false,"first_name":{"present":false,"source":"none","len":0},"lang":"en","bucket":"first_time","is_reconnect":false,"timezone_present":true}
+
+      at logWakeDecisionSnapshot (src/orb/live/instruction/wake-decision-snapshot.ts:194:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-1656ae42-9752-4c34-b3de-c748777b8279 (user=real-user-uuid, tenant=tenant-uuid, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.warn
+    [VTID-03081] recordWakeBriefEmitted failed (non-fatal): SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      745 |       if (!res.ok) {
+      746 |         // eslint-disable-next-line no-console
+    > 747 |         console.warn(
+          |                 ^
+      748 |           `[VTID-03081] recordWakeBriefEmitted failed (non-fatal): ${res.reason}`,
+      749 |         );
+      750 |       }
+
+      at src/services/wake-brief-wiring.ts:747:17
+
+  console.log
+    [Guide:opener-mvp] no candidate available for user real-user-uuid (no Life Compass goal set)
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:268:11)
+          at async Promise.all (index 2)
+
+  console.log
+    [OASIS Event] Emitted: guide.opener.no_candidate for PROACTIVE-GUIDE (7ce2da2b-c216-4968-9d24-3e7772c9ed0b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.error
+    [Guide:pause-check] query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      56 |
+      57 |   if (error) {
+    > 58 |     console.error(`${LOG_PREFIX} query failed:`, error.message);
+         |             ^
+      59 |     return { paused: false };
+      60 |   }
+      61 |
+
+      at isPaused (src/services/guide/pause-check.ts:58:13)
+      at pickConversationFocus (src/services/guide/conversation-focus.ts:263:19)
+      at buildJourneyConversationV2Block (src/services/guide/journey-conversation-v2.ts:52:17)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:851:23)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-ANON] Session live-2ef84d82-4920-456d-aa6b-7fc3195c9460: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-2ef84d82-4920-456d-aa6b-7fc3195c9460 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-2ef84d82-4920-456d-aa6b-7fc3195c9460 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (1369dc8d-658a-4cb0-9a44-c53ead6db59c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: guide.focus.selected for PROACTIVE-GUIDE (9b7c9ad0-be86-4589-baf9-dbebf09b7487)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VITANA-BRAIN] System instruction built in 95ms (18464 chars, 0 memory hits, calendar=false, compass=on, guide=on, identity=off)
+
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:442:11)
+
+  console.log
+    [VITANA-BRAIN] ORB context built in 96ms (18464 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1005:23
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-1656ae42-9752-4c34-b3de-c748777b8279: 97ms, chars=18464
+
+      at src/orb/live/session/live-session-controller.ts:1075:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-1656ae42-9752-4c34-b3de-c748777b8279 in 97ms (role=community, chars=18464)
+
+      at src/orb/live/session/live-session-controller.ts:1121:17
+
+  console.log
+    [OASIS Event] Emitted: orb.live.context.bootstrap for VTID-01224 (8d5d9f64-028d-4173-8bed-291c0af4940f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.error
+    [entitlement-service] recordPaywallEvent(shown) error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      706 |   });
+      707 |   if (error) {
+    > 708 |     console.error(`${LOG_PREFIX} recordPaywallEvent(${action}) error: ${error.message}`);
+          |             ^
+      709 |   }
+      710 | }
+      711 |
+
+      at recordPaywallEvent (src/services/entitlement-service.ts:708:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad: hasJwtIdentity=true, isAnonymous=false, req.identity.user_id=real-user-uuid, orbIdentity.user_id=real-user-uuid, bootstrapIdentity=real-use
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=false
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [VTID-01224] Building bootstrap context for SSE session live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad user=real-use...
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:979:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (8d089d35-0260-46fb-80e7-a15b50d70f4f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [ORB-BRAIN-CACHE] MISS tenant-uuid|real-user-uuid|community|orb — building
+
+      at buildBrainSystemInstructionCached (src/services/vitana-brain-cache.ts:133:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://localhost:54321/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=40&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.real-user-uuid&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:393:13)
+          at async Promise.all (index 5)
+
+  console.warn
+    [VTID-01180] listCommunityAutopilotRecommendations failed (non-fatal): rows is not iterable
+
+      1008 |     }));
+      1009 |   } catch (err: any) {
+    > 1010 |     console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+           |             ^
+      1011 |     return [];
+      1012 |   }
+      1013 | }
+
+      at listCommunityAutopilotRecommendations (src/routes/autopilot-recommendations.ts:1010:13)
+      at Object.buildAutopilotOfferBlock (src/routes/autopilot-recommendations.ts:1093:18)
+          at async Promise.all (index 5)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [Calendar] Context fetch failed (non-fatal): events.filter is not a function
+
+      1034 |           };
+      1035 |         } catch (calErr: any) {
+    > 1036 |           console.warn(`[Calendar] Context fetch failed (non-fatal): ${calErr.message}`);
+           |                   ^
+      1037 |         }
+      1038 |       })()
+      1039 |     );
+
+      at src/services/context-pack-builder.ts:1036:19
+          at async Promise.all (index 4)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicSemantic (src/services/memory-broker.ts:705:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:459:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (a97e85d9-53a1-407d-aa99-de763fe3cefb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [MEMORY-ORCHESTRATOR] fetchActiveGoals failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      235 |     }));
+      236 |   } catch (err: any) {
+    > 237 |     console.warn(`${LOG_PREFIX} fetchActiveGoals failed: ${err.message}`);
+          |             ^
+      238 |     throw err;
+      239 |   }
+      240 | }
+
+      at fetchActiveGoals (src/services/memory-orchestrator.ts:237:13)
+          at async Promise.allSettled (index 1)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01192] Fact retrieval failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      281 |
+      282 |     if (error) {
+    > 283 |       console.error(`[${VTID}] Fact retrieval failed:`, error.message);
+          |               ^
+      284 |       return { ok: false, facts: [], error: error.message };
+      285 |     }
+      286 |
+
+      at getCurrentFacts (src/services/memory-facts-service.ts:283:15)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:276:26)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.warn
+    [VTID-01952] identity-guardrail: app_users select error: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      83 |
+      84 |     if (error) {
+    > 85 |       console.warn('[VTID-01952] identity-guardrail: app_users select error:', error.message);
+         |               ^
+      86 |       return '';
+      87 |     }
+      88 |     row = (data as unknown) as IdentityRow | null;
+
+      at buildIdentityGuardrailBlock (src/services/identity-guardrail-block.ts:85:15)
+          at async Promise.all (index 3)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at searchFactsSemantic (src/services/memory-facts-service.ts:519:23)
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:301:23)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (7053f9cd-9e56-459a-8124-d9704d664434)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-01216] Semantic search failed (non-fatal): embedding_failed
+
+      312 |       console.log(`[VTID-01216] Semantic search: ${semanticFacts.length} facts matched query`);
+      313 |     } else if (!semResult.ok && semResult.error && semResult.error !== 'missing_lens') {
+    > 314 |       console.warn(`[VTID-01216] Semantic search failed (non-fatal): ${semResult.error}`);
+          |               ^
+      315 |     }
+      316 |
+      317 |     // --- Tier 3: General facts (confidence + recency sorted) ---
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:314:15)
+          at async Promise.all (index 1)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] structured facts: 0 identity core + 0 semantic + 0 general = 0 total
+
+      at fetchMemoryFacts (src/services/context-pack-builder.ts:342:13)
+          at async Promise.all (index 1)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-02026] relationship_edges query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      827 |
+      828 |   if (error) {
+    > 829 |     console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
+          |             ^
+      830 |     return { block: null, latency_ms: Date.now() - t0 };
+      831 |   }
+      832 |
+
+      at fetchNetworkBlock (src/services/memory-broker.ts:829:13)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:451:18)
+          at async Promise.all (index 2)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01216] relationship graph returned 0 connections (NETWORK block)
+
+      at fetchRelationshipContext (src/services/context-pack-builder.ts:466:13)
+          at async Promise.all (index 2)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224-FIX] fetchDiaryHits: 0 diary entries found
+
+      at fetchDiaryHits (src/services/context-pack-builder.ts:413:13)
+          at async Promise.all (index 3)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: exclusions_read_failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      71 |     excl = await fetchExclusions(input.user_id);
+      72 |   } catch (err: any) {
+    > 73 |     console.error(
+         |             ^
+      74 |       `[SOCIAL-MEMORY] exclusions failed — failing CLOSED, no social context this turn: ${err?.message}`,
+      75 |     );
+      76 |     return emptyPack(startTime, ['exclusions_fail_closed'], [
+
+      at buildSocialContextPack (src/services/social-memory/social-context-builder.ts:73:13)
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:59:16)
+      at src/services/memory-orchestrator.ts:595:22
+          at async Promise.allSettled (index 4)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [SOCIAL-MEMORY] context built in 29ms — intent=[general_social] follows=0/0 matches=0 posts=0 events=0 person=no degraded=[exclusions_fail_closed]
+
+      at buildAssistantSocialContext (src/services/social-memory/social-memory-service.ts:102:11)
+          at async Promise.allSettled (index 4)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.social.context_built for BOOTSTRAP-SOCIAL-MEMORY (8c94b04d-1a64-400d-bdf7-2d7171c96c14)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [VTID-02026] mem_episodes query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      504 |       }
+      505 |     } else {
+    > 506 |       console.warn(`[${VTID}] mem_episodes query failed: ${error.message}`);
+          |               ^
+      507 |     }
+      508 |   }
+      509 |
+
+      at fetchEpisodicBlock (src/services/memory-broker.ts:506:15)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [VTID-01184] OpenAI failed, trying Gemini fallback
+
+      at generateEmbedding (src/services/embedding-service.ts:334:11)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.error
+    [VTID-01184] Gemini embedding error: Invalid Gemini embedding response format
+
+      284 |   } catch (err: any) {
+      285 |     const latencyMs = Date.now() - startTime;
+    > 286 |     console.error(`[${VTID}] Gemini embedding error:`, err.message);
+          |             ^
+      287 |
+      288 |     return {
+      289 |       ok: false,
+
+      at generateGeminiEmbedding (src/services/embedding-service.ts:286:13)
+      at generateEmbedding (src/services/embedding-service.ts:335:24)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [VTID-01184] All embedding providers failed
+
+      369 |
+      370 |   // Both failed
+    > 371 |   console.error(`[${VTID}] All embedding providers failed`);
+          |           ^
+      372 |
+      373 |   await emitOasisEvent({
+      374 |     vtid: VTID,
+
+      at generateEmbedding (src/services/embedding-service.ts:371:11)
+      at fetchEpisodicLegacySemantic (src/services/memory-broker.ts:555:15)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:513:28)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: embedding.all_providers_failed for VTID-01184 (48ea852e-c04e-49d0-99d0-52ed25dde711)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.all (index 0)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [VTID-02026] memory_items REST query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      621 |
+      622 |   if (error) {
+    > 623 |     console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
+          |             ^
+      624 |     return { ok: false, block: null };
+      625 |   }
+      626 |
+
+      at fetchEpisodicLegacyRest (src/services/memory-broker.ts:623:13)
+      at fetchEpisodicBlock (src/services/memory-broker.ts:526:22)
+      at withBudget (src/services/memory-broker.ts:1368:18)
+          at async Promise.all (index 0)
+      at getMemoryContext (src/services/memory-broker.ts:1335:3)
+      at fetchMemoryHitsViaBroker (src/services/context-pack-builder.ts:199:18)
+      at fetchMemoryHits (src/services/context-pack-builder.ts:167:24)
+          at async Promise.all (index 0)
+      at buildContextPack (src/services/context-pack-builder.ts:1147:3)
+          at async Promise.allSettled (index 0)
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:608:60)
+          at async Promise.all (index 0)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.error
+    [ORB_SESSION_STATE_UNHEALTHY] orb_session_state read failing persistently — 3 consecutive failures (3/3 lifetime). Last reason: SyntaxError: Unexpected token 'O', "OK" is not valid JSON. ORB continuity, audio-ready handshake, pending CTA and opener rotation are degraded.
+
+      142 |     lastAlertAtMs = nowMs;
+      143 |     const stats = opStats[op];
+    > 144 |     console.error(
+          |             ^
+      145 |       `[${ALERT_MARKER}] orb_session_state ${op} failing persistently — ` +
+      146 |         `${stats.consecutive_failures} consecutive failures ` +
+      147 |         `(${stats.failures}/${stats.attempts} lifetime)` +
+
+      at maybeAlert (src/services/orb/orb-session-state.ts:144:13)
+      at recordFailure (src/services/orb/orb-session-state.ts:192:5)
+      at readOrbSessionState (src/services/orb/orb-session-state.ts:245:7)
+      at decideWakeBriefForSession (src/services/wake-brief-wiring.ts:635:19)
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1756:25)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2125:25)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:1027:7)
+
+  console.log
+    [VTID-03156] Broker EPISODIC: 0 hits (76ms)
+
+      at fetchMemoryHits (src/services/context-pack-builder.ts:168:13)
+          at async Promise.all (index 0)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.warn
+    [admin-briefing] fetch failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      69 |       .limit(20);
+      70 |     if (error) {
+    > 71 |       console.warn(`${LOG_PREFIX} fetch failed: ${error.message}`);
+         |               ^
+      72 |       return null;
+      73 |     }
+      74 |     if (!data || data.length === 0) return null;
+
+      at fetchAdminBriefingBlock (src/services/admin-scanners/briefing.ts:71:15)
+          at async Promise.all (index 4)
+
+  console.log
+    [OASIS Event] Emitted: conversation.context_pack.built for VTID-01216 (f592b558-6ade-400b-a3d0-83730964a65e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+          at async Promise.allSettled (index 0)
+          at async Promise.all (index 0)
+
+  console.log
+    [MEMORY-ORCHESTRATOR] context built in 78ms — hits=0 facts=0 goals=0 prefs=0 dnr=0 degraded=[goals]
+
+      at buildAssistantMemoryContext (src/services/memory-orchestrator.ts:710:11)
+          at async Promise.all (index 0)
+
+  console.log
+    [OASIS Event] Emitted: memory.orchestrator.context_built for MEMORY-ORCHESTRATOR (471e45ab-8bf0-4006-8a41-48fd253aeb95)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (34adff92-7194-47d3-9d13-16cbefc1525f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (148fc3b8-c11a-486f-ac28-a69451a64fbd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (7e38facc-c3f8-4c82-9bac-2d47e17833ff)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (0239d32f-752b-41af-8d93-4152b80727eb)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (ab508305-06fa-4789-9f3d-cfd06526f41e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (b4f66857-1830-485f-a5c5-6caede9edcf2)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (142bbfdd-6b56-42b2-8799-2e706c9fde92)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.candidate for VTID-03066 (e20c6a7e-4117-47ab-91a3-f60d79a686d3)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [Guide:opener-mvp] default-goal seed failed for user real-user-uuid: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      117 |
+      118 |     if (seedErr) {
+    > 119 |       console.warn(`${LOG_PREFIX} default-goal seed failed for user ${input.user_id}:`, seedErr.message);
+          |               ^
+      120 |     } else if (seeded) {
+      121 |       goal = seeded as LifeCompassRow;
+      122 |       goalIsSystemSeeded = true;
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:119:15)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:619:17)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [REAL-LIFE-INVITE] user=real-use lang=en activity=walk pillar=default
+
+      at Object.produce (src/services/assistant-continuation/providers/real-life-invite-provider.ts:98:15)
+          at async Promise.all (index 11)
+
+  console.log
+    [VTID-03079/VTID-03101] Vertex wake-brief stored on session.wakeBriefOverrideBlock (decision_id=3d397e16-c104-4eae-8ad7-0ed8c70ca50a, source=voice_wake_brief, block_chars=1116)
+
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1864:15)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (4b54e43e-8569-428a-885c-61419e43496d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [Guide:opener-mvp] no candidate available for user real-user-uuid (no Life Compass goal set)
+
+      at pickOpenerCandidate (src/services/guide/opener-mvp.ts:268:11)
+          at async Promise.all (index 2)
+
+  console.log
+    [OASIS Event] Emitted: guide.opener.no_candidate for PROACTIVE-GUIDE (cb22a975-33fe-4203-a782-2834b8aa5b87)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [journey-service] getJourneyState DB error for real-use: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      148 |
+      149 |     if (error) {
+    > 150 |       console.warn(`[journey-service] getJourneyState DB error for ${userId.slice(0, 8)}:`, error.message);
+          |               ^
+      151 |       return null;
+      152 |     }
+      153 |
+
+      at getJourneyState (src/services/journey/user-journey-service.ts:150:15)
+      at assembleWakeBriefAndJourney (src/orb/live/session/live-session-controller.ts:1948:25)
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2125:25)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:1027:7)
+
+  console.log
+    [wake-decision] {"tag":"wake_decision","transport":"vertex","session_id":"live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad","decision_id":"3d397e16-c104-4eae-8ad7-0ed8c70ca50a","winner":{"provider_key":"login_briefing","kind":"wake_brief","source_kind":null,"dedupe_key":"login-briefing:2026-08-29:orient","line_present":true,"line_chars":159},"suppression_reason":null,"providers":[{"key":"voice_wake_brief","status":"suppressed","reason":"no_grounded_line_grounded_or_silent","latency_ms":1},{"key":"contextual_next_action","status":"suppressed","reason":"all_sources_skipped","latency_ms":6},{"key":"feature_discovery_teacher","status":"skipped","reason":"no_teacher_inputs","latency_ms":1},{"key":"new_day_return","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":15},{"key":"first_time_welcome","status":"errored","reason":"user_journey_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":4},{"key":"goal_completion_inquiry","status":"errored","reason":"life_compass_fetch_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":4},{"key":"journey_guide","status":"returned","reason":null,"latency_ms":13},{"key":"guided_topic_narration","status":"skipped","reason":"no_topic_tapped","latency_ms":1},{"key":"login_briefing","status":"returned","reason":null,"latency_ms":15},{"key":"unread_messages_announce","status":"errored","reason":"exclusions_read_failed: SyntaxError: Unexpected token 'O', \"OK\" is not valid JSON","latency_ms":5},{"key":"conversation_flow_v3","status":"suppressed","reason":"nothing_to_surface:greeting","latency_ms":11},{"key":"real_life_invite","status":"returned","reason":null,"latency_ms":13}],"turn1_blocks":{"wake_brief_override":true,"teacher_mode_content":false,"journey_greeting":false},"turn1_block_count":1,"turn1_collision":false,"first_name":{"present":false,"source":"none","len":0},"lang":"en","bucket":"first_time","is_reconnect":false,"timezone_present":true}
+
+      at logWakeDecisionSnapshot (src/orb/live/instruction/wake-decision-snapshot.ts:194:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad (user=real-user-uuid, tenant=tenant-uuid, lang=en, contextDeferred=true)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.warn
+    [VTID-03081] recordWakeBriefEmitted failed (non-fatal): SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      745 |       if (!res.ok) {
+      746 |         // eslint-disable-next-line no-console
+    > 747 |         console.warn(
+          |                 ^
+      748 |           `[VTID-03081] recordWakeBriefEmitted failed (non-fatal): ${res.reason}`,
+      749 |         );
+      750 |       }
+
+      at src/services/wake-brief-wiring.ts:747:17
+
+  console.error
+    [Guide:pause-check] query failed: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      56 |
+      57 |   if (error) {
+    > 58 |     console.error(`${LOG_PREFIX} query failed:`, error.message);
+         |             ^
+      59 |     return { paused: false };
+      60 |   }
+      61 |
+
+      at isPaused (src/services/guide/pause-check.ts:58:13)
+      at pickConversationFocus (src/services/guide/conversation-focus.ts:263:19)
+      at buildJourneyConversationV2Block (src/services/guide/journey-conversation-v2.ts:52:17)
+      at buildProactiveGuideBlock (src/services/vitana-brain.ts:851:23)
+          at async Promise.all (index 2)
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:358:90)
+
+  console.log
+    [OASIS Event] Emitted: guide.focus.selected for PROACTIVE-GUIDE (ce254d83-1c6f-474f-9842-e4412e8ae3de)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VITANA-BRAIN] System instruction built in 104ms (18464 chars, 0 memory hits, calendar=false, compass=on, guide=on, identity=off)
+
+      at buildBrainSystemInstruction (src/services/vitana-brain.ts:442:11)
+
+  console.log
+    [VITANA-BRAIN] ORB context built in 105ms (18464 chars)
+
+      at src/orb/live/session/live-session-controller.ts:1005:23
+          at async Promise.all (index 0)
+
+  console.log
+    [VTID-01224] Context bootstrap complete for live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad: 106ms, chars=18464
+
+      at src/orb/live/session/live-session-controller.ts:1075:19
+
+  console.log
+    [BOOTSTRAP-ORB-CRITICAL-PATH] Context ready for live-6fdb20bc-0cec-4f93-90a5-c1bb3ef7b7ad in 106ms (role=community, chars=18464)
+
+      at src/orb/live/session/live-session-controller.ts:1121:17
+
+  console.log
+    [OASIS Event] Emitted: orb.live.context.bootstrap for VTID-01224 (08998d55-f85f-485d-8abe-d0eda7d546f1)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/start
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:642:11)
+
+  console.log
+    [LANG-PREF] Client requested lang: 'NONE' (from POST body.lang)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:737:11)
+
+  console.log
+    [VTID-ANON] Session live-104c5e67-833d-4ba3-aeab-d0a810ff0259: hasJwtIdentity=false, isAnonymous=true, req.identity.user_id=none, orbIdentity.user_id=none, bootstrapIdentity=null
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:798:11)
+
+  console.log
+    [VTID-CONTEXT] Client context: city=test, country=US, time=12:00, device=desktop, anonymous=true
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:799:11)
+
+  console.log
+    [LANG-PREF] Anonymous session using Accept-Language: en
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:859:15)
+
+  console.log
+    [VTID-ANON] Anonymous session live-104c5e67-833d-4ba3-aeab-d0a810ff0259 — skipping memory, tools, lastSessionInfo. Context: city=test
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:931:13)
+
+  console.log
+    [VTID-ORBC] Live session created: live-104c5e67-833d-4ba3-aeab-d0a810ff0259 (user=anonymous, tenant=none, lang=en, contextDeferred=false)
+
+      at handleLiveSessionStart (src/orb/live/session/live-session-controller.ts:2168:11)
+
+  console.log
+    [OASIS Event] Emitted: orb.session.identity.resolved for DEV-COMHU-0502 (530f83f6-2dac-4923-8c0a-126cfc298ff2)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-01155] Live session stopped: s1
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2462:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-01155] Live session stopped: s1
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2462:11)
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-01155] Live session stopped: s1
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2462:11)
+
+  console.error
+    [VTID-01225] Error fetching conversation: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      285 |
+      286 |     if (error) {
+    > 287 |       console.error('[VTID-01225] Error fetching conversation:', error.message);
+          |               ^
+      288 |       return null;
+      289 |     }
+      290 |
+
+      at fetchRecentConversationForCognee (src/services/orb-memory-bridge.ts:287:15)
+
+  console.log
+    [VTID-01225] No meaningful transcript for extraction: s1
+
+      at src/orb/live/session/live-session-controller.ts:2427:21
+
+  console.log
+    [VTID-ORBC] POST /orb/live/session/stop
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2251:11)
+
+  console.log
+    [VTID-01155] Live session stopped: s1
+
+      at handleLiveSessionStop (src/orb/live/session/live-session-controller.ts:2462:11)
+
+  console.error
+    [VTID-01225] Error fetching conversation: SyntaxError: Unexpected token 'O', "OK" is not valid JSON
+
+      285 |
+      286 |     if (error) {
+    > 287 |       console.error('[VTID-01225] Error fetching conversation:', error.message);
+          |               ^
+      288 |       return null;
+      289 |     }
+      290 |
+
+      at fetchRecentConversationForCognee (src/services/orb-memory-bridge.ts:287:15)
+
+  console.log
+    [VTID-01225] No meaningful transcript for extraction: s1
+
+      at src/orb/live/session/live-session-controller.ts:2427:21
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.post_turn.cooldown_ms" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getPostTurnCooldownMs (src/orb/upstream/constants.ts:120:30)
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2564:42)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:1350:5)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.watchdog.forwarding_ack_timeout_ms" tenant_id="GLOBAL" — using defaultValue
+
+      134 |   if (loggedMisses.has(tag)) return;
+      135 |   loggedMisses.add(tag);
+    > 136 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      137 | }
+      138 |
+      139 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:136:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:148:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:287:12)
+      at getForwardingAckTimeoutMs (src/orb/upstream/constants.ts:155:30)
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2611:78)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:1395:5)
+
+  console.log
+    [VTID-01155] Video frame received: session=s1, source=screen, frame=1
+
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2662:15)
+
+  console.log
+    [VTID-VOICE-INIT] Text message forwarded to Live API: "hello..."
+
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2695:17)
+
+  console.log
+    [VTID-VOICE-INIT] SSE path: client interrupt — ungating mic and stopping Gemini: session=s1
+
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2705:15)
+
+  console.error
+    [VTID-01155] Stream send error: Error: boom
+        at Object.sendAudioToLiveAPI (/home/user/vitana-platform/services/gateway/test/orb/live/session/live-session-controller.test.ts:1527:17)
+        at handleLiveStreamSend (/home/user/vitana-platform/services/gateway/src/orb/live/session/live-session-controller.ts:2586:27)
+        at Object.<anonymous> (/home/user/vitana-platform/services/gateway/test/orb/live/session/live-session-controller.test.ts:1538:5)
+
+      2733 |     return res.status(200).json({ ok: true });
+      2734 |   } catch (error: any) {
+    > 2735 |     console.error(`[VTID-01155] Stream send error:`, error);
+           |             ^
+      2736 |     return res.status(500).json({ ok: false, error: error.message });
+      2737 |   }
+      2738 | }
+
+      at handleLiveStreamSend (src/orb/live/session/live-session-controller.ts:2735:13)
+      at Object.<anonymous> (test/orb/live/session/live-session-controller.test.ts:1538:5)
+
+(node:1653) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/session/live-session-controller.test.ts (5.291 s)
+  A8.2: configureLiveSessionController
+    ✓ throws if a handler runs before configure (72 ms)
+    ✓ throws if configured twice (2 ms)
+    ✓ reset escape hatch allows reconfiguration
+  A8.2: cleanupExpiredSessions
+    ✓ removes sessions whose lastActivity is older than SESSION_TIMEOUT_MS (1 ms)
+    ✓ ends the SSE response on expiry (best-effort, swallows errors) (1 ms)
+    ✓ does not throw when sse.end throws (1 ms)
+  A8.2: cleanupWsSession
+    ✓ is a no-op when the sessionId is unknown
+    ✓ clears keepalive intervals + watchdog and removes both registry entries (4 ms)
+    ✓ skips client WS close when readyState is not OPEN (2 ms)
+    ✓ handles a session that has no liveSession (WS-only entry) (2 ms)
+  VTID-03561: cleanupWsSession emits session.stop
+    ✓ emits vtid.live.session.stop on WS teardown (the regression) (2 ms)
+    ✓ reports the LIVE session id, never the ws-<uuid> socket id (1 ms)
+    ✓ carries the session metrics the cost/quality consumers read (3 ms)
+    ✓ passes the caller-supplied reason through, and defaults to client_disconnect (3 ms)
+    ✓ does NOT double-emit when a stop was already emitted for the session (1 ms)
+    ✓ latches after emitting so a repeat teardown cannot re-emit (2 ms)
+    ✓ completes teardown even when the emit throws (22 ms)
+    ✓ reports null duration/idle for a session torn down before it started (2 ms)
+    ✓ still emits when the session never resolved an identity (2 ms)
+  A8.2: handleLiveStreamEndTurn
+    ✓ 400 when session_id is missing from both query and body (1 ms)
+    ✓ 404 when session is not in liveSessions (1 ms)
+    ✓ 400 when session is not active
+    ✓ falls back to body.session_id when query is empty (1 ms)
+    ✓ calls sendEndOfTurn + responds "End of turn signaled" when upstream WS is open and sendEndOfTurn returns true (1 ms)
+    ✓ responds "acknowledged (no Live API)" when no upstream WS exists (1 ms)
+    ✓ responds "acknowledged (no Live API)" when upstream WS is not in OPEN state (1 ms)
+    ✓ logs ownership mismatch but still processes the request (2 ms)
+  A8.2 anti-regression: orb-live.ts is a consumer of the controller
+    ✓ imports the controller (configure + cleanup helpers + end-turn handler) (1 ms)
+    ✓ calls configureLiveSessionController exactly once at module init (10 ms)
+    ✓ does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore (5 ms)
+    ✓ end-turn route is now a thin delegator (single await call) (1 ms)
+    ✓ /live/session/start route is now a thin delegator (A8.2.1) (1 ms)
+    ✓ /live/session/stop route is now a thin delegator (A8.2-complete) (1 ms)
+    ✓ /live/stream/send route is now a thin delegator (A8.2-complete) (1 ms)
+  A8.2.1: handleLiveSessionStart
+    ✓ returns 403 when validateOrigin rejects (3 ms)
+    ✓ returns 401 AUTH_TOKEN_INVALID when Bearer header present but req.identity unset (5 ms)
+    ✓ creates an anonymous session (no JWT) and stores it in liveSessions with a live-<uuid> session_id (22 ms)
+    ✓ respects client-requested language (9 ms)
+    ✓ emits OASIS vtid.live.session.start with the resolved fields (4 ms)
+    ✓ pins client-supplied conversation_id when present (3 ms)
+    ✓ marks reconnect session with resumedFromHistory when transcript_history provided (4 ms)
+    ✓ marks reconnect session with resumedFromHistory when reconnect_stage is explicitly "idle" and transcript_history is empty (4 ms)
+    ✓ does NOT mark a brand-new session (no reconnect_stage field at all) as resumedFromHistory (4 ms)
+    ✓ stores guided_topic_id and guided_topic_resume on the created session (4 ms)
+    ✓ defaults guided_topic_resume to false when the field is absent (a fresh topic tap, not a resume) (4 ms)
+    ✓ ignores a non-boolean guided_topic_resume (defensive against a malformed/tampered payload) (4 ms)
+    ✓ uses VAD silence override when supplied in valid range (4 ms)
+    ✓ does NOT terminate other sessions when identity is DEV_IDENTITY (1522 ms)
+    ✓ terminates existing sessions for a real authenticated user (102 ms)
+    ✓ returns wake_brief field in meta (default null for anonymous; non-null structure when populated) (7 ms)
+    VTID-03107: voice-quota gate
+      ✓ returns 402 with structured paywall body when quota is exhausted (hard_block) (6 ms)
+      ✓ allows the session to start normally when quota is available (108 ms)
+      ✓ skips the quota check entirely for anonymous sessions (no identity) (5 ms)
+  A8.2-complete: handleLiveSessionStop
+    ✓ 400 when session_id missing (2 ms)
+    ✓ 404 when session not found (1 ms)
+    ✓ happy path: closes upstream WS, writes session_ended SSE event, marks inactive, deletes from registry, returns 200 { ok: true } (4 ms)
+    ✓ clears upstream ping + silence keepalive intervals (2 ms)
+    ✓ OASIS payload includes user/tenant from session.identity (4 ms)
+    ✓ ownership mismatch is logged but allowed through (6 ms)
+  A8.2-complete: handleLiveStreamSend
+    ✓ 400 when session_id missing (2 ms)
+    ✓ 404 when session not found (1 ms)
+    ✓ 400 when session not active (1 ms)
+    ✓ drops audio with reason "navigation_dispatched" when navigation is queued
+    ✓ drops audio with reason "model_speaking" while the model is producing audio (1 ms)
+    ✓ drops audio with reason "post_turn_cooldown" within the cooldown window (2 ms)
+    ✓ forwards audio via sendAudioToLiveAPI when upstream WS is open
+    ✓ arms the forwarding watchdog when only the USER has shown life (transport, not response) (1 ms)
+    ✓ skips the forwarding watchdog once the model has responded on this turn (1 ms)
+    ✓ silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE) (1 ms)
+    ✓ handles video frame: increments videoInFrames + writes video_ack via SSE (8 ms)
+    ✓ text path: forwards client_content turn_complete=true via upstream WS (1 ms)
+    ✓ interrupt path with model not speaking: returns was_speaking:false (no-op) (1 ms)
+    ✓ interrupt path with model speaking: ungates mic, sends end-of-turn, clears output buffer, writes interrupted SSE event (1 ms)
+    ✓ falls back to body.session_id when query is empty
+    ✓ 500 on uncaught throw from sendAudioToLiveAPI (3 ms)
+  VTID-03774: shouldInjectWakeBriefOverrideBlock
+    ✓ injects on a non-reconnect open regardless of dedupeKey (1 ms)
+    ✓ withholds injection on a reconnect for a non-guided-topic candidate (unchanged behavior)
+    ✓ still injects on a reconnect when the winning candidate is a guided-topic resume (1 ms)
+    ✓ requires an exact guided_topic: prefix — a lookalike key is not exempted
+    ✓ handles undefined/empty dedupeKey on a reconnect as non-exempt
+
+Test Suites: 1 passed, 1 total
+Tests:       80 passed, 80 total
+Snapshots:   0 total
+Time:        6.451 s
+Ran all test suites matching /test\/orb\/live\/session\/live-session-controller.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

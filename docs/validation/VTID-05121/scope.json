@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05121",
+  "files": [
+    "services/gateway/src/routes/autopilot.ts",
+    "services/gateway/src/routes/autopilot-prompts.ts",
+    "services/gateway/test/vtid-05121-autopilot-prompts-not-behind-service-token.test.ts",
+    "docs/validation/VTID-05121/**"
+  ]
+}

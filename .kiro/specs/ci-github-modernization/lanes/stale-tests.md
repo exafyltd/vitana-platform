@@ -1,0 +1,38 @@
+---
+lane: stale-tests
+state: ready
+next_actor: kiro
+depends_on: []
+executor: kiro
+seat: exafy
+reviewer_seat: jtadic
+repos: [vitana-v1, vitana-platform]
+paths:
+  - src/components/messages/ConversationView.deeplink-scroll.vtid-05201.test.tsx
+  - src/components/messages/ConversationView.tsx
+  - docs/validation/**
+updated: 2026-10-21T12:26Z
+vtid: VTID-05308
+---
+# Lane: stale-tests
+
+Fix the permanently-red suites at the cause, never by skipping: vitana-v1 ConversationView VTID-05201
+deeplink-scroll test (+ the ConversationView product code it asserts), and the platform VTID-05082
+staging-contract failure (update the contract/`staging-tests.json` to today's AWS/Aurora/route state;
+read-only). Tasks T1–T3 in `tasks.md`. The only straightforward Kiro lane — product + non-governance test
+files, so `executor: kiro` (seat `exafy`, reviewer `jtadic`). PR-GATE's test-weakening guard is the
+backstop: assertions change to the current contract, none deleted/loosened. No VTID yet.
+
+Note: the vitana-v1 `paths` globs are the lane's v1-repo scope; the platform VTID-05082 evidence lands
+under `docs/validation/**` in the lane's platform PR. Confirm the exact product-code file the v1 test
+drives before editing (ConversationView may compose sub-components).
+
+## Log
+
+### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
+Lane created with the plan. Scope: the v1 ConversationView test + its product code, the platform
+VTID-05082 contract under docs/validation. Evidence from inv-tests §8 (both files confirmed on
+origin/main). Non-governance Kiro lane. No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05308 allocated after policy approval (converged-auto-v1).

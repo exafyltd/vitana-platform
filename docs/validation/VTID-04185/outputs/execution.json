@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04185",
+  "execution_id": "e1fa489e-ecda-4ae6-b9d4-780904e5144e",
+  "finding_id": "9422f531-c6fb-4d5d-8212-532554d60f7b",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e1fa489e",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/console-task-21-bootstrap-all-sources-fail.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:29:47.949Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

@@ -1,0 +1,739 @@
+{
+  "containerDefinitions": [
+    {
+      "name": "gateway",
+      "image": "472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway:9c31d29d47bf",
+      "cpu": 0,
+      "portMappings": [
+        {
+          "containerPort": 8080,
+          "hostPort": 8080,
+          "protocol": "tcp"
+        }
+      ],
+      "essential": true,
+      "environment": [
+        {
+          "name": "ORB_DEVON_PRECONNECT_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "KIRO_ENGINE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_SQL_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_COMMUNITY_INTENT_KIND_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "NOVA_SONIC_REGION",
+          "value": "eu-north-1"
+        },
+        {
+          "name": "JEV_DOCUMENT_TYPE_ROUTING_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_LESSON_NOVELTY_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_APPROVAL_RISK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_SELFHEAL_PROVIDER_FAILURE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_DECISIONS_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_VOICE_BACKSTOP_CLUSTERS_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_CLAIM_FEASIBILITY_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_SELFHEAL_INCIDENT_DEDUPE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "NAV_GUIDED_JOURNEY",
+          "value": "true"
+        },
+        {
+          "name": "NOVA_SONIC_CANARY_TENANT_IDS",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_PAYMENT_INVOICE_MATCH_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_ORB_BRAIN_CACHE_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "GOOGLE_CLOUD_PROJECT",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_CODEINTEL_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "GATEWAY_PUBLIC_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "COMMIT_SHA",
+          "value": "<redacted>"
+        },
+        {
+          "name": "OPERATOR_THREADS_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "BRAIN_PERSONAL_WEIGHTS",
+          "value": "true"
+        },
+        {
+          "name": "ORB_SSE_CROSS_TASK_FORWARD_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "VERTEX_SERBIAN_BRIDGE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_TOOL_ACK_INTENT_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_CODEBASE_READ_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_SQL_READONLY_BACKEND",
+          "value": "<redacted>"
+        },
+        {
+          "name": "NOVA_SONIC_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_ONRAMP_EXECUTOR",
+          "value": "agent"
+        },
+        {
+          "name": "JEV_COMMUNITY_FEED_PICK_SAMPLE",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_COMMUNITY_MEMBER_TIEBREAK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_CRM_ACCOUNT_CLASSIFICATION_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_INTENT_ENGINE_A",
+          "value": "true"
+        },
+        {
+          "name": "ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_COMPANY_DOC_RELEVANCE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_COMMUNITY_TICKET_TRIAGE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "AUDIOBOOK_GOOGLE_SR_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "AUTOMATIONS_DELIVERY_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_COMMUNITY_NEXT_ACTION_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_ORB_NOVA_PREWARM_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "JEV_CI_FAILURE_ROUTING_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_VOICE_SLOW_SESSION_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_COMMUNITY_FEED_PICK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "NAV_REGISTRY_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "REMINDERS_INPROCESS_DISPATCH_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "VERTEX_AI_LOCATION",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DB_READER_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_PR_CLASH_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_ORB_FAST_START_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "AWS_TRANSCRIBE_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "JEV_COMMUNITY_NOTIFICATION_WORTH_SAMPLE",
+          "value": "<redacted>"
+        },
+        {
+          "name": "KIRO_MCP_WRITE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "REDIS_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ORB_CASCADE_STREAMING_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "BRAIN_SCORED_OPENING",
+          "value": "true"
+        },
+        {
+          "name": "COMMERCE_MCP_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "TTS_FISH_FALLBACK_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_CRM_LEAD_SCORE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "OPERATOR_BOOTSTRAP_BUILD_INFO_URLS",
+          "value": "<redacted>"
+        },
+        {
+          "name": "OPERATOR_BOOTSTRAP_PACK_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "CODEINTEL_V1_REPO_DIR",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_ROOT_CAUSE_ROLLUP_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "CALENDAR_MAINTENANCE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_VTID_SELF_ALLOCATE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "NAV_CONTINUATION_BIND",
+          "value": "true"
+        },
+        {
+          "name": "ERP_BRIDGE_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_TEST_SELECTION_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_FINDING_DEDUPE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "VTID_ALLOCATOR_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "FEEDBACK_AUTO_DISPATCH_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "GIT_COMMIT_SHA",
+          "value": "<redacted>"
+        },
+        {
+          "name": "OPERATOR_PR_APPROVAL_REQUIRED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_TURN_MEMORY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_COMMUNITY_SUGGESTION_PICK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "COMMERCE_AI_SETUP_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "GEMINI_LIVE_TRANSPORT",
+          "value": "<redacted>"
+        },
+        {
+          "name": "CALENDAR_DEFAULT_REMINDERS_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "TTS_PROVIDER",
+          "value": "<redacted>"
+        },
+        {
+          "name": "COMMERCE_MCP_CHATGPT",
+          "value": "true"
+        },
+        {
+          "name": "VERTEX_RUSSIAN_BRIDGE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+          "value": "off"
+        },
+        {
+          "name": "JEV_CRM_DUPLICATE_ACCOUNT_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_PLANNABILITY_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "ORCHESTRATOR_DELEGATION_PERSIST_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "APP_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_COMMUNITY_MARKETPLACE_INTENT_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "LEDGER_WRITE_AUTH_MODE",
+          "value": "enforce"
+        },
+        {
+          "name": "JEV_CHANGE_RISK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "AWS_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "TTS_POLLY_STRICT",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "VERTEX_LIVE_UNAVAILABLE",
+          "value": "true"
+        },
+        {
+          "name": "JEV_COMMUNITY_WORTH_REMEMBERING_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "FEATURE_ORB_WS_TRANSPORT_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "NOVA_SONIC_CANARY_USER_IDS",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AUTOPILOT_HEARTBEAT_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_CONTEXT_READY_GATE_TIMEOUT_MS",
+          "value": "300"
+        },
+        {
+          "name": "DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_FULL_DUPLEX_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_JOB_CLOUD",
+          "value": "aws"
+        },
+        {
+          "name": "CALENDAR_GOOGLE_SYNC_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_SCAN_TOKEN",
+          "value": "<redacted>"
+        },
+        {
+          "name": "KIRO_MCP_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_DAY_CLOSE_RUNG_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "VITANA_ENV",
+          "value": "staging"
+        },
+        {
+          "name": "GATEWAY_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "DEFAULT_TENANT_ID",
+          "value": "<redacted>"
+        },
+        {
+          "name": "BEDROCK_ROLE_ARN",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK",
+          "value": "1040000"
+        },
+        {
+          "name": "JEV_SELFHEAL_DEPLOY_CAUSE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "DEV_AUTOPILOT_WATCHER_LIVE",
+          "value": "true"
+        },
+        {
+          "name": "JEV_SELFHEAL_PRETRIAGE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "ENVIRONMENT",
+          "value": "<redacted>"
+        },
+        {
+          "name": "JEV_COMMUNITY_MATCH_RERANK_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "OPERATOR_PLANNER_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_AGENT_PROGRESS_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_COMMUNITY_CALENDAR_PRIORITY_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "ENV",
+          "value": "<redacted>"
+        },
+        {
+          "name": "BUILD_INFO_MARKER",
+          "value": "<redacted>"
+        },
+        {
+          "name": "REMINDERS_STAGING_DISPATCH_OVERRIDE",
+          "value": "true"
+        },
+        {
+          "name": "JEV_VOICE_SESSION_OUTCOME_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "DEV_AUTOPILOT_EXECUTOR",
+          "value": "agent"
+        },
+        {
+          "name": "GCP_SERVICE_ACCOUNT_JSON",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AUTOPILOT_ACTION_REWARD_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_FIX_VERIFICATION_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "NOVA_SONIC_MODEL_ID",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ORB_CASCADED_VOICE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_USE_JOB",
+          "value": "true"
+        },
+        {
+          "name": "ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "AURORA_CA_BUNDLE_PATH",
+          "value": "<redacted>"
+        },
+        {
+          "name": "FEATURE_LATENCY_TELEMETRY_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "JEV_REPEAT_RUN_GUARD_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "JEV_COMMUNITY_NOTIFICATION_WORTH_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "AUDIOBOOK_GOOGLE_RU_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DB_HOST",
+          "value": "<redacted>"
+        },
+        {
+          "name": "AWS_BEDROCK_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "OPERATOR_AWS_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_VOICE_OPENER_OUTCOMES_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "OPERATOR_DB_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_OPERATOR_ROUTE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "OPERATOR_MACHINE_AUTH_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "GOOGLE_AUTH_AWS_SUPPLIER_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_TOOL_SELECTION_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "MEMORY_ORB_RECALL_SHADOW",
+          "value": "true"
+        },
+        {
+          "name": "MEMORY_ORB_RECALL_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "JEV_PARTNER_ONBOARDING_TRIAGE_MODE",
+          "value": "shadow"
+        },
+        {
+          "name": "KIRO_RUNNER_URL",
+          "value": "<redacted>"
+        },
+        {
+          "name": "CODEINTEL_PLATFORM_REPO_DIR",
+          "value": "<redacted>"
+        },
+        {
+          "name": "ORB_VERTEX_SHARED_HANDLERS",
+          "value": "true"
+        }
+      ],
+      "mountPoints": [],
+      "volumesFrom": [],
+      "secrets": [
+        {
+          "name": "DB_PASSWORD",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:rds!db-baf646a7-6dcf-450d-a69c-8a9020ec505b-9VKz86"
+        },
+        {
+          "name": "SUPABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/staging/url-I9rciI"
+        },
+        {
+          "name": "SUPABASE_SERVICE_ROLE",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/staging/service-role-key-yfS4gk"
+        },
+        {
+          "name": "SUPABASE_JWT_SECRET",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/jwt-secret-k2UAbI"
+        },
+        {
+          "name": "SUPABASE_ANON_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/anon-key-aoYETV"
+        },
+        {
+          "name": "GOOGLE_GEMINI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/google-gemini-api-key-kXos73"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/google-gemini-api-key-kXos73"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/openai-api-key-VaUL31"
+        },
+        {
+          "name": "DEEPSEEK_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/deepseek-api-key-iErwBo"
+        },
+        {
+          "name": "FISH_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/fish-api-key-4pRcUe"
+        },
+        {
+          "name": "AURORA_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/database-url-URDvEh"
+        },
+        {
+          "name": "AURORA_RLS_DATABASE_URL",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/aurora/prod/postgrest-authenticator-uri-twGIie"
+        },
+        {
+          "name": "GITHUB_SAFE_MERGE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/github/pat-g82ixI"
+        },
+        {
+          "name": "GATEWAY_SERVICE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/supabase/prod/service-role-key-GfBpSP"
+        },
+        {
+          "name": "GATEWAY_INTERNAL_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/internal-token-i7VUb9"
+        },
+        {
+          "name": "ERP_BRIDGE_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/erp-bridge/staging/bridge-token-97k8bM"
+        },
+        {
+          "name": "OPERATOR_MACHINE_AUTH_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/operator-machine-auth-token-mnycw1"
+        },
+        {
+          "name": "TYPESAFE_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/typesafe-api-key-YElucz"
+        },
+        {
+          "name": "DAILY_API_KEY",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/staging/daily-api-key-yhpaUt"
+        },
+        {
+          "name": "KIRO_RUNNER_TOKEN",
+          "valueFrom": "arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/staging/runner-token-2prVvG"
+        }
+      ],
+      "logConfiguration": {
+        "logDriver": "awslogs",
+        "options": {
+          "awslogs-group": "/vitana/gateway",
+          "awslogs-region": "eu-central-1",
+          "awslogs-stream-prefix": "ecs"
+        }
+      },
+      "systemControls": []
+    }
+  ],
+  "family": "vitana-gateway",
+  "taskRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-role",
+  "executionRoleArn": "arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role",
+  "networkMode": "awsvpc",
+  "volumes": [],
+  "placementConstraints": [],
+  "requiresCompatibilities": [
+    "FARGATE"
+  ],
+  "cpu": "1024",
+  "memory": "2048"
+}

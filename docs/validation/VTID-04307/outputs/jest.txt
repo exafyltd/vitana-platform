@@ -1,0 +1,59 @@
+PASS test/routes/tenant-specialists.test.ts
+    ✓ GET overrides without a token → 401 UNAUTHENTICATED (22 ms)
+    ✓ GET overrides with an undecodable token → 401 INVALID_TOKEN (12 ms)
+    ✓ rejects an unsigned/forged token that only carries a sub → 401 (5 ms)
+    ✓ verified member who is not a tenant admin → 403, nothing read (4 ms)
+    ✓ verified member with no membership row → 403 (3 ms)
+    ✓ verified tenant admin (active_role=admin in that tenant) passes the gate (3 ms)
+    ✓ PUT overrides without a token → 401 (writes are gated too) (10 ms)
+    ✓ GET overrides → 404 PERSONA_NOT_FOUND for an unknown specialist key (2 ms)
+    ✓ GET overrides scopes every overlay query to the URL tenant and defaults the overlay (4 ms)
+    ✓ PUT overrides rejects invalid bodies → 400 VALIDATION_FAILED (4 ms)
+    ✓ PUT overrides upserts a row stamped with the URL tenant_id, audits, and busts the tenant cache (4 ms)
+    ✓ PUT keywords normalizes keywords, scopes delete+insert to the tenant (3 ms)
+    ✓ DELETE a connection owned by another tenant → 404, and nothing is deleted (3 ms)
+    ✓ POST connections inserts a draft connection stamped with the URL tenant (2 ms)
+    ✓ GET /:tenantId/audit only reads rows for that tenant (2 ms)
+    ✓ GET a ticket whose owner is NOT a member of the tenant → 404 (tenant A cannot see tenant B's ticket) (3 ms)
+    ✓ POST reject on a cross-tenant ticket → 404 and the ticket is never updated (2 ms)
+    ✓ GET a ticket owned by a tenant member succeeds and includes handoffs (2 ms)
+    ✓ approve-all → 404 CUSTOMER_NOT_FOUND for an unknown vitana_id (2 ms)
+    ✓ approve-all refuses to act on a customer outside the tenant → 404 CUSTOMER_NOT_IN_TENANT (2 ms)
+    ✓ approve-all advances a non-dispatchable spec_ready ticket to in_progress with an optimistic lock (3 ms)
+    ✓ approve-all dispatches a spec_ready bug ticket through the bridge (no bare status flip) (2 ms)
+    ✓ approve-all counts a refused dispatch as skipped and leaves the ticket alone (2 ms)
+PASS test/feedback-pipeline.test.ts
+    ✓ user can create a ticket via POST /tickets and read it back via /mine (10 ms)
+    ✓ handoff-detect routes a bug opener to Devon (3 ms)
+    ✓ handoff-detect returns vitana for off-keyword text (2 ms)
+    ✓ full bug-fix lifecycle: handoff → intake → triage → spec → approve → resolve → confirm (214 ms)
+    ✓ support-question lifecycle: Sage drafts answer → supervisor sends (9 ms)
+    ✓ rejection path: supervisor rejects a ticket with reason (3 ms)
+    ✓ reopen path: confirmed ticket can be reopened by the user with priority bump (11 ms)
+    ✓ mark-duplicate links to canonical (5 ms)
+    ✓ all routes return 401 without Bearer token (15 ms)
+PASS test/architecture/data-access-seam.test.ts
+    ✓ routes/specialists-admin.ts has no direct supabase-js usage (1 ms)
+    ✓ every sealed file exists (catches renames silently dropping the guard)
+    ✓ the seal list is non-empty
+      ✓ routes/tenant-specialists.ts has at most 0 supabase call sites (1 ms)
+PASS test/vtid-04308-feedback-approve-dispatch.test.ts
+    ✓ allocates a VTID, links it on the ticket, dispatches, then moves to in_progress (3 ms)
+    ✓ reuses a VTID the finding already carries (1 ms)
+    ✓ refuses to dispatch when VTID allocation fails, and leaves the ticket at spec_ready (1 ms)
+    ✓ leaves the ticket at spec_ready when the bridge refuses (e.g. kill switch) (1 ms)
+    ✓ refuses non-dispatchable kinds and non spec_ready tickets
+    ✓ evaluateSafetyGate blocks a feedback-lane finding when the kill switch is armed (4 ms)
+    ✓ the executor tick no longer filters cooling rows to the feedback lane (1 ms)
+PASS test/vtid-04246-auto-approve-vtid-allocation.test.ts
+    ✓ mints via allocate_global_vtid, registers the ledger row approved/in_progress, stamps the finding (4 ms)
+    ✓ refuses when the allocator fails or returns no usable VTID, and issues no PATCH
+    ✓ refuses (without stamping the finding) when the ledger registration fails (1 ms)
+    ✓ refuses when the finding stamp fails, naming the VTID that was minted
+    ✓ a thrown fetch is a clean refusal
+    ✓ uses the finding title when present, else a stable fallback, always prefixed with the scanner (1 ms)
+    ✓ selects activated_vtid for both auto-approve passes
+    ✓ ensures a VTID immediately before every approveAutoExecute call the tick makes (1 ms)
+    ✓ ensureFindingVtid allocates only when the finding has none and skips the approval on failure (1 ms)
+Test Suites: 5 passed, 5 total
+Tests:       52 passed, 52 total

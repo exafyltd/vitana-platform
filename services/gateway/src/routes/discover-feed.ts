@@ -1,0 +1,266 @@
+/**
+ * VTID-02000: Discover Feed API — GET /api/v1/discover/feed
+ *
+ * The default browse experience. Distinct from /search: no user query, no
+ * explicit intent — just "what matters to this user right now?"
+ *
+ * Pipeline:
+ *   1. Resolve UserHealthContext (geo, scope, lifecycle, limitations).
+ *   2. Load applicable default_feed_config (tenant_id × region × lifecycle_stage,
+ *      with GLOBAL × stage fallback).
+ *   3. Candidate fetch: products in user's region + scope, limited.
+ *   4. Apply hard limitations filter.
+ *   5. Rank via feed-ranker (default_score + personalized_score blend).
+ *   6. Return items + feed_context (lifecycle_stage, personalization_weight, rationale).
+ */
+
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { getSupabase } from '../lib/supabase';
+import { getUserHealthContext, type UserHealthContext } from '../services/user-health-context';
+import {
+  applyUserLimitations,
+  excludePastPurchases,
+  buildHiddenBreakdown,
+  type FilterableProduct,
+} from '../services/limitations-filter';
+import { rankFeedProducts, type FeedConfig } from '../services/feed-ranker';
+import * as jose from 'jose';
+import * as repo from './discover-feed-repository';
+import { shadowFeedPick } from '../services/jev/gates/community-ranking-gates';
+
+const router = Router();
+
+const FeedQuerySchema = z.object({
+  category: z.string().max(64).optional(),
+  cursor: z.string().optional(),
+  limit: z.coerce.number().int().min(1).max(30).default(20),
+});
+
+function extractUserIdOptimistic(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) return null;
+  const token = authHeader.slice(7);
+  try {
+    const claims = jose.decodeJwt(token);
+    return typeof claims.sub === 'string' ? claims.sub : null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * Public/guest context for the unauthenticated Discover landing experience.
+ *
+ * A signed-out visitor (e.g. someone evaluating the marketplace before
+ * signing up) gets the GLOBAL × onboarding starter selection: no
+ * personalization, no health-limitations filtering (a guest has no
+ * profile, so there is nothing to filter on), no past-purchase exclusion.
+ * Scope is 'international' so candidate fetch applies no origin restriction
+ * and the broadest curated starter set is shown. Carries no PII.
+ */
+function buildGuestHealthContext(): UserHealthContext {
+  return {
+    user_id: 'guest',
+    tenant_id: null,
+    active_conditions: [],
+    active_goals: [],
+    dietary_restrictions: [],
+    allergies: [],
+    contraindications: [],
+    current_medications: [],
+    pregnancy_status: null,
+    age_bracket: null,
+    religious_restrictions: [],
+    ingredient_sensitivities: [],
+    budget_max_per_product_cents: null,
+    budget_monthly_cap_cents: null,
+    budget_preferred_band: null,
+    wearable_summary_7d: null,
+    vitana_index_snapshot: null,
+    upcoming_events: [],
+    past_purchases: [],
+    recent_recommendations_dismissed: [],
+    topic_affinity: {},
+    country_code: null,
+    region_group: 'GLOBAL',
+    scope_preference: 'international',
+    currency: null,
+    lifecycle_stage: 'onboarding',
+    retrieved_at: new Date().toISOString(),
+    sources_queried: [],
+    stale: false,
+  };
+}
+
+router.get('/feed', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) {
+    res.status(500).json({ ok: false, error: 'Supabase unavailable' });
+    return;
+  }
+
+  const parsed = FeedQuerySchema.safeParse(req.query);
+  if (!parsed.success) {
+    res.status(400).json({ ok: false, error: 'Validation failed', details: parsed.error.flatten() });
+    return;
+  }
+  const { category, limit } = parsed.data;
+
+  // Public landing: a signed-out visitor gets the GLOBAL starter feed instead
+  // of a 401, so the marketplace is viewable (and indexable / reviewable)
+  // without an account. Authenticated requests get the full personalized feed.
+  const user_id = extractUserIdOptimistic(req);
+  const isGuest = !user_id;
+  const ctx = isGuest ? buildGuestHealthContext() : await getUserHealthContext(user_id as string);
+
+  const regionGroup = ctx.region_group ?? 'GLOBAL';
+  const lifecycleStage = ctx.lifecycle_stage ?? 'onboarding';
+
+  // Resolve feed config: tenant-specific > platform-wide > GLOBAL × stage fallback
+  let feedConfig: FeedConfig | null = null;
+  const { data: configRows } = await repo.fetchDefaultFeedConfig(supabase, { regionGroup, lifecycleStage });
+
+  if (configRows?.length) {
+    // Prefer tenant-specific, then platform-default for region, then GLOBAL fallback
+    const tenantRow = configRows.find((r) => r.tenant_id === ctx.tenant_id);
+    const regionRow = configRows.find((r) => r.tenant_id === null && r.region_group === regionGroup);
+    const globalRow = configRows.find((r) => r.tenant_id === null && r.region_group === 'GLOBAL');
+    const chosen = tenantRow ?? regionRow ?? globalRow ?? configRows[0];
+    feedConfig = {
+      id: chosen.id,
+      region_group: chosen.region_group,
+      lifecycle_stage: chosen.lifecycle_stage,
+      featured_product_ids: chosen.featured_product_ids ?? [],
+      category_mix: (chosen.category_mix as Record<string, number>) ?? {},
+      max_products_per_merchant: chosen.max_products_per_merchant ?? 3,
+      max_products_per_category: chosen.max_products_per_category ?? null,
+      starter_conditions: chosen.starter_conditions ?? [],
+      personalization_weight_override: chosen.personalization_weight_override ?? null,
+      diversity_rules: (chosen.diversity_rules as Record<string, unknown>) ?? {},
+      notes: chosen.notes ?? null,
+    };
+  }
+
+  // Candidate fetch
+  let candidateQuery = repo.buildCandidateProductsFeedQuery(
+    supabase,
+    'id, title, description, description_long, brand, category, subcategory, price_cents, currency, compare_at_price_cents, images, affiliate_url, availability, rating, review_count, origin_country, origin_region, merchant_id, ingredients_primary, health_goals, dietary_tags, reward_preview, contains_allergens, contraindicated_with_conditions, contraindicated_with_medications, ships_to_countries, ships_to_regions, excluded_from_regions, dosage, serving_size, servings_per_container, evidence_links, safety_notes',
+  );
+
+  if (category) candidateQuery = candidateQuery.eq('category', category);
+
+  // Scope-based origin
+  const scope = ctx.scope_preference;
+  if (scope === 'local' && ctx.country_code) {
+    candidateQuery = candidateQuery.eq('origin_country', ctx.country_code);
+  } else if (scope === 'regional' && ctx.region_group) {
+    candidateQuery = candidateQuery.eq('origin_region', ctx.region_group);
+  } else if (scope === 'friendly' && ctx.region_group) {
+    const friendlyMap: Record<string, string[]> = {
+      EU: ['EU', 'UK'],
+      UK: ['UK', 'EU'],
+      US: ['US', 'CA'],
+      CA: ['CA', 'US'],
+      MENA: ['MENA'],
+      APAC_JP_KR_TW: ['APAC_JP_KR_TW'],
+      APAC_SEA: ['APAC_SEA'],
+      APAC_IN: ['APAC_IN'],
+      LATAM: ['LATAM'],
+      OCEANIA: ['OCEANIA'],
+    };
+    // A region with no defined "friendly neighbors" (e.g. 'OTHER', or any
+    // value app_users.region_group can hold that isn't in the map above)
+    // used to fall back to `[ctx.region_group]` — filtering to a single
+    // origin_region no product in the catalog actually has, which silently
+    // zeroed the whole feed for those users. Unmapped regions now skip the
+    // origin filter instead (equivalent to 'international' for them) rather
+    // than showing nothing.
+    const allowedOrigins = friendlyMap[ctx.region_group];
+    if (allowedOrigins) {
+      candidateQuery = candidateQuery.in('origin_region', allowedOrigins);
+    }
+  }
+
+  // VTID-02000: was .limit(150) — with only 12 of 477 active products carrying
+  // a real rating, `ORDER BY rating DESC NULLS LAST` has no stable tiebreak
+  // among the other 465, so an arbitrary ~138 of them won the old 150-row cut
+  // and any newly-seeded unrated merchant (e.g. DoctorBox's 53 products) could
+  // vanish from ranking entirely, regardless of category_mix/featured_product_ids
+  // boosts — those only rescore candidates already in this slice. Raised well
+  // above current catalog size so every active/in-stock product reaches the
+  // ranker; feed-ranker.ts's own limit + diversity caps still bound the response.
+  candidateQuery = candidateQuery.order('rating', { ascending: false, nullsFirst: false }).limit(1000);
+
+  const { data: rows, error } = await candidateQuery;
+  if (error) {
+    console.error('[discover-feed] candidate fetch failed:', error);
+    res.status(500).json({ ok: false, error: error.message });
+    return;
+  }
+
+  const candidates = (rows ?? []) as (FilterableProduct & {
+    id: string;
+    title: string;
+    category: string | null;
+    merchant_id: string | null;
+    rating: number | null;
+    origin_region: string | null;
+    health_goals: string[] | null;
+    price_cents: number | null;
+  })[];
+
+  // Geo country-level + limitations
+  const geoAllowed = candidates.filter((p) => {
+    if (!ctx.country_code) return true;
+    const countryMatch = (p.ships_to_countries ?? []).includes(ctx.country_code);
+    const regionMatch = ctx.region_group ? (p.ships_to_regions ?? []).includes(ctx.region_group) : false;
+    return countryMatch || regionMatch;
+  });
+
+  const { allowed, hidden_breakdown } = applyUserLimitations(geoAllowed, ctx, { surface: 'feed' });
+
+  // Exclude past purchases
+  const { withoutPast, past_purchases_hidden } = excludePastPurchases(allowed, ctx.past_purchases);
+
+  const ranked = rankFeedProducts({
+    products: withoutPast,
+    config: feedConfig,
+    ctx,
+    limit,
+  });
+
+  // VTID-04883 (D7): Jev shadow of the product feed's lead item, sampled per request. Signed-in members
+  // only; fire-and-forget, the response never waits for it.
+  if (!isGuest) {
+    void shadowFeedPick({
+      tenantId: ctx.tenant_id,
+      userId: user_id,
+      requestRef: `${user_id}:${Date.now()}:${Math.random()}`,
+      lifecycleStage,
+      regionGroup,
+      items: ranked.items,
+    }).catch(() => undefined);
+  }
+
+  res.json({
+    ok: true,
+    items: ranked.items,
+    feed_context: {
+      lifecycle_stage: lifecycleStage,
+      personalization_weight: ranked.personalization_weight,
+      region_group: regionGroup,
+      scope: ctx.scope_preference,
+      rationale: ranked.rationale,
+      config_id: feedConfig?.id ?? null,
+      guest: isGuest,
+    },
+    hidden_breakdown: buildHiddenBreakdown({
+      preFilterGeoHidden: candidates.length - geoAllowed.length,
+      limitations: hidden_breakdown,
+      pastPurchasesHidden: past_purchases_hidden,
+    }),
+  });
+});
+
+export default router;

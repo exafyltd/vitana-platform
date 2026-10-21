@@ -1,0 +1,102 @@
+/* VTID-04754 — Jev decisions card. CSP-compliant: external stylesheet only. */
+
+.jev-container {
+  max-width: 1100px;
+  margin: 0 auto;
+  padding: 24px 16px;
+}
+
+.jev-header h1 {
+  margin: 0 0 4px;
+}
+
+.jev-sub {
+  color: var(--muted, #8a93a6);
+  margin: 0 0 16px;
+  font-size: 14px;
+}
+
+.jev-controls {
+  display: flex;
+  gap: 16px;
+  align-items: center;
+  flex-wrap: wrap;
+  margin-bottom: 16px;
+}
+
+.jev-controls input {
+  width: 72px;
+  padding: 4px 6px;
+}
+
+.jev-controls button {
+  padding: 6px 14px;
+  min-height: 32px;
+  cursor: pointer;
+}
+
+.jev-tiles {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.jev-tile {
+  border: 1px solid var(--border, #2a3142);
+  border-radius: 8px;
+  padding: 12px;
+}
+
+.jev-tile-label {
+  font-size: 12px;
+  color: var(--muted, #8a93a6);
+}
+
+.jev-tile-value {
+  font-size: 22px;
+  font-weight: 600;
+  margin-top: 4px;
+  overflow-wrap: anywhere;
+}
+
+.jev-section h2 {
+  font-size: 16px;
+  margin: 24px 0 8px;
+}
+
+.jev-scroll {
+  overflow-x: auto;
+}
+
+.jev-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.jev-table th,
+.jev-table td {
+  text-align: start;
+  padding: 6px 8px;
+  border-bottom: 1px solid var(--border, #2a3142);
+  white-space: nowrap;
+}
+
+.jev-table td.num,
+.jev-table th.num {
+  text-align: end;
+}
+
+.jev-empty {
+  color: var(--muted, #8a93a6);
+  font-size: 13px;
+}
+
+.jev-error {
+  color: #e5484d;
+}
+
+.jev-mode-enforce {
+  font-weight: 600;
+}

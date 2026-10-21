@@ -1,0 +1,29 @@
+PASS migration applies over existing pacer rows
+PASS migration is re-runnable
+PASS pacer accepts did_you_know_card
+PASS pacer accepts voice_opener_tour
+PASS pacer accepts voice_opener_initiative
+PASS pacer accepts vitana_responsibility_message
+PASS pacer accepts onboarding_coach
+PASS pacer rejects an unknown surface
+PASS pacer constraint is validated
+PASS first claim of the day succeeds — {"id":1,"ok":true,"attempt":1,"claimed":true}
+PASS second claim while pending is refused — {"ok":true,"reason":"touch_in_flight","claimed":false}
+PASS finish(failed)
+PASS one retry after a failed send — {"id":1,"ok":true,"attempt":2,"claimed":true}
+PASS finish(failed) again
+PASS no third attempt — {"ok":true,"reason":"retry_spent","claimed":false}
+PASS next local day has its own slot — {"id":5,"ok":true,"attempt":1,"claimed":true}
+PASS finish(sent)
+PASS after a sent touch the day is used — {"ok":true,"reason":"already_touched_today","claimed":false}
+PASS finish on a non-pending row is refused
+PASS bad channel rejected
+PASS finish_onboarding_touch: service_role only — {"proname":"finish_onboarding_touch","auth_exec":false,"anon_exec":false,"svc_exec":true}
+PASS claim_onboarding_touch: service_role only — {"proname":"claim_onboarding_touch","auth_exec":false,"anon_exec":false,"svc_exec":true}
+PASS onboarding_coach_state: authenticated cannot write — {"i":false,"u":false}
+PASS onboarding_coach_decisions: authenticated cannot write — {"i":false,"u":false}
+PASS onboarding_touch_ledger: authenticated cannot write — {"i":false,"u":false}
+PASS RLS on all three coach tables — [{"relname":"onboarding_coach_state","relrowsecurity":true},{"relname":"onboarding_coach_decisions","relrowsecurity":true},{"relname":"onboarding_touch_ledger","relrowsecurity":true}]
+PASS an unknown live surface aborts the whole migration — failed=true table=null
+
+ALL PASS

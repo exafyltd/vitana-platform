@@ -1,0 +1,23 @@
+# VTID-03842 — commands run
+# ledger + spec
+curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"backoffice-orchestrator"}'   -> VTID-03842
+curl -X PATCH .../api/v1/oasis/tasks/VTID-03842 -d '{"title":"Gateway: BackOffice command orchestrator + approvals + audit","status":"in_progress"}'  -> 200
+POST specs/VTID-03842/generate 201 -> validate 200 pass -> quality-check 200 pass (95, CRITICAL label = known false positive) -> approve 200 (spec_status=approved)
+# branch
+git checkout -b claude/practical-gates-iqwv52-vtid-03842 claude/practical-gates-iqwv52-vtid-03834
+# registry generated from the bridge catalog (VTID-03840 branch) — one-off generator, output committed
+git show claude/practical-gates-iqwv52-vtid-03840:services/erp-bridge/app/catalog.py | python3 <generator> > services/gateway/src/constants/backoffice-commands.ts   # 164 entries
+# checks
+cd services/gateway && npx tsc --noEmit -p .                                                    # outputs/tsc.txt: exit 0
+npx jest test/vtid-03842-command-policy.test.ts test/vtid-03842-entity-resolution.test.ts test/routes/backoffice-commands.test.ts test/routes/backoffice-access.test.ts   # outputs/jest-targeted.txt
+npx jest test/vtid-03842-commands-vs-bridge-catalog.test.ts    # skipped on this branch; PASS with the bridge catalog copied in (outputs/jest-crosscheck.txt)
+npx jest --silent                                                # full gateway suite (./node_modules/.bin/jest --silent), tail:
+    ✓ isWakeTimelineEventName accepts every locked name (19 ms)
+    ✓ isWakeTimelineEventName rejects unknown names
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 skipped, 760 passed, 760 of 762 total
+Tests:       30 skipped, 6 todo, 13888 passed, 13924 total
+Snapshots:   44 passed, 44 total
+Time:        69.679 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+# note: a first full run via `npx jest` resolved a stray npx-cached jest (require(esm) error on every suite) — environment artefact, re-run with the project binary above.

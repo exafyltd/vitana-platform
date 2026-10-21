@@ -1,0 +1,7 @@
+FAIL test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+Tests:       1 failed, 200 passed
+Tests:       1 failed, 200 passed (1 ms)
+FAIL test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+Test Suites: 1 failed, 2 skipped, 1661 passed, 1662 of 1664 total
+Tests:       1 failed, 26 skipped, 6 todo, 26868 passed, 26901 total
+done

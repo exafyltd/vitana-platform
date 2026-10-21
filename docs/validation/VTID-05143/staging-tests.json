@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05143",
+  "service": "gateway",
+  "note": "Unified Card System Phase 1 backend (VTID-05085 plan). Read-only probes only: the dismiss POST is a member write and is proven by Jest, never called on staging (staging writes to the production Supabase project).",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "the enrichment-cards route is mounted and requires a login", "path": "/api/v1/enrichment-cards?screen=home", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/routes/enrichment-cards.test.ts test/services/enrichment", "cwd": "services/gateway", "reason": "Proves auth, validation, per-screen filtering (incl. messenger and calendar), priority order, completion exclusion, the 7-day cooldown, the caller-only dismiss write, every completion check, and (Phase 3) the G1–G3 boost triggers, their screens, G3 → G2 → G1 order, card data and dismissal" },
+    { "kind": "existing", "ref": "npx jest test/data/enrichment-card-tips.locale-coverage.test.ts", "cwd": "services/gateway", "reason": "Proves E1–E11 and G1–G4 card texts exist and are translated in all 11 gateway locales, German in du-form" }
+  ]
+}

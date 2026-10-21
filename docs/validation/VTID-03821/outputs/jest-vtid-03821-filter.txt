@@ -1,0 +1,41 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03820-execution-onramp-metadata.test.ts
+  extractLlmOnRampOverride (VTID-03820)
+    ✓ returns undefined for null/undefined metadata (2 ms)
+    ✓ returns undefined when the field is absent (self-healing executions) (1 ms)
+    ✓ returns the override when provider/model are valid (1 ms)
+    ✓ rejects an unknown provider (1 ms)
+    ✓ rejects a missing/non-string model
+    ✓ rejects a non-object llm_on_ramp_override without throwing
+    ✓ accepts every real LLMProvider value (1 ms)
+  runExecutionSession source wiring (VTID-03820, source check)
+    ✓ computes onRampOverride from exec.metadata before choosing the LLM path
+    ✓ the worker-queue branch condition excludes executions carrying an override (1 ms)
+    ✓ the direct-API branch passes the override into callMessagesApi (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03821-execution-telemetry-vtid.test.ts
+  runExecutionSession telemetry vtid resolution (VTID-03821, source check)
+    ✓ selects activated_vtid alongside spec_snapshot in the unconditional findingMetaR query
+    ✓ computes telemetryVtid preferring activated_vtid, falling back to the synthetic id (1 ms)
+    ✓ the direct-API path tags callMessagesApi with telemetryVtid, not a bare synthetic id
+    ✓ the worker-queue path tags vtid_like with telemetryVtid too (commit-message/trace consistency) (1 ms)
+    ✓ telemetryVtid is computed before the worker-queue-vs-direct-API branch that consumes it
+
+Test Suites: 2 passed, 2 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        0.667 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03821-execution-telemetry-vtid.test.ts|test\/vtid-03820-execution-onramp-metadata.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

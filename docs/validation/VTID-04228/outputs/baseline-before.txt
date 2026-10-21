@@ -1,0 +1,25 @@
+# VTID-04228 — baseline BEFORE the VTID-04225/04226/04227 merge (read-only, 2026-09-21 ~15:00 UTC)
+staging build-info: git_commit 9545b1904a00111d47b5f8be73b92488b8e74a7e, env=staging, booted 2026-09-21T14:30:42Z
+prod    build-info: git_commit a286b94abc0e8506c502598f2dadcd30297497de, env=production, booted 2026-09-20T17:11:56Z
+
+autopilot_recommendations, last 14 days, by source_type/status:
+  community/new 273, community/rejected 118, operator_onramp/new 90, operator_onramp/completed 17, roadmap/new 5, oasis/new 5, health/new 2, behavior/new 2
+  -> source_type='dev_autopilot': 0 rows. (Every DEV-AUTOPILOT.yml run POSTed to the dead GCP host: 404.)
+
+dev_autopilot_executions, last 14 days, by metadata.executor/status:
+  agent/failed 68, agent/completed 13, agent/reverted 11, agent/cancelled 6, agent/failed_escalated 4, agent/self_healed 1, (none)/completed 4, (none)/auto_archived 4, (none)/failed 2, (none)/reverted 1
+  -> all from operator_onramp findings; none from a scan-produced finding.
+
+oasis_events topic=llm.call.completed, last 14 days, by stage/provider/model:
+  worker/bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0 9742; worker/deepseek/deepseek-flash 9201; memory/bedrock/sonnet-4-6 482;
+  operator/deepseek/deepseek-flash 422; triage/bedrock/sonnet-4-6 43; operator/bedrock/sonnet-4-6 21; validator/bedrock/opus-4-5 5; worker/bedrock/sonnet-4-6 2
+  -> stage='planner': 0 calls in 14 days (lazyPlanTick -> generatePlanVersion -> callViaRouter('planner') never ran: no dev_autopilot findings to plan).
+  -> provider='anthropic' or 'vertex': 0 calls (rule 10a/10b holds).
+
+llm_routing_policy v17 (active, DEV): planner primary bedrock/eu.anthropic.claude-opus-4-5-20251101-v1:0, fallback bedrock/eu.anthropic.claude-sonnet-4-6
+  (NB: the brief expected "Bedrock Sonnet 4.6" for the planner — the live policy has Opus 4.5 primary, Sonnet 4.6 fallback.)
+
+dev_autopilot_config (id=1): kill_switch=false, auto_approve_enabled=FALSE, daily_budget 500, concurrency_cap 4, cooldown 1 min,
+  auto_approve_scanners = 11 scanner ids (todo, npm-audit, dead-code, missing-tests, ...), auto_approve_risk_classes [low,medium], max_effort 8, impact rules on.
+
+self_healing_log last 30 days: outcome=escalated 51 (last 2026-09-21 13:20Z); oasis_events self-healing.execution.failed 55, autopilot.task.spec.created 5 (last 2026-09-15), self-healing.reconciled 1, self-healing.triage.loop 4.

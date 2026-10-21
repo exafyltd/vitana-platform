@@ -1,0 +1,1961 @@
+/**
+ * VTID-01106: ORB Memory Bridge (Dev Sandbox)
+ * VTID-01115: Memory Relevance Scoring Engine Integration (D23)
+ *
+ * Bridges ORB live sessions to Memory Core for persistent user context.
+ * Enables ORB to remember user identity and conversation history.
+ *
+ * Features:
+ * - Fixed dev identity for sandbox mode (no JWT required)
+ * - Memory context retrieval for system instruction injection
+ * - Conversation context formatting for LLM prompts
+ * - VTID-01115: Relevance scoring for all memory items before context assembly
+ *
+ * Integration with Intelligence Stack:
+ * - Memory Scoring (D23) → Confidence (D24) → D25 Context Window Control → Context Assembly (D20)
+ *
+ * DEV SANDBOX ONLY - No production auth patterns.
+ */
+
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { emitOasisEvent } from './oasis-event-service';
+import * as repo from './orb-memory-bridge-repository';
+import { memoryRoleForWrite } from './memory/scope'; // VTID-04367
+import {
+  recordTranscriptTurn,
+  rawTurnsAlsoToMemoryItems,
+  transcriptRoleOf,
+  fetchRecentTranscriptTurns,
+  fetchTranscriptWindow,
+} from './memory/transcript'; // VTID-04387
+import {
+  type ScoringContext,
+  type ScoredMemoryItem,
+  type ScoringMetadata,
+  type RetrieveIntent,
+  type Domain,
+  type UserRole
+} from './memory-relevance-scoring';
+import {
+  processMessageForOrb,
+  getOrbSignalContext,
+  OrbSignalContext
+} from './d28-emotional-cognitive-engine';
+import {
+  getOrbBoundaryContext,
+  OrbBoundaryContext
+} from './d41-boundary-consent-engine';
+import {
+  ContextWindowManager,
+  selectContextWindow,
+  ContextMetrics,
+  formatSelectionDebug
+} from './context-window-manager';
+import { isOrbRecallEnabled, recallOrbMemoryItems } from './memory/recall';
+import { isRecallShadowEnabled, runRecallShadow, type ReadPath } from './memory/recall-shadow';
+import { formatPeopleBlock } from './memory/people';
+
+// =============================================================================
+// VTID-01106: Constants & Configuration
+// =============================================================================
+
+/**
+ * Fixed dev identity for sandbox testing (no JWT required)
+ * These values match the dev_bootstrap_request_context expectations
+ */
+export const DEV_IDENTITY = {
+  // Fixed dev user UUID (consistent across sessions)
+  USER_ID: '00000000-0000-0000-0000-000000000099',
+  // Vitana tenant (primary dev tenant)
+  TENANT_ID: '00000000-0000-0000-0000-000000000001',
+  TENANT_SLUG: 'vitana',
+  // Default dev role
+  ACTIVE_ROLE: 'developer',
+  // Display name for memory items
+  DISPLAY_NAME: 'Dev User (ORB Sandbox)'
+};
+
+/**
+ * Memory context configuration
+ * VTID-01109: Increased limits to prevent losing personal details
+ */
+const MEMORY_CONFIG = {
+  // Max items to fetch for context
+  // VTID-DEBUG-01: Increased from 30 to 100 to accommodate personal identity
+  DEFAULT_CONTEXT_LIMIT: 100,
+  // Per-category limit for formatting (applies to non-identity categories)
+  // VTID-DEBUG-01: Personal/relationships have NO limit - see formatMemoryForPrompt
+  ITEMS_PER_CATEGORY: 10,
+  // Categories relevant for ORB context — must include ALL Memory Garden category_keys
+  // so manually entered diary items are visible during voice sessions.
+  // VTID-DEBUG-MEMORY-FIX: Added all 13 Memory Garden mapped categories
+  CONTEXT_CATEGORIES: [
+    'personal', 'company', 'conversation', 'preferences', 'goals', 'health', 'relationships',
+    'community', 'tasks', 'products_services', 'events_meetups', 'notes'
+  ],
+  // Max age of memory items to include (7 days instead of 24 hours)
+  MAX_AGE_HOURS: 168,
+  // Max characters for memory context in system prompt
+  // VTID-DEBUG-01: Increased from 6000 to 10000 to hold all personal info
+  MAX_CONTEXT_CHARS: 10000,
+  // Max characters per individual item (increased from 150)
+  MAX_ITEM_CHARS: 300,
+  /**
+   * VTID-DEBUG-01 + VTID-DEBUG-MEMORY-FIX: Categories that should NEVER be time-filtered.
+   * Personal identity information (name, birthday, hometown, family members, company)
+   * must be available regardless of when it was stored.
+   * These are fundamental facts about the user that don't expire.
+   */
+  PERSISTENT_CATEGORIES: ['personal', 'relationships', 'company', 'health', 'goals', 'tasks', 'notes']
+};
+
+// =============================================================================
+// VTID-01106: Types
+// =============================================================================
+
+/**
+ * Memory item from the memory_get_context RPC
+ */
+export interface MemoryItem {
+  id: string;
+  category_key: string;
+  source: string;
+  content: string;
+  content_json: Record<string, unknown>;
+  importance: number;
+  occurred_at: string;
+  created_at: string;
+}
+
+/**
+ * Memory context for ORB system instruction
+ * VTID-01117: Enhanced with context window metrics
+ */
+export interface OrbMemoryContext {
+  ok: boolean;
+  user_id: string;
+  tenant_id: string;
+  items: MemoryItem[];
+  summary: string;
+  formatted_context: string;
+  fetched_at: string;
+  error?: string;
+  // VTID-01115: Scoring metadata
+  scoring_metadata?: ScoringMetadata;
+  /** VTID-01117: Context window selection metrics */
+  contextMetrics?: ContextMetrics;
+  /** VTID-01117: Number of items excluded by context window manager */
+  excludedCount?: number;
+  /** VTID-01117: Reasons for exclusions (summary) */
+  exclusionSummary?: Record<string, number>;
+  /** VTID-04784: which read path produced this context (unset on errors). */
+  read_path?: ReadPath;
+}
+
+// =============================================================================
+// VTID-01106: Environment Detection
+// =============================================================================
+
+/**
+ * Check if running in dev-sandbox environment
+ * VTID-01106: Now accepts flexible dev environment naming
+ */
+export function isDevSandbox(): boolean {
+  const env = (process.env.ENVIRONMENT || process.env.VITANA_ENV || '').toLowerCase();
+  // Accept: dev-sandbox, dev, development, sandbox, or any env containing 'dev' or 'sandbox'
+  const isDevEnv = env === 'dev-sandbox' ||
+                   env === 'dev' ||
+                   env === 'development' ||
+                   env === 'sandbox' ||
+                   env.includes('dev') ||
+                   env.includes('sandbox');
+  return isDevEnv;
+}
+
+// Cache for memory bridge status (to avoid repeated logging)
+let _memoryBridgeStatusLogged = false;
+let _cachedMemoryBridgeEnabled: boolean | null = null;
+
+/**
+ * Check if Memory Bridge is enabled
+ * Only active in dev-sandbox mode
+ */
+export function isMemoryBridgeEnabled(): boolean {
+  // Return cached result if available
+  if (_cachedMemoryBridgeEnabled !== null) {
+    return _cachedMemoryBridgeEnabled;
+  }
+
+  const env = process.env.ENVIRONMENT || process.env.VITANA_ENV || '(not set)';
+
+  // Only enable in dev-sandbox
+  if (!isDevSandbox()) {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ENVIRONMENT='${env}' is not a dev environment`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
+    return false;
+  }
+  // Check if explicitly disabled
+  if (process.env.ORB_MEMORY_BRIDGE_DISABLED === 'true') {
+    if (!_memoryBridgeStatusLogged) {
+      console.log(`[VTID-01106] Memory bridge DISABLED: ORB_MEMORY_BRIDGE_DISABLED=true`);
+      _memoryBridgeStatusLogged = true;
+    }
+    _cachedMemoryBridgeEnabled = false;
+    return false;
+  }
+  if (!_memoryBridgeStatusLogged) {
+    console.log(`[VTID-01106] Memory bridge ENABLED for env='${env}'`);
+    _memoryBridgeStatusLogged = true;
+  }
+  _cachedMemoryBridgeEnabled = true;
+  return true;
+}
+
+/**
+ * VTID-01109 rev2: Reset memory bridge cache
+ * Call this if environment variables change or for testing
+ */
+export function resetMemoryBridgeCache(): void {
+  _cachedMemoryBridgeEnabled = null;
+  _memoryBridgeStatusLogged = false;
+  console.log('[VTID-01109] Memory bridge cache reset');
+}
+
+// =============================================================================
+// VTID-01106: Supabase Client for Memory Access
+// =============================================================================
+
+/**
+ * Create a service-role Supabase client for memory access
+ * In dev sandbox, we use service role to bypass RLS with fixed dev identity
+ */
+function createMemoryClient(): SupabaseClient | null {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.warn('[VTID-01106] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return null;
+  }
+
+  return createClient(supabaseUrl, supabaseServiceKey, {
+    auth: {
+      autoRefreshToken: false,
+      persistSession: false
+    }
+  });
+}
+
+// =============================================================================
+// VTID-01225: Fetch Recent Conversation for Cognee Extraction
+// =============================================================================
+
+/**
+ * VTID-01225: Fetch recent conversation turns from memory_items for Cognee extraction
+ * Queries by user_id and time range to get conversation history
+ */
+export async function fetchRecentConversationTranscript(
+  tenantId: string,
+  userId: string,
+  startTime: Date,
+  endTime: Date = new Date()
+): Promise<string | null> {
+  const client = createMemoryClient();
+  if (!client) {
+    console.warn('[VTID-01225] No Supabase client for fetching conversation');
+    return null;
+  }
+
+  // VTID-04387: the transcript table is the complete record; memory_items
+  // is the fallback for turns written before it existed.
+  const turns = await fetchTranscriptWindow(
+    { tenant_id: tenantId, user_id: userId }, startTime.toISOString(), endTime.toISOString(),
+  );
+  if (turns.length > 0) {
+    return turns.map((t) => `${t.role === 'user' ? 'User' : 'Assistant'}: ${t.content}`).join('\n');
+  }
+
+  try {
+    // VTID-01225: Include all ORB-related sources for comprehensive conversation capture
+    const { data, error } = await repo.fetchOrbConversationItems(
+      client, tenantId, userId, ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'],
+      startTime.toISOString(), endTime.toISOString(),
+    );
+
+    if (error) {
+      console.error('[VTID-01225] Error fetching conversation:', error.message);
+      return null;
+    }
+
+    if (!data || data.length === 0) {
+      console.log('[VTID-01225] No conversation items found for time range');
+      return null;
+    }
+
+    // Build transcript from memory items
+    const transcript = data
+      .map(item => {
+        const direction = (item.content_json as any)?.direction || 'unknown';
+        const role = direction === 'user' ? 'User' : direction === 'assistant' ? 'Assistant' : 'Unknown';
+        return `${role}: ${item.content}`;
+      })
+      .join('\n');
+
+    console.log(`[VTID-01225] Built transcript from ${data.length} memory items`);
+    return transcript;
+  } catch (err: any) {
+    console.error('[VTID-01225] Exception fetching conversation:', err.message);
+    return null;
+  }
+}
+
+// =============================================================================
+// VTID-RECENT-TURNS: Fetch the last N user utterances from ORB sessions.
+// =============================================================================
+// Used by the bootstrap context builder so a new ORB session can answer
+// "what did I ask you last?" with the actual last thing the user said —
+// instead of hallucinating from aggregated facts. The old flow discarded
+// `session.transcriptTurns` on session close and the new session started
+// with an empty transcript, so Gemini had no recent-conversation grounding.
+export async function fetchRecentOrbUserTurns(
+  identity: { user_id: string; tenant_id: string },
+  limit: number = 3
+): Promise<Array<{ content: string; occurred_at: string }>> {
+  // VTID-04387: newest user turns from the transcript table first.
+  const recent = await fetchRecentTranscriptTurns(identity, { limit, role: 'user' });
+  if (recent.length > 0) {
+    return recent.map((t) => ({ content: t.content, occurred_at: t.occurred_at }));
+  }
+
+  const client = createMemoryClient();
+  if (!client) return [];
+
+  try {
+    const { data, error } = await repo.fetchRecentOrbUserTurnsRaw(
+      client, identity.tenant_id, identity.user_id, ['orb_voice', 'orb_text', 'orb', 'orb-live-ws'],
+      Math.max(limit * 4, 12), // over-fetch; then filter to user-direction
+    );
+
+    if (error || !data) return [];
+
+    const out: Array<{ content: string; occurred_at: string }> = [];
+    for (const row of data) {
+      const direction = (row.content_json as any)?.direction;
+      if (direction !== 'user') continue;
+      const content = (row.content || '').trim();
+      if (!content) continue;
+      out.push({ content, occurred_at: row.occurred_at as string });
+      if (out.length >= limit) break;
+    }
+    return out;
+  } catch (err: any) {
+    console.warn('[VTID-RECENT-TURNS] fetchRecentOrbUserTurns error:', err.message);
+    return [];
+  }
+}
+
+// Format recent turns as a HIGH-PRIORITY prompt block. Returns a header +
+// "no data" block even when the list is empty, so Gemini always sees the
+// anchor and the rules.
+//
+// VTID-RECENT-TURNS-V2: v1 was ignored — Gemini saw "what did I ask last?"
+// and reflexively called search_memory, which returns semantic matches
+// against memory_facts (Cognee-extracted birthday, fiancée name, etc.) and
+// produced hallucinations. This revision (a) uses strong === banners so the
+// block can't be confused with the category-organized memory context below,
+// and (b) includes explicit rules forbidding search_memory for recency
+// questions.
+export function formatRecentTurnsBlock(
+  turns: Array<{ content: string; occurred_at: string }>,
+  lang: string = 'en'
+): string {
+  const isDe = lang.startsWith('de');
+  const now = Date.now();
+  const lines: string[] = [];
+  lines.push('============================================================');
+  lines.push(isDe
+    ? '## LETZTE ECHTE NUTZER-AUSSAGEN (wörtliche Transkripte — HÖCHSTE PRIORITÄT)'
+    : '## MOST RECENT USER UTTERANCES (verbatim transcripts — HIGHEST PRIORITY)');
+  lines.push('============================================================');
+
+  if (!turns || turns.length === 0) {
+    lines.push(isDe
+      ? 'Noch keine vorigen Nutzer-Äußerungen für diese Nutzer-ID gespeichert.'
+      : 'No prior user utterances stored for this user yet.');
+    lines.push('');
+    lines.push(isDe
+      ? '**REGEL:** Wenn der Nutzer fragt "was habe ich zuletzt gesagt / gefragt?" oder "erinnerst du dich an meine letzte Frage?" — sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal." Rufe KEINE Tools auf (kein search_memory, kein search_knowledge) — diese liefern semantische Treffer, nicht die chronologisch letzte Äußerung, und halluzinieren.'
+      : '**RULE:** If the user asks "what did I last say / ask?" or "do you remember my previous question?" — say honestly "I\'m not quite sure — could you remind me?" Do NOT call any tools (no search_memory, no search_knowledge) — those return semantic matches, not the most recent chronological utterance, and will hallucinate.');
+    lines.push('============================================================');
+    lines.push('');
+    return lines.join('\n');
+  }
+
+  lines.push(isDe
+    ? 'Dies sind die letzten Dinge, die der Nutzer in einer vorigen oder dieser ORB-Sitzung tatsächlich gesagt hat (neueste zuerst). Sie sind die EINZIGE verlässliche Quelle für "was habe ich gerade / zuletzt gefragt?". Die "## Verified Facts" und "## User Context" weiter unten enthalten AGGREGIERTE, extrahierte Fakten (Geburtstag, Beziehungen, Interessen) — sie sind NICHT die letzte gesprochene Frage.'
+    : 'These are the actual things the user said in a prior or current ORB session (newest first). They are the ONLY reliable source for "what did I just / last ask?". The "## Verified Facts" and "## User Context" sections further down hold AGGREGATED, extracted facts (birthday, relationships, interests) — they are NOT the most recent spoken utterance.');
+  lines.push('');
+
+  for (const t of turns) {
+    const ts = Date.parse(t.occurred_at);
+    const mins = Math.max(0, Math.round((now - ts) / 60000));
+    const ago = mins < 1 ? (isDe ? 'gerade eben' : 'just now')
+      : mins < 60 ? (isDe ? `vor ${mins} min` : `${mins} min ago`)
+      : mins < 60 * 24 ? (isDe ? `vor ${Math.round(mins / 60)} h` : `${Math.round(mins / 60)} h ago`)
+      : (isDe ? `vor ${Math.round(mins / (60 * 24))} Tagen` : `${Math.round(mins / (60 * 24))} days ago`);
+    const content = t.content.length > 300 ? t.content.substring(0, 297) + '…' : t.content;
+    lines.push(`  - [${ago}] ${isDe ? 'Nutzer' : 'User'}: "${content}"`);
+  }
+  lines.push('');
+  lines.push(isDe
+    ? '**REGELN für Fragen zu vergangenen Aussagen:**'
+    : '**RULES for questions about past utterances:**');
+  lines.push(isDe
+    ? '1. "Was habe ich zuletzt gesagt / gefragt?" / "Erinnerst du dich an meine letzte Frage?" → zitiere den OBERSTEN Eintrag oben wörtlich. Rufe KEINE Tools auf.'
+    : '1. "What did I last say / ask?" / "Do you remember my previous question?" → quote the TOP entry above verbatim. Do NOT call any tools.');
+  lines.push(isDe
+    ? '2. "Was habe ich vorher gefragt / davor gesagt?" → zitiere den ZWEITEN Eintrag.'
+    : '2. "What did I ask before that / say earlier?" → quote the SECOND entry.');
+  lines.push(isDe
+    ? '3. "Erinnerst du dich noch?" / "Was haben wir besprochen?" → fasse die Einträge oben kurz zusammen (eine Zeile pro Eintrag, neueste zuerst).'
+    : '3. "Do you remember?" / "What did we talk about?" → summarize the entries above briefly (one line each, newest first).');
+  lines.push(isDe
+    ? '4. NIEMALS search_memory für diese Fragen aufrufen. search_memory liefert semantische Treffer aus memory_facts / Cognee-extrahierten Entitäten — das ist NICHT die gesprochene Frage. Nur search_memory aufrufen, wenn der Nutzer nach einem FAKT fragt, den er irgendwann erwähnt hat ("was weißt du über meine Gesundheit?").'
+    : '4. NEVER call search_memory for these questions. search_memory returns semantic hits from memory_facts / Cognee-extracted entities — that is NOT the spoken utterance. Only call search_memory when the user asks about a FACT they mentioned sometime ("what do you know about my health?").');
+  lines.push(isDe
+    ? '5. Wenn keiner der obigen Einträge zur Frage passt, sage ehrlich "Daran erinnere ich mich nicht genau — sag es mir bitte nochmal." NICHT halluzinieren. NICHT aus den "Verified Facts" unten raten.'
+    : '5. If none of the entries above match the question, say honestly "I\'m not quite sure — could you remind me?" Do NOT hallucinate. Do NOT guess from the "Verified Facts" below.');
+  lines.push('============================================================');
+  lines.push('');
+  return lines.join('\n');
+}
+
+// =============================================================================
+// VTID-01106: Memory Context Fetching
+// =============================================================================
+
+/**
+ * VTID-01109 rev2: Check if a message is worth storing in memory
+ * Filters out trivial messages to prevent memory flooding
+ *
+ * Returns true if the message should be stored, false if it should be skipped.
+ */
+export function shouldStoreInMemory(content: string, direction: 'user' | 'assistant'): boolean {
+  const lower = content.toLowerCase().trim();
+  const wordCount = lower.split(/\s+/).filter(w => w.length > 0).length;
+
+  // VTID-01225-CLEANUP: Never store assistant responses in memory_items.
+  // Assistant output is derivative (generated from user input + system prompt).
+  // Storing it causes pollution — "nice to meet you", "let me help you with that", etc.
+  // User facts are extracted to memory_facts via inline-fact-extractor instead.
+  if (direction === 'assistant') {
+    console.log(`[VTID-01225-CLEANUP] Blocking assistant message from memory_items (pollution prevention)`);
+    return false;
+  }
+
+  // VTID-MEMORY-BRIDGE: Minimum character length — filters out voice fragments like "yeah" or "uh huh"
+  // Lowered from 20 to 10 chars to capture short but important voice utterances
+  // like "I'm David" (9 chars) or "from Berlin" (11 chars)
+  if (lower.length < 10) {
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby|company|business|project|learn|study|age|country|language|sprache|speak)\b/i.test(lower);
+    if (!hasImportantInfo) {
+      console.log(`[VTID-01225-CLEANUP] Skipping short message (${lower.length} chars): "${lower.substring(0, 30)}"`);
+      return false;
+    }
+  }
+
+  // Skip very short messages (less than 3 words) unless they contain key info
+  // VTID-MEMORY-BRIDGE: Lowered from 5 to 3 words — voice conversations naturally have
+  // short meaningful sentences like "I speak German" or "my name is David"
+  if (wordCount < 3) {
+    const hasImportantInfo = /\b(name|heiß|heiss|bin|from|aus|jahre|old|live|wohne|email|phone|born|geboren|work|arbeit|job|beruf|city|stadt|allergy|allergie|married|verheiratet|single|divorced|hobby|company|business|project|learn|study|age|country|language|sprache|speak)\b/i.test(lower);
+    if (!hasImportantInfo) {
+      console.log(`[VTID-01109] Skipping trivial message (${wordCount} words): "${lower.substring(0, 30)}..."`);
+      return false;
+    }
+  }
+
+  // Skip common trivial responses
+  const trivialPatterns = [
+    /^(ok|okay|yes|no|ja|nein|gut|alles klar|danke|thanks|thank you|bitte|please|sure|klar|genau|aha|hmm|uh|oh|ah)\.?$/i,
+    /^(hallo|hello|hi|hey|guten tag|guten morgen|guten abend)\.?$/i,
+    /^(tschüss|tschüs|bye|goodbye|auf wiedersehen|bis dann|ciao)\.?$/i,
+    /^(what|was|wie|warum|why|when|wann|where|wo)\?$/i,  // Single word questions
+  ];
+
+  for (const pattern of trivialPatterns) {
+    if (pattern.test(lower)) {
+      console.log(`[VTID-01109] Skipping trivial ${direction} message: "${lower}"`);
+      return false;
+    }
+  }
+
+  // NOTE: Assistant messages are now blocked at the top of this function (VTID-01225-CLEANUP).
+  // The per-pattern assistant filtering below is no longer needed and has been removed.
+
+  // Check if message contains meaningful personal/contextual information
+  // VTID-01225: Expanded keyword patterns - the old list missed many valid facts
+  // (e.g., "I enjoy swimming", "my hobby is painting", "I'm allergic to nuts")
+  const hasMeaningfulContent =
+    // Personal info patterns
+    /\b(name|heiß|heiss|ich bin|i am|i'm|from|aus|born|geboren|live|wohne|work|arbeit|email|phone|address|adresse|age|alter|jahre|years old)\b/i.test(lower) ||
+    // Preference patterns
+    /\b(like|mag|love|liebe|prefer|bevorzuge|favorite|liebling|hate|hasse|always|immer|never|nie|enjoy|genießen|hobby|hobbies|interest|interessiert)\b/i.test(lower) ||
+    // Relationship patterns
+    /\b(family|familie|friend|freund|partner|wife|frau|husband|mann|child|kind|mother|mutter|father|vater|brother|bruder|sister|schwester|son|sohn|daughter|tochter|fiancée|verlobte|colleague|kollege|boss|chef)\b/i.test(lower) ||
+    // Goal patterns
+    /\b(want|will|möchte|plane|goal|ziel|hope|hoffe|dream|traum|plan|planen|wish|wünsche|intend|vorhabe)\b/i.test(lower) ||
+    // Health patterns (previously missing entirely)
+    /\b(health|gesundheit|allergy|allergie|medication|medikament|doctor|arzt|diet|diät|exercise|sport|sleep|schlaf|illness|krank|condition|symptom|pain|schmerz|fitness|weight|gewicht)\b/i.test(lower) ||
+    // Location/travel patterns (previously missing)
+    /\b(city|stadt|country|land|move|umziehen|travel|reisen|hometown|heimat|neighborhood|viertel|apartment|wohnung|house|haus)\b/i.test(lower) ||
+    // Business/professional patterns (previously missing)
+    /\b(company|firma|unternehmen|business|geschäft|job|beruf|career|karriere|project|projekt|study|studium|university|universität|school|schule|degree|abschluss)\b/i.test(lower) ||
+    // Food/lifestyle patterns (previously missing)
+    /\b(eat|essen|cook|kochen|vegetarian|vegan|coffee|kaffee|tea|tee|alcohol|alkohol|smoke|rauchen|morning|morgen|evening|abend|routine|gewohnheit|habit)\b/i.test(lower) ||
+    // Remember requests
+    /\b(remember|merk|vergiss nicht|don't forget|wichtig|important)\b/i.test(lower) ||
+    // VTID-01225-CLEANUP: Raised from 5 to 10 words — short generic messages like
+    // "can you help me with something" or "tell me about that thing" are noise.
+    // Real personal facts are almost always 10+ words or contain the keyword patterns above.
+    wordCount >= 10;
+
+  if (!hasMeaningfulContent) {
+    console.log(`[VTID-01109] Skipping low-value ${direction} message (no meaningful keywords)`);
+    return false;
+  }
+
+  return true;
+}
+
+/**
+ * VTID-01107: Write memory item for dev user (dev-sandbox only)
+ * Uses service role to bypass RLS with fixed dev identity.
+ * This is the write counterpart to fetchDevMemoryContext.
+ *
+ * VTID-01109 rev2: Added filtering to prevent memory flooding
+ */
+export async function writeDevMemoryItem(params: {
+  source: 'orb_text' | 'orb_voice' | 'system';
+  content: string;
+  content_json?: Record<string, unknown>;
+  importance?: number;
+  category_key?: string;
+  occurred_at?: string;
+  skipFiltering?: boolean;  // Set to true to bypass shouldStoreInMemory check
+}): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string; skipped?: boolean }> {
+  // Check if memory bridge is enabled
+  if (!isMemoryBridgeEnabled()) {
+    return { ok: false, error: 'Memory bridge not enabled (requires dev-sandbox)' };
+  }
+
+  // VTID-01109 rev2: Filter trivial messages to prevent memory flooding
+  const direction = params.content_json?.direction as 'user' | 'assistant' | undefined;
+  if (!params.skipFiltering && direction && !shouldStoreInMemory(params.content, direction)) {
+    return { ok: true, skipped: true };  // Successfully skipped (not an error)
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const occurredAt = params.occurred_at || new Date().toISOString();
+    const importance = params.importance || 10;
+    const contentJson = params.content_json || {};
+
+    // Auto-classify category if not provided
+    const categoryKey = params.category_key || classifyDevCategory(params.content);
+
+    // VTID-01109 rev2: Boost importance for personal/relationship categories
+    let adjustedImportance = importance;
+    if (categoryKey === 'personal') {
+      adjustedImportance = Math.max(importance, 50);  // Personal info is high priority
+    } else if (categoryKey === 'relationships') {
+      adjustedImportance = Math.max(importance, 40);  // Relationships are important
+    }
+
+    // Insert directly into memory_items table using service role
+    const { data, error } = await repo.insertMemoryItem(supabase, {
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      user_id: DEV_IDENTITY.USER_ID,
+      category_key: categoryKey,
+      source: params.source,
+      content: params.content,
+      content_json: contentJson,
+      importance: adjustedImportance,
+      occurred_at: occurredAt
+    });
+
+    if (error) {
+      // Check if table doesn't exist
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.warn('[VTID-01107] memory_items table not found (VTID-01104 dependency)');
+        return { ok: false, error: 'Memory Core not available' };
+      }
+      console.error('[VTID-01107] Memory write error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    console.log(`[VTID-01107] Dev memory written: ${data?.id} (${categoryKey}, importance=${adjustedImportance})`);
+    return { ok: true, id: data?.id, category_key: categoryKey };
+
+  } catch (err: any) {
+    console.error('[VTID-01107] Memory write exception:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * VTID-01186: Identity structure for authenticated memory operations
+ */
+export interface MemoryIdentity {
+  user_id: string;
+  tenant_id: string;
+  active_role?: string | null;
+}
+
+/**
+ * VTID-01186: Write memory item with authenticated identity
+ * Uses the provided identity instead of DEV_IDENTITY.
+ * This is the production-ready version that works with req.identity from JWT.
+ *
+ * @param identity - The authenticated user's identity (from req.identity)
+ * @param params - Memory item parameters
+ */
+export async function writeMemoryItemWithIdentity(
+  identity: MemoryIdentity,
+  params: {
+    source: 'orb_text' | 'orb_voice' | 'system' | 'diary' | 'upload';
+    content: string;
+    content_json?: Record<string, unknown>;
+    importance?: number;
+    category_key?: string;
+    occurred_at?: string;
+    workspace_scope?: string;
+    skipFiltering?: boolean;
+  }
+): Promise<{ ok: boolean; id?: string; category_key?: string; error?: string; skipped?: boolean }> {
+  // Validate identity
+  if (!identity.user_id || !identity.tenant_id) {
+    console.error('[VTID-01186] writeMemoryItemWithIdentity: Missing user_id or tenant_id');
+    return { ok: false, error: 'Identity incomplete: user_id and tenant_id required' };
+  }
+
+  // VTID-04387: a raw conversation turn goes to memory_transcript_turns
+  // (90-day TTL), the complete record used for session transcripts and
+  // recent-turn grounding. It is recorded before the trivial-message filter.
+  const transcriptRole = transcriptRoleOf(params.content_json);
+  if (transcriptRole) {
+    const cj = params.content_json || {};
+    void recordTranscriptTurn({
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      role: transcriptRole,
+      content: params.content,
+      source: params.source,
+      session_id: (cj.orb_session_id as string) ?? (cj.session_id as string) ?? null,
+      conversation_id: (cj.conversation_id as string) ?? null,
+      channel: (cj.channel as string) ?? null,
+      active_role: identity.active_role ?? null,
+      occurred_at: params.occurred_at,
+    });
+    // Transition switch: once session summaries are observed live, raw turns
+    // stop landing in memory_items (MEMORY_RAW_TURNS_TO_ITEMS=false).
+    if (!rawTurnsAlsoToMemoryItems()) {
+      return { ok: true, skipped: true };
+    }
+  }
+
+  // Filter trivial messages to prevent memory flooding
+  const direction = params.content_json?.direction as 'user' | 'assistant' | undefined;
+  if (!params.skipFiltering && direction && !shouldStoreInMemory(params.content, direction)) {
+    return { ok: true, skipped: true };
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return { ok: false, error: 'Supabase not configured' };
+  }
+
+  try {
+    const occurredAt = params.occurred_at || new Date().toISOString();
+    // VTID-01225: Raised default importance from 10 to 30 - user-provided information
+    // from voice/text should not be buried at the bottom of retrieval results
+    const importance = params.importance || 30;
+    const contentJson = {
+      ...params.content_json,
+      workspace_scope: params.workspace_scope || 'dev',
+      active_role: identity.active_role || null,
+    };
+
+    // Auto-classify category if not provided
+    const categoryKey = params.category_key || classifyDevCategory(params.content);
+
+    // VTID-01225: Boost importance based on category - ALL categories get meaningful scores
+    // Previously only personal (50) and relationships (40) were boosted, everything else stayed at 10
+    let adjustedImportance = importance;
+    if (categoryKey === 'personal') {
+      adjustedImportance = Math.max(importance, 60);
+    } else if (categoryKey === 'relationships') {
+      adjustedImportance = Math.max(importance, 50);
+    } else if (categoryKey === 'health') {
+      adjustedImportance = Math.max(importance, 50);
+    } else if (categoryKey === 'goals') {
+      adjustedImportance = Math.max(importance, 45);
+    } else if (categoryKey === 'preferences') {
+      adjustedImportance = Math.max(importance, 40);
+    }
+    // VTID-01225: Extra boost for user-direction messages (user explicitly said something)
+    const direction = params.content_json?.direction;
+    if (direction === 'user') {
+      adjustedImportance = Math.max(adjustedImportance, 35);
+    }
+
+    // Insert with authenticated identity
+    const { data, error } = await repo.insertMemoryItem(supabase, {
+      tenant_id: identity.tenant_id,
+      user_id: identity.user_id,
+      category_key: categoryKey,
+      source: params.source,
+      content: params.content,
+      content_json: contentJson,
+      importance: adjustedImportance,
+      occurred_at: occurredAt,
+      // VTID-04367: NULL for personal memory, the role otherwise, so
+      // memory_semantic_search can scope reads by role (D9).
+      active_role: memoryRoleForWrite(identity.active_role),
+    });
+
+    if (error) {
+      if (error.message.includes('does not exist') || error.code === '42P01') {
+        console.warn('[VTID-01186] memory_items table not found');
+        return { ok: false, error: 'Memory Core not available' };
+      }
+      console.error('[VTID-01186] Memory write error:', error.message);
+      return { ok: false, error: error.message };
+    }
+
+    console.log(`[VTID-01186] Memory written: ${data?.id} (user=${identity.user_id.substring(0,8)}..., tenant=${identity.tenant_id.substring(0,8)}...)`);
+
+    // VTID-04342: embed on write (Titan V2, fire-and-forget) so the row is
+    // reachable by semantic recall immediately. This path never embedded
+    // before, which is why only 1/3 of memory_items ever had a vector. A
+    // failure leaves embedding NULL; AP-0910 retries it hourly.
+    if (data?.id) {
+      const itemId = data.id as string;
+      void (async () => {
+        try {
+          const { embedMemoryText, toPgVector } = await import('./memory-embedding');
+          const emb = await embedMemoryText(params.content);
+          if (!emb.ok || !emb.embedding) {
+            console.warn(`[VTID-04342] memory_items embed skipped for ${itemId}: ${emb.error}`);
+            return;
+          }
+          const { error: embErr } = await supabase
+            .from('memory_items')
+            .update({
+              embedding: toPgVector(emb.embedding),
+              embedding_model: emb.model,
+              embedding_updated_at: new Date().toISOString(),
+            })
+            .eq('id', itemId);
+          if (embErr) console.warn(`[VTID-04342] memory_items embed store failed for ${itemId}: ${embErr.message}`);
+        } catch (e: any) {
+          console.warn(`[VTID-04342] memory_items embed error for ${itemId}: ${e?.message ?? e}`);
+        }
+      })();
+    }
+
+    return { ok: true, id: data?.id, category_key: categoryKey };
+
+  } catch (err: any) {
+    console.error('[VTID-01186] Memory write exception:', err.message);
+    return { ok: false, error: err.message };
+  }
+}
+
+/**
+ * VTID-04452: selection + formatting shared by the broker read and the
+ * legacy read, so both produce the same prompt shape.
+ */
+function buildOrbMemoryContextFromItems(
+  sourceItems: MemoryItem[],
+  identity: MemoryIdentity,
+  fetchedAt: string,
+  categories?: string[],
+): OrbMemoryContext {
+  const wanted = categories && categories.length > 0 ? new Set(categories) : null;
+  // Facts and diary always pass; episodes respect an explicit category filter.
+  const filtered = wanted
+    ? sourceItems.filter(i => i.source === 'memory_facts' || i.source === 'diary' || wanted.has(i.category_key))
+    : sourceItems;
+  const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+  const selectionResult = selectContextWindow(filtered, 50, turnId, identity.user_id, identity.tenant_id);
+  const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+    id: item.id,
+    category_key: item.category_key,
+    source: item.source,
+    content: item.content,
+    content_json: item.content_json,
+    importance: item.importance,
+    occurred_at: item.occurred_at,
+    created_at: item.created_at,
+  }));
+  return {
+    ok: true,
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    items,
+    summary: generateMemorySummary(items),
+    formatted_context: formatMemoryForPrompt(items),
+    fetched_at: fetchedAt,
+    contextMetrics: selectionResult.metrics,
+    excludedCount: selectionResult.excludedItems.length,
+  };
+}
+
+/**
+ * VTID-01186: Fetch memory context with authenticated identity
+ * Uses the provided identity instead of DEV_IDENTITY.
+ * Falls back to DEV_IDENTITY if no identity provided (dev-sandbox only).
+ *
+ * @param identity - Optional authenticated identity. If not provided, uses DEV_IDENTITY in dev-sandbox mode.
+ * @param limit - Maximum number of memory items to fetch
+ * @param categories - Optional category filter
+ */
+export async function fetchMemoryContextWithIdentity(
+  identity?: MemoryIdentity | null,
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[]
+): Promise<OrbMemoryContext> {
+  const t0 = Date.now();
+  const ctx = await readMemoryContext(identity, limit, categories);
+  // VTID-04784: compare against the other read path in the background
+  // (memory plan phase 2). Never awaited; the session is already answered.
+  if (identity && ctx.ok && ctx.read_path && isRecallShadowEnabled()) {
+    const served = ctx.read_path;
+    const other: ReadPath = served === 'legacy' ? 'recall' : 'legacy';
+    void runRecallShadow(ctx, { served, ms_served: Date.now() - t0 }, () =>
+      readMemoryContext(identity, limit, categories, other),
+    );
+  }
+  return ctx;
+}
+
+/**
+ * The ORB memory read. `forcePath` picks a path regardless of
+ * MEMORY_ORB_RECALL_ENABLED (the VTID-04784 shadow); a forced recall does not
+ * fall back to the legacy read.
+ */
+async function readMemoryContext(
+  identity?: MemoryIdentity | null,
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[],
+  forcePath?: ReadPath,
+): Promise<OrbMemoryContext> {
+  // If no identity provided, fall back to DEV_IDENTITY in dev-sandbox mode
+  const effectiveIdentity: MemoryIdentity = identity && identity.user_id && identity.tenant_id
+    ? identity
+    : {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        active_role: DEV_IDENTITY.ACTIVE_ROLE
+      };
+
+  // If falling back to DEV_IDENTITY, check if dev-sandbox mode is enabled
+  if (!identity && !isMemoryBridgeEnabled()) {
+    const fetchedAt = new Date().toISOString();
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Memory bridge disabled',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Memory bridge not enabled (requires dev-sandbox mode or valid identity)'
+    };
+  }
+
+  // VTID-04452: read through the broker (one recall()) when enabled. Falls
+  // back to the legacy six-table read below if the broker gives nothing.
+  const useRecall = forcePath ? forcePath === 'recall' : isOrbRecallEnabled();
+  if (identity && useRecall) {
+    const recalled = await recallOrbMemoryItems(effectiveIdentity);
+    if (recalled.ok) {
+      return {
+        ...buildOrbMemoryContextFromItems(
+          recalled.items as MemoryItem[], effectiveIdentity, new Date().toISOString(), categories,
+        ),
+        read_path: 'recall',
+      };
+    }
+    if (forcePath === 'recall') {
+      return {
+        ok: false, user_id: effectiveIdentity.user_id, tenant_id: effectiveIdentity.tenant_id,
+        items: [], summary: 'recall unavailable', formatted_context: '',
+        fetched_at: new Date().toISOString(), error: recalled.error ?? 'recall_not_ok',
+      };
+    }
+  }
+
+  const fetchedAt = new Date().toISOString();
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Database not configured',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Supabase not configured'
+    };
+  }
+
+  try {
+    const sinceDate = new Date();
+    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
+    const sinceTimestamp = sinceDate.toISOString();
+    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
+
+    // Split categories into persistent and time-sensitive
+    const persistentCategories = categoryFilter.filter(
+      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+    const timeSensitiveCategories = categoryFilter.filter(
+      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+
+    // VTID-01224-FIX: Run ALL 6 queries in parallel instead of sequentially.
+    // Previous sequential execution took 300-1200ms. Parallel cuts to ~100-300ms.
+    const BOOTSTRAP_FETCH_TIMEOUT_MS = 2000;
+    const bootstrapController = new AbortController();
+    const bootstrapTimeout = setTimeout(() => bootstrapController.abort(), BOOTSTRAP_FETCH_TIMEOUT_MS);
+    const bootstrapStartTime = Date.now();
+
+    let persistentItems: MemoryItem[] = [];
+    let timeSensitiveItems: MemoryItem[] = [];
+    let structuredFacts: MemoryItem[] = [];
+    let diaryItems: MemoryItem[] = [];
+    let lovableDiaryItems: MemoryItem[] = [];
+    let lovableMemoryItems: MemoryItem[] = [];
+
+    const bootstrapPromises: Promise<void>[] = [];
+
+    // 1. Persistent categories (no time filter)
+    if (persistentCategories.length > 0) {
+      bootstrapPromises.push(
+        repo.fetchPersistentMemoryItemsParallel(
+          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, persistentCategories,
+          limit, bootstrapController.signal,
+        ).then(({ data, error }) => {
+            if (!error) persistentItems = (data || []) as MemoryItem[];
+          })
+          .catch((e: any) => console.warn(`[VTID-01224-FIX] persistent items fetch failed: ${e.message}`))
+      );
+    }
+
+    // 2. Time-sensitive categories
+    if (timeSensitiveCategories.length > 0) {
+      bootstrapPromises.push(
+        repo.fetchTimeSensitiveMemoryItemsParallel(
+          supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, timeSensitiveCategories,
+          sinceTimestamp, limit, bootstrapController.signal,
+        ).then(({ data, error }) => {
+            if (!error) timeSensitiveItems = (data || []) as MemoryItem[];
+          })
+          .catch((e: any) => console.warn(`[VTID-01224-FIX] time-sensitive items fetch failed: ${e.message}`))
+      );
+    }
+
+    // 3. Structured facts (memory_facts via REST — previously had NO timeout)
+    const SUPABASE_URL_ENV = process.env.SUPABASE_URL;
+    const SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+    if (SUPABASE_URL_ENV && SUPABASE_KEY) {
+      bootstrapPromises.push(
+        (async () => {
+          try {
+            const factsUrl = `${SUPABASE_URL_ENV}/rest/v1/memory_facts?select=id,fact_key,fact_value,entity,provenance_confidence&tenant_id=eq.${effectiveIdentity.tenant_id}&user_id=eq.${effectiveIdentity.user_id}&superseded_by=is.null&order=provenance_confidence.desc,extracted_at.desc&limit=50`;
+            const factsResp = await fetch(factsUrl, {
+              method: 'GET',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: SUPABASE_KEY,
+                Authorization: `Bearer ${SUPABASE_KEY}`,
+              },
+              signal: bootstrapController.signal,
+            });
+            if (factsResp.ok) {
+              const factsData = await factsResp.json() as Array<{
+                id: string; fact_key: string; fact_value: string;
+                entity: string; provenance_confidence: number;
+              }>;
+              structuredFacts = factsData.map((f) => ({
+                id: f.id,
+                category_key: 'personal',
+                source: 'memory_facts',
+                content: `${f.fact_key}: ${f.fact_value}`,
+                content_json: { fact_key: f.fact_key, fact_value: f.fact_value, entity: f.entity } as Record<string, unknown>,
+                importance: Math.round((f.provenance_confidence || 0.85) * 100),
+                occurred_at: new Date().toISOString(),
+                created_at: new Date().toISOString(),
+              }));
+              if (structuredFacts.length > 0) {
+                console.log(`[VTID-01225-READ-FIX] Fetched ${structuredFacts.length} structured facts from memory_facts`);
+              }
+            }
+          } catch (factsErr: any) {
+            console.warn(`[VTID-01225-READ-FIX] memory_facts fetch failed (non-fatal): ${factsErr.message}`);
+          }
+        })()
+      );
+    }
+
+    // 4. Diary entries (memory_diary_entries)
+    bootstrapPromises.push(
+      repo.fetchMemoryDiaryEntriesParallel(
+        supabase, effectiveIdentity.tenant_id, effectiveIdentity.user_id, 20, bootstrapController.signal,
+      ).then(({ data: diaryData, error: diaryError }) => {
+          if (!diaryError && diaryData && diaryData.length > 0) {
+            diaryItems = (diaryData as Array<{
+              id: string; raw_text: string; tags: string[];
+              entry_date: string; created_at: string; entry_type: string;
+            }>).map((d) => ({
+              id: d.id,
+              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
+              source: 'diary',
+              content: d.raw_text,
+              content_json: { tags: d.tags, entry_type: d.entry_type } as Record<string, unknown>,
+              importance: 60,
+              occurred_at: d.entry_date ? new Date(d.entry_date).toISOString() : d.created_at,
+              created_at: d.created_at,
+            }));
+            console.log(`[VTID-01082-BRIDGE] Fetched ${diaryItems.length} diary entries from memory_diary_entries`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-01082-BRIDGE] memory_diary_entries fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // 5. Lovable diary entries (diary_entries)
+    bootstrapPromises.push(
+      repo.fetchLovableDiaryEntriesParallel(
+        supabase, effectiveIdentity.user_id, 20, bootstrapController.signal,
+      ).then(({ data: lovDiaryData, error: lovDiaryErr }) => {
+          if (!lovDiaryErr && lovDiaryData && lovDiaryData.length > 0) {
+            lovableDiaryItems = (lovDiaryData as Array<{
+              id: string; text: string; source: string;
+              tags: string[]; created_at: string;
+            }>).map((d) => ({
+              id: d.id,
+              category_key: d.tags && d.tags.length > 0 ? d.tags[0].replace(/-/g, '_') : 'notes',
+              source: d.source || 'diary',
+              content: d.text,
+              content_json: { tags: d.tags, source: d.source } as Record<string, unknown>,
+              importance: 60,
+              occurred_at: d.created_at,
+              created_at: d.created_at,
+            }));
+            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableDiaryItems.length} entries from diary_entries (Lovable)`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] diary_entries fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // 6. Lovable AI memory (ai_memory)
+    bootstrapPromises.push(
+      repo.fetchLovableAiMemoryParallel(
+        supabase, effectiveIdentity.user_id, 30, bootstrapController.signal,
+      ).then(({ data: lovMemData, error: lovMemErr }) => {
+          if (!lovMemErr && lovMemData && lovMemData.length > 0) {
+            lovableMemoryItems = (lovMemData as Array<{
+              id: string; content: string; memory_type: string;
+              category: string; created_at: string;
+            }>).map((m) => ({
+              id: m.id,
+              category_key: m.category ? m.category.replace(/-/g, '_') : 'notes',
+              source: 'ai_memory',
+              content: m.content,
+              content_json: { memory_type: m.memory_type } as Record<string, unknown>,
+              importance: 55,
+              occurred_at: m.created_at,
+              created_at: m.created_at,
+            }));
+            console.log(`[VTID-MEMORY-BRIDGE] Fetched ${lovableMemoryItems.length} entries from ai_memory (Lovable)`);
+          }
+        })
+        .catch((e: any) => console.warn(`[VTID-MEMORY-BRIDGE] ai_memory fetch failed (non-fatal): ${e.message}`))
+    );
+
+    // Execute ALL 6 queries in parallel with 2s hard timeout
+    await Promise.all(bootstrapPromises);
+    clearTimeout(bootstrapTimeout);
+    console.log(`[VTID-01224-FIX] Bootstrap parallel fetch completed in ${Date.now() - bootstrapStartTime}ms`);
+
+    // Merge: structured facts FIRST, then diary entries (both tables), then Lovable memory,
+    // then persistent items, then time-sensitive
+    const allItems = [...structuredFacts, ...diaryItems, ...lovableDiaryItems, ...lovableMemoryItems, ...persistentItems, ...timeSensitiveItems];
+    const seenIds = new Set<string>();
+    const memoryItems = allItems.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    // Use context window manager for selection
+    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+    const selectionResult = selectContextWindow(
+      memoryItems,
+      50,
+      turnId,
+      effectiveIdentity.user_id,
+      effectiveIdentity.tenant_id
+    );
+
+    const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+      id: item.id,
+      category_key: item.category_key,
+      source: item.source,
+      content: item.content,
+      content_json: item.content_json,
+      importance: item.importance,
+      occurred_at: item.occurred_at,
+      created_at: item.created_at
+    }));
+
+    const summary = generateMemorySummary(items);
+    const formattedContext = formatMemoryForPrompt(items);
+
+    console.log(`[VTID-01186] Memory context fetched for user=${effectiveIdentity.user_id.substring(0,8)}...: ${items.length} items`);
+
+    return {
+      ok: true,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items,
+      summary,
+      formatted_context: formattedContext,
+      fetched_at: fetchedAt,
+      contextMetrics: selectionResult.metrics,
+      excludedCount: selectionResult.excludedItems.length,
+      read_path: 'legacy',
+    };
+
+  } catch (err: any) {
+    console.error('[VTID-01186] Memory context fetch error:', err.message);
+    return {
+      ok: false,
+      user_id: effectiveIdentity.user_id,
+      tenant_id: effectiveIdentity.tenant_id,
+      items: [],
+      summary: 'Fetch error',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: err.message
+    };
+  }
+}
+
+/**
+ * Simple category classification for dev memory writes
+ * VTID-01109: Enhanced to better classify personal identity and relationships
+ *
+ * BUG FIXES (VTID-01109 revision 2):
+ * - Fixed regex patterns with trailing spaces that broke \b word boundary
+ * - Added German ß/ss variants (speech-to-text may normalize ß to ss)
+ * - Added more German name patterns (nenn mich, man nennt mich, etc.)
+ * - Added English contractions properly (my name's, I'm)
+ */
+function classifyDevCategory(content: string): string {
+  const lower = content.toLowerCase();
+
+  // VTID-01109 rev2 + VTID-DEBUG-05: Personal identity keywords
+  // VTID-DEBUG-05: Removed overly broad patterns that caused false positives:
+  // - "/\bi am\b/" matched any "I am X" including "I am here"
+  // - "/\bi'm\b/" matched any "I'm X"
+  // - "/\bich bin\b/" matched "ich bin da" (I'm here)
+  // Now uses more specific patterns for actual name introductions
+  const personalPatterns = [
+    // English name patterns - specific to name introductions
+    /\bmy name\b/i,
+    /\bmy name's\b/i,
+    /\bmy name is\b/i,
+    /\bi am called\b/i,
+    /\bcall me\b/i,
+    /\byou can call me\b/i,
+    /\bpeople call me\b/i,
+    /\beveryone calls me\b/i,
+    /\bi go by\b/i,
+    // German name patterns - specific to name introductions
+    /\bich heiße\b/i,
+    /\bich heisse\b/i,           // speech-to-text may convert ß to ss
+    /\bich bin der\b/i,          // "ich bin der Marco"
+    /\bich bin die\b/i,          // "ich bin die Maria"
+    /\bmein name ist\b/i,
+    /\bmein name lautet\b/i,
+    /\bnenn mich\b/i,
+    /\bnennen sie mich\b/i,
+    /\bman nennt mich\b/i,
+    /\bdu kannst mich.*nennen\b/i,
+    /\bsie können mich.*nennen\b/i,
+    // Location/origin patterns (fixed: removed trailing space from "from")
+    /\bi'm from\b/i,
+    /\bi am from\b/i,
+    /\bi come from\b/i,
+    /\bborn in\b/i,
+    /\bhometown\b/i,
+    /\bi live in\b/i,
+    /\bich komme aus\b/i,
+    /\bich wohne in\b/i,
+    /\bgeboren in\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added missing German location patterns
+    /\bmein wohnort\b/i,         // "mein Wohnort ist..."
+    /\bwohnort ist\b/i,          // "Wohnort ist Berlin"
+    /\bmeine heimatstadt\b/i,    // "meine Heimatstadt ist..."
+    /\bheimatstadt ist\b/i,      // "Heimatstadt ist München"
+    /\bich lebe in\b/i,          // "ich lebe in Berlin"
+    /\bwohne seit\b/i,           // "ich wohne seit 5 Jahren in..."
+    /\bgebürtig aus\b/i,         // "gebürtig aus Hamburg"
+    /\bgeburtig aus\b/i,         // speech-to-text variant
+    /\baufgewachsen in\b/i,      // "aufgewachsen in München"
+    // Age/birthday patterns
+    /\bmy age\b/i,
+    /\byears old\b/i,
+    /\bmy birthday\b/i,
+    /\bich bin \d+ jahre\b/i,
+    /\bmein geburtstag\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added missing German birthday patterns
+    /\bmein geburtsdatum\b/i,    // "mein Geburtsdatum ist..."
+    /\bgeburtsdatum ist\b/i,     // "Geburtsdatum ist 15.03.1985"
+    /\bgeboren am\b/i,           // "geboren am 15. März"
+    /\bam \d+\.\d+\.\d+ geboren\b/i,  // "am 15.03.1985 geboren"
+    /\bbin am \d+\b/i,           // "ich bin am 15. März..."
+    /\bgeburtstag ist am\b/i,    // "mein Geburtstag ist am..."
+    /\bgeburtstag am\b/i,        // "Geburtstag am 15.03"
+    // Occupation patterns
+    /\bi work\b/i,
+    /\bmy job\b/i,
+    /\bmy occupation\b/i,
+    /\bi'm a\b/i,
+    /\bich arbeite\b/i,
+    /\bmein beruf\b/i,
+    /\bich bin.*von beruf\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Added company/business patterns
+    /\bmy company\b/i,           // "my company is..."
+    /\bmy business\b/i,          // "my business is..."
+    /\bown a company\b/i,        // "I own a company"
+    /\bmy firm\b/i,              // "my firm is..."
+    /\bmeine firma\b/i,          // "meine Firma heißt..."
+    /\bfirma heißt\b/i,          // "die Firma heißt..."
+    /\bfirma heisst\b/i,         // speech-to-text variant
+    /\bmein unternehmen\b/i,     // "mein Unternehmen ist..."
+    /\bunternehmen heißt\b/i,    // "das Unternehmen heißt..."
+    /\bunternehmen heisst\b/i,   // speech-to-text variant
+    /\bich habe eine firma\b/i,  // "ich habe eine Firma"
+    /\bselbstständig\b/i,        // "ich bin selbstständig"
+    /\bselbststaendig\b/i,       // speech-to-text variant
+    /\bfreiberufler\b/i,         // "ich bin Freiberufler"
+    /\bgründer von\b/i,          // "ich bin Gründer von..."
+    /\bgruender von\b/i,         // speech-to-text variant
+    // Contact patterns
+    /\bmy email\b/i,
+    /\bmy phone\b/i,
+    /\bmy address\b/i,
+    /\bmeine email\b/i,
+    /\bmeine telefon\b/i,
+    /\bmeine adresse\b/i,
+    // VTID-DEBUG-MEMORY-FIX: Explicit "remember this" patterns (German)
+    /\bdas ist mein\b/i,         // "das ist mein Name/Geburtstag/etc."
+    /\bdas ist meine\b/i,        // "das ist meine Firma/Adresse/etc."
+    /\bich bin \w+ und\b/i       // "ich bin Dragan und..." (name introduction)
+  ];
+
+  for (const pattern of personalPatterns) {
+    if (pattern.test(lower)) {
+      return 'personal';
+    }
+  }
+
+  // Health-related keywords
+  if (/\b(health|fitness|exercise|sleep|diet|weight|medication|doctor|symptom|pain|illness|sick|medical|gesundheit|arzt|medizin|schmerz|krank)\b/i.test(lower)) {
+    return 'health';
+  }
+
+  // VTID-01109: Relationship keywords - EXPANDED with German
+  if (/\b(family|friend|partner|wife|husband|fiancée|fiancee|fiance|spouse|girlfriend|boyfriend|significant other|child|children|son|daughter|parent|mother|father|mom|dad|brother|sister|colleague|relationship|married|engaged|dating|verlobte|verlobter|frau|mann|freundin|freund|kind|kinder|mutter|vater|schwester|bruder|familie)\b/i.test(lower)) {
+    return 'relationships';
+  }
+
+  // Preference keywords (likes, dislikes, favorites)
+  if (/\b(prefer|like|love|hate|favorite|favourite|always|never|want|need|enjoy|dislike|mag|liebe|hasse|bevorzuge|liebling)\b/i.test(lower)) {
+    return 'preferences';
+  }
+
+  // Goal keywords
+  if (/\b(goal|plan|want to|going to|will|target|achieve|objective|aspire|dream|hope to|ziel|plane|vorhaben|erreichen|traum)\b/i.test(lower)) {
+    return 'goals';
+  }
+
+  // Remember requests (user asking to remember something specific)
+  if (/\b(remember|don't forget|keep in mind|note that|wichtig|merken|vergiss nicht|merk dir)\b/i.test(lower)) {
+    return 'personal';  // Store as personal since user explicitly wants it remembered
+  }
+
+  // Default to conversation
+  return 'conversation';
+}
+
+/**
+ * Fetch memory context for the dev user
+ * Uses fixed dev identity and service role access
+ *
+ * @param limit - Maximum number of memory items to fetch
+ * @param categories - Optional category filter
+ * @returns Memory context with formatted prompt injection
+ */
+export async function fetchDevMemoryContext(
+  limit: number = MEMORY_CONFIG.DEFAULT_CONTEXT_LIMIT,
+  categories?: string[]
+): Promise<OrbMemoryContext> {
+  const fetchedAt = new Date().toISOString();
+
+  // Check if memory bridge is enabled
+  if (!isMemoryBridgeEnabled()) {
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      summary: 'Memory bridge disabled',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Memory bridge not enabled (requires dev-sandbox mode)'
+    };
+  }
+
+  const supabase = createMemoryClient();
+  if (!supabase) {
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      summary: 'Database not configured',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: 'Supabase not configured'
+    };
+  }
+
+  try {
+    // Calculate since timestamp (last 24 hours)
+    const sinceDate = new Date();
+    sinceDate.setHours(sinceDate.getHours() - MEMORY_CONFIG.MAX_AGE_HOURS);
+    const sinceTimestamp = sinceDate.toISOString();
+
+    // Filter categories
+    const categoryFilter = categories || MEMORY_CONFIG.CONTEXT_CATEGORIES;
+
+    // Call memory_get_context RPC with dev identity context
+    // First, set the request context for the dev user
+    const { error: bootstrapError } = await repo.rpcDevBootstrapRequestContextByTenantId(
+      supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.ACTIVE_ROLE,
+    );
+    if (bootstrapError) {
+      console.warn('[VTID-01106] Bootstrap context failed (non-fatal):', bootstrapError.message);
+    }
+
+    // VTID-DEBUG-01: Split categories into persistent (no time filter) and time-sensitive
+    // Personal identity info (name, birthday, family) must NEVER expire
+    const persistentCategories = categoryFilter.filter(
+      (cat: string) => MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+    const timeSensitiveCategories = categoryFilter.filter(
+      (cat: string) => !MEMORY_CONFIG.PERSISTENT_CATEGORIES.includes(cat)
+    );
+
+    console.log(`[VTID-DEBUG-01] Querying persistent categories (no time limit): ${persistentCategories.join(', ')}`);
+    console.log(`[VTID-DEBUG-01] Querying time-sensitive categories (${MEMORY_CONFIG.MAX_AGE_HOURS}h): ${timeSensitiveCategories.join(', ')}`);
+
+    // Query 1: Persistent categories WITHOUT time filter (personal identity never expires)
+    let persistentItems: MemoryItem[] = [];
+    if (persistentCategories.length > 0) {
+      const { data: persistentData, error: persistentError } = await repo.fetchPersistentMemoryItemsByImportance(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, persistentCategories, limit,
+      );  // Generous limit for identity info
+
+      if (persistentError) {
+        console.warn('[VTID-DEBUG-01] Persistent category query error:', persistentError.message);
+      } else {
+        persistentItems = (persistentData || []) as MemoryItem[];
+        console.log(`[VTID-DEBUG-01] Found ${persistentItems.length} persistent memory items (no time filter)`);
+      }
+    }
+
+    // Query 2: Time-sensitive categories WITH time filter
+    let timeSensitiveItems: MemoryItem[] = [];
+    if (timeSensitiveCategories.length > 0) {
+      const { data: timeSensitiveData, error: timeSensitiveError } = await repo.fetchTimeSensitiveMemoryItemsByImportance(
+        supabase, DEV_IDENTITY.TENANT_ID, DEV_IDENTITY.USER_ID, timeSensitiveCategories, sinceTimestamp, limit,
+      );  // Time filter for non-identity categories
+
+      if (timeSensitiveError) {
+        // Check if table doesn't exist (VTID-01104 not deployed)
+        if (timeSensitiveError.message.includes('does not exist') || timeSensitiveError.code === '42P01') {
+          console.warn('[VTID-01106] memory_items table not found (VTID-01104 dependency)');
+          return {
+            ok: false,
+            user_id: DEV_IDENTITY.USER_ID,
+            tenant_id: DEV_IDENTITY.TENANT_ID,
+            items: [],
+            summary: 'Memory Core not deployed',
+            formatted_context: '',
+            fetched_at: fetchedAt,
+            error: 'Memory Core not available (VTID-01104 dependency)'
+          };
+        }
+        console.error('[VTID-DEBUG-01] Time-sensitive category query error:', timeSensitiveError.message);
+      } else {
+        timeSensitiveItems = (timeSensitiveData || []) as MemoryItem[];
+      }
+    }
+
+    // Merge results: persistent items first (identity is most important), then time-sensitive
+    const allItems = [...persistentItems, ...timeSensitiveItems];
+
+    // Deduplicate by ID (in case of overlap)
+    const seenIds = new Set<string>();
+    const memoryItems = allItems.filter(item => {
+      if (seenIds.has(item.id)) return false;
+      seenIds.add(item.id);
+      return true;
+    });
+
+    console.log(`[VTID-DEBUG-01] Total memory items: ${memoryItems.length} (${persistentItems.length} persistent + ${timeSensitiveItems.length} time-sensitive, ${allItems.length - memoryItems.length} duplicates removed)`);
+
+    // Handle empty result (not an error, just no data yet)
+    if (memoryItems.length === 0) {
+      console.log('[VTID-01106] No memory items found for dev user');
+    }
+
+    // VTID-01117: Use Context Window Manager for deterministic selection
+    // This replaces the old ad-hoc sorting and limiting logic
+    const rawItems = (memoryItems || []) as MemoryItem[];
+
+    // Generate a unique turn ID for traceability
+    const turnId = `turn-${Date.now()}-${Math.random().toString(36).substring(2, 8)}`;
+
+    // Apply context window selection with saturation control
+    // Quality score defaults to 50 (medium confidence) - can be enhanced with D24 integration
+    const selectionResult = selectContextWindow(
+      rawItems,
+      50, // Default quality score
+      turnId,
+      DEV_IDENTITY.USER_ID,
+      DEV_IDENTITY.TENANT_ID
+    );
+
+    // Extract selected items (strip the enhanced fields to maintain interface compatibility)
+    const items: MemoryItem[] = selectionResult.includedItems.map(item => ({
+      id: item.id,
+      category_key: item.category_key,
+      source: item.source,
+      content: item.content,
+      content_json: item.content_json,
+      importance: item.importance,
+      occurred_at: item.occurred_at,
+      created_at: item.created_at
+    }));
+
+    // Generate exclusion summary for debugging
+    const exclusionSummary: Record<string, number> = {};
+    for (const exclusion of selectionResult.excludedItems) {
+      exclusionSummary[exclusion.reason] = (exclusionSummary[exclusion.reason] || 0) + 1;
+    }
+
+    console.log(
+      `[VTID-01117] Context window selection: ${items.length} included, ` +
+      `${selectionResult.excludedItems.length} excluded ` +
+      `(personal: ${items.filter(i => i.category_key === 'personal').length}, ` +
+      `relationships: ${items.filter(i => i.category_key === 'relationships').length})`
+    );
+
+    if (selectionResult.excludedItems.length > 0) {
+      console.log(`[VTID-01117] Exclusion reasons: ${JSON.stringify(exclusionSummary)}`);
+    }
+
+    const summary = generateMemorySummary(items);
+    const formattedContext = formatMemoryForPrompt(items);
+
+    console.log(`[VTID-01106] Context assembled: ${items.length} items, ${selectionResult.metrics.totalChars} chars`);
+
+    // Emit OASIS event for memory context fetch with enhanced metrics
+    await emitOasisEvent({
+      vtid: 'VTID-01117',
+      type: 'orb.context.window_selected',
+      source: 'orb-memory-bridge',
+      status: 'success',
+      message: `Context window selected: ${items.length} items, ${selectionResult.excludedItems.length} excluded`,
+      payload: {
+        user_id: DEV_IDENTITY.USER_ID,
+        tenant_id: DEV_IDENTITY.TENANT_ID,
+        turn_id: turnId,
+        included_count: items.length,
+        excluded_count: selectionResult.excludedItems.length,
+        total_chars: selectionResult.metrics.totalChars,
+        diversity_score: selectionResult.metrics.diversityScore,
+        budget_utilization: selectionResult.metrics.budgetUtilization,
+        processing_time_ms: selectionResult.metrics.processingTimeMs,
+        exclusion_summary: exclusionSummary,
+        categories: categoryFilter,
+        since: sinceTimestamp
+      }
+    }).catch((err: Error) => console.warn('[VTID-01117] OASIS event failed:', err.message));
+
+    return {
+      ok: true,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items,
+      summary,
+      formatted_context: formattedContext,
+      fetched_at: fetchedAt,
+      // VTID-01117: Include context window metrics
+      contextMetrics: selectionResult.metrics,
+      excludedCount: selectionResult.excludedItems.length,
+      exclusionSummary
+    };
+
+  } catch (err: any) {
+    console.error('[VTID-01106] Memory context fetch error:', err.message);
+    return {
+      ok: false,
+      user_id: DEV_IDENTITY.USER_ID,
+      tenant_id: DEV_IDENTITY.TENANT_ID,
+      items: [],
+      summary: 'Fetch error',
+      formatted_context: '',
+      fetched_at: fetchedAt,
+      error: err.message
+    };
+  }
+}
+
+// =============================================================================
+// VTID-01106: Memory Formatting for Prompts
+// =============================================================================
+
+/**
+ * Generate a brief summary of memory items
+ */
+function generateMemorySummary(items: MemoryItem[]): string {
+  if (items.length === 0) {
+    return 'No recent memory items';
+  }
+
+  // Count items by category
+  const categoryCounts: Record<string, number> = {};
+  for (const item of items) {
+    categoryCounts[item.category_key] = (categoryCounts[item.category_key] || 0) + 1;
+  }
+
+  const categoryList = Object.entries(categoryCounts)
+    .map(([cat, count]) => `${cat}: ${count}`)
+    .join(', ');
+
+  return `${items.length} recent items (${categoryList})`;
+}
+
+/**
+ * Format memory items for injection into system prompt
+ * Creates a structured, concise representation for LLM context
+ * VTID-01109: Uses config values, prioritizes personal category
+ */
+function formatMemoryForPrompt(items: MemoryItem[]): string {
+  if (items.length === 0) {
+    return '';
+  }
+
+  // VTID-NAV-01: Filter out navigator-action memories. These are records of
+  // Vitana's own past navigations (mode='navigator_action' in content_json)
+  // and they are useful for the navigator-consult service to avoid looping
+  // the user, but they pollute the system prompt with "you sent the user to
+  // /home yesterday" noise that the LLM should not be reasoning about.
+  // Detection is robust to either content_json shape or content prefix.
+  items = items.filter((i) => {
+    const cj = (i as any).content_json;
+    if (cj && typeof cj === 'object' && cj.mode === 'navigator_action') return false;
+    if (typeof i.content === 'string' && i.content.startsWith('Vitana navigated to ')) return false;
+    return true;
+  });
+  if (items.length === 0) return '';
+
+  const lines: string[] = [];
+
+  // VTID-01225-READ-FIX: Separate structured facts (from memory_facts) from raw memory items.
+  // Structured facts are high-confidence extracted knowledge — render them first and prominently.
+  const structuredFacts = items.filter(i => i.source === 'memory_facts');
+  const regularItems = items.filter(i => i.source !== 'memory_facts');
+
+  if (structuredFacts.length > 0) {
+    lines.push('## Verified Facts About This User');
+    lines.push('The following are extracted, structured facts (high confidence):');
+    for (const fact of structuredFacts) {
+      lines.push(`- ${fact.content}`);
+    }
+    lines.push('');
+    // VTID-04766: who is who, so a wife's father is never read as the
+    // member's own father.
+    const people = formatPeopleBlock(
+      structuredFacts.map((f) => {
+        const cj = (f as any).content_json;
+        return { fact_key: String(cj?.fact_key ?? ''), fact_value: String(cj?.fact_value ?? '') };
+      }),
+    );
+    if (people) lines.push(people.trimEnd(), '');
+  }
+
+  if (regularItems.length > 0) {
+    lines.push('## User Context (from Memory)');
+    lines.push('');
+
+    // Group by category for better organization
+    const byCategory: Record<string, MemoryItem[]> = {};
+    for (const item of regularItems) {
+      if (!byCategory[item.category_key]) {
+        byCategory[item.category_key] = [];
+      }
+      byCategory[item.category_key].push(item);
+    }
+
+    // VTID-01109: Process categories in priority order (personal first!)
+    const categoryOrder = ['personal', 'relationships', 'preferences', 'health', 'goals', 'conversation'];
+    const sortedCategories = Object.keys(byCategory).sort((a, b) => {
+      const aIdx = categoryOrder.indexOf(a);
+      const bIdx = categoryOrder.indexOf(b);
+      return (aIdx === -1 ? 999 : aIdx) - (bIdx === -1 ? 999 : bIdx);
+    });
+
+    // Format each category
+    for (const category of sortedCategories) {
+      const catItems = byCategory[category];
+      lines.push(`### ${formatCategoryName(category)}`);
+
+      // VTID-DEBUG-01: NO LIMIT for personal/relationships - include ALL items
+      // Other categories use ITEMS_PER_CATEGORY to prevent flooding
+      const isIdentityCategory = category === 'personal' || category === 'relationships';
+      const itemLimit = isIdentityCategory ? catItems.length : (MEMORY_CONFIG.ITEMS_PER_CATEGORY || 10);
+
+      for (const item of catItems.slice(0, itemLimit)) {
+        const timestamp = formatRelativeTime(item.occurred_at);
+        // VTID-01109: Use config for content truncation limit
+        const content = truncateContent(item.content, MEMORY_CONFIG.MAX_ITEM_CHARS || 300);
+        const direction = item.content_json?.direction as string | undefined;
+
+        if (direction === 'user') {
+          lines.push(`- [${timestamp}] User: "${content}"`);
+        } else if (direction === 'assistant') {
+          lines.push(`- [${timestamp}] Assistant: "${content}"`);
+        } else {
+          lines.push(`- [${timestamp}] ${content}`);
+        }
+      }
+
+      if (catItems.length > itemLimit) {
+        lines.push(`  (+ ${catItems.length - itemLimit} more ${category} items)`);
+      }
+      lines.push('');
+    }
+  }
+
+  // Truncate if too long
+  let result = lines.join('\n');
+  if (result.length > MEMORY_CONFIG.MAX_CONTEXT_CHARS) {
+    result = result.substring(0, MEMORY_CONFIG.MAX_CONTEXT_CHARS - 50) + '\n\n(context truncated for brevity)';
+  }
+
+  return result;
+}
+
+/**
+ * Format category key as readable name
+ * VTID-01109: Added 'personal' category
+ */
+function formatCategoryName(category: string): string {
+  const names: Record<string, string> = {
+    personal: 'Personal Identity (IMPORTANT - User\'s Name, Location, etc.)',
+    conversation: 'Recent Conversations',
+    preferences: 'User Preferences',
+    goals: 'Goals & Plans',
+    health: 'Health & Wellness',
+    relationships: 'Relationships & Family',
+    tasks: 'Tasks & Work',
+    community: 'Community',
+    products_services: 'Products & Services',
+    events_meetups: 'Events',
+    notes: 'Notes'
+  };
+  return names[category] || category;
+}
+
+/**
+ * Format timestamp as relative time (e.g., "2h ago", "yesterday")
+ */
+function formatRelativeTime(isoTimestamp: string): string {
+  const date = new Date(isoTimestamp);
+  const now = new Date();
+  const diffMs = now.getTime() - date.getTime();
+  const diffMins = Math.floor(diffMs / (1000 * 60));
+  const diffHours = Math.floor(diffMs / (1000 * 60 * 60));
+  const diffDays = Math.floor(diffMs / (1000 * 60 * 60 * 24));
+
+  if (diffMins < 5) return 'just now';
+  if (diffMins < 60) return `${diffMins}m ago`;
+  if (diffHours < 24) return `${diffHours}h ago`;
+  if (diffDays === 1) return 'yesterday';
+  if (diffDays < 7) return `${diffDays}d ago`;
+  return date.toLocaleDateString();
+}
+
+/**
+ * Truncate content to max length
+ */
+function truncateContent(content: string, maxLength: number): string {
+  if (content.length <= maxLength) return content;
+  return content.substring(0, maxLength - 3) + '...';
+}
+
+// =============================================================================
+// VTID-01106: System Instruction Enhancement
+// =============================================================================
+
+/**
+ * Build enhanced system instruction with memory context
+ * Injects user memory/history into the ORB system prompt
+ * VTID-01109: Enhanced with stronger directives to use personal information
+ *
+ * @param baseInstruction - The base system instruction
+ * @param memoryContext - Memory context to inject
+ * @returns Enhanced system instruction with memory
+ */
+export function buildMemoryEnhancedInstruction(
+  baseInstruction: string,
+  memoryContext: OrbMemoryContext,
+  activitySummary?: string
+): string {
+  // If no memory or error, still inject activity summary if we have one.
+  if (!memoryContext.ok || memoryContext.items.length === 0) {
+    if (activitySummary && activitySummary.trim().length > 0) {
+      return `${baseInstruction}\n\n## USER CONTEXT PROFILE (recent activity & preferences)\n${activitySummary}\n`;
+    }
+    return baseInstruction;
+  }
+
+  // Extract key personal details for explicit mention
+  const personalItems = memoryContext.items.filter(i => i.category_key === 'personal');
+  const relationshipItems = memoryContext.items.filter(i => i.category_key === 'relationships');
+
+  // VTID-01109: Create a quick-reference section for personal details
+  let quickReference = '';
+  if (personalItems.length > 0 || relationshipItems.length > 0) {
+    quickReference = '\n### QUICK REFERENCE - KEY FACTS ABOUT THIS USER:\n';
+    for (const item of personalItems.slice(0, 5)) {
+      quickReference += `• ${item.content}\n`;
+    }
+    for (const item of relationshipItems.slice(0, 3)) {
+      quickReference += `• ${item.content}\n`;
+    }
+  }
+
+  // Inject memory context after the base instruction
+  // VTID-01107 + VTID-01109: Strong instruction to USE memory and NEVER claim inability to remember
+  // BOOTSTRAP-HISTORY-AWARE-TIMELINE: append activity summary so the assistant
+  // is aware of recent actions, routines, and inferred preferences.
+  const activityBlock = activitySummary && activitySummary.trim().length > 0
+    ? `\n\n## USER CONTEXT PROFILE (recent activity, routines, preferences)\n${activitySummary}\n\n**Weave this naturally into responses** — e.g. "I noticed you logged a diary entry this morning" or "since you usually do X". Never recite the list verbatim.`
+    : '';
+
+  const enhancedInstruction = `${baseInstruction}
+
+## CRITICAL: You Have Persistent Memory About This User
+
+You have access to PERSISTENT MEMORY that contains REAL information from previous conversations with THIS SPECIFIC USER. This is NOT hypothetical - this is ACTUAL stored data about them.
+${quickReference}
+**MANDATORY RULES - FOLLOW THESE EXACTLY:**
+1. NEVER say "I don't remember", "ich erinnere mich nicht", "I don't have information about your name/hometown/etc."
+2. When the user asks about their name, hometown, fiancée, or ANY personal detail - CHECK THE MEMORY BELOW FIRST
+3. If the information IS in your memory context, ANSWER WITH THAT INFORMATION
+4. The "Personal Identity" section below contains their name, location, and key facts - USE IT
+5. The "Relationships & Family" section contains info about family/partners - USE IT
+6. Only say "I don't have that information yet" if it's truly NOT in the memory context below
+
+**STORING NEW INFORMATION - CRITICAL:**
+7. When the user tells you NEW personal information (name, birthday, family member's birthday, preferences, etc.), the system AUTOMATICALLY STORES IT in persistent memory.
+8. NEVER say "I cannot store this", "ich kann nicht speichern", or "I don't have the ability to save". The system DOES store it automatically.
+9. When the user provides new info, ACKNOWLEDGE it positively: "Got it, I'll remember that" / "Notiert!" / "Ich merke mir das"
+10. Treat every piece of personal information the user shares as something you WILL remember in future conversations.
+
+---
+MEMORY CONTEXT (This is REAL data - USE IT when answering):
+${memoryContext.formatted_context}
+---${activityBlock}
+
+You KNOW this user. You REMEMBER their name, their hometown, their family, and their recent life rhythm. Answer their questions using the memory and context above.`;
+
+  return enhancedInstruction;
+}
+
+// =============================================================================
+// VTID-01107: Debug Snapshot for Memory Endpoint
+// =============================================================================
+
+/**
+ * Debug snapshot response for /api/v1/orb/debug/memory endpoint
+ * VTID-01117: Enhanced with context window metrics
+ */
+export interface OrbMemoryDebugSnapshot {
+  ok: boolean;
+  enabled: boolean;
+  dev_user_id: string;
+  dev_tenant_id: string;
+  lookback_hours: number;
+  items_count: number;
+  items_preview: string[];
+  injected_chars: number;
+  injected_preview: string;
+  timestamp: string;
+  error?: string;
+  /** VTID-01117: Context window metrics */
+  context_window?: {
+    excluded_count: number;
+    exclusion_summary: Record<string, number>;
+    diversity_score: number;
+    budget_utilization: number;
+    processing_time_ms: number;
+  };
+}
+
+/**
+ * VTID-01107: Get debug snapshot of current ORB memory state
+ * Returns the exact data being injected into ORB system instructions
+ *
+ * This function is designed for the /api/v1/orb/debug/memory endpoint
+ * to prove what memory context ORB is using.
+ */
+export async function getDebugSnapshot(): Promise<OrbMemoryDebugSnapshot> {
+  const timestamp = new Date().toISOString();
+  const enabled = isMemoryBridgeEnabled();
+
+  // If not enabled, return minimal snapshot
+  if (!enabled) {
+    return {
+      ok: false,
+      enabled: false,
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+      items_count: 0,
+      items_preview: [],
+      injected_chars: 0,
+      injected_preview: '',
+      timestamp,
+      error: 'Memory bridge not enabled (requires dev-sandbox environment)'
+    };
+  }
+
+  // Fetch memory context
+  const memoryContext = await fetchDevMemoryContext();
+
+  if (!memoryContext.ok) {
+    return {
+      ok: false,
+      enabled: true,
+      dev_user_id: DEV_IDENTITY.USER_ID,
+      dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+      lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+      items_count: 0,
+      items_preview: [],
+      injected_chars: 0,
+      injected_preview: '',
+      timestamp,
+      error: memoryContext.error || 'Failed to fetch memory context'
+    };
+  }
+
+  // Build items preview (truncate each to ~200 chars)
+  const itemsPreview = memoryContext.items.map(item => {
+    const content = item.content;
+    return content.length > 200 ? content.substring(0, 197) + '...' : content;
+  });
+
+  // Build injected preview (the actual memory context block)
+  // Use the VITANA_MEMORY_CONTEXT format that would be injected
+  const fullInjectedBlock = `VITANA_MEMORY_CONTEXT\n---\n${memoryContext.formatted_context}\n---`;
+  const injectedPreview = fullInjectedBlock.length > 800
+    ? fullInjectedBlock.substring(0, 797) + '...'
+    : fullInjectedBlock;
+
+  return {
+    ok: true,
+    enabled: true,
+    dev_user_id: DEV_IDENTITY.USER_ID,
+    dev_tenant_id: DEV_IDENTITY.TENANT_ID,
+    lookback_hours: MEMORY_CONFIG.MAX_AGE_HOURS,
+    items_count: memoryContext.items.length,
+    items_preview: itemsPreview,
+    injected_chars: memoryContext.formatted_context.length,
+    injected_preview: injectedPreview,
+    timestamp,
+    // VTID-01117: Include context window metrics
+    context_window: memoryContext.contextMetrics ? {
+      excluded_count: memoryContext.excludedCount || 0,
+      exclusion_summary: memoryContext.exclusionSummary || {},
+      diversity_score: memoryContext.contextMetrics.diversityScore,
+      budget_utilization: memoryContext.contextMetrics.budgetUtilization,
+      processing_time_ms: memoryContext.contextMetrics.processingTimeMs
+    } : undefined
+  };
+}
+
+// =============================================================================
+// VTID-01106 + VTID-01115 + VTID-01117 + VTID-01120 + VTID-01121 + VTID-01135: Exports
+// Note: shouldStoreInMemory, resetMemoryBridgeCache already exported inline
+// VTID-04364: the unused scored/trust/enhanced instruction builders were removed.
+// VTID-01117: Added context window manager exports
+// VTID-01135: Added D41 boundary context exports
+// =============================================================================
+
+export {
+  MEMORY_CONFIG,
+  formatMemoryForPrompt,
+  generateMemorySummary,
+  getOrbSignalContext,
+  processMessageForOrb,
+  getOrbBoundaryContext
+};
+
+// Re-export scoring types for consumers (VTID-01115)
+export type {
+  ScoringContext,
+  ScoredMemoryItem,
+  ScoringMetadata,
+  RetrieveIntent,
+  Domain,
+  UserRole
+} from './memory-relevance-scoring';
+
+export type { OrbSignalContext };
+export type { OrbBoundaryContext };
+
+// VTID-01117: Re-export context window manager for direct access
+export {
+  ContextWindowManager,
+  selectContextWindow,
+  formatSelectionDebug
+} from './context-window-manager';

@@ -1,0 +1,6 @@
+# root cause: nova_instruction_debug_dump of live-61b6a597-1b20-4388-b03d-b70eed4124b4 (staging 2ae96e0)
+cd services/gateway && npx tsc --noEmit -p .                       # clean
+node node_modules/.bin/jest test/orb test/services/memory test/services test/vtid-04683-own-people-direct-questions.test.ts
+# -> 623 suites; only vtid-04542 payload identity failed (expected, one hash) -> regenerated with -u
+npm run test:roles    # 105/105
+npm run test:support  # 82/82

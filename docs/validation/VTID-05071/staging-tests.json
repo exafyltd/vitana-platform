@@ -1,0 +1,58 @@
+{
+  "vtid": "VTID-05071",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Command Hub loads the Kiro console and app.js at the VTID-05071 version",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": [
+        "kiro-console.js?v=20261114-vtid-05071",
+        "kiro-console.css?v=20261114-vtid-05071",
+        "app.js?v=20261121-vtid-05082"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served kiro-console.js names a timed-out approval and has the waiting badge",
+      "path": "/command-hub/kiro-console.js?v=20261114-vtid-05071",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "your approval for",
+        "timed out.",
+        "function waitingBadge",
+        "Needs your OK"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served kiro-console.css styles the badge and the timeout marker",
+      "path": "/command-hub/kiro-console.css?v=20261114-vtid-05071",
+      "expect_status": 200,
+      "expect_content_type": "text/css",
+      "expect_body_contains": [
+        ".kiro-waiting-badge",
+        ".kiro-run-marker--approval-timeout"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served app.js puts the badge on each thread row",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "window.KiroConsole.waitingBadge(thread.id)"
+      ]
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05071-kiro-keeps-thread.test.ts test/command-hub/vtid-05071-kiro-approval-visibility.test.ts",
+      "cwd": "services/gateway",
+      "reason": "history restore caps, idle and approval timeout defaults, session rules, console label/badge/title run in-process"
+    }
+  ]
+}

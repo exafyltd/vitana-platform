@@ -1,0 +1,4 @@
+# local checks (npm registry unavailable in the session sandbox; CI runs jest + tsc)
+ts-node (transpile-only) scratchpad/s4711.ts   -> real modules: Shopify/FHIR state round-trip, tamper, fallback — all assertions passed
+typescript.transpileModule on all 11 changed/new files -> 0 diagnostics
+curl (read-only) staging: org-scoped shopify/fhir authorize POST -> 401 JSON; both callbacks GET -> 503 JSON

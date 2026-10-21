@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-05003",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/vtid-05003-*.test.ts",
+    "services/gateway/test/command-hub/vtid-05003-*.test.ts",
+    "services/gateway/test/vtid-04999-kiro-runner-backend.test.ts",
+    "services/gateway/test/command-hub/vtid-04999-kiro-key-field.test.ts",
+    "services/gateway/test/vtid-03822-operator-chat-threads.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "scripts/aws/setup-kiro-runner.sh",
+    "scripts/aws/setup-kiro-runner-staging.sh",
+    ".github/workflows/AWS-PROD-DEPLOY-KIRO-RUNNER.yml",
+    ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05003/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

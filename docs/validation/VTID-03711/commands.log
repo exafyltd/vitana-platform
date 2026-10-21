@@ -1,0 +1,80 @@
+# VTID-03711 — commands actually run.
+
+# Reported live by the platform owner: "Polly TTS speaks for all wired
+# languages in Mickey Mouse speed." Investigated in the same session that
+# had just dispatched ORB_CASCADED_VOICE_ENABLED=true to production
+# (VTID-03703's production follow-up).
+
+# Root-caused by reading the actual code, not guessing:
+cat services/gateway/src/orb/live/upstream/cascaded-live-client.ts
+#   -> confirmed Polly PCM is synthesized at 16kHz and every chunk is
+#      correctly labeled 'audio/pcm;rate=16000' (POLLY_PCM_SAMPLE_RATE_HZ)
+grep -n "audio/pcm|rate=|sampleRate|AudioContext" \
+  services/gateway/src/frontend/command-hub/orb-widget.js
+#   -> found _playAudio(msg.data_b64, msg.mime || 'audio/pcm;rate=24000')
+#      at the single WS message dispatch site, and createBuffer(1,
+#      floats.length, 24000) hardcoded in _processQueue() — the mime's
+#      actual rate was never read.
+grep -n "audio/pcm;rate=\${|mime.*rate|sampleRateHz" \
+  services/gateway/src/routes/orb-live.ts
+#   -> confirmed greeting-bridge and guided-topic-narration audio ALSO
+#      send correctly-labeled `mime: audio/pcm;rate=${sampleRateHz}`
+#      through the same shared _playAudio() path -- same defect,
+#      pre-existing, not introduced by this session.
+
+# IMMEDIATE MITIGATION -- applied BEFORE writing this fix, to stop live
+# user impact while the code fix was being written and verified:
+#   (via mcp__github__actions_run_trigger, method: run_workflow)
+#   AWS-PROD-DEPLOY-GATEWAY.yml, ref=main,
+#   inputs: { orb_cascaded_voice_enabled: "false", reason: "EMERGENCY
+#   ROLLBACK of VTID-03703 production dispatch ..." }
+#   -> run 32743618322, status=completed, conclusion=success
+
+# Self-allocated the VTID via direct Supabase RPC (gateway not reachable
+# from this session), per CLAUDE.md §4.1 procedure 2.
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "SELECT allocate_global_vtid('claude-code', 'gateway', 'orb-widget-audio-playback-rate');"
+#   -> (VTID-03711, 3711, 1bf1de2a-7cd0-453b-a684-00e3c299e81e)
+
+supabase execute_sql --project inmkhvwdcuyhnxkgfvsb \
+  "UPDATE vtid_ledger SET title=..., summary=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03711';"
+
+# Implementation: added _pcmRateFromMime() next to the existing
+# _currentPlaybackRate() helper, and changed the single createBuffer()
+# call site in _processQueue() to use the parsed rate instead of the
+# literal 24000. Added 3 new regression tests to the existing
+# test/frontend/orb-widget-audio-playback.test.ts (same file the
+# VTID-03606 DE-rate tests already live in).
+
+cd services/gateway
+npx jest test/frontend/orb-widget-audio-playback.test.ts --silent
+#   -> Test Suites: 1 passed, 1 total
+#   -> Tests: 7 passed, 7 total
+#   -> outputs/targeted-tests.txt
+
+npx jest test/frontend/ --silent
+#   -> Test Suites: 14 passed, 14 total
+#   -> Tests: 86 passed, 86 total
+#   -> outputs/full-frontend-suite.txt
+
+npx tsc --noEmit
+#   -> outputs/tsc.txt (empty -- clean)
+
+# Rebased onto a fresh branch off origin/main (the shared session branch
+# had unrelated in-flight work) to keep this VTID isolated:
+git stash
+git fetch origin main -q
+git checkout -B claude/orb-widget-pcm-rate-vtid-03711 origin/main -q
+git stash pop
+
+git add services/gateway/src/frontend/command-hub/orb-widget.js \
+        services/gateway/test/frontend/orb-widget-audio-playback.test.ts
+git commit -m "Fix orb-widget PCM playback hardcoded to 24kHz -- Polly audio played at 1.5x speed/pitch (VTID-03711)"
+git push -u origin claude/orb-widget-pcm-rate-vtid-03711
+
+# --- NOT done from this session ---
+# Live confirmation against real cascade-routed traffic on staging --
+# this cannot happen until the PR merges and AWS-STAGE-DEPLOY-GATEWAY.yml
+# deploys it, per the staging-first CI/CD model (CLAUDE.md §16).
+# ORB_CASCADED_VOICE_ENABLED stays false on production until this fix is
+# verified live on staging.

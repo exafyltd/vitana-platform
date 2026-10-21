@@ -1,0 +1,8 @@
+PASS test/routes/voice-supervisor.test.ts
+PASS test/routes/orb-livekit.test.ts
+PASS test/command-hub/vtid-04779-voice-section-rebuild.test.ts
+PASS test/vtid-04776-voice-supervisor.test.ts
+PASS test/orb/latency/vtid-04542-voice-payload-identity.test.ts (5.384 s)
+Test Suites: 5 passed, 5 total
+Tests:       188 passed, 188 total
+Snapshots:   56 passed, 56 total

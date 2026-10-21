@@ -1,0 +1,13 @@
+# VTID-04509 — commands run
+# Investigation (read-only, Supabase MCP execute_sql on the shared project):
+select ... from oasis_events where topic='vtid.live.session.start' and created_at > now()-'20 min'           # found live-fcf24797 (15:57:29, staging origin)
+select ... from oasis_events where metadata->>'session_id'='live-fcf24797-…'                               # timeline: conv_resume/continue -> narrate_guided_session on turn 0
+select ... metadata->>'instruction_text' ... stage='nova_instruction_debug_dump'                            # personal context omitted; no thread visible
+select ... greeting_sent wake_opener='conv_resume' (14 days) + first turn_complete output_preview           # 14:16 translation monologue, 13:50 unasked calendar booking
+select ... from memory_transcript_turns / conversation_messages / user_session_summaries                    # no words recorded for the cut-off session
+# Build / test:
+cd services/gateway && npx tsc --noEmit -p .                                                                 # clean
+npx jest test/orb/live/session/vtid-04509-opening-action-guard.test.ts test/orb/live/session/vtid-04480-opening-turn-guard.test.ts test/orb/live/session/upstream-session-binding.test.ts   # 42/42
+npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u                             # 6 conv_resume snapshots updated, diff = the new directive lines only
+npx jest test/orb test/services/conversation test/routes                                                     # 387 suites, 6453 passed
+npx jest                                                                                                      # full suite, see outputs/test-summary.txt

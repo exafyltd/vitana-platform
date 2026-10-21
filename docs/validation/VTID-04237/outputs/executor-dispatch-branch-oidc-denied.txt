@@ -1,0 +1,5 @@
+# AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml run 35624216627 (#20), dispatched 16:13:26Z on the PR branch to overlap with CI
+# job build-push-register, step aws-actions/configure-aws-credentials@v4, 12 OIDC attempts 16:13:47 → 16:16:24:
+#   ##[error]Could not assume role with OIDC: Not authorized to perform sts:AssumeRoleWithWebIdentity
+# Cause: AWS_PROD_ROLE_ARN's trust policy admits only refs/heads/main (the §1b prod-deploy posture), so a branch ref
+# cannot assume it. Not a code or workflow defect; the same dispatch from main is the real run (see commands.log).

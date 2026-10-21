@@ -1,0 +1,13 @@
+    ✓ check 21 calls ci_memory_health over PostgREST (7 ms)
+    ✓ the self-audit stays the last numbered check and TOTAL_CHECKS matches (1 ms)
+    ✓ judges the failure shapes that went unnoticed before (1 ms)
+    ✓ the RPC is service_role only and returns counts, not content
+    ✓ a quiet day (nobody spoke, nothing written) passes and says so (161 ms)
+    ✓ speech that was written passes (97 ms)
+    ✓ speech with nothing written fails no-memory-writes-24h (90 ms)
+    ✓ speech that never reached the writer fails speech-not-recorded (76 ms)
+    ✓ the other conditions still fail the row on a quiet day (418 ms)
+    ✓ keeps every existing key and adds the two input-side keys (7 ms)
+    ✓ counts speech per (session, turn) over the summed fragments, not per fragment (3 ms)
+    ✓ stays SECURITY DEFINER, pinned search_path, service_role only (4 ms)
+Tests:       12 passed, 12 total

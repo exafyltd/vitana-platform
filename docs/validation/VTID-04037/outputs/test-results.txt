@@ -1,0 +1,89 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+  VTID-04037: staging pins the four operator-agent flags to exact "true"
+  VTID-04037: read-only SQL is wired optionally, the ERP-bridge way
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts
+  VTID-04000: staging wires the Vertex Serbian bridge (WIF), unconditionally
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03820-onramp-staging-flag-pinned.test.ts
+  VTID-03820 follow-up: staging pins OPERATOR_EXECUTION_ONRAMP_ENABLED
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-04006-staging-onramp-executor-pinned.test.ts
+  VTID-04006: staging pins OPERATOR_ONRAMP_EXECUTOR=agent
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts
+  VTID-03813: staging pins AURORA_RLS_DATABASE_URL
+
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+  VTID-03850: staging gateway dispatches executions to the ECS executor
+  VTID-03850: the executor task definition gets an LLM runtime of its own
+
+  console.warn
+    [VTID-04018] bootstrap pack failed open: deps.readRepoFile is not a function
+
+      360 |     return assembleBootstrapPack([...entry.sections, catalog], entry.builtAtIso);
+      361 |   } catch (err) {
+    > 362 |     console.warn(`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`);
+          |             ^
+      363 |     return '';
+      364 |   }
+      365 | }
+
+      at getOperatorBootstrapPack (src/services/operator-bootstrap-pack.ts:362:13)
+      at Object.<anonymous> (test/vtid-04018-operator-bootstrap-pack.test.ts:170:18)
+
+PASS test/vtid-04018-operator-bootstrap-pack.test.ts
+  VTID-04018 pure renderers
+  VTID-04018 sections, fail-open and cache
+  VTID-04018 wiring
+
+Test Suites: 8 passed, 8 total
+Tests:       75 passed, 75 total
+Snapshots:   0 total
+Time:        2.809 s, estimated 3 s
+Ran all test suites matching /test\/vtid-04037-staging-operator-agent-flags-pinned.test.ts|test\/vtid-04006-staging-onramp-executor-pinned.test.ts|test\/vtid-03850-staging-executor-dispatch-pinned.test.ts|test\/vtid-03820-onramp-staging-flag-pinned.test.ts|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax.test.ts|test\/orb\/live\/upstream\/staging-aurora-database-url-pinned.test.ts|test\/orb\/live\/upstream\/staging-vertex-serbian-bridge-wiring-pinned.test.ts|test\/vtid-04018-operator-bootstrap-pack.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

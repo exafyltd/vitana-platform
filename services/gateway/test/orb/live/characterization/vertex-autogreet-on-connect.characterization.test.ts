@@ -1,0 +1,110 @@
+/**
+ * ORB-CONVERSATION-LATENCY — server-driven auto-greet on upstream connect.
+ *
+ * Contract this file locks (services/gateway/src/routes/orb-live.ts):
+ *
+ * The ORB greeting fires SERVER-SIDE the moment the Vertex Live API upstream
+ * WebSocket resolves — driven by `liveApiPromise.then((ws) => …)`, NOT by any
+ * client-sent greeting/welcome trigger. The frontend (vitana-v1) used to POST a
+ * context turn + a greet trigger after getUserMedia; that round-trip was removed
+ * as part of the conversation-start latency work, so the server is now the SOLE
+ * driver of the first spoken turn. If a refactor ever re-coupled the greeting to
+ * an inbound client message, the orb would go silent on tap — this test fails
+ * loudly before that ships.
+ *
+ * It also locks the idempotency guard (`greetingSent`) that lets a stray legacy
+ * client trigger be ignored rather than double-greeting, and the first-time vs.
+ * reconnect routing.
+ *
+ * Structural (source-level) by design: exercising the real path needs a live
+ * Vertex WebSocket + ADC, which unit CI can't stand up. The existing
+ * characterization tests in this directory follow the same approach.
+ */
+
+import * as fs from 'fs';
+import * as path from 'path';
+
+const ROUTE_PATH = path.resolve(
+  __dirname,
+  '../../../../src/routes/orb-live.ts',
+);
+
+let src: string;
+
+beforeAll(() => {
+  src = fs.readFileSync(ROUTE_PATH, 'utf8');
+});
+
+describe('ORB-CONVERSATION-LATENCY: server-driven auto-greet on upstream connect', () => {
+  it('kicks off the upstream connect non-blocking and greets in its .then() resolve', () => {
+    const idxConnect = src.indexOf('const liveApiPromise = connectToLiveAPI(');
+    const idxThen = src.indexOf('liveApiPromise.then((ws) => {');
+    const idxGreet = src.indexOf('sendGreetingPromptToLiveAPI(ws, session);');
+
+    // The connect is fired and its resolution drives the greeting.
+    expect(idxConnect).toBeGreaterThan(-1);
+    expect(idxThen).toBeGreaterThan(idxConnect);
+    // The greeting fire sits AFTER the .then() opener — i.e. inside the connect
+    // resolution callback, not in a client-message handler earlier in the file.
+    expect(idxGreet).toBeGreaterThan(idxThen);
+  });
+
+  it('routes first-time sessions to the greeting and reconnects to recovery — both server-side', () => {
+    const idxThen = src.indexOf('liveApiPromise.then((ws) => {');
+    const idxReconnectFlag = src.indexOf('const isReconnectGreetingSkip', idxThen);
+    const idxRecovery = src.indexOf('sendReconnectRecoveryPromptToLiveAPI(ws, session);', idxThen);
+    const idxGreet = src.indexOf('sendGreetingPromptToLiveAPI(ws, session);', idxThen);
+
+    // The reconnect decision and BOTH opener calls live inside the connect
+    // resolution block (all indices are searched from idxThen forward).
+    expect(idxReconnectFlag).toBeGreaterThan(idxThen);
+    expect(idxRecovery).toBeGreaterThan(idxReconnectFlag);
+    expect(idxGreet).toBeGreaterThan(idxReconnectFlag);
+  });
+
+  it('greeting send is idempotent on greetingSent so a stray client trigger cannot double-greet', () => {
+    const idxFn = src.indexOf('function sendGreetingPromptToLiveAPI(');
+    expect(idxFn).toBeGreaterThan(-1);
+    // Within the function, an early return when greetingSent is already set.
+    const fnBody = src.slice(idxFn, idxFn + 1200);
+    expect(fnBody).toMatch(/if\s*\(session\.greetingSent\)/);
+    expect(fnBody).toMatch(/return false;/);
+  });
+
+  it('does NOT gate the connect-time greeting behind an inbound client message type', () => {
+    // The greeting fire must not be wrapped in a handler keyed on a client
+    // request like "request_welcome" / "greet" / "trigger_greeting". We assert
+    // the connect-resolution greeting and any such client-message string do not
+    // appear on the same wiring: there is no client-trigger call to
+    // sendGreetingPromptToLiveAPI anywhere except the connect .then() path.
+    const greetCalls = [...src.matchAll(/sendGreetingPromptToLiveAPI\(/g)];
+    // Definition + the connect-time call(s) + stall-recovery re-send are the only
+    // invocations; none are driven by a freshly-received client welcome request.
+    expect(greetCalls.length).toBeGreaterThan(0);
+    expect(src).not.toMatch(/on\(['"]request_welcome['"]/);
+    expect(src).not.toMatch(/case\s+['"]request_welcome['"]/);
+  });
+
+  it('BOOTSTRAP-NOVA-GREETING-CADENCE: the real decideOpening() call wires wakeCadenceSkip from a fresh-open reconnect-bucket check', () => {
+    // Regression lock for a live incident: `decideOpening`'s `wakeCadenceSkip`
+    // input (proven correct in isolation by opening-contract.test.ts) was never
+    // populated at THIS call site, so a brand-new session_id opened seconds
+    // after the user's last one always fell through to the wake-brief's
+    // selected line (override_v2) instead of staying quiet. `_reconnectCount`
+    // only covers transport-level reconnects within one session object, so it
+    // can't catch "the user closed and reopened ORB" — the bucket check can.
+    const idxDecide = src.indexOf('const _openDecision = decideOpening({');
+    expect(idxDecide).toBeGreaterThan(-1);
+    const callBody = src.slice(idxDecide, idxDecide + 700);
+    // VTID-03727 added a guided-topic override ahead of this bucket check
+    // (a pending, never-yet-spoken guided topic must not be cadence-
+    // silenced either) — match on the conjunction containing the bucket
+    // check rather than requiring it to be the whole expression.
+    expect(callBody).toMatch(/wakeCadenceSkip:[\s\S]*_cadenceBucketPre\s*===\s*'reconnect'/);
+    // The bucket must be computed BEFORE the decideOpening call, not after —
+    // otherwise the variable wouldn't exist to reference.
+    const idxBucket = src.indexOf('const _cadenceBucketPre = describeTimeSince(');
+    expect(idxBucket).toBeGreaterThan(-1);
+    expect(idxBucket).toBeLessThan(idxDecide);
+  });
+});

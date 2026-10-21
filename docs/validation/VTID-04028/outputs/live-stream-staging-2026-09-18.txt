@@ -1,0 +1,20 @@
+HTTP/1.1 200 Connection Established
+
+HTTP/2 200 
+content-type: text/event-stream
+x-powered-by: Express
+cf-cache-status: DYNAMIC
+cf-ray: a3cc1c1dfa972978-IAD
+
+event: turn.started
+data: {"threadId":"<thread>","started_at":"2026-09-18T00:07:20.315Z"}
+
+event: model.turn
+data: {"stage":"plan","provider":"deepseek","model":"deepseek-flash","tool_calls":0,"duration_ms":3148}
+
+event: reply
+data: {"ok":true,"reply":"VTID-04026 — the newest change-log entry (2026-09-18) covers the post-login Serbian voice looping \"hold on, I'm reconnecting\" on staging, closed with measurement rather than another rewording. ✅","attachments":[],"oasis_ref":"OASIS-CHAT-2B21F6D6","meta":{"provider":"deepseek","model":"deepseek-flash","mode":"operator_deepseek","tool_calls":0,"vtid":"VTID-01023"},"threadId":"0d7fedb9-c7f1-4cd7-acb5-c625d50af6b8","messageId":"de8dbfd5-6715-4aa9-87b6-d288d8c3dbce","createdAt":"2026-09-18T00:07:20.316Z"}
+
+event: done
+data: {"threadId":"<thread>"}
+

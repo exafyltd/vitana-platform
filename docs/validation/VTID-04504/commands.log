@@ -1,0 +1,7 @@
+cd services/gateway && npx tsc --noEmit -p .                                   # clean
+npx jest test/vtid-04504-community-autopilot-drafts.test.ts                    # 15 passed
+npx jest test/routes/autopilot-recommendations.test.ts -t "CA-4"               # 4 passed
+npx jest <autopilot suites> test/orb                                           # 240 suites, 4114 passed
+# mutation: appOnly voice guard disabled -> 2 failed (outputs/mutation-apponly-removed.txt)
+# vitana-v1: npx vitest run src/components/autopilot src/hooks                 # 49 files passed
+# vitana-v1: playwright screenshots of AutopilotDraftSheet, local harness      # outputs/draft-*.png

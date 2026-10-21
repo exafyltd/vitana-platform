@@ -1,0 +1,14 @@
+$ (services/gateway) npx tsc --noEmit -p .
+(clean)
+$ (services/gateway) npx jest            # full suite
+1 failure found and fixed: vtid-03822 pinned `function startNewOperatorThread()`; the function now takes an optional { engine } argument (search string updated)
+$ npx jest test/vtid-05003-* test/command-hub/vtid-05003-* test/vtid-04999-* test/command-hub/vtid-04999-* test/vtid-04975-* test/vtid-04984-* test/command-hub/vtid-04975-* test/command-hub/vtid-04984-* test/vtid-03822-*
+all passed
+$ npm run test:operator
+Tests: 30 passed
+$ PATH=<stub aws> scripts/aws/setup-kiro-runner.sh --env production provision   # dry run
+production names only (vitana-kiro-runner-awsdr, vitana/kiro-runner/production/runner-token, vitana/kiro/production/users/*, kiro-runner-prod.vitana.internal, vitana-kiro-runner-prod-task-role); found and fixed a shared exec-role policy name (now kiro-runner-token-<env>)
+$ jq: prod gateway Kiro step with/without KIRO_RUNNER_PROD_TOKEN_ARN; prod runner task-def jq
+as expected
+$ node scratchpad/kiro-fallback-shots.js   # real app.js block + styles.css in Chromium
+4 screenshots, no overflow; Continue in Operator -> new thread {engine:'llm'}, input pre-filled, nothing sent

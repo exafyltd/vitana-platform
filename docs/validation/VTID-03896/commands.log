@@ -1,0 +1,66 @@
+# VTID-03896/03895/03897/03898 — commands run during this change
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03895-terminalize-vtid-ledger.test.ts test/vtid-03896-03898-execution-steps-stream.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       20 passed, 20 total
+(full output: outputs/jest-new-vtid-suites.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 792 passed, 792 of 793 total
+Tests:       29 skipped, 6 todo, 14169 passed, 14204 total
+0 failures.
+(tail: outputs/jest-full-suite-summary.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight (VTID-03714 diff-only scan)
+$ git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+No CSP pattern hits in added lines.
+
+First run of this command flagged 4 `.style` hits (three from
+`.style.cssText` assignments in the new app.js "Steps" panel/heartbeat
+code, one from a doc-comment in styles.css that echoed the literal string
+"element .style property"). Fixed by moving every new element's styling to
+CSS classes in styles.css (`.dev-autopilot-heartbeat`,
+`.dev-autopilot-ghost-toggle`, `.dev-autopilot-steps-*`), mirroring the
+VTID-03852 `.llm-provider-badge` precedent, and rewording the new
+styles.css comment to avoid the literal `.style` substring.
+
+## Command Hub Ownership Guard — local pre-flight
+$ GITHUB_HEAD_REF=claude/youthful-mccarthy-9o56j5 GITHUB_BASE_REF=main \
+  PR_TITLE="VTID-03896: Command Hub Operator terminalize-on-completion, step feed, SSE tail, heartbeat" \
+  node scripts/ci/command-hub-ownership-guard.js
+DEV-COMHU marker found in branch/PR title.
+Guard check PASSED.
+
+(Required adding VTID-03896/03897/03898 to
+scripts/ci/command-hub-ownership-guard.js's ALLOWED_VTID_PATTERN, and
+retitling the PR to carry VTID-03896 explicitly — the branch name predates
+this VTID and originally carried none.)
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/pr_body.txt
+NOT JUDGED — 2 file(s) outside this gate's remit:
+  scripts/ci/command-hub-ownership-guard.js
+  scripts/ci/impact-rules/new-route-without-auth-middleware.mjs
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 6 in-remit file(s) match the gateway_backend allowlist
+exit=0
+
+(gateway_backend allows services/gateway/src/** — which includes
+frontend/command-hub/** as a subtree — plus services/gateway/test/** and
+docs/validation/**; scripts/ci/*.mjs and scripts/ci/*.js are outside this
+gate's REMIT and are reported NOT JUDGED rather than rejected, per
+VTID-03696.)

@@ -1,0 +1,82 @@
+VTID-04273 — commands run to build and verify this change
+
+1. Queried live Supabase `autopilot_recommendations` for the finding
+   (`3d729613-5196-4219-8d49-d4bf317ee51c`, spec_snapshot) to get the exact
+   8 file:line hits the rollup carries.
+
+2. Read all 8 flagged files/lines directly:
+   .github/workflows/AURORA-I18N-INTEGRATION.yml:60
+   .github/workflows/CICDL-GATEWAY-CI.yml:69
+   docs/DEV-CICDL-0034-IMPLEMENTATION.md:45
+   docs/reports/devcicdl0034-telemetry-ci-fix.md:83
+   docs/validation/VTID-03798/outputs/before-fix-live-staging-evidence.txt:24
+   scripts/aws/setup-operator-sql-readonly-secret.sh:88
+   services/gateway/src/services/autopilot-agent/agent-workspace.ts:55
+   services/postgrest-aurora-proxy/cloudshell-unblock-aurora.sh:351
+   -> confirmed all 8 are false positives (loopback CI defaults, runtime
+      variable interpolation, or an already-redacted preview) — none is a
+      live credential.
+
+3. Read scripts/ci/scanners/secret-exposure.mjs in full — found the "URL
+   with embedded credentials" regex has no `ignore` field (unlike the
+   OpenAI-key pattern in the same file, which does), and
+   GLOBAL_PLACEHOLDER_HINTS has no entry for a `***` redaction marker.
+
+4. Edited the pattern's `ignore` field:
+   `/\$\{|\$[A-Za-z_][A-Za-z0-9_]*|@(?:127\.0\.0\.1|localhost)\b/`
+   and added `'***'` to GLOBAL_PLACEHOLDER_HINTS.
+
+5. Verified live against a throwaway temp directory, first via a manual
+   Node script (scratchpad, not committed) reproducing all 4 false-positive
+   shapes plus 2 genuine-leak controls:
+   - postgres://postgres:postgres@127.0.0.1:5432/... -> no signal (was: 1)
+   - postgresql://postgres:postgres@localhost:5432/... -> no signal (was: 1)
+   - postgresql://${USER_NAME}:${ENC_PASS}@${READER}:5432/... -> no signal
+   - `https://x-access-token:${t}@github.com/...` (TS template literal) -> no signal
+   - postgresql://vitana_admin:***@vitana-rds-proxy-prod...  -> no signal
+   - postgres://admin:SuperSecretPass123@db.prod.acmecorp.io:5432/app
+     (genuine leak, non-example.com hostname) -> STILL 1 signal (control)
+
+6. Wrote services/gateway/test/scripts/secret-exposure-scanner.test.ts
+   (8 tests). Jest's own module system cannot `require()`/dynamic-`import()`
+   a bare `.mjs` file (confirmed directly: throws `SyntaxError: Cannot use
+   import statement outside a module` — Jest intercepts `import()` too, not
+   only `require()`), so the test spawns a real, separate
+   `node --input-type=module -e '<driver>'` process per assertion, doing a
+   genuine dynamic `import()` of the real scanner file under Node's own
+   native ESM loader (the same mechanism the CI scan workflow uses) against
+   a fresh `fs.mkdtempSync` temp dir, and parses its JSON stdout.
+
+7. `cd services/gateway && node node_modules/.bin/jest
+   test/scripts/secret-exposure-scanner.test.ts` -> 8/8 passing.
+
+8. Mutation verification: `git checkout origin/main --
+   scripts/ci/scanners/secret-exposure.mjs` (reverting to the pre-fix
+   file), re-ran the same test -> 5 of 8 correctly FAILED (the 4
+   false-positive-suppression assertions plus a side effect on the
+   `***`-preview one counting an extra signal), restored the fix
+   (`cp` from a saved copy) -> 8/8 passing again.
+
+9. `cd services/gateway && npx tsc --noEmit` -> clean, no output.
+
+10. `cd services/gateway && npm ci --no-audit --no-fund` — reinstalled
+    node_modules against THIS branch's own (unmodified) package-lock.json;
+    node_modules on disk had been left in a post-`npm audit fix` state by
+    an earlier, unrelated VTID-04272 session on a different branch (git
+    branch switches do not touch the gitignored node_modules directory),
+    which briefly made the full suite fail here on the same pre-existing
+    ESM/CJS jest-transform issue that VTID-04272 (a separate, not-yet-merged
+    PR) fixes on its own branch. Confirmed this branch's own
+    package-lock.json is untouched by that fix and does not need it.
+
+11. `cd services/gateway && npx jest --silent` (full suite, after step 10)
+    -> 1059/1060 suites (1 pre-existing skip), 17,291/17,326 tests passing
+    (29 skipped, 6 todo, both pre-existing), 0 failures, 42/42 snapshots.
+
+12. Marked `autopilot_recommendations` row `3d729613-5196-4219-8d49-
+    d4bf317ee51c` `status='completed'`, `activated_vtid='VTID-04273'`,
+    `completed_at=now()` directly via Supabase, since no automated sweep in
+    this codebase resolves a scanner-sourced finding once its underlying
+    signal stops firing (see acceptance.md's closing note).
+
+No AWS mutation was made from this session for this VTID.

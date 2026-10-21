@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04651",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "recommendations service is up", "path": "/api/v1/autopilot/recommendations/health", "expect_json": { "ok": true, "service": "autopilot-recommendations" } },
+    { "kind": "http", "name": "lineup answers from its own member gate, not the pipeline service-token gate (VTID-04530)", "path": "/api/v1/autopilot/recommendations", "expect_status": 401, "expect_json": { "error": "UNAUTHENTICATED" } },
+    { "kind": "http", "name": "badge count answers from its own member gate (VTID-04530)", "path": "/api/v1/autopilot/recommendations/count", "expect_status": 401, "expect_json": { "error": "UNAUTHENTICATED" } },
+    { "kind": "http", "name": "history requires a login", "path": "/api/v1/autopilot/recommendations/history", "expect_status": 401, "expect_json": { "error": "UNAUTHENTICATED" } },
+    { "kind": "http", "name": "activate refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/activate", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "draft refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/draft", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "snooze refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/snooze", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "reject refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/reject", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "complete refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/complete", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "the scan tick refuses a caller without the internal token", "method": "POST", "path": "/api/v1/autopilot/recommendations/community-scan", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "reminder Mark-done (closes a linked Autopilot slot) refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/reminders/00000000-0000-0000-0000-000000000000/complete", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "invite link lookup is public and answers for an unknown code", "path": "/api/v1/invites/doesnotexist", "expect_status": 404, "expect_json": { "error": "invite_not_found" } },
+    { "kind": "http", "name": "own invite link requires a login", "path": "/api/v1/invites/me", "expect_status": 401 },
+    { "kind": "http", "name": "invite claim refuses an unauthenticated caller", "method": "POST", "path": "/api/v1/invites/claim", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "automation supervisor view is admin-only", "path": "/api/v1/automations/supervisor", "expect_status": 401 },
+    { "kind": "existing", "ref": "npm run test:community-autopilot", "cwd": "services/gateway", "reason": "activation, drafts, scans, the lineup cap, invites and wallet credit, calendar slots and template retirement all write to shared production data, which a read-only staging suite cannot do; these 14 suites run the real code of each step" }
+  ]
+}

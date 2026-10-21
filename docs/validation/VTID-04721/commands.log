@@ -1,0 +1,7 @@
+# read-only diagnosis
+get_job_logs run 36456091808 (ALERT-PUSH-DISPATCH-HEALTH) — unsent=1000 oldest_age_min=308442
+get_job_logs run 36454678098 (SCREEN-LOAD-TIMING) — report rejected: HTTP 401 invalid_service_token
+SQL (read-only): user_notifications last 48h push-eligible — 919 created, 919 pushed
+# verification
+cd services/gateway && npx jest test/vtid-04721-scheduled-workflow-fixes.test.ts test/vtid-04345-morning-memory-check.test.ts test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts test/vtid-04663-ops-health-checks.test.ts
+python3 yaml.safe_load on the three workflow files — ok

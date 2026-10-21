@@ -1,0 +1,31 @@
+$ curl -s -m 15 -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"backend","module":"partner-orgs-listing-endpoints"}'
+{"ok":true,"vtid":"VTID-03935","num":3935,"id":"bdc34179-26da-4ac3-9403-fb4e0520e267"}
+
+$ (via Supabase MCP execute_sql against project inmkhvwdcuyhnxkgfvsb — the
+governance ledger table, not a community-content write; see this repo's own
+§4.1 rule 4 precedent for this exact follow-up pattern)
+UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved',
+metadata = metadata || '{"parent_vtid":"VTID-03932"}' WHERE vtid='VTID-03935';
+-> {"vtid":"VTID-03935","status":"in_progress","spec_status":"approved", ...}
+
+$ cd services/gateway && /opt/node22/bin/tsc --noEmit --ignoreDeprecations 6.0 \
+    --skipLibCheck --ignoreConfig --target es2020 --module esnext \
+    --moduleResolution bundler \
+    src/routes/partner-orgs.ts src/routes/admin-partner-health.ts \
+    src/services/partner-health/org-access.ts src/types/cicd.ts
+(see outputs/gateway-tsc-narrow.txt — same 3 pre-existing unrelated
+implicit-any errors as VTID-03932's own run, zero new errors)
+
+$ node -e "..." (jest cannot execute in this sandbox — no node_modules,
+same limitation as VTID-03932/VTID-03901). The two new describe blocks in
+test/partner-orgs.test.ts were traced by hand against the same fake-
+Supabase harness already established in that file: GET /mine's handler
+returns the embedded-join shape the route's .select('role,
+partner_organizations(...)') expects (an array of {role,
+partner_organizations: {...}} rows); GET /:orgId/invites reuses the exact
+{terminal:'maybeSingle'} disambiguation pattern the sibling GET
+/:orgId/members test already established for requireOrgAdmin()'s own
+membership check vs. the route handler's own list query against the same
+table.

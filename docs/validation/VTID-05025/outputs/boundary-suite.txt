@@ -1,0 +1,42 @@
+$ npx jest test/vtid-05025-commerce-health-boundary.test.ts
+    ✓ does not query the wearable rollup when include_wearable is omitted (7 ms)
+    ✓ does not query the wearable rollup when include_wearable is false (2 ms)
+    ✓ queries and maps the rollup only when include_wearable === true (1 ms)
+    ✓ never serves a wearable-loaded context to a caller that did not opt in (6 ms)
+    ✓ serves the same option variant from cache
+    ✓ invalidateUserHealthContext() drops every option variant for the user (1 ms)
+    ✓ returns null for a context whose only signal is low sleep / low HRV wearable data
+    ✓ keeps the member-stated condition precedence unchanged (1 ms)
+    ✓ still maps upcoming travel to jet-lag (1 ms)
+    ✓ covers the expected commerce modules (5 ms)
+    ✓ services/recommendation-engine/analyzers/marketplace-analyzer-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/recommendation-engine/analyzers/marketplace-analyzer.ts never opts into wearable data, reads the wearable field, or touches a health-data table (2 ms)
+    ✓ services/feed-ranker.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ routes/discover-feed-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-feed.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-recommendations-public-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ routes/discover-recommendations-public.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ routes/discover-recommendations-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ routes/discover-recommendations.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ routes/discover-search-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ routes/discover-search.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/shopping-agent/agent-core-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/shopping-agent/agent-core.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/shopping-agent/reorder-core-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/shopping-agent/reorder-core.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-discovery-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/orb-tools/marketplace-discovery-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/orb-tools/marketplace-guide-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-guide-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/orb-tools/marketplace-journey-tools-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/orb-tools/marketplace-journey-tools.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/orb-tools/marketplace-va-shared-repository.ts never opts into wearable data, reads the wearable field, or touches a health-data table
+    ✓ services/orb-tools/marketplace-va-shared.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ services/context-pack-builder.ts never opts into wearable data, reads the wearable field, or touches a health-data table (1 ms)
+    ✓ the scan patterns catch real violations and allow only the null initialiser (1 ms)
+    ✓ limitations-filter.ts is the single allowed health→commerce module and stays hide-only in shape (3 ms)
+    ✓ wearable-analyzer recommendations stay in the health domain (never marketplace) (2 ms)
+    ✓ for 500 generated product lists and contexts, never adds or reorders products (128 ms)
+    ✓ with no limitations at all, returns every product in its original order (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       39 passed, 39 total

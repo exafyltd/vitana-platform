@@ -1,0 +1,19 @@
+# VTID-04032 — commands run (2026-09-17/18, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'dev-autopilot');   -- VTID-04032
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04032';
+
+# gateway
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                        # ok
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0
+npx jest test/vtid-04011-watchdog-heartbeat.test.ts test/vtid-04017-fix-mode.test.ts test/vtid-04016-agent-check-guard.test.ts \
+  test/dev-autopilot-execute.test.ts test/vtid-04029-dev-autopilot-pr-approval.test.ts test/dev-autopilot-watcher.test.ts   # 6 suites, 101 tests, 0 failures
+npx jest test/vtid-04032-cancel-running-execution.test.ts test/autopilot-agent-loop.test.ts
+                                        # 16 + loop suite green (first run: the PostgREST double had to sit behind global fetch — the executor's supa is module-internal —
+                                        #  and it returned the same object twice, which exposed that cancelExecution read `was` after its own PATCH; captured once now)
+
+# visual verification (local harness, nothing live)
+node docs/validation/VTID-04032/outputs/harness-server.js &                         # http://127.0.0.1:18432 — VTID-04029's harness with one running agent execution + /cancel
+node docs/validation/VTID-04032/outputs/harness-shoot.js                            # Playwright: /command-hub/autopilot/live/, click Cancel run (prompt answered), 1400x900 + 390x844

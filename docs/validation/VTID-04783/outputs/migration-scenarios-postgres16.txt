@@ -1,0 +1,17 @@
+# PostgreSQL 16 (local, throwaway), 2026-10-01, migration 20261001140000 applied twice
+ok  network product untouched
+ok  network product with odd category untouched
+ok  existing supplier beauty product moved to skincare
+ok  beauty_care -> skincare, known subcategory kept
+ok  subcategory of another category dropped
+ok  owner-keyed fitness merchant -> fitness
+ok  Discover category kept, subcategory trimmed and lower-cased
+ok  diagnostics -> health-tests
+ok  services vertical: no Discover category
+ok  unknown free text falls back to the merchant vertical
+ok  subcategory edit kept
+ok  a category added as data works with no code change
+ok  counts: active products in known categories only
+ok  re-run: unchanged
+ok  re-run: network untouched
+ ALL PASSED

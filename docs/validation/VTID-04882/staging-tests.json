@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-04882",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_body_contains": ["\"scopes_supported\":[\"email\",\"profile\"]", "/auth/v1"],
+      "reason": "the assistant learns which scopes to request (email, profile — never openid, which makes Supabase mint an ID token the project's HS256 key cannot sign)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "an unsigned request is still refused before any tool runs; the challenge now also names the scopes (asserted in the Jest suite)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the WWW-Authenticate scope parameter and the exact scope list are pinned in the suite; whether Claude honours them is proven only by the owner's real connection, read back from the Supabase auth logs"
+    }
+  ]
+}

@@ -1,0 +1,14 @@
+# 02 — CoA loader: same command after dropping uae_ifrs.json into assets/charts/ (non-shipped template)
+{
+  "accounts_created": 22,
+  "template": "uae_ifrs",
+  "company_id": "f1de441f-7cdb-4842-9ce3-8830294b71e5",
+  "status": "ok"
+}
+# re-run (idempotent, expect accounts_created 0)
+{
+  "accounts_created": 0,
+  "template": "uae_ifrs",
+  "company_id": "f1de441f-7cdb-4842-9ce3-8830294b71e5",
+  "status": "ok"
+}

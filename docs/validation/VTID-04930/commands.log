@@ -1,0 +1,11 @@
+# read-only AWS (session IAM user), 2026-10-06/07
+ecs describe-tasks 4b7636c2b542474299b19c998e493642 → STOPPED TaskFailedToStart, ResourceInitializationError (secret rds!cluster-eba8a4f2-… not found), task def vitana-autopilot-executor:27
+secretsmanager describe-secret on each executor:27 secret → DB_PASSWORD ResourceNotFoundException; SUPABASE_URL, SUPABASE_SERVICE_ROLE, GITHUB_SAFE_MERGE_TOKEN, DEEPSEEK_API_KEY exist
+rds describe-db-clusters → vitana-aurora-prod MasterUserSecret rds!cluster-4dab93b8-…
+ecs describe-task-definition vitana-gateway-awsdr → rev 155, DEV_AUTOPILOT_PROD_CLAIM_ENABLED unset (prod never claims executions, VTID-04497)
+ecs describe-task-definition vitana-autopilot-executor:27 → image autopilot-executor:375401c8c37d (rollback reference)
+scan of 47 active task families → 13 still reference rds!cluster-eba8a4f2 (listed in acceptance.md)
+# repo
+git grep DB_PASSWORD -- services/gateway ':!services/gateway/test' → no matches
+npx jest test/vtid-04930-* + 6 executor/sibling pin suites → 7 suites, 65 tests passed
+mutation: revert workflow change → vtid-04930 2 failed / 2 passed; restored → passed

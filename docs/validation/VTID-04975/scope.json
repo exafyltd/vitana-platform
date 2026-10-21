@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04975",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/services/operator-threads.ts",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/types/operator-chat.ts",
+    "services/gateway/test/vtid-04975-*.test.ts",
+    "supabase/migrations/20261008120000_vtid_04975_operator_thread_engine.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04975/**",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/vtid-04975-*.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "docs/validation/*/staging-tests.json"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04940",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04940-commerce-mcp-supplier-data.test.ts test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the tool result shapes are proven by jest (the MCP needs a sign-in, and staging tests are read-only); the supplier-data envelope, caps and pinned tool catalogue plus the existing MCP behaviour must stay green."
+    }
+  ]
+}

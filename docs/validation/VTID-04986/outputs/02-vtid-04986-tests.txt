@@ -1,0 +1,237 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/vtid-04986-regen-screens-catalog.test.ts
+  VTID-04986: regen-screens-catalog dynamic icon stubs
+    ✓ parses ADMIN_SECTIONS that reference an icon the generator has never seen (107 ms)
+    ✓ stubs every bare identifier and nothing inside strings or comments (59 ms)
+    ✓ gives each stub an inert frozen value (57 ms)
+    ✓ does not run the regen (or write files) when imported (54 ms)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2178:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2185:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2209:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2234:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2437:11)
+
+  console.log
+    [reminder-chime] PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at getReminderChimePcmB64 (src/services/reminder-chime.ts:49:11)
+
+  console.warn
+    [terra] TERRA_API_KEY / TERRA_DEV_ID not set — connector present but inactive
+
+      214 |   async initialize(): Promise<void> {
+      215 |     if (!getTerraCreds()) {
+    > 216 |       console.warn('[terra] TERRA_API_KEY / TERRA_DEV_ID not set — connector present but inactive');
+          |               ^
+      217 |     } else {
+      218 |       console.log('[terra] connector ready');
+      219 |     }
+
+      at Object.initialize (src/connectors/wearable/terra.ts:216:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+      at Object.<anonymous> (src/index.ts:234:3)
+      at Object.<anonymous> (test/vtid-04986-overview-timeseries-retired.test.ts:54:1)
+
+  console.log
+    [action-executors] registered 5 executors: shopping_add_to_list, share_milestone, social_post_story, wearable_log_workout, calendar_add_event
+
+      at registerAllActionExecutors (src/services/action-executors.ts:154:11)
+
+  console.warn
+    [VTID-01228] DailyClient not available (DAILY_API_KEY missing)
+
+      132 |     } catch {
+      133 |       // DAILY_API_KEY not set — Daily.co features disabled
+    > 134 |       console.warn('[VTID-01228] DailyClient not available (DAILY_API_KEY missing)');
+          |               ^
+      135 |     }
+      136 |   }
+      137 |
+
+      at new RoomSessionManager (src/services/room-session-manager.ts:134:15)
+      at Object.<anonymous> (src/routes/live.ts:114:24)
+      at Object.<anonymous> (src/index.ts:262:22)
+      at Object.<anonymous> (test/vtid-04986-overview-timeseries-retired.test.ts:54:1)
+
+  console.log
+    RouteGuard: registered 1644 routes, 0 duplicates
+
+      at logStartupSummary (src/governance/route-guard.ts:346:11)
+
+  console.error
+    ❌ OAuth preflight: GOOGLE_OAUTH_CLIENT_ID is not set — Google OAuth client ID is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.
+
+      1634 |   for (const { key, label } of oauthPreflight) {
+      1635 |     if (!process.env[key]) {
+    > 1636 |       console.error(`❌ OAuth preflight: ${key} is not set — ${label} is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.`);
+           |               ^
+      1637 |     } else {
+      1638 |       console.log(`✅ OAuth preflight: ${key} present.`);
+      1639 |     }
+
+      at Object.<anonymous> (src/index.ts:1636:15)
+      at Object.<anonymous> (test/vtid-04986-overview-timeseries-retired.test.ts:54:1)
+
+  console.error
+    ❌ OAuth preflight: GOOGLE_OAUTH_CLIENT_SECRET is not set — Google OAuth client secret is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.
+
+      1634 |   for (const { key, label } of oauthPreflight) {
+      1635 |     if (!process.env[key]) {
+    > 1636 |       console.error(`❌ OAuth preflight: ${key} is not set — ${label} is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.`);
+           |               ^
+      1637 |     } else {
+      1638 |       console.log(`✅ OAuth preflight: ${key} present.`);
+      1639 |     }
+
+      at Object.<anonymous> (src/index.ts:1636:15)
+      at Object.<anonymous> (test/vtid-04986-overview-timeseries-retired.test.ts:54:1)
+
+  console.warn
+    [vital] VITAL_API_KEY not set — connector present but inactive
+
+      155 |   async initialize(): Promise<void> {
+      156 |     if (!vitalHeaders()) {
+    > 157 |       console.warn('[vital] VITAL_API_KEY not set — connector present but inactive');
+          |               ^
+      158 |     } else {
+      159 |       console.log('[vital] connector ready', vitalBaseUrl());
+      160 |     }
+
+      at Object.initialize (src/connectors/wearable/vital.ts:157:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.warn
+    [fitbit] FITBIT_CLIENT_ID/SECRET not set — connector present but inactive
+
+      62 |   async initialize(): Promise<void> {
+      63 |     if (!fitbitCreds()) {
+    > 64 |       console.warn('[fitbit] FITBIT_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      65 |     } else {
+      66 |       console.log('[fitbit] connector ready');
+      67 |     }
+
+      at Object.initialize (src/connectors/wearable/fitbit.ts:64:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.warn
+    [oura] OURA_CLIENT_ID/SECRET not set — connector present but inactive
+
+      57 |   async initialize(): Promise<void> {
+      58 |     if (!ouraCreds()) {
+    > 59 |       console.warn('[oura] OURA_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      60 |     } else {
+      61 |       console.log('[oura] connector ready');
+      62 |     }
+
+      at Object.initialize (src/connectors/wearable/oura.ts:59:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.warn
+    [strava] STRAVA_CLIENT_ID/SECRET not set — connector present but inactive
+
+      61 |   async initialize(): Promise<void> {
+      62 |     if (!stravaCreds()) {
+    > 63 |       console.warn('[strava] STRAVA_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      64 |     } else {
+      65 |       console.log('[strava] connector ready');
+      66 |     }
+
+      at Object.initialize (src/connectors/wearable/strava.ts:63:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.warn
+    [google] GOOGLE_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive
+
+      188 |   async initialize(): Promise<void> {
+      189 |     if (!googleCreds()) {
+    > 190 |       console.warn('[google] GOOGLE_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive');
+          |               ^
+      191 |     } else {
+      192 |       console.log('[google] connector ready');
+      193 |     }
+
+      at Object.initialize (src/connectors/productivity/google.ts:190:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.log
+    [vitana_hub] connector ready (no-auth, in-house)
+
+      at Object.initialize (src/connectors/media/vitana-hub.ts:69:13)
+
+  console.log
+    [doctorbox] connector present (sandbox/mock — no live DoctorBox API exists yet)
+
+      at Object.initialize (src/connectors/health/doctorbox.ts:89:13)
+
+  console.warn
+    [microsoft] MICROSOFT_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive
+
+      108 |   async initialize(): Promise<void> {
+      109 |     if (!process.env.MICROSOFT_OAUTH_CLIENT_ID || !process.env.MICROSOFT_OAUTH_CLIENT_SECRET) {
+    > 110 |       console.warn('[microsoft] MICROSOFT_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive');
+          |               ^
+      111 |     }
+      112 |   },
+      113 |
+
+      at Object.initialize (src/connectors/productivity/microsoft.ts:110:15)
+      at initializeAllConnectors (src/connectors/index.ts:77:15)
+
+  console.log
+    [connectors] initialized 10/10
+
+      at initializeAllConnectors (src/connectors/index.ts:85:11)
+
+PASS test/vtid-04986-overview-timeseries-retired.test.ts
+  VTID-04986: /api/v1/ops/overview-timeseries is retired
+    ✓ the retired path falls through to the default 404 (text/html), not 401 JSON (38 ms)
+    ✓ a sibling ops route is still mounted and answers 401 JSON unauthenticated (12 ms)
+    ✓ the route file, its mount and its env mention are gone (2 ms)
+    ✓ the Command Hub never calls it (14 ms)
+    ✓ the generated route manifest no longer lists it (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 2 passed, 2 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        5.454 s
+Ran all test suites matching /test\/scripts\/vtid-04986-regen-screens-catalog.test.ts|test\/vtid-04986-overview-timeseries-retired.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

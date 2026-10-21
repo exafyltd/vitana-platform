@@ -1,0 +1,146 @@
+PASS test/vtid-04790-deny-scope-glob.test.ts
+    ✓ `**/` stands for whole directories, not part of a file name (13 ms)
+    ✓ `a/**/b` matches b directly under a and at any depth (1 ms)
+    ✓ a trailing `**` still covers everything below (2 ms)
+    ✓ **/auth* (old matcher) and **/*auth* (new matcher) deny the same repository files (89 ms)
+    ✓ **/.env* (old matcher) and **/*.env* (new matcher) deny the same repository files (98 ms)
+    ✓ **/credentials* (old matcher) and **/*credentials* (new matcher) deny the same repository files (75 ms)
+    ✓ **/orb-live.ts (old matcher) and **/*orb-live.ts (new matcher) deny the same repository files (75 ms)
+    ✓ services/gateway/src/connectors/runtime/oauth2.ts is denied, new or not (2 ms)
+    ✓ services/gateway/src/lib/oauth-state.ts is denied, new or not (2 ms)
+    ✓ services/gateway/src/lib/tenant-role-auth.ts is denied, new or not (1 ms)
+    ✓ services/gateway/src/routes/auth.ts is denied, new or not
+    ✓ services/gateway/src/routes/dev-auth.ts is denied, new or not
+    ✓ services/gateway/src/middleware/auth-supabase-jwt.ts is denied, new or not
+    ✓ services/gateway/src/services/cognito-auth-client.ts is denied, new or not (1 ms)
+    ✓ services/gateway/src/services/oauth-token-refresher.ts is denied, new or not (3 ms)
+    ✓ services/gateway/src/services/operator-execute-authz.ts is denied, new or not (2 ms)
+    ✓ services/gateway/src/services/operator-machine-auth.ts is denied, new or not (3 ms)
+    ✓ a NEW test file caught only by a name rule is not denied (1 ms)
+    ✓ the same test file is denied when it already exists
+    ✓ directory and exact-path rules have no exemption (2 ms)
+    ✓ only `**/<name>` rules count as name-only (1 ms)
+    ✓ only test files caught by name rules alone need a repository lookup (1 ms)
+    ✓ passes the FB-2026-10-000143 plan when its test file is confirmed new (2 ms)
+    ✓ refuses it when the test file is not confirmed new (1 ms)
+    ✓ a confirmed-new auth SOURCE file is still refused (1 ms)
+    ✓ a test file the agent created passes; editing an existing one does not (1 ms)
+    ✓ a created auth source file is still refused (1 ms)
+    ✓ reports a file as new only when the lookup says it does not exist (2 ms)
+    ✓ fails closed on a lookup error or exception (1 ms)
+    ✓ does not look up files whose verdict cannot change (1 ms)
+PASS test/autopilot-agent-scope-validate.test.ts
+    ✓ passes changes inside allow and outside deny (2 ms)
+    ✓ deny wins over allow; outside-allow is reported separately (2 ms)
+    ✓ runner-owned paths (evidence pack) are always permitted
+    ✓ requires a test file when there is any non-deletion edit
+    ✓ groups by project and pairs source files with their conventional test by basename (3 ms)
+    ✓ maps git status codes to create/modify/delete and handles renames + quotes
+    ✓ scrubs the token from error text (2 ms)
+    ✓ defaults to single-shot; env selects agent; the row wins over env (1 ms)
+    ✓ defaults to 3072 MB and honours AGENT_CHECK_HEAP_MB, ignoring garbage (1 ms)
+    ✓ appends the heap cap after any inherited NODE_OPTIONS so the cap wins
+    ✓ runTsc spawns tsc with NODE_OPTIONS carrying the heap cap (the Run #4 OOM) (2 ms)
+PASS test/vtid-04308-feedback-approve-dispatch.test.ts
+    ✓ allocates a VTID, links it on the ticket, dispatches, then moves to in_progress (66 ms)
+    ✓ reuses a VTID the finding already carries (2 ms)
+    ✓ refuses to dispatch when VTID allocation fails, and leaves the ticket at spec_ready (2 ms)
+    ✓ leaves the ticket at spec_ready when the bridge refuses (e.g. kill switch) (2 ms)
+    ✓ refuses non-dispatchable kinds and non spec_ready tickets
+    ✓ evaluateSafetyGate blocks a feedback-lane finding when the kill switch is armed (1 ms)
+    ✓ the executor tick no longer filters cooling rows to the feedback lane (5 ms)
+    ✓ refuses with spec_placeholder before any allocation or execution (1 ms)
+PASS test/vtid-04333-feedback-bridge-ticket-ref.test.ts
+    ✓ stamps linked_vtid + ticket_number on the recommendation feedback block (7 ms)
+    ✓ emits feedback.ticket.dispatched under the ticket VTID with the ticket number (2 ms)
+    ✓ emits nothing when the bridge refuses (1 ms)
+    ✓ picks the newest execution per finding and derives the stage (1 ms)
+    ✓ the admin ticket selects return the linked_* columns (1 ms)
+    ✓ the Dev Autopilot list APIs attach feedback_ticket (56 ms)
+PASS test/dev-autopilot-safety.test.ts
+    ✓ matches ** across segments (3 ms)
+    ✓ rejects paths outside the pattern
+    ✓ ** matches zero segments too
+    ✓ single * does not cross slashes (1 ms)
+    ✓ handles **/ prefix for deep deny patterns (1 ms)
+    ✓ detects .test.ts and .spec.ts (1 ms)
+    ✓ detects __tests__ folders
+    ✓ rejects normal sources (1 ms)
+    ✓ passes the happy path
+    ✓ short-circuits on kill switch (1 ms)
+    ✓ blocks high-risk plans
+    ✓ blocks files outside allow-scope (1 ms)
+    ✓ blocks files in deny-scope (auth, migrations, orb-live, secrets)
+    ✓ requires a test file when there are non-deletion edits (1 ms)
+    ✓ allows pure deletions without a new test file
+    ✓ blocks when daily budget is exhausted
+    ✓ blocks when auto_fix_depth cap is reached (3 ms)
+    ✓ aggregates multiple violations when several rules fail (2 ms)
+      ✓ does NOT reject tests_missing when is_open_ended is true, even with only a source file (1 ms)
+      ✓ does NOT reject file_outside_allow_scope when is_open_ended is true
+      ✓ does NOT reject file_in_deny_scope when is_open_ended is true (1 ms)
+      ✓ still rejects kill_switch, risk_class, daily_budget, and max_auto_fix_depth when is_open_ended is true
+      ✓ regression: scope and tests_missing still apply when is_open_ended is false or omitted (1 ms)
+PASS test/vtid-04649-feedback-bridge-approver.test.ts
+    ✓ drops the auto-dispatch actor label (1 ms)
+    ✓ drops any other non-user label (1 ms)
+    ✓ passes null and undefined through as null
+    ✓ keeps a real user id (a human Approve & Fix click)
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+    ✓ the ticket is filed for the member and announced (148 ms)
+    ✓ goes all the way: spec → dispatch → PR title → resolved, member notified (1004 ms)
+    ✓ a fix that fails reopens the ticket for review instead of closing it (64 ms)
+    ✓ an unauthenticated request files nothing (6 ms)
+    ✓ files a triaged ticket routed to Devon, with the session context (6 ms)
+    ✓ Vitana is told the hand-off happened, and Devon joins in his own (male) voice (3 ms)
+    ✓ with no male voice on the pipeline, Devon does not join — the ticket is still filed and still fixed (9 ms)
+    ✓ goes all the way: spec → dispatch → PR title → resolved (63 ms)
+    ✓ a vague report files nothing and asks the member for detail (2 ms)
+    ✓ the typed voice tool (submit_bug_report) files through the same path and is fixed the same way (9 ms)
+    ✓ Devon adds what he learns to the hand-off ticket; Vitana cannot (2 ms)
+    ✓ Devon cannot write to another member's ticket (1 ms)
+    ✓ the enriched ticket reaches the spec writer with Devon's note, and is fixed (12 ms)
+    ✓ a second bug the member mentions to Devon becomes its own ticket, fixed on its own (25 ms)
+    ✓ when Devon hands the member back, Vitana returns quietly as herself (1 ms)
+    ✓ a placeholder spec never reaches Dev Autopilot (2 ms)
+    ✓ an armed kill switch stops auto-dispatch before anything is allocated (2 ms)
+    ✓ a NEW test file with "auth" in its name is kept and the ticket is dispatched (4 ms)
+    ✓ an EXISTING test with "auth" in its name stays locked (3 ms)
+    ✓ auto-dispatch is off unless FEEDBACK_AUTO_DISPATCH_ENABLED is exactly "true" (1 ms)
+    ✓ a ticket from the human-only Support screen is never auto-triaged or auto-fixed (6 ms)
+    ✓ finds the migration that last defines auto_triage_pending_feedback_tickets() (1 ms)
+    ✓ selects the same tickets and writes the same placeholder the fake does (2 ms)
+    ✓ the placeholder the database writes is one the drafter recognises and the bridge refuses
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (8.949 s)
+    ✓ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (1254 ms)
+    ✓ an anonymous console request is refused before any VTID, finding or execution exists (91 ms)
+    ✓ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (146 ms)
+    ✓ an anonymous request that reuses an admin's thread does not inherit the admin marker (168 ms)
+    ✓ a wrong machine token is not a credential (84 ms)
+    ✓ a verified exafy_admin JWT queues the same execution the machine credential does (94 ms)
+    ✓ both providers failing on the first call fails the execution with the outage error (151 ms)
+    ✓ after one outage failure the next tick claims at most one execution (a probe) (329 ms)
+    ✓ three outage failures in a row: the next tick claims nothing — no retry storm (327 ms)
+    ✓ auto-approve → agent reads until the cap → failure → the next auto-approve pass snoozes the finding (232 ms)
+    ✓ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (378 ms)
+    ✓ VTID-04472 — the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI) (386 ms)
+    ✓ leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed) (429 ms)
+    ✓ staging's CI watcher ignores a production-claimed PR; production's merges it (126 ms)
+    ✓ a legacy row with no claim stamp stays visible to every environment (82 ms)
+    ✓ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (87 ms)
+    ✓ the production gateway does not claim a queued execution; staging does (216 ms)
+    ✓ production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact) (44 ms)
+    ✓ the operator cancels from the console mid-run; the agent stops at its next boundary (229 ms)
+    ✓ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (156 ms)
+    ✓ an armed kill switch: a queued execution is not claimed and a green PR is not merged (159 ms)
+    ✓ main moved but touched none of the PR files → merged on its green CI, no branch update (79 ms)
+    ✓ main touched a file the PR changes → the branch is updated and the PR waits for CI on the new head (77 ms)
+    ✓ a failed tool call is corrected in the next round and the answer comes from the second result (144 ms)
+    ✓ OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call (79 ms)
+    ✓ the round budget ends a model that keeps calling tools: the tool-less final call answers (86 ms)
+    ✓ the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted (160 ms)
+    ✓ a new error type firing 3 times after the deploy still fails verification (168 ms)
+    ✓ the runner jest targets include every suite that names app.js, not only the paired ones (152 ms)
+    ✓ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (88 ms)
+Test Suites: 8 passed, 8 total
+Tests:       136 passed, 136 total

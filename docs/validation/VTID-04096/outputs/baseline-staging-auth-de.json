@@ -1,0 +1,158 @@
+{
+  "summary": {
+    "label": "BASELINE-auth-de",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "de",
+    "route": null,
+    "auth": true,
+    "trials": 6,
+    "with_audio": 6,
+    "no_audio": 0,
+    "first_audio_ms": {
+      "min": 1192,
+      "p50": 1436,
+      "p90": 2361,
+      "max": 2361
+    },
+    "first_model_audio_ms": {
+      "min": 2583,
+      "p50": 3687,
+      "p90": 8138,
+      "max": 8138
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 119,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803951158,
+      "sessionStartMs": 1005,
+      "sessionId": "live-a904a11e-ff4c-41b5-9e8b-e5434c5a86dc",
+      "sseOpenMs": 1373,
+      "firstAudioMs": 2361,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E  Der Tag geht zu Ende, und es gibt so viel, worauf man sich morgen freuen kann. Wie kann ich dir heute Nacht noch zur Seite stehen?",
+      "firstModelAudioMs": 8138,
+      "turnCompleteMs": 9822
+    },
+    {
+      "idx": 2,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 114,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803961227,
+      "sessionStartMs": 717,
+      "sessionId": "live-d8cd3410-4277-40b0-9e91-56720468c8b7",
+      "sseOpenMs": 1238,
+      "firstAudioMs": 1972,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E  Der Tag geht zu Ende, und es gibt so viel, worauf man sich morgen freuen kann. Wie kann ich dir heute Nacht noch zur Seite stehen?",
+      "firstModelAudioMs": 3687,
+      "turnCompleteMs": 5305
+    },
+    {
+      "idx": 3,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 105,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803966731,
+      "sessionStartMs": 704,
+      "sessionId": "live-7d46f1cc-5d14-4a31-a9bd-208654edc2a4",
+      "sseOpenMs": 845,
+      "firstAudioMs": 1436,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E  Der Tag geht zu Ende, und es gibt so viel, worauf man sich morgen freuen kann. Wie kann ich dir heute Nacht noch helfen?",
+      "firstModelAudioMs": 6841,
+      "turnCompleteMs": 8325
+    },
+    {
+      "idx": 4,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 105,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803975225,
+      "sessionStartMs": 392,
+      "sessionId": "live-c0927bd5-a97f-4bea-9e56-27439f7b49a2",
+      "sseOpenMs": 525,
+      "firstAudioMs": 1192,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E  Der Tag geht zu Ende, und es gibt so viel, worauf man sich morgen freuen kann. Wie kann ich dir heute Nacht noch helfen?",
+      "firstModelAudioMs": 2583,
+      "turnCompleteMs": 4081
+    },
+    {
+      "idx": 5,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 105,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1789803979439,
+      "sessionStartMs": 775,
+      "sessionId": "live-cf509d6d-28ea-478a-9f35-7312b51ad9a1",
+      "sseOpenMs": 911,
+      "firstAudioMs": 1407,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E  Der Tag geht zu Ende, und es gibt so viel, worauf man sich morgen freuen kann. Wie kann ich dir heute Nacht noch helfen?",
+      "firstModelAudioMs": 2911,
+      "turnCompleteMs": 4397
+    },
+    {
+      "idx": 6,
+      "lang": "de",
+      "auth": true,
+      "route": null,
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 477,
+        "output_transcript": 6,
+        "turn_complete": 1
+      },
+      "t0": 1789803983966,
+      "sessionStartMs": 693,
+      "sessionId": "live-f39ccb5a-1689-416d-97ff-f39d161cd798",
+      "sseOpenMs": 822,
+      "firstAudioMs": 1359,
+      "firstAudioSource": "activation_chime",
+      "text": "Guten Abend, E2E   schön, dass du wieder da bist. Heute ist dein 115. Tag mit Vitana, und wir arbeiten gerade an deinem Ziel: Find Life Partner. Dein Vitana-Index steht heute bei 125, das ist ein ausgeglichener Tag —  vor allem deine mentale Stärke trägt dich gerade durch die Woche, leicht im Plus seit letztem Wochenende.\n\nBevor ich's vergesse: in einer guten Stunde steht dein Yoga-Termin an, und 196 kleine Nachrichten warten noch auf dich. Ich hab heute auch den nächsten Schritt für dich vorbereitet —  eine kurze Atem-Sequenz vor dem Schlafengehen. Soll ich die für dich starten, oder gehen wir zuerst die Nachrichten durch?",
+      "firstModelAudioMs": 2962,
+      "turnCompleteMs": 9734
+    }
+  ]
+}

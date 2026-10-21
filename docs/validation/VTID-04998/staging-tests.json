@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04998",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04996-calendar-find-a-time.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Design document only; no code or behaviour changes, nothing deploys."
+    }
+  ]
+}

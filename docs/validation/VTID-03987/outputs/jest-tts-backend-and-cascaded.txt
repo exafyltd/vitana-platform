@@ -1,0 +1,81 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+  VTID-03683: cascade language eligibility
+    ✓ REFUSES every language Nova speaks natively (3 ms)
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (3 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified (3 ms)
+    ✓ derives coverage from Polly rather than restating it (1 ms)
+    ✓ normalises locale tags and refuses unknown languages
+  VTID-03683: activation gate is off by default
+    ✓ is off unless the value is exactly "true" (1 ms)
+  VTID-03683: selector routes Nova-blocked languages to the cascade
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path
+    ✓ with the flag on and the language covered, it routes to the cascade
+    ✓ with the flag on but the language NOT covered (sr), it does not divert
+    ✓ VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to
+    ✓ never diverts a session whose language Nova DOES support (1 ms)
+
+PASS test/orb/live/upstream/cascaded-live-client-audio-gating.test.ts
+  VTID-03986: cascade drops mic audio while Vitana is thinking or speaking
+    ✓ forwards audio normally before any turn has ever run (3 ms)
+    ✓ drops mic audio while a turn is generating (turnInFlight), then resumes once the reply finishes playing (10 ms)
+    ✓ does not extend the busy window when the turn errors before any audio is emitted (1 ms)
+    ✓ a short reply gates for a correspondingly short window, not a fixed long one
+    ✓ still returns false (not true) when the client is not open at all
+
+PASS test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts
+  VTID-03970: cascade eligibility with Fish fallback
+    ✓ sr stays ineligible (no_polly_voice) when Fish is unconfigured — the pre-existing default (1 ms)
+    ✓ sr stays ineligible when the flag is set but no API key is configured
+    ✓ sr becomes eligible, routed to Fish, once explicitly enabled AND keyed (1 ms)
+    ✓ a language Polly already covers stays on Polly even with Fish enabled
+    ✓ a language with no curated Fish voice either stays ineligible even with Fish enabled (1 ms)
+
+PASS test/orb/live/upstream/cascaded-wiring.test.ts
+  seam 1 — the selector is told about the cascade
+    ✓ imports the cascade gate helpers (they previously had NO caller on any live path) (1 ms)
+    ✓ passes a `cascade` field into selectUpstreamProvider (1 ms)
+    ✓ derives languageSupported from the session language, not a hardcoded list (1 ms)
+  seam 2 + 3 — a cascaded decision actually builds a cascaded client
+    ✓ has a branch on the cascaded provider decision
+    ✓ constructs the client with the 'cascaded' provider and supplies deps.cascaded
+    ✓ the cascaded branch precedes the nova_sonic branch and returns (1 ms)
+    ✓ binds the shared session handlers to the cascaded client
+    ✓ reuses the generic ws facade rather than introducing a second adapter (1 ms)
+    ✓ sets upstreamProvider so telemetry does not report the session as Nova
+  the cascade must NOT inherit Nova-specific transport behaviour
+    ✓ does not arm the silence keepalive on the cascaded path (1 ms)
+    ✓ does not arm Nova stream rotation on the cascaded path
+  failure is loud
+    ✓ emits a typed failure event carrying the error code (1 ms)
+    ✓ emits a success event so the rescue is observable in oasis_events
+
+PASS test/orb/live/upstream/cascaded/tts-backend.test.ts
+  VTID-03987: cascade TTS backend boundary
+    pollyBackend / fishBackend — individually
+      ✓ pollyBackend.synthesize returns audioB64 on a successful Polly call
+      ✓ pollyBackend.synthesize returns null when Polly returns null
+      ✓ fishBackend.synthesize returns audioB64 on a successful Fish call
+      ✓ fishBackend.synthesize returns null when Fish returns null
+    synthesizeCascadeReply — selection logic (Polly-backed language, e.g. ru)
+      ✓ returns the Polly result and never calls Fish when Polly succeeds
+      ✓ does not fall back to Fish when Polly fails but the language HAS a Polly voice (a runtime failure, not a coverage gap) (1 ms)
+    synthesizeCascadeReply — selection logic (Fish-only language, e.g. sr)
+      ✓ falls back to Fish when Polly fails AND the language has no Polly voice at all
+      ✓ returns null when both Polly and Fish fail for a Fish-only language (1 ms)
+
+PASS test/orb/live/upstream/cascaded-live-client-empty-completion.test.ts
+  VTID-03985: cascade turn survives an ok-but-empty primary completion
+    ✓ retries against the fallback model and completes the turn when the retry has real text (4 ms)
+    ✓ reports cascade_llm_empty only after BOTH the primary and the retry come back empty (1 ms)
+    ✓ does NOT retry when the primary already used the router-level fallback (fallbackUsed:true) (1 ms)
+    ✓ does not retry on an explicit primary failure (ok:false) — cascade_llm_failed still fires immediately
+    ✓ a non-empty primary reply never triggers a retry call at all (1 ms)
+
+Test Suites: 6 passed, 6 total
+Tests:       47 passed, 47 total
+Snapshots:   0 total
+Time:        0.596 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

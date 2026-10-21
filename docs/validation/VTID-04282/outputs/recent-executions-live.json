@@ -1,0 +1,121 @@
+[
+ {
+  "id": "cc059a5f-c81e-48f2-991b-1e8855f39245",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-22T17:04:50Z",
+  "updated_at": "2026-09-22T17:04:50Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 1,
+  "metadata": {
+   "error": "finding 7a93bca4 already has an unmerged PR https://github.com/exafyltd/vitana-platform/pull/3570 from execution 044980f5 (status=reverted); refusing to open a duplicate."
+  },
+  "recommendation": {
+   "title": "CVE: package.json",
+   "source_type": "dev_autopilot"
+  }
+ },
+ {
+  "id": "a2b5b807-d6fe-43c1-a486-e08144f7a68b",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-22T13:11:16Z",
+  "updated_at": "2026-09-22T13:11:16Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 0,
+  "metadata": {
+   "error": "agent hit the 120-turn cap without calling finish"
+  },
+  "recommendation": {
+   "title": "Operator open-ended request: VTID-04269",
+   "source_type": "operator_onramp"
+  }
+ },
+ {
+  "id": "9f161a4e-e032-49c9-a81b-076eb0c28f8a",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-22T13:06:26Z",
+  "updated_at": "2026-09-22T13:06:26Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 0,
+  "metadata": {
+   "error": "agent hit the 120-turn cap without calling finish"
+  },
+  "recommendation": {
+   "title": "Operator open-ended request: VTID-04268",
+   "source_type": "operator_onramp"
+  }
+ },
+ {
+  "id": "e3b1d0cb-a807-457e-b209-bdecacde39e2",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-22T13:00:41Z",
+  "updated_at": "2026-09-22T13:00:41Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 0,
+  "metadata": {
+   "error": "agent hit the 120-turn cap without calling finish"
+  },
+  "recommendation": {
+   "title": "Operator open-ended request: VTID-04267",
+   "source_type": "operator_onramp"
+  }
+ },
+ {
+  "id": "044980f5-5f45-4bc9-89fd-6164706171f3",
+  "status": "reverted",
+  "approved_by": null,
+  "created_at": "2026-09-22T17:03:22Z",
+  "updated_at": "2026-09-22T17:03:22Z",
+  "pr_url": "https://github.com/exafyltd/vitana-platform/pull/3570",
+  "pr_number": 3570,
+  "auto_fix_depth": 0,
+  "metadata": {
+   "error": null
+  },
+  "recommendation": {
+   "title": "CVE: package.json",
+   "source_type": "dev_autopilot"
+  }
+ },
+ {
+  "id": "ba5342a6-93cf-4dc1-a498-1644b2a46a3c",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-21T19:28:56Z",
+  "updated_at": "2026-09-21T19:28:56Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 1,
+  "metadata": {
+   "error": "finding efec84e4 already has an unmerged PR https://github.com/exafyltd/vitana-platform/pull/3547 from execution c52bfcca (status=reverted); refusing to open a duplicate."
+  },
+  "recommendation": {
+   "title": "Missing auth middleware in admin-health.ts",
+   "source_type": "dev_autopilot"
+  }
+ },
+ {
+  "id": "a1283045-7f63-4f36-b0be-57865b08a2df",
+  "status": "failed",
+  "approved_by": null,
+  "created_at": "2026-09-21T19:28:21Z",
+  "updated_at": "2026-09-21T19:28:21Z",
+  "pr_url": null,
+  "pr_number": null,
+  "auto_fix_depth": 1,
+  "metadata": {
+   "error": "finding 1b7d874a already has an unmerged PR https://github.com/exafyltd/vitana-platform/pull/3548 from execution 2a9edcb4 (status=reverted); refusing to open a duplicate."
+  },
+  "recommendation": {
+   "title": "Schema drift in server-locale-repository.ts",
+   "source_type": "dev_autopilot"
+  }
+ }
+]

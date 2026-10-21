@@ -1,0 +1,28 @@
+$ cd services/gateway && npm ci
+added 734 packages, and audited 735 packages in 13s
+(exit 0)
+
+$ npx jest test/i18n/catalog-coverage.test.ts test/i18n/llm-locale.test.ts test/journey-checklist-translations.test.ts test/db-i18n/
+PASS test/db-i18n/notify-source-changed.test.ts
+PASS test/journey-checklist-translations.test.ts
+PASS test/i18n/llm-locale.test.ts
+PASS test/i18n/catalog-coverage.test.ts
+PASS test/db-i18n/db-i18n.test.ts
+Test Suites: 1 skipped, 5 passed, 5 of 6 total
+Tests:       17 skipped, 117 passed, 134 total
+(1 suite skipped = test/db-i18n/aurora-integration.test.ts, whose live-Postgres
+ describe block is .skip-gated; see ./outputs/jest-i18n-scoped.txt for full output)
+(exit 0)
+
+$ npx tsc --noEmit
+(no output — 0 errors)
+(exit 0)
+
+# Full ~7.5k-test suite and production build were NOT re-run locally in this
+# pass (multi-minute run); CI already executed both against this exact
+# commit (00599fc4d474f6c02c1ae2f250256d12361bf367) — see:
+#   - GitHub Actions run 31134466729, job "Gateway (Jest, ~7.5k tests)": success
+#   - GitHub Actions run 31134466712, job "Gateway Validation (Minimal CI)": success
+#   - GitHub Actions run 31134466725, job "integration": success
+#   - GitHub Actions run 31134466799, job "Gateway Service Tests": success
+#   - GitHub Actions run 31134466799, job "Prisma Schema Check": success

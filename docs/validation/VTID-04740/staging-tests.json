@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04740",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "click redirect answers for an unknown product (no click logged)", "path": "/r/00000000-0000-4000-8000-000000000000", "expect_status": 404 },
+    { "kind": "existing", "ref": "npx jest test/routes/click-redirect-referral.test.ts", "cwd": "services/gateway",
+      "reason": "a real click writes to the shared production database, so storing the referrer on the click is proven by this suite, not on staging" }
+  ]
+}

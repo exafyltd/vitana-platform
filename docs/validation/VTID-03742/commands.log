@@ -1,0 +1,94 @@
+# VTID-03742 — commands actually run.
+
+# --- Investigation ----------------------------------------------------------
+# Follow-up to VTID-03740's client-side fix (stuck-on-"speaking" caption).
+# User explicitly asked: fix the underlying "why does Nova's stream die
+# mid-turn" question, if it will improve languages/translations. Dispatched
+# a read-only investigation agent to pull the exact current code before
+# writing anything.
+
+grep -n "function buildAnonymousSystemInstruction" services/gateway/src/routes/orb-live.ts
+#   -> confirmed lines 6884-7032
+
+# Read the full function body directly (not just the agent's summary) to
+# verify the exact structure before editing:
+#   - LANGUAGE: Respond ONLY in ${languageNames[lang]} (line 6910)
+#   - FIRST MESSAGE block (lines 6951-6988): a literal, hand-authored
+#     ~45-second script, `lang === 'de' ? germanScript : englishScript`,
+#     wrapped "READ THIS SPEECH VERBATIM — DO NOT SHORTEN, SKIP, OR
+#     SUMMARIZE". Any non-German language gets the English script while
+#     simultaneously being told to respond ONLY in that language — a live
+#     full-recitation-translation demand.
+
+# Confirmed this reaches Nova unsanitized:
+grep -n "system_instruction.parts\[0\].text" services/gateway/src/routes/orb-live.ts
+#   -> the Nova sanitizer (sanitizeInstructionForNova) only rewrites the
+#      IDENTITY LOCK block, not the FIRST MESSAGE block.
+
+# Confirmed the safe precedent pattern already proven in this codebase:
+grep -n "Teaching material (paraphrase, do NOT read aloud)" \
+  services/gateway/src/orb/live/instruction/guided-topic-narration-prompt.ts
+#   -> buildGuidedTopicNarrationBlock: gives the model English-authored
+#      MATERIAL + instructs it to compose delivery fresh in the target
+#      language, in its own words — the exact shape VTID-03650/03674
+#      proved safe for the identical class of Nova instability.
+
+# Confirmed scope: single call site, no other rung/provider/test touches
+# buildAnonymousSystemInstruction's private content:
+grep -rn "buildAnonymousSystemInstruction" services/gateway/src/
+#   -> defined + called exactly once (orb-live.ts:7548)
+grep -n "anonymous" services/gateway/test/services/conversation/compute-greeting-decision.golden.test.ts
+#   -> only asserts d.wakeOpener === 'legacy_default', never the FIRST
+#      MESSAGE content — confirms no existing test needs updating for the
+#      content itself.
+
+# --- Fix ----------------------------------------------------------------------
+# Replaced the de/English literal-script ternary (lines 6951-6988) with one
+# language-agnostic block: English-authored material (every talking point
+# from both original scripts preserved) + an instruction to compose the
+# delivery fresh in ${languageNames[lang]}, paraphrasing, not reciting.
+# Applied uniformly to ALL languages including German/English, which
+# previously also got a hardcoded finished script (a softer instance of
+# the same CLAUDE.md NEVER-rule-41 violation — it happened to already
+# match their spoken language, so it worked without being compliant).
+
+npx tsc --noEmit
+#   -> exit 0 after the edit — confirms no syntax/type break in the huge
+#      orb-live.ts file
+#   Output: outputs/tsc.txt
+
+grep -rln "Hallo aus \[Stadt\|Hello from \[city\|READ THIS SPEECH VERBATIM\|Let me tell you what this is all about" \
+  services/gateway/ --include="*.ts"
+#   -> only the new test file references the old text (as a negative
+#      assertion) — confirms nothing else in the codebase depended on the
+#      removed literal script.
+
+# --- Test ---------------------------------------------------------------------
+# Extended the existing VTID-03622 "no hardcoded spoken wording" guard file
+# (the exact standing-rule test this fix brings the anonymous-intro rung
+# into compliance with) rather than creating a new file — same file, new
+# describe block, following its established pattern (strip comments,
+# assert old shape gone + new shape present):
+#   services/gateway/test/orb/live/characterization/no-hardcoded-spoken-wording.test.ts
+
+cd services/gateway
+npx jest --testPathPattern="no-hardcoded-spoken-wording|compute-greeting-decision.golden"
+#   -> Test Suites: 2 passed, 2 total / Tests: 69 passed, 69 total
+#      (12 new + 5 existing VTID-03622/03630 + 57 existing golden-snapshot,
+#      confirming this rung is still correctly selected for anonymous
+#      sessions — that test keys off the wakeOpener label, not content, so
+#      it wasn't expected to break and didn't)
+#   Output: outputs/targeted-tests.txt
+
+npx jest
+#   -> full gateway suite: 703/704 suites (1 pre-existing skip),
+#      13349/13384 tests passing, 0 failures
+#   Output: outputs/full-suite.txt
+
+# --- Not done, and why ---------------------------------------------------------
+# No live oasis_events confirmation that this actually reduces Nova
+# stream-death incidents on anonymous Serbian sessions — this session has
+# no Supabase access. What's confirmed: the specific instruction shape
+# already proven (VTID-03674, live evidence) to trip Nova's content filter
+# is now gone from this rung, for every language. Flagged in acceptance.md,
+# not silently claimed as a live-verified fix.

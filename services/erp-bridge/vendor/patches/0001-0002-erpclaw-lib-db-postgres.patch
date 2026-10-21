@@ -1,0 +1,35 @@
+diff --git a/scripts/erpclaw-setup/lib/erpclaw_lib/db.py b/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
+index da73631..0ac553a 100644
+--- a/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
++++ b/scripts/erpclaw-setup/lib/erpclaw_lib/db.py
+@@ -270,6 +270,17 @@ def _ensure_pg_decimal_sum(conn) -> None:
+     """
+     cur = conn.cursor()
+     try:
++        # VITANA PATCH 0002 (VTID-03840): this ran CREATE OR REPLACE on every
++        # connection open. Under concurrent subprocesses Postgres raises
++        # "tuple concurrently updated" (measured 4/12 failures in the
++        # VTID-03840 spike). Fast path: if the aggregate already exists,
++        # nothing to do. Slow path: serialize creators on an advisory lock.
++        cur.execute(
++            "SELECT 1 FROM pg_proc WHERE proname = 'decimal_sum' AND prokind = 'a'"
++        )
++        if cur.fetchone():
++            return
++        cur.execute("SELECT pg_advisory_xact_lock(hashtext('erpclaw_decimal_sum'))")
+         cur.execute(
+             """
+             CREATE OR REPLACE FUNCTION erpclaw_decimal_sum_sfunc(numeric, text)
+@@ -315,6 +326,12 @@ def _resolve_pg_url(db_path=None) -> str:
+     with ``ERPCLAW_DB_PATH`` accepted as a final fallback so a single
+     ``ERPCLAW_DB_PATH=postgresql://...`` works end-to-end. Raises if none is set.
+     """
++    # VITANA PATCH 0001 (VTID-03840): module main() passes the SQLite
++    # DEFAULT_DB_PATH explicitly, which used to shadow ERPCLAW_DB_URL under the
++    # postgresql dialect and fail with "invalid dsn". A non-URL db_path is a
++    # filesystem path and cannot be a Postgres target, so it does not win here.
++    if db_path and "://" not in str(db_path):
++        db_path = None
+     url = db_path or os.environ.get("ERPCLAW_DB_URL") or os.environ.get("ERPCLAW_DB_PATH")
+     if not url:
+         raise RuntimeError(

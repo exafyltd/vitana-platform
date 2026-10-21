@@ -1,0 +1,46 @@
+$ cd services/worker-runner && npx jest src/services/execution-service-delegation.test.ts --silent=false
+...
+PASS src/services/execution-service-delegation.test.ts
+  executeTask — self-healing delegation
+    ✓ skips local LLM call and returns pr_ready as patched_pending_deploy (28 ms)
+    ✓ returns completed as verified_healed (3 ms)
+    ✓ returns failed with healing_state=execution_failed (2 ms)
+    ✓ returns deferred with defer=true on timeout (2 ms)
+    ✓ falls back to the local LLM path when task.metadata.source is NOT self-healing (4 ms)
+    ✓ REFUSES local LLM fallback when self-healing flag set but execution_id missing (Gap 1) (2 ms)
+    ✓ surfaces gateway errors instead of silently treating as success (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       7 passed, 7 total
+Snapshots:   0 total
+Time:        1.766 s
+
+$ npx jest --silent=false   # full worker-runner suite
+...
+PASS src/services/runner-service.test.ts
+  WorkerRunner
+    constructor
+      ✓ should initialize with provided config (5 ms)
+    start
+      ✓ should register worker and start polling (46 ms)
+      ✓ should not start if already running (6 ms)
+      ✓ should fail to start if registration fails (4 ms)
+      ✓ should emit governance blocked event if autopilot is disabled (4 ms)
+    stop
+      ✓ should stop polling and heartbeat (2 ms)
+    getMetrics
+      ✓ should return current metrics (4 ms)
+    task eligibility
+      ✓ should only process eligible tasks (111 ms)
+  isTaskEligible
+    ✓ should reject tasks not in_progress (2 ms)
+    ✓ should reject tasks without approved spec (2 ms)
+    ✓ should reject terminal tasks (2 ms)
+    ✓ should reject tasks claimed by other workers (1 ms)
+    ✓ should accept eligible tasks (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       33 passed, 33 total
+Snapshots:   0 total
+Time:        3.702 s
+Ran all test suites.

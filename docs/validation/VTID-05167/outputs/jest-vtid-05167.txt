@@ -1,0 +1,28 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-05167-timeline-catalog.test.ts
+  VTID-05167 timeline catalog
+    ✓ has unique, well-formed entries (44 ms)
+    ✓ uses only the Vitana Index pillars, and pillar categories carry their pillar (3 ms)
+    ✓ classifies exact before prefix, longest prefix first, unknown as silent (1 ms)
+    ✓ every activity type members actually had in the last 120 days (2026-10-13) is classified deliberately (3 ms)
+    ✓ the migration seed is exactly what the generator renders from the JSON (45 ms)
+    ✓ the migration tier/pillar checks match the catalog (1 ms)
+  VTID-05167 projector never writes system telemetry
+    ✓ drops orb.livekit.next_action.candidate (1 ms)
+    ✓ drops orb.livekit.next_action.suppressed
+    ✓ drops orb.livekit.next_action.suggested
+    ✓ drops orb.navigator.requested (1 ms)
+    ✓ drops orb.session.identity.resolved
+    ✓ drops vtid.live.audio_blocked
+    ✓ still projects a member moment (diary.create) (2 ms)
+    ✓ writeTimelineRow refuses a system type from a direct caller
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.526 s, estimated 1 s
+Ran all test suites matching /test\/vtid-05167-timeline-catalog.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,125 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (1ca15ad1-0ac8-41ee-8857-2fed44248e21)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (76ba3a54-8763-47f2-b86a-fcc50b1c4ee9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (9174691c-6c89-4aad-901c-6e98a41590db)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (4e1ec339-c702-40b8-81d2-3623a93877d9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (2a391048-feec-4d43-bb67-20269144cafd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (c41b9550-a51f-4fc7-a3e1-70b6db946b9d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (32198115-04eb-4a4d-9636-896819dcf48e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (9520161e-9f41-4dc9-a991-f5ee33e8590e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (d4a21037-e66b-441b-8426-0e8b692597c7)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (ff41776e-8b4e-43ca-8f65-c18164d3ffef)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (93515b12-b150-4c41-bae1-8553fbdeaab6)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (edac44e4-bcf7-4d1c-9520-8db9cfb91cc8)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (080a5edf-9ffc-4a2b-8cd0-9b856ad305fd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (e6625727-393f-483a-a1f1-2a94860a3319)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: orb.livekit.next_action.suppressed for VTID-03061 (d34ae3f7-f1c0-4ce9-aa2f-b62d3ff2bec9)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/services/wake-brief-wiring.test.ts
+  B0d.4 — wake-brief-wiring
+    provider registration
+      ✓ voice-wake-brief is registered with the default registry on import (3 ms)
+      ✓ ensureWakeBriefProviderRegistered is idempotent
+    decideWakeBriefForSession
+      ✓ suppresses (grounded-or-silent) on a non-skip greeting with no grounded line (10 ms)
+      ✓ returns a grounded wake_brief continuation when pillar momentum qualifies (3 ms)
+      ✓ suppresses on transparent reconnect (greeting policy = skip) (2 ms)
+      ✓ maps bucket=long to fresh_intro (warm new-day greeting policy) (2 ms)
+      ✓ honors lang for the grounded wake-brief line (de = German pillar line) (1 ms)
+    timeline events
+      ✓ emits the 3 continuation_decision_* events in order (2 ms)
+      ✓ wake_brief_selected carries selected_continuation_kind on a returned candidate (2 ms)
+      ✓ wake_brief_selected carries none_with_reason on full suppression (2 ms)
+      ✓ continuation_decision_finished carries providerResults summary (2 ms)
+    VTID-03081 — B1 cadence wiring
+      ✓ cadence: greeted within 15min forces policy=skip (2 ms)
+      ✓ cadence: cross-surface continuation under 5 min forces policy=skip (1 ms)
+      ✓ cadence: 3+ sessions today dampens fresh_intro → brief_resume (5 ms)
+      ✓ cadence: same greeting style twice in a row downgrades one tier (1 ms)
+      ✓ timeline carries greeting policy evidence + signals present (2 ms)
+    best-effort policy
+      ✓ returns the decision even when the recorder throws on every call (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/wake-brief-explicit-selection-timeout.test.ts
+  VTID-03741 follow-up: explicit-selection turns get a longer ranker timeout
+    ✓ passes providerTimeoutMs=10000 when a Guided Journey topic was explicitly tapped (1 ms)
+    ✓ passes providerTimeoutMs=10000 when a Foundation journey-focus step was explicitly tapped
+    ✓ does NOT set providerTimeoutMs on a passive/ambient open (falls through to the ranker default)
+
+Test Suites: 2 passed, 2 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.78 s, estimated 1 s
+Ran all test suites matching /test\/services\/wake-brief-explicit-selection-timeout.test.ts|test\/services\/wake-brief-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

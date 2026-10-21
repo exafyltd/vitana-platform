@@ -1,0 +1,14 @@
+PASS test/vtid-04456-customer-support-pipeline-regression.test.ts
+PASS test/services/automation-handlers-sharing-growth.test.ts
+PASS test/services/automation-handlers-wallet-payments.test.ts
+PASS test/services/automation-handlers-onboarding-growth.test.ts
+PASS test/vtid-04809-vtna-reward-ledger.test.ts
+PASS test/routes/billing-repository.test.ts
+PASS test/vtid-04508-community-invites.test.ts
+PASS test/vtid-04349-automation-shadow.test.ts
+PASS test/milestone-service.test.ts
+PASS test/diary-streak-celebrator.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (11.231 s)
+PASS test/vtid-04560-role-separation-regression.test.ts (11.668 s)
+Test Suites: 12 passed, 12 total
+Tests:       281 passed, 281 total

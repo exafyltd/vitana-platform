@@ -1,0 +1,98 @@
+# VTID-03719 — commands run, in order. 2026-08-24.
+
+# Ran VTID-03716's own audio-timing test program for real against staging,
+# at the user's direct request ("now you have the audio test program... if
+# anything fails, go and fix it"):
+cd services/gateway
+GATEWAY_URL=https://preview-aws-gateway.vitanaland.com npx tsx ../../scripts/tts/verify-cascade-audio-timing.ts
+#   -> 5/6 languages passed. zh FAILED on the pacing plausibility check
+#      (4.9 chars/sec, outside the uniform 6-30 band) despite its other 4
+#      checks (sample count, PCM rate parse, duration match) all passing.
+#      tr was not in the run at all — TEST_CASES never had it.
+
+# Verified the zh failure math by hand:
+python3 -c "
+t = '欢迎使用维塔纳。这是一条测试消息，用于验证正确的音频播放速度。'
+print(len(t), 'chars')       # 31
+print(31/6.330)              # 4.897... matches the reported 4.9 chars/sec exactly
+"
+
+# Investigated why tr was missing — read TEST_CASES and the surrounding
+# comment ("The 5 languages ORB_CASCADED_VOICE_ENABLED routes through...").
+# Checked whether tr is wired on main at all:
+grep -n "tr:" services/gateway/src/services/tts/polly.ts
+#   -> no 'tr' entry in POLLY_VOICES on main, and POLLY_UNSUPPORTED_LANGS
+#      is {'sr'} only — tr falls through to the caller's `?? POLLY_VOICES['en']`
+#      fallback. Confirmed this is the SAME undeclared-gap shape as VTID-03578
+#      (pt/pl silently speaking English before they were added).
+
+# Confirmed a prior, unmerged attempt at this exact fix exists on a different
+# branch (claude/nova-sonic-voice-provider-o0r79r, commit 50ab0cd,
+# VTID-03701) — it added tr:Filiz/standard, with an explicit caveat that it
+# had no AWS credentials to verify against a live DescribeVoices call. This
+# session DOES have real AWS credentials, so verified for real:
+aws polly describe-voices --language-code tr-TR --region eu-central-1
+#   -> TWO Turkish voices exist: Filiz (standard only) AND Burcu (neural) —
+#      the unmerged branch's "no neural Turkish voice" assumption was wrong,
+#      just undiscoverable without credentials at the time it was written.
+
+aws polly synthesize-speech --engine neural --output-format pcm \
+  --sample-rate 16000 --voice-id Burcu \
+  --text "Vitana'ya hoş geldin. Bu, doğru ses oynatma hızını doğrulamak için bir test mesajıdır." \
+  /tmp/burcu-test.pcm
+#   -> real 192960-byte PCM file, not just an ACTIVE listing (same §2b
+#      "ACTIVE does not mean invokable" discipline applied here)
+
+# Self-allocated VTID-03719 via direct Supabase RPC (this session has real
+# Supabase MCP access, confirmed it resolves to the same production project
+# `inmkhvwdcuyhnxkgfvsb` vitana-v1's CLAUDE.md names — proceeded anyway since
+# vitana-platform's own CLAUDE.md §4.1 mandates self-allocation as standing
+# governance and `vtid_ledger` is platform-governance data, not user-facing
+# community content):
+#   SELECT allocate_global_vtid('claude-code', 'gateway',
+#     'cascade-audio-test-cjk-pacing-and-turkish-coverage');
+#   -> VTID-03719
+#   UPDATE vtid_ledger SET title=..., summary=..., status='in_progress',
+#     spec_status='approved' WHERE vtid='VTID-03719';
+
+# Implementation:
+#   - services/gateway/src/services/tts/polly.ts: added tr -> Burcu/neural
+#     (not Filiz/standard) to POLLY_VOICES.
+#   - scripts/tts/verify-cascade-audio-timing.ts: added a tr TEST_CASES
+#     entry; added pacingBoundsFor(lang) (CJK_LANGS={'zh'} -> {min:2,max:10},
+#     default {min:6,max:30}), wired Check 2 to use it instead of the
+#     hardcoded 6/30 literals; exported pacingBoundsFor for direct testing.
+#   - services/gateway/test/tts/polly-provider.test.ts: tr added to the
+#     "resolves the supported languages" and "release locales" tables; new
+#     test pinning tr -> Burcu/neural specifically (not just "resolves").
+#   - services/gateway/test/scripts/verify-cascade-audio-timing.test.ts:
+#     3 new tests for pacingBoundsFor (alphabetic band unchanged, zh band
+#     lower, the real 4.9 chars/sec sample passes zh's band but would fail
+#     the alphabetic one).
+
+cd services/gateway
+npx tsc --noEmit
+#   -> clean, no output (outputs/tsc.txt)
+
+npx jest test/tts/polly-provider.test.ts test/scripts/verify-cascade-audio-timing.test.ts --silent
+#   -> Test Suites: 2 passed, 2 total
+#   -> Tests: 28 passed, 28 total (8 new: 1 tr-specific Polly test + 3
+#      pacingBoundsFor tests, plus the 2 pre-existing files' tests unchanged)
+#   -> outputs/targeted-tests.txt
+
+npx jest test/orb --silent
+#   -> Test Suites: 177 passed, 177 total
+#   -> Tests: 6 todo, 3281 passed, 3287 total (matches pre-change baseline
+#      exactly — no regression from the polly.ts change)
+#   -> outputs/full-orb-suite.txt
+
+npm run build
+#   -> clean, tsc + copy-frontend + copy-data all succeeded
+
+# --- NOT done from this session yet ---
+# Once merged and staging redeploys, re-run the full audio-timing test
+# program against real staging to confirm zh now passes and tr is tested
+# for real (not silently mislabeled English):
+#   GATEWAY_URL=https://preview-aws-gateway.vitanaland.com \
+#     npx tsx scripts/tts/verify-cascade-audio-timing.ts
+# Result reported directly, not assumed.

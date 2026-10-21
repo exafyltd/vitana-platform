@@ -1,0 +1,4 @@
+cd services/gateway
+npm run test:operator                       # 19/19 passed
+npx jest test/vtid-04475-self-healing-single-writer.test.ts <bridge + self-healing suites>   # 20 suites, 207 tests passed
+npx tsc --noEmit -p .                       # exit 0

@@ -1,0 +1,45 @@
+VTID-04258 — commands run this session
+
+Investigation (background Explore agent, read-only):
+- grep/search over services/gateway/src/orb/live/, routes/orb-live.ts,
+  services/orb-tools-shared.ts, services/assistant-continuation/,
+  services/wake-brief-wiring.ts for the navigate/navigate_to_screen tool
+  dispatch chain, the turn-scope guard (navigation-turn-scope.ts), the
+  vertex tool-catalog byte budget, and the acceptance-gate module.
+- grep NAV_CONTINUATION_BIND across the repo (test files, docs, both
+  gateway deploy workflows) — confirmed the flag is unit-tested and wired
+  into the turn handler, but never set by AWS-STAGE-DEPLOY-GATEWAY.yml or
+  AWS-PROD-DEPLOY-GATEWAY.yml's jq env blocks.
+
+Allocation (governed, self-service per CLAUDE.md §4.1):
+- select allocate_global_vtid('claude-code', 'gateway', 'orb-navigation')
+    -> VTID-04258
+- update vtid_ledger set title=..., summary=..., status='in_progress',
+    spec_status='approved' where vtid='VTID-04258'
+
+Code changes:
+- Edit .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml — added
+  NAV_CONTINUATION_BIND to the existing strip-list and re-add block
+  (value "true").
+- Edit .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml — added a new
+  strip-then-add jq block (declared, not dispatched) for the same flag,
+  following the VTID-04230 precedent immediately above it in the file.
+  Caught and fixed a self-introduced jq paren-mismatch before pushing
+  (verified via Grep, not executed — no local jq/AWS CLI in this session).
+- Write services/gateway/test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts
+  — pins the flag's presence/value/order on both workflow files.
+
+Verification performed:
+- Grep re-confirmation that NAV_CONTINUATION_BIND appears the expected
+  number of times, in the expected order, on both workflow files after
+  the edits.
+- Manual paren-count check of the new prod jq block by hand (mirrored by
+  the new test's own paren-balance assertion).
+
+Not run from this session (no local Node/npm/jest, no AWS CLI, no live
+gateway access):
+- `npm run build` / `npm test` inside services/gateway — CI's own Build
+  Gate step (`cd services/gateway && npm ci && npm run build`) and the
+  Test Suite / unit workflows are the first real execution of this code.
+- A live staging "yes, do it" confirmation exercising the acceptance-gate
+  path end to end.

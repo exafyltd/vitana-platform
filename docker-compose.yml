@@ -1,0 +1,60 @@
+# Docker Compose for Vitana Platform Local Development
+# VTID: DEV-CICDL-0034
+#
+# Usage:
+#   docker compose up -d     # Start all services
+#   docker compose down      # Stop all services
+#   docker compose logs -f   # View logs
+
+version: '3.8'
+
+services:
+  # PostgreSQL Database
+  db:
+    image: postgres:16
+    container_name: vitana-postgres
+    environment:
+      POSTGRES_USER: postgres
+      POSTGRES_PASSWORD: postgres
+      POSTGRES_DB: vitana_dev
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U postgres"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - vitana-network
+
+  # Optional: pgAdmin for database management
+  pgadmin:
+    image: dpage/pgadmin4:latest
+    container_name: vitana-pgadmin
+    environment:
+      PGADMIN_DEFAULT_EMAIL: admin@vitana.local
+      PGADMIN_DEFAULT_PASSWORD: admin
+      PGADMIN_CONFIG_SERVER_MODE: 'False'
+    ports:
+      - "5050:80"
+    volumes:
+      - pgadmin_data:/var/lib/pgadmin
+    depends_on:
+      - db
+    networks:
+      - vitana-network
+    profiles:
+      - tools  # Only start with: docker compose --profile tools up
+
+volumes:
+  postgres_data:
+    name: vitana_postgres_data
+  pgadmin_data:
+    name: vitana_pgadmin_data
+
+networks:
+  vitana-network:
+    name: vitana_network
+    driver: bridge

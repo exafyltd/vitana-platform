@@ -1,0 +1,5 @@
+# Local verification (services/gateway)
+npx tsc --noEmit -p .   -> exit 0
+npx jest test/services/memory/vtid-04766-people.test.ts   -> passed
+npx jest test/memory-verification-conformance.test.ts test/services/vtid-04581-remember-fact-tool.test.ts   -> passed (user_pet_name keeps its key)
+npx jest --ci --silent   -> 1415 suites passed (1 skipped), 22773 tests passed

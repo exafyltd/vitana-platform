@@ -1,0 +1,5 @@
+# VTID-05031 — commands run locally (services/gateway unless noted)
+npx jest test/vtid-05031-webhook-verification.test.ts test/connectors/doctorbox.test.ts   # 31/31 -> outputs/webhook-suites.txt
+npx jest <10 suites importing connector-webhooks / connectors / partner-health>          # 128 tests; 9 failed before the doctorbox test update (they relied on the removed dev-mode pass), all pass after
+npx tsc --noEmit -p .                                                                      # exit 0
+npx jest <10 related suites>  # after the doctorbox test update: 128/128

@@ -1,0 +1,11 @@
+# Read-only, project inmkhvwdcuyhnxkgfvsb, 2026-10-10 (before the S2 apply).
+# post-apply-checks.sql Q1/Q2 shape; all functions SECURITY DEFINER, owner postgres.
+fn                                                                         auth_x anon_x public_x service_x
+fn_consume_credits(uuid,uuid,integer,text,text,text)                       false  false  false    true    <- VTID-04981 effect is live by now
+get_current_facts(uuid,uuid,text,text[])                                   true   false  false    true
+get_user_profile_by_identifier(text)                                       true   true   true     true    (returns ... bio text, email text, location text ...)
+memory_facts_semantic_search(vector,integer,uuid,uuid,text,numeric)        true   false  false    true
+recall_at_time_range(uuid,timestamp with time zone,timestamp with time zone,text) true false false true
+write_fact(uuid,uuid,text,text,text,text,text,uuid,numeric,uuid)           true   false  false    true
+# pg_get_functiondef(get_user_profile_by_identifier) == vitana-v1 20260721124500 body (compared verbatim).
+# pg_depend: no view/rule depends on get_user_profile_by_identifier (DROP FUNCTION succeeds without CASCADE).

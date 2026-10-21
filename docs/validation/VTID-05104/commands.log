@@ -1,0 +1,7 @@
+# VTID-05104 — commands run and their results (Jest only, in-memory; nothing touched a database, Supabase or production)
+$ cd services/gateway && npx jest test/vtid-05104-calendar-invite-guard.test.ts   -> 47 passed   (outputs/jest-new-suite.txt)
+$ [mutation 1] remove the test-account check in checkInviteSend, rerun -> 2 failed, 45 passed   (outputs/mutation-1-no-test-account-check.txt); restored
+$ [mutation 2] remove the quota check in checkInviteSend, rerun -> 6 failed, 41 passed   (outputs/mutation-2-no-quota-check.txt); restored
+$ npm run test:calendar   -> 28 suites, 547 tests passed   (outputs/jest-test-calendar.txt)
+$ npx jest <every test touching chat routes, chat-groups, calendar-invite, messaging-depth, voice-message-guard, i18n catalog> test/orb-tools test/i18n test/orb/live/characterization test/orb/latency test/wave1-voice-tools-flow.test.ts   -> 107 suites, 2298 tests passed   (outputs/jest-related.txt)
+$ npx tsc --noEmit -p .   -> only 3 TS2307 'cannot find module' errors in files this change does not touch (libphonenumber-js, @aws-sdk/client-pinpoint-sms-voice-v2: packages not installed in this sandbox); nothing in the changed files   (outputs/tsc.txt)

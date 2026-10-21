@@ -1,0 +1,108 @@
+name: OASIS Persistence CI
+# VTID: DEV-CICDL-2025-0001
+# Purpose: CI for OASIS persistence layer and Gateway Service Tests
+# Last updated: 2025-12-18 - Added env var injection for SUPABASE and GOOGLE_GEMINI_API_KEY
+
+on:
+  pull_request:
+    paths:
+      - 'prisma/**'
+      - 'database/**'
+      - 'services/gateway/**'
+      - 'scripts/report.sh'
+      - '.github/workflows/oasis-persistence.yml'
+      - '.github/workflows/OASIS-PERSISTENCE.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'prisma/**'
+      - 'database/**'
+      - 'services/gateway/**'
+      - 'scripts/report.sh'
+
+jobs:
+  prisma-check:
+    name: Prisma Schema Check
+    runs-on: ubuntu-latest
+    if: github.event.pull_request.head.repo.full_name == github.repository
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - uses: pnpm/action-setup@v4
+      - run: pnpm install --frozen-lockfile
+      - run: pnpm prisma generate
+      - run: pnpm prisma format --check
+
+  gateway-test:
+    name: Gateway Service Tests
+    runs-on: ubuntu-latest
+    # Only run with secrets when PR is from same repo (not forks)
+    if: github.event_name == 'push' || github.event.pull_request.head.repo.full_name == github.repository
+    # DEV-CICDL-2025-0001: Inject all required secrets at job level for gateway tests
+    env:
+      NODE_ENV: test
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+      GOOGLE_GEMINI_API_KEY: ${{ secrets.GOOGLE_GEMINI_API_KEY }}
+    steps:
+      - uses: actions/checkout@v4
+
+      # DEV-CICDL-2025-0001: Preflight (tolerant) — prefer real secrets, fall back to
+      # inert placeholders so the job RUNS instead of hard-failing when secrets are
+      # unset (e.g. PRs without secret access). The gateway test suite is
+      # self-contained (mocks Supabase/Gemini; passes with no env), so placeholders
+      # never reach a live service. Real secrets, when configured in repo settings,
+      # are always used as-is and take precedence. Missing secrets are warned loudly.
+      - name: Preflight - Ensure Test Env Vars
+        run: |
+          echo "🔍 Resolving gateway test environment variables..."
+          if [ -z "$SUPABASE_URL" ]; then
+            echo "::warning::SUPABASE_URL secret not set — using inert placeholder (tests are mocked)"
+            echo "SUPABASE_URL=http://localhost:54321" >> "$GITHUB_ENV"
+          else
+            echo "✅ SUPABASE_URL provided by repo secret"
+          fi
+          if [ -z "$SUPABASE_SERVICE_ROLE" ]; then
+            echo "::warning::SUPABASE_SERVICE_ROLE secret not set — using inert placeholder (tests are mocked)"
+            echo "SUPABASE_SERVICE_ROLE=ci-test-placeholder-service-role" >> "$GITHUB_ENV"
+          else
+            echo "✅ SUPABASE_SERVICE_ROLE provided by repo secret"
+          fi
+          if [ -z "$GOOGLE_GEMINI_API_KEY" ]; then
+            echo "::warning::GOOGLE_GEMINI_API_KEY secret not set — using inert placeholder (tests are mocked)"
+            echo "GOOGLE_GEMINI_API_KEY=ci-test-placeholder-gemini-key" >> "$GITHUB_ENV"
+          else
+            echo "✅ GOOGLE_GEMINI_API_KEY provided by repo secret"
+          fi
+          echo "✅ Gateway test environment ready"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Install dependencies
+        working-directory: ./services/gateway
+        run: npm install
+
+      - name: Type check
+        working-directory: ./services/gateway
+        run: npm run typecheck
+
+      - name: Run tests
+        working-directory: ./services/gateway
+        run: npm test
+
+      - name: Build
+        working-directory: ./services/gateway
+        run: npm run build
+
+  reporter-test:
+    name: Reporter Script Validation
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: bash -n scripts/report.sh
+      - run: echo "✅ Script syntax valid"

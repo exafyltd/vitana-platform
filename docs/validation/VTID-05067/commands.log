@@ -1,0 +1,27 @@
+# VTID-05067 — commands run locally (Claude Code session, 2026-10-11). Nothing written to staging or production.
+# services/gateway
+npx tsc --noEmit -p .
+node --check src/frontend/command-hub/kiro-console.js
+node --check src/frontend/command-hub/app.js
+node --check test/command-hub/fixtures/kiro-console-harness.js
+npx jest test/command-hub/vtid-05067-kiro-console.test.ts
+npx jest test/vtid-05067-operator-media.test.ts
+npx jest test/vtid-05067-kiro-acp-images.test.ts
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t "Kiro runs"
+npm run test:operator
+npm run test:support
+npm run test:roles
+npx jest test/command-hub test/scripts/command-hub-ownership-guard.test.ts test/vtid-03822-operator-chat-threads.test.ts
+npx jest test/operator-kiro-runs.test.ts test/vtid-05065-kiro-runs.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-04984-kiro-model-selection.test.ts test/vtid-04999-kiro-runner-backend.test.ts test/vtid-05003-kiro-default-engine.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-05006-kiro-write-tools.test.ts test/vtid-05014-kiro-v1-writes.test.ts test/vtid-05018-kiro-thread-memory.test.ts test/vtid-05060-resume-and-model-pick.test.ts
+npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+npx jest --silent
+node scripts/generate-command-hub-symbol-index.mjs && node scripts/generate-command-hub-symbol-index.mjs --check
+node scripts/find-dead-css-classes.mjs --check
+python3 <scratchpad>/mutate-05067.py          # 19 single-line mutations (scratch script, not committed)
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers node <scratchpad>/shoot.js   # harness screenshots → docs/validation/VTID-05067/outputs/*.png
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed-files.txt> gateway_backend
+node scripts/ci/validator-path-guard.cjs --csp-targets <changed-files.txt>
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <frontend-diff.txt>
+node scripts/ci/validator-path-guard.cjs --route-evidence-required <diff.txt>
+node -e "validateManifest(docs/validation/VTID-05067/staging-tests.json, { vtid: 'VTID-05067', service: 'gateway' })"   # also VTID-04975, VTID-05006 after their marker move

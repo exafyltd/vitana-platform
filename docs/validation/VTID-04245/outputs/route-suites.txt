@@ -1,0 +1,5 @@
+PASS test/orb/live/characterization/tts-pcm-diagnostic-route.characterization.test.ts
+PASS test/console-task-02-onramp-rate-limit.test.ts
+PASS test/voice-send-chat-rate-limit-isolation.test.ts
+Test Suites: 3 passed, 3 total
+Tests:       39 passed, 39 total

@@ -1,0 +1,8 @@
+$ curl (anonymous ECR Public token) https://public.ecr.aws/v2/docker/library/node/manifests/20-alpine
+200
+$ curl (anonymous ECR Public token) https://public.ecr.aws/v2/docker/library/node/manifests/20-bookworm-slim
+200 (a back-to-back retry answered 429: per-IP anonymous limit)
+$ npx jest test/vtid-05017-base-images-ecr-public.test.ts
+Tests: 5 passed, 5 total
+$ (with services/gateway/Dockerfile reverted) npx jest test/vtid-05017-base-images-ecr-public.test.ts
+Tests: 1 failed, 4 passed, 5 total

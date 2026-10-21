@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04017",
+  "trigger": "dev-autopilot-watcher ci_failed -> bridgeFailureToSelfHealing(stage='ci')",
+  "eligibility": ["stage == ci", "parent metadata.executor == agent", "parent pr_number > 0 && pr_url && branch", "DEV_AUTOPILOT_DRY_RUN != true"],
+  "parent_after_bridge": { "status": "reverted", "revert_pr_url": null, "metadata.bridge_fix_mode": true, "pr": "left open" },
+  "child_row": { "status": "cooling", "auto_fix_depth": "parent+1", "metadata": { "executor": "agent", "llm_on_ramp_override": "inherited", "parent_failure": "CI failure reason + log excerpts (VTID-04005)", "fix_mode": { "branch": "dev-autopilot/<parent8>", "pr_number": "<parent pr>", "pr_url": "<parent pr url>", "parent_execution_id": "<parent id>" } } },
+  "runner_in_fix_mode": ["clone --branch <pr branch> (no checkout -b)", "fetch --depth 1 origin main -> baseSha", "prompt: buildFixModeTaskPrompt (PR files, CI evidence, attempt N of M)", "post-hoc checks on git diff --name-status <baseSha> (whole PR)", "refuse if this run edited nothing", "commit + push (no --force) to the same branch", "return parent's pr_url/pr_number -> row status ci, watcher tracks the same PR"],
+  "escalation_in_fix_mode": "PR left open; escalated event payload.pr_left_open = pr_url",
+  "cost_record": "dev_autopilot_outcomes.metadata.agent_runs[] + agent_cost_usd_total (estimateCost(model, in, out))"
+}

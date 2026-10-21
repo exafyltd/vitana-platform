@@ -1,0 +1,17 @@
+# commands run for VTID-05026, 2026-10-10
+cd services/gateway
+$ npx tsc --noEmit -p .
+exit 0
+$ npx jest test/vtid-05026-audiobook-voices.test.ts test/vtid-04761-audiobook-audio.test.ts test/vtid-04761-audiobook-audio-route.test.ts test/vtid-04873-narration-language.test.ts test/vtid-04445-persona-voice-gender.test.ts test/routes/voice-config.test.ts test/vtid-04893-google-aws-supplier.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/voice-config.test.ts
+Test Suites: 10 passed, 10 total
+Tests:       188 passed, 188 total
+$ npx jest test/orb/live/upstream test/services/tts test/orb/live/voice
+Test Suites: 58 passed, 58 total
+Tests:       691 passed, 691 total
+$ npm run test:roles
+Tests:       105 passed, 105 total
+$ npm run test:support
+Tests:       87 passed, 87 total
+$ node scripts/conversation/generate-flag-pins.mjs   (regenerated: three staging pins added)
+$ bash -n scripts/aws/setup-audiobook-google-metric.sh
+exit 0

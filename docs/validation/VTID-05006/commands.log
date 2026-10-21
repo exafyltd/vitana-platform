@@ -1,0 +1,9 @@
+# VTID-05006 — local checks (2026-10-09)
+$ cd services/gateway && npx tsc --noEmit -p .                       # clean
+$ npx jest test/vtid-05006-kiro-write-tools.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts test/vtid-04999-kiro-runner-backend.test.ts test/vtid-05003-kiro-default-engine.test.ts test/vtid-04560-role-separation-regression.test.ts
+Tests: 167 passed, 167 total
+$ npx jest test/vtid-04465-operator-pipeline-regression.test.ts   # incl. 4 new Kiro write scenarios
+Tests: 34 passed, 34 total
+$ npx jest test/command-hub                                          # 552 passed
+$ cd services/kiro-runner && npx tsc --noEmit -p . && npm test       # 30 passed
+$ node scratchpad/kiro-write-shots.js                                # real app.js block + styles.css in Chromium, no overflow

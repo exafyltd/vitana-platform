@@ -1,0 +1,25 @@
+{
+  "vtid": "VTID-04873",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "episode audio stays behind sign-in",
+      "path": "/api/v1/journey/audiobook/topics/T251/audio?lang=en",
+      "expect_status": 401
+    },
+    {
+      "kind": "playwright",
+      "name": "each of the eleven languages narrates in its own language, never German",
+      "spec": "e2e/staging/vtid-04873-narration-language.staging.spec.ts",
+      "cwd": "e2e"
+    },
+    {
+      "kind": "existing",
+      "name": "narration-language and seeder unit suites",
+      "ref": "npx jest test/vtid-04873-narration-language.test.ts test/vtid-04761-audiobook-audio-route.test.ts test/services/assistant-continuation/providers/guided-topic-narration.test.ts test/db-i18n/db-i18n.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins, for all ten translation targets, that German text never comes back as another language's narration, that the ORB tap path skips pre-rendering untranslated text, and that the seeder translates vitana_voice_script."
+    }
+  ]
+}

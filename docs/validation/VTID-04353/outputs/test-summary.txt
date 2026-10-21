@@ -1,0 +1,5 @@
+Targeted: test/orb/live/session/vtid-04353-finalize-live-session.test.ts -> 16 passed
+Full gateway suite (local, on 18b4a5620):
+  Test Suites: 1 skipped, 1087 passed, 1087 of 1088 total
+  Tests:       29 skipped, 6 todo, 17635 passed, 17670 total
+PR #3614 CI on 1e4f7b997: 20/20 checks green (incl. Gateway Jest, validate-pr)

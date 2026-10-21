@@ -1,0 +1,10 @@
+# VTID-04804 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_VOICE_BACKSTOP_CLUSTERS_MODE "04804 C2"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04804 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-c2.txt
+npx jest (full gateway suite)                                          # 1446 suites, 23190 passed, 0 failed (outputs/jest-full.txt)
+# Evidence (production, read-only SQL, 14 days to 2026-10-01): orb.live.diag backstop stages by sub-cause —
+# remember_hold_dropped/remember_request 116, recall_backstop/denied 49, remember_backstop/stored_value_echoed 31,
+# remember_backstop/remember_request 31, remember_backstop/claimed_without_call 23, tool_loop_guard 22,
+# recall_hold_suspect 21, recall_backstop/privacy_refusal 11, forget_backstop 7, opening_action_refused 7.

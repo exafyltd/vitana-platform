@@ -1,0 +1,41 @@
+psql:docs/validation/VTID-05103/migration-test.sql:6: NOTICE:  drop cascades to 4 other objects
+DETAIL:  drop cascades to table routines
+drop cascades to table routine_runs
+drop cascades to function claim_routine_run(text)
+drop cascades to function finish_routine_run(uuid,text,text,jsonb,text)
+DROP SCHEMA
+CREATE SCHEMA
+DO
+GRANT
+CREATE TABLE
+CREATE TABLE
+INSERT 0 2
+UPDATE 1
+INSERT 0 1
+BEGIN
+ALTER TABLE
+ALTER TABLE
+CREATE INDEX
+INSERT 0 1
+CREATE FUNCTION
+CREATE FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+COMMIT
+BEGIN
+ALTER TABLE
+ALTER TABLE
+psql:supabase/migrations/20261012210000_vtid_05103_routine_runner_claim.sql:28: NOTICE:  relation "uq_routine_runs_gateway_runner_day" already exists, skipping
+CREATE INDEX
+INSERT 0 0
+CREATE FUNCTION
+CREATE FUNCTION
+REVOKE
+REVOKE
+GRANT
+GRANT
+COMMIT
+psql:docs/validation/VTID-05103/migration-test.sql:104: NOTICE:  VTID-05103 migration test: all assertions passed
+DO

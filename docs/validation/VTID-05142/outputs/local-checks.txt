@@ -1,0 +1,2 @@
+commerce-mcp.ts and the two edited tests: TypeScript transpile, no syntax diagnostics.
+jest / tsc with dependencies: not available in the build session (registry blocked); CI is the first run.

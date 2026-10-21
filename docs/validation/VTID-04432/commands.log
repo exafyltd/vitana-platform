@@ -1,0 +1,3 @@
+npx jest test/services/orchestrator/vtid-04432-specialist-evals.test.ts   # 36/36
+npx tsc --noEmit -p .                                                     # exit 0
+npx jest test/services/orchestrator test/orb/live/vtid-04386-voice-delegation.test.ts test/services/llm-stage-tool-loop  # 9 suites / 141 tests

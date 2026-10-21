@@ -1,0 +1,8 @@
+    ✓ admin-signups.ts router.post('/:id/repair' awaits ensureProvisioned before its first member write
+
+Test Suites: 4 passed, 4 total
+Tests:       68 passed, 68 total
+Snapshots:   0 total
+Time:        1.153 s
+Ran all test suites matching /test\/vtid-05023-outbound-http-worker.test.ts|test\/vtid-05023-auth-bridge-endpoint.test.ts|test\/vtid-05023-auth-bridge-reconciler.test.ts|test\/vtid-05023-auth-bridge-write-paths.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,6 @@
+$ bash probe.sh (bare, both page ?v= URLs, a fresh ?v=) -> cached URLs marker=0, fresh URL marker=1 (outputs/staging-widget-cache-probe.txt)
+$ node services/gateway/scripts/generate-command-hub-symbol-index.mjs -> orb-widget.js entries shifted (VTID-04644 drift)
+$ npx jest test/vtid-04659-staging-checks-use-versioned-urls.test.ts test/routes/command-hub-static-cache-headers.test.ts -> 10 passed
+$ mutation: bare VTID-04644 path -> guard test fails; old ?v in index.html -> cache-bust test fails
+$ npx jest test/scripts/command-hub-ownership-guard.test.ts test/nav-redirect/explicit-open-backstop.test.ts -> passed (92 with the above)
+$ npx jest test/scripts/generate-command-hub-symbol-index.test.ts -> 8 passed

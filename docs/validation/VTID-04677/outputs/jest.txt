@@ -1,0 +1,76 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04677-scheduled-notifications-auth.test.ts
+  mode switch
+    ✓ defaults to log; only exact enforce/off change it (5 ms)
+  token compare
+    ✓ matches only an identical non-empty token (2 ms)
+  enforce mode
+    ✓ runs the route with the right token (20 ms)
+    ✓ 401 without a token, 403 with a wrong one — the route never runs (9 ms)
+    ✓ an admin bearer token is not accepted (no JWT path) (9 ms)
+    ✓ 503 and a loud error when the gateway has no token configured (4 ms)
+    ✓ GET /health stays open and reports the mode (5 ms)
+  log mode (default)
+    ✓ lets an anonymous call through and logs it without the header value (4 ms)
+    ✓ a call with the right token is not logged (3 ms)
+    ✓ health reports log and whether a token is set, never the token (4 ms)
+  off mode
+    ✓ runs without any check or log line (2 ms)
+  internalTokenHeaders (gateway self-calls)
+    ✓ sends the token when configured, nothing otherwise (1 ms)
+  wiring (source)
+    ✓ the middleware is registered before the first route of the router (1 ms)
+    ✓ no route is still marked public (1 ms)
+    ✓ /health reports the auth status
+    ✓ every gateway self-call to these routes sends the token (1 ms)
+  deploy workflows
+    ✓ prod wires GATEWAY_INTERNAL_TOKEN in every deploy mode, before register/roll (1 ms)
+    ✓ prod step replaces any existing entry and keeps the other secrets (runs its jq) (8 ms)
+    ✓ prod does not set an auth mode (stays log until enforce is approved)
+    ✓ staging strips any set value, so it runs the code default (log) (1 ms)
+    ✓ staging prints the secret lookup error instead of discarding it
+  scheduler Lambda scripts
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-push-dispatch.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (7 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-daily-feature-tip.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (5 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-whats-new.sh: valid bash, token read from the prod secret and sent as X-Gateway-Internal (7 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-push-dispatch.sh: the embedded Lambda code parses (1 ms)
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-daily-feature-tip.sh: the embedded Lambda code parses
+    ✓ /home/user/vitana-platform/scripts/aws/setup-eventbridge-whats-new.sh: the embedded Lambda code parses (1 ms)
+    ✓ cron script: notification jobs carry the prod token secret; daily-feature-tip is not duplicated (1 ms)
+  route-auth CI rule
+    ✓ new-route-without-auth-middleware accepts the file-level router.use(requireScheduledNotificationsAuth) (51 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04226-eventbridge-test-contract-schedules.test.ts
+  VTID-04226: EventBridge JOBS carry the two test-contract scanners
+    ✓ lists gateway-test-contracts-scheduled-run every 15 minutes with the internal-token auth, targeting the test-contract gateway (1 ms)
+    ✓ lists gateway-test-contracts-missing daily as a GET with the internal-token auth (1 ms)
+    ✓ the test-contract gateway defaults to STAGING (prod is an explicit override, IF-THEN 26)
+    ✓ keeps every pre-existing VTID-03766 job (25, minus daily-feature-tip — VTID-04677) and adds exactly 2
+    ✓ the schedule Input merges the EXTRA json (method/auth/gateway_url) onto path+body
+  VTID-04226: the shared Lambda can present X-Gateway-Internal without the token ever sitting in plain config
+    ✓ reads the token from Secrets Manager at invoke time, cached, only for auth=gateway_internal jobs
+    ✓ honours method (GET sends no body) and a per-job gateway_url override
+    ✓ still fails loudly on non-2xx (a 403 from a missing token is a Lambda error, not a silent success) (1 ms)
+    ✓ grants the Lambda exec role GetSecretValue on exactly the internal-token secret and passes its id as env
+  VTID-04226: scripts parse and dry-run
+    ✓ both scripts pass bash -n (11 ms)
+    ✓ --dry-run prints the two new jobs without calling AWS (10 ms)
+    ✓ the token provisioning script is dry-run by default and never defaults to prod (11 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       41 passed, 41 total
+Snapshots:   0 total
+Time:        0.86 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04677-scheduled-notifications-auth.test.ts|test\/vtid-04226-eventbridge-test-contract-schedules.test.ts/i.

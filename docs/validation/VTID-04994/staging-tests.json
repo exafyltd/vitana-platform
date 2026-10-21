@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04994",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04994-subscription-dates-in-calendar-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the platform part of VTID-04994 is a database migration (subscription renewal/trial/Premium end dates appear in the member's calendar) plus one added value in the gateway source-type list. Behaviour is proven on a throwaway Postgres (CI SQL-SUBSCRIPTION-DATES-IN-CALENDAR, two mutation checks, including 'a failing mirror never blocks a billing write'). Staging shares the production Supabase project, so verification never creates or edits a subscription."
+    }
+  ]
+}

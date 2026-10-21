@@ -1,0 +1,25 @@
+    ✓ maps tenure to stages and ends at 90 days (5 ms)
+    ✓ teaches in ladder order and only steps the member is far enough in for (1 ms)
+    ✓ only uses milestones that milestone-service already detects (no new milestones in slice 1) (8 ms)
+    ✓ would touch a fresh member with the next step (1 ms)
+    ✓ respects opt-out, the 90-day window and snooze (1 ms)
+    ✓ backs off ×2 after each ignored touch and stops after 3 ignores (1 ms)
+    ✓ gives the day to the Audiobook reminder (set and today not heard, or already sent today)
+    ✓ never a second touch the same local day
+    ✓ a pilot stage override wins over tenure (1 ms)
+    ✓ cohort = joined on/after rollout − 30 days and still inside 90 days
+    ✓ uses the member's local date (17 ms)
+    ✓ never runs on staging (1 ms)
+    ✓ is off without the feature flag or a valid rollout date
+    ✓ has no live mode in slice 1: VOA_MODE=live still runs shadow (1 ms)
+    ✓ skips the whole tick when the strict exclusion lookup fails (2 ms)
+    ✓ decides for cohort members only, writes only coach tables, one aggregate event (3 ms)
+    ✓ re-running the same day overwrites the decision (one row per member per day) (2 ms)
+    ✓ simulates 90 days: a stage change emits one transition event, then the member graduates (20 ms)
+    ✓ the coach code has no send path at all in slice 1 (1 ms)
+    ✓ the tick needs the internal token whatever the global auth mode is (366 ms)
+    ✓ 503 when no internal token is configured (112 ms)
+    ✓ the staging gateway refuses the tick even with a valid token (90 ms)
+    ✓ status is a read-only GET with the mode and nothing about members (95 ms)
+Test Suites: 1 passed, 1 total
+Tests:       23 passed, 23 total

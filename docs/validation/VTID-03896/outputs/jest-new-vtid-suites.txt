@@ -1,0 +1,40 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-03895-terminalize-vtid-ledger.test.ts
+  VTID-03895: terminalizeVtidLedgerForExecution (via applyExecTerminalSideEffects)
+    ✓ completed: PATCHes vtid_ledger with is_terminal=true, terminal_outcome=success, and emits vtidLifecycleCompleted (7 ms)
+    ✓ failed: terminal_outcome/status = failed, emits vtidLifecycleFailed (1 ms)
+    ✓ cancelled: terminal_outcome/status = cancelled, emits vtidLifecycleFailed (not a success outcome) (1 ms)
+    ✓ never PATCHes vtid_ledger for a status other than completed/failed/cancelled (1 ms)
+    ✓ autonomous-plane finding (no activated_vtid): looks up the recommendation but never PATCHes vtid_ledger (5 ms)
+    ✓ missing finding_id on the execution row: bails before even looking up the recommendation
+    ✓ a failed vtid_ledger PATCH is logged, not thrown, and never crashes the caller (2 ms)
+    ✓ cancelExecution() (direct-PATCH path, bypassing patchExecution) also terminalizes vtid_ledger (1 ms)
+
+PASS test/vtid-03896-03898-execution-steps-stream.test.ts
+  VTID-03896: GET /executions/:id/steps
+    ✓ 401 without a token (242 ms)
+    ✓ 403 for a non-admin token (60 ms)
+    ✓ 200: returns oasis_events filtered by execution_id, oldest first (58 ms)
+    ✓ 500 with the PostgREST error when the query fails (51 ms)
+  VTID-03897: GET /executions/:id/stream
+    ✓ 401 without a token (no Authorization header, no access_token query param) (55 ms)
+    ✓ accepts the bearer token via ?access_token= (EventSource cannot set headers) (61 ms)
+    ✓ 403 via the query-token fallback for a non-admin token (53 ms)
+    ✓ does not let a query access_token override an explicit Authorization header (50 ms)
+  VTID-03898: GET /executions last_event_at enrichment
+    ✓ merges the most recent oasis_events row per execution id into last_event_at (48 ms)
+    ✓ an execution with no matching oasis_events row gets last_event_at: null (48 ms)
+    ✓ an empty execution list never queries oasis_events at all (48 ms)
+    ✓ a failed enrichment query still returns the executions list (never a 500) (51 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        1.804 s, estimated 2 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+jest exit=0

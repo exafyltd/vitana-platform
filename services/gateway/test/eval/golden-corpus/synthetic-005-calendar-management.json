@@ -1,0 +1,37 @@
+{
+  "fixture_id": "synthetic-005-calendar-management",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Calendar create + read + reminder lifecycle.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Book a 30 minute focus block tomorrow at 10",
+      "expected_tool": "create_calendar_event",
+      "expected_intent": "calendar.create"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "What's on my schedule for Friday?",
+      "expected_tool": "get_schedule",
+      "expected_intent": "calendar.read"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Remind me to call the dentist at 3pm",
+      "expected_tool": "set_reminder",
+      "expected_intent": "calendar.reminder_set"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "Cancel the dentist reminder",
+      "expected_tool": "delete_reminder",
+      "expected_intent": "calendar.reminder_delete"
+    }
+  ]
+}

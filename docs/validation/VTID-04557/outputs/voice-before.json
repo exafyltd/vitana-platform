@@ -1,0 +1,693 @@
+[
+ {
+  "id": "C01-open-wallet",
+  "lang": "en",
+  "expect": "opens WALLET.OVERVIEW (route), short sentence, no question",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Take me to my wallet."
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "my wallet",
+     "intent": "open"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "ambiguous",
+    "offer": null,
+    "candidates": [
+     "OVERLAY.WALLET_POPUP",
+     "WALLET.OVERVIEW",
+     "WALLET.BALANCE_OPTIMIZATION"
+    ],
+    "ms": 823,
+    "text": "POSSIBLE SCREENS (best first):\n- OVERLAY.WALLET_POPUP: \"Quick Wallet Popup\" — Bottom-sheet peek of balance + recent rewards.\n- WALLET.OVERVIEW: \"Wallet\" — Your Maxina wallet — balance, subscriptions, and rewards.\n- WALLET.BALANCE_OPTIMIZATION: \"Optimization\" — The optimization tab of your wallet bal"
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "WALLET.OVERVIEW"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "WALLET.OVERVIEW",
+     "route": "/wallet",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 5,
+    "text": "Wallet opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) I'm taking you to your Wallet now."
+   },
+   {
+    "at": "asr",
+    "text": "take me to my wallet"
+   }
+  ]
+ },
+ {
+  "id": "C02-open-messages",
+  "lang": "en",
+  "expect": "opens INBOX.OVERVIEW",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Open my messages."
+   },
+   {
+    "at": "tool",
+    "name": "view_messages",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 0,
+    "text": "(view_messages is not available in this test; answer without it)"
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 2,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Your home News Feed — the latest longevity news, research, and articles curated for you.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) \nLet me take you to your messages screen now."
+   },
+   {
+    "at": "asr",
+    "text": "open my messages."
+   }
+  ]
+ },
+ {
+  "id": "C03-open-diary",
+  "lang": "en",
+  "expect": "opens MEMORY.DIARY",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Show me my diary."
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 1,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Your home News Feed — the latest longevity news, research, and articles curated for you.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "diary",
+     "intent": "open"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "ambiguous",
+    "offer": null,
+    "candidates": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY",
+     "AI.DAILY_SUMMARY"
+    ],
+    "ms": 566,
+    "text": "POSSIBLE SCREENS (best first):\n- MEMORY.DIARY: \"Daily Diary\" — Your daily diary entries — log thoughts, moods, and reflections.\n- MEMORY.DAILY_DIARY: \"Single-Day Capture Flow\" — A focused single-day capture flow for one specific day.\n- AI.DAILY_SUMMARY: \"Daily Summary\" — Your AI-generated daily summ"
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "MEMORY.DIARY"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "MEMORY.DIARY",
+     "route": "/memory/diary",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 3,
+    "text": "Daily Diary opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  \n\nWould you like me to help you add a new entry or look at a specific day's entry?"
+   },
+   {
+    "at": "asr",
+    "text": "show me my diary."
+   }
+  ]
+ },
+ {
+  "id": "C04-open-events-today",
+  "lang": "en",
+  "expect": "opens COMM.EVENTS_TODAY",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "What events are happening today? Show me."
+   },
+   {
+    "at": "tool",
+    "name": "search_events",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 0,
+    "text": "(search_events is not available in this test; answer without it)"
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 2,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Your home News Feed — the latest longevity news, research, and articles curated for you.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) \n\nWhich of these would you like to explore first?"
+   },
+   {
+    "at": "asr",
+    "text": "what events are happening today? show me."
+   }
+  ]
+ },
+ {
+  "id": "C05-where-then-yes",
+  "lang": "en",
+  "expect": "turn1: navigate intent=where, answers + offers, NO directive; turn2: navigate_to_screen with offered id -> directive",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Where can I see my lab results?"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "where can I see my lab results?",
+     "intent": "where"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "offer",
+    "offer": "HEALTH.MY_BIOLOGY",
+    "candidates": [
+     "HEALTH.MY_BIOLOGY",
+     "HEALTH.MEDICAL",
+     "HEALTH.BIOLOGY_OMICS"
+    ],
+    "ms": 567,
+    "text": "FOUND: HEALTH.MY_BIOLOGY — \"My Biology\": Track your biomarkers, lab results, and personal health indicators with trends over time.\nThe member asked WHERE this is, so do not open it yet. Tell them in one or two sentences what they will find there and where (use the title, never the route),\nthen ask w"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  Would you like me to open this section for you?"
+   },
+   {
+    "at": "asr",
+    "text": "where can i see my lab results?"
+   },
+   {
+    "at": "user_says",
+    "text": "Yes please, open it."
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "HEALTH.MY_BIOLOGY"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "HEALTH.MY_BIOLOGY",
+     "route": "/health/my-biology",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 3,
+    "text": "My Biology opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "I can see your lab results in the \"My Biology\" section. { \"interrupted\" : true }  This is where you can track your biomarkers, lab results, and personal health indicators with trends over time."
+   },
+   {
+    "at": "asr",
+    "text": "yes please, open it."
+   }
+  ]
+ },
+ {
+  "id": "C06-where-then-no",
+  "lang": "en",
+  "expect": "turn1 offer only; turn2 no navigation",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Where do I change the app language?"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "change app language",
+     "intent": "where"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "offer",
+    "offer": "SETTINGS.PREFERENCES_LANGUAGE",
+    "candidates": [
+     "SETTINGS.PREFERENCES_LANGUAGE",
+     "ASSISTANT.VOICE",
+     "SETTINGS.PREFERENCES_APPEARANCE"
+    ],
+    "ms": 222,
+    "text": "FOUND: SETTINGS.PREFERENCES_LANGUAGE — \"Language Region\": App language and region.\nThe member asked WHERE this is, so do not open it yet. Tell them in one or two sentences what they will find there and where (use the title, never the route),\nthen ask whether you should open it for them. If they say "
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  Would you like me to take you to the Language Region settings now?"
+   },
+   {
+    "at": "asr",
+    "text": "where do i change the app language?"
+   },
+   {
+    "at": "user_says",
+    "text": "No thanks, not now."
+   },
+   {
+    "at": "model_said",
+    "text": "{ \"interrupted\" : true } I can help you change the app language. You'll find the language settings under \"Language Region\" in the Settings menu."
+   },
+   {
+    "at": "asr",
+    "text": "no thanks, not now."
+   }
+  ]
+ },
+ {
+  "id": "C07-ambiguous-podcasts",
+  "lang": "en",
+  "expect": "opens a podcasts screen or asks one either/or",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Open the podcasts."
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "podcasts",
+     "intent": "open"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "COMM.MEDIA_PODCASTS",
+     "route": "/comm/media-hub?tab=podcasts",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 552,
+    "text": "Podcasts opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) I'm taking you to the Podcasts section now."
+   },
+   {
+    "at": "asr",
+    "text": "open the podcasts"
+   }
+  ]
+ },
+ {
+  "id": "C08-explain-not-nav",
+  "lang": "en",
+  "expect": "explains, does NOT navigate",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "What is the Vitana Index?"
+   },
+   {
+    "at": "tool",
+    "name": "search_knowledge",
+    "args": {
+     "query": "what is the Vitana Index"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 0,
+    "text": "(search_knowledge is not available in this test; answer without it)"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  It's updated daily based on your activities and habits logged in the app."
+   },
+   {
+    "at": "asr",
+    "text": "what is the vitana index?"
+   }
+  ]
+ },
+ {
+  "id": "C09-smalltalk",
+  "lang": "en",
+  "expect": "no navigation tool",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "How are you doing today?"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  \n\nLet me know what you'd like to explore first!"
+   },
+   {
+    "at": "asr",
+    "text": "how are you doing today?"
+   }
+  ]
+ },
+ {
+  "id": "C10-where-am-i",
+  "lang": "en",
+  "expect": "get_current_screen, no navigation",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Which screen am I on right now?"
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 1,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Your home News Feed — the latest longevity news, research, and articles curated for you.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  \n\nWould you like me to show you something specific from this feed, or would you like to explore another part of the app?"
+   },
+   {
+    "at": "asr",
+    "text": "which screen am i on right now?"
+   }
+  ]
+ },
+ {
+  "id": "C11-de-open-calendar",
+  "lang": "de",
+  "expect": "opens CALENDAR.OVERVIEW (panel)",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Öffne bitte meinen Kalender."
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 7,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Dein News-Feed zu Hause — aktuelle Longevity-Nachrichten, Forschung und Artikel, für dich kuratiert.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "kalender",
+     "intent": "open"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "ambiguous",
+    "offer": null,
+    "candidates": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "ms": 575,
+    "text": "POSSIBLE SCREENS (best first):\n- CALENDAR.OVERVIEW: \"Mein Kalender\" — Dein persönlicher Kalender — deine Termine, Verabredungen und geplante Aktivitäten. Öffnet sich als Overlay.\nIf one of these clearly fits what the member said, call navigate_to_screen with its screen_id now. If two fit equally, as"
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "CALENDAR.OVERVIEW"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "CALENDAR.OVERVIEW",
+     "route": "/calendar?open=calendar",
+     "after_speech": true,
+     "entry_kind": "overlay"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 3,
+    "text": "Mein Kalender opens as a panel on the current screen as soon as you finish this sentence. Say one short sentence about it; the member stays where they are and the conversation carries on."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  Möchtest du etwas Bestimmtes im Kalender anschauen oder hinzufügen?"
+   },
+   {
+    "at": "asr",
+    "text": "öffne bitte meinen kalender"
+   }
+  ]
+ },
+ {
+  "id": "C12-de-where-then-yes",
+  "lang": "de",
+  "expect": "turn1 offer SETTINGS.NOTIFICATIONS, turn2 opens it",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Wo finde ich meine Benachrichtigungseinstellungen?"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "benachrichtigungseinstellungen",
+     "intent": "where"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "offer",
+    "offer": "SETTINGS.NOTIFICATIONS",
+    "candidates": [
+     "SETTINGS.NOTIFICATIONS",
+     "SETTINGS.PREFERENCES_APPEARANCE",
+     "SETTINGS.PRIVACY_VISIBILITY"
+    ],
+    "ms": 218,
+    "text": "FOUND: SETTINGS.NOTIFICATIONS — \"Benachrichtigungen\": Verwalte deine Benachrichtigungspräferenzen.\nThe member asked WHERE this is, so do not open it yet. Tell them in one or two sentences what they will find there and where (use the title, never the route),\nthen ask whether you should open it for th"
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative)  Möchtest du, dass ich dich dorthin führe?"
+   },
+   {
+    "at": "asr",
+    "text": "wo finde ich meine benachrichtigungseinstellungen?"
+   },
+   {
+    "at": "user_says",
+    "text": "Ja, mach das bitte auf."
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "SETTINGS.NOTIFICATIONS"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "SETTINGS.NOTIFICATIONS",
+     "route": "/settings/notifications",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 3,
+    "text": "Benachrichtigungen opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "{ \"interrupted\" : true } Du findest deine Benachrichtigungseinstellungen unter  Benachrichtigungen  in den Einstellungen. Dort kannst du deine Präferenzen für verschiedene Benachrichtigungsarten verwalten."
+   },
+   {
+    "at": "asr",
+    "text": "ja, mach das bitte auf."
+   }
+  ]
+ },
+ {
+  "id": "C13-de-open-profile",
+  "lang": "de",
+  "expect": "opens PROFILE.ME",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Zeig mir mein Profil."
+   },
+   {
+    "at": "tool",
+    "name": "get_current_screen",
+    "args": {},
+    "ok": true,
+    "directive": null,
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 1,
+    "text": "{\"title\":\"Longevity News\",\"description\":\"Dein News-Feed zu Hause — aktuelle Longevity-Nachrichten, Forschung und Artikel, für dich kuratiert.\",\"category\":\"home\",\"screen_id\":\"HOME.OVERVIEW\",\"route\":\"/home\",\"recent_screens\":[]}"
+   },
+   {
+    "at": "tool",
+    "name": "navigate",
+    "args": {
+     "question": "zeig mir mein profil",
+     "intent": "open"
+    },
+    "ok": true,
+    "directive": null,
+    "decision": "ambiguous",
+    "offer": null,
+    "candidates": [
+     "PROFILE.ME",
+     "PROFILE.PRIVACY",
+     "WALLET.BALANCE_MEMBERSHIP"
+    ],
+    "ms": 587,
+    "text": "POSSIBLE SCREENS (best first):\n- PROFILE.ME: \"Mein Profil\" — Dein persönliches Profil — Name, Foto, Bio und Kontodetails.\n- PROFILE.PRIVACY: \"Profil-Sichtbarkeit\" — Sichtbarkeits-Schalter pro Bereich für dein Profil — steuere, wer was sieht.\n- WALLET.BALANCE_MEMBERSHIP: \"Mitgliedschaft\" — Der Mitgli"
+   },
+   {
+    "at": "tool",
+    "name": "navigate_to_screen",
+    "args": {
+     "screen_id": "PROFILE.ME"
+    },
+    "ok": true,
+    "directive": {
+     "screen_id": "PROFILE.ME",
+     "route": "/me/profile",
+     "after_speech": true,
+     "entry_kind": "route"
+    },
+    "decision": null,
+    "offer": null,
+    "candidates": [],
+    "ms": 3,
+    "text": "Mein Profil opens as soon as you finish speaking. Say one short sentence that you are taking them there, then stop."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) Ich öffne jetzt dein Profil für dich."
+   },
+   {
+    "at": "asr",
+    "text": "zeig mir mein profil"
+   }
+  ]
+ },
+ {
+  "id": "C14-de-smalltalk",
+  "lang": "de",
+  "expect": "no navigation",
+  "tools_declared": 49,
+  "log": [
+   {
+    "at": "user_says",
+    "text": "Erzähl mir einen kurzen Witz."
+   },
+   {
+    "at": "model_said",
+    "text": "(speculative) \n\nIch hoffe, der hat dich zum Lachen gebracht! Möchtest du noch einen Witz hören oder soll ich dir etwas anderes erzählen?"
+   },
+   {
+    "at": "asr",
+    "text": "erzähl mir einen kurzen witz"
+   }
+  ]
+ }
+]

@@ -1,0 +1,27 @@
+$ npx tsc --noEmit          -> exit 0
+
+$ npx jest test/orb/live/voice/nova-sonic-voice.test.ts
+  ✓ maps Vitana (feminine default) per language
+  ✓ maps masculine personas (devon, atlas) per language
+  ✓ sage and mira use feminine voices
+  ✓ unknown/absent persona falls back to the feminine voice
+  ✓ handles regional tags and casing
+  ✓ returns null for languages outside the Nova canary
+  ✓ serves pt with Nova's documented pt-BR voices          [new]
+  ✓ still refuses the languages Nova genuinely does not speak [new]
+  ✓ never returns a Gemini voice ID
+  Tests: 9 passed
+
+$ npx jest test/orb
+  Tests: 6 todo, 3083 passed, 3089 total
+
+MUTATION VERIFICATION — remove `pt` from NOVA_SONIC_SUPPORTED_LANGUAGES:
+  ✕ serves pt with Nova's documented pt-BR voices
+  Tests: 1 failed, 8 passed
+  -> restored: 9 passed
+
+NOT weakened: `test/orb/live/upstream/nova-sonic-config.test.ts` pins the
+health payload's language list and failed on this change. It was UPDATED to the
+new intended value rather than relaxed — noticing the change is its job. The
+"outside the canary" test needed no edit at all: it asserts ru/sr -> null, and
+both remain correct because Nova genuinely does not speak them.

@@ -1,0 +1,35 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+(node:7972) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/routes/voice-lab-nova-decision-cascade.test.ts
+  VTID-03729: GET /nova/decision wires cascade context like the real session path
+    ✓ lang=pl with the cascade enabled reports cascaded_language_rescue, not a forced-Nova verdict (48 ms)
+    ✓ lang=pt with the cascade enabled also reports cascaded_language_rescue (5 ms)
+    ✓ lang=sr (no Polly voice, even with the cascade on) is NOT reported as cascaded — falls to forced Nova, never vertex (4 ms)
+    ✓ lang=pl with the cascade OFF forces Nova rather than reporting cascaded (cascade flag is genuinely load-bearing) (3 ms)
+    ✓ lang=en (Nova-native) is unaffected by the cascade flag either way (4 ms)
+    ✓ provider is never vertex regardless of lang or cascade flag (VTID-03723 invariant, re-asserted at this route) (49 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/routes/voice-lab.test.ts
+  Voice Lab API Auth Rules
+    ✓ should allow unauthenticated requests to public-route /health (5 ms)
+    ✓ should reject unauthenticated requests to protected routes (9 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        1.674 s
+Ran all test suites matching /voice-lab-nova-decision-cascade|routes\/voice-lab/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,14 @@
+Re-measured live 2026-09-28 via @aws-sdk/client-polly DescribeVoices,
+LanguageCode=ru-RU, in eu-central-1 (the region the production gateway runs in).
+Read-only API call; no synthesis, no writes.
+
+region: eu-central-1
+Tatyana	Female	engines=[standard]
+Maxim	Male	engines=[standard]
+--- any neural/generative RU voice? ---
+NONE — standard engine only
+
+Conclusion: CLAUDE.md §2c's 2026-08-20 finding still holds, now re-verified.
+Russian is the only language in POLLY_VOICES pinned to `standard`; every other
+shipped locale is `neural`. The reported "zero energy" voice is Tatyana on the
+standard engine, and no Polly setting changes that.

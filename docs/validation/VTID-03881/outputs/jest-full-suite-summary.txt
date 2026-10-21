@@ -1,0 +1,100 @@
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-stuck-speaking-recovery.test.ts
+  orb-widget stuck-speaking recovery (VTID-03740)
+    ✓ resets the visible voiceState/orb/caption back to listening when the watchdog fires while stuck in SPEAKING (1 ms)
+    ✓ guards the recovery on session-active / not-closing-for-nav / not-user-closed / overlay-visible, matching the normal turn-complete path
+    ✓ does not overwrite the tap-to-hear prompt when audio is blocked (VTID-03469) (1 ms)
+    ✓ re-arms the mic exactly once, gated on !greetingComplete, mirroring the normal first-turn mic-start invariant
+    ✓ never fires _cfg.onTurnComplete — this turn did not genuinely complete, and reporting it as complete would reproduce the VTID-03685 "completed" drawer bug for undelivered content
+    ✓ still clears the internal audioPlaying flag and refreshes the mic-button UI regardless of the recovery branch (unchanged DEV-COMHU-0501 behavior) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/context/b0c-user-assistant-state-migration.test.ts
+  B0c — user_assistant_state migration
+    ✓ creates the user_assistant_state table (1 ms)
+    ✓ uses the documented composite primary key
+    ✓ enables RLS for tenant isolation (1 ms)
+    ✓ documents the forbidden ephemeral signals
+    ✓ has a touch trigger so updated_at advances on mutation
+    ✓ indexes expires_at for time-based sweeps
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb-fast-start.test.ts
+  shouldDeferWakeWork
+    ✓ defaults OFF — never defers when the flag is unset (legacy path preserved) (1 ms)
+    ✓ defers for an authenticated, non-guided, non-anonymous session when enabled in prod
+    ✓ never defers anonymous sessions (they skip wake-brief/journey anyway)
+    ✓ never defers guided-topic sessions (already on the VTID-03294 fast path)
+    ✓ never defers when there is no user id
+  composeContextReady
+    ✓ resolves only after BOTH the brain promise and the deferred work settle (3 ms)
+    ✓ is fail-open: a rejection in the deferred work does NOT reject the gate
+    ✓ is fail-open: a rejection in the brain promise does NOT reject the gate
+    ✓ tolerates an undefined brain promise (anonymous/guided never set one) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/conversation/new-facts-detector.test.ts
+  detectNewFacts
+    ✓ counts fresh facts and returns a capped sample (2 ms)
+    ✓ excludes plumbing keys like preferred_language (1 ms)
+    ✓ clamps the cutoff to the 7-day lookback cap (12 ms)
+    ✓ filters superseded rows and tenant-scopes when given (1 ms)
+    ✓ returns zero on query error and on missing inputs (1 ms)
+  learning-surfaced stamp
+    ✓ markLearningSurfaced upserts the signal row
+    ✓ readLearningSurfacedAt returns the stamp or null (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/dev-autopilot-failure-actionability.test.ts
+  classifyAutopilotFailure
+    ✓ normalises the worker-queue "unclaimed" failure to environmental_blocker
+    ✓ catches environmental blockers detected by isEnvironmentalBlocker (e.g. ENOENT spawn) from the summary text (12 ms)
+    ✓ flags safety-gate blocks as non-actionable policy decisions but keeps their class (1 ms)
+    ✓ classifies a Cloud Run deploy concurrency race as environmental (real EXEC-DEPLOY failure 2026-06-07)
+    ✓ leaves a genuinely auto-fixable code failure actionable and unchanged (1 ms)
+    ✓ handles a missing diagnosis summary without throwing
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.deferred for VTID-00004 (03017a2e-2788-47e3-b0e8-2c7edcd5c550)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.719 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (32 ms)
+    ✓ 400 when autopilot_execution_id is missing (5 ms)
+    ✓ 401 when worker_id is missing (4 ms)
+    ✓ 401 when worker is NOT in worker_registry (10 ms)
+    ✓ 403 when worker does not hold the claim (5 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (4 ms)
+    ✓ returns failed when status=failed (8 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60069 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (5 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 763 passed, 763 of 764 total
+Tests:       29 skipped, 6 todo, 13907 passed, 13942 total
+Snapshots:   44 passed, 44 total
+Time:        61.91 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

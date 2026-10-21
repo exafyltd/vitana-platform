@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-05141",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05141/plan-sparring.md",
+  "paths": [
+    "services/gateway/src/services/routine-runner/**",
+    "services/gateway/src/routes/routine-audits.ts",
+    "services/gateway/src/routes/ops-health-checks.ts",
+    "services/gateway/src/routes/ops-runtime-health.ts",
+    "services/gateway/src/constants/service-health-registry.ts",
+    "services/gateway/src/services/orchestrator/run-ledger.ts",
+    "services/gateway/src/services/orchestrator/dispatcher.ts",
+    "services/gateway/src/services/orchestrator/delegation-run-store.ts",
+    "services/gateway/src/services/community-autopilot/action-registry.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/specs/loop-catalog-v1.json",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "supabase/migrations/20261013190000_vtid_05141_phase3b_routine_seeds.sql",
+    ".github/workflows/ALERT-*.yml",
+    "routines/*.md",
+    "services/gateway/test/**",
+    "docs/validation/*/staging-tests.json",
+    "docs/autonomy/LOOP-ENGINEERING.md",
+    "docs/CHANGELOG.md",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05141/**"
+  ]
+}

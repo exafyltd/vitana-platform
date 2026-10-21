@@ -1,0 +1,43 @@
+{
+  "vtid": "VTID-05147",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "gateway alive",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "the deployed build serves"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "orb tool dispatcher refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/orb/tool",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); no tool runs. The effective-role clamp behind it is proven by jest"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "tenant-admin route refuses an unauthenticated caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/settings",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "expect_body_contains": "UNAUTHENTICATED",
+      "reason": "requireTenantAdmin (now also requires a permitted admin role) is mounted and answers before any read"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05147-s-m-membership-role-lockdown.test.ts test/vtid-05147-effective-role-permitted.test.ts test/middleware/require-tenant-admin.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the migration pinned + guarded against reopening (SQL harness when Postgres is available), the effective-role clamp on /orb/tool, the permitted-admin requirement in requireTenantAdmin and admin-users"
+    }
+  ]
+}

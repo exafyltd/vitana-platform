@@ -1,0 +1,5 @@
+{"vtid":"VTID-04826","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"calendar reprioritize stays auth-gated","method":"POST","path":"/api/v1/calendar/reprioritize","expect_status":401,"rejected_probe":true},
+{"kind":"existing","ref":"npx jest test/vtid-04826-calendar-pillar-priority.test.ts","cwd":"services/gateway","reason":"Reprioritizing writes calendar_events.priority_score for real members, which a read-only staging probe must not cause. The pillar mapping, the boost and the run (with and without index data) are proven by this suite."}
+]}

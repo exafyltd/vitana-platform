@@ -1,0 +1,17 @@
+Einladung zu Praxis <Nord> & Co auf Vitanaland
+Hallo,
+
+du wurdest eingeladen, dem Team von Praxis <Nord> & Co auf Vitanaland als Fachperson beizutreten.
+
+Melde dich mit dieser E-Mail-Adresse an und öffne den Link, um die Einladung anzunehmen:
+https://x.test/commerce/invites/tok/accept
+
+Der Link ist 7 Tage gültig.
+Wenn du diese Einladung nicht erwartet hast, kannst du diese E-Mail einfach ignorieren.
+true
+https://api.resend.com/emails Bearer k [ 'a@b.c' ]
+{
+  sent: false,
+  status: 'rejected',
+  error: 'Resend 403: domain not verified'
+}

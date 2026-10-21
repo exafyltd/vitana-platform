@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04147",
+  "execution_id": "23fb6c21-0e1c-436d-87d7-49a6a595205c",
+  "finding_id": "2be9cc9b-b5ca-4837-9cc6-dd58a30586d6",
+  "plan_version": 1,
+  "branch": "dev-autopilot/23fb6c21",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/vtid-04147-service-health-aria-live.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T20:56:22.462Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

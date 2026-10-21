@@ -1,0 +1,52 @@
+VTID-04088 — commands log
+
+1. Self-allocated VTID via direct Supabase RPC:
+     SELECT allocate_global_vtid('claude-code', 'gateway', 'command-hub-a11y-region1-live-regions');
+   -> VTID-04088
+   UPDATE vtid_ledger SET title=..., summary=..., status='in_progress',
+   spec_status='approved' WHERE vtid='VTID-04088';
+
+2. Consumed the T10 research audit (background Explore agent report):
+   grep-based sweep of app.js/index.html/orb-widget.js/etc. for missing
+   alt, div-as-button, missing aria-label, missing role, unlabeled
+   inputs, color-only status, missing lang, heading hierarchy, modal
+   focus traps, missing aria-live. Chose region 1 (live regions/status
+   text) as the safest, most contained first pass.
+
+3. grep -n "status-dot\|deploy-status-dot" app.js -> 2 hits. Read both
+   in context: both already have an adjacent text-content span rendering
+   the same status ("Standby" / dep.status) — not color-only, no fix
+   needed. Scoped this region down to the toast container only.
+
+4. Edited services/gateway/src/frontend/command-hub/app.js:
+   renderToastContainer() now sets role="status" and aria-live="polite"
+   on the container, before the state.toasts.forEach loop appends
+   individual toast elements.
+
+5. node --check app.js -> syntax OK.
+   grep -rln "renderToastContainer\|toast-container" services/gateway/test/
+   -> no existing tests reference this function; no brittle-test risk.
+
+6. Wrote services/gateway/test/command-hub/t10-r1-toast-aria-live.test.ts
+   (3 new tests, static-source-check pattern matching this repo's
+   established app.js-testing convention).
+
+7. Bumped index.html's cache-bust on both styles.css and app.js to
+   ?v=20260918-vtid-04088-a11y-toast-live-region.
+
+8. cd services/gateway && npx jest test/command-hub/ --silent
+   -> 10 suites, 162 tests, all passing.
+
+9. cd services/gateway && npx tsc --noEmit -> 0 errors.
+
+10. cd services/gateway && npm run build -> exit 0.
+
+11. Branch created from fresh origin/main:
+    claude/vtid-04088-t10-r1-aria-live
+    git fetch origin main; git log --oneline origin/main -3 matched
+    local main before branching (0be3951, 1af32f3, f8d73c3).
+
+12. Committed and pushed; PR opened with VTID/VALIDATION_PROFILE/marker
+    block per VALIDATOR-CHECK.yml's contract; local
+    scripts/ci/validate-pr-locally.cjs run against the title/body before
+    pushing; subscribed to PR activity.

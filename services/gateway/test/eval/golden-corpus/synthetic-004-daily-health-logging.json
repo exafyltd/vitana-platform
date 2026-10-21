@@ -1,0 +1,37 @@
+{
+  "fixture_id": "synthetic-004-daily-health-logging",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Daily wellness logging — the highest-frequency memory-write voice surface (water/sleep/exercise/meditation).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "I drank two glasses of water just now",
+      "expected_tool": "log_water",
+      "expected_intent": "memory.log_water"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Log that I slept about seven hours last night",
+      "expected_tool": "log_sleep",
+      "expected_intent": "memory.log_sleep"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "I went for a 5k run this morning",
+      "expected_tool": "log_exercise",
+      "expected_intent": "memory.log_exercise"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "Record ten minutes of meditation",
+      "expected_tool": "log_meditation",
+      "expected_intent": "memory.log_meditation"
+    }
+  ]
+}

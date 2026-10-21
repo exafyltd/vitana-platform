@@ -1,0 +1,62 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+FAIL test/frontend/guided-topic-replay-loop.test.ts
+  VTID-03799 guided-topic replay loop
+    one authority decides whether a topic may be resumed
+      ✓ declares _shouldResumeGuidedTopic() (3 ms)
+      ✓ refuses to resume once teaching has ended (1 ms)
+      ✓ still requires an in-flight topic that is not already armed
+    every re-arm site goes through that one authority
+      ✓ all three re-arm sites are guarded by it (1 ms)
+      ✓ no re-arm site still uses the old teaching-blind condition (7 ms)
+    the delivered-audio flag is not coupled to the one-shot auto-close
+      ✓ is set on its own condition, not inside the guidedAutoClose branch (1 ms)
+      ✓ the auto-close branch no longer sets it (1 ms)
+    closing a DELIVERED lesson credits it (the Well Done drawer)
+      ✕ _hide captures a pending completion before clearing the flags (1 ms)
+      ✓ marks teaching ended so the tool call and this path cannot double-fire
+      ✓ does NOT credit a lesson whose audio never played
+      ✓ fires onGuidedTopicTeachingEnd after teardown
+    pre-existing invariants still hold
+      ✓ _endGuidedTopicTeaching still sets its flag before hiding (no double-fire)
+      ✓ _hide still clears every guided flag (1 ms)
+      ✓ a fresh tap still resets teaching-ended (VTID-03781)
+
+  ● VTID-03799 guided-topic replay loop › closing a DELIVERED lesson credits it (the Well Done drawer) › _hide captures a pending completion before clearing the flags
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /if \(_s\._guidedTopicInFlight && _s\._guidedTopicAudioDelivered && !_s\._guidedTopicTeachingEnded\) \{/
+    Received string:  "var _pendingGuidedCompletion = null;
+        if (false && _s._guidedTopicInFlight && _s._guidedTopicAudioDelivered && !_s._guidedTopicTeachingEnded) {
+          _pendingGuidedCompletion = _s._guidedTopicInFlight;
+          _s._guidedTopicTeachingEnded = true;
+          console.log('[VTOrb] _hide: guided lesson ' + _pendingGuidedCompletion +
+            ' was delivered and is being closed — crediting completion (VTID-03799)');
+        }·
+        _s.guidedAutoClose = false; // VTID-03294 (#4): clear any pending guided auto-close
+        _s.guidedTopic = null; // VTID-03675: don't let a never-delivered topic leak into a later, unrelated session
+        _s._guidedTopicInFlight = null; // VTID-03746: same lifecycle — this overlay s"
+
+      107 |       // drawer simply never opens, which is the user-visible half of this bug.
+      108 |       // Caught by mutation C, which this assertion previously let through.
+    > 109 |       expect(block).toMatch(
+          |                     ^
+      110 |         /if \(_s\._guidedTopicInFlight && _s\._guidedTopicAudioDelivered && !_s\._guidedTopicTeachingEnded\) \{/,
+      111 |       );
+      112 |       // capture must happen BEFORE the clearing block, or there is nothing left to credit
+
+      at Object.<anonymous> (test/frontend/guided-topic-replay-loop.test.ts:109:21)
+
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 13 passed, 14 total
+Snapshots:   0 total
+Time:        0.725 s, estimated 1 s
+Ran all test suites matching /test\/frontend\/guided-topic-replay-loop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

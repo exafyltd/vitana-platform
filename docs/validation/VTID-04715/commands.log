@@ -1,0 +1,6 @@
+node --test scripts/ci/staging-verify/lib.test.cjs            # 22 pass, 0 fail
+node --check scripts/ci/staging-verify/run.mjs                # ok
+python3 -c 'yaml.safe_load(...)' STAGING-VERIFY.yml AWS-STAGE-DEPLOY-GATEWAY.yml   # ok
+cd services/gateway && jest <53 suites reading either workflow>                    # 53 suites, 573 tests pass
+node scripts/ci/staging-verify/run.mjs verify --service gateway \
+  --sha a4adbbea580f7389ce00529a675e9a5d59000a1e --repo-root . --out <tmp>   # read-only, staging + prod build-info GETs only

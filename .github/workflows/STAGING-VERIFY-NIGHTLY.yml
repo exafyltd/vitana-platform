@@ -1,0 +1,63 @@
+# STAGING-VERIFY-NIGHTLY — the full staging suite once a day (VTID-04949, plan C2).
+#
+# The per-deploy STAGING-VERIFY runs smoke + the change suites of the commits
+# between production and the deployed commit. This nightly run re-runs EVERY
+# change suite ever merged for each service against whatever staging serves,
+# so a change that breaks an older feature is caught within a day even when no
+# new commit touches it. Read-only like every staging suite (rule 48): it only
+# dispatches STAGING-VERIFY with full=true. The Gate 2 message requires a full
+# run younger than 24 h (staging.verify.* OASIS event with metadata.full=true).
+
+name: STAGING-VERIFY-NIGHTLY
+
+on:
+  schedule:
+    - cron: '17 2 * * *'
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  actions: write
+
+jobs:
+  dispatch:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - service: gateway
+            repo: exafyltd/vitana-platform
+          - service: community-app
+            repo: exafyltd/vitana-v1
+    steps:
+      - name: Checkout runner (vitana-platform main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: runner
+          sparse-checkout: scripts/ci/staging-verify
+
+      - name: Checkout ${{ matrix.service }} history
+        uses: actions/checkout@v4
+        with:
+          repository: ${{ matrix.repo }}
+          token: ${{ matrix.service == 'community-app' && secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          path: target
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Dispatch a full STAGING-VERIFY on the commit staging serves
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          SHA=$(node runner/scripts/ci/staging-verify/run.mjs stamp --service "${{ matrix.service }}" --repo-root target)
+          echo "staging serves ${{ matrix.service }} @ $SHA"
+          gh workflow run STAGING-VERIFY.yml --repo "${{ github.repository }}" --ref main \
+            -f service="${{ matrix.service }}" -f commit_sha="$SHA" -f full=true
+          echo "- ${{ matrix.service }}: full STAGING-VERIFY dispatched @ \`$SHA\`" >> "$GITHUB_STEP_SUMMARY"
