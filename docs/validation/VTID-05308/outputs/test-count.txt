@@ -1,0 +1,4 @@
+﻿AC-2 test objects still present (none deleted): count = 3 (expected: 3)
+  - gateway alive
+  - command-hub index wires the svg-preview and operator-console modules
+  - deployed svg-preview.js contains the SVG sanitizer/renderer
