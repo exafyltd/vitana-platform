@@ -1,7 +1,9 @@
 ---
 lane: pack-intake-db
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-hotmail-202610211408-c407
+branch: kiro/mt-launch/pack-intake-db
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -12,7 +14,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-launch-pack-intake-pgtap.test.ts
-updated: 2026-10-21T13:58Z
+updated: 2026-10-21T16:05Z
 vtid: VTID-05324
 ---
 # pack-intake-db — tenant pack intake + content pipeline tables (repo vitana-platform)
@@ -44,3 +46,13 @@ for service_role.
 
 ### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05324 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T16:05Z · kiro-hotmail-202610211408-c407 · ready → executing
+Claimed (collab-claim/mt-launch/pack-intake-db), driver run wf_2eb625e1fdb2dda6. P1 `tenant_pack_intake` (PK
+`(tenant_id, item_key)`, 13-key checklist + status CHECKs, FK `tenants(tenant_id)`), P2 `tenant_content_pipeline`
+(`unique (tenant_id, locale, key)`, review_state CHECK), both service-role-only RLS with client privileges revoked; P3
+`get_tenant_launch_readiness(uuid)` SECURITY INVOKER, STABLE, `search_path = public, pg_catalog`, EXECUTE service_role
+only, reads only intake + `tenants`. P4 MIGRATION-QUEUE rows 9-10 after WS5 `tenant_content_overrides` + drift
+baseline. P5 `mt-launch-pack-intake-pgtap.test.ts` 17/17 green on head, 17/17 red on base; pgTAP plan, rollback and
+read-only pre/post checks in `docs/validation/VTID-05324/`. No renumber needed (latest on main 20261021140000).
+Nothing applied anywhere. Next: reviewer agent on the PR head.
