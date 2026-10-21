@@ -45,6 +45,9 @@ table.
 - [ ] `services/chat-viewing-presence.ts`: `chatConversationKeyFromData`, batched `viewingRecipients`.
 - [ ] `notifyUser`: chat types + viewing → row written with `push_sent_at` at INSERT, no push, outcome
       `suppressed_viewing`; dedup rule (b). `/push-dispatch`: viewing → `suppressed_viewing`; dedup rule (a).
+- [ ] Same migration: drop and re-add `user_notifications_push_outcome_check` with `suppressed_viewing` and
+      `suppressed_duplicate` (`NOT VALID` then `VALIDATE`, as `20261013180000_vtid_05137_chat_push_coalescing.sql`);
+      `PushOutcome` type extended.
 - [ ] Off switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on); fails open.
 **Acceptance:**
 - Jest: viewing `dm:<sender>` suppresses that DM's push only; another conversation still pushes; group member viewing
@@ -56,6 +59,9 @@ table.
 - Cron: a trigger-style row (`url:'/inbox'`, no `conversation_key`) is keyed via `sender_id`/`message_id`,
   suppressed when viewing; both write orders (trigger row first / gateway row first) → exactly one push, the other
   row `suppressed_duplicate`.
+- The outcome value is asserted as written (the `setNotificationPushOutcome` update receives `suppressed_viewing` /
+  `suppressed_duplicate`), not just the absence of an error; the migration's CHECK list is a superset of the previous
+  one (a test parses both migrations and compares).
 - In-app row always written; email fallback not triggered for `suppressed_viewing`;
   `vtid-05137-chat-push-coalescing.test.ts` and `vtid-04926-chat-group-mentions.test.ts` green unchanged.
 

@@ -108,6 +108,11 @@ rows written without it, in `/push-dispatch` (`scheduled-notifications.ts:1252`)
   expires. `NotifyUserOptions` is unchanged (the decision is internal). Mentions in a viewed group are suppressed too.
 - `/push-dispatch`, for an unpushed chat row: viewing → marked handled with `suppressed_viewing` (the existing
   `markHandled`, :1306-1309).
+- **New outcome values persist.** `user_notifications_push_outcome_check` hard-codes the allowed values (live: the 9
+  of VTID-04962 plus `coalesced`, `20261013180000_vtid_05137_chat_push_coalescing.sql:24`), and `recordPushOutcome`
+  swallows a violation (`notification-service.ts:303`). The lane's migration therefore drops and re-adds that CHECK
+  with `suppressed_viewing` and `suppressed_duplicate` added (`NOT VALID`, then `VALIDATE`, the VTID-05137 pattern),
+  and `PushOutcome` (`notification-service.ts:265`) gains both values.
 - One batched presence read per `notifyUser` call / per cron batch; fails open (read error → push as before); off
   switch `CHAT_PUSH_VIEWING_SUPPRESSION_ENABLED` (default on).
 - Interplay: the coalescer counts only really pushed rows (`wasPushed` excludes `suppressed_*`,
@@ -175,7 +180,8 @@ base.
 1. `api-send-reliability` (P0) — I1, I2, I3. Files: one migration (`client_message_id`, unique partial index,
    `delivered_at`), `routes/chat.ts`, `routes/chat-groups.ts`, `routes/chat-repository.ts`,
    `routes/chat-groups-repository.ts`, `DATABASE_SCHEMA.md`, new test `test/vtid-xxxxx-chat-send-reliability.test.ts`.
-2. `api-viewing-presence` (P1, R13) — I4. Files: one migration (`chat_viewing_presence`, PK `(user_id, device_id)`,
+2. `api-viewing-presence` (P1, R13) — I4. Files: one migration (the `push_outcome` CHECK extended with
+   `suppressed_viewing` and `suppressed_duplicate`; `chat_viewing_presence`, PK `(user_id, device_id)`,
    RLS on with no client policies, index `(user_id, conversation_key, expires_at)`, the caller's expired rows deleted
    on write), new `routes/chat-viewing.ts` mounted from `chat.ts` (`router.use('/viewing', …)`), new
    `services/chat-viewing-presence.ts`, `services/notification-service.ts` (+ `notification-service-repository.ts`),
