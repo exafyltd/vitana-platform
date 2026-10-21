@@ -52,7 +52,16 @@ signal.
   :113-118; purpose comment at :5). Lines 119-137 are the **live** `Report Validation Success` step and
   must stay (its deferred-echo line is :133). So the fix deletes **only** the commented-out step lines
   :113-118 (optionally updating the live echo at :133), never re-enabling it (that would duplicate the
-  real gateway Jest run in `TEST-SUITE.yml:48-61`, ~7.5k tests). (inv-code §1, §5.)
+  real gateway Jest run in `TEST-SUITE.yml:48-61` — ~1,737 suites / ~22,700 tests, see the ground-truth
+  counts below). (inv-code §1, §5.)
+- **Ground-truth test counts (owner, 2026-10-21 — supersede the brief's stale "~7.5k gateway / 4
+  shards").** Gateway Jest: **1,737 suites / ~22,700 tests**; vcaop Jest: **45 suites / ~290**; vcaop-mcp:
+  **7 suites / ~58**; vitana-v1 web Vitest: **444 suites / ~2,840**; vitana-v1 mobile Jest: **61 suites /
+  ~650**. Total ≈ **2,290 suites / ~26,500 tests**. Plus ~**50 Playwright / e2e** spec files and some
+  shell / Python test scripts in vitana-platform that **no required check covers today** — a coverage gap
+  the inventory records and the ci-health lane will surface going forward. TEST-SUITE runs the gateway
+  suite with `--maxWorkers=100%` (one job, not the "4 shards" the brief assumed); the speed lane balances
+  on these real counts, not the stale ones.
 - **The real gateway build+typecheck duplication is between `CICDL-GATEWAY-CI.yml` and
   `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`, not TEST-SUITE/PR-GATE.** CICDL runs the gateway build at
   :94-97 and typecheck at :103-106; `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml:16-21` installs gateway deps
@@ -210,36 +219,39 @@ order. No two lanes edit the same file. Real `depends_on` only.
    autofill behaviour (red on base = current bare `exit 11`).
 
 5. **plan-spar-checks** — `executor: claude`, **protected gate** (`.github/workflows/PLAN-SPAR.yml`).
-   Make PLAN-SPAR round commits visible to the merge step on the plan PR head. The
-   `PLAN_SPAR_PUSH_TOKEN || github.token` fallback already exists (`PLAN-SPAR.yml:61`, push at :116);
-   provisioning the PAT secret is owner config and belongs in Gate 2, and the token path on its own writes
-   no code. A `GITHUB_TOKEN` push does not itself start `pull_request` checks, and neither re-dispatch nor
-   re-run can create them: `gh workflow run`/`dispatches` is not available for `pull_request`-triggered
-   workflows, and `gh api .../actions/runs/{id}/rerun` re-runs the *old* run against the *old* SHA, not the
-   new bot head (R2-F1). The step also cannot post a Checks-API check-run, because `GITHUB_TOKEN` in a
-   `pull_request_target` context is not an installation token with `checks:write`.
-   **So this lane commits to exactly one mechanism — a commit status (not a check run) on the new bot
-   head:** after the round-commit push (`PLAN-SPAR.yml:116`), add one step, guarded by
-   `if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''` (the `GITHUB_TOKEN`-push
-   case; when the PAT secret is present the push already starts checks and this step is skipped), that
-   reads the just-pushed head SHA (`git -C head rev-parse HEAD`) and posts
-   `POST /repos/{owner}/{repo}/statuses/{sha}` via `gh api` with a fixed `context`
-   (`plan-spar/needs-rebase`), `state: pending`, and a `description`/`target_url` pointing at the run.
-   `GITHUB_TOKEN` carries `statuses: write` by default (statuses are not checks), so this is within the
-   token's capability with no owner config. The PM / land step reads this status context on the PR head
-   and, when present and `pending`, runs `gh pr update-branch` (which re-pushes the head under a trigger
-   that *does* start `pull_request` checks) before evaluating merge readiness — the status is the
-   observable signal, not a blocking required check. The land-step read is a non-gate `scripts/ci/**`
-   concern tracked here as part of this lane's acceptance; it does not change the `queue.mjs` subcommand
-   contract. The PAT secret itself stays **owner config → Gate 2** (with the PAT present, the status step
-   never runs and checks start normally). Independent of other lanes. Blocked on an owner instruction to
-   merge (protected gate) — surface for Gate 2.
+   **Producer-only (owner escalation decision 2026-10-21, R3-F2 option B).** Today a `GITHUB_TOKEN` push of
+   a PLAN-SPAR round commit starts no `pull_request` checks; this lane adds the *producer* of a
+   needs-rebase signal and nothing else. Neither re-dispatch nor re-run can start checks on the new head
+   (`gh workflow run`/`dispatches` is unavailable for `pull_request`-triggered workflows; `gh api
+   .../actions/runs/{id}/rerun` re-runs the *old* SHA — R2-F1), and a Checks-API check-run needs
+   `checks:write`, which the `pull_request_target` `GITHUB_TOKEN` lacks. **So the one mechanism is a commit
+   status (not a check run) on the new bot head:** after the round-commit push (`PLAN-SPAR.yml:116`), add
+   one step, guarded by `if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''` (the
+   `GITHUB_TOKEN`-push case; when the PAT secret is present the push already starts checks and this step is
+   skipped), that reads the just-pushed head SHA (`git -C head rev-parse HEAD`) and posts
+   `POST /repos/{owner}/{repo}/statuses/{sha}` via `gh api` with a fixed `context` (`plan-spar/needs-rebase`),
+   `state: pending`, and a `description`/`target_url` pointing at the run.
+   **R3-F1 (blocker) fix — in-lane code, not owner config:** `PLAN-SPAR.yml` has an explicit workflow-level
+   `permissions:` block, and an explicit block sets every unlisted scope to `none` — so `GITHUB_TOKEN`
+   would *not* carry `statuses: write` and the POST would 403. This lane adds `statuses: write` to that
+   block; the proof test asserts the addition.
+   **Consumer deferred (R3-F2 option B):** the PM / land step that reads `plan-spar/needs-rebase` on the PR
+   head and runs `gh pr update-branch` lives in the gateway service
+   (`services/gateway/src/services/project-manager/act.ts`), is **not** a `scripts/ci/**` change, and needs
+   a staging deploy — so it is **outside this plan's "deploys nothing" scope and is deferred to a separate
+   gateway lane with its own staging deploy** (surfaced for Gate 2 alongside the PAT secret). **Until that
+   consumer is built the posted status has no effect and today's behaviour is unchanged by this lane** —
+   this lane is CI-only. The PAT secret itself stays **owner config → Gate 2** (with the PAT present, the
+   status step never runs and checks start normally). Independent of other lanes. Blocked on an owner
+   instruction to merge (protected gate) — surface for Gate 2.
    Files: `.github/workflows/PLAN-SPAR.yml`, `scripts/collab/plan-spar.test.mjs` /
    `scripts/ci/plan-spar-slot/slot.test.mjs`, `docs/validation/<VTID>/**`.
    Test that fails on base: a case in `plan-spar.test.mjs` / `plan-spar-slot/slot.test.mjs` pinning the
-   observable contract — that the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase` commit
-   status on the bot head (asserted against a stubbed `gh api statuses` call / the extracted status-posting
-   helper), red on base because no such status is posted today.
+   **producer** contract only — (a) `PLAN-SPAR.yml`'s `permissions:` block contains `statuses: write`, and
+   (b) the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase` commit status on the bot head
+   (asserted against a stubbed `gh api statuses` call / the extracted status-posting helper); red on base
+   because neither `statuses: write` nor the status post exists today. The test asserts **no** consumer
+   behaviour (the consumer is deferred).
 
 6. **speed-path-filters** — `executor: claude`, **protected gate** (edits `PR-GATE.yml`).
    Add caching to the uneven install steps, add path filters to **non-gate** jobs only, confirm and (if
@@ -288,7 +300,9 @@ order. No two lanes edit the same file. Real `depends_on` only.
 8. **ci-health** — `executor: claude` (new `.github/**` + `scripts/ci/**`; not protected).
    Add a daily CI-health report: a scheduled workflow + a producer script that reports flake rate,
    red-on-main age and per-check median/p90 duration, modelled on `ALERT-*.yml` / `TEST-CATALOG.yml`'s
-   `schedule:`+publish shape. This turns the Phase-1 inventory into a standing signal. Independent.
+   `schedule:`+publish shape. It also surfaces the coverage gap from the ground-truth counts — the ~50
+   Playwright/e2e specs and the shell/Python test scripts that no required check runs today — as a
+   standing signal. This turns the Phase-1 inventory into a recurring one. Independent.
    Files: `.github/workflows/CI-HEALTH.yml`, `scripts/ci/health/report.mjs`,
    `scripts/ci/health/report.test.mjs`, `docs/validation/<VTID>/**`.
    Test that fails on base: `scripts/ci/health/report.test.mjs` (trivially red on base — files do not
@@ -326,7 +340,10 @@ order. No two lanes edit the same file. Real `depends_on` only.
 Write `docs/validation/<plan VTID>/timings.json` (`vitana.plan-timings/v1`). Record the brief's
 before/after numbers for Gate 2: typical gateway-PR and vitana-v1-PR critical path (jobs, order,
 duration, queue time), flake rate, and count/age of red checks on `main`. YAML-only speed lanes carry a
-measured-timings artifact rather than a red→green unit test.
+measured-timings artifact rather than a red→green unit test. Use the ground-truth test counts in the
+Today section (gateway ~1,737 suites / ~22,700 tests; vcaop 45/~290; vcaop-mcp 7/~58; vitana-v1 web
+444/~2,840; mobile 61/~650; ~50 Playwright/e2e specs + shell/Python scripts with no required check),
+not the brief's stale "~7.5k / 4 shards".
 
 ## Risks
 
@@ -351,6 +368,11 @@ measured-timings artifact rather than a red→green unit test.
 
 - No branch-protection change, no `enforce` flip, no repo-secret change — all listed for Gate 2 (owner
   config).
+- **The `plan-spar/needs-rebase` consumer is not built here (R3-F2 option B).** The PM/land read in
+  `services/gateway/src/services/project-manager/act.ts` that calls `gh pr update-branch` is a gateway
+  change needing its own staging deploy, outside this plan's "deploys nothing" scope — deferred to a
+  separate gateway lane and listed for Gate 2 together with the `PLAN_SPAR_PUSH_TOKEN` PAT secret. Lane 5
+  ships the producer (the status post) only; until the consumer exists the status has no effect.
 - `CLAUDE.md` and the protected-gate-list are not edited.
 - RepoWise index is stamped `aa26481` (2026-09-19), stale vs `main`; targeted git reads from
   `origin/main` were used instead (allowed when the index is stale).
@@ -358,7 +380,11 @@ measured-timings artifact rather than a red→green unit test.
   their own (common-rules §5); the plan's Gate 2 is the measured before/after numbers plus the owner-
   config list. No staging run is fabricated for a CI-only change.
 - Sparring round 1 delivered no reviewable findings (partner `evidence_floor_not_met`; see
-  `sparring/responses-1.md`). This revision only re-anchors the one drifted citation
-  (`CICDL-GATEWAY-CI.yml` dead block, now :113-133, re-verified on `origin/main`); no premise or lane
-  changed in substance.
+  `sparring/responses-1.md`). Session 2 ran three rounds: R1-F1..F6, R2-F1, R2-F2 all accepted and fixed;
+  round 3 raised R3-F1 (blocker) and R3-F2 (major), both defects in lane 5's own mechanism, and the spar
+  loop reached its 3-round / 2-session cap and escalated to the owner. The owner accepted both
+  (`sparring/s2-responses-3.md`): R3-F1 adds `statuses: write` to `PLAN-SPAR.yml`; R3-F2 option B narrows
+  lane 5 to producer-only and defers the gateway consumer to Gate 2. The owner also supplied ground-truth
+  test counts that supersede the brief's stale "~7.5k / 4 shards" (folded into Today / speed / ci-health).
+  No other lane changed in substance.
 <!-- plan:end -->

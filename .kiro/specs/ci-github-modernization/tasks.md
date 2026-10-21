@@ -98,30 +98,40 @@ gateway trees (no new PR types bitten).
 <!-- lane: plan-spar-checks -->
 ## Lane: plan-spar-checks
 
-Make PLAN-SPAR round commits start checks on the plan PR head.
+Producer-only (R3-F2 option B): post the `plan-spar/needs-rebase` commit status on the plan PR bot head.
+The posted status has no effect until the consumer is built — today's behaviour is unchanged by this lane.
 
-- [ ] T1 — In `.github/workflows/PLAN-SPAR.yml`, after the round-commit push (:116), add **one** step
+- [ ] T1 — In `.github/workflows/PLAN-SPAR.yml`, add `statuses: write` to the explicit workflow-level
+  `permissions:` block (R3-F1 blocker: an explicit block sets every unlisted scope to `none`, so without
+  this the status POST 403s). This is in-lane code, not owner config.
+- [ ] T2 — In `.github/workflows/PLAN-SPAR.yml`, after the round-commit push (:116/:117), add **one** step
   guarded by `if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''` (the
   `GITHUB_TOKEN`-push case; when the PAT secret is present the push already starts checks and this step is
   skipped). The step reads the pushed head SHA (`git -C head rev-parse HEAD`) and posts a commit status via
   `gh api -X POST repos/{owner}/{repo}/statuses/{sha}` with `context=plan-spar/needs-rebase`,
-  `state=pending`, and a `target_url` to the run. `GITHUB_TOKEN` carries `statuses: write` by default, so
-  no owner config is needed. Do **not** use re-dispatch (`gh workflow run`/`dispatches` is unavailable for
-  `pull_request`-triggered workflows), re-run (`.../runs/{id}/rerun` re-runs the old SHA), or the Checks API
-  (needs `checks:write`, which the `pull_request_target` `GITHUB_TOKEN` lacks).
-- [ ] T2 — In the PM / land step (`scripts/ci/**`, non-gate), read the `plan-spar/needs-rebase` status on
-  the PR head; when present and `pending`, run `gh pr update-branch` before evaluating merge readiness so
-  the re-push starts `pull_request` checks. Do not change any `queue.mjs` subcommand name/shape.
+  `state=pending`, and a `target_url` to the run. Do **not** use re-dispatch (`gh workflow run`/`dispatches`
+  is unavailable for `pull_request`-triggered workflows), re-run (`.../runs/{id}/rerun` re-runs the old
+  SHA), or the Checks API (needs `checks:write`, which the `pull_request_target` `GITHUB_TOKEN` lacks).
 - [ ] T3 — Add a case to `scripts/collab/plan-spar.test.mjs` / `scripts/ci/plan-spar-slot/slot.test.mjs`
-  pinning the observable contract: the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase`
-  status on the bot head (asserted against a stubbed `gh api statuses` call / the extracted status helper).
+  pinning the **producer** contract only: (a) `PLAN-SPAR.yml`'s `permissions:` block contains
+  `statuses: write`, and (b) the empty-`PLAN_SPAR_PUSH_TOKEN` path posts a `plan-spar/needs-rebase` status
+  on the bot head (asserted against a stubbed `gh api statuses` call / the extracted status helper). Do
+  **not** assert any consumer behaviour (no `gh pr update-branch`) — the consumer is deferred.
   Run `node --test scripts/collab/plan-spar.test.mjs scripts/ci/plan-spar-slot/slot.test.mjs` green.
 
-**Acceptance (R2-F1):** the test case is red on base (no such status is posted today) and green on head;
-exactly one dispatch mechanism is used (commit status, not re-run / re-dispatch / Checks API); when the PAT
-secret is present the status step is skipped and checks start normally; no other PLAN-SPAR behaviour
-changes; the PAT secret is listed for Gate 2, not set. Protected gate → merge needs the owner instruction
-naming this plan (surfaced in Gate 2).
+**Consumer deferred (R3-F2 option B):** the PM / land step that reads the status and calls
+`gh pr update-branch` lives in `services/gateway/src/services/project-manager/act.ts` (a gateway change
+needing a staging deploy) and is **NOT** built in this plan — it is deferred to a separate gateway lane
+with its own staging deploy, outside this plan's "deploys nothing" scope (surfaced for Gate 2 with the PAT
+secret). Until it exists the posted status has no effect and today's behaviour is unchanged.
+
+**Acceptance (R2-F1, R3-F1, R3-F2):** the proof test is red on base (no `statuses: write`, no such status
+posted today) and green on head; `PLAN-SPAR.yml` carries `statuses: write`; exactly one producer mechanism
+is used (commit status, not re-run / re-dispatch / Checks API); the test asserts ONLY the producer contract
+(no consumer assertion); when the PAT secret is present the status step is skipped and checks start
+normally; no other PLAN-SPAR behaviour changes; the PAT secret and the deferred consumer lane are listed
+for Gate 2, not built here. Protected gate → merge needs the owner instruction naming this plan (surfaced
+in Gate 2).
 
 <!-- lane: speed-path-filters -->
 ## Lane: speed-path-filters
@@ -133,7 +143,10 @@ Caching, path filters on non-gate jobs, de-dup, shard balance — target ≤ 15 
 - [ ] T2 — Add path filters to **non-gate** jobs only; never path-filter PR-GATE / Lane scope / Collab
   handoff (a required check that never runs stays pending and wedges merges).
 - [ ] T3 — Confirm the gateway Jest shard setup (TEST-SUITE runs `--maxWorkers=100%`, not the "4 shards"
-  the brief assumed) and re-balance only if measured imbalance warrants it.
+  the brief assumed) and re-balance only if measured imbalance warrants it, using the ground-truth counts
+  (gateway ~1,737 suites / ~22,700 tests; vcaop 45/~290; vcaop-mcp 7/~58; vitana-v1 web 444/~2,840; mobile
+  61/~650), not the brief's stale "~7.5k / 4 shards". Note in the measured artifact the ~50 Playwright/e2e
+  specs and the shell/Python test scripts that no required check covers today (coverage gap for ci-health).
 - [ ] T4 — Extend `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` to pin the new
   shard/skip contract; run `node --test` green. Record before/after critical path under
   `docs/validation/<VTID>/`.
@@ -188,6 +201,11 @@ Daily CI-health report: flake rate, red-on-main age, per-check duration.
   `node --test scripts/ci/health/report.test.mjs` green (enforced by UNIT.yml which runs all
   `scripts/**/*.test.*`).
 
+- [ ] T4 — The report surfaces the coverage gap from the ground-truth counts: flag the ~50 Playwright/e2e
+  spec files and the shell/Python test scripts in vitana-platform that no required check runs today, so the
+  gap is a standing signal rather than a one-off inventory note.
+
 **Acceptance:** the report script and test exist; the test is red on base (files absent) and green on
 head; the workflow is scheduled and does not run against production (GitHub reads only); output reports
-flake rate, red-on-main age and per-check duration.
+flake rate, red-on-main age and per-check duration, and the uncovered-test coverage gap (Playwright/e2e +
+shell/Python scripts with no required check).
