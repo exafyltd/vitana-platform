@@ -2,9 +2,11 @@
 slug: i18n-audit-nightly-off
 author: kiro
 executor: claude
-next_actor: claude
-state: drafted
-updated: 2026-10-21T08:40Z
+next_actor: kiro
+state: approved
+updated: 2026-10-21T08:48Z
+sparring_record: .kiro/specs/i18n-audit-nightly-off/sparring/verdict.md
+vtids: [VTID-05284]
 ---
 # Handoff — i18n-audit-nightly-off
 The nightly i18n audit runs on an out-of-quota Gemini key, shows green anyway, never reaches `main` and leaves 9
@@ -26,3 +28,6 @@ vitana-platform for the lane file.
 All three round-1 findings accepted (`sparring/responses-1.md`): draft exafyltd/vitana-v1#1463 closed unmerged
 (code follows the VTID); the script's own default provider and the dead `pull-requests: write` permission are added
 to the plan. The lane file is unchanged (only its claim holder edits it): the executor adds scripts/i18n-audit-llm.mjs to paths when it moves the lane to executing.
+
+### 2026-10-21T08:48Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
