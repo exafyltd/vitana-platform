@@ -1,0 +1,23 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-launch/lanes/pack-intake-admin.md (and tenant-owner-analytics.md, support-landing.md)",
+      "issue": "Lane paths list a placeholder docs/validation/VTID-mt-launch-<lane>/** entry, which deviates from the BATCH-BRIEF instruction to omit docs/validation from paths. Harmless: queue.mjs scope-check own() at queue.mjs:464 auto-allows docs/validation/<fm.vtid>/ once the real VTID is set, and the convention is applied uniformly across all 14 sibling specs.",
+      "fix": "Optional: drop the docs/validation/... path line and rely on the body note plus the scope-check auto-allow; or keep it as a harmless over-declaration."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-launch/lanes/pack-intake-admin.md and tenant-owner-analytics.md",
+      "issue": "Both lanes declare services/gateway/src/index.ts in paths (each mounts its own router). Non-blocking: tenant-owner-analytics depends_on pack-intake-admin so they merge sequentially and each adds only its own mount line.",
+      "fix": "Optional: note in both lane bodies that each appends only its single router-registration line to index.ts to minimise conflict, or route mounts through a per-lane sub-index."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-launch/plan.md and handoff.md",
+      "issue": "PACK_FIELDS cited as admin-tenants.ts:384; the array declaration is actually at :383. Immaterial; field list and surrounding readiness refs are correct.",
+      "fix": "Optional: change :384 to :383."
+    }
+  ]
+}

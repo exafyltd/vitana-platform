@@ -7,10 +7,13 @@
  * next push starts the next round.
  *
  *   node scripts/collab/plan-spar.mjs --dir <PR head checkout> --base-sha <sha> --repo exafyltd/vitana-platform \
- *        --changed <file with changed paths> [--summary <file>] [--extra-ref-vitana-v1 <vitana-v1 commit sha>]
- *   --extra-ref-vitana-v1 (optional): a 40-hex vitana-v1 commit; forwarded as extra_refs so the partner can
- *     read exafyltd/vitana-v1 (native plans premise on apps/mobile/** there). Omitted/invalid ⇒ unchanged.
- *   env: GATEWAY_URL, GATEWAY_SERVICE_TOKEN, PLAN_SPAR_ALLOCATE ("true" to allocate VTIDs after policy approval)
+ *        --changed <file with changed paths> [--summary <file>]
+ *   A plan that spans both repos declares a companion ref in handoff.md front matter under `spar_refs:`
+ *     (`- exafyltd/vitana-v1: <branch|tag|40-hex-sha>`). plan-spar.mjs resolves it to a commit SHA (branch/tag
+ *     via the GitHub API using GITHUB_TOKEN; a 40-hex SHA verbatim with no call) and forwards it as
+ *     extra_refs so the partner can read exafyltd/vitana-v1. No declaration ⇒ byte-identical to today.
+ *   env: GATEWAY_URL, GATEWAY_SERVICE_TOKEN, PLAN_SPAR_ALLOCATE ("true" to allocate VTIDs after policy approval),
+ *        GITHUB_TOKEN (only used to resolve a declared branch/tag companion ref)
  *
  * Files under `.kiro/specs/<slug>/`:
  *   plan.md                      the plan; the text between <!-- plan:begin --> and <!-- plan:end --> is sparred
@@ -31,6 +34,10 @@ import { parseFrontMatter } from './queue.mjs';
 
 export const POLICY = 'converged-auto-v1';
 export const MAX_SESSIONS = 2;
+// Source of truth: services/gateway/src/services/plan-sparring/github-tools.ts:21. The gateway re-validates every
+// extra_refs key against this same list (plan-sparring-service.ts), so a drift here fails loudly server-side — it
+// cannot silently spar the wrong repo. Kept as a local const to avoid importing the gateway TypeScript into this script.
+export const PLAN_SPARRING_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'];
 // Partner-side failures (not a plan problem): the plan goes to Claude, never parked. Only the gateway's own
 // RETRYABLE_REASONS (plan-sparring-service.ts) are re-run automatically; anything else waits for Claude Code.
 const INFRA_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded', 'partner_output_invalid'];
@@ -39,6 +46,47 @@ const POLL_MS = 20_000;
 const WAIT_MS = 25 * 60_000;
 
 class Usage extends Error {}
+
+const SHA40 = /^[0-9a-f]{40}$/i;
+
+/**
+ * Companion repo refs a plan declares in handoff.md front matter under `spar_refs:`, as [[repo, branchOrSha], ...].
+ * parseFrontMatter (queue.mjs:102-121) yields a block list as an array of RAW STRINGS and does NOT strip inline
+ * "#" comments from list items (the strip at queue.mjs:114 runs only on `key: value` scalars; a list item goes
+ * through clean() at queue.mjs:111). So each entry arrives verbatim as a "<repo>: <ref>" string. The anchored
+ * regex rejects any trailing content (an inline comment, a second token) as malformed rather than silently
+ * truncating the ref — fail-loud, since a dropped "# note" on a resolved branch would be worse than a clear error.
+ */
+export function parseSparRefs(fm) {
+  const raw = fm?.spar_refs;
+  if (raw === undefined || raw === null) return []; // FR4: nothing declared → nothing forwarded
+  const entries = Array.isArray(raw) ? raw : [raw];
+  const out = [];
+  for (const e of entries) {
+    const m = /^\s*([^:\s]+)\s*:\s*(\S+)\s*$/.exec(String(e));
+    const repo = m?.[1];
+    const ref = m?.[2];
+    if (!repo || !ref) throw new Usage(`spar_refs entry is not "<repo>: <ref>": ${JSON.stringify(e)}`);
+    out.push([repo.trim(), ref.trim()]);
+  }
+  return out;
+}
+
+/**
+ * Resolve a companion ref to a 40-hex commit SHA. A 40-hex ref is returned verbatim with no API call (AC4);
+ * anything else (a branch or tag) is resolved via the GitHub commits API using the token already in PLAN-SPAR.
+ * fetchImpl is a test-only injection point; main()/step() pass only the token so production uses the global fetch.
+ */
+export async function resolveRef(repo, ref, { token, fetchImpl = fetch } = {}) {
+  if (SHA40.test(ref)) return ref.toLowerCase(); // AC4: SHA → no network
+  const res = await fetchImpl(`https://api.github.com/repos/${repo}/commits/${encodeURIComponent(ref)}`, {
+    headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github+json', 'User-Agent': 'plan-spar' },
+  });
+  if (res.status !== 200) throw new Error(`resolve ${repo}@${ref}: HTTP ${res.status}`);
+  const sha = (await res.json())?.sha;
+  if (!SHA40.test(String(sha))) throw new Error(`resolve ${repo}@${ref}: no commit sha in response`);
+  return String(sha).toLowerCase();
+}
 
 /** The one spec a plan PR is about: `.kiro/specs/<slug>/plan.md` or a responses file changed. */
 export function detectSlug(changedPaths) {
@@ -221,7 +269,7 @@ export async function allocateLanes({ spec, slug, session, client, write, log, t
  * One step for one plan. Returns { action, wrote: [paths] }. `client` is gatewayClient(); `env` carries
  * PLAN_SPAR_ALLOCATE. Reads and writes only below `<dir>/.kiro/specs/<slug>/`.
  */
-export async function step({ dir, slug, baseSha, repo, client, allocate = false, extraRefs = null, now = Date.now }) {
+export async function step({ dir, slug, baseSha, repo, client, allocate = false, token, fetchImpl, now = Date.now }) {
   const spec = path.join(dir, '.kiro/specs', slug);
   const rel = (p) => path.relative(dir, p);
   const planPath = path.join(spec, 'plan.md');
@@ -229,6 +277,20 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
   const planText = readFileSync(planPath, 'utf8');
   if (!planText.includes('<!-- plan:begin -->') || !planText.includes('<!-- plan:end -->')) throw new Usage('plan.md needs <!-- plan:begin --> … <!-- plan:end -->');
   const changeClass = parseFrontMatter(planText)?.change_class || 'standard';
+
+  // Companion refs for a plan that spans repos (FR1–FR5). Computed ONCE, before the create/retry/replan branch,
+  // so a create, a retry and a replan all pin the same resolved companion ref. Absent → extraRefs stays
+  // undefined and the conditional spread below contributes nothing, so a single-repo plan's create body is
+  // byte-identical to today (FR4). plan_text is never touched — companion refs live in handoff.md, outside the
+  // hashed plan block — so dedup/replan detection is unaffected.
+  const handoffForRefs = path.join(spec, 'handoff.md');
+  const declared = existsSync(handoffForRefs) ? parseSparRefs(parseFrontMatter(readFileSync(handoffForRefs, 'utf8'))) : [];
+  let extraRefs;
+  for (const [r, ref] of declared) {
+    if (!PLAN_SPARRING_REPOS.includes(r)) throw new Usage(`spar_refs: ${r} is not an allowed sparring repo`); // FR5
+    if (r === repo) throw new Usage(`spar_refs: ${r} is the plan's own repo; it is pinned by --base-sha`);
+    (extraRefs ??= {})[r] = await resolveRef(r, ref, { token, fetchImpl }); // FR2/FR3
+  }
   const sdir = path.join(spec, 'sparring');
   mkdirSync(sdir, { recursive: true });
   const statePath = path.join(sdir, 'state.json');
@@ -249,12 +311,12 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
     if (retryInfra) state.sessions.pop();
     session = await client.create({
       plan_text: planText, producer: `ci-plan-spar.${slug}`, change_class: changeClass, base_ref: baseSha, repo, approval_policy: POLICY,
-      // VTID-05215/R1-F1: native plans premise on code in exafyltd/vitana-v1, which the base-repo
-      // (vitana-platform) session cannot read. Pin a vitana-v1 ref so the partner's read_file/search_code
-      // tools can verify those file:line claims. Only sent when a ref was resolved (platform-only plans
-      // leave extraRefs null, so their sessions are byte-for-byte unchanged). The gateway validates each
-      // key against PLAN_SPARRING_REPOS and refuses an unpinned repo.
-      ...(extraRefs && Object.keys(extraRefs).length ? { extra_refs: extraRefs } : {}),
+      // FR4: when no spar_refs is declared, extraRefs is undefined and this spread contributes nothing — the
+      // create body is byte-identical, key-for-key, to the 6-key body every single-repo plan sends today. When a
+      // companion ref IS declared (a cross-repo plan), it forwards extra_refs = { 'exafyltd/vitana-v1': <sha> }
+      // so the partner's read_file/list_dir tools can verify the frontend half. The gateway re-validates each
+      // key against PLAN_SPARRING_REPOS and the value against SHA_RE, so it cannot pin an unallowed repo.
+      ...(extraRefs ? { extra_refs: extraRefs } : {}),
     });
     state.sessions.push({ id: session.id, submitted: [], plan_text_sha: sha(planText) });
   } else if (cur.verdict === 'in_progress') {
@@ -377,12 +439,11 @@ async function main(argv) {
   const { GATEWAY_URL, GATEWAY_SERVICE_TOKEN } = process.env;
   if (!GATEWAY_URL || !GATEWAY_SERVICE_TOKEN) { say('❌ **plan-spar** — GATEWAY_URL / GATEWAY_SERVICE_TOKEN not configured'); return 1; }
   const client = gatewayClient({ baseUrl: GATEWAY_URL.replace(/\/$/, ''), token: GATEWAY_SERVICE_TOKEN });
-  // VTID-05215/R1-F1: a resolved vitana-v1 commit SHA (from PLAN-SPAR.yml) lets the partner read
-  // exafyltd/vitana-v1 for native plans. Optional and validated: only a 40-hex SHA is forwarded, and only
-  // under the exafyltd/vitana-v1 key, so a missing/garbage value simply leaves platform-only behaviour.
-  const v1Sha = (a['extra-ref-vitana-v1'] || '').trim();
-  const extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : null;
-  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client, allocate: process.env.PLAN_SPAR_ALLOCATE === 'true', extraRefs });
+  // A companion vitana-v1 ref is declared in handoff.md front matter (spar_refs:) and resolved inside step().
+  // main() forwards ONLY the GitHub token — never a fetchImpl — so production always resolves via the global
+  // fetch. GITHUB_TOKEN is unused for a single-repo plan (no spar_refs ⇒ no resolveRef call).
+  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client,
+    allocate: process.env.PLAN_SPAR_ALLOCATE === 'true', token: process.env.GITHUB_TOKEN });
   say(`✅ **plan-spar** — ${slug}: ${r.action}${r.verdict ? ` (verdict ${r.verdict})` : ''}; wrote ${r.wrote.length} file(s)`);
   // VTID-05273: a failed allocation exits 0 so the workflow commits the VTIDs already written; the next run retries.
   if (r.failed) say(`⚠️ **plan-spar** — VTID allocation pending for lane ${r.failed.lane}: ${r.failed.error}`);

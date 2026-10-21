@@ -5,20 +5,23 @@ import assert from 'node:assert/strict';
 import { mkdtempSync, mkdirSync, writeFileSync, readFileSync, existsSync, rmSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
-import { detectSlug, parseResponses, setFrontMatter, step, gatewayClient, POLICY } from './plan-spar.mjs';
+import { detectSlug, parseResponses, setFrontMatter, step, gatewayClient, POLICY, parseSparRefs, resolveRef } from './plan-spar.mjs';
 import { parseFrontMatter } from './queue.mjs';
 
 const PLAN = (v = 1) => `---\nchange_class: standard\n---\n# Plan\n<!-- plan:begin -->\nDo the thing v${v}.\n<!-- plan:end -->\n`;
 const HANDOFF = '---\nslug: cards\nauthor: kiro\nexecutor: kiro\nnext_actor: claude\nstate: drafted\nupdated: 2026-10-15T10:00Z\n---\n## Log\n';
+// A handoff.md that declares one companion spar_refs entry (repo: branch-or-sha).
+const HANDOFF_WITH_REF = (ref) =>
+  `---\nslug: cards\nauthor: kiro\nexecutor: kiro\nnext_actor: claude\nstate: drafted\nspar_refs:\n  - exafyltd/vitana-v1: ${ref}\nupdated: 2026-10-15T10:00Z\n---\n## Log\n`;
 const LANE = (id) => `---\nlane: ${id}\nstate: ready\nnext_actor: kiro\nupdated: 2026-10-15T10:00Z\n---\n## Log\n`;
 const SHA = 'a'.repeat(40);
 
-function spec() {
+function spec(handoff = HANDOFF) {
   const dir = mkdtempSync(path.join(tmpdir(), 'plan-spar-'));
   const s = path.join(dir, '.kiro/specs/cards');
   mkdirSync(path.join(s, 'lanes'), { recursive: true });
   writeFileSync(path.join(s, 'plan.md'), PLAN());
-  writeFileSync(path.join(s, 'handoff.md'), HANDOFF);
+  writeFileSync(path.join(s, 'handoff.md'), handoff);
   writeFileSync(path.join(s, 'lanes/a.md'), LANE('a'));
   writeFileSync(path.join(s, 'lanes/b.md'), LANE('b'));
   return { dir, s, done: () => rmSync(dir, { recursive: true, force: true }) };
@@ -407,30 +410,143 @@ test('allocation off: a converged plan with a late lane is not retried and still
   } finally { f.done(); }
 });
 
-test('R1-F1: extraRefs is forwarded to create as extra_refs (and omitted when null)', async () => {
+test('spar_refs: a declared 40-hex SHA is forwarded as extra_refs with no GitHub API call (AC2, AC4)', async () => {
   const V1 = 'b'.repeat(40);
+  const f = spec(HANDOFF_WITH_REF(V1));
+  try {
+    const c = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+    let fetched = 0;
+    const fetchImpl = async () => { fetched++; return { status: 200, json: async () => ({ sha: 'x' }) }; };
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok', fetchImpl });
+    const create = c.calls.find((x) => x[0] === 'create')[1];
+    assert.deepEqual(create.extra_refs, { 'exafyltd/vitana-v1': V1 });
+    assert.equal(fetched, 0, 'a 40-hex SHA must not trigger a GitHub API call');
+  } finally { f.done(); }
+});
 
-  // With a vitana-v1 ref: create carries extra_refs keyed by the repo.
-  const f1 = spec();
-  const c1 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
-  await step({ dir: f1.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c1, extraRefs: { 'exafyltd/vitana-v1': V1 } });
-  const create1 = c1.calls.find((c) => c[0] === 'create')[1];
-  assert.deepEqual(create1.extra_refs, { 'exafyltd/vitana-v1': V1 });
-  f1.done();
+test('spar_refs: a declared branch is resolved to a SHA via the GitHub API and forwarded (AC3)', async () => {
+  const RESOLVED = 'c'.repeat(40);
+  const f = spec(HANDOFF_WITH_REF('claude/cards/impl'));
+  try {
+    const c = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+    const seen = [];
+    const fetchImpl = async (url, opts) => { seen.push({ url, opts }); return { status: 200, json: async () => ({ sha: RESOLVED }) }; };
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok', fetchImpl });
+    const create = c.calls.find((x) => x[0] === 'create')[1];
+    assert.deepEqual(create.extra_refs, { 'exafyltd/vitana-v1': RESOLVED });
+    assert.equal(seen.length, 1);
+    assert.equal(seen[0].url, 'https://api.github.com/repos/exafyltd/vitana-v1/commits/claude%2Fcards%2Fimpl');
+    assert.equal(seen[0].opts.headers.Authorization, 'Bearer tok');
+  } finally { f.done(); }
+});
 
-  // Without a ref (platform-only plan): no extra_refs key at all — behaviour unchanged.
-  const f2 = spec();
-  const c2 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
-  await step({ dir: f2.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c2 });
-  const create2 = c2.calls.find((c) => c[0] === 'create')[1];
-  assert.ok(!('extra_refs' in create2));
-  f2.done();
+test('spar_refs: absent → the create body is byte-identical to the current 6-key body, no extra_refs (AC1, AC6)', async () => {
+  const f = spec(); // plain HANDOFF, no spar_refs
+  try {
+    const c = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+    let fetched = 0;
+    const fetchImpl = async () => { fetched++; return { status: 200, json: async () => ({ sha: 'x' }) }; };
+    const planText = readFileSync(path.join(f.s, 'plan.md'), 'utf8');
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok', fetchImpl });
+    const create = c.calls.find((x) => x[0] === 'create')[1];
+    assert.ok(!('extra_refs' in create), 'extra_refs must be ABSENT, not an empty object');
+    assert.deepEqual(create, {
+      plan_text: planText, producer: 'ci-plan-spar.cards', change_class: 'standard', base_ref: SHA,
+      repo: 'exafyltd/vitana-platform', approval_policy: POLICY,
+    });
+    assert.deepEqual(Object.keys(create), ['plan_text', 'producer', 'change_class', 'base_ref', 'repo', 'approval_policy']);
+    assert.equal(fetched, 0, 'no spar_refs ⇒ no GitHub API call at all');
+  } finally { f.done(); }
+});
 
-  // Empty object is treated as "none" (never sends an empty extra_refs).
-  const f3 = spec();
-  const c3 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
-  await step({ dir: f3.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c3, extraRefs: {} });
-  const create3 = c3.calls.find((c) => c[0] === 'create')[1];
-  assert.ok(!('extra_refs' in create3));
-  f3.done();
+test('spar_refs: an inline-commented or multi-token entry fails loud rather than silently truncating (AC5)', async () => {
+  // parseFrontMatter does not strip a trailing "# note" from a block-list item, so parseSparRefs must reject it.
+  const f1 = spec(HANDOFF_WITH_REF('my-branch # note'));
+  try {
+    const c = fakeClient([]);
+    await assert.rejects(
+      step({ dir: f1.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok', fetchImpl: async () => { throw new Error('must not fetch'); } }),
+      /spar_refs entry is not/,
+    );
+    assert.ok(!c.calls.some((x) => x[0] === 'create'), 'a malformed ref must not reach create()');
+  } finally { f1.done(); }
+  // A multi-token value with no "#" is rejected the same way.
+  const f2 = spec(HANDOFF_WITH_REF('a b'));
+  try {
+    const c = fakeClient([]);
+    await assert.rejects(step({ dir: f2.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok' }), /spar_refs entry is not/);
+  } finally { f2.done(); }
+});
+
+test('spar_refs: a disallowed repo and the plan\'s own repo both fail loud (AC5, FR5)', async () => {
+  const bad = (ref) => `---\nslug: cards\nauthor: kiro\nexecutor: kiro\nnext_actor: claude\nstate: drafted\nspar_refs:\n  - ${ref}\nupdated: 2026-10-15T10:00Z\n---\n## Log\n`;
+  const f1 = spec(bad('exafyltd/other-repo: ' + 'd'.repeat(40)));
+  try {
+    const c = fakeClient([]);
+    await assert.rejects(step({ dir: f1.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok' }), /not an allowed sparring repo/);
+    assert.ok(!c.calls.some((x) => x[0] === 'create'));
+  } finally { f1.done(); }
+  // Declaring the plan's own repo is rejected (it is already pinned by --base-sha).
+  const f2 = spec(bad('exafyltd/vitana-platform: ' + 'e'.repeat(40)));
+  try {
+    const c = fakeClient([]);
+    await assert.rejects(step({ dir: f2.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok' }), /plan's own repo/);
+  } finally { f2.done(); }
+});
+
+test('spar_refs: a resolve failure (non-200) is fatal and nothing is sent to create (AC5)', async () => {
+  const f = spec(HANDOFF_WITH_REF('no-such-branch'));
+  try {
+    const c = fakeClient([]);
+    const fetchImpl = async () => ({ status: 404, json: async () => ({}) });
+    await assert.rejects(
+      step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok', fetchImpl }),
+      /HTTP 404/,
+    );
+    assert.ok(!c.calls.some((x) => x[0] === 'create'));
+  } finally { f.done(); }
+});
+
+test('spar_refs: a re-plan reuses the same resolved companion ref on the second create (round reuse)', async () => {
+  const V1 = 'f'.repeat(40);
+  const f = spec(HANDOFF_WITH_REF(V1));
+  try {
+    const esc = (id) => sess(id, [[finding('R1-F1')], [finding('R2-F1')], [finding('R3-F1')]], 'escalated', { escalation_reasons: ['round_cap_reached'] });
+    const c = fakeClient([esc('S1'), esc('S2')]);
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok' });
+    writeFileSync(path.join(f.s, 'plan.md'), PLAN(3)); // change the plan so a re-plan session is created
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c, token: 'tok' });
+    const creates = c.calls.filter((x) => x[0] === 'create').map((x) => x[1]);
+    assert.equal(creates.length, 2);
+    assert.deepEqual(creates[1].extra_refs, { 'exafyltd/vitana-v1': V1 }, 'the re-plan pins the same companion ref');
+  } finally { f.done(); }
+});
+
+test('parseSparRefs: parses entries, defaults to [] when absent, and rejects malformed entries', () => {
+  assert.deepEqual(parseSparRefs({}), []);
+  assert.deepEqual(parseSparRefs({ spar_refs: undefined }), []);
+  assert.deepEqual(parseSparRefs(null), []);
+  assert.deepEqual(parseSparRefs({ spar_refs: ['exafyltd/vitana-v1: main'] }), [['exafyltd/vitana-v1', 'main']]);
+  // parseFrontMatter yields a single-element list as an array; a lone string is tolerated too.
+  assert.deepEqual(parseSparRefs({ spar_refs: 'exafyltd/vitana-v1: ' + 'a'.repeat(40) }), [['exafyltd/vitana-v1', 'a'.repeat(40)]]);
+  assert.throws(() => parseSparRefs({ spar_refs: ['exafyltd/vitana-v1: my-branch # note'] }), /spar_refs entry is not/);
+  assert.throws(() => parseSparRefs({ spar_refs: ['exafyltd/vitana-v1: a b'] }), /spar_refs entry is not/);
+  assert.throws(() => parseSparRefs({ spar_refs: ['no-colon-here'] }), /spar_refs entry is not/);
+});
+
+test('resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch resolves via the API', async () => {
+  // 40-hex in → returned lowercased, no network.
+  let called = 0;
+  const noFetch = async () => { called++; throw new Error('must not fetch'); };
+  assert.equal(await resolveRef('exafyltd/vitana-v1', 'A'.repeat(40), { token: 't', fetchImpl: noFetch }), 'a'.repeat(40));
+  assert.equal(called, 0);
+  // Branch → 200 with .sha → that sha (lowercased).
+  const ok = async () => ({ status: 200, json: async () => ({ sha: 'B'.repeat(40) }) });
+  assert.equal(await resolveRef('exafyltd/vitana-v1', 'main', { token: 't', fetchImpl: ok }), 'b'.repeat(40));
+  // 200 but no sha → throws.
+  const noSha = async () => ({ status: 200, json: async () => ({}) });
+  await assert.rejects(resolveRef('exafyltd/vitana-v1', 'main', { token: 't', fetchImpl: noSha }), /no commit sha/);
+  // Non-200 → throws.
+  const bad = async () => ({ status: 500, json: async () => ({}) });
+  await assert.rejects(resolveRef('exafyltd/vitana-v1', 'main', { token: 't', fetchImpl: bad }), /HTTP 500/);
 });
