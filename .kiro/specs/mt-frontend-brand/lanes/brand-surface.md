@@ -1,6 +1,7 @@
 ---
 lane: brand-surface
-state: ready
+state: parked
+parked_from: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -19,8 +20,9 @@ paths:
   - src/i18n/de/tenantBrand.json
   - src/i18n/en/tenantBrand.json
   - docs/SCREEN_INVENTORY.md
-updated: 2026-10-19T20:32Z
+updated: 2026-10-21T21:10Z
 vtid: VTID-05242
+pr: https://github.com/exafyltd/vitana-v1/pull/1485
 ---
 # brand-surface — member-facing brand constants tenant-driven (repo vitana-v1)
 
@@ -70,3 +72,11 @@ State unchanged (`ready`).
 
 ### 2026-10-19T20:32Z · ci-plan-spar · ready (VTID allocated)
 VTID-05242 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T21:05Z · kiro-hotmail-202610212103-6fc9 · review
+review: changes
+head: 7a8b2ab74654b197fe86b866c40041d2ff3440b5
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-v1/pull/1485
+Findings: blocking: (1) Lane scope fails: `src/i18n/en/screens.json` and `i18n-source-stamps/en.json` are outside the lane paths. (2) B1 (CommerceJoin slug) is not implemented; a deferral needs a plan or paths change. (3) B7 coverage is incomplete. Non-blocking: local full-vitest failures are documented and Linux CI is green; mobile jobs were skipped; the App.tsx, AuthGuard, i18n and RTL lines were not individually verified.
+### 2026-10-21T21:10Z · kiro-hotmail-202610211102-7ed9 · ready → parked
+Parked for re-plan (driver LAND, re-review round 1). (1) Lane scope cannot go green inside the paths: the out-of-scope files come from the I18N-PROPAGATE bot commit `e7e62ca89`, which re-runs on every push because B6 touches `src/i18n/de/**`. Its collect job will also write `src/i18n/<every locale>/**` (run 39662909601). (2) B1 needs `src/pages/CommerceJoin.oauth-first.test.ts:29` and `CommerceJoin.routing.test.ts:55`, which pin `tenant_slug: 'maxina'` (the comment there: "Maxina is the only tenant this portal serves"). Neither file is in the paths. (3) B7's mount, AuthGuard and voucher wiring is already asserted in `useTenantMeta.test.ts:177-201`; only the signup assertion is missing, and it depends on B1. Recommended: amend `plan(mt-frontend-brand)`. Widen paths to the I18N-PROPAGATE outputs (or exempt the bot in scope-check) and to the two CommerceJoin tests, or drop B1 if Commerce is Maxina-only on purpose. Then rebuild B1 and its signup test and re-review. Next actor: kiro, exceptions seat `exafyltd` (CLAUDE_AVAILABLE=false). Full stop message: driver state `.agents/tasks/mt-frontend-brand/brand-surface-rereview/park.md`.
