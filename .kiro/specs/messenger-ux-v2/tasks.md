@@ -23,7 +23,8 @@ table.
 - Jest: same `client_message_id` twice → one insert, second response 200 `duplicate:true`, `notifyUser` called once;
   a race (unique violation `23505` on insert) is mapped to the duplicate response, not a 500.
 - Reply target in another DM pair / another group / unknown → 400 `invalid_reply_target`; valid → `metadata.reply_to`.
-- `/delivered` with ids of messages received by someone else updates 0 rows; > 200 ids → 400.
+- `/delivered` with ids of messages received by someone else updates 0 rows; > 200 ids → 400; `/delivered` and the
+  bubble never apply to group messages.
 - `around` on a message of another conversation → 404; result ascending with `has_older`/`has_newer`.
 - Requests without the new fields behave exactly as before (existing chat tests unchanged and green).
 
@@ -42,7 +43,8 @@ table.
 - Jest: viewing `dm:<sender>` suppresses that DM's push only; a push for another conversation still goes out; group
   key likewise; expired row (> 45 s) does not suppress; two devices, one viewing → suppressed; `active:false` → pushed.
 - In-app row still written for a suppressed push; outcome recorded.
-- `vtid-05137-chat-push-coalescing.test.ts` green unchanged; cron path covered by a test.
+- `vtid-05137-chat-push-coalescing.test.ts` green unchanged; cron path: a trigger-style row (no `conversation_key`) is
+  keyed via its `message_id`, suppressed when viewing, pushed otherwise; exactly one push per DM across both paths.
 
 <!-- lane: api-message-search -->
 ## Lane `api-message-search` — authorised message search (vitana-platform)
@@ -53,7 +55,7 @@ table.
 **Acceptance:**
 - Jest authorization: user C never sees an A↔B DM; a non-member never sees a group's messages; another tenant never;
   `scope=group:<id>` for a non-member → 403.
-- `q` < 2 chars → 400; LIKE wildcards in `q` are escaped (a `%` query matches a literal `%`).
+- `q` < 3 chars → 400; LIKE wildcards in `q` are escaped (a `%` query matches a literal `%`).
 - Type filter `image` returns only messages whose attachments include an image mime type.
 
 <!-- lane: api-shared-content -->
@@ -78,7 +80,9 @@ table.
 **Acceptance:**
 - Vitest: network error → bubble Failed with the text kept, composer cleared; Retry posts the same
   `client_message_id`; a duplicate response reconciles to one row; two quick sends keep their order; realtime echo
-  of the sender's own message does not create a second row; reconnect flushes once.
+  of the sender's own message does not create a second row; reconnect flushes once; after a simulated reload the
+  persisted outbox re-posts a pending item with its original id and shows a failed one with Retry; user A's outbox is
+  never loaded for user B; a group message never shows Delivered/Read.
 - Existing `MessageInput.*` suites green with `MessageInput.tsx` unchanged.
 
 <!-- lane: ui-scroll-anchoring -->

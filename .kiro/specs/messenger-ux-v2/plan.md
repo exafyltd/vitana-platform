@@ -67,14 +67,17 @@ which the `/push-dispatch` cron (`routes/scheduled-notifications.ts:1252`, `fetc
 `client_message_id` (UUID v4) and `reply_to_message_id` (UUID). New nullable column `chat_messages.client_message_id
 uuid` with partial unique index `(sender_id, client_message_id) WHERE client_message_id IS NOT NULL`. A repeat with the
 same pair returns `200 {ok:true, data:<existing row>, duplicate:true}` and sends no second push; first insert stays
-`201`. `reply_to_message_id` must be a message of the same conversation (same DM pair or same group) visible to the
+`201`. Concurrent duplicates: the insert's unique violation (SQLSTATE `23505` on that index) is caught, the existing row
+re-fetched by `(sender_id, client_message_id)` and returned as the duplicate response — never a 500. `reply_to_message_id` must be a message of the same conversation (same DM pair or same group) visible to the
 sender, else `400 invalid_reply_target`; stored as `metadata.reply_to = {message_id}` (no copied content, so an edit or
 delete of the parent is reflected and nothing leaks). Rows returned by every read endpoint include
 `client_message_id`, `delivered_at`.
 **I2 delivery (api-send-reliability).** Nullable `chat_messages.delivered_at timestamptz`. `POST /chat/delivered
 {message_ids: uuid[] ≤ 200}` sets `delivered_at = now()` only where `receiver_id = caller` and `delivered_at IS NULL`
-(DMs only; groups have no delivered state). `read_at` set by `/chat/read` also sets `delivered_at` when NULL.
-Senders observe both through realtime UPDATE on `chat_messages` (`sender_id=eq.<me>`; existing SELECT RLS).
+(DMs only). `read_at` set by `/chat/read` also sets `delivered_at` when NULL. Senders observe both through realtime
+UPDATE on `chat_messages` (`sender_id=eq.<me>`; existing SELECT RLS). **Groups have no per-message delivered/read
+state** (read state is `chat_group_members.last_read_at`, `20260525000000_VTID_03089_chat_groups.sql:26`): a group
+message's ladder is Sending → Sent | Failed only, and the bubble never shows Delivered/Read for a group message.
 **I3 context window (api-send-reliability).** `GET /chat/conversation/:peerId?around=<messageId>&limit=N` and
 `GET /chat/groups/:id/messages?around=<messageId>&limit=N` return up to N/2 rows before and after the target,
 ascending, plus `{has_older, has_newer}`; 404 when the target is not in that conversation. `before`/`limit` unchanged;
@@ -87,9 +90,17 @@ The client sends `active:true` every 20 s while the conversation is open AND the
 (Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (`navigator.sendBeacon` on
 pagehide). Any unexpired row for (recipient, key) on any device → the push is suppressed; the in-app row is still
 written with `push_outcome 'suppressed_viewing'`. Mentions are suppressed too only for the conversation being viewed.
+**Second push path.** The vitana-v1 trigger `notify_on_chat_message` also writes `new_chat_message` rows, with
+`push_sent_at` NULL and no `conversation_key`, which `/push-dispatch` pushes. The cron derives the key for such a row
+from `data->>'message_id'` → `chat_messages(sender_id, group_id)` → `dm:<sender_id>` | `group:<group_id>` (one
+batched lookup per cron batch), then applies the same viewing check. Measured read-only 2026-10-21: the trigger is
+enabled, its live body differs from the repo's last migration (drift, recorded by the lane, not changed by this plan);
+over 7 days 155 messages produced notification rows, 1 of them two rows, and 8 rows had no `conversation_key` (the
+direct-insert fallback path). This plan does not change the trigger; the lane's integration test asserts exactly one
+push per DM per path, and none when viewing.
 **I5 search (api-message-search).** `GET /chat/search?q=&scope=all|dm:<peerId>|group:<groupId>&from=&to=&type=
 any|image|video|file|voice|link&sender=<userId>&cursor=&limit≤50` → `{results:[{message_id, conversation_key,
-sender_id, created_at, snippet, message_type}], next_cursor}`. `q` ≥ 2 characters, ILIKE on `content` and attachment
+sender_id, created_at, snippet, message_type}], next_cursor}`. `q` ≥ 3 characters (the shortest a trigram index serves; shorter → 400), ILIKE on `content` and attachment
 file names backed by a `pg_trgm` GIN index; scope restricted server-side to DMs where the caller is sender or receiver
 and groups where the caller is a member, within `identity.tenant_id`; rate-limited per user.
 **I6 shared content (api-shared-content).** New `message_type 'shared_content'`, `content_data = {kind:
@@ -98,8 +109,13 @@ and groups where the caller is a member, within `identity.tenant_id`; rate-limit
 `{available:true, title, description, image_url, url}` or `{available:false, reason:'deleted'|'restricted'}`. Push body
 for this type is a catalog entry (`tt()`), never the item's content.
 **I7 client outbox (ui-send-status).** `src/lib/messaging/outbox.ts`: each send gets `client_message_id =
-crypto.randomUUID()` and an optimistic row `id: temp-<client_message_id>`, status `sending → sent | failed`; the row is
-reconciled by `client_message_id`, never by position; retry re-posts the SAME id; reconnect retries pending items once.
+crypto.randomUUID()` and an optimistic row `id: temp-<client_message_id>`, status `sending → sent | failed` (DMs then
+advance to delivered/read from I2; groups stop at sent); the row is reconciled by `client_message_id`, never by
+position; retry re-posts the SAME id; reconnect retries pending items once. **Persisted:** every unsent item
+(`client_message_id`, conversation, body, `message_type`, `content_data` incl. already-uploaded attachment paths,
+`reply_to_message_id`, `created_at`, attempts) is kept in `localStorage` under `vitana:chat:outbox:v1:<userId>` until
+the server accepts it; on mount after a reload, pending items are re-posted once (safe: same id, I1 dedup) and failed
+ones render with Retry; items older than 7 days are dropped; a storage error falls back to in-memory for that session.
 `onSendMessage` resolves once the item is queued (the composer clears; a failure shows on the bubble, not by
 restoring the composer), so `MessageInput.tsx` is not edited.
 **I8 jump (ui-reply-jump).** `useJumpToMessage(conversation)` → `jump(messageId)`: if the row is rendered, scroll it
