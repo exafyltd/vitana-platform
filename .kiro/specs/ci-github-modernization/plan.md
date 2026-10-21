@@ -21,7 +21,7 @@ Phase 1 (read-only inventory + classification + time budget) is **done** — evi
 act on those findings. A standing CI-health report lane turns the one-off inventory into a recurring
 signal.
 
-## Today (file:line, origin/main a2d069ea)
+## Today (file:line, origin/main bc27dd354)
 
 - **The only GitHub-required check is a near-fake one.** `gh api repos/.../branches/main/protection`:
   vitana-platform `main` requires exactly one status context, `validate`, which resolves to the
