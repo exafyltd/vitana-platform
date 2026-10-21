@@ -16,7 +16,7 @@ paths:
   - scripts/ci/validator-path-guard.cjs
   - scripts/ci/validator-path-guard.test.cjs
   - docs/validation/**
-updated: 2026-10-21T14:40Z
+updated: 2026-10-21T15:20Z
 vtid: VTID-05305
 ---
 # Lane: false-positives-validator
@@ -72,3 +72,19 @@ Collab-Review: ci-github-modernization/false-positives-validator
 Collab-Verdict: changes
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 7c22c050a7cdb3b40ed1ae08c4c29006409cb664
+
+### 2026-10-21T15:20Z · kiro-202610211348-9f71 · executing (review round 1 fix)
+head: fa654ac1a9c39634284103a6f0781685505587af
+Addressed both blocking findings. Reworded the PR template's "Validator declarations" guidance comment
+so it no longer carries the literal `VALIDATION_PROFILE:` / `OASIS_IMPACT:` (or the other three) marker
+tokens — it now describes each field in prose. VALIDATOR-CHECK's first-match extractors
+(`VALIDATOR-CHECK.yml:116` and `:328`) therefore read the real declaration lines: PROFILE=gateway_backend,
+IMPACT=no (was PROFILE=one → exit 21, IMPACT=yes → exit 81 on the reviewed comment). Added 3 node:test
+cases that read the SHIPPED template and apply the workflow's own regexes, asserting
+gateway_backend / no and that `prBodyRequirements` passes. `node --test
+scripts/ci/validator-path-guard.test.cjs` → 9 pass / 0 fail. Proof:
+`docs/validation/VTID-05305/outputs/template-extractor-fix.txt`. Two non-blocking findings left as-is:
+the reachable failure is fixed by rewording; keeping the Handoff section and aligning the guard's
+presence-match with the first-match semantics are optional and out of the blocking scope. 'validate'
+recheck on the new head is the land step's.
+next_actor: claude
