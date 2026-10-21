@@ -11,7 +11,10 @@ paths:
   - apps/mobile/app/(app)/news/**
   - apps/mobile/app/(app)/post/**
   - apps/mobile/src/screens/news/**
+  - apps/mobile/src/ports/news.ts
+  - apps/mobile/tests/news/**
   - apps/mobile/maestro/news/**
+  - scripts/native/mobile-ci-paths.generated.json
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**

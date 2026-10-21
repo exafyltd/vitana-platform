@@ -13,7 +13,10 @@ paths:
   - apps/mobile/app/(app)/intents/**
   - apps/mobile/app/(app)/search.tsx
   - apps/mobile/src/screens/community/**
+  - apps/mobile/src/ports/ui.tsx
+  - apps/mobile/tests/community/**
   - apps/mobile/maestro/community/**
+  - scripts/native/mobile-ci-paths.generated.json
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**
