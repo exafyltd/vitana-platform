@@ -108,15 +108,21 @@ become skeletons on desktop Spotlight **and** on mobile.
   `prefers-reduced-motion`); the skeleton reserves the loaded layout's boxes, so there is no layout shift (CLS < 0.1).
 - Placement: each page moves its loading branch inside the frame/layout it renders when loaded, so the header, utility
   row and rail (desktop) or app bar and bottom nav (mobile) appear at once and only the content swaps.
-- **Action-in-progress spinners keep a spinner** (5, they wait on an action the member started, not on page data):
-  `community/LiveRoomViewer` (joining the room), `CreatorOnboarded` (finishing Stripe onboarding), `legal/DeleteAccount`
-  (deleting), `RedeemVoucher` (redeeming), `TicketPurchaseSuccess` (confirming the payment). Each keeps its inline
-  spinner with `// design-allow-next-line: action in progress, not a data load`; the raw palette class
-  (`border-blue-600` in `CreatorOnboarded`) maps to `border-primary` (decision 1).
+- **Only genuinely mutation-gated spinners keep a spinner**, verified against the code at the pinned ref (session
+  eeb01b78 R3-F1): `community/LiveRoomViewer` (only if its reported spinner is gated on a user mutation `isPending`)
+  and `legal/DeleteAccount` (only on the actual delete mutation `isPending`). Each keeps its inline spinner with a
+  `// design-allow-next-line: <reason>` the code supports. **The spinners that were wrongly called
+  "action-in-progress" are data-load gated and become skeletons, not allow-comments:** `RedeemVoucher`
+  (`authLoading || voucherLoading`) → `form`, `TicketPurchaseSuccess` (`loading || verifying`) → `detail`, and
+  `CreatorOnboarded`'s legacy `animate-spin` (`isLoading || isRefetching`) → `form` (its Spotlight branch is already a
+  skeleton). The raw palette class (`border-blue-600` in `CreatorOnboarded`) maps to `border-primary` (decision 1).
 
-Spinner inventory (27 in 24 files): 22 data-loading → skeletons — `skeletons` 21 (18 files), `public-profile` 1
-(`PublicProfilePage`); 5 action spinners kept with a reason — `skeletons` 2 (`LiveRoomViewer`, `CreatorOnboarded`),
-`remaining-screens` 3 (`RedeemVoucher`, `TicketPurchaseSuccess`, `legal/DeleteAccount`).
+Spinner inventory (27 in 24 files), classification derived from the code at the pinned ref (session eeb01b78 R3-F1):
+the data-loading spinners → skeletons — `skeletons` (incl. `CreatorOnboarded`'s Spotlight branch and its residual
+legacy spinner), `public-profile` 1 (`PublicProfilePage`), and `remaining-screens` for `RedeemVoucher` (`form`) and
+`TicketPurchaseSuccess` (`detail`). Only genuinely mutation-gated (`isPending`) spinners keep a `design-allow-next-line`
+with an accurate reason: `skeletons` — `LiveRoomViewer` (only if its reported spinner is action-gated); `remaining-screens`
+— `legal/DeleteAccount` (only on the real delete mutation). No data-load spinner is masked by an allow-comment.
 
 MP4: a Playwright script (not committed to the suite) records `/messages`, `/community/media` and `/my-tickets` with
 the data request delayed by `page.route` (GETs only, delay then `route.continue()`), before (main) and after (branch),

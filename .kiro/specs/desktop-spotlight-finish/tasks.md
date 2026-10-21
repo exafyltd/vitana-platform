@@ -13,9 +13,10 @@ trailers `Collab-Session` / `Collab-Lane`). A lane changes only its `paths` (Lan
   `src/components/layout/spotlight/index.ts` (design.md §6; owner approved 2026-10-16: skeletons on desktop and
   mobile). Vitest `SpotlightLoading.test.tsx`: desktop Spotlight → archetype/row skeleton; mobile → the same
   skeleton shaped for the mobile layout; both with `aria-busy`, no spinner, reduced-motion → no cross-fade.
-- [ ] S2 Replace the 21 data-loading spinners in the owned pages with `SpotlightLoading` (desktop and mobile); the 2
-  action spinners (`CreatorOnboarded`, `community/LiveRoomViewer`) keep a spinner with
-  `// design-allow-next-line: action in progress, not a data load`. Owned pages (`BusinessHub`, `BusinessListings`, `BusinessOpportunities`,
+- [ ] S2 Replace the data-loading spinners in the owned pages with `SpotlightLoading` (desktop and mobile), including
+  `CreatorOnboarded`'s residual legacy `animate-spin` (its Spotlight branch is already a skeleton; session eeb01b78
+  R3-F1). Only `community/LiveRoomViewer` may keep a spinner, and only if its reported site is gated on a genuine user
+  mutation (`isPending`) with a `// design-allow-next-line` reason the code supports — never on a data load. Owned pages (`BusinessHub`, `BusinessListings`, `BusinessOpportunities`,
   `CreatorOnboarded`, `Home` ×4, `IntentBoard`, `IntentMatchDetail`, `Messages`, `MyIntents`, `MyTickets`,
   `PostDetail`, `assistant/AIAssistant`, `community/EventGamePage`, `community/LiveRoomViewer`, `community/MediaHub`,
   `discover/Marketplace`, `patient/Dashboard`, `patient/Results`, `settings/Limitations`,
@@ -50,9 +51,12 @@ trailers `Collab-Session` / `Collab-Lane`). A lane changes only its `paths` (Lan
 
 ## Remaining screens + manifest — decision 4
 <!-- lane: remaining-screens -->
-- [ ] R1 Frame `/redeem` (`form`), `/tickets/success` + `/tickets/demo` (`detail`), `/delete-account` (`form`); their
-  3 spinners are action-in-progress (owner approved 2026-10-16) and stay, each with
-  `// design-allow-next-line: action in progress, not a data load`.
+- [ ] R1 Frame `/redeem` (`form`), `/tickets/success` + `/tickets/demo` (`detail`), `/delete-account` (`form`).
+  Spinner classification is from the code at the pinned ref (session eeb01b78 R3-F1): `RedeemVoucher`
+  (`authLoading || voucherLoading`) and `TicketPurchaseSuccess` (`loading || verifying`) are **data-load gated** →
+  `SpotlightLoading` skeleton (`form` / `detail`), **no** allow-comment. `legal/DeleteAccount`: skeletonise any
+  data-load spinner; only a spinner gated on the real delete mutation (`isPending`) keeps
+  `// design-allow-next-line: <code-accurate reason>`.
 - [ ] R2 `MobileSettings`, `MobileSubscriptions`, `MobileDailyDiary`, `NotAuthorized`: `require-screen-frame` /
   `no-raw-content-card` via `FrameWhen` / `Panel`.
 - [ ] R3 Clear every finding in the owned pages, `src/components/tickets/**`, `src/components/voucher/**`.

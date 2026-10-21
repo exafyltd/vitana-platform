@@ -34,8 +34,10 @@ rows for an in-section wait, inside the same `ScreenFrame`, so nothing moves whe
 bar and bottom nav stay; content cross-fades in (none under `prefers-reduced-motion`) with no layout shift.
 3.4 One shared component (`SpotlightLoading`) in `src/components/layout/spotlight/skeletons/`, no bespoke per-page
 skeletons.
-3.5 The 5 action-in-progress spinners (`LiveRoomViewer`, `CreatorOnboarded`, `DeleteAccount`, `RedeemVoucher`,
-`TicketPurchaseSuccess`) keep a spinner, each with a `design-allow-next-line` reason.
+3.5 Spinner classification is derived from the code at the pinned ref (session eeb01b78 R3-F1). `CreatorOnboarded`,
+`RedeemVoucher` and `TicketPurchaseSuccess` are data-load gated → skeletons (no allow-comment on a data-load path).
+Only a spinner gated on a genuine user mutation (`isPending`) keeps a `design-allow-next-line` with an accurate reason:
+`LiveRoomViewer` (only if action-gated) and `DeleteAccount` (only on the real delete mutation).
 3.6 The owner gets an MP4 that shows spinner (before) vs skeleton (after) at 1400×900 and at 390×844.
 
 ## R4 — Remaining screens (decision 4)

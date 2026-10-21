@@ -130,9 +130,11 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
 5. **`desktop_spotlight` production flag** — decided by Kiro under owner delegation 2026-10-16: unchanged, no flag
    flip; it is an owner/production decision → open owner item.
 6. **File ownership** (Kiro, within the plan): every file with findings belongs to exactly one lane, and that lane
-   clears every `design/*` rule in it, so no two PRs edit one file. In particular the three action-spinner pages that
+   clears every `design/*` rule in it, so no two PRs edit one file. In particular the three pages that
    Decision 4 also re-archetypes — `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess` — belong only to
-   `remaining-screens` (archetype flip and action-spinner allow reason in one PR), never also to `skeletons`.
+   `remaining-screens` (archetype flip in one PR; `RedeemVoucher`/`TicketPurchaseSuccess` data-load spinners become
+   skeletons per Decision 3, only `DeleteAccount`'s genuine delete-mutation spinner may keep an accurate allow
+   reason), never also to `skeletons`.
    **`src/design/screen-manifest.json` is a single-owner file, owned solely by `remaining-screens`** (together with the
    manifest generator `scripts/design/screen-manifest.mjs` and its test): every route's `archetype`/`status` edit —
    including the `/u/:identifier`, `/me/profile`, `/redeem`, `/tickets/*`, `/delete-account` flips of Decision 4 — is
@@ -146,10 +148,10 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
 ## Lanes (all `ready`, executor kiro; seat → reviewer_seat)
 | Lane | Seat → reviewer | Scope (files with findings) | depends_on |
 |---|---|---|---|
-| `skeletons` | exafyltd → hotmail | `SpotlightLoading` + 19 data-loading spinner pages → skeletons + 2 action-spinner pages kept (`LiveRoomViewer`, `CreatorOnboarded`) | — |
+| `skeletons` | exafyltd → hotmail | `SpotlightLoading` + data-loading spinner pages → skeletons (incl. `CreatorOnboarded` legacy spinner); only `LiveRoomViewer` may keep a genuinely mutation-gated action spinner | — |
 | `public-profile` | exafyltd → hotmail | `src/components/profile/**` + 3 profile pages (67) | skeletons |
 | `commerce-shell` | exafyltd → hotmail | commerce components/pages, `ShopFeed`, `UniversalCart`, portal login (28) | — |
-| `remaining-screens` | exafyltd → hotmail | redeem, tickets, delete-account (sole owner of `DeleteAccount`/`RedeemVoucher`/`TicketPurchaseSuccess`: archetype flip + action-spinner allow reason), phone fallbacks, tickets/voucher components (17) + manifest generator/test, design-contract spec | skeletons, public-profile, commerce-shell |
+| `remaining-screens` | exafyltd → hotmail | redeem, tickets, delete-account (sole owner of `DeleteAccount`/`RedeemVoucher`/`TicketPurchaseSuccess`: archetype flip + `RedeemVoucher`/`TicketPurchaseSuccess` data-load spinners → skeleton, only `DeleteAccount`'s genuine delete-mutation spinner keeps an accurate allow reason), phone fallbacks, tickets/voucher components (17) + manifest generator/test, design-contract spec | skeletons, public-profile, commerce-shell |
 | `colours-batch-2` | exafyltd → hotmail | health, journey, supplements, diary, memory (86) | — |
 | `colours-batch-3` | exafyltd → hotmail | community, sharing, event game, live rooms, meetups, events, crossover, feed, home (81) | — |
 | `colours-batch-4` | exafyltd → hotmail | discover, wallet, payment, calendar, business, reseller, orders, subscription, intents (96) | — |
@@ -186,7 +188,7 @@ files outside every lane (chrome excepted). Eight lanes can run in parallel; `pu
   spec `tests/e2e/staging/vtid-<VTID>-<lane>.staging.spec.ts` (1440×900 with `?spotlight=1`, and 390×844; sign in,
   navigate, read; network guard aborts every non-GET except sign-in; never `vitanaland.com`). STAGING-VERIFY on the
   merge commit is the done criterion; `design-contract.staging.spec.ts` covers every route flipped to `migrated`.
-- Skeletons: Vitest desktop and mobile branches (skeleton, `aria-busy`, no spinner) and the 5 kept action spinners;
+- Skeletons: Vitest desktop and mobile branches (skeleton, `aria-busy`, no spinner) and the only genuinely mutation-gated spinners kept (`LiveRoomViewer` if action-gated, `DeleteAccount` delete mutation);
   staging spec with delayed GETs asserts the skeleton and no page spinner at both 1400×900 (`?spotlight=1`) and
   390×844 (app bar and bottom nav visible), CLS < 0.1 at both; MP4 `docs/validation/<VTID>/spinner-vs-skeleton.mp4`
   (desktop and mobile, before/after).
