@@ -11,7 +11,7 @@ paths:
   - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
   - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-21T08:47Z
+updated: 2026-10-21T08:49Z
 vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
@@ -52,4 +52,6 @@ separate platform PR: https://github.com/exafyltd/vitana-platform/pull/4204
 Migration `20261101090000_vtid_05245_tenant_email_branding.sql` + rollback/pre/post-check/scope.json shipped
 (not applied), PR https://github.com/exafyltd/vitana-v1/pull/1464 opened; awaiting review by seat exafyltd.
 ### 2026-10-21T08:47Z · pm-agent · update
+reassign review exafyltd→claude (stale_review)
+### 2026-10-21T08:49Z · pm-agent · update
 reassign review exafyltd→claude (stale_review)
