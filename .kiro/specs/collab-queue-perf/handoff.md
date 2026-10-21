@@ -2,9 +2,11 @@
 slug: collab-queue-perf
 author: kiro
 executor: claude
-next_actor: claude
-state: drafted
-updated: 2026-10-18T20:30Z
+next_actor: kiro
+state: approved
+updated: 2026-10-21T11:24Z
+sparring_record: .kiro/specs/collab-queue-perf/sparring/verdict.md
+vtids: [VTID-05300]
 ---
 # Handoff — collab-queue-perf
 `queue.mjs` collect() spawns one git process per branch, per spec file and per claim; on Windows that is
@@ -22,3 +24,6 @@ spars this PR; Claude Code builds the lane, possibly together with `sparring-flo
 
 ### 2026-10-18T20:30Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-21T11:24Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
