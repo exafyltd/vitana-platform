@@ -1,6 +1,6 @@
 ---
 lane: jest-05077-cachebuster
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,10 +9,11 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/**
-updated: 2026-10-21T21:53Z
+updated: 2026-10-21T22:37Z
 vtid: VTID-05265
 claimed_by: kiro-hotmail-202610212137-725e
 branch: kiro/fix-4182-test-fallout/jest-05077-cachebuster
+pr: https://github.com/exafyltd/vitana-platform/pull/4225
 ---
 # jest-05077-cachebuster — update the stale app.js pin in the VTID-05077 test (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `jest-05077-cachebuster` section of `tasks.md`
@@ -42,3 +43,9 @@ Close-out of the merged lane (queue sweep 2026-10-21, item 3). Lane claim taken 
   PR, as the lane state machine requires.
 
 Next: `executing → in-review`, `in-review → verified` (merge record), then `verified → done`.
+
+### 2026-10-21T22:37Z · kiro-hotmail-202610212137-725e · executing → in-review
+Lane PR: https://github.com/exafyltd/vitana-platform/pull/4225 (head `85b0b0f2030f9f4c4728b1a75b21ca7b9bb26ebb`, files
+`docs/validation/VTID-05265/**` only; the test pin itself reached main earlier via #4231 `d28e465c0`).
+
+Next: `in-review → verified` (merge record), then `verified → done`.

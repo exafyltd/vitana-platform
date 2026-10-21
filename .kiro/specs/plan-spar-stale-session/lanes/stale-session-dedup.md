@@ -1,6 +1,6 @@
 ---
 lane: stale-session-dedup
-state: verified
+state: done
 next_actor: kiro
 pr: https://github.com/exafyltd/vitana-platform/pull/4208
 depends_on: []
@@ -12,9 +12,8 @@ paths:
   - services/gateway/src/services/plan-sparring/plan-sparring-repository.ts
   - services/gateway/test/plan-sparring-stale-session.test.ts
   - docs/validation/**
-updated: 2026-10-21T21:49Z
+updated: 2026-10-21T22:34Z
 vtid: VTID-05254
-claimed_by: kiro-hotmail-202610212137-725e
 branch: kiro/plan-spar-stale-session/stale-session-dedup
 ---
 # stale-session-dedup — re-run dead round-1 sparring sessions (repo vitana-platform)
@@ -64,3 +63,10 @@ Close-out of the merged lane (queue sweep 2026-10-21, item 1). Lane claim taken 
 
 Next: `verified → done` in a follow-up PR, because the lane state machine allows one step per PR. The VTID-05254
 ledger row is not terminalized by Kiro (no live writes, §7a); the PM or Claude terminalizes it.
+
+### 2026-10-21T22:34Z · kiro-hotmail-202610212137-725e · verified → done
+The merge record and STAGING-VERIFY result are in the entry above (merge `3063c95430c089fa157e6e66932bd3eb9d2bc787`,
+STAGING-VERIFY run 39575858903 PASS, already in production at `a2d069ea`). Lane closed. `claimed_by` is cleared and the
+lane claim is released after this PR merges.
+Left for the coordinator: `handoff.md` for plan-spar-stale-session is still `approved` and needs the `_plan` holder. The
+VTID-05254 ledger row is terminalized by the PM or Claude, not by Kiro (§7a, no live writes).
