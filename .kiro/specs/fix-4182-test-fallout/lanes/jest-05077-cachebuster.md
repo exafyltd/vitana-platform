@@ -1,6 +1,6 @@
 ---
 lane: jest-05077-cachebuster
-state: in-review
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,11 +9,11 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/**
-updated: 2026-10-21T22:37Z
+updated: 2026-10-21T22:41Z
 vtid: VTID-05265
+pr: https://github.com/exafyltd/vitana-platform/pull/4225
 claimed_by: kiro-hotmail-202610212137-725e
 branch: kiro/fix-4182-test-fallout/jest-05077-cachebuster
-pr: https://github.com/exafyltd/vitana-platform/pull/4225
 ---
 # jest-05077-cachebuster — update the stale app.js pin in the VTID-05077 test (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `jest-05077-cachebuster` section of `tasks.md`
@@ -49,3 +49,20 @@ Lane PR: https://github.com/exafyltd/vitana-platform/pull/4225 (head `85b0b0f203
 `docs/validation/VTID-05265/**` only; the test pin itself reached main earlier via #4231 `d28e465c0`).
 
 Next: `in-review → verified` (merge record), then `verified → done`.
+
+### 2026-10-21T22:41Z · kiro-hotmail-202610212137-725e · in-review → verified
+- PR https://github.com/exafyltd/vitana-platform/pull/4225 squash-merged to `main` 2026-10-21T08:44:13Z with
+  `--match-head-commit 85b0b0f2030f9f4c4728b1a75b21ca7b9bb26ebb`. All checks were green, including `validate`, Lane scope
+  and Collab handoff, and no `--admin` was used.
+- merge: bd7e8e97941a875b62469fbbf35a694d50e23159
+- authority: owner instruction 2026-10-20 naming #4222, #4223, #4225 ("you do it, claude is off , you have to do it, we
+  have changed the rule"; then "continue"), under collaboration.md §7b. Deploy path staging only.
+- No reviewer-agent entry exists in this lane log. Here `verified` records the owner-directed merge and the staging
+  result below. It is not an agent accept.
+- STAGING-VERIFY: gateway run https://github.com/exafyltd/vitana-platform/actions/runs/39575858903 at
+  `a2d069ea03855d3491d94e924af572611d4f709c` passed. It contains `bd7e8e9`, and its suite VTID-05272 runs
+  `test/vtid-05077-planner-fallback-and-thinking.test.ts` green. `bd7e8e9` is also in the passing run 39658010525 at
+  `b9e0db02`. This lane changes only a test and validation files and deploys nothing, so it has no Gate 2.
+- This entry supersedes record PR #4246, closed because its branch name fails main's Collab handoff check.
+
+Next: `verified → done`.
