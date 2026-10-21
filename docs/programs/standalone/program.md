@@ -16,6 +16,7 @@ specs:
   - vitana-platform:kiro-primary-executor
   - vitana-platform:kiro-autonomy-fallback
   - vitana-platform:kaf-fallback-env
+  - vitana-platform:claude-md-cleanup
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -38,3 +39,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
 - `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
 - `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
+- `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)

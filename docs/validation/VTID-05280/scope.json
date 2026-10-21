@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05280",
+  "kind": "docs",
+  "paths": [
+    "CLAUDE.md",
+    ".kiro/steering/vitana-kiro-notes.md",
+    ".kiro/steering/vitana-load-project-rules.md",
+    "docs/validation/VTID-05280/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05280/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
