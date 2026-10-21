@@ -1,17 +1,19 @@
 ---
 lane: plan-spar-checks
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafyltd
 reviewer_seat: claude
+claimed_by: kiro-202610211348-9f71
+branch: kiro/ci-github-modernization/plan-spar-checks
 paths:
   - .github/workflows/PLAN-SPAR.yml
   - scripts/collab/plan-spar.test.mjs
   - scripts/ci/plan-spar-slot/slot.test.mjs
   - docs/validation/**
-updated: 2026-10-21T12:26Z
+updated: 2026-10-21T15:30Z
 vtid: VTID-05306
 ---
 # Lane: plan-spar-checks
@@ -69,3 +71,7 @@ change needing a staging deploy, so it is **deferred to a separate gateway lane*
 
 ### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05306 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T15:30Z u{00B7} kiro-202610211348-9f71 u{00B7} executing (VTID-05306)
+Claimed and implemented. T2: added one step `Signal needs-rebase on the bot head (GITHUB_TOKEN push)` after the round-commit push in PLAN-SPAR.yml, guarded by the empty-PLAN_SPAR_PUSH_TOKEN path; it posts a `plan-spar/needs-rebase` commit status on the bot head via `gh api .../statuses/{sha}` (no re-run/re-dispatch/Checks API). T1 (`statuses: write`) was already on main from the plan merge; left as-is. T3: added the producer-contract test to scripts/ci/plan-spar-slot/slot.test.mjs (asserts only the producer side) and updated the step-count assertion 7->8. Red on base / green on head in docs/validation/VTID-05306/. plan-spar.test.mjs 27/27 still green. Consumer (act.ts gh pr update-branch) deferred to a gateway lane; PLAN-SPAR.yml protected-gate + the PAT secret surfaced for Gate 2.
+
