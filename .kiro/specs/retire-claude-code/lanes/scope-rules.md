@@ -1,6 +1,6 @@
 ---
 lane: scope-rules
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,10 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-20T10:51Z
+claimed_by: kiro-exafyltd-202610201041-ab5d
+branch: kiro/retire-claude-code/scope-rules
+pr: https://github.com/exafyltd/vitana-platform/pull/4210
+updated: 2026-10-21T07:44Z
 vtid: VTID-05259
 ---
 # Lane scope rules: governance lanes, permission changes, legacy claude reviews (platform)
@@ -132,3 +135,30 @@ So the plan commit that declared the lane, or an unrelated commit naming it, no 
 flow (repro5 R1) still passes Lane scope. Tests: 43/43.
 Next: an independent review entry from seat `jtadic` on the current head, then the owner's explicit merge instruction
 (bootstrap merge 2).
+
+### 2026-10-21T07:44Z · kiro-exafyltd-202610201041-ab5d · executing → in-review
+T1–T3 are complete at head `ff06a9c3b` (PR #4210). The latest run of every check on that head is green: PR-GATE
+(incl. Lane scope), Validator Check, STAGING-TESTS-REQUIRED, unit, impact scan, Phase 2B gates, frontend canonical
+source. The first Validator Check run on that head (39416940593) failed only because `VALIDATION_PROFILE` was missing
+from the PR body. The two later runs on the same head passed after the body was fixed. This entry changes no code,
+scope or tests and does not address the non-blocking follow-ups (owner, 2026-10-20). The merge stays on hold until the
+governance review is complete.
+
+Known false positive: queue.mjs validate reports ready → in-review because the base lane file on main is ready and
+executing happened only on this branch. Owner accepted it on 2026-10-20 (option 1). No validator change in this PR.
+
+**Timestamp correction.** The headings of the earlier entries are dated ahead of the commits that added them. The
+commit times are the authoritative record. The headings stay as written (the log is append-only):
+
+| Entry heading | Added by | Commit time (UTC) |
+|---|---|---|
+| 11:35Z ready → executing | `bb2ae7a49` | 2026-10-20T10:59Z |
+| 12:20Z executing (bypass review fixes) | `26753a2ba` | 2026-10-20T11:10Z |
+| 12:55Z executing (round-2 fixes) | `bf5e83d6b` | 2026-10-20T11:18Z |
+| 13:25Z executing (round-3 fixes) | `55bb876c0` | 2026-10-20T11:26Z |
+| 13:45Z executing (round-4 fixes) | `3ff72d533` | 2026-10-20T11:30Z |
+| 14:05Z executing (round-5) | `df6683376` | 2026-10-20T11:36Z |
+
+Next: reviewer seat `jtadic` appends `review: approve|changes` on the new head of this branch (trailer `Collab-Review`,
+front matter untouched). Then the owner gives an explicit per-PR merge instruction (bootstrap merge 2). The claim
+`collab-claim/retire-claude-code/scope-rules` is released after this push.
