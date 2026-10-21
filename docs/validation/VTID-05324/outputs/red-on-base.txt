@@ -1,0 +1,294 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/AppData/Local/Temp/mtl-base-pid/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/mt-launch-pack-intake-pgtap.test.ts
+  VTID-05324 migration files
+    × both files exist, in order, and no other migration shares their version (105 ms)
+    × are expand-only: one transaction each, no drop/alter of an existing object, no backfill (4 ms)
+  VTID-05324 P1 tenant_pack_intake
+    × is keyed (tenant_id, item_key) with an FK to the live tenants key (3 ms)
+    × constrains item_key to the WS8 checklist and status to the four states (2 ms)
+  VTID-05324 P2 tenant_content_pipeline
+    × is unique on (tenant_id, locale, key) with the plan columns (1 ms)
+    × constrains review_state to the pipeline states (2 ms)
+    × never writes to WS5 tenant_content_overrides (2 ms)
+  VTID-05324 P1/P2 service-role-only access (a client read fails)
+    × tenant_pack_intake: RLS on, client privileges revoked, only a service_role policy (2 ms)
+    × tenant_content_pipeline: RLS on, client privileges revoked, only a service_role policy (24 ms)
+  VTID-05324 P3 get_tenant_launch_readiness
+    × is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER (2 ms)
+    × EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role (1 ms)
+    × is read-only and reads only tenant_pack_intake + tenants (no health table) (1 ms)
+    × the health-table guard catches a planted read (self-test) (2 ms)
+    × its checklist equals the item_key CHECK constraint, and an unknown tenant returns NULL (37 ms)
+  VTID-05324 P4 queue, drift baseline, rollback
+    × MIGRATION-QUEUE lists both files after WS5 tenant_content_overrides with rollback + checks (2 ms)
+    × the drift baseline lists both unapplied tables and its count matches (1 ms)
+    × rollback drops exactly the new objects; pre/post checks and the pgTAP plan are read-only
+
+  ● VTID-05324 migration files › both files exist, in order, and no other migration shares their version
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 migration files › are expand-only: one transaction each, no drop/alter of an existing object, no backfill
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P1 tenant_pack_intake › is keyed (tenant_id, item_key) with an FK to the live tenants key
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P1 tenant_pack_intake › constrains item_key to the WS8 checklist and status to the four states
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P2 tenant_content_pipeline › is unique on (tenant_id, locale, key) with the plan columns
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P2 tenant_content_pipeline › constrains review_state to the pipeline states
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P2 tenant_content_pipeline › never writes to WS5 tenant_content_overrides
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P1/P2 service-role-only access (a client read fails) › tenant_pack_intake: RLS on, client privileges revoked, only a service_role policy
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P1/P2 service-role-only access (a client read fails) › tenant_content_pipeline: RLS on, client privileges revoked, only a service_role policy
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P3 get_tenant_launch_readiness › is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P3 get_tenant_launch_readiness › EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P3 get_tenant_launch_readiness › is read-only and reads only tenant_pack_intake + tenants (no health table)
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P3 get_tenant_launch_readiness › the health-table guard catches a planted read (self-test)
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P3 get_tenant_launch_readiness › its checklist equals the item_key CHECK constraint, and an unknown tenant returns NULL
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P4 queue, drift baseline, rollback › MIGRATION-QUEUE lists both files after WS5 tenant_content_overrides with rollback + checks
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P4 queue, drift baseline, rollback › the drift baseline lists both unapplied tables and its count matches
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+  ● VTID-05324 P4 queue, drift baseline, rollback › rollback drops exactly the new objects; pre/post checks and the pgTAP plan are read-only
+
+    Cannot find module '../../src/services/operator-onramp-rate-limit' from 'test/__mocks__/setup-tests.ts'
+
+    [0m [90m 63 |[39m   [90m// is never throttled by its own earlier cases.[39m
+     [90m 64 |[39m   [90m// eslint-disable-next-line @typescript-eslint/no-var-requires[39m
+    [31m[1m>[22m[39m[90m 65 |[39m   require([32m'../../src/services/operator-onramp-rate-limit'[39m)[33m.[39mresetOnRampRateLimit()[33m;[39m
+     [90m    |[39m   [31m[1m^[22m[39m
+     [90m 66 |[39m   
+     [90m 67 |[39m   [90m// Default mock implementation for Supabase/OASIS calls[39m
+     [90m 68 |[39m   mockFetch[33m.[39mmockImplementation((url[33m:[39m string [33m|[39m [33mRequest[39m[33m,[39m options[33m?[39m[33m:[39m any) [33m=>[39m {[0m
+
+      at Resolver._throwModNotFoundError (../../../mtl-wt-pack-intake-db/services/gateway/node_modules/jest-resolve/build/resolver.js:427:11)
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:65:3)
+
+Test Suites: 1 failed, 1 total
+Tests:       17 failed, 17 total
+Snapshots:   0 total
+Time:        2.535 s, estimated 4 s
+Ran all test suites matching /test\\mt-launch-pack-intake-pgtap.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
