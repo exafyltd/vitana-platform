@@ -22,3 +22,15 @@ Owner spec "Vitanaland Messenger — UX Improvements & Functional Requirements" 
 
 ### 2026-10-21T12:31Z · ci-plan-spar · drafted → parked
 Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
+
+### 2026-10-21T12:40Z · kiro-exafyltd-202610211130-c65e · parked (note, no state change)
+Why the plan is parked. Session 1 ran 3 real rounds: R1 had 5 findings, R2 had 2 and R3 had 2. All were accepted and
+the plan was changed for each. It escalated only at the round cap; the partner acknowledged every earlier answer.
+The re-plan session 2 (`e0c47098…`) then failed before reviewing anything: `evidence_floor_not_met`, with 0 successful
+`read_file` calls. That is the code-access failure described in the approved plan `sparring-floor-retry` (VTID-05240,
+lane `floor-retry-code`, not built yet) and in open PR #4215 (`plan-spar-retry-invalid`). It is not a finding on this
+plan. Today `evidence_floor_not_met` is not in `RETRYABLE_REASONS` (`scripts/collab/plan-spar.mjs:37`), so the plan
+used up its 2 sessions.
+Unblock: once the floor-retry fix is on `main`, the plan can get one more session. That needs PLAN-SPAR to treat
+session 2 as an infra retry. The other way is an owner decision. No VTID exists and no code was written. The `_plan`
+claim is released and the driver heartbeat removed.
