@@ -29,6 +29,12 @@ correlated errors.
 3. `CLAUDE.md` (§ Catalog quality): `gh workflow run i18n-audit-llm.yml -f locale=<code> -f provider=gemini`
    becomes `-f provider=deepseek`, with one sentence on why (Gemini quota, Anthropic API has no credit) and that a
    Bedrock auditor is the follow-up.
+4. `scripts/i18n-audit-llm.mjs`: the script's own fallback (`const PROVIDER = args.provider || 'gemini'`, ~L67)
+   becomes `'deepseek'`, and the usage comment (~L34–40, "default gemini") says `default deepseek`. Otherwise a
+   direct `node scripts/i18n-audit-llm.mjs` run without `--provider` still lands on the exhausted Gemini key.
+5. `.github/workflows/i18n-audit-llm.yml`: drop `pull-requests: write` from the workflow `permissions` block. Only
+   `audit-nightly` opened branches for PRs. `audit-single` only commits and pushes to the dispatching branch, which
+   needs `contents: write` and nothing else.
 
 ## Not in this plan
 - A Bedrock (Claude) provider in `scripts/i18n-audit-llm.mjs`. That is the right auditor (independent of the
@@ -48,5 +54,7 @@ correlated errors.
 ## Lane
 - `workflow-off`, **repo `exafyltd/vitana-v1`** (every file above is in vitana-v1; the spec lives here in
   vitana-platform because PLAN-SPAR only runs here). Executor **claude** (governance paths `.github/**`,
-  `CLAUDE.md`), reviewer `exafy`. The implementation is prepared as draft PR exafyltd/vitana-v1#1463.
+  `CLAUDE.md`), reviewer `exafy`. Sequence: plan → sparring → policy approval → VTID → code. No implementation
+  exists before the VTID: an earlier draft (exafyltd/vitana-v1#1463) was closed unmerged during sparring, and the
+  executor opens a fresh lane PR only after the VTID is allocated.
 <!-- plan:end -->
