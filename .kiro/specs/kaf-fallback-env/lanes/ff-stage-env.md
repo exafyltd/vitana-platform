@@ -11,8 +11,9 @@ repos: [exafyltd/vitana-platform]
 paths:
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
+  - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:58Z
+updated: 2026-10-21T08:30Z
 branch: kiro/kaf-fallback-env/ff-stage-env
 vtid: VTID-05282
 claimed_by: kiro-202610202258-2232
@@ -38,3 +39,5 @@ Claimed by seat exafyltd (pipeline run wf_f16f7c2bcc131c71, slot 1). Changed: st
 `AWS-STAGE-DEPLOY-GATEWAY.yml` (env `CLAUDE_AVAILABLE_VALUE` from `vars.CLAUDE_AVAILABLE || 'true'`, jq `--arg CLAUDE_AVAILABLE`
 before `--arg TASK_ROLE`, strip + single upsert next to `PM_MODE`), new wiring test (red on base 4/5 failed, green 5/5),
 evidence in `docs/validation/VTID-05282/`. Next: reviewer agent on the PR head.
+### 2026-10-21T08:30Z Â· kiro-202610210825-2f6b Â· executing (fix round 1 after review changes on e7deafa)
+Blocking findings of the review on e7deafa fixed: regenerated `services/gateway/src/services/conversation/conversation-flag-pins.generated.ts` (new dynamic pin `CLAUDE_AVAILABLE` for staging; `generate-flag-pins.mjs --check` and the VTID-04525 registry test were red) and added it to the lane paths; PR body gets the Validator block (`VALIDATION_PROFILE: gateway_backend`). Local: registry + wiring tests 2 suites pass, `tsc --noEmit` pass. Next: reviewer agent on the new head.
