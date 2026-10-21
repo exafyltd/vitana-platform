@@ -13,7 +13,7 @@ paths:
   - services/gateway/test/mt-launch-owner-analytics.test.ts
   - services/gateway/test/mt-launch-owner-analytics-health-boundary.test.ts
   - docs/validation/VTID-mt-launch-owner-analytics/**
-updated: 2026-10-21T16:16Z
+updated: 2026-10-21T16:18Z
 vtid: VTID-05326
 ---
 # tenant-owner-analytics — tenant-owner funnel + D18 lineage guard (repo vitana-platform)
@@ -53,4 +53,6 @@ R1-F1 full resolver path; R1-F2 explicit read allowlist enumerated.
 ### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05326 allocated after policy approval (converged-auto-v1).
 ### 2026-10-21T16:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-21T16:18Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
