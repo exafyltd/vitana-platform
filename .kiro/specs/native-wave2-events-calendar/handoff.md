@@ -6,6 +6,8 @@ next_actor: kiro
 state: drafted
 author_seat: exafyltd
 updated: 2026-10-21T20:30Z
+spar_refs:
+  - exafyltd/vitana-v1: main
 ---
 # Handoff — Native Wave 2: Events / Meetups / Calendar / Reminders / Live-rooms screen ports
 Second Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
