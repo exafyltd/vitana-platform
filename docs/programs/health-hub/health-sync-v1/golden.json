@@ -1,0 +1,1109 @@
+{
+  "contract_version": "1.0",
+  "clock": "2026-10-13T12:00:00.000Z",
+  "cases": [
+    {
+      "name": "contract self-check",
+      "env": "production",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest/contract",
+            "method": "GET",
+            "headers": {}
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "contract_version": "1.0",
+              "supported_majors": [
+                1
+              ],
+              "max_minor": 0,
+              "catalogue": [
+                {
+                  "category": "activity",
+                  "consent_key": "sync_activity",
+                  "codes": [
+                    {
+                      "type": "steps",
+                      "kind": "series_sum",
+                      "unit": "{steps}",
+                      "plausible_min": 0,
+                      "plausible_max": 100000,
+                      "healthkit": "HKQuantityTypeIdentifierStepCount",
+                      "health_connect": "StepsRecord"
+                    },
+                    {
+                      "type": "active_energy",
+                      "kind": "series_sum",
+                      "unit": "kcal",
+                      "plausible_min": 0,
+                      "plausible_max": 20000,
+                      "healthkit": "HKQuantityTypeIdentifierActiveEnergyBurned",
+                      "health_connect": "ActiveCaloriesBurnedRecord"
+                    },
+                    {
+                      "type": "exercise_minutes",
+                      "kind": "series_sum",
+                      "unit": "min",
+                      "plausible_min": 0,
+                      "plausible_max": 1440,
+                      "healthkit": "HKQuantityTypeIdentifierAppleExerciseTime",
+                      "health_connect": "ExerciseSessionRecord.EXERCISE_DURATION_TOTAL"
+                    },
+                    {
+                      "type": "distance",
+                      "kind": "series_sum",
+                      "unit": "m",
+                      "plausible_min": 0,
+                      "plausible_max": 300000,
+                      "healthkit": "HKQuantityTypeIdentifierDistanceWalkingRunning",
+                      "health_connect": "DistanceRecord"
+                    },
+                    {
+                      "type": "workout",
+                      "kind": "record",
+                      "unit": "min",
+                      "plausible_min": 0,
+                      "plausible_max": 1440,
+                      "healthkit": "HKWorkoutType",
+                      "health_connect": "ExerciseSessionRecord"
+                    }
+                  ]
+                },
+                {
+                  "category": "sleep",
+                  "consent_key": "sync_sleep",
+                  "codes": [
+                    {
+                      "type": "sleep_session",
+                      "kind": "record",
+                      "unit": "min",
+                      "plausible_min": 0,
+                      "plausible_max": 1440,
+                      "healthkit": "HKCategoryTypeIdentifierSleepAnalysis",
+                      "health_connect": "SleepSessionRecord"
+                    }
+                  ]
+                },
+                {
+                  "category": "heart",
+                  "consent_key": "sync_heart",
+                  "codes": [
+                    {
+                      "type": "heart_rate",
+                      "kind": "series_stats",
+                      "unit": "/min",
+                      "plausible_min": 20,
+                      "plausible_max": 250,
+                      "healthkit": "HKQuantityTypeIdentifierHeartRate",
+                      "health_connect": "HeartRateRecord"
+                    },
+                    {
+                      "type": "resting_heart_rate",
+                      "kind": "record",
+                      "unit": "/min",
+                      "plausible_min": 20,
+                      "plausible_max": 200,
+                      "healthkit": "HKQuantityTypeIdentifierRestingHeartRate",
+                      "health_connect": "RestingHeartRateRecord"
+                    },
+                    {
+                      "type": "hrv_sdnn",
+                      "kind": "record",
+                      "unit": "ms",
+                      "plausible_min": 1,
+                      "plausible_max": 300,
+                      "healthkit": "HKQuantityTypeIdentifierHeartRateVariabilitySDNN",
+                      "health_connect": null
+                    },
+                    {
+                      "type": "hrv_rmssd",
+                      "kind": "record",
+                      "unit": "ms",
+                      "plausible_min": 1,
+                      "plausible_max": 300,
+                      "healthkit": null,
+                      "health_connect": "HeartRateVariabilityRmssdRecord"
+                    }
+                  ]
+                },
+                {
+                  "category": "body",
+                  "consent_key": "sync_body",
+                  "codes": [
+                    {
+                      "type": "body_weight",
+                      "kind": "record",
+                      "unit": "kg",
+                      "plausible_min": 20,
+                      "plausible_max": 400,
+                      "healthkit": "HKQuantityTypeIdentifierBodyMass",
+                      "health_connect": "WeightRecord"
+                    },
+                    {
+                      "type": "body_fat_percentage",
+                      "kind": "record",
+                      "unit": "%",
+                      "plausible_min": 2,
+                      "plausible_max": 75,
+                      "healthkit": "HKQuantityTypeIdentifierBodyFatPercentage",
+                      "health_connect": "BodyFatRecord"
+                    }
+                  ]
+                }
+              ],
+              "limits": {
+                "max_compressed_bytes": 524288,
+                "max_inflated_bytes": 4194304,
+                "max_records": 1000,
+                "max_deletions": 1000,
+                "too_old_days": 400,
+                "future_tolerance_minutes": 5,
+                "default_backfill_days": 90,
+                "five_minute_window_days": 30
+              },
+              "error_codes": {
+                "batch": {
+                  "INVALID_BATCH": {
+                    "status": 400,
+                    "retryable": false
+                  },
+                  "UNSUPPORTED_CONTRACT_VERSION": {
+                    "status": 400,
+                    "retryable": false
+                  },
+                  "UNAUTHENTICATED": {
+                    "status": 401,
+                    "retryable": true
+                  },
+                  "TENANT_REQUIRED": {
+                    "status": 400,
+                    "retryable": false
+                  },
+                  "CONSENT_REQUIRED": {
+                    "status": 403,
+                    "retryable": false
+                  },
+                  "SOURCE_PAUSED": {
+                    "status": 409,
+                    "retryable": false
+                  },
+                  "INGEST_DISABLED": {
+                    "status": 409,
+                    "retryable": false
+                  },
+                  "BATCH_ID_REUSED": {
+                    "status": 409,
+                    "retryable": false
+                  },
+                  "BATCH_TOO_LARGE": {
+                    "status": 413,
+                    "retryable": false
+                  },
+                  "UNSUPPORTED_ENCODING": {
+                    "status": 415,
+                    "retryable": false
+                  },
+                  "RATE_LIMITED": {
+                    "status": 429,
+                    "retryable": true
+                  },
+                  "STORE_PENDING": {
+                    "status": 503,
+                    "retryable": true
+                  },
+                  "STORE_UNAVAILABLE": {
+                    "status": 503,
+                    "retryable": true
+                  }
+                },
+                "record": [
+                  "UNSUPPORTED_TYPE",
+                  "UNIT_MISMATCH",
+                  "IMPLAUSIBLE_VALUE",
+                  "OUT_OF_WINDOW",
+                  "CATEGORY_NOT_CONSENTED",
+                  "INVALID_RECORD",
+                  "STORE_UNAVAILABLE"
+                ]
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "activity consented: stored",
+      "env": "production",
+      "consents": [
+        {
+          "key": "sync_activity",
+          "resource": "apple_health"
+        }
+      ],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": false,
+              "counts": {
+                "stored": 1,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 0
+              },
+              "rejected": [],
+              "consent": {
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "same batch re-sent after a timeout: replay",
+      "env": "production",
+      "consents": [
+        {
+          "key": "sync_activity",
+          "resource": "apple_health"
+        }
+      ],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": false,
+              "counts": {
+                "stored": 1,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 0
+              },
+              "rejected": [],
+              "consent": {
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        },
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": true,
+              "counts": {
+                "stored": 1,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 0
+              },
+              "rejected": [],
+              "consent": {
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "interval re-sent with a new value and an emptied interval deleted",
+      "env": "production",
+      "consents": [
+        {
+          "key": "sync_activity",
+          "resource": "apple_health"
+        }
+      ],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "steps:2026-10-13T08:05:00.000Z",
+                  "type": "steps",
+                  "value": 90,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:05:00Z",
+                  "end": "2026-10-13T08:10:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": false,
+              "counts": {
+                "stored": 2,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 0
+              },
+              "rejected": [],
+              "consent": {
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        },
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "7a2d3c4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 415,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": [
+                {
+                  "record_id": "steps:2026-10-13T08:05:00.000Z",
+                  "type": "steps"
+                }
+              ]
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "7a2d3c4e-5f6a-4b7c-8d9e-0f1a2b3c4d5e",
+              "replay": false,
+              "counts": {
+                "stored": 0,
+                "duplicate": 0,
+                "updated": 1,
+                "deleted": 1,
+                "rejected": 0
+              },
+              "rejected": [],
+              "consent": {
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "sleep not consented: dropped per record, steps stored",
+      "env": "production",
+      "consents": [
+        {
+          "key": "sync_activity",
+          "resource": "apple_health"
+        }
+      ],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "B3C1E6A0-5D2F-4A8B-9E1C-7F6D5A4B3C2D",
+                  "type": "sleep_session",
+                  "value": 452,
+                  "unit": "min",
+                  "start": "2026-10-12T22:31:00+02:00",
+                  "end": "2026-10-13T06:03:00+02:00",
+                  "tz": "Europe/Berlin",
+                  "stages": [
+                    {
+                      "stage": "light",
+                      "start": "2026-10-12T22:31:00+02:00",
+                      "end": "2026-10-13T01:10:00+02:00"
+                    },
+                    {
+                      "stage": "deep",
+                      "start": "2026-10-13T01:10:00+02:00",
+                      "end": "2026-10-13T02:40:00+02:00"
+                    },
+                    {
+                      "stage": "rem",
+                      "start": "2026-10-13T02:40:00+02:00",
+                      "end": "2026-10-13T06:03:00+02:00"
+                    }
+                  ]
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": false,
+              "counts": {
+                "stored": 1,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 1
+              },
+              "rejected": [
+                {
+                  "record_id": "B3C1E6A0-5D2F-4A8B-9E1C-7F6D5A4B3C2D",
+                  "code": "CATEGORY_NOT_CONSENTED"
+                }
+              ],
+              "consent": {
+                "activity": "granted",
+                "sleep": "not_granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "nothing consented: 403",
+      "env": "production",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "B3C1E6A0-5D2F-4A8B-9E1C-7F6D5A4B3C2D",
+                  "type": "sleep_session",
+                  "value": 452,
+                  "unit": "min",
+                  "start": "2026-10-12T22:31:00+02:00",
+                  "end": "2026-10-13T06:03:00+02:00",
+                  "tz": "Europe/Berlin",
+                  "stages": [
+                    {
+                      "stage": "light",
+                      "start": "2026-10-12T22:31:00+02:00",
+                      "end": "2026-10-13T01:10:00+02:00"
+                    },
+                    {
+                      "stage": "deep",
+                      "start": "2026-10-13T01:10:00+02:00",
+                      "end": "2026-10-13T02:40:00+02:00"
+                    },
+                    {
+                      "stage": "rem",
+                      "start": "2026-10-13T02:40:00+02:00",
+                      "end": "2026-10-13T06:03:00+02:00"
+                    }
+                  ]
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 403,
+            "body": {
+              "ok": false,
+              "error": "CONSENT_REQUIRED",
+              "retryable": false,
+              "categories": [
+                "activity",
+                "sleep"
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "per-record rejections",
+      "env": "production",
+      "consents": [
+        {
+          "key": "sync_activity",
+          "resource": "apple_health"
+        },
+        {
+          "key": "sync_body",
+          "resource": "apple_health"
+        }
+      ],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "w-lb",
+                  "type": "body_weight",
+                  "value": 160,
+                  "unit": "[lb_av]",
+                  "start": "2026-10-13T07:00:00+02:00",
+                  "end": "2026-10-13T07:00:00+02:00",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "w-999",
+                  "type": "body_weight",
+                  "value": 999,
+                  "unit": "kg",
+                  "start": "2026-10-13T07:00:00+02:00",
+                  "end": "2026-10-13T07:00:00+02:00",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "glucose-1",
+                  "type": "blood_glucose",
+                  "value": 5.4,
+                  "unit": "mmol/L",
+                  "start": "2026-10-13T07:00:00+02:00",
+                  "end": "2026-10-13T07:00:00+02:00",
+                  "tz": "Europe/Berlin"
+                },
+                {
+                  "record_id": "old-1",
+                  "type": "steps",
+                  "value": 10,
+                  "unit": "{steps}",
+                  "start": "2024-01-01T08:00:00Z",
+                  "end": "2024-01-01T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 200,
+            "body": {
+              "ok": true,
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "replay": false,
+              "counts": {
+                "stored": 0,
+                "duplicate": 0,
+                "updated": 0,
+                "deleted": 0,
+                "rejected": 4
+              },
+              "rejected": [
+                {
+                  "record_id": "glucose-1",
+                  "code": "UNSUPPORTED_TYPE"
+                },
+                {
+                  "record_id": "w-lb",
+                  "code": "UNIT_MISMATCH"
+                },
+                {
+                  "record_id": "w-999",
+                  "code": "IMPLAUSIBLE_VALUE"
+                },
+                {
+                  "record_id": "old-1",
+                  "code": "OUT_OF_WINDOW"
+                }
+              ],
+              "consent": {
+                "body": "granted",
+                "activity": "granted"
+              },
+              "source_state": "connected"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "unknown field: 400",
+      "env": "production",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": [],
+              "user_id": "99999999-9999-4999-8999-999999999999"
+            }
+          },
+          "response": {
+            "status": 400,
+            "body": {
+              "ok": false,
+              "error": "INVALID_BATCH",
+              "retryable": false,
+              "details": [
+                {
+                  "path": "",
+                  "code": "unknown_field"
+                }
+              ]
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "newer major: 400",
+      "env": "production",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "2.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 400,
+            "body": {
+              "ok": false,
+              "error": "UNSUPPORTED_CONTRACT_VERSION",
+              "retryable": false,
+              "details": {
+                "supported_majors": [
+                  1
+                ],
+                "contract_version": "1.0"
+              }
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "no token: 401",
+      "env": "production",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 401,
+            "body": {
+              "ok": false,
+              "error": "UNAUTHENTICATED",
+              "message": "Missing or invalid Authorization header. Expected: Bearer <token>"
+            }
+          }
+        }
+      ]
+    },
+    {
+      "name": "staging: 409",
+      "env": "staging",
+      "consents": [],
+      "steps": [
+        {
+          "request": {
+            "path": "/api/v1/health/ingest",
+            "method": "POST",
+            "headers": {
+              "Content-Type": "application/json",
+              "Authorization": "Bearer <member access token>"
+            },
+            "body": {
+              "contract_version": "1.0",
+              "batch_id": "6f1c2b1e-4d6a-4a8e-9c1b-2f3e4d5a6b7c",
+              "source": {
+                "kind": "apple_health",
+                "install_id": "0b7f6d52-3a1e-4c2f-8d9a-1e2f3a4b5c6d",
+                "platform": "ios",
+                "os_version": "18.1",
+                "app_version": "1.0.0",
+                "device": {
+                  "manufacturer": "Apple",
+                  "model": "Watch7,1"
+                }
+              },
+              "sync_mode": "incremental",
+              "records": [
+                {
+                  "record_id": "steps:2026-10-13T08:00:00.000Z",
+                  "type": "steps",
+                  "value": 412,
+                  "unit": "{steps}",
+                  "start": "2026-10-13T08:00:00Z",
+                  "end": "2026-10-13T08:05:00.000Z",
+                  "tz": "Europe/Berlin"
+                }
+              ],
+              "deletions": []
+            }
+          },
+          "response": {
+            "status": 409,
+            "body": {
+              "ok": false,
+              "error": "INGEST_DISABLED",
+              "retryable": false,
+              "reason": "staging"
+            }
+          }
+        }
+      ]
+    }
+  ]
+}

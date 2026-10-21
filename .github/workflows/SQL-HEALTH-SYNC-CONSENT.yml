@@ -1,0 +1,54 @@
+name: SQL-HEALTH-SYNC-CONSENT
+run-name: 'Health Sync consent keys against a throwaway Postgres [VTID: VTID-05164] (${{ github.ref_name }})'
+
+# VTID-05164 — the Health Sync consent keys / phone health-store connectors
+# migration against a disposable Postgres service container: the five Phase 1
+# catalogue rows (sync_activity|sleep|heart|body, self_logged_health), the
+# apple_health / health_connect connector_registry rows, the connector category
+# and granted_via CHECK supersets, fn_set_health_consent with
+# native_health_sync, privileges, the VTID-05156 revoke still in place,
+# idempotency, and the refusal to apply without VTID-05092. Never runs against
+# Supabase or Aurora.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*vtid_05164*.sql'
+      - 'supabase/migrations/*vtid_05092*.sql'
+      - 'supabase/migrations/*vtid_05156*.sql'
+      - 'supabase/migrations/20260417000000_vtid_02100_connector_framework.sql'
+      - 'supabase/migrations/20260417000100_vtid_02100_connector_registry_seed.sql'
+      - 'supabase/migrations/20260417010000_vtid_02100_connector_registry_update.sql'
+      - 'scripts/ci/sql-tests/**'
+      - '.github/workflows/SQL-HEALTH-SYNC-CONSENT.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the Health Sync consent test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-health-sync-consent-test.sh 2>&1 | tee /tmp/health-sync-consent.log
+      - name: Assert the test ran to the end
+        run: |
+          grep -q '^PASS vtid-05164 health sync consent' /tmp/health-sync-consent.log
+          grep -q '^PASS vtid-05164 prerequisite guard' /tmp/health-sync-consent.log

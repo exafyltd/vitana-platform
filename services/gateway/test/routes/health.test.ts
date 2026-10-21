@@ -161,21 +161,21 @@ describe('Health Router', () => {
   });
 
   // ============================================================
-  // POST /wearables/ingest — RETIRED (VTID-05156)
+  // POST /wearables/ingest — RETIRED (VTID-05156); body names Health Sync v1 (VTID-05164)
   // ============================================================
-  describe('POST /wearables/ingest (retired, VTID-05156)', () => {
+  describe('POST /wearables/ingest (retired, VTID-05156 / VTID-05164)', () => {
     const cases: Array<[string, Record<string, string>, unknown]> = [
       ['no Authorization header', {}, {}],
       ['a bearer token and a valid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] }],
       ['a bearer token and an invalid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit' }],
     ];
 
-    it.each(cases)('answers 410 ENDPOINT_RETIRED with %s, before any database call', async (_label, headers, body) => {
+    it.each(cases)('answers 410 SUPERSEDED (use /api/v1/health/ingest) with %s, before any database call', async (_label, headers, body) => {
       let req = request(testApp).post('/wearables/ingest');
       for (const [k, v] of Object.entries(headers)) req = req.set(k, v);
       const res = await req.send(body as object);
       expect(res.status).toBe(410);
-      expect(res.body).toEqual({ ok: false, error: 'ENDPOINT_RETIRED' });
+      expect(res.body).toEqual({ ok: false, error: 'SUPERSEDED', use: '/api/v1/health/ingest' });
       // No Supabase client is built and no RPC (me_context or the revoked
       // health_ingest_wearable_samples) is called, and no OASIS event fires.
       expect(mockCreateUserSupabaseClient).not.toHaveBeenCalled();

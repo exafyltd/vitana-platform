@@ -1,0 +1,22 @@
+# full gateway Jest (npx jest --silent), local env; failing suites identical to the base (A2 run full-jest-05159): all fail on missing local modules libphonenumber-js / @aws-sdk/client-pinpoint-sms-voice-v2
+FAIL test/autopilot-pipeline.test.ts
+FAIL test/governance.test.ts
+FAIL test/operator-chat-oasis.test.ts
+FAIL test/operator-command.test.ts
+FAIL test/operator-deployments.test.ts
+FAIL test/routes/command-hub-static-cache-headers.test.ts
+FAIL test/task-extractor.test.ts
+FAIL test/vtid-03926-operator-chat-userrole.test.ts
+FAIL test/vtid-03928-operator-cross-session-memory.test.ts
+FAIL test/vtid-04028-operator-turn-stream.test.ts
+FAIL test/vtid-04172-operator-simulated-tool-call-retry.test.ts
+FAIL test/vtid-04309-thread-messages-route.test.ts
+FAIL test/vtid-04402-connected-apps.test.ts
+FAIL test/vtid-04439-contacts-import-collisions.test.ts
+FAIL test/vtid-04449-outlook-contacts.test.ts
+FAIL test/vtid-04986-overview-timeseries-retired.test.ts
+FAIL test/vtid-05057-contacts-phone-matching.test.ts
+FAIL test/vtid-05095-phone-verification.test.ts
+FAIL test/vtid.test.ts
+Test Suites: 19 failed, 2 skipped, 1691 passed, 1710 of 1712 total
+Tests:       4 failed, 24 skipped, 6 todo, 27534 passed, 27568 total

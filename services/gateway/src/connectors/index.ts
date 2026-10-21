@@ -24,6 +24,8 @@ import doctorBoxConnector from './health/doctorbox';
 // VTID-04403 / VTID-04404: Outlook (Microsoft Graph) and iCloud (Apple).
 import microsoftConnector from './productivity/microsoft';
 import appleConnector from './productivity/apple';
+// VTID-05164: phone health stores (Health Sync v1, no OAuth — sdk_bridge).
+import { appleHealthConnector, healthConnectConnector } from './health-store/phone-store';
 
 const CONNECTORS = new Map<string, Connector>();
 
@@ -46,6 +48,8 @@ register(vitanaHubConnector);
 register(doctorBoxConnector);
 register(microsoftConnector);
 register(appleConnector);
+register(appleHealthConnector);
+register(healthConnectConnector);
 
 export function getConnector(id: string): Connector | undefined {
   return CONNECTORS.get(id);
