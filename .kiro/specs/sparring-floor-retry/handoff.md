@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-19T18:45Z
+updated: 2026-10-21T11:03Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -87,3 +87,156 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-20T20:01Z · kiro-exafy-202610202001-7717 · approved (automation-started driver woke, no buildable work)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan `kiro-autonomy-fallback`). This plan's driver heartbeat was
+`none`, and the plan is `approved` with `author_seat: exafy`, so item W applied: wrote the first heartbeat
+(`73897f39…`, no other driver alive) and took the `_plan` claim (`5e65cb85…`). `plan-driver.mjs next` returns one
+action, `build floor-retry-code` (VTID-05240). An **automation-started driver never builds a governance lane or an
+`executor: claude` lane** (`.kiro/pipeline/driver.md` → "Automation-started driver"), and `floor-retry-code` is both
+(`executor: claude`, paths under `scripts/collab/**`). No open `plan(` PR, no sparring round awaiting a response, no
+`in-review` lane. So there is no action this driver may take beyond the heartbeat: the lane waits for its builder
+(Claude Code) or an interactive driver. Front matter unchanged (`state: approved`, `next_actor: claude` is correct —
+the lane's builder is Claude Code). No VTID allocated, no merge, no live-system write.
+
+### 2026-10-20T22:03Z · kiro-exafy-202610202201-f154 · approved (driver heartbeat refreshed, still no buildable work)
+Next fallback wake-up (`.kiro/automations/exafy.md`, item W). The 20:01Z driver's heartbeat had gone stale (`none`),
+so I took it over: refreshed the heartbeat on `refs/heads/collab-driver/sparring-floor-retry` (took over
+`kiro-exafy-202610202101-2af8`), released that session's stale `_plan` claim and took `_plan` as
+`kiro-exafy-202610202201-f154`. State is unchanged from the 20:01Z entry: `plan-driver.mjs next` still returns only
+`build floor-retry-code`, which is `executor: claude` on governance paths, so an automation-started driver may not
+build it; `CLAUDE_AVAILABLE` is unreadable from Kiro Web (HTTP 403 → no override), so the lane is not reassigned to
+the exceptions seat either. Driver is alive again for the next ~45 min; the lane still waits for Claude Code. No
+state change, no VTID, no merge, no live write.
+
+### 2026-10-20T23:04Z · kiro-exafy-202610202301-8f4f · approved (driver heartbeat refreshed, still no buildable work)
+Next fallback wake-up (`.kiro/automations/exafy.md`, item W). The 22:03Z driver's heartbeat had gone stale (tip
+`574243c8…` was ~57 min old, > 45 min), so I took it over: refreshed the heartbeat on
+`refs/heads/collab-driver/sparring-floor-retry` (`aa8605a8…`, took over `kiro-exafy-202610202201-f154`) and took the
+`_plan` claim (`8dafe605…`) as `kiro-exafy-202610202301-8f4f`. Resumed from git: `plan(` PR #4186 is merged (spec on
+`origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response, no `in-review` lane.
+`plan-driver.mjs next` still returns only `build floor-retry-code`, which is `executor: claude` on governance paths
+(`scripts/collab/**`, incl. the protected gate file `scripts/collab/plan-spar.mjs`); an automation-started driver may
+not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` → "Automation-started driver";
+automation file Wake-a-driver point 3). `CLAUDE_AVAILABLE` is still unreadable from Kiro Web (HTTP 403 → no override),
+so no reassignment to the exceptions seat. The lane waits for Claude Code or an interactive driver. Front matter
+unchanged. No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes.
+
+### 2026-10-21T00:05Z · kiro-exafy-202610210001-0dcc · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was `none`
+(stale), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`4e5384f1…`, took over from
+`kiro-exafy-202610202301-8f4f`) and took the `_plan` claim (`c2033b21…`). Resumed from git: `plan(` PR is merged
+(spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response, nothing
+`in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file `scripts/collab/plan-spar.mjs`);
+an automation-started driver may not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` →
+"Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md §7a). `CLAUDE_AVAILABLE` is still
+unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the exceptions seat `exafyltd`; and this lane
+would never route to `exafy`. The lane waits for Claude Code or an interactive/exceptions driver. Front matter
+unchanged in meaning. No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop; the next wake-up
+resumes from git.
+
+### 2026-10-21T01:00Z · kiro-exafy-202610210100-118b · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was `none`
+(stale), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`29bbdf0c…`, took over from
+`kiro-exafy-202610210001-0dcc`) and took the `_plan` claim (`09572439…`). Resumed from git: `plan(` PR #4186 is
+merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response,
+nothing `in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file
+`scripts/collab/plan-spar.mjs`); an automation-started driver may not build a governance or `executor: claude` lane
+(`.kiro/pipeline/driver.md` → "Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md
+§7a). `CLAUDE_AVAILABLE` is still unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the
+exceptions seat `exafyltd`; and this lane would never route to `exafy`. The lane waits for Claude Code or an
+interactive/exceptions driver. Front matter unchanged. No VTID, no merge, no live-system write. Releasing the
+`_plan` claim on stop; the next wake-up resumes from git.
+
+### 2026-10-21T03:03Z · kiro-exafy-202610210301-66d7 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was `none`
+(stale), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`45a504507…`, took over from
+`kiro-exafy-202610210201-f90f`) and took the `_plan` claim (`e5494dd9…`). Resumed from git: `plan(` PR #4186 is
+merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response (both
+sparring sessions are terminal in `state.json`; session 2 converged and is policy-approved `converged-auto-v1`),
+nothing `in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file `scripts/collab/plan-spar.mjs`);
+an automation-started driver may not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` →
+"Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md §7a). `CLAUDE_AVAILABLE` is still
+unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the exceptions seat `exafyltd`; and this lane
+would never route to `exafy`. The lane waits for Claude Code or an interactive/exceptions driver. Front matter
+unchanged. No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes
+from git.
+
+### 2026-10-21T04:04Z · kiro-exafy-202610210401-6704 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was stale
+(~57 min), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`99d25fff…`, took over from
+`kiro-exafy-202610210301-66d7`) and took the `_plan` claim (`106d2de7…`). Resumed from git: `plan(` PR #4186 is
+merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response (both
+sparring sessions terminal in `state.json`; session 2 converged and is policy-approved `converged-auto-v1`), nothing
+`in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file `scripts/collab/plan-spar.mjs`);
+an automation-started driver may not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` →
+"Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md §7a). `CLAUDE_AVAILABLE` is still
+unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the exceptions seat `exafyltd`; and this lane
+would never route to `exafy`. The lane waits for Claude Code or an interactive/exceptions driver. Front matter
+unchanged (next_actor stays `claude`). No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop;
+the next wake-up resumes from git.
+
+### 2026-10-21T07:01Z · kiro-exafy-202610210701-ead8 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was `none`
+(stale), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`4434f517…`, took over from
+`kiro-exafy-202610210601-9d77`) and took the `_plan` claim (`d6492ded…`). Resumed from git: `plan(` PR #4186 is
+merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response (both
+sparring sessions terminal in `state.json`; session 2 converged and is policy-approved `converged-auto-v1`), nothing
+`in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file `scripts/collab/plan-spar.mjs`);
+an automation-started driver may not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` →
+"Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md §7a). `CLAUDE_AVAILABLE` is still
+unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the exceptions seat `exafyltd`; and this lane
+would never route to `exafy`. The lane waits for Claude Code or an interactive/exceptions driver. Front matter
+unchanged (next_actor stays `claude`). No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop;
+the next wake-up resumes from git.
+
+### 2026-10-21T09:04Z · kiro-exafy-202610210902-47c9 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat was `none`
+(stale), so I took over `refs/heads/collab-driver/sparring-floor-retry` (`7fa3b0ce…`, took over from
+`kiro-exafy-202610210801-688e`) and took the `_plan` claim (`58df8767…`). Resumed from git: `plan(` PR #4186 is
+merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a response (both
+sparring sessions terminal in `state.json`; session 2 converged and is policy-approved `converged-auto-v1`), nothing
+`in-review`, nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is
+`executor: claude` on governance paths `scripts/collab/**` (incl. the protected gate file `scripts/collab/plan-spar.mjs`);
+an automation-started driver may not build a governance or `executor: claude` lane (`.kiro/pipeline/driver.md` →
+"Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md §7a). `CLAUDE_AVAILABLE` is still
+unreadable from Kiro Web (HTTP 403 → no override), so no reassignment to the exceptions seat `exafyltd`; and this lane
+would never route to `exafy`. The lane waits for Claude Code or an interactive/exceptions driver. Front matter
+unchanged (next_actor stays `claude`). No VTID, no merge, no live-system write. Releasing the `_plan` claim on stop;
+the next wake-up resumes from git.
+
+### 2026-10-21T10:03Z · kiro-exafy-202610211001-d784 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The driver heartbeat tip
+(`kiro-exafy-202610210902-47c9`, 2026-10-21T09:06Z) was ~56 min old (> 45 min, `heartbeat-age` 3378090 ms), so I
+took it over (`62624dfe…`) and took the `_plan` claim (`522304e4…`) as `kiro-exafy-202610211001-d784`. Resumed from
+git: `plan(` PR merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a
+response (all rounds answered; `s2-round-2` converged, policy-approved `converged-auto-v1`), nothing `in-review`,
+nothing to land. `plan-driver.mjs next` still returns only `build floor-retry-code`, which is `executor: claude`,
+`seat: claude` on governance paths `scripts/collab/**` and `services/gateway/src/services/plan-sparring/**` (incl. the
+protected gate file `scripts/collab/plan-spar.mjs`); an automation-started driver may not build a governance or
+`executor: claude` lane (`.kiro/pipeline/driver.md` → "Automation-started driver"; automation file Wake-a-driver point
+3; collaboration.md §7a). The live queue now shows `floor-retry-code` with `seat: exafyltd` on branch
+`origin/pm-agent/sparring-floor-retry` (updated 2026-10-21T10:01Z by `pm-agent`), i.e. the exceptions seat has picked
+it up. `CLAUDE_AVAILABLE` unreadable from Kiro Web (HTTP 403 → no override). Front matter unchanged (next_actor stays
+`claude`). No VTID, no merge, no dispatch, no live-system write. Releasing the `_plan` claim on stop; the next wake-up
+resumes from git.
+
+### 2026-10-21T11:03Z · kiro-exafy-202610211101-0868 · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. The 10:03Z driver's heartbeat tip
+(`kiro-exafy-202610211001-d784`, 2026-10-21T10:06Z) was 56 min old (> 45 min), so I took it over
+(`964d1797…`) and took the `_plan` claim (`2b48ccf7…`) as `kiro-exafy-202610211101-0868`. Resumed from git:
+`plan(` PR #4186 merged (spec on `origin/main`), VTID-05240 allocated, no open plan PR, no sparring round awaiting a
+response (session 2 converged, policy-approved `converged-auto-v1`), nothing `in-review`, nothing to land.
+`plan-driver.mjs next` still returns only `build floor-retry-code`, which is `executor: claude` on governance paths
+`scripts/collab/**` and `services/gateway/src/services/plan-sparring/**` (incl. the protected gate file
+`scripts/collab/plan-spar.mjs`); an automation-started driver may not build a governance or `executor: claude` lane
+(`.kiro/pipeline/driver.md` → "Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md
+§7a). The live queue shows `floor-retry-code` now `seat: exafyltd` on branch `origin/pm-agent/sparring-floor-retry`
+(updated 2026-10-21T11:03Z by `pm-agent`), i.e. the exceptions seat still holds it. `CLAUDE_AVAILABLE` unreadable
+from Kiro Web (HTTP 403 → no override). Front matter unchanged except `updated` (next_actor stays `claude`). No VTID,
+no merge, no dispatch, no live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes from git.
