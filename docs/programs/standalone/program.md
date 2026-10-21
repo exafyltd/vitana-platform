@@ -11,6 +11,7 @@ specs:
   - vitana-platform:retire-claude-code
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
+  - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-kiro-governance
@@ -37,6 +38,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:i18n-audit-nightly-off` — stop the nightly i18n audit in vitana-v1, keep the manual one
 - `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
 - `vitana-platform:fix-4182-test-fallout` — staging suite + Jest pin left stale by #4182 (VTID-05082)
+- `vitana-platform:collab-queue-perf` — collab queue reads git in a constant number of processes
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
 - `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
