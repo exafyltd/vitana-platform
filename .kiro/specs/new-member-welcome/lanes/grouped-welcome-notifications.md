@@ -8,7 +8,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-21T08:43Z
+updated: 2026-10-21T08:45Z
 parked_from: in-review
 ---
 # Grouped greeting-DM notifications
@@ -540,4 +540,6 @@ park (stale_claim); claim released
 ### 2026-10-21T08:41Z · pm-agent · update
 park (stale_claim); claim released
 ### 2026-10-21T08:43Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-21T08:45Z · pm-agent · update
 park (stale_claim); claim released
