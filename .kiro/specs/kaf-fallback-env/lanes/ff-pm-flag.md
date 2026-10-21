@@ -16,6 +16,7 @@ paths:
   - docs/validation/VTID-*/**
 updated: 2026-10-21T00:30Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
+pr: https://github.com/exafyltd/vitana-platform/pull/4242
 vtid: VTID-05281
 ---
 # ff-pm-flag — an unreadable `CLAUDE_AVAILABLE` repo variable falls back to the env; the 4 h rule stays
