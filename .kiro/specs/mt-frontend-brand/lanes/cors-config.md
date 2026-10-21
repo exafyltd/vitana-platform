@@ -9,7 +9,7 @@ reviewer_seat: exafyltd
 paths:
   - services/gateway/src/middleware/cors.ts
   - services/gateway/test/middleware/cors.test.ts
-updated: 2026-10-21T14:07Z
+updated: 2026-10-21T14:09Z
 vtid: VTID-05243
 ---
 # cors-config — config-driven CORS allowlist (repo vitana-platform)
@@ -43,4 +43,6 @@ VTID-05243 allocated after policy approval (converged-auto-v1).
 ### 2026-10-21T14:05Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-21T14:07Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-21T14:09Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
