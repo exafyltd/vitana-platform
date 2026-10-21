@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: approved
 author_seat: exafyltd
-updated: 2026-10-21T09:24Z
+updated: 2026-10-21T09:29Z
 sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
 vtids: [VTID-05285, VTID-05286, VTID-05287, VTID-05288, VTID-05289, VTID-05290, VTID-05291, VTID-05292, VTID-05293, VTID-05294]
 ---
@@ -62,3 +62,6 @@ Answered round 2 in `sparring/responses-2.md`. R2-F1 and R2-F2 deferred to a fre
 
 ### 2026-10-21T09:24Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 10 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-21T09:29Z · kiro-202610182052-5ce2 · note on the convergence (no state change)
+Session 5fbb73a2 converged at round 3 with no findings and was policy-approved (VTID-05285 … 05294), but its pin (vitana-platform 7b6425b, no vitana-v1 ref) meant the partner never read vitana-v1: R2-F1/R2-F2 were acknowledged as deferred to an `s2-` session that now will not open, because a converged plan does not replan. So the vitana-v1 premises (PR-GATE.yml:150-153/:166-190, gate.mjs:100/:120/:122, lib.mjs:112/:132, config.json:2, design.json 544/3,705, manifest 346 = 329 + 17, at vitana-v1 1a553367f) are planner-verified only. Mitigation already in the plan: every lane runs `ratchet-design`/`baseline-design` locally and the reviewer seat checks the PR-GATE summary line, so a wrong premise shows up on the first lane PR. Claude Code may decide whether a vitana-v1-pinned re-spar is wanted before lanes start; this session does not change the approval.
