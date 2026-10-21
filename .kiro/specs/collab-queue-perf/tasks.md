@@ -1,6 +1,7 @@
 # Tasks — collab-queue-perf
 <!-- lane: queue-batch-read -->
-- [ ] T1 `queue.mjs`: `catFileBatch(repo, queries)` → `Map<query, string|null>` over one `git cat-file --batch`.
+- [ ] T1 `queue.mjs`: `catFileBatch(repo, queries)` → `Map<query, string|null>` over one `git cat-file --batch`
+      (Buffer output, `maxBuffer: 256 MiB`; the same limit on the `rev-list` / `log` calls of T2).
 - [ ] T2 `collect()`: main spec contents through T1; branch → changed spec files from one `rev-list --parents` +
       one pathspec'd `log --cc --name-status`, walked as in `plan.md` §Changes 3; all `(ref, path)` contents and
       the claim commit messages through the same T1 batch.

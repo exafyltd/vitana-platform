@@ -25,7 +25,8 @@ Cost grows with branches × spec files, and both keep growing. vitana-v1 also ha
 `delete_branch_on_merge: false`, so merged PR branches pile up (1,681 remote refs, vs 494 in vitana-platform).
 
 ## Goal
-1. `queue.mjs` (table, `--json`, `--mine`, `--seat`, `validate`) shows exactly the same rows as today.
+1. `queue.mjs` (table, `--json`, `--mine`, `--seat`, `validate`) shows exactly the same rows as today, except the
+   one case named in "Difference from today".
 2. The number of `git` processes per repo is constant, not proportional to branches, spec files, claims or
    programmes: `collect()` ≤ 8 (6 when `origin/HEAD` is set; see the budget below), `loadPrograms()` 2,
    standalone `listClaims()` 2. A CLI `queue` run is ≤ 10 per repo.
@@ -35,6 +36,10 @@ Cost grows with branches × spec files, and both keep growing. vitana-v1 also ha
 1. **One batch reader.** A helper that starts one `git cat-file --batch` process, writes all `<rev>:<path>` (or
    `<sha>`) queries to stdin and parses the replies (`<oid> <type> <size>\n<bytes>\n`, or `<query> missing`).
    Synchronous via `execFileSync(..., { input })`, so `collect()` keeps its signature and stays synchronous.
+   **Every batch-style call sets `maxBuffer: 256 * 1024 * 1024`** (the Node default of 1 MB is exceeded by
+   vitana-platform's 150+ spec files): the `cat-file --batch` reader returns a Buffer (`encoding: 'buffer'`, sizes
+   are bytes), and the `rev-list --parents` and `log --cc --name-status` calls of step 3 use the same limit. An
+   `ENOBUFS` or other spawn error is thrown, never swallowed as "no data".
 2. **Main specs.** `specFilesAt(main)` stays one `ls-tree`; their contents come from the batch reader.
 3. **Which branch changed which spec file**, in two calls instead of one diff per branch, with the recent refs
    (same `--days` filter on tip committer date as today) on stdin:
@@ -77,6 +82,14 @@ CLI `queue` path adds `loadPrograms()` = 2.
 changed and then reverted is now read too. Its content is the base version, so it is equal to or older than main's
 and never wins, except for a file main has since deleted. Then it can reappear as a row. Guard: skip a `(ref, path)`
 whose `path` is not on main unless the branch's own commits added it (the walk tells us).
+The guard's one visible difference: a stale branch that **modified** (status `M`, not `A`) a handoff/lane file that
+`main` has since deleted. Today the three-dot diff lists it and the branch's copy shows as a row; with the guard it
+does not. Accepted: `main` deleting a spec file means that plan or lane was removed, and a stale branch must not bring
+it back into the queue. Every other case gives the same rows as today:
+- reverted on the branch, path on main → read, but its `updated` is the base version's (≤ main's; main wins ties);
+- reverted, path not on main, status `M` → skipped by the guard, as today (empty net diff);
+- added then deleted on the branch → `<ref>:<path>` is `missing` in the batch → skipped, as today;
+- added on the branch (status `A`), deleted on main or never on main → read, as today.
 
 ## Not in this plan (owner decision, deletes data on GitHub)
 - Turning on "Automatically delete head branches" for `exafyltd/vitana-v1`.
@@ -87,9 +100,12 @@ After this plan they make `git fetch` faster but are no longer needed for the qu
 ## Tests
 - `scripts/collab/queue.test.mjs`: a fixture repo (temp dir, `git init`, a fake `origin` remote) with main specs,
   three branches (one changing a lane, one changing then reverting, one adding a new spec), an old branch outside
-  `--days`, a file deleted on main, and two claim refs. Assert `collect()` output equals the old implementation's
-  output (keep the old one in the test as `collectReference`). Also a branch that merged `main` in, with a conflict
-  resolution in a spec file in the merge commit. Spawn count, by wrapping the `git` helper: `collect()` = 6 with
+  `--days`, a branch that added a lane file (status `A`) which main later deleted, a branch that merged `main` in with
+  a conflict resolution in a spec file in the merge commit, and two claim refs. Assert `collect()` output equals the
+  old implementation's output (keep the old one in the test as `collectReference`). **Separate, labelled guard
+  fixture** (excluded from the equality check, with a comment naming this section): a stale branch that modified
+  (status `M`) a lane file main has since deleted; assert that path does NOT appear in the new `collect()` output.
+  A batch-size test: a fixture whose spec blobs total > 2 MB reads back in full (guards the `maxBuffer` setting). Spawn count, by wrapping the `git` helper: `collect()` = 6 with
   `origin/HEAD` set, ≤ 8 without it, and the same count with 3 and with 8 recent branches; `loadPrograms()` = 2;
   `listClaims()` = 2 and its output equals the old implementation's for the two claim refs.
 - Run `node --test scripts/collab/queue.test.mjs` and the existing `queue.mjs validate` tests.
