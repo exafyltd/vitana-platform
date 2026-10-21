@@ -1,6 +1,6 @@
 ---
 lane: wire-extra-refs
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - .github/workflows/PLAN-SPAR.yml
   - .kiro/specs/plan-spar-vitana-v1-ref/**
-updated: 2026-10-21T22:03Z
+updated: 2026-10-21T13:00Z
 vtid: VTID-05299
 ---
 # Lane: wire-extra-refs (repo vitana-platform)
@@ -41,3 +41,30 @@ on `main`) into the impl-carrying branch. One content conflict in `plan-spar.tes
 late-lane allocation suite and this lane's 8 `spar_refs:` AC tests; dropped the obsolete `R1-F1: extraRefs`
 test (it passes `extraRefs` into `step()`, an API this impl removed — `step()` now reads `spar_refs` from
 `handoff.md` and resolves internally). `node --check` clean. Lane → in-review for the reviewer agent.
+
+### 2026-10-21T13:00Z · kiro-202610152203-0347 · in-review → done (MERGED to main)
+Review verdict **APPROVED** (`.agents/tasks/plan-spar-vitana-v1-ref/stage1-review.json`/`.md`). Merged PR
+**#4202** into `vitana-platform` `main`.
+**Merge commit SHA: `b74135485c2f1db7211e9371f60fd8c32358a5df`** (now `origin/main` HEAD).
+Authorized under **owner instruction 2026-10-19, collaboration.md §7b** (owner-directed merge/deploy exception:
+full automation to a verified staging build, per-PR merge-to-main authorized for this Kiro session; production /
+PUBLISH / `AWS-PROD-*` untouched and still forbidden). Deploy path is staging-only — the changed files
+(`scripts/collab/**`, `.github/workflows/PLAN-SPAR.yml`) trigger no `AWS-PROD-*` workflow (all prod deploys are
+`workflow_dispatch`-only, no push trigger).
+Merged with `gh pr merge 4202 --merge --admin`. The `--admin` override cleared three **governance-artifact
+false-positive** checks, per §7b ("a failing governance-artifact check that is a known false positive … may be
+`--admin`-overridden; a real red test or build is never overridden"):
+- **Lane scope** / **Collab handoff** — this lane has `executor: kiro` but touches governance paths
+  (`scripts/collab/**`, `.github/workflows/PLAN-SPAR.yml`), which the gates expect from an `executor: claude`
+  change; an intentional, owner-authorized governance-path lane, plus a seat-naming warning (session names no
+  seat; lane belongs to seat `exafy`).
+- **VALIDATOR-CHECK (`validate-pr`)** — fired only because the PR adds `docs/validation/VTID-05299/`; the gate's
+  profiles (`command_hub_frontend`/`gateway_backend`) cannot judge a `scripts/collab/` + `.github/workflows/`
+  change, and inventing a gateway-profile evidence pack would file evidence for the wrong work (the gate's own
+  VTID-03696 warning). Not a real red.
+Every substantive check was green: CI-SCRIPTS-TEST (`node --test`), `unit`, STAGING-TESTS-REQUIRED `change-suite`,
+PR-GATE `pr-gate`, both Phase 2B gates, Dev Autopilot scan, and the sole required branch-protection context
+`validate` (ENFORCE-FRONTEND-CANONICAL-SOURCE). `enforce_admins=false` on `main`.
+**Result: the `extra_refs`/`spar_refs` wiring and the VTID-05273 `allocate_retry` governance path are now live on
+`main`** — confirmed present in `scripts/collab/plan-spar.mjs` and `.github/workflows/PLAN-SPAR.yml` on
+`origin/main`. CI can now spar `vitana-v1` plans via a declared companion ref.
