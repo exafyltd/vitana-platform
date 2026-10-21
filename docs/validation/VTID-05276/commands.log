@@ -1,0 +1,58 @@
+# VTID-05276 — kiro-autonomy-fallback/scope-check — verification log
+# Machine: Windows (Kiro IDE), node v24.11.1. Base = origin/main 422a7b045ce5883f56acadcc3b4dd0440aeb7aaa.
+
+## 1. Baseline (origin/main, before any change)
+$ node --test --test-reporter=tap scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs
+# tests 40 / pass 39 / fail 1
+not ok 35 - programme registry: shape, a spec in two programmes, queue --program column
+  (pre-existing, Windows only: the test spawns the CLI as 'C:\C:\…\queue.mjs' -> MODULE_NOT_FOUND; green on Ubuntu CI)
+
+## 2. Red on base: the new queue.test.mjs run against origin/main's queue.mjs (no JSON, old PR-GATE.yml)
+$ node --test --test-reporter=tap scripts/collab/queue.test.mjs
+# tests 46 / pass 30 / fail 16
+not ok 25 - programme registry …                         (pre-existing, Windows only, see 1)
+not ok 31 - VTID-05276 T1-T3: validateLane — kiro lane with the agent reviewer …
+ok     32 - VTID-05276 guard: validateLane does not newly refuse Kiro lanes on non-governance gate code   (guard: green on base by design)
+not ok 33 - VTID-05276 T4: scope-check passes a governance file on a kiro lane with the agent reviewer from main
+not ok 34 - VTID-05276 T5: protected gate files never pass for a kiro lane …
+not ok 35 - VTID-05276 T6: a lane PR cannot grant itself the agent reviewer
+not ok 36 - VTID-05276 T7: an agent review entry passes scope-check and validate …
+not ok 37 - VTID-05276 T8: agent session ids …
+not ok 38 - VTID-05276 T9: a lane only on a qualifying open plan( PR …
+not ok 39 - VTID-05276 T10: plan-PR permissions win …
+not ok 40 - VTID-05276 T11: an unqualified plan( PR is never trusted …
+not ok 41 - VTID-05276 T12: a lane file only in the lane PR head gets no governance exemption
+not ok 42 - VTID-05276 T13: findPlanPr … ghPlanLaneFetcher … fails closed
+not ok 43 - VTID-05276 T14: the registry accepts the reviewer agent
+not ok 44 - VTID-05276 T15: pm-agent lane-state commits are exempt …
+not ok 45 - VTID-05276 T16: protected-gate-files.json parses …
+not ok 46 - VTID-05276 T17: PR-GATE runs a "Collab handoff" job …
+Existing tests 1-30 unchanged and green (except the Windows-only #25).
+
+## 3. Green on the lane head
+$ node --test --test-reporter=tap scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs
+# tests 56 / pass 55 / fail 1
+not ok 35 - programme registry …                         (same pre-existing Windows-only failure, MODULE_NOT_FOUND 'C:\C:\…')
+All 16 new tests + the guard pass; plan-spar.test.mjs 10/10 pass.
+
+## 4. CLI on the lane branch (head checker, then the base copy exactly as CI Lane scope runs it)
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/scope-check
+✅ lane scope — lane kiro-autonomy-fallback/scope-check: every change is inside its paths          (exit 0)
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-autonomy-fallback/scope-check
+✅ collab handoff — 1 handoff/lane file(s) changed, all valid                                      (exit 0)
+$ git show origin/main:scripts/collab/queue.mjs > $TEMP/queue.mjs
+$ node $TEMP/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch … --plan-repo exafyltd/vitana-platform
+✅ lane scope — lane kiro-autonomy-fallback/scope-check: every change is inside its paths          (exit 0)
+
+## 5. Single-file copy of the new queue.mjs (no protected-gate-files.json next to it, as in CI/vitana-v1)
+$ node $TEMP/new/queue.mjs session-id --agent agent:vitana-lane-reviewer
+agent-vitana-lane-reviewer-202610201847-3889                                                       (exit 0)
+$ node -e "import(…/queue.mjs).then(m => m.PROTECTED_GATE_PATHS.length)"
+builtin used, entries: 12
+$ node $TEMP/new/queue.mjs session-id --agent agent:other
+queue.mjs: only Kiro sessions and reviewer agents (agent:vitana-lane-reviewer) generate an id …    (exit 2)
+
+## 6. Workflow YAML
+$ node -e "require('js-yaml').load(fs.readFileSync('.github/workflows/PR-GATE.yml'))"   (js-yaml from services/gateway/node_modules)
+parsed; jobs: pr-gate=, collab-handoff=Collab handoff, lane-scope=Lane scope
+lane-scope env GH_TOKEN: ${{ github.token }}

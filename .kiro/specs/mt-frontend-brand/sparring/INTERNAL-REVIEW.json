@@ -1,0 +1,17 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-frontend-brand/design.md",
+      "issue": "The 'Rules every successor follows' section 1 tells the email-brand-db executor to add a not-yet-live object to scripts/ci/migration-drift-baseline.json, but that drift check lives in vitana-platform and guards platform migrations; email-brand-db's migration is in vitana-v1 (supabase/migrations/), which has no such baseline. Carried-over platform boilerplate that does not apply here. Not a Lane-scope defect (paths correctly omit the file).",
+      "fix": "Scope the baseline sentence in design.md §1 to 'platform migrations only; a vitana-v1 migration has no drift baseline to touch,' so the executor does not attempt to edit a file outside its repo/paths."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-frontend-brand/lanes/email-brand-code.md",
+      "issue": "Premises cite exact line numbers for sibling edge functions (send-appointment-email/-reminder, send-welcome-discount) and OG workers (og-event/og-campaign/og-short) that were not re-opened individually; the brief warns program file:line refs may have drifted. Representative files (voucher-send-email, og-share) were verified directly and the pattern is consistent, so this is low risk.",
+      "fix": "Add a note to the email-brand-code lane body: 'line numbers for sibling edge functions are indicative — re-locate the hardcoded literal by grep at build time rather than trusting the exact lines.'"
+    }
+  ]
+}

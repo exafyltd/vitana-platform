@@ -1,0 +1,11 @@
+{
+  "_doc": "VTID-05236. Commits that landed on main without a VTID in their subject and cannot get a change suite after the fact. Each entry names the FULL sha, the VTID whose staging-tests.json covers it, why, and who approved it. STAGING-VERIFY runs the covering suite and lists the commit as covered. Only commits with no VTID of their own are affected.",
+  "covers": [
+    {
+      "sha": "229b38b2111cd407ff9c3cefc46d3f7e1486380c",
+      "vtid": "VTID-05236",
+      "reason": "plan(sparring-model-fallback) #4184 added the Sonnet 4.6 throttle fallback without a VTID; VTID-05236 extends exactly that code (partner.ts tiers) and its suite runs the partner and stage tests.",
+      "approved_by": "owner, Kiro session 2026-10-19 ('do A')"
+    }
+  ]
+}

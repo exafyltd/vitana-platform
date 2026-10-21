@@ -1,0 +1,4 @@
+VTID-05272 local test results (2026-10-20, branch kiro/kiro-autonomy-fallback/pipeline-speed)
+node --test (shard-union, rerun-policy, slot, staging-verify lib, plan-driver): tests 91, pass 91, fail 0, skipped 0
+jest test/vtid-05077-planner-fallback-and-thinking.test.ts: Test Suites 1 passed; Tests 15 passed, 15 total
+jest --listTests: 1730; shards 433/433/432/432; union 1730, missing 0, duplicates 0
