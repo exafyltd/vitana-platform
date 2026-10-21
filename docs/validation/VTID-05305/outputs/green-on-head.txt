@@ -1,0 +1,14 @@
+Γ£ö a complete PR body (from the template) passes with code 0 (4.5825ms)
+Γ£ö a missing profile fails with the historic exit 11, not a bare message (1.2329ms)
+Γ£ö an empty body reports ALL five missing declarations at once (0.505ms)
+Γ£ö each marker keeps its own historic exit code when it is the first missing (0.788ms)
+Γ£ö a non-string body is treated as empty, never throws (0.5215ms)
+Γ£ö the CLI --pr-body-check exits 0 for a complete body and 11 for a missing profile (419.9512ms)
+Γä╣ tests 6
+Γä╣ suites 0
+Γä╣ pass 6
+Γä╣ fail 0
+Γä╣ cancelled 0
+Γä╣ skipped 0
+Γä╣ todo 0
+Γä╣ duration_ms 628.6422

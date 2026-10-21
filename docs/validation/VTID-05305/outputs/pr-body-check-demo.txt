@@ -1,0 +1,21 @@
+REJECTED: PR body is missing 4 required declaration(s): VALIDATION_PROFILE, SCOPE_ALLOWLIST, ACCEPTANCE, MERGE_PAYLOAD_PREVIEW
+
+Fix all of them in one edit ΓÇö the .github pull request template already
+contains every line below. Add each missing declaration to the PR body:
+
+ΓÇó VALIDATION_PROFILE (exit 11):
+  Add a line naming one of the known profiles (command_hub_frontend, gateway_backend):
+    VALIDATION_PROFILE: gateway_backend
+
+ΓÇó SCOPE_ALLOWLIST (exit 12):
+  List the paths this PR is allowed to touch:
+    SCOPE_ALLOWLIST: services/gateway/src/**, docs/validation/**
+
+ΓÇó ACCEPTANCE (exit 13):
+  Point at the evidence acceptance file:
+    ACCEPTANCE: docs/validation/VTID-XXXXX/acceptance.md
+
+ΓÇó MERGE_PAYLOAD_PREVIEW (exit 14):
+  Describe what a merge of this PR deploys (or "none"):
+    MERGE_PAYLOAD_PREVIEW: none (CI-only change, deploys nothing)
+

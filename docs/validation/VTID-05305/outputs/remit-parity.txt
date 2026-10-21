@@ -1,0 +1,19 @@
+REMIT == VALIDATOR-CHECK.yml paths: — the trigger stays path-scoped to the
+gateway trees, so no new PR types are bitten by this lane's change (AC-4).
+
+trigger paths: [
+  'docs/validation/',
+  'services/gateway/dist/',
+  'services/gateway/openapi/',
+  'services/gateway/src/',
+  'services/gateway/test/'
+]
+REMIT        : [
+  'docs/validation/',
+  'services/gateway/dist/',
+  'services/gateway/openapi/',
+  'services/gateway/src/',
+  'services/gateway/test/'
+]
+match        : true
+prBodyRequirements exported: true
