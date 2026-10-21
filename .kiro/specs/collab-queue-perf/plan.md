@@ -26,7 +26,9 @@ Cost grows with branches × spec files, and both keep growing. vitana-v1 also ha
 
 ## Goal
 1. `queue.mjs` (table, `--json`, `--mine`, `--seat`, `validate`) shows exactly the same rows as today.
-2. The number of `git` processes per repo is constant (≤ 6), not proportional to branches, spec files or claims.
+2. The number of `git` processes per repo is constant, not proportional to branches, spec files, claims or
+   programmes: `collect()` ≤ 8 (6 when `origin/HEAD` is set; see the budget below), `loadPrograms()` 2,
+   standalone `listClaims()` 2. A CLI `queue` run is ≤ 10 per repo.
 3. A two-repo run takes < 10 s on the owner's Windows machine (today: 75–150 s).
 
 ## Changes (all in `scripts/collab/queue.mjs`)
@@ -40,10 +42,36 @@ Cost grows with branches × spec files, and both keep growing. vitana-v1 also ha
    `git log --stdin --not <main> --format=%x00%H --name-status -- .kiro/specs` (the spec files each of those
    commits touched). In JS, walk each branch tip through parents inside that set and union the files: that is
    the set of spec files changed on `main..ref`. Read each `(ref, path)` pair in the same batch as step 2.
-   Details in `design.md`.
-4. **Claims.** `listClaims()` reads the claim commits' messages through the batch reader (`<sha>` queries, parse the
-   body after the first blank line) instead of one `git log -1` each.
-5. Merge rule unchanged: per path, the newest `updated` wins; main is considered first and wins ties.
+   **The walk, exactly** (also in `design.md`; this block is normative):
+   - `rev-list --stdin --not <main> --parents` (no pathspec, so parents are not rewritten) prints one line per
+     off-main commit reachable from any recent tip: `<sha> <parent>…`. Build `parents: Map<sha, sha[]>`; its keys
+     are the off-main set `S`.
+   - `log --stdin --not <main> --cc --format=%x00%H --name-status -- .kiro/specs` prints, per off-main commit that
+     touched a spec file, `\0<sha>` then `<status>\t<path>` lines (`--cc` keeps a merge commit's own conflict
+     resolutions; a combined status has one letter per parent; the path is the last tab field). Build
+     `touched: Map<sha, Map<path, statuses>>`.
+   - Per recent ref: if its tip is not in `S` (already on main), it changed nothing — same as today's empty diff.
+     Otherwise depth-first from the tip, visiting each sha once, following only parents in `S`; union
+     `touched.get(sha)` over the visited commits. Paths that are not a handoff/lane file (`classifyPath`) are
+     dropped as today.
+   - Guard (see "Difference from today"): keep `(ref, path)` if `path` is on main, or a visited commit's status for it
+     contains `A`.
+4. **Claims.** One internal helper `claimsFrom(refLines, messages)` builds the claim objects (same shape as today:
+   `{key, slug, lane, sha, session, at}`). `collect()` takes the `collab-claim/*` lines from its single
+   `for-each-ref refs/remotes/origin` call (separated in JS, no second `for-each-ref`) and reads their commit
+   messages as `<sha>` queries in the same `cat-file --batch` (message = text after the first blank line).
+   **The exported `listClaims(repo)` keeps its signature and return value** for its standalone callers — `claim`
+   (queue.mjs `listClaims(repo).find(...)` after `fetch --prune`), `release`, and the `claims` CLI command: it runs
+   its own `for-each-ref refs/remotes/origin/collab-claim/` plus one `cat-file --batch` (2 spawns instead of 1 + N)
+   and returns the same array. Those callers are not edited.
+5. **Programmes.** `loadPrograms(repo, ref)` keeps its signature; it reads the `program.md` contents through one
+   `cat-file --batch` after its `ls-tree` (2 spawns instead of 1 + N).
+6. Merge rule unchanged: per path, the newest `updated` wins; main is considered first and wins ties.
+
+**Process budget per repo** (`collect()`): `symbolic-ref` 1 (+ up to 2 `rev-parse` in `defaultRemoteBranch()` only
+when `origin/HEAD` is unset), `for-each-ref refs/remotes/origin` 1 (branches and claims), `ls-tree` 1, `rev-list` 1,
+`log` 1, `cat-file --batch` 1 = 6, at most 8. `rev-list` and `log` are skipped when there are no recent refs. The
+CLI `queue` path adds `loadPrograms()` = 2.
 
 **Difference from today, accepted:** `main..ref` (commits) is a superset of `main...ref` (net diff). A file a branch
 changed and then reverted is now read too. Its content is the base version, so it is equal to or older than main's
@@ -60,8 +88,10 @@ After this plan they make `git fetch` faster but are no longer needed for the qu
 - `scripts/collab/queue.test.mjs`: a fixture repo (temp dir, `git init`, a fake `origin` remote) with main specs,
   three branches (one changing a lane, one changing then reverting, one adding a new spec), an old branch outside
   `--days`, a file deleted on main, and two claim refs. Assert `collect()` output equals the old implementation's
-  output (keep the old one in the test as `collectReference`), and assert the git spawn count ≤ 6 per repo by
-  wrapping the `git` helper.
+  output (keep the old one in the test as `collectReference`). Also a branch that merged `main` in, with a conflict
+  resolution in a spec file in the merge commit. Spawn count, by wrapping the `git` helper: `collect()` = 6 with
+  `origin/HEAD` set, ≤ 8 without it, and the same count with 3 and with 8 recent branches; `loadPrograms()` = 2;
+  `listClaims()` = 2 and its output equals the old implementation's for the two claim refs.
 - Run `node --test scripts/collab/queue.test.mjs` and the existing `queue.mjs validate` tests.
 - Manual timing on the owner's machine: `Measure-Command { node scripts/collab/queue.mjs --repo … --repo … }`
   before and after, recorded in the lane log.
