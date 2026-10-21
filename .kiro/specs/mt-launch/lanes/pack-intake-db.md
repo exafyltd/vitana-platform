@@ -12,7 +12,7 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-launch-pack-intake-pgtap.test.ts
-updated: 2026-10-21T16:16Z
+updated: 2026-10-21T16:18Z
 vtid: VTID-05324
 ---
 # pack-intake-db — tenant pack intake + content pipeline tables (repo vitana-platform)
@@ -45,4 +45,6 @@ for service_role.
 ### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05324 allocated after policy approval (converged-auto-v1).
 ### 2026-10-21T16:16Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-21T16:18Z · pm-agent · update
 reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
