@@ -92,6 +92,32 @@ test('planRange: suites run, missing ones fail only after the rule took effect',
   assert.equal(plan.relevant.length, 4, 'the docs-only commit is not part of the gateway build');
 });
 
+test('VTID-05236: commit-coverage maps a no-VTID commit onto a covering suite', () => {
+  const SHA = 'a'.repeat(40);
+  const { coverage, errors } = lib.parseCommitCoverage({
+    covers: [
+      { sha: SHA, vtid: 'VTID-00007', reason: 'covers it', approved_by: 'owner' },
+      { sha: 'abc123', vtid: 'VTID-00007', reason: 'r', approved_by: 'o' },
+      { sha: 'b'.repeat(40), vtid: 'VTID-00007', reason: '', approved_by: 'o' },
+    ],
+  });
+  assert.deepEqual(coverage, { [SHA]: 'VTID-00007' });
+  assert.equal(errors.length, 2, 'short sha and missing reason are rejected');
+  const manifests = { 'VTID-00007': { vtid: 'VTID-00007', service: 'gateway', tests: [{ kind: 'http', path: '/alive' }] } };
+  const commits = [
+    { sha: SHA, date: '2026-10-18T10:00:00Z', subject: 'plan(x): no vtid', files: ['services/gateway/src/a.ts'] },
+    { sha: 'c'.repeat(40), date: '2026-10-18T11:00:00Z', subject: 'also no vtid', files: ['services/gateway/src/b.ts'] },
+  ];
+  const plan = lib.planRange({ service: 'gateway', commits, manifests, coverage });
+  assert.deepEqual(plan.suites.map((s) => s.vtid), ['VTID-00007']);
+  assert.deepEqual(plan.covered.map((c) => c.sha), [SHA]);
+  assert.deepEqual(plan.missing.map((m) => m.sha), ['c'.repeat(40)], 'an uncovered no-VTID commit is still missing');
+  // A covering VTID without a suite is still missing, never silently passed.
+  const none = lib.planRange({ service: 'gateway', commits: [commits[0]], manifests: { 'VTID-00007': null }, coverage });
+  assert.equal(none.missing.length, 1);
+  assert.equal(lib.parseCommitCoverage(null).errors.length, 0);
+});
+
 test('planRange: an invalid manifest is reported, not run', () => {
   const plan = lib.planRange({
     service: 'gateway',
@@ -686,4 +712,34 @@ test('VTID-05129: staging-guard.ts mirrors the shared list exactly', () => {
   const fromGuard = literals.map((l) => l.replace(/,$/, ''));
   assert.deepEqual(fromGuard, lib.DEFAULT_ALLOWED_ABORTS.map((r) => r.toString()));
   assert.match(src, /!DEFAULT_ALLOWED_ABORTS\.some\(\(r\) => r\.test\(b\)\) && !allow\.some/);
+});
+// VTID-05272 (plan kiro-autonomy-fallback §5 H): per-lane attribution of a STAGING-VERIFY run.
+test('VTID-05272: summarizeByVtid names the lane whose suite failed', () => {
+  const ok = (suite, name = 't') => ({ suite, name, ok: true });
+  const bad = (suite, name = 't') => ({ suite, name, ok: false, problems: ['x'] });
+  assert.deepEqual(lib.summarizeByVtid([ok('smoke'), ok('VTID-00001'), bad('VTID-00002'), ok('VTID-00002', 'u')]),
+    { smoke: 'passed', 'VTID-00001': 'passed', 'VTID-00002': 'failed' });
+});
+test('VTID-05272: summarizeByVtid fails every VTID when smoke or a deploy row failed', () => {
+  assert.deepEqual(lib.summarizeByVtid([bad0('smoke'), { suite: 'VTID-00001', name: 't', ok: true }], ['VTID-00002']),
+    { smoke: 'failed', 'VTID-00001': 'failed', 'VTID-00002': 'failed' });
+  assert.deepEqual(lib.summarizeByVtid([{ suite: 'smoke', name: 's', ok: true }, { ...bad0('deploy'), static: true }, { suite: 'VTID-00001', name: 't', ok: true }]),
+    { smoke: 'failed', 'VTID-00001': 'failed' });
+  function bad0(suite) { return { suite, name: 'x', ok: false, problems: ['down'] }; }
+});
+test('VTID-05272: summarizeByVtid marks unattributed suites and leaves the outcome rule alone', () => {
+  const results = [
+    { suite: 'smoke', name: 's', ok: true },
+    { suite: 'VTID-00001', name: 'late', ok: false, problems: ['x'], attributed: false },
+  ];
+  assert.deepEqual(lib.summarizeByVtid(results, ['VTID-00001', 'VTID-00003', 'not-a-vtid']),
+    { smoke: 'passed', 'VTID-00001': 'not_attributed', 'VTID-00003': 'not_attributed' });
+  assert.deepEqual(lib.summarizeByVtid([], []), { smoke: 'not_run' });
+  // decideOutcome is untouched: a failed row still fails a non-superseded run.
+  assert.equal(lib.decideOutcome({ superseded: false, results, plan: { missing: [], invalid: [] } }), 'failed');
+});
+test('VTID-05272: run.mjs writes record.per_vtid from summarizeByVtid', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'run.mjs'), 'utf8');
+  assert.match(src, /per_vtid: lib\.summarizeByVtid\(results, /);
+  assert.match(src, /const outcome = lib\.decideOutcome\(\{ superseded, results, plan \}\);/);
 });

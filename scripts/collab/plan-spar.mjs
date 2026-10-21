@@ -7,7 +7,9 @@
  * next push starts the next round.
  *
  *   node scripts/collab/plan-spar.mjs --dir <PR head checkout> --base-sha <sha> --repo exafyltd/vitana-platform \
- *        --changed <file with changed paths> [--summary <file>]
+ *        --changed <file with changed paths> [--summary <file>] [--extra-ref-vitana-v1 <vitana-v1 commit sha>]
+ *   --extra-ref-vitana-v1 (optional): a 40-hex vitana-v1 commit; forwarded as extra_refs so the partner can
+ *     read exafyltd/vitana-v1 (native plans premise on apps/mobile/** there). Omitted/invalid ⇒ unchanged.
  *   env: GATEWAY_URL, GATEWAY_SERVICE_TOKEN, PLAN_SPAR_ALLOCATE ("true" to allocate VTIDs after policy approval)
  *
  * Files under `.kiro/specs/<slug>/`:
@@ -18,6 +20,8 @@
  *   sparring/verdict.md          written here when the plan converged (policy-approved) or was parked
  * Up to 2 sparring sessions per plan (the second is the re-plan after an escalation); a second escalation parks the
  * plan. A partner/model/code-access failure is not a plan problem: the plan goes to `next_actor: claude`, never parked.
+ * VTID-05273: with allocation on, every later run on a converged, policy-approved plan allocates the lanes still
+ * lacking a VTID (late lanes, a failed allocation) — idempotent per lane, sparring id sent at most once per session.
  * Exit codes: 0 done or nothing to do, 1 failure, 2 usage.
  */
 import { readFileSync, writeFileSync, existsSync, mkdirSync, readdirSync } from 'node:fs';
@@ -139,7 +143,7 @@ export function gatewayClient({ baseUrl, token, fetchImpl = fetch, sleep = (ms) 
   };
 }
 
-/** Set front-matter keys (scalars or lists) in a handoff/lane file, keeping the body. */
+/** Set front-matter keys (scalars or lists) in a handoff/lane file, keeping the body. A `null` value removes the key. */
 export function setFrontMatter(text, patch) {
   const m = /^---\r?\n([\s\S]*?)\r?\n---/.exec(text);
   if (!m) throw new Error('no front matter');
@@ -147,11 +151,11 @@ export function setFrontMatter(text, patch) {
   for (const [k, v] of Object.entries(patch)) {
     const val = Array.isArray(v) ? `[${v.join(', ')}]` : String(v);
     const i = lines.findIndex((l) => new RegExp(`^${k}:`).test(l));
-    if (i === -1) { lines.push(`${k}: ${val}`); continue; }
+    if (i === -1) { if (v !== null) lines.push(`${k}: ${val}`); continue; }
     // drop a following block list of the old value
     let j = i + 1;
     while (j < lines.length && /^\s+-\s/.test(lines[j])) j++;
-    lines = [...lines.slice(0, i), `${k}: ${val}`, ...lines.slice(j)];
+    lines = [...lines.slice(0, i), ...(v === null ? [] : [`${k}: ${val}`]), ...lines.slice(j)];
   }
   return `---\n${lines.join('\n')}\n---${text.slice(m[0].length)}`;
 }
@@ -159,11 +163,65 @@ export function setFrontMatter(text, patch) {
 const appendLog = (text, entry) => `${text.replace(/\s*$/, '')}\n\n${entry}\n`;
 const iso = (t) => new Date(t).toISOString().slice(0, 16) + 'Z';
 
+/** Lane files of a spec, sorted (the allocation order). */
+const laneFilesOf = (spec) => {
+  const lanesDir = path.join(spec, 'lanes');
+  return existsSync(lanesDir) ? readdirSync(lanesDir).filter((f) => f.endsWith('.md')).sort().map((f) => path.join(lanesDir, f)) : [];
+};
+const laneVtid = (lp) => parseFrontMatter(readFileSync(lp, 'utf8'))?.vtid;
+
+/**
+ * VTID-05273 — give every lane of a converged, policy-approved plan its VTID; safe to run again on any later
+ * PLAN-SPAR run. Idempotent per lane (a lane with `vtid` is skipped). The gate binds one VTID to one sparring record,
+ * so the sparring id + plan hash are sent only while the live session is still unbound (`!session.vtid`), with the
+ * first lane lacking a VTID; every other allocation is unbound. A session already bound to a VTID that no lane and no
+ * handoff `vtids` entry carries (an earlier run allocated it but its files were never committed) is adopted by the
+ * first lane lacking a VTID, without calling allocate. The first allocation error stops the loop and keeps what was
+ * written; the next run retries the rest. Returns { vtids (this run, incl. adopted), all (every lane VTID), lanes,
+ * pending (lane ids still lacking a VTID), failed: null | { lane, error } }.
+ */
+export async function allocateLanes({ spec, slug, session, client, write, log, t, handoffVtids = [] }) {
+  const files = laneFilesOf(spec);
+  const laneId = (lp) => path.basename(lp, '.md');
+  const vtids = [];
+  let failed = null;
+  const known = new Set([...handoffVtids, ...files.map(laneVtid).filter(Boolean)]);
+  let bind = !session.vtid;
+  let adopt = session.vtid && !known.has(session.vtid) ? session.vtid : null;
+  for (const lp of files) {
+    const lt = readFileSync(lp, 'utf8');
+    if (parseFrontMatter(lt)?.vtid) continue;
+    let vtid;
+    let text;
+    if (adopt) {
+      vtid = adopt;
+      adopt = null;
+      text = `${vtid} adopted: already bound to this plan's sparring record by an earlier run whose files were not committed (${POLICY}).`;
+    } else {
+      try {
+        // Only the allocation that binds the record carries sparring_id + plan_hash; all others carry neither.
+        vtid = await client.allocate({ source: 'ci-plan-spar', layer: 'DEV', module: slug.toUpperCase().slice(0, 40),
+          ...(bind ? { sparring_id: session.id, plan_hash: session.final_plan_hash } : {}) });
+      } catch (err) {
+        failed = { lane: laneId(lp), error: String(err?.message || err) };
+        break;
+      }
+      bind = false;
+      text = `${vtid} allocated after policy approval (${POLICY}).`;
+    }
+    vtids.push(vtid);
+    write(lp, appendLog(setFrontMatter(lt, { vtid, next_actor: 'kiro', updated: t }), log('ready (VTID allocated)', text)));
+  }
+  const all = files.map(laneVtid).filter(Boolean);
+  const pending = files.filter((lp) => !laneVtid(lp)).map(laneId);
+  return { vtids, all, lanes: files.length, pending, failed };
+}
+
 /**
  * One step for one plan. Returns { action, wrote: [paths] }. `client` is gatewayClient(); `env` carries
  * PLAN_SPAR_ALLOCATE. Reads and writes only below `<dir>/.kiro/specs/<slug>/`.
  */
-export async function step({ dir, slug, baseSha, repo, client, allocate = false, now = Date.now }) {
+export async function step({ dir, slug, baseSha, repo, client, allocate = false, extraRefs = null, now = Date.now }) {
   const spec = path.join(dir, '.kiro/specs', slug);
   const rel = (p) => path.relative(dir, p);
   const planPath = path.join(spec, 'plan.md');
@@ -191,6 +249,12 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
     if (retryInfra) state.sessions.pop();
     session = await client.create({
       plan_text: planText, producer: `ci-plan-spar.${slug}`, change_class: changeClass, base_ref: baseSha, repo, approval_policy: POLICY,
+      // VTID-05215/R1-F1: native plans premise on code in exafyltd/vitana-v1, which the base-repo
+      // (vitana-platform) session cannot read. Pin a vitana-v1 ref so the partner's read_file/search_code
+      // tools can verify those file:line claims. Only sent when a ref was resolved (platform-only plans
+      // leave extraRefs null, so their sessions are byte-for-byte unchanged). The gateway validates each
+      // key against PLAN_SPARRING_REPOS and refuses an unpinned repo.
+      ...(extraRefs && Object.keys(extraRefs).length ? { extra_refs: extraRefs } : {}),
     });
     state.sessions.push({ id: session.id, submitted: [], plan_text_sha: sha(planText) });
   } else if (cur.verdict === 'in_progress') {
@@ -207,57 +271,67 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
     session = await client.round(cur.id, n + 1, { responses: parseResponses(readFileSync(respPath, 'utf8')), revised_plan_text: planText });
     cur.submitted.push(n);
     cur.plan_text_sha = sha(planText);
+  } else if (cur.verdict === 'converged' && cur.policy_approved_at && allocate && laneFilesOf(spec).some((lp) => !laneVtid(lp))) {
+    // VTID-05273: a lane without a VTID on a plan that converged in an earlier run (a late lane, a lane-less plan that
+    // got its lanes, or an allocation that failed). No new round: verify the live session, then allocate below.
+    // state.json is PR-controlled, so the session must be this plan's own, converged, policy-approved session with
+    // the same final plan hash, or nothing is allocated.
+    const live = await client.get(cur.id);
+    if (!live || live.producer !== `ci-plan-spar.${slug}` || live.verdict !== 'converged' || !live.policy_approved_at || live.final_plan_hash !== cur.final_plan_hash) {
+      throw new Error(`sparring/state.json names session ${cur.id}, which is not this plan's converged, policy-approved session`);
+    }
+    action = 'allocate_retry';
+    session = live;
   } else {
     return { action: 'nothing_to_do', wrote };
   }
 
   const entry = state.sessions[state.sessions.length - 1];
-  const seen = entry.rounds ?? 0;
-  for (const r of session.rounds.filter((x) => x.round > seen)) write(path.join(sdir, `${prefix(state.sessions.length)}round-${r.round}.md`), renderRound(session, r.round, prefix(state.sessions.length)));
-  entry.rounds = session.rounds.length;
-  entry.verdict = session.verdict;
-  entry.infra = (session.escalation_reasons ?? []).some((x) => INFRA_REASONS.includes(x));
-  entry.retryable = (session.escalation_reasons ?? []).some((x) => RETRYABLE_REASONS.includes(x));
-  entry.final_plan_hash = session.final_plan_hash ?? null;
-  entry.policy_approved_at = session.policy_approved_at ?? null;
-  write(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  if (action !== 'allocate_retry') {
+    const seen = entry.rounds ?? 0;
+    for (const r of session.rounds.filter((x) => x.round > seen)) write(path.join(sdir, `${prefix(state.sessions.length)}round-${r.round}.md`), renderRound(session, r.round, prefix(state.sessions.length)));
+    entry.rounds = session.rounds.length;
+    entry.verdict = session.verdict;
+    entry.infra = (session.escalation_reasons ?? []).some((x) => INFRA_REASONS.includes(x));
+    entry.retryable = (session.escalation_reasons ?? []).some((x) => RETRYABLE_REASONS.includes(x));
+    entry.final_plan_hash = session.final_plan_hash ?? null;
+    entry.policy_approved_at = session.policy_approved_at ?? null;
+    write(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  }
 
   const handoffPath = path.join(spec, 'handoff.md');
   const t = iso(now());
   const log = (change, text) => `### ${t} · ci-plan-spar · ${change}\n${text}`;
+  let failed = null;
   if (session.verdict === 'converged' && session.policy_approved_at) {
-    action = `${action}+approved`;
-    let vtids = [];
-    let lanesTouched = 0;
-    const lanesDir = path.join(spec, 'lanes');
-    const laneFiles = existsSync(lanesDir) ? readdirSync(lanesDir).filter((f) => f.endsWith('.md')).sort() : [];
-    if (allocate) {
-      let first = true;
-      for (const f of laneFiles) {
-        const lp = path.join(lanesDir, f);
-        const lt = readFileSync(lp, 'utf8');
-        if (parseFrontMatter(lt)?.vtid) continue;
-        // The gate binds one VTID to one sparring record: the first lane carries the record, the others the plan hash.
-        const vtid = await client.allocate({ source: 'ci-plan-spar', layer: 'DEV', module: slug.toUpperCase().slice(0, 40),
-          ...(first ? { sparring_id: session.id, plan_hash: session.final_plan_hash } : {}) });
-        first = false;
-        vtids.push(vtid);
-        write(lp, appendLog(setFrontMatter(lt, { vtid, next_actor: 'kiro', updated: t }), log('ready (VTID allocated)', `${vtid} allocated after policy approval (${POLICY}).`)));
-        lanesTouched++;
-      }
-    }
-    write(path.join(sdir, 'verdict.md'), `# Verdict — ${slug}\n\nCONVERGED and approved by policy \`${POLICY}\` at ${session.policy_approved_at}.\nSession \`${session.id}\` · final plan hash \`${session.final_plan_hash}\`.\n${vtids.length ? `VTIDs: ${vtids.join(', ')}\n` : allocate ? '' : 'VTID allocation is off (PLAN_SPAR_ALLOCATE) — Claude Code allocates.\n'}`);
-    if (existsSync(handoffPath)) {
-      const ht = readFileSync(handoffPath, 'utf8');
-      const fm = parseFrontMatter(ht) || {};
-      const allVtids = [...new Set([...(Array.isArray(fm.vtids) ? fm.vtids : []), ...vtids])];
+    if (action !== 'allocate_retry') action = `${action}+approved`;
+    const ht = existsSync(handoffPath) ? readFileSync(handoffPath, 'utf8') : null;
+    const fm = (ht && parseFrontMatter(ht)) || {};
+    const handoffVtids = Array.isArray(fm.vtids) ? fm.vtids : [];
+    const res = allocate
+      ? await allocateLanes({ spec, slug, session, client, write, log, t, handoffVtids })
+      : { vtids: [], all: laneFilesOf(spec).map(laneVtid).filter(Boolean), lanes: laneFilesOf(spec).length, pending: [], failed: null };
+    failed = res.failed;
+    if (failed) action = `${action}+partial`;
+    write(path.join(sdir, 'verdict.md'), `# Verdict — ${slug}\n\nCONVERGED and approved by policy \`${POLICY}\` at ${session.policy_approved_at}.\nSession \`${session.id}\` · final plan hash \`${session.final_plan_hash}\`.\n${res.all.length ? `VTIDs: ${res.all.join(', ')}\n` : allocate ? '' : 'VTID allocation is off (PLAN_SPAR_ALLOCATE) — Claude Code allocates.\n'}`);
+    if (ht !== null) {
+      const allVtids = [...new Set([...handoffVtids, ...res.vtids])];
       const approved = allocate && allVtids.length > 0;
+      const from = fm.state || 'drafted';
+      const to = approved ? 'approved' : 'sparred';
+      // Allocation on: the plan is always Kiro's next move. `reason` says why it is not fully allocated yet.
+      const reason = !allocate ? undefined : res.lanes === 0 ? 'lanes_missing' : (failed || res.pending.length) ? 'allocation_pending' : null;
+      let text;
+      if (!allocate) text = `Converged; approved by policy ${POLICY}. VTID allocation is off — next_actor claude allocates.`;
+      else if (reason === 'lanes_missing') text = `Converged; approved by policy ${POLICY}. No lane files yet; add them in a \`_plan\` commit on this PR and the next PLAN-SPAR run allocates their VTIDs.`;
+      else {
+        text = `Converged; approved by policy ${POLICY}. ${res.vtids.length} lane(s) got a VTID and are handed to Kiro.`;
+        if (failed) text += ` VTID allocation failed for lane ${failed.lane} (${failed.error}); ${res.pending.length} lane(s) still lack a VTID — the next PLAN-SPAR run on this PR retries them.`;
+      }
       write(handoffPath, appendLog(setFrontMatter(ht, {
-        state: approved ? 'approved' : 'sparred', next_actor: approved ? 'kiro' : 'claude', sparring_record: `.kiro/specs/${slug}/sparring/verdict.md`,
-        ...(approved ? { vtids: allVtids } : {}), updated: t,
-      }), log(`${fm.state || 'drafted'} → ${approved ? 'approved' : 'sparred'}`, approved
-        ? `Converged; approved by policy ${POLICY}. ${lanesTouched} lane(s) got a VTID and are handed to Kiro.`
-        : `Converged; approved by policy ${POLICY}. VTID allocation is off — next_actor claude allocates.`)));
+        state: to, next_actor: allocate ? 'kiro' : 'claude', sparring_record: `.kiro/specs/${slug}/sparring/verdict.md`,
+        ...(approved ? { vtids: allVtids } : {}), ...(reason !== undefined ? { reason } : {}), updated: t,
+      }), log(from === to && action.startsWith('allocate_retry') ? `${to} (late lane VTID)` : `${from} → ${to}`, text)));
     }
   } else if (session.verdict === 'escalated') {
     const infra = entry.infra;
@@ -274,7 +348,7 @@ export async function step({ dir, slug, baseSha, repo, client, allocate = false,
         : `Not converged after ${MAX_SESSIONS} sparring sessions (${(session.escalation_reasons ?? []).join(', ')}). Parked with the open findings in sparring/.`)));
     }
   }
-  return { action, wrote, session_id: session.id, verdict: session.verdict };
+  return { action, wrote, session_id: session.id, verdict: session.verdict, ...(failed ? { failed } : {}) };
 }
 
 function sha(t) {
@@ -303,8 +377,15 @@ async function main(argv) {
   const { GATEWAY_URL, GATEWAY_SERVICE_TOKEN } = process.env;
   if (!GATEWAY_URL || !GATEWAY_SERVICE_TOKEN) { say('❌ **plan-spar** — GATEWAY_URL / GATEWAY_SERVICE_TOKEN not configured'); return 1; }
   const client = gatewayClient({ baseUrl: GATEWAY_URL.replace(/\/$/, ''), token: GATEWAY_SERVICE_TOKEN });
-  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client, allocate: process.env.PLAN_SPAR_ALLOCATE === 'true' });
+  // VTID-05215/R1-F1: a resolved vitana-v1 commit SHA (from PLAN-SPAR.yml) lets the partner read
+  // exafyltd/vitana-v1 for native plans. Optional and validated: only a 40-hex SHA is forwarded, and only
+  // under the exafyltd/vitana-v1 key, so a missing/garbage value simply leaves platform-only behaviour.
+  const v1Sha = (a['extra-ref-vitana-v1'] || '').trim();
+  const extraRefs = /^[0-9a-f]{40}$/.test(v1Sha) ? { 'exafyltd/vitana-v1': v1Sha } : null;
+  const r = await step({ dir: a.dir, slug, baseSha: a['base-sha'], repo: a.repo, client, allocate: process.env.PLAN_SPAR_ALLOCATE === 'true', extraRefs });
   say(`✅ **plan-spar** — ${slug}: ${r.action}${r.verdict ? ` (verdict ${r.verdict})` : ''}; wrote ${r.wrote.length} file(s)`);
+  // VTID-05273: a failed allocation exits 0 so the workflow commits the VTIDs already written; the next run retries.
+  if (r.failed) say(`⚠️ **plan-spar** — VTID allocation pending for lane ${r.failed.lane}: ${r.failed.error}`);
   return 0;
 }
 

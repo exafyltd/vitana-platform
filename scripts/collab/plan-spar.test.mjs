@@ -202,3 +202,235 @@ test('review fix: partner_output_invalid goes to Claude but is not auto-retried 
     assert.equal(c.calls.filter((x) => x[0] === 'create').length, 1);
   } finally { f.done(); }
 });
+
+// ── VTID-05273: late-lane VTID allocation (retry, idempotent per lane) ──────────────────────────────
+const HASH = 'f'.repeat(64);
+const readFm = (f, rel) => parseFrontMatter(readFileSync(path.join(f.s, rel), 'utf8'));
+const allocCalls = (c) => c.calls.filter((x) => x[0] === 'allocate').map((x) => x[1]);
+/** A plan that converged (policy-approved) in an earlier PLAN-SPAR run: state.json as that run committed it. */
+function convergedState(f, extra = {}) {
+  mkdirSync(path.join(f.s, 'sparring'), { recursive: true });
+  const st = { sessions: [{ id: 'S1', submitted: [1], plan_text_sha: 'x', rounds: 2, verdict: 'converged', infra: false, retryable: false,
+    final_plan_hash: HASH, policy_approved_at: '2026-10-20T12:00:00Z', ...extra }] };
+  writeFileSync(path.join(f.s, 'sparring/state.json'), `${JSON.stringify(st, null, 2)}\n`);
+}
+/** The live session the gateway returns for the retry path. */
+const liveSession = (extra = {}) => ({ id: 'S1', producer: 'ci-plan-spar.cards', verdict: 'converged', policy_approved_at: '2026-10-20T12:00:00Z',
+  final_plan_hash: HASH, vtid: null, rounds: [{ round: 1 }, { round: 2 }], escalation_reasons: [], ...extra });
+const VTID_LANE = (id, vtid) => `---\nlane: ${id}\nstate: ready\nnext_actor: kiro\nvtid: ${vtid}\nupdated: 2026-10-15T10:00Z\n---\n## Log\n`;
+const APPROVED_HANDOFF = (vtids) => `---\nslug: cards\nauthor: kiro\nexecutor: kiro\nnext_actor: kiro\nstate: approved\nsparring_record: .kiro/specs/cards/sparring/verdict.md\nvtids: [${vtids.join(', ')}]\nupdated: 2026-10-15T10:00Z\n---\n## Log\n`;
+
+async function convergeWithAllocation(f, c) {
+  await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+  respond(f.s, 'responses-1.md', [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'done' }]);
+  return step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+}
+const convScript = () => [sess('S1', [[finding('R1-F1')]], 'in_progress'), sess('S1', [[finding('R1-F1')], []], 'converged', { policy_approved_at: 'x' })];
+
+test('late lane: a converged, policy-approved plan allocates a lane added after convergence', async () => {
+  const f = spec();
+  try {
+    const c = fakeClient(convScript());
+    await convergeWithAllocation(f, c);
+    writeFileSync(path.join(f.s, 'lanes/c.md'), LANE('c'));
+    c.get = async (id) => liveSession({ id, vtid: 'VTID-09001' });
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(r.action, 'allocate_retry');
+    assert.equal(allocCalls(c).length, 3);
+    assert.equal(readFm(f, 'lanes/c.md').vtid, 'VTID-09003');
+    assert.equal(readFm(f, 'lanes/c.md').next_actor, 'kiro');
+    const h = readFm(f, 'handoff.md');
+    assert.equal(h.state, 'approved');
+    assert.equal(h.next_actor, 'kiro');
+    assert.deepEqual(h.vtids, ['VTID-09001', 'VTID-09002', 'VTID-09003']);
+    assert.equal(h.reason, undefined);
+    assert.match(readFileSync(path.join(f.s, 'sparring/verdict.md'), 'utf8'), /VTIDs: VTID-09001, VTID-09002, VTID-09003/);
+    // no new round, no new session
+    assert.equal(c.calls.filter((x) => x[0] === 'round' || x[0] === 'create').length, 2);
+    // idempotent: the next run on the same state allocates nothing and writes nothing
+    const again = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(again.action, 'nothing_to_do');
+    assert.deepEqual(again.wrote, []);
+    assert.equal(allocCalls(c).length, 3);
+  } finally { f.done(); }
+});
+
+test('late lane: the retry never re-sends the sparring id once the session is bound', async () => {
+  const f = spec();
+  try {
+    const c = fakeClient(convScript());
+    await convergeWithAllocation(f, c);
+    writeFileSync(path.join(f.s, 'lanes/c.md'), LANE('c'));
+    c.get = async (id) => liveSession({ id, vtid: 'VTID-09001' });
+    await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    const late = allocCalls(c)[2];
+    assert.ok(late, 'the late lane was allocated');
+    assert.equal(late.sparring_id, undefined);
+    assert.equal(late.plan_hash, undefined);
+    assert.equal(allocCalls(c).filter((b) => b.sparring_id).length, 1, 'sparring id sent once per session');
+  } finally { f.done(); }
+});
+
+test('no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"', async () => {
+  const f = spec();
+  try {
+    rmSync(path.join(f.s, 'lanes'), { recursive: true, force: true });
+    const c = fakeClient(convScript());
+    await convergeWithAllocation(f, c);
+    const h = readFm(f, 'handoff.md');
+    assert.equal(h.state, 'sparred');
+    assert.equal(h.next_actor, 'kiro');
+    assert.equal(h.reason, 'lanes_missing');
+    const ht = readFileSync(path.join(f.s, 'handoff.md'), 'utf8');
+    assert.doesNotMatch(ht, /allocation is off/);
+    assert.match(ht, /No lane files yet/);
+    assert.doesNotMatch(readFileSync(path.join(f.s, 'sparring/verdict.md'), 'utf8'), /allocation is off/);
+    assert.equal(allocCalls(c).length, 0);
+  } finally { f.done(); }
+});
+
+test('lanes added later to a lane-less converged plan: first lane gets the bound VTID', async () => {
+  const f = spec();
+  try {
+    rmSync(path.join(f.s, 'lanes'), { recursive: true, force: true });
+    const c = fakeClient(convScript());
+    await convergeWithAllocation(f, c);
+    mkdirSync(path.join(f.s, 'lanes'));
+    writeFileSync(path.join(f.s, 'lanes/a.md'), LANE('a'));
+    writeFileSync(path.join(f.s, 'lanes/b.md'), LANE('b'));
+    c.get = async (id) => liveSession({ id, vtid: null });
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(r.action, 'allocate_retry');
+    const allocs = allocCalls(c);
+    assert.equal(allocs.length, 2);
+    assert.equal(allocs[0].sparring_id, 'S1');
+    assert.equal(allocs[0].plan_hash, HASH);
+    assert.equal(allocs[1].sparring_id, undefined);
+    const h = readFm(f, 'handoff.md');
+    assert.equal(h.state, 'approved');
+    assert.equal(h.next_actor, 'kiro');
+    assert.equal(h.reason, undefined, 'the lanes_missing reason is cleared');
+    assert.deepEqual(h.vtids, ['VTID-09001', 'VTID-09002']);
+  } finally { f.done(); }
+});
+
+test('allocation failure keeps the VTIDs already allocated and retries the rest on the next run', async () => {
+  const f = spec();
+  try {
+    const c = fakeClient(convScript());
+    const ok = c.allocate;
+    let n = 0;
+    c.allocate = async (b) => { n++; if (n === 2) { c.calls.push(['allocate-failed', b]); throw new Error('allocate: HTTP 503 null'); } return ok(b); };
+    const r = await convergeWithAllocation(f, c);
+    assert.match(r.action, /\+partial$/);
+    assert.equal(r.failed.lane, 'b');
+    assert.equal(readFm(f, 'lanes/a.md').vtid, 'VTID-09001');
+    assert.equal(readFm(f, 'lanes/b.md').vtid, undefined);
+    let h = readFm(f, 'handoff.md');
+    assert.equal(h.next_actor, 'kiro');
+    assert.equal(h.reason, 'allocation_pending');
+    assert.equal(h.state, 'approved');
+    assert.deepEqual(h.vtids, ['VTID-09001']);
+    assert.match(readFileSync(path.join(f.s, 'handoff.md'), 'utf8'), /lane b.*HTTP 503/);
+    // the next PLAN-SPAR run allocates the rest, unbound
+    c.get = async (id) => liveSession({ id, vtid: 'VTID-09001' });
+    const r2 = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(r2.action, 'allocate_retry');
+    const allocs = allocCalls(c);
+    assert.equal(allocs.length, 2);
+    assert.equal(allocs[1].sparring_id, undefined);
+    assert.equal(readFm(f, 'lanes/b.md').vtid, 'VTID-09002');
+    h = readFm(f, 'handoff.md');
+    assert.equal(h.reason, undefined);
+    assert.deepEqual(h.vtids, ['VTID-09001', 'VTID-09002']);
+  } finally { f.done(); }
+});
+
+test('orphaned bound VTID is adopted, not re-allocated', async () => {
+  const f = spec();
+  try {
+    rmSync(path.join(f.s, 'lanes/b.md'));
+    convergedState(f);
+    const c = fakeClient([]);
+    c.get = async (id) => liveSession({ id, vtid: 'VTID-09007' });
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(r.action, 'allocate_retry');
+    assert.equal(allocCalls(c).length, 0);
+    assert.equal(readFm(f, 'lanes/a.md').vtid, 'VTID-09007');
+    const h = readFm(f, 'handoff.md');
+    assert.equal(h.state, 'approved');
+    assert.deepEqual(h.vtids, ['VTID-09007']);
+  } finally { f.done(); }
+});
+
+test('retry refuses a state.json that names another plan\'s session', async () => {
+  for (const bad of [{ producer: 'ci-plan-spar.other' }, { final_plan_hash: 'e'.repeat(64) }, { verdict: 'escalated' }, { policy_approved_at: null }]) {
+    const f = spec();
+    try {
+      convergedState(f);
+      const c = fakeClient([]);
+      c.get = async (id) => liveSession({ id, ...bad });
+      await assert.rejects(step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true }), /not this plan's converged, policy-approved session/);
+      assert.equal(allocCalls(c).length, 0);
+      assert.equal(readFm(f, 'lanes/a.md').vtid, undefined);
+    } finally { f.done(); }
+  }
+});
+
+test('retry with every lane allocated is a no-op with zero writes', async () => {
+  const f = spec();
+  try {
+    writeFileSync(path.join(f.s, 'lanes/a.md'), VTID_LANE('a', 'VTID-09001'));
+    writeFileSync(path.join(f.s, 'lanes/b.md'), VTID_LANE('b', 'VTID-09002'));
+    writeFileSync(path.join(f.s, 'handoff.md'), APPROVED_HANDOFF(['VTID-09001', 'VTID-09002']));
+    convergedState(f);
+    const c = fakeClient([]);
+    let gets = 0;
+    c.get = async (id) => { gets++; return liveSession({ id, vtid: 'VTID-09001' }); };
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: true });
+    assert.equal(r.action, 'nothing_to_do');
+    assert.deepEqual(r.wrote, []);
+    assert.equal(gets, 0);
+    assert.equal(c.calls.length, 0);
+  } finally { f.done(); }
+});
+
+test('allocation off: a converged plan with a late lane is not retried and still goes to claude', async () => {
+  const f = spec();
+  try {
+    convergedState(f);
+    const c = fakeClient([]);
+    const r = await step({ dir: f.dir, slug: 'cards', baseSha: SHA, repo: 'r', client: c, allocate: false });
+    assert.equal(r.action, 'nothing_to_do');
+    assert.deepEqual(r.wrote, []);
+    assert.equal(c.calls.length, 0);
+  } finally { f.done(); }
+});
+
+test('R1-F1: extraRefs is forwarded to create as extra_refs (and omitted when null)', async () => {
+  const V1 = 'b'.repeat(40);
+
+  // With a vitana-v1 ref: create carries extra_refs keyed by the repo.
+  const f1 = spec();
+  const c1 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f1.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c1, extraRefs: { 'exafyltd/vitana-v1': V1 } });
+  const create1 = c1.calls.find((c) => c[0] === 'create')[1];
+  assert.deepEqual(create1.extra_refs, { 'exafyltd/vitana-v1': V1 });
+  f1.done();
+
+  // Without a ref (platform-only plan): no extra_refs key at all — behaviour unchanged.
+  const f2 = spec();
+  const c2 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f2.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c2 });
+  const create2 = c2.calls.find((c) => c[0] === 'create')[1];
+  assert.ok(!('extra_refs' in create2));
+  f2.done();
+
+  // Empty object is treated as "none" (never sends an empty extra_refs).
+  const f3 = spec();
+  const c3 = fakeClient([sess('S1', [[finding('R1-F1')]], 'in_progress')]);
+  await step({ dir: f3.dir, slug: 'cards', baseSha: SHA, repo: 'exafyltd/vitana-platform', client: c3, extraRefs: {} });
+  const create3 = c3.calls.find((c) => c[0] === 'create')[1];
+  assert.ok(!('extra_refs' in create3));
+  f3.done();
+});

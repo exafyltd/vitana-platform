@@ -1,0 +1,11 @@
+VTID-05208 local check results (2026-10-16, services/gateway, Windows). Full commands: ../commands.log
+
+tsc --noEmit                                   exit 0
+jest (12 suites incl. vtid-05208-*, vtid-05137, test/i18n)   12/12 suites, 239/239 tests passed
+mutation check (inverted push decision)        6 tests failed as expected; reverted, green
+npm run test:roles                             105/105 passed
+npm run build (bash script shell)              exit 0
+JSON parse (scope.json, staging-tests.json, 11 locale files)  ok
+plan-sparring.md copy vs spec                  byte-identical
+
+Nothing was run against staging or production.

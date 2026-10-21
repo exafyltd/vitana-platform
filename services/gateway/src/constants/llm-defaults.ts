@@ -138,6 +138,27 @@ export function resolvePlanSparringFallbackModel(): string {
 }
 
 /**
+ * Plan-sparring LAST-RESORT tier (owner decision 2026-10-19, supersedes the
+ * "no DeepSeek" part of rule 53): when Opus 4.6 and then Sonnet 4.6 both fail
+ * (burned Bedrock quota), the partner pass continues on DeepSeek instead of
+ * escalating `model_unavailable`. `deepseek-v4-pro` verified live 2026-10-19
+ * (chat + forced tool call). Logged loudly and recorded in model_log with
+ * `fallback_tier: 'deepseek'`; never silent. Kill switch:
+ * PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false.
+ */
+export const PLAN_SPARRING_LAST_RESORT_MODEL = 'deepseek-v4-pro';
+
+/** Resolved last-resort partner model: PLAN_SPARRING_LAST_RESORT_MODEL env, else the constant above. */
+export function resolvePlanSparringLastResortModel(): string {
+  return process.env.PLAN_SPARRING_LAST_RESORT_MODEL || PLAN_SPARRING_LAST_RESORT_MODEL;
+}
+
+/** On unless PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED is exactly 'false'. */
+export function isPlanSparringDeepseekFallbackEnabled(): boolean {
+  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED !== 'false';
+}
+
+/**
  * Models verified to accept Anthropic `output_config.effort` / adaptive
  * `thinking` on Bedrock. Opus 4.6 accepts both; Opus 4.5 rejected
  * `output_config.effort` ("Extra inputs are not permitted"). The partner pass
