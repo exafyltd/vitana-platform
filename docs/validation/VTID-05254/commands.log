@@ -1,0 +1,11 @@
+# 2026-10-20, Kiro IDE (Windows), branch kiro/plan-spar-stale-session/stale-session-dedup
+# All tests use in-memory fakes; no gateway, Supabase, Bedrock or GitHub call.
+cd services/gateway
+npx jest test/plan-sparring-stale-session.test.ts
+  -> 1 suite, 17 passed
+npx jest test/plan-sparring-stale-session.test.ts test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-repository.test.ts
+  -> 3 suites, 79 passed
+npx jest plan-sparring --testPathIgnorePatterns session-layer
+  -> 5 suites, 117 passed, 1 skipped
+  (vtid-04868-plan-sparring-session-layer runs the bash PreToolUse hook; it needs bash and passes in CI)
+npm run typecheck   -> exit 0

@@ -1,0 +1,27 @@
+# VTID-05271 (kiro-autonomy-fallback/exceptions-seat) — local verification, Windows, node v24.11.1
+# session kiro-exafy-202610201807-2a87, worktree base origin/main 422a7b045ce5883f56acadcc3b4dd0440aeb7aaa
+
+## red on base (origin/main + only scripts/collab/automations.test.mjs added)
+node --test --test-reporter=tap scripts/collab/automations.test.mjs
+  tests 9, pass 1, fail 8  (output: red-on-base.txt)
+  fail: exceptions_seat missing; no Order line; no allowlist; next_actor: claude hand-offs; shared W section missing;
+        cron 0 7-19 * * 1-5; no Retired header; no .kiro/pipeline/driver.md
+
+## green on 0ac022bbb (implementation commit)
+node --test --test-reporter=tap scripts/collab/automations.test.mjs      tests 9,  pass 9,  fail 0
+node --test --test-reporter=tap scripts/collab/queue.test.mjs            tests 30, pass 29, fail 1
+  the 1 failure = "programme registry: shape, a spec in two programmes, queue --program column"
+  (Cannot find module 'C:\C:\…\queue.mjs'): the base-known Windows-only path bug named in plan §8; unrelated to this lane
+node --test --test-reporter=tap scripts/collab/plan-spar.test.mjs        tests 10, pass 10, fail 0
+node --test --test-reporter=tap scripts/ci/kiro-steering/guard.test.cjs  tests 8,  pass 8,  fail 0
+node scripts/ci/kiro-steering/guard.cjs .                                 exit 0
+node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD                       exit 0
+node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD \
+  --branch kiro/kiro-autonomy-fallback/exceptions-seat                                              exit 0
+  "lane kiro-autonomy-fallback/exceptions-seat: every change is inside its paths"
+
+## after the lane-file / evidence commit: re-run of the same commands, recorded in the PR body / lane log
+
+## CI fix pass 1 (2026-10-20): kiro-steering guard (main via #4229) rejected slug-specific text in .kiro/pipeline/driver.md
+node --test scripts/ci/kiro-steering/guard.test.cjs (before fix)                                     exit 1 (1 fail: driver.md slug-specific text)
+node --test scripts/ci/kiro-steering/guard.test.cjs scripts/collab/automations.test.mjs (after fix)   exit 0 (40 tests, 40 pass)

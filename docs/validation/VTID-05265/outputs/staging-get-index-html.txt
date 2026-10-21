@@ -1,0 +1,5 @@
+﻿# 2026-10-20, read-only unauthenticated GET, staging only (no production call)
+# GET https://preview-aws-gateway.vitanaland.com/command-hub/index.html
+status 200, content-type text/html; charset=UTF-8
+body contains "/command-hub/app.js?v=20261121-vtid-05082": True
+body contains "app.js?v=20261120-vtid-05148": False

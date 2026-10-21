@@ -4,6 +4,7 @@
     { "file": "pipeline-tree.js", "kind": "module" },
     { "file": "kiro-console.js", "kind": "module" },
     { "file": "loops-catalog.js", "kind": "module" },
+    { "file": "svg-preview.js", "kind": "module" },
     { "file": "operator-console.js", "kind": "extracted" },
     { "file": "app.js", "kind": "app" },
     { "file": "voice-self-healing.js", "kind": "post_app" },

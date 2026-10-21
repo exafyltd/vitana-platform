@@ -1,0 +1,25 @@
+# gh pr checks 4242 on PR head 0e93e3701f82230ed73a2f73d73b148aab3c2317 (24 pass / 0 fail / 0 pending), captured 2026-10-21T00:33:36Z
+Collab handoff	pass	27s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116858/job/118964906858	
+Enforce Phase 2B Naming Standards	pass	47s	https://github.com/exafyltd/vitana-platform/actions/runs/39521117206/job/118964908588	
+Gateway (Jest, shard 1/4)	pass	2m22s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054248	
+Gateway (Jest, shard 2/4)	pass	1m15s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054393	
+Gateway (Jest, shard 3/4)	pass	1m59s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054443	
+Gateway (Jest, shard 4/4)	pass	1m26s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054417	
+Gateway Service Tests	pass	8m34s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116885/job/118964907662	
+Gateway Validation (Minimal CI)	pass	2m50s	https://github.com/exafyltd/vitana-platform/actions/runs/39521117005/job/118964908323	
+Lane scope	pass	18s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116858/job/118964907095	
+Prisma Schema Check	pass	30s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116885/job/118964907112	
+Reporter Script Validation	pass	17s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116885/job/118964907449	
+Test Suite Summary	pass	4s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965953288	
+Validate Services Structure	pass	13s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116878/job/118964907026	
+change-suite	pass	16s	https://github.com/exafyltd/vitana-platform/actions/runs/39521117318/job/118964910019	
+check-phase-2b-docs	pass	12s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116957/job/118964907177	
+gateway-shard-union	pass	16s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965848217	
+oasis-projector (jest)	pass	21s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054256	
+openclaw-bridge (vitest)	pass	19s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054270	
+pr-gate	pass	28s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116858/job/118964907052	
+scan	pass	19s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116951/job/118964907782	
+unit	pass	24s	https://github.com/exafyltd/vitana-platform/actions/runs/39521117138/job/118964908297	
+validate	pass	2m37s	https://github.com/exafyltd/vitana-platform/actions/runs/39521117101/job/118964907757	
+validate-pr	pass	2m40s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116870/job/118964907047	
+vcaop (jest)	pass	42s	https://github.com/exafyltd/vitana-platform/actions/runs/39521116979/job/118965054081	
