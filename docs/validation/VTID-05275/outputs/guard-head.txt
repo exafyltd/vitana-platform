@@ -1,0 +1,37 @@
+ok 1 - a matching layout passes
+ok 2 - a rules file without a twin fails
+ok 3 - globs that differ from paths fail
+ok 4 - a link to a missing file fails
+ok 5 - no always file linking CLAUDE.md fails
+ok 6 - the twin must be fileMatch
+ok 7 - this repository passes
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+ok 9 - agents: the shipped reviewer agent, workflow, hook and runbooks pass
+ok 10 - agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+ok 11 - agents: a missing reviewer agent fails
+ok 12 - agents: the reviewer must run on claude-sonnet-5.5
+ok 13 - agents: the reviewer name is fixed
+ok 14 - agents: the reviewer may only have the read and shell tools
+ok 15 - agents: the reviewer must exclude every write tool
+ok 16 - agents: the reviewer gets no MCP servers
+ok 17 - agents: the reviewer fails loudly when its model is unavailable
+ok 18 - agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+ok 19 - agents: the reviewer treats protected gate files as blocking
+ok 20 - agents: every agent file needs front matter with a name
+ok 21 - workflow: the shipped recipe passes the workflow schema checks
+ok 22 - workflow: input is the owner task text only
+ok 23 - workflow: a recipe that does not parse fails
+ok 24 - workflow: every review step is pinned to vitana-lane-reviewer on claude-sonnet-5.5
+ok 25 - workflow: at most 6 lanes build in parallel
+ok 26 - workflow: lane landing is serialized by the merge lock
+ok 27 - workflow: schema errors are reported
+ok 28 - workflow: every .kiro/pipeline file the recipe names exists
+ok 29 - workflow: the steering entry point may only name pipeline files that exist (driver.md is text-only)
+ok 30 - hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+ok 31 - runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+# tests 31
+# pass 31
+# fail 0
+
+node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK

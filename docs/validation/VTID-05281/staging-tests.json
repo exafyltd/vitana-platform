@@ -1,0 +1,43 @@
+{
+  "vtid": "VTID-05281",
+  "service": "gateway",
+  "note": "Read-only. Plan kaf-fallback-env §5 B (fix-forward of VTID-05277): an unreadable CLAUDE_AVAILABLE repo variable falls back to the staging task-definition env, so the live staging PM reports kiro_fallback. Behaviour is proven by Jest; staging proves the deployed build reports the mode and keeps /status guarded. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build boots"
+    },
+    {
+      "kind": "http",
+      "name": "PM reports Kiro-fallback mode",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/mode",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "enabled": true, "mode": "live", "executor_mode": "kiro_fallback" },
+      "reason": "read-only anonymous GET, same check as VTID-05277: with the repo variable unreadable the PM reads CLAUDE_AVAILABLE=false from the staging env"
+    },
+    {
+      "kind": "http",
+      "name": "PM status stays auth-gated",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/status",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid bearer: /status is still guarded"
+    },
+    {
+      "kind": "existing",
+      "name": "observer CLAUDE_AVAILABLE read + env fallback",
+      "ref": "npx jest test/project-manager/observe-live.test.ts",
+      "cwd": "services/gateway",
+      "reason": "B1-B7: REST 404/403 unreadable, 200 value read, env fallback, variable wins, 4 h rule kept"
+    }
+  ]
+}

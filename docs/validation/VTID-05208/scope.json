@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05208",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/new-member-greeting-push.ts",
+    "services/gateway/src/services/chat-push-coalescer.ts",
+    "services/gateway/src/routes/chat.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/test/vtid-05208-new-member-greeting-push.test.ts",
+    "services/gateway/test/vtid-05208-greeting-send-route.test.ts",
+    "services/gateway/test/i18n/catalog-coverage.test.ts",
+    "DATABASE_SCHEMA.md",
+    ".kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md",
+    "docs/validation/VTID-05208/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05208/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

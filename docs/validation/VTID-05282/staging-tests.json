@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05282",
+  "service": "gateway",
+  "note": "Read-only. Plan kaf-fallback-env §5 A: the staging deploy writes CLAUDE_AVAILABLE (repo variable, default 'true') into the gateway task definition. No /mode check here: until ff-pm-flag lands, a 404 on the variable still hides the env. The wiring is proven by Jest. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build deployed with the new task-definition revision boots"
+    },
+    {
+      "kind": "existing",
+      "name": "staging CLAUDE_AVAILABLE wiring",
+      "ref": "npx jest test/kaf-staging-claude-available-wiring.test.ts",
+      "cwd": "services/gateway",
+      "reason": "step env default, jq arg before TASK_ROLE, strip list and single upsert next to PM_MODE, nothing in AWS-PROD-DEPLOY-GATEWAY.yml"
+    }
+  ]
+}

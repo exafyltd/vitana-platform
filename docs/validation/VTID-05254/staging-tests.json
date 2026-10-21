@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05254",
+  "service": "gateway",
+  "note": "Read-only. The create path of POST /api/v1/plans/spar now escalates a dead round-1 session (in_progress, no rounds, unapproved, untouched for 60 min) as deadline_exceeded and re-runs the plan on a fresh session. The behaviour needs a write (POST create), so it is proven by the Jest suites below; staging proves the gateway still serves.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build with the stale-session dedup change boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "vtid health endpoint unaffected",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/vtid/health",
+      "expect_status": 200,
+      "reason": "read-only GET: the ledger routes the sparring flow allocates through still answer"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/plan-sparring-stale-session.test.ts test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-repository.test.ts",
+      "cwd": "services/gateway",
+      "reason": "stale round-1 escalation and re-run, fresh/waiting/non-retryable dedup, lost race, boundary per change class, partial failure recovery, store error, and the real guard chain of escalateDeadRoundOne"
+    }
+  ]
+}

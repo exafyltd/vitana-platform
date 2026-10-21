@@ -1,0 +1,22 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/kaf-staging-claude-available-wiring.test.ts
+  VTID-05282 staging task definition carries CLAUDE_AVAILABLE
+    √ the step env reads the repo variable with a true default, outside run: (18 ms)
+    √ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (2 ms)
+    √ the strip list removes the old entry next to PM_MODE (2 ms)
+    √ the upsert appears exactly once, right after PM_MODE (3 ms)
+    √ production never gets CLAUDE_AVAILABLE (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        4.563 s, estimated 5 s
+Ran all test suites matching /test\\kaf-staging-claude-available-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

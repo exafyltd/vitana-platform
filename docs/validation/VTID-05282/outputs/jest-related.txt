@@ -1,0 +1,265 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/kaf-staging-claude-available-wiring.test.ts
+  VTID-05282 staging task definition carries CLAUDE_AVAILABLE
+    √ the step env reads the repo variable with a true default, outside run: (63 ms)
+    √ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (10 ms)
+    √ the strip list removes the old entry next to PM_MODE (1 ms)
+    √ the upsert appears exactly once, right after PM_MODE (2 ms)
+    √ production never gets CLAUDE_AVAILABLE (1 ms)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/kaf-fallback-env-ff-stage-env/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05127-phone-verify-switch-wiring.test.ts
+  VTID-05127 production wiring step
+    √ reads both repository variables and calls the shared wiring script on the partial task definition (163 ms)
+    √ runs after the checkout and before step 2/2, so env_overrides can still switch it off (32 ms)
+    √ step 2/2 never strips the phone settings by name (1 ms)
+    √ the secret is only ever a valueFrom reference, never a plain value (4 ms)
+    √ pins the exact anchored ARN pattern (7 ms)
+  VTID-05127 wiring decision (scripts/ci/phone-verify-wiring.sh)
+    ○ skipped ARN + enabled → secret wired, PHONE_VERIFY_ENABLED=true, other entries kept
+    ○ skipped ARN + not enabled → secret wired, PHONE_VERIFY_ENABLED=false
+    ○ skipped no ARN + enabled → fails (on without its secret)
+    ○ skipped no ARN + not enabled → PHONE_VERIFY_ENABLED=false and the stale secret ref removed
+    ○ skipped rejects an ARN with wrong prefix
+    ○ skipped rejects an ARN with other account
+    ○ skipped rejects an ARN with suffix too short
+    ○ skipped rejects an ARN with trailing text
+    ○ skipped rejects an ARN with another secret with the same prefix
+    ○ skipped enabled value "TRUE" is off
+    ○ skipped enabled value " true" is off
+    ○ skipped enabled value "true " is off
+    ○ skipped enabled value "1" is off
+    ○ skipped enabled value "yes" is off
+  VTID-05127 staging wiring step
+    √ looks up the staging secret and never fails the deploy when it is absent (2 ms)
+    √ absent → PHONE_VERIFY_ENABLED=false; present → secret ref + true (merged by name via connected-apps.json) (2 ms)
+    √ runs before the roll step, which merges connected-apps.json by name and does not strip the phone settings itself (2 ms)
+  VTID-05127 setup script
+    √ grants only SendTextMessage, scoped to this account and region (2 ms)
+    × dry run without credentials stops at the account check and changes nothing (6 ms)
+    √ never prints the secret value (3 ms)
+
+  ● VTID-05127 setup script › dry run without credentials stops at the account check and changes nothing
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "nothing was changed"
+    Received string:    "undefinedundefined"
+
+    [0m [90m 189 |[39m     })[33m;[39m
+     [90m 190 |[39m     expect(res[33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([35m0[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 191 |[39m     expect([32m`${res.stdout}${res.stderr}`[39m)[33m.[39mtoContain([32m'nothing was changed'[39m)[33m;[39m
+     [90m     |[39m                                          [31m[1m^[22m[39m
+     [90m 192 |[39m   })[33m;[39m
+     [90m 193 |[39m
+     [90m 194 |[39m   test([32m'never prints the secret value'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05127-phone-verify-switch-wiring.test.ts:191:42)
+
+FAIL test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts (12.661 s)
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (61 ms)
+    × AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (3292 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (6 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (8 ms)
+    × AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (4479 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (6 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (5 ms)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 24
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Pinned commit must already be on main (VTID-04709)\": ",
+    +   "job \"build-push-deploy\" step \"Stage codeintel source (VTID-04118 — RepoWise/Graphify image indexing)\": ",
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Connected Apps sign-in config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Jev decision config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Live Rooms Daily key\": ",
+    +   "job \"build-push-deploy\" step \"Resolve dev-memory pack token\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Kiro runner config\": ",
+    +   "job \"build-push-deploy\" step \"Audiobook Google narration flags\": ",
+    +   "job \"build-push-deploy\" step \"Community MCP flags\": ",
+    +   "job \"build-push-deploy\" step \"Resolve phone verification config\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service (1/2 — build the task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Diagnose failed rollout (service events + stopped tasks)\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=staging + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — Nova Sonic health surface present\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    +   "job \"build-push-deploy\" step \"Record deployed commit for STAGING-VERIFY (VTID-04715)\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 30
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Resolve deploy source (promote-staging vs rebuild-main)\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image (rebuild-main only)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (1/2 — image, commit stamp, always-pinned flags)\": ",
+    +   "job \"build-push-deploy\" step \"Capture rollback target (task definition live before this deploy)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Jev gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (drop dead secret refs)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (internal token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Live Rooms Daily key)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Kiro runner)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (dev-memory pack token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reward payouts on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (routine runner on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (onboarding coach shadow mode on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reminders dispatch on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Commerce MCP)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (calendar gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (data backend — VTID-05023)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (phone verification)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (2/2 — optional overrides) + register + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=production + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Verify reward sweep setting (live task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Post-deploy verification (read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Roll back to the previous task definition\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+  console.error
+    [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m   [36mif[39m (secrets[33m.[39mlength [33m===[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 173 |[39m     console[33m.[39merror([32m'[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)'[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 174 |[39m   }
+     [90m 175 |[39m
+     [90m 176 |[39m   [36mreturn[39m secrets[33m;[39m[0m
+
+      at getJwtSecrets (src/middleware/auth-supabase-jwt.ts:173:13)
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:325:19)
+      at optionalAuth (src/middleware/auth-supabase-jwt.ts:451:26)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at next (../../../../services/gateway/node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (../../../../services/gateway/node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at ../../../../services/gateway/node_modules/express/lib/router/index.js:284:15
+      at router.process_params (../../../../services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../../services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../../services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../../services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../../services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../../services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../../services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../../services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (../../../../services/gateway/node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../../services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../../services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../../services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../../services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at expressInit (../../../../services/gateway/node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../../services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../../services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../../services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../../services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at query (../../../../services/gateway/node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (../../../../services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../../services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../../services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../../services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../../services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../../services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at app.handle (../../../../services/gateway/node_modules/express/lib/application.js:181:10)
+      at Server.app (../../../../services/gateway/node_modules/express/lib/express.js:39:9)
+
+PASS test/kiro-autonomy-fallback-proof.test.ts (24.657 s)
+  VTID-05277 proof 1: claudeAvailability (plan §3)
+    √ flag false → unavailable (flag_false) (23 ms)
+    √ flag true, unknown, or nothing observed → available (no silent fallback) (2 ms)
+    √ 4 h without a Claude Code action → unavailable (no_action_4h), flag true does not override (1 ms)
+  VTID-05277 proof 2: /mode and /status bodies
+    √ /mode is public and carries exactly ok, enabled, mode, executor_mode = kiro_fallback (202 ms)
+    √ /status stays auth-gated (401 without a token, 401 with an invalid bearer) (124 ms)
+    √ /status with the service token carries claude, fallback and last_lease (14 ms)
+    √ a tick that observes CLAUDE_AVAILABLE=false makes the default /mode report kiro_fallback (39 ms)
+    √ a tick with Claude available keeps the default /mode on claude_primary (13 ms)
+  VTID-05277 proof 3: end of rotation never goes to claude while unavailable
+    √ stale ready lane at the end of the rotation → exceptions seat, not claude (2 ms)
+    √ a stale review at the end of the rotation → exceptions seat, not claude (1 ms)
+    √ no decision of a fallback tick routes any job to claude (4 ms)
+    √ a parked lane goes to the exceptions seat while unavailable (2 ms)
+    √ control: Claude available → end of rotation still goes to claude (today’s routing) (1 ms)
+
+Test Suites: 2 failed, 2 passed, 4 total
+Tests:       3 failed, 14 skipped, 33 passed, 50 total
+Snapshots:   0 total
+Time:        28.166 s
+Ran all test suites matching /test\\kaf-staging-claude-available-wiring.test.ts|test\\orb\\live\\upstream\\staging-deploy-workflow-bash-syntax.test.ts|test\\vtid-05127-phone-verify-switch-wiring.test.ts|test\\kiro-autonomy-fallback-proof.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
