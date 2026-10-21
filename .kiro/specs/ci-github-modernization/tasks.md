@@ -11,23 +11,32 @@ Remove the one genuinely-live dead GCP Cloud Run workflow and correct the dead-l
 
 - [ ] T1 — Confirm (and cite in the evidence row) that `VCAOP-GUARDRAILS-CI.yml` already runs the vcaop
   `typecheck` (`npm run typecheck`) and `test:guardrails` (`npm run test:guardrails`, required gate) plus
-  `npm test` on the same `services/vcaop/**` triggers, so deleting `VCAOP-CICD.yml` loses no gate. No
-  migration into `TEST-SUITE.yml`; no dependency on lane 6.
-- [ ] T2 — Remove `.github/workflows/VCAOP-CICD.yml` (dead: `google-github-actions/auth@v2` :63,
+  `npm test` on the same `services/vcaop/**` triggers. No migration into `TEST-SUITE.yml`; no dependency
+  on lane 6.
+- [ ] T2 — **Preserve the vcaop build gate first (R2-F1):** add a `Build` step (`run: npm run build`,
+  `working-directory: services/vcaop`) to `.github/workflows/VCAOP-GUARDRAILS-CI.yml` (after its
+  `npm test` step). `VCAOP-CICD.yml:46-48` runs `npm run build` (= `tsc` with emit, distinct from
+  `typecheck` = `tsc --noEmit`) and no other workflow builds vcaop, so this must land before deletion or
+  the only vcaop build gate is silently lost.
+- [ ] T3 — Remove `.github/workflows/VCAOP-CICD.yml` (dead: `google-github-actions/auth@v2` :63,
   `gcloud run deploy vcaop-api-dev --region us-central1` :77-78 — decommissioned GCP, infrastructure.md
-  §1). Its only unique body is the dead GCP `deploy-dev` job.
-- [ ] T3 — Add the evidence row under `docs/validation/<VTID>/` (what the workflow deployed, that the GCP
-  target is gone, and that `VCAOP-GUARDRAILS-CI.yml` already covers the vcaop typecheck + guardrails
+  §1). After T2 its only unique body is the dead GCP `deploy-dev` job.
+- [ ] T4 — Add the evidence row under `docs/validation/<VTID>/` (what the workflow deployed, that the GCP
+  target is gone, and that `VCAOP-GUARDRAILS-CI.yml` now covers the vcaop typecheck + guardrails + build
   gates) and record in the inventory that EXEC-DEPLOY/STAGE-DEPLOY are already gone and UNIT.yml is already
   a real check (not a no-op).
-- [ ] T4 — Add a dead-GCP-marker inventory test (`scripts/ci/ci-inventory/*.test.mjs` or a case in
+- [ ] T5 — Add tests: a dead-GCP-marker inventory test (`scripts/ci/ci-inventory/*.test.mjs` or a case in
   `scripts/ci/pr-gate/__tests__/`) that greps the workflow tree for live GCP/Cloud-Run deploy markers and
-  fails while any such workflow exists. Run `node --test` over it green after removal.
+  fails while any such workflow exists; **plus** an assertion that `VCAOP-GUARDRAILS-CI.yml` runs
+  `npm run build` (red on base — no build step today — green on head). Run `node --test` over them green
+  after the changes.
 
-**Acceptance (R1-F1):** the evidence row cites `VCAOP-GUARDRAILS-CI.yml` as the surviving runner of the
-vcaop typecheck/guardrails gates; `VCAOP-CICD.yml` is gone; the inventory test is red on base (VCAOP
-present) and green on head; no TEST-SUITE edit and no lane-6 dependency; no non-dead workflow (e.g.
-`AWS-STAGE-DEPLOY-GATEWAY.yml`, `VCAOP-GUARDRAILS-CI.yml`) is touched.
+**Acceptance (R1-F1, R2-F1):** `VCAOP-GUARDRAILS-CI.yml` gains an `npm run build` step **before**
+`VCAOP-CICD.yml` is deleted (the vcaop build gate survives); the evidence row cites
+`VCAOP-GUARDRAILS-CI.yml` as the surviving runner of the vcaop typecheck / guardrails / build gates;
+`VCAOP-CICD.yml` is gone; the inventory test is red on base (VCAOP present) and green on head; the build
+assertion is red on base and green on head; no TEST-SUITE edit and no lane-6 dependency; no non-dead
+workflow (e.g. `AWS-STAGE-DEPLOY-GATEWAY.yml`) is otherwise touched.
 
 <!-- lane: fake-checks-dedupe -->
 ## Lane: fake-checks-dedupe

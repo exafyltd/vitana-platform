@@ -44,12 +44,17 @@ signal.
   :77-78). `EXEC-DEPLOY.yml` and `STAGE-DEPLOY.yml` are **already gone** from `origin/main`;
   `AWS-STAGE-DEPLOY-GATEWAY.yml` only mentions `gcloud` in a historical comment and is the live AWS
   deploy. (inv-code §2.)
-- **`VCAOP-CICD.yml`'s only unique body is its dead GCP `deploy-dev` job; its vcaop CI gates are already
-  covered elsewhere (R1-F1).** `VCAOP-GUARDRAILS-CI.yml` runs `npm run typecheck` (:39),
+- **`VCAOP-CICD.yml`'s vcaop CI gates are mostly covered elsewhere; one (build) needs preserving before
+  deletion (R1-F1, R2-F1).** `VCAOP-GUARDRAILS-CI.yml` runs `npm run typecheck` (:39),
   `npm run test:guardrails` as the required gate (:42) and `npm test` (:45) on the same `services/vcaop/**`
-  `pull_request`/`push` triggers (verified on `origin/main`). So removing `VCAOP-CICD.yml` loses **no**
-  gate, needs **no** migration into `TEST-SUITE.yml`, and lane 1 has **no** dependency on lane 6. The
-  earlier draft's "migrate the gates first" premise was wrong — it missed `VCAOP-GUARDRAILS-CI.yml`.
+  `pull_request`/`push` triggers (verified on `origin/main`) — so typecheck/guardrails/unit are not lost.
+  **But `VCAOP-CICD.yml:46-48` also runs `npm run build` (= `tsc` with emit, distinct from `typecheck` =
+  `tsc --noEmit`), and no other workflow builds vcaop** (`VCAOP-GUARDRAILS-CI.yml` ends at `npm test`;
+  TEST-SUITE's vcaop entry runs only `npm test`). So lane 1 adds the `npm run build` step to
+  `VCAOP-GUARDRAILS-CI.yml` **before** deleting `VCAOP-CICD.yml`, keeping "loses no gate" literally true.
+  After that the only unique body left is the dead GCP `deploy-dev` job. Still **no** `TEST-SUITE.yml`
+  migration and **no** lane-1→6 dependency. The earlier draft's "migrate the gates into TEST-SUITE first"
+  premise was wrong — it missed `VCAOP-GUARDRAILS-CI.yml` entirely.
 - **UNIT.yml is no longer a no-op.** VTID-04950 rewrote it to run every `scripts/**/*.test.{cjs,mjs}`
   via `node --test` (`UNIT.yml:16-20`). The brief's "UNIT.yml placeholder" premise is stale.
   (inv-code §1, inv-tests §5.)
@@ -165,22 +170,29 @@ Eight lanes. Build concurrency is capped at 6 (§8a); lanes beyond that wait in 
 order. No two lanes edit the same file. Real `depends_on` only.
 
 1. **dead-workflows** — `executor: claude` (governance `.github/**`; not protected). **Independent**
-   (R1-F1: no migration, no dependency).
+   (R1-F1: no `TEST-SUITE.yml` migration, no `depends_on` on lane 6).
    Remove `.github/workflows/VCAOP-CICD.yml` (dead GCP Cloud Run: `google-github-actions/auth@v2` :63,
    `gcloud run deploy vcaop-api-dev` :77-78) with its evidence row; correct the inventory's dead-list to
-   today's tracked set (EXEC/STAGE-DEPLOY already gone; UNIT.yml already fixed). **Deleting
-   `VCAOP-CICD.yml` loses no gate:** its vcaop `typecheck` (VCAOP-CICD.yml:37-39) and `test:guardrails`
-   (VCAOP-CICD.yml:40-42) gates are **already run on the same `services/vcaop/**` triggers by
-   `VCAOP-GUARDRAILS-CI.yml`** (`npm run typecheck` :39, `npm run test:guardrails` :42 as the required
-   gate, `npm test` :45 — verified on `origin/main`). The only unique body in `VCAOP-CICD.yml` is its dead
-   GCP `deploy-dev` job. So there is **no migration into `TEST-SUITE.yml` and no `depends_on` on lane 6** —
-   lane 1 is independent and can land as soon as its evidence row and inventory test are ready.
-   Files: `.github/workflows/VCAOP-CICD.yml`, `docs/validation/<VTID>/**`.
+   today's tracked set (EXEC/STAGE-DEPLOY already gone; UNIT.yml already fixed). Its vcaop `typecheck`
+   (VCAOP-CICD.yml:37-39) and `test:guardrails` (VCAOP-CICD.yml:40-42) gates are **already run on the same
+   `services/vcaop/**` triggers by `VCAOP-GUARDRAILS-CI.yml`** (`npm run typecheck` :39,
+   `npm run test:guardrails` :42 as the required gate, `npm test` :45 — verified on `origin/main`).
+   **But `VCAOP-CICD.yml` also runs `npm run build` (:46-48 = `tsc` with emit, distinct from `typecheck` =
+   `tsc --noEmit`), and that build gate is NOT in `VCAOP-GUARDRAILS-CI.yml` or TEST-SUITE's vcaop entry
+   (R2-F1).** To keep "loses no gate" literally true, **this lane first adds a `Build`
+   (`npm run build`) step to `VCAOP-GUARDRAILS-CI.yml`** (the surviving vcaop workflow, same
+   `services/vcaop/**` triggers), then deletes `VCAOP-CICD.yml`. After that the only unique body left in
+   `VCAOP-CICD.yml` is its dead GCP `deploy-dev` job. Still **no `TEST-SUITE.yml` migration and no
+   `depends_on` on lane 6** — the build step lands in `VCAOP-GUARDRAILS-CI.yml`, a file no other lane
+   touches, so lane 1 stays independent.
+   Files: `.github/workflows/VCAOP-CICD.yml`, `.github/workflows/VCAOP-GUARDRAILS-CI.yml`,
+   `docs/validation/<VTID>/**`.
    Test that fails on base: an inventory/no-dead-GCP assertion added to
    `scripts/ci/pr-gate/__tests__/` or a dedicated `scripts/ci/ci-inventory/*.test.mjs` that greps the
-   workflow tree for live GCP/Cloud-Run deploy markers and fails while `VCAOP-CICD.yml` exists. The
-   evidence row cites `VCAOP-GUARDRAILS-CI.yml` as the surviving runner of the vcaop typecheck/guardrails
-   gates.
+   workflow tree for live GCP/Cloud-Run deploy markers and fails while `VCAOP-CICD.yml` exists; plus an
+   assertion that `VCAOP-GUARDRAILS-CI.yml` runs `npm run build` (red on base — it has no build step — and
+   green on head), proving the vcaop build gate survived the deletion. The evidence row cites
+   `VCAOP-GUARDRAILS-CI.yml` as the surviving runner of the vcaop typecheck / guardrails / build gates.
 
 2. **fake-checks-dedupe** — `executor: claude` (governance `.github/**`; not protected).
    Delete **only** the dead commented-out `Gateway Tests` step at `CICDL-GATEWAY-CI.yml:113-118` (the
@@ -318,7 +330,8 @@ order. No two lanes edit the same file. Real `depends_on` only.
   queued.
 - **Shared-file collisions avoided:** `CICDL-GATEWAY-CI.yml` edited only by lane 2. `TEST-SUITE.yml`
   edited only by lane 6 (speed changes only — no vcaop-matrix migration). `PR-GATE.yml` only by lane 6.
-  `VCAOP-CICD.yml` only by lane 1. `queue.mjs`/`queue.test.mjs` only by lane 3.
+  `VCAOP-CICD.yml` and `VCAOP-GUARDRAILS-CI.yml` only by lane 1 (lane 1 adds the `npm run build` step to
+  the latter before deleting the former). `queue.mjs`/`queue.test.mjs` only by lane 3.
   `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml` (the required check) is edited by no lane; if lane 2's build
   de-dup would need to, it is surfaced for Gate 2 instead.
 - **Hot file `CLAUDE.md`** (120 commits/60d) is **not edited by this plan** — no lane touches it. If a
@@ -396,5 +409,8 @@ not the brief's stale "~7.5k / 4 shards".
   right; the "one job" premise was wrong), corrected in Today / measurement / lane 6; R1-F3 (minor) — the
   `--runInBand` rationale is moot once the migration is dropped (guardrails already runs under `npm test`
   in three workflows); R1-F4 (minor) — lane 3's bug description is narrowed to `ci-plan-spar` only
-  (`pm-agent` is already excluded at `queue.mjs:452`).
+  (`pm-agent` is already excluded at `queue.mjs:452`). Round 2 raised R2-F1 (major), also **accepted**
+  (`sparring/s2-responses-2.md`): `VCAOP-CICD.yml:46-48` runs `npm run build` (`tsc` with emit), a gate
+  not covered by `VCAOP-GUARDRAILS-CI.yml` or TEST-SUITE — so lane 1 now adds a `Build` step to
+  `VCAOP-GUARDRAILS-CI.yml` before deleting `VCAOP-CICD.yml`, keeping "loses no gate" literally true.
 <!-- plan:end -->
