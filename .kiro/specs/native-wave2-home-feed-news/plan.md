@@ -27,7 +27,7 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
   `:1488-1526` (search/matches/intents). (R1-F2: these line counts are an **approximate** snapshot for
   scoping — a few files have grown since, e.g. `news-feed-ranker.ts`/`useAllNewsFeed.ts`/`FindPartner.tsx`;
   exact counts are not load-bearing. The ONE load-bearing check — that `feed-compose.ts` is IO-free — is
-  confirmed at `origin/main`: 98 lines, a single `import type { FeedItem, FeedItemKind } from
+  confirmed at the pinned commit: ~110 lines, a single `import type { FeedItem, FeedItemKind } from
   "@/lib/news-feed-ranker"`, no runtime import anywhere including the tail, so it extracts as class A.)
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
@@ -65,7 +65,14 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
    **re-implements the fetching natively** (native Supabase client + native auth context) and consumes
    `composeFeed`/`rankFeed` from core. So the core extraction is two pure modules, with `core-closure --write`/`--check`
    passing and no class-B file reachable. (Supersedes both the earlier "one re-export line per module" and the
-   over-scoped "transitive modules each get a re-export PR" wording.)
+   over-scoped "transitive modules each get a re-export PR" wording.) **The core-extraction work is owned by the
+   `home` lane (R2-F1), no separate lane.** The home lane PR adds `packages/core/src/feed-compose.ts` and
+   `packages/core/src/news-feed-ranker.ts` (the re-export entries) + the matching `packages/core/manifest.json`
+   lines, and **in the same PR** runs `node scripts/native/core-closure.mjs --write` and commits the regenerated
+   `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json`, so `--check` passes.
+   `news` and `community-hub` consume core but do not add core entries. This keeps the "same PR as the re-export"
+   governance rule owned by exactly one lane, so a reviewer of the home PR knows to check for the generated-file
+   commits.
 3. **`news` owns the `NewsArticleCard` native twin**, shared into Home via a port, so the card has one owner and the
    two lanes' `paths` stay disjoint. Therefore **`home` depends_on `news`**; `news` and `community-hub` have no deps
    and run in parallel.
@@ -84,7 +91,7 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
 |---|---|---|---|
 | `news` | exafyltd → hotmail | `NEWS.DETAIL /news/:id`, `/post/:source/:id`; owns the `NewsArticleCard` twin (2 rows) | — |
 | `community-hub` | exafyltd → hotmail | groups (+discover, detail, legacy my-groups), members (+profile-preview overlay), open-asks, find-partner (+board/matches/posts), `/me/matches`, intents (board/mine/match), `/search` (**16 rows**) | — |
-| `home` | exafyltd → hotmail | `/home` (+ `?tab=all|community`, `?compose=1`), life-compass + master-action overlays, and the 3 exclusion routes `/home/compose`, `/home/comments`, `/home/notif` (**9 parity rows**, all flipped `not_started`→`native`) | `news` |
+| `home` | exafyltd → hotmail | `/home` (+ `?tab=all|community`, `?compose=1`), life-compass + master-action overlays, and the 3 exclusion routes `/home/compose`, `/home/comments`, `/home/notif` (**9 parity rows**, all flipped `not_started`→`native`); **AND owns the core extraction** — `packages/core/src/{feed-compose,news-feed-ranker}.ts` re-exports + `packages/core/manifest.json` lines, with `core-closure.mjs --write` run and `packages/core/closure.generated.json` + `scripts/native/mobile-ci-paths.generated.json` committed in the same PR (R2-F1) | `news` |
 Exact `paths` globs are in each `lanes/<id>.md`; the 27 parity rows partition **9 (home) + 2 (news) + 16
 (community-hub)** with 0 overlap and 0 orphan (R3-F1 re-count); the 3 `/home/*` deep-links are dedicated
 exclusion rows the home lane flips to `native` (exact `shapeOf` match, not prefix — `parity-ledger.mjs:60`).
@@ -103,7 +110,7 @@ exclusion rows the home lane flips to `native` (exact `shapeOf` match, not prefi
   `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json` in the SAME PR, then
   `node scripts/native/core-closure.mjs --check` passes. Without the `--write`+commit, `--check` fails in NATIVE-CI
   with "stale generated file" regardless of whether the modules are class A. (Confirmed IO-free premise: at
-  `origin/main`, `src/lib/feed-compose.ts` is 98 lines with a single `import type … from "@/lib/news-feed-ranker"`
+  the pinned commit, `src/lib/feed-compose.ts` is ~110 lines with a single `import type … from "@/lib/news-feed-ranker"`
   and no runtime import through its tail — so after `--write` the core copy is class A.)
 - NATIVE-CI (shell source-pin + ports), PR-GATE **Collab handoff** + **Lane scope** green.
 - **i18n:** 11 locales (ar de en es fr pl pt ru sr tr zh), any new key DE-first (du-form) then mirrored; RTL (`ar`)
