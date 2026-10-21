@@ -6,6 +6,8 @@ next_actor: kiro
 state: drafted
 author_seat: exafyltd
 updated: 2026-10-15T19:13Z
+spar_refs:
+  - exafyltd/vitana-v1: main
 ---
 # Handoff — Native Wave 2: Inbox / Chat / Calls screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`, program
