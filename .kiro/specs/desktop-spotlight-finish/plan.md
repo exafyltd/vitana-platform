@@ -105,19 +105,28 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
    `skeletons`. An MP4 (spinner before vs skeleton after, desktop and mobile) goes to the owner.
 4. **Older open items** — decided by Kiro under owner delegation 2026-10-16: public profile `/u/:identifier` and
    `/me/profile` → `detail` (contract §A lists public profile under `detail`); `/redeem`, `/delete-account` → `form`;
-   `/tickets/success`, `/tickets/demo` → `detail`; `/shop` → `immersive` inside the app shell (SR-04); Commerce portal →
-   app shell for signed-in members on the app host on desktop Spotlight (the phone app already does this,
-   VTID-03999), standalone for guests and `commerce.vitanaland.com`, no new step/field/dialog, PR carries "UX
-   acceptance"; pure redirect components leave the manifest. `/business/sell-earn` stays unchanged — who may see it is
-   a product question → open owner item.
+   `/tickets/success`, `/tickets/demo` → `detail`. **Every one of these archetype/status manifest edits is made only in
+   `remaining-screens`** (the sole owner of `src/design/screen-manifest.json`, see Decision 6); the `public-profile`
+   lane frames the profile pages/components and lists the routes it made ready but does not edit the manifest. **`/shop`
+   is already `immersive`/`migrated` in the manifest** (`screen-manifest.json`), so there is no manifest flip for it;
+   the Decision 4 work for `/shop` is the **code-level** change only — Commerce portal → app shell for signed-in members
+   on the app host on desktop Spotlight (the phone app already does this, VTID-03999), standalone for guests and
+   `commerce.vitanaland.com`, no new step/field/dialog, PR carries "UX acceptance" — owned by the `commerce-shell` lane
+   (`CommerceShell`, `ShopFeed`, `AppLayout` skin), not by a manifest edit. Pure redirect components leave the manifest.
+   `/business/sell-earn` stays unchanged — who may see it is a product question → open owner item.
 5. **`desktop_spotlight` production flag** — decided by Kiro under owner delegation 2026-10-16: unchanged, no flag
    flip; it is an owner/production decision → open owner item.
 6. **File ownership** (Kiro, within the plan): every file with findings belongs to exactly one lane, and that lane
    clears every `design/*` rule in it, so no two PRs edit one file. In particular the three action-spinner pages that
    Decision 4 also re-archetypes — `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess` — belong only to
-   `remaining-screens` (archetype flip and action-spinner allow reason in one PR), never also to `skeletons`. Shared:
-   the two ratchet baselines (every lane) and `docs/SCREEN_INVENTORY.md` (the three lanes that add copy, each in its
-   own new i18n shard).
+   `remaining-screens` (archetype flip and action-spinner allow reason in one PR), never also to `skeletons`.
+   **`src/design/screen-manifest.json` is a single-owner file, owned solely by `remaining-screens`** (together with the
+   manifest generator `scripts/design/screen-manifest.mjs` and its test): every route's `archetype`/`status` edit —
+   including the `/u/:identifier`, `/me/profile`, `/redeem`, `/tickets/*`, `/delete-account` flips of Decision 4 — is
+   made in that one lane's PR, so no two PRs edit the manifest. The other lanes (`public-profile`, `commerce-shell`,
+   `skeletons`) frame their routes in code and list the routes they made ready, but the manifest status flip itself
+   lands only in `remaining-screens`, which `depends_on` them and goes last. Shared across every lane: the two ratchet
+   baselines, and `docs/SCREEN_INVENTORY.md` (the three lanes that add copy, each in its own new i18n shard).
 7. **Raw `Card` and physical directions** (Kiro, within the contract): content items → `VCard`, panels → `Panel`
    (identical DOM); logical properties, centring/slide/sheet-direction cases keep the escape hatch.
 
