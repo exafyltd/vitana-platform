@@ -11,7 +11,8 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - scripts/ci/plan-spar-slot/slot.test.mjs
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05306
 ---
 # Lane: plan-spar-checks
 
@@ -65,3 +66,6 @@ is built the posted status has no effect and today's behaviour is unchanged. The
 in `services/gateway/src/services/project-manager/act.ts` that calls `gh pr update-branch`) is a gateway
 change needing a staging deploy, so it is **deferred to a separate gateway lane**, outside this plan's
 "deploys nothing" scope — NOT built in this plan (surfaced for Gate 2 with the PAT secret).
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05306 allocated after policy approval (converged-auto-v1).

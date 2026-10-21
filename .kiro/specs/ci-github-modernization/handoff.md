@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-21T11:20Z
+state: approved
+updated: 2026-10-21T12:26Z
+sparring_record: .kiro/specs/ci-github-modernization/sparring/verdict.md
+vtids: [VTID-05301, VTID-05302, VTID-05303, VTID-05304, VTID-05305, VTID-05306, VTID-05307, VTID-05308]
 ---
 # Handoff — ci-github-modernization
 
@@ -61,3 +63,6 @@ chose Route 2: a FRESH `plan(` PR carrying the revised spec with a clean (empty)
 PLAN-SPAR spars it from session 1. PR #4247 stays open and intact as the escalation record — its sparring
 state is not edited and `MAX_SESSIONS` is not raised. This spec is identical to #4247's head except the
 sparring/ dir is reset. Next: open the fresh `plan(` PR for PLAN-SPAR round 1.
+
+### 2026-10-21T12:26Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 8 lane(s) got a VTID and are handed to Kiro.

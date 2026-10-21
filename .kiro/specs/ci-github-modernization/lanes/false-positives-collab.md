@@ -10,7 +10,8 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05304
 ---
 # Lane: false-positives-collab
 
@@ -34,3 +35,6 @@ edit the three-copy protected-gate list. No VTID yet.
 Lane created with the plan. Scope: `queue.mjs` + `queue.test.mjs` + validation docs. Evidence from
 inv-rules §7 / inv-code §3-4 / inv-tests §2-3,6. Flagged protected-gate + the #4210/#4188 collision
 (R1/R2/R6). No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05304 allocated after policy approval (converged-auto-v1).

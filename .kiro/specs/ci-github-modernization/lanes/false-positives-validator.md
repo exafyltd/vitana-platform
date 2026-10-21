@@ -13,7 +13,8 @@ paths:
   - scripts/ci/validator-path-guard.cjs
   - scripts/ci/validator-path-guard.test.cjs
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05305
 ---
 # Lane: false-positives-validator
 
@@ -29,3 +30,6 @@ gateway trees (no new PR types bitten). No VTID yet.
 ### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
 Lane created with the plan. Scope: VALIDATOR-CHECK.yml, a PR template, the validator-path-guard + its
 test, validation docs. Evidence from inv-rules §6-7 / inv-code §3 / inv-tests §2-3. No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05305 allocated after policy approval (converged-auto-v1).

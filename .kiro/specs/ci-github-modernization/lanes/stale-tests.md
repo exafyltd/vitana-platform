@@ -11,7 +11,8 @@ paths:
   - src/components/messages/ConversationView.deeplink-scroll.vtid-05201.test.tsx
   - src/components/messages/ConversationView.tsx
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05308
 ---
 # Lane: stale-tests
 
@@ -32,3 +33,6 @@ drives before editing (ConversationView may compose sub-components).
 Lane created with the plan. Scope: the v1 ConversationView test + its product code, the platform
 VTID-05082 contract under docs/validation. Evidence from inv-tests §8 (both files confirmed on
 origin/main). Non-governance Kiro lane. No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05308 allocated after policy approval (converged-auto-v1).

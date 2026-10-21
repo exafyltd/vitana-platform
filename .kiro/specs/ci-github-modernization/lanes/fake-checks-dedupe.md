@@ -9,7 +9,8 @@ reviewer_seat: claude
 paths:
   - .github/workflows/CICDL-GATEWAY-CI.yml
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05303
 ---
 # Lane: fake-checks-dedupe
 
@@ -24,3 +25,6 @@ VTID yet.
 ### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
 Lane created with the plan. Scope: `CICDL-GATEWAY-CI.yml` + validation docs only. Evidence from inv-code
 §1/§5 (commented Jest block at :95-101; build/typecheck duplicated vs TEST-SUITE). No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05303 allocated after policy approval (converged-auto-v1).

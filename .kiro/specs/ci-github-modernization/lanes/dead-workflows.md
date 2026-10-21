@@ -10,7 +10,8 @@ paths:
   - .github/workflows/VCAOP-CICD.yml
   - scripts/ci/ci-inventory/**
   - docs/validation/**
-updated: 2026-10-21T11:52Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05302
 ---
 # Lane: dead-workflows
 
@@ -32,3 +33,6 @@ Added `depends_on: [speed-path-filters]`. VCAOP-CICD.yml is the only CI runner o
 TEST-SUITE.yml (:111-113) runs only `npm test`. Those two gates are migrated into TEST-SUITE.yml by lane 6
 (which owns that file); this lane deletes `VCAOP-CICD.yml` only after lane 6 has landed them, so no gate is
 silently lost. Paths unchanged (TEST-SUITE.yml stays owned by lane 6).
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05302 allocated after policy approval (converged-auto-v1).

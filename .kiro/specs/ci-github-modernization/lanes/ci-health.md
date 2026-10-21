@@ -10,7 +10,8 @@ paths:
   - .github/workflows/CI-HEALTH.yml
   - scripts/ci/health/**
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05301
 ---
 # Lane: ci-health
 
@@ -25,3 +26,6 @@ reviewer-agent accept). GitHub reads only, never against production. No VTID yet
 ### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
 Lane created with the plan. Scope: new CI-HEALTH.yml, scripts/ci/health/**, validation docs. Evidence
 from inv-code §6 (no existing health aggregator; closest patterns named). No VTID yet.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05301 allocated after policy approval (converged-auto-v1).

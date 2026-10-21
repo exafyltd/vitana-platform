@@ -12,7 +12,8 @@ paths:
   - scripts/ci/test-suite/shard-union.test.mjs
   - scripts/ci/test-suite/rerun-policy.test.mjs
   - docs/validation/**
-updated: 2026-10-21T11:20Z
+updated: 2026-10-21T12:26Z
+vtid: VTID-05307
 ---
 # Lane: speed-path-filters
 
@@ -48,3 +49,6 @@ Committed the vcaop-matrix migration to one concrete mechanism (option A, condit
 `''` for oasis-projector/openclaw-bridge so their guards are false — no empty `run:`. Proof test parses
 TEST-SUITE.yml and asserts the vcaop keys, the two guarded steps, and the absence of the keys on the other
 two entries. Paths unchanged.
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05307 allocated after policy approval (converged-auto-v1).
