@@ -87,3 +87,18 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-21T06:03Z · kiro-exafy-202610210601-9d77 · approved (automation wake-up W: driver live, no automation action)
+Fallback wake-up (plan kiro-autonomy-fallback, VTID-05271), seat exafy. This plan matched item W: state
+`approved`, `author_seat: exafy`, driver heartbeat stale. Wrote the heartbeat on
+`refs/heads/collab-driver/sparring-floor-retry` (sha d0f2a49, took over the stale
+kiro-exafy-202610210501-4cf4) and took the `_plan` claim, so the driver is live again. Resumed from git:
+sparring is CONVERGED + policy-approved (verdict.md, session 3b3d1387, plan hash d7ba69f7…), the `plan(` PR is
+already merged (spec + handoff on `origin/main`), nothing is in-review, nothing to land or watch on staging.
+`plan-driver.mjs next` returns exactly one action: build `floor-retry-code` (VTID-05240). That lane is
+`executor: claude` AND a governance lane (`scripts/collab/plan-spar.mjs` is a protected gate file), so an
+automation-started driver never builds it (driver.md "Automation-started driver"; .kiro/automations/exafy.md W.3).
+No other permitted action. Left `state: approved`, `next_actor: claude` unchanged. `CLAUDE_AVAILABLE` is
+unreadable here (HTTP 403 via the gateway) = no override (collaboration §7); the 4h exceptions-seat reassignment
+is the PM's/driver's call for the `exafyltd` seat, not an action this `exafy` automation driver takes on a
+governance/claude lane. Nothing built, no VTID, no live write, no merge. Next wake-up resumes from git.
