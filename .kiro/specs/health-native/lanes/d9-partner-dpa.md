@@ -19,7 +19,7 @@ paths:
   - "docs/SCREEN_INVENTORY.md"
   - "docs/validation/**"
   - "tests/**"
-updated: 2026-10-21T09:41Z
+updated: 2026-10-21T09:42Z
 ---
 # D9 — partners read and sign the data processing agreement
 
@@ -36,4 +36,6 @@ Then: re-run `drift` on #4057 → merge #4057 → merge #1342 → STAGING-VERIFY
 ### 2026-10-15T18:59Z · session_01VuZPi9pvHaUverAXRC1WvU · (backfill) → in-review
 Handed over to Kiro with the health-native spec. next_actor: owner.
 ### 2026-10-21T09:41Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-21T09:42Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
