@@ -16,6 +16,7 @@ updated: 2026-10-20T23:58Z
 branch: kiro/kaf-fallback-env/ff-stage-env
 vtid: VTID-05282
 claimed_by: kiro-202610202258-2232
+pr: https://github.com/exafyltd/vitana-platform/pull/4241
 ---
 # ff-stage-env — `CLAUDE_AVAILABLE` from the repo variable into the staging task definition
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 A, and the `ff-stage-env` section of `tasks.md`, are
