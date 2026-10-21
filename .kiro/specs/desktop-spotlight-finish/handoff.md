@@ -5,7 +5,7 @@ executor: kiro
 next_actor: claude
 state: sparring
 author_seat: exafyltd
-updated: 2026-10-21T22:05Z
+updated: 2026-10-21T22:30Z
 sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: 69d39ef344b578f1ff171e99c61295f51c4e1f50
@@ -89,3 +89,14 @@ auto-allocates the 10 lane VTIDs. Re-pinned the plan from vitana-v1 1a553367f to
 every premise file — PR-GATE.yml, gate.mjs, lib.mjs, config.json, design.json, the manifest, eslint.config.js,
 eslint-rules/design/** — byte-identical, so all baselines/line refs hold). Rewrote `responses-1.md` R1-F1/F2/F3 to cite
 the merged mechanism + the declared ref. No VTID allocated, no product code changed, no live system touched.
+### 2026-10-21T22:30Z · kiro-202610152203-0347 · answered sparring round (session 6963fb88) → re-spar
+Session 6963fb88 escalated with a partner **wiring** error, not a plan finding: `evidence_floor_not_met` (0 premise
+checks citing read_file). Root cause: PLAN-SPAR runs `plan-spar.mjs` from the **PR base checkout**
+(`PLAN-SPAR.yml:48-52/:90/:94`, `ref: pull_request.base.sha`), and run 39606554146 logged `BASE_SHA: 7b6425b`, which
+predates #4202 (`merge-base --is-ancestor b7413548 7b6425b` → exit 1; that commit's `plan-spar.mjs` has no
+`parseSparRefs`). So the pre-#4202 driver ran, `spar_refs:` was never read, vitana-v1 was never attached, and the
+partner had nothing to cite. The 22:05Z re-spar wrongly assumed the base = `main` HEAD. Fix: merged `origin/main`
+(`c7481256`, #4202 ancestor — `merge-base --is-ancestor b7413548 origin/main` → exit 0, its `plan-spar.mjs` has
+`parseSparRefs`) into the branch so the next PLAN-SPAR base contains the mechanism and attaches vitana-v1. `spar_refs:`
+unchanged (vitana-v1 origin/main still `69d39ef344`). Answered in `sparring/responses-2.md`. No VTID allocated, no
+product code changed, no live system touched.
