@@ -14,7 +14,7 @@ paths:
   - services/gateway/src/routes/community-invites.ts
   - services/gateway/test/mt-launch-support-landing.test.ts
   - docs/validation/VTID-mt-launch-support-landing/**
-updated: 2026-10-21T16:16Z
+updated: 2026-10-21T16:18Z
 vtid: VTID-05325
 ---
 # support-landing — per-tenant support routing + landing SEO/OG (repo vitana-platform)
@@ -57,4 +57,6 @@ R2-F1: VTID-05267 dependency cited with its artifact + a pre-PR merge gate. R2-F
 ### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
 VTID-05325 allocated after policy approval (converged-auto-v1).
 ### 2026-10-21T16:16Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-21T16:18Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
