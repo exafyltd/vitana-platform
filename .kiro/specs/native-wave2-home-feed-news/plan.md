@@ -33,15 +33,19 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
 1. **Three disjoint lanes by cluster** (prompt: home / feed / news). "Feed" is Home's composed feed (no separate web
    page), so: **`home`** (feed lives here), **`news`** (the `/news/:id` + `/post/:source/:id` readers), **`community-hub`**
    (the remaining `home-feed` ledger rows — community, intents, search). The three touch disjoint route files and
-   component folders, build/review independently, each leaves the app buildable. **Partition (R1-F2, corrected
-   against the ledger): home 6 parity rows** — `HOME.OVERVIEW`, `HOME.NEWS_ALL`, `HOME.NEWS_COMMUNITY`,
+   component folders, build/review independently, each leaves the app buildable. **Partition (R1-F2 / R3-F1,
+   corrected against the ledger): home 9 parity rows** — `HOME.OVERVIEW`, `HOME.NEWS_ALL`, `HOME.NEWS_COMMUNITY`,
    `HOME.CREATE_POST` (the `?compose=1` row) + the two `/home` overlays `LIFE_COMPASS.OVERLAY`,
-   `OVERLAY.MASTER_ACTION` — **news 2 rows, community-hub 19 rows = 27** (re-counted: the earlier "home 8 /
-   community-hub 17" double-counted). The three `/home/compose`, `/home/comments`, `/home/notif` App.tsx routes
-   (`src/App.tsx:969-998`) are **not** parity-ledger rows; the home lane still ports them as native route files but
-   they carry **no** dedicated parity row — `parity-ledger.mjs --check` covers them under `HOME.OVERVIEW` (they are
-   sub-routes of `/home`), never as new rows, so the "0 orphan / only status flips" guarantee holds for the 6 rows
-   and the deep-links are explicitly excluded from row accounting.
+   `OVERLAY.MASTER_ACTION` + the three **exclusion route rows** `/home/compose`, `/home/comments`, `/home/notif`
+   (each a dedicated ledger row — `source: exclusion`, `scope: in`, `lane: home-feed`, from
+   `src/navigation/registry/exclusions.json` and `scripts/native/parity-scope.json`) — **news 2 rows,
+   community-hub 16 rows = 27** (9+2+16; the earlier "6+2+19" and "8+2+17" were both wrong). The three `/home/*`
+   deep-links are ports WITH their own rows, not uncounted sub-routes: the home lane creates their native route files
+   **and flips all three rows `not_started`→`native`** alongside the 6 registry rows. `parity-ledger.mjs` matches by
+   exact `shapeOf()` (`:60`), not prefix, so `/home/compose` is never "covered under `/home`"; if the native files
+   exist but the rows stay `not_started`, `--check` passes silently (check (d) sees the shapes via the exclusion
+   rows; check (c) only fires on `native`/`in_progress`) while the ledger reports the home lane permanently
+   incomplete. The home-lane acceptance therefore REQUIRES flipping all 9 rows to `native`.
 2. **Only the pure IO-free compose/rank modules move into `@vitana/core`; the data-fetching hooks do NOT**
    (R1-F1, R2-F1, R2-F2). Core gets re-export entries for exactly **`feed-compose` and `news-feed-ranker`** — both
    pure. Their only cross-module references, `news-feed-ranker.ts:23-24`'s `import type { MatchReason }` from
@@ -75,11 +79,11 @@ no `App.tsx` route, no registry/manifest change — only native route files and 
 | Lane | Seat → reviewer | Scope (web destinations) | depends_on |
 |---|---|---|---|
 | `news` | exafyltd → hotmail | `NEWS.DETAIL /news/:id`, `/post/:source/:id`; owns the `NewsArticleCard` twin (2 rows) | — |
-| `community-hub` | exafyltd → hotmail | groups (+discover, detail, legacy my-groups), members (+profile-preview overlay), open-asks, find-partner (+board/matches/posts), `/me/matches`, intents (board/mine/match), `/search` (**19 rows**) | — |
-| `home` | exafyltd → hotmail | `/home` (+ `?tab=all|community`, `?compose=1`), life-compass + master-action overlays (**6 parity rows**); plus the `/home/compose`, `/home/comments`, `/home/notif` sub-routes ported as native route files with **no** dedicated parity row (covered under `HOME.OVERVIEW`) | `news` |
-Exact `paths` globs are in each `lanes/<id>.md`; the 27 parity rows partition **6 (home) + 2 (news) + 19
-(community-hub)** with 0 overlap and 0 orphan (R1-F2 re-count); the 3 `/home` deep-link sub-routes are ported but
-excluded from row accounting (no ledger row, covered by `HOME.OVERVIEW` for `parity-ledger.mjs --check`).
+| `community-hub` | exafyltd → hotmail | groups (+discover, detail, legacy my-groups), members (+profile-preview overlay), open-asks, find-partner (+board/matches/posts), `/me/matches`, intents (board/mine/match), `/search` (**16 rows**) | — |
+| `home` | exafyltd → hotmail | `/home` (+ `?tab=all|community`, `?compose=1`), life-compass + master-action overlays, and the 3 exclusion routes `/home/compose`, `/home/comments`, `/home/notif` (**9 parity rows**, all flipped `not_started`→`native`) | `news` |
+Exact `paths` globs are in each `lanes/<id>.md`; the 27 parity rows partition **9 (home) + 2 (news) + 16
+(community-hub)** with 0 overlap and 0 orphan (R3-F1 re-count); the 3 `/home/*` deep-links are dedicated
+exclusion rows the home lane flips to `native` (exact `shapeOf` match, not prefix — `parity-ledger.mjs:60`).
 `news` and `community-hub` run in parallel; `home` waits for `news` (the card twin).
 
 ## Test plan
