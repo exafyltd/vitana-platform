@@ -1,6 +1,6 @@
 ---
 lane: staging-test-05082
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,10 +9,9 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-21T22:37Z
+updated: 2026-10-21T22:46Z
 vtid: VTID-05266
 pr: https://github.com/exafyltd/vitana-platform/pull/4223
-claimed_by: kiro-hotmail-202610212137-725e
 branch: kiro/fix-4182-test-fallout/staging-test-05082
 ---
 # staging-test-05082 — point the VTID-05082 staging suite at svg-preview.js (repo vitana-platform)
@@ -65,3 +64,10 @@ Next: `in-review → verified` (merge record and STAGING-VERIFY), then `verified
 - This entry supersedes record PR #4245, closed because its branch name fails main's Collab handoff check.
 
 Next: `verified → done`.
+
+### 2026-10-21T22:46Z · kiro-hotmail-202610212137-725e · verified → done
+The merge record and STAGING-VERIFY result are in the entry above (merge `8f74d68caf4a0fb79f59efa03488cb396bfb8a4d`,
+STAGING-VERIFY run 39575858903 PASS). Lane closed. `claimed_by` is cleared and the lane claim is released after this
+PR merges.
+Left: the VTID-05266 ledger row is terminalized by the PM or Claude, not by Kiro (§7a). The plan `handoff.md` is
+closed by the `_plan` holder once both lanes are `done`.
