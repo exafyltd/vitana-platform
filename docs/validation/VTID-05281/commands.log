@@ -21,4 +21,12 @@ npm ci --no-audit --no-fund                                   -> ok (799 package
 [CI on PR head 29908fa95] gh pr checks 4242 -> 23 pass (Gateway Jest shards 1-4, Gateway Validation, Lane scope, Collab handoff, pr-gate, unit, validate, ...);
        VALIDATOR-CHECK validate-pr red: PR body lacked VALIDATION_PROFILE / SCOPE_ALLOWLIST / ACCEPTANCE / MERGE_PAYLOAD_PREVIEW / OASIS_IMPACT markers -> body fixed (review round 1)
 [head] git grep -E "workflow_dispatch|/dispatches|AWS-PROD-DEPLOY" -- services/gateway/src/services/project-manager/ -> no match
+## Review round 2 fix — re-run at sources 0e93e3701 (lane code unchanged since b62b27556)
+[head] npx jest test/project-manager/observe-live.test.ts --ci -> PASS 20 passed / 20 (outputs/green-head.txt)
+[head] npx jest test/project-manager --ci                     -> PASS 184 passed / 184, 10 suites
+[head] npm run typecheck                                       -> PASS (exit 0) outputs/typecheck.txt
+[head] npm run build (Git Bash script shell)                   -> PASS (exit 0) outputs/build.txt
+[local] validator-path-guard.cjs <changed files> gateway_backend <PR body> -> APPROVED (12 in remit, 1 not judged: the lane file)
+[CI on PR head 0e93e3701] gh pr checks 4242 -> 24 pass / 0 fail / 0 pending, VALIDATOR-CHECK validate-pr PASS (outputs/ci-head.txt)
+[head] git diff origin/main...0e93e3701 (stat + source diff)    -> outputs/diff-head.patch (for a review session without a shell)
 CI on the PR head is the authority.

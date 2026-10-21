@@ -1,5 +1,6 @@
-# [head 894f10bd3 sources] npm run build (services/gateway), Windows 11, npm_config_script_shell=Git Bash (rm/cp/mkdir -p)
-# exit 0; dist/frontend/command-hub, dist/services/tool-manifest.json, dist/navigation/data present
+# [sources at 0e93e3701f82230ed73a2f73d73b148aab3c2317; lane code unchanged since b62b27556 (git diff --stat b62b27556 0e93e3701f82230ed73a2f73d73b148aab3c2317 -- services/ is empty)]
+# npm run build (services/gateway), Windows 11, npm_config_script_shell=Git Bash; exit 0
+
 > @vitana/gateway@1.0.1 prebuild
 > rm -rf dist
 
@@ -14,4 +15,4 @@
 
 > @vitana/gateway@1.0.1 copy-data
 > mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/ && mkdir -p dist/navigation/data && cp src/navigation/data/* dist/navigation/data/
-exit 0
+

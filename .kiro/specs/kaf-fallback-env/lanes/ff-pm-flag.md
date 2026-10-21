@@ -14,7 +14,7 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T00:30Z
+updated: 2026-10-21T00:45Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
 pr: https://github.com/exafyltd/vitana-platform/pull/4242
 vtid: VTID-05281
@@ -61,3 +61,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4242
 Findings: blocking: CI and PR diff on head 46b85eb not verifiable (shell denied in the review session; the recorded CI run is for 29908fa95), re-review needed with gh and git; non-blocking: build.txt is now filled and passing but labelled for head 894f10b; non-blocking: lint has no ESLint config, red on base and head alike; non-blocking: red-to-green evidence (B1, B4, B5, B7 red on base, 20/20 on head) was recorded at 894f10b; non-blocking: staging-tests.json is read-only
 Next: the lane's seat fixes the blocking findings
+### 2026-10-21T00:45Z · kiro-exafy-202610202351-3160 · review fix (round 2)
+Evidence re-recorded at sources 0e93e3701 (lane code unchanged since b62b27556): observe-live 20/20, project-manager
+184/184, typecheck and `npm run build` exit 0. CI on PR head 0e93e3701: 24 pass / 0 fail incl. VALIDATOR-CHECK
+validate-pr (`outputs/ci-head.txt`). The PR diff against origin/main is in `outputs/diff-head.patch` so a review session
+without a shell can read it. No source change. Next: re-review.
