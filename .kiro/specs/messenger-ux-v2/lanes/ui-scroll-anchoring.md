@@ -20,7 +20,8 @@ paths:
   - src/i18n/*/inbox.json
   - tests/e2e/staging/vtid-*-scroll-anchoring.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05319
 ---
 # ui-scroll-anchoring
 Open at the newest message on the first frame, `↓ N new messages` pill, unread divider, no forced scrolling.
@@ -30,3 +31,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05319 allocated after policy approval (converged-auto-v1).

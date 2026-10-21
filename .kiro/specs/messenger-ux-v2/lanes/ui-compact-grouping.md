@@ -18,7 +18,8 @@ paths:
   - src/components/messages/*.vtid-*.test.tsx
   - tests/e2e/staging/vtid-*-compact-grouping.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05314
 ---
 # ui-compact-grouping
 Consecutive-message grouping (avatar/name once, tails, timestamps). Builds on #1425 (merged first, plan §8).
@@ -28,3 +29,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05314 allocated after policy approval (converged-auto-v1).

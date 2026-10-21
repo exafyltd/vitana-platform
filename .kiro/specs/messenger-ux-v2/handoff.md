@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-21T13:00Z
+state: approved
+updated: 2026-10-21T13:16Z
+sparring_record: .kiro/specs/messenger-ux-v2/sparring/verdict.md
+vtids: [VTID-05309, VTID-05310, VTID-05311, VTID-05312, VTID-05313, VTID-05314, VTID-05315, VTID-05316, VTID-05317, VTID-05318, VTID-05319, VTID-05320, VTID-05321, VTID-05322]
 ---
 # Handoff — messenger-ux-v2 (Messenger: reliable sending, scroll, replies, media, search, sharing, push suppression)
 Planner: Kiro seat `exafyltd` (session kiro-exafyltd-202610211130-c65e). Plan: `plan.md` (between the plan markers), sparred by CI PLAN-SPAR.
@@ -47,3 +49,5 @@ all accepted. Session 2 failed on code access: 22 `read_file` calls, 0 ok (read-
 of `messenger-ux-v2` in both repos, plus the leftover messenger PR #1425 (`chat-ux/compact-density`). Merge to `main`
 deploys to staging only. Gate 2 / production stays the owner's PUBLISH.
 
+### 2026-10-21T13:16Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 14 lane(s) got a VTID and are handed to Kiro.

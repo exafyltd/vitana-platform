@@ -21,7 +21,8 @@ paths:
   - src/i18n/*/inbox.json
   - tests/e2e/staging/vtid-*-message-search.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05317
 ---
 # ui-message-search
 Global and in-conversation search; a result opens the exact message (plan I5, I8).
@@ -31,3 +32,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05317 allocated after policy approval (converged-auto-v1).

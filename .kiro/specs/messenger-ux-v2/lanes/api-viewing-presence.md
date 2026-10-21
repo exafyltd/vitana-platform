@@ -21,7 +21,8 @@ paths:
   - DATABASE_SCHEMA.md
   - services/gateway/test/vtid-*-chat-viewing-presence.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05312
 ---
 # api-viewing-presence
 Push suppressed for the conversation the recipient is viewing, checked centrally in `notifyUser` and `/push-dispatch` (plan I4).
@@ -31,3 +32,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05312 allocated after policy approval (converged-auto-v1).

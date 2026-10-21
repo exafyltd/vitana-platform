@@ -18,7 +18,8 @@ paths:
   - DATABASE_SCHEMA.md
   - services/gateway/test/vtid-*-chat-send-reliability.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05310
 ---
 # api-send-reliability
 Idempotent send (`client_message_id`), persisted replies, `delivered_at` + `/chat/delivered`, `around`/`after` context window (plan I1-I3).
@@ -28,3 +29,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05310 allocated after policy approval (converged-auto-v1).

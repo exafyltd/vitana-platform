@@ -15,7 +15,8 @@ paths:
   - src/components/messages/ConversationView.tsx
   - src/pages/messages/GroupChat.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05322
 ---
 # ui-viewing-presence
 Viewing heartbeat for the open conversation (plan I4 client).
@@ -25,3 +26,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05322 allocated after policy approval (converged-auto-v1).

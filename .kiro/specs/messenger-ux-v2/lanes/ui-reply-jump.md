@@ -22,7 +22,8 @@ paths:
   - src/i18n/*/inbox.json
   - tests/e2e/staging/vtid-*-reply-jump.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T12:00Z
+updated: 2026-10-21T13:16Z
+vtid: VTID-05318
 ---
 # ui-reply-jump
 Replies in DMs and groups; quotes jump to the original even when it is not loaded (plan I8).
@@ -32,3 +33,6 @@ Acceptance by `agent:vitana-lane-reviewer (claude-sonnet-5.5)`.
 ## Log
 ### 2026-10-21T12:00Z · kiro-exafyltd-202610211130-c65e · created → ready
 Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
+
+### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05318 allocated after policy approval (converged-auto-v1).
