@@ -41,7 +41,8 @@
   - **NOT a `products`/`merchants` reader:** `routes/shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads
     `shop_videos` (its select carries no product id) — out of the predicate's scope.
 - `tenant_catalog_overrides`: foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`
-  (bare `_select` RLS); not enforced anywhere (commerce arch §"Partner↔tenant relationship").
+  (`:326`; RLS `:807-812` — authenticated `tenant_id = current_tenant_id()`, service_role all); the predicate reads it
+  on the service-role client with an explicit tenant filter; not enforced anywhere today (commerce arch §"Partner↔tenant relationship").
 - `partner_tenant.tenant_id` written `caller.tenantId || 'platform'` at
   `services/gateway/src/services/partner-onboarding-service.ts:948`; onboarding routes `routes/partner-onboarding*.ts`.
 - Referral/commission: `services/gateway/src/services/recommendation-commissions/credit-recommender.ts`
@@ -62,14 +63,7 @@
   expand/contract (add with default → existing rows `community` → drop default per §4.7).
 - `partner_tenant.tenant_id` free text → real tenant UUID or NULL (platform): snapshot `bak_*` first, map only
   unambiguous rows, unresolvable → NULL.
-- Referral attribution: a `buyer_tenant_id uuid` column on **`product_orders`** (the concrete commission-attribution
-  row — verified: `credit-recommender-repository.ts:28 fetchProductOrderForCommission` selects
-  `attribution_recommendation_id, merchant_id, product_id, user_id, click_id` from `product_orders`, and
-  `checkout-service-repository.ts insertPendingOrders` writes it). The commission ledger `recommendation_commissions`
-  already carries `recommender_user_id`, so no column is added there. The column is added DARK (nullable, expand-only,
-  no default) and is READ only by lane `supplier-onboarding-communities` task S4 behind the mt flags —
-  `supplier-onboarding-communities` already `depends_on supplier-relationships-db`. This is one logical change split
-  across the two lanes per §4.7 (DB file here, consuming code there).
+- Referral attribution: NO new column. D26 attribution (`supplier-onboarding-communities` S4) reads the existing buyer-tenant column `product_orders.tenant_id`, which is NULLABLE since VTID-04740 (`20260929120200_vtid_04740_product_orders_tenant_nullable.sql:12`, column comment: NULL = signed-out buyer of an anonymous referral sale; the Awin sync copies the click's tenant, `product_clicks.tenant_id` also nullable). Rule: `buyer_tenant_id = product_orders.tenant_id`, with an explicit `buyer_tenant_source`: `'order'` when non-NULL, `'anonymous_buyer'` when NULL — NULL is recorded as the honest value and labelled, never replaced by the recommender's tenant, the platform tenant or `DEFAULT_TENANT_ID`. Recommender earnings follow `recommender_tenant_id = resolvePrimaryTenant(recommender_user_id)` (`services/tenancy/tenant-context.ts:43`; the recommender is always a signed-in member). M2 carries the three fields on the commission's OASIS events and the credit result; persisting them as ledger columns on `recommendation_commissions` belongs to the per-tenant money work (M3, Out of scope), so no migration here.
 - Migrations 20261101120000–120300, each with rollback + `live-before.sql` + `post-apply-checks.sql`,
   `lock_timeout` + retries, a MIGRATION-QUEUE.md row at the WS11 position, drift-baseline entry removed after apply.
 

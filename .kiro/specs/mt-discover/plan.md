@@ -17,16 +17,18 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
    the plan-of-record list; **design "What exists" + tasks P2 carry the full file:line set** across three classes —
    **discovery** (open feed/search/browse + the by-id discovery initiator `discover-recommendations-repository.ts:23`),
    **fulfilment** (by-explicit-id hydration of an already-held item), **admin/ingestion** (admin/supplier surface by
-   `merchant_id`/org). Two classification corrections verified this round: (a) `credit-recommender-repository.ts:114
+   `merchant_id`/org). Two classification corrections verified this round: (a) `credit-recommender-repository.ts:112
    fetchMerchantCommissionEligibility` is a by-`merchant_id` commission read on an already-placed order (no
-   admin/member surface) → fulfilment, not admin; (b) **R1-F1** — `shop-feed-repository.ts:32 fetchProductsByIds` is
+   admin/member surface) → fulfilment, not admin; (b) **R1-F1** — `services/gateway/src/routes/shop-feed-repository.ts:32 fetchProductsByIds` is
    dual-use (module comment `:31`: reused for BOTH video-anchor hydration AND saved-products hydration), so its
    anchor call site is a discovery surface that MUST carry the predicate and is split from the saved-products
-   fulfilment call site. `shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, out of
+   fulfilment call site. `routes/shop-feed-repository.ts:43 fetchRankedShopVideosPage` reads `shop_videos` only, out of
    scope. The lane `paths` cover the full swept set so the build-failing lint can annotate/route each file in-scope
    (else Lane-scope CI fails the first touch).
-3. `tenant_catalog_overrides` exists (foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql`,
-   RLS `_select` bare `tenant_id = current_tenant_id()`) but is enforced nowhere (commerce architecture: "exists but
+3. `tenant_catalog_overrides` exists (foundation migration `20260416120000_vtid_02000_marketplace_foundation.sql:326`;
+   RLS at `:807-812`: `tenant_catalog_overrides_select … FOR SELECT TO authenticated USING (tenant_id =
+   public.current_tenant_id())` and `tenant_catalog_overrides_service … FOR ALL TO service_role`; `GRANT SELECT … TO
+   authenticated` `:857`) but is enforced nowhere (commerce architecture: "exists but
    is not enforced anywhere").
 4. `products` has no `distribution` column (no match for `distribution` in the marketplace migrations), so no
    community-vs-network offering split. The Discover feed is fully global today.
@@ -40,10 +42,10 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
    (SPOTLIGHT_RULES.md §D). Discover's own tab pill (`src/pages/Discover.tsx`) is the tab selector, NOT a scope
    control — §4.11 requires a SEPARATE scope control for Community/Network Discover mode.
 8. Referral earnings (`services/gateway/src/services/recommendation-commissions/credit-recommender.ts`) credit the
-   recommender platform-wide with no tenant attribution (D26). `product_orders` ALREADY has a buyer-tenant column —
-   `tenant_id UUID NOT NULL` (`20260416120000_vtid_02000_marketplace_foundation.sql`), populated at order creation —
-   but `fetchProductOrderForCommission` (`credit-recommender-repository.ts:28`) does not select it; D26 attribution
-   is the missing read of that existing column, not a new column (R1-F3).
+   recommender platform-wide with no tenant attribution (D26). `product_orders` ALREADY has a buyer-tenant column `tenant_id`
+   (created `UUID NOT NULL` in `20260416120000_vtid_02000_marketplace_foundation.sql:529`, made NULLABLE by
+   `20260929120200_vtid_04740_product_orders_tenant_nullable.sql:12` — NULL for a signed-out buyer's anonymous referral
+   sale), but `fetchProductOrderForCommission` (`credit-recommender-repository.ts:26-32`) does not select it.
 9. Health-category offerings (labs, practitioners) have no trust-level-2 + DPA gate before listing.
 10. The lineage guard (§4.9/§4.10): no build-failing test stops a `products`/`merchants` reader query from reading
     `health_*`/`wearable_*`/`biomarker_*`/`lab_*`/`vitana_index_*`. It must be per-query, because
@@ -59,12 +61,9 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   `active` for Maxina only — D7); add `products.distribution text NOT NULL DEFAULT 'community'
   CHECK (distribution IN ('community','network'))` expand/contract (default stays, existing rows → `community`,
   active for Maxina only); backfill `partner_tenant.tenant_id` free-text → real tenant UUID or NULL (platform),
-  referenced by — not duplicated in — `supplier_tenant_relationships` (ALWAYS 9). NO new order-tenant column: D26
-  reuses the EXISTING `product_orders.tenant_id UUID NOT NULL`
-  (`20260416120000_vtid_02000_marketplace_foundation.sql`), already the buyer's tenant (filtered in
-  `health-action-initiative-repository.ts:71`, `admin-scanners/marketplace-repository.ts:42`); a nullable
-  `buyer_tenant_id` would be NULL for all historical/new orders until a write path existed (silent-fallback, R1-F3),
-  so dropped. Make RLS a REAL backstop
+  referenced by — not duplicated in — `supplier_tenant_relationships` (ALWAYS 9). NO new order-tenant column: the existing nullable `product_orders.tenant_id` already IS the buyer's tenant (written
+  by checkout and the Awin sync; NULL only for anonymous buyers, VTID-04740) — a second `buyer_tenant_id` column would
+  duplicate it. D26 attribution (`supplier-onboarding-communities` S4) reads the existing buyer-tenant column `product_orders.tenant_id`, which is NULLABLE since VTID-04740 (`20260929120200_vtid_04740_product_orders_tenant_nullable.sql:12`, column comment: NULL = signed-out buyer of an anonymous referral sale; the Awin sync copies the click's tenant, `product_clicks.tenant_id` also nullable). Rule: `buyer_tenant_id = product_orders.tenant_id`, with an explicit `buyer_tenant_source`: `'order'` when non-NULL, `'anonymous_buyer'` when NULL — NULL is recorded as the honest value and labelled, never replaced by the recommender's tenant, the platform tenant or `DEFAULT_TENANT_ID`. Recommender earnings follow `recommender_tenant_id = resolvePrimaryTenant(recommender_user_id)` (`services/tenancy/tenant-context.ts:43`; the recommender is always a signed-in member). M2 carries the three fields on the commission's OASIS events and the credit result; persisting them as ledger columns on `recommendation_commissions` belongs to the per-tenant money work (M3, Out of scope), so no migration here. Make RLS a REAL backstop
   (R1-F2): today `products_select`/`merchants_select`
   (`20260416120000_vtid_02000_marketplace_foundation.sql:729/:735`) gate only `is_active = TRUE` with no tenant term;
   replace each with a tenant-scoped policy (`is_active AND (distribution = 'network' OR EXISTS active
@@ -75,15 +74,18 @@ tenant-gated and adds the Community/Network scope, on top of the global supplier
   checks. DB applied by Claude via RUN-MIGRATION after merge.
 - **discover-shared-predicate** (CODE, repo vitana-platform): ONE shared Discover visibility predicate module
   `services/gateway/src/services/discover/tenant-visibility.ts` — v1 = `is_active` AND active
-  `supplier_tenant_relationships` for the resolved tenant AND no `tenant_catalog_overrides` hide (both modes), PLUS
+  `supplier_tenant_relationships` for the resolved tenant AND no `tenant_catalog_overrides` hide (both modes; the
+  predicate runs on the gateway's service-role client — `getSupabase()` — which bypasses RLS, so it reads overrides
+  with an explicit `.eq('tenant_id', resolvedTenantId)` filter; the `:809-811` `current_tenant_id()` policy is only a
+  user-JWT backstop, never relied on), PLUS
   the scope term (`distribution='community'` → tenant has an active relationship; `'network'` → every tenant). The
   predicate serves the three
   reader classes defined in Problem 2 / design "What exists" (discovery = FULL predicate; fulfilment = by-id
   hydration, unfiltered so an order is never 404'd when a supplier is later suspended; admin/ingestion = unfiltered,
-  admin-guarded). A GENERATED inventory (`scripts/ci/discover-reader-inventory.*`) tags each reader per CALL SITE
+  admin-guarded). A GENERATED inventory (`scripts/ci/discover-reader-inventory.*`, sweeping ALL of `services/gateway/src/**` — `routes/**` and `services/**` alike — for `.from('products')`/`.from('merchants')`) tags each reader per CALL SITE
   `discovery|fulfilment|admin`; a build-failing lint asserts discovery goes through the predicate, fulfilment is
   annotated `// discover-inventory: fulfilment`, admin `// discover-inventory: admin`, and anything unclassified
-  fails. The dual-use `fetchProductsByIds` (`shop-feed:32`, R1-F1) is split so its anchor call site lints as
+  fails. The dual-use `fetchProductsByIds` (`services/gateway/src/routes/shop-feed-repository.ts:32`, R1-F1) is split so its anchor call site lints as
   discovery. Health-category offerings additionally require
   the Health plan trust level 2 + signed DPA before listing (gate in the predicate, discovery class). Add a
   **per-query** lineage guard (the §7.2 ranking-guard idea applied per-query, not per-module): it fails only when the
@@ -125,7 +127,10 @@ Each has a pre-approved rollback under `docs/validation/<vtid>/`, read-only `liv
   health trust-2+DPA gate); the generated inventory lint; the per-query lineage guard (fails on a health_* read in
   the SAME query as a products read; passes a mixed-module sibling health read); onboarding "which communities"
   creates `proposed` rows and accept/decline flips state; referral attribution reads the existing
-  `product_orders.tenant_id` (R1-F3) and is never silently NULL.
+  `product_orders.tenant_id`: a signed-in buyer's order gives `buyer_tenant_source:'order'` with that tenant; an
+  anonymous (NULL) order gives `buyer_tenant_id:null, buyer_tenant_source:'anonymous_buyer'` — never the recommender's,
+  platform or default tenant; `recommender_tenant_id` = the recommender's primary tenant; the override read carries
+  an explicit tenant filter (service role).
 - pgTAP: `supplier_tenant_relationships` RLS (T_B member reads 0 T_A rows); `products.distribution` CHECK;
   default-active-for-maxina seed; the new tenant-scoped `products`/`merchants` RLS (R1-F2: a user-JWT T_B read
   returns 0 rows for a T_A-only supplier; a `network` product visible to both; flag off → Maxina unchanged).

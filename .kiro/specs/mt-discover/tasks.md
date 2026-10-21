@@ -145,12 +145,15 @@ Allowed paths:
 - [ ] S1 "Which communities" step (service + onboarding routes + Commerce MCP + voice path) → `proposed` relationships.
 - [ ] S2 Tenant accept/decline API (`proposed→active|declined`).
 - [ ] S3 Platform tenant + `signup_intent='commerce'` path: drop hardcoded Maxina; `signup_intent` routes only (R6).
-- [ ] S4 Referral attribution reads the buyer's tenant from the EXISTING `product_orders.tenant_id` (extend
-      `fetchProductOrderForCommission`, `credit-recommender-repository.ts:28`, to select it — R1-F3; no new column);
-      recommender earnings follow recommender's tenant (R7, D26); no ranking influence; never silently NULL.
+- [ ] S4 Referral attribution reads the buyer's tenant from the EXISTING, NULLABLE `product_orders.tenant_id`
+      (VTID-04740 `20260929120200…sql:12`; extend `fetchProductOrderForCommission`, `credit-recommender-repository.ts:26-32`,
+      to select it; no new column): `buyer_tenant_source` = `'order'` (non-NULL) or `'anonymous_buyer'` (NULL, kept
+      NULL — never the recommender's/platform/default tenant); `recommender_tenant_id` = `resolvePrimaryTenant(
+      recommender_user_id)` (R7, D26); carried on the commission OASIS events + credit result (ledger columns are M3);
+      no ranking influence.
 - [ ] S5 Dark behind the mt flags.
 - [ ] S6 Vitest: "which communities" creates `proposed` rows; accept/decline flips state; attribution carries buyer
-      tenant; commerce signup no longer hardcodes Maxina.
+      tenant (`'order'`) and an anonymous order is labelled `'anonymous_buyer'` with NULL tenant; commerce signup no longer hardcodes Maxina.
 
 Acceptance: full gateway Vitest/Jest green; `npm run test:support`/`npm run test:operator` green if touched; executor
 never calls a provisioning/onboarding write endpoint against a live system; adds its own `docs/validation/<vtid>/`.

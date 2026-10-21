@@ -53,3 +53,7 @@ silent-fallback risk) is dropped (R1-F3). The 4th migration is now
 `20261101120300_*_products_merchants_tenant_rls.sql`: it replaces `products_select`/`merchants_select` (today
 `is_active = TRUE` only, `...foundation.sql:729/:735`) with tenant-scoped policies so RLS is a genuine backstop for
 user-JWT reads (R1-F2), flag-guarded (inert for Maxina, D7). Path + task D4/D6 updated to match.
+
+### 2026-10-21T14:10Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (b452b935) — no path change
+R2-F1: `product_orders.tenant_id` is nullable since VTID-04740 (`20260929120200…sql:12`); still no new column — D26
+labels a NULL buyer tenant `anonymous_buyer` in the S4 code lane. R2-F3: `tenant_catalog_overrides` RLS cited (`:807-812`).
