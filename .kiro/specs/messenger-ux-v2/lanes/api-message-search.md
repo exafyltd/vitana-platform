@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [api-viewing-presence]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -16,7 +16,7 @@ paths:
   - DATABASE_SCHEMA.md
   - services/gateway/test/vtid-*-chat-message-search.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T13:16Z
+updated: 2026-10-21T17:44Z
 vtid: VTID-05309
 ---
 # api-message-search
@@ -30,3 +30,5 @@ Lane created with the plan (owner spec 2026-10-21, `requirements.md`).
 
 ### 2026-10-21T13:16Z · ci-plan-spar · ready (VTID allocated)
 VTID-05309 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T17:44Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
