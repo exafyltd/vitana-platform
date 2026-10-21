@@ -1,7 +1,7 @@
 ---
 lane: tenant-owner-analytics
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [pack-intake-db, pack-intake-admin]
 executor: kiro
 seat: jtadic
@@ -13,7 +13,8 @@ paths:
   - services/gateway/test/mt-launch-owner-analytics.test.ts
   - services/gateway/test/mt-launch-owner-analytics-health-boundary.test.ts
   - docs/validation/VTID-mt-launch-owner-analytics/**
-updated: 2026-10-15T16:40Z
+updated: 2026-10-21T13:58Z
+vtid: VTID-05326
 ---
 # tenant-owner-analytics — tenant-owner funnel + D18 lineage guard (repo vitana-platform)
 
@@ -48,3 +49,6 @@ Created and held. Five owner-analytics read endpoints + the fail-closed D18 heal
 
 ### 2026-10-20T19:00Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (0de6a378) — no path change
 R1-F1 full resolver path; R1-F2 explicit read allowlist enumerated.
+
+### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+VTID-05326 allocated after policy approval (converged-auto-v1).

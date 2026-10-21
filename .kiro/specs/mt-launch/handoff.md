@@ -3,9 +3,11 @@ slug: mt-launch
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: claude
-state: drafted
-updated: 2026-10-18T20:37Z
+next_actor: kiro
+state: approved
+updated: 2026-10-21T13:58Z
+sparring_record: .kiro/specs/mt-launch/sparring/verdict.md
+vtids: [VTID-05323, VTID-05324, VTID-05325, VTID-05326, VTID-05327]
 ---
 # Handoff — mt-launch (WS8 Tenant Launch engineering)
 
@@ -89,3 +91,6 @@ The sparring partner could not review (model_unavailable). Not a plan problem: C
 
 ### 2026-10-18T20:37Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-21T13:58Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

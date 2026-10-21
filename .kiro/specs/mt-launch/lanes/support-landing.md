@@ -1,7 +1,7 @@
 ---
 lane: support-landing
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [pack-intake-admin]
 executor: kiro
 seat: jtadic
@@ -14,7 +14,8 @@ paths:
   - services/gateway/src/routes/community-invites.ts
   - services/gateway/test/mt-launch-support-landing.test.ts
   - docs/validation/VTID-mt-launch-support-landing/**
-updated: 2026-10-15T16:40Z
+updated: 2026-10-21T13:58Z
+vtid: VTID-05325
 ---
 # support-landing — per-tenant support routing + landing SEO/OG (repo vitana-platform)
 
@@ -52,3 +53,6 @@ R1-F1 full resolver path; R1-F4 `/claim` event carries `tenant_id`, `admin-signu
 
 ### 2026-10-20T19:20Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
 R2-F1: VTID-05267 dependency cited with its artifact + a pre-PR merge gate. R2-F2: `/claim` tenant = `resolvePrimaryTenant` (service role), not the JWT active tenant.
+
+### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+VTID-05325 allocated after policy approval (converged-auto-v1).

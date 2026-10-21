@@ -1,7 +1,7 @@
 ---
 lane: pack-intake-db
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: hotmail
@@ -12,7 +12,8 @@ paths:
   - docs/multitenancy/MIGRATION-QUEUE.md
   - scripts/ci/migration-drift-baseline.json
   - services/gateway/test/mt-launch-pack-intake-pgtap.test.ts
-updated: 2026-10-15T16:40Z
+updated: 2026-10-21T13:58Z
+vtid: VTID-05324
 ---
 # pack-intake-db — tenant pack intake + content pipeline tables (repo vitana-platform)
 
@@ -40,3 +41,6 @@ Created and held. Two expand-only tables (`tenant_pack_intake`, `tenant_content_
 ### 2026-10-20T19:00Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (0de6a378) — no path change
 R1-F5: `get_tenant_launch_readiness` is SECURITY INVOKER, STABLE, `SET search_path = public, pg_catalog`, EXECUTE only
 for service_role.
+
+### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+VTID-05324 allocated after policy approval (converged-auto-v1).

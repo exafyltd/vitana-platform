@@ -1,7 +1,7 @@
 ---
 lane: pack-intake-admin
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: [pack-intake-db]
 executor: kiro
 seat: jtadic
@@ -21,7 +21,8 @@ paths:
   - services/gateway/test/mt-launch-linters.test.ts
   - services/gateway/test/mt-launch-pack-intake.test.ts
   - docs/validation/VTID-mt-launch-pack-intake/**
-updated: 2026-10-15T16:40Z
+updated: 2026-10-21T13:58Z
+vtid: VTID-05323
 ---
 # pack-intake-admin — intake API + AI content pipeline + linters (repo vitana-platform)
 
@@ -57,3 +58,6 @@ reviewer `exafy`.
 
 ### 2026-10-20T19:00Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (0de6a378) — no path change
 R1-F1 full resolver path `services/gateway/src/services/tenant-launch/tenant-feature-flag.ts`; R1-F3 `DEPENDENCY_NOT_READY` publish guard.
+
+### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+VTID-05323 allocated after policy approval (converged-auto-v1).

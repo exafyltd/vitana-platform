@@ -1,14 +1,15 @@
 ---
 lane: worker-test-gate
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: [pack-intake-admin, tenant-owner-analytics]
 executor: claude
 reviewer_seat: jtadic
 paths:
   - .github/workflows/PR-GATE.yml
   - .github/workflows/mt-launch-suites.yml
-updated: 2026-10-15T16:40Z
+updated: 2026-10-21T13:58Z
+vtid: VTID-05327
 ---
 # worker-test-gate — CI gate for linters, D18 guard, golden (repo vitana-platform)
 
@@ -30,3 +31,6 @@ Branch `claude/mt-launch/worker-test-gate`; PR title `VTID-xxxxx (mt-launch/work
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
 Created. Governance lane, executor `claude`, reviewer seat `jtadic`. VTID allocated by PLAN-SPAR after convergence like
 the others; Claude builds it after the two code lanes add their suites.
+
+### 2026-10-21T13:58Z · ci-plan-spar · ready (VTID allocated)
+VTID-05327 allocated after policy approval (converged-auto-v1).
