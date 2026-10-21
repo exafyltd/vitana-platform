@@ -1,6 +1,6 @@
 ---
 lane: staging-test-05082
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,11 +9,11 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-20T23:30Z
+updated: 2026-10-21T21:51Z
 vtid: VTID-05266
-claimed_by: kiro-hotmail-202610151618-b437
-branch: kiro/fix-4182-test-fallout/staging-test-05082
 pr: https://github.com/exafyltd/vitana-platform/pull/4223
+claimed_by: kiro-hotmail-202610212137-725e
+branch: kiro/fix-4182-test-fallout/staging-test-05082
 ---
 # staging-test-05082 — point the VTID-05082 staging suite at svg-preview.js (repo vitana-platform)
 Plan: `.kiro/specs/fix-4182-test-fallout/plan.md` and the `staging-test-05082` section of `tasks.md`
@@ -39,3 +39,12 @@ Pipeline run wf_51b9f6f561a73c5d, slot 2. Claim held by this session. Tasks A1�
 Reviewed head adab3b56496e9dfbbcee1e6a90334eabf4bf0c01 (PR https://github.com/exafyltd/vitana-platform/pull/4223). Verdict: accept.
 Findings: no blockers. Non-blocking: an earlier PR-GATE Collab handoff run was cancelled; the rerun on the same head is green.
 Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_902f332d443b657a). Next: update onto main, merge under collaboration.md §7b, then jest-05077-cachebuster.
+
+### 2026-10-21T21:51Z · kiro-hotmail-202610212137-725e · executing → in-review
+Close-out of the merged lane (queue sweep 2026-10-21, item 2). Lane claim taken by this session (the previous holder
+`kiro-hotmail-202610151618-b437` had no claim ref left).
+- PR https://github.com/exafyltd/vitana-platform/pull/4223 was opened by the previous session and is merged. The
+  reviewer agent accepted head `adab3b56496e9dfbbcee1e6a90334eabf4bf0c01` (entry above). The state was never moved to
+  `in-review` when the PR opened, so this step makes up for that.
+
+Next: `in-review → verified` (merge record and STAGING-VERIFY), then `verified → done`, one step per PR.
