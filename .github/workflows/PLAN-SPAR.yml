@@ -31,6 +31,7 @@ permissions:
   contents: write
   pull-requests: write
   actions: read # VTID-05272: the slot step lists PLAN-SPAR runs (read-only)
+  statuses: write # lane plan-spar-checks: post plan-spar/needs-rebase on the GITHUB_TOKEN bot-head push (an explicit permissions block sets every unlisted scope to none)
 
 concurrency:
   group: plan-spar-${{ github.event.pull_request.number }}
