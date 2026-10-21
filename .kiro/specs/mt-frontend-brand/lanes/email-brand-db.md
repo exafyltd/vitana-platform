@@ -1,18 +1,19 @@
 ---
 lane: email-brand-db
-state: in-review
-next_actor: claude
+state: parked
+next_actor: kiro
 pr: https://github.com/exafyltd/vitana-v1/pull/1464
 depends_on: []
 executor: kiro
-seat: hotmail
+seat: exafyltd
 reviewer_seat: exafyltd
 paths:
   - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
   - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-21T09:15Z
+updated: 2026-10-21T23:48Z
 vtid: VTID-05245
+parked_from: in-review
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
 
@@ -79,3 +80,5 @@ reassign review exafyltd→claude (stale_review)
 reassign review exafyltd→claude (stale_review)
 ### 2026-10-21T09:15Z · pm-agent · update
 reassign review exafyltd→claude (stale_review)
+### 2026-10-21T23:48Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
