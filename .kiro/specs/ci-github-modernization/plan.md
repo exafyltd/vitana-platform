@@ -47,8 +47,8 @@ signal.
 - **UNIT.yml is no longer a no-op.** VTID-04950 rewrote it to run every `scripts/**/*.test.{cjs,mjs}`
   via `node --test` (`UNIT.yml:16-20`). The brief's "UNIT.yml placeholder" premise is stale.
   (inv-code §1, inv-tests §5.)
-- **The real no-op / dead remnant is the commented-out Jest block in `CICDL-GATEWAY-CI.yml:95-101`**
-  ("TESTS DEFERRED TO DEV-CICDL-0035"); real gateway tests already run in `TEST-SUITE.yml:48-61`
+- **The real no-op / dead remnant is the commented-out "tests deferred" block in `CICDL-GATEWAY-CI.yml:113-133`**
+  ("# TESTS DEFERRED TO DEV-CICDL-0035" at :113, deferred-echo at :133, purpose comment at :5); real gateway tests already run in `TEST-SUITE.yml:48-61`
   (Jest ~7.5k). So the fix is to delete the dead block, not re-enable it (that would duplicate
   TEST-SUITE). Build+typecheck run in both `CICDL-GATEWAY-CI.yml:84-91` and the TEST-SUITE/PR-GATE
   paths — the duplicate-jobs evidence. (inv-code §1, §5.)
@@ -144,8 +144,8 @@ order. No two lanes edit the same file. Real `depends_on` only.
    workflow tree for live GCP/Cloud-Run deploy markers and fails while `VCAOP-CICD.yml` exists.
 
 2. **fake-checks-dedupe** — `executor: claude` (governance `.github/**`; not protected).
-   Delete the dead commented-out Jest block in `CICDL-GATEWAY-CI.yml:95-101` (real gateway tests live
-   in TEST-SUITE); de-duplicate the gateway build+typecheck that runs in both `CICDL-GATEWAY-CI.yml`
+   Delete the dead commented-out "tests deferred" block in `CICDL-GATEWAY-CI.yml:113-133` (real gateway
+   tests live in TEST-SUITE); de-duplicate the gateway build+typecheck that runs in both `CICDL-GATEWAY-CI.yml`
    and TEST-SUITE/PR-GATE. Do **not** rewrite UNIT.yml (already real). Independent.
    Files: `.github/workflows/CICDL-GATEWAY-CI.yml`, `docs/validation/<VTID>/**`.
    Proof: measured before/after job set + the no-dead-block inventory assertion from lane 1's test.
@@ -280,4 +280,8 @@ measured-timings artifact rather than a red→green unit test.
 - A CI/GitHub-only change deploys nothing, so most lanes reach no staging deploy and have no Gate 2 of
   their own (common-rules §5); the plan's Gate 2 is the measured before/after numbers plus the owner-
   config list. No staging run is fabricated for a CI-only change.
+- Sparring round 1 delivered no reviewable findings (partner `evidence_floor_not_met`; see
+  `sparring/responses-1.md`). This revision only re-anchors the one drifted citation
+  (`CICDL-GATEWAY-CI.yml` dead block, now :113-133, re-verified on `origin/main`); no premise or lane
+  changed in substance.
 <!-- plan:end -->
