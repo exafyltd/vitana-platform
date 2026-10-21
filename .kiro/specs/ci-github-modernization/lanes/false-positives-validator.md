@@ -8,7 +8,7 @@ seat: exafyltd
 reviewer_seat: claude
 claimed_by: kiro-202610211348-9f71
 branch: kiro/ci-github-modernization/false-positives-validator
-pr:
+pr: https://github.com/exafyltd/vitana-platform/pull/4256
 paths:
   - .github/workflows/VALIDATOR-CHECK.yml
   - .github/pull_request_template.md
