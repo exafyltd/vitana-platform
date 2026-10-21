@@ -12,6 +12,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - supabase/migrations/2026*_chat_viewing_presence.sql
   - services/gateway/src/routes/chat.ts
+  - services/gateway/src/routes/chat-groups.ts
+  - services/gateway/src/services/notification-service-repository.ts
   - services/gateway/src/routes/chat-viewing.ts
   - services/gateway/src/services/chat-push-coalescer.ts
   - services/gateway/src/services/notification-service.ts

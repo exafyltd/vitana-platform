@@ -44,7 +44,10 @@ table.
   key likewise; expired row (> 45 s) does not suppress; two devices, one viewing → suppressed; `active:false` → pushed.
 - In-app row still written for a suppressed push; outcome recorded.
 - `vtid-05137-chat-push-coalescing.test.ts` green unchanged; cron path: a trigger-style row (no `conversation_key`) is
-  keyed via its `message_id`, suppressed when viewing, pushed otherwise; exactly one push per DM across both paths.
+  keyed via its `message_id`, suppressed when viewing, pushed otherwise; exactly one push per DM across both paths
+  in both orders (trigger row first / gateway row first), the other row `suppressed_duplicate`.
+- Group: a member viewing `group:<id>` gets no push (message and mention), a non-viewing member does; calendar invites
+  in a viewed DM/group are suppressed through `applyViewingSuppression`.
 
 <!-- lane: api-message-search -->
 ## Lane `api-message-search` — authorised message search (vitana-platform)

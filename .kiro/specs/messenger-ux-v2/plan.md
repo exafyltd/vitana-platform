@@ -90,14 +90,27 @@ The client sends `active:true` every 20 s while the conversation is open AND the
 (Appilix: visible), and `active:false` on blur, hide, unmount and conversation change (`navigator.sendBeacon` on
 pagehide). Any unexpired row for (recipient, key) on any device → the push is suppressed; the in-app row is still
 written with `push_outcome 'suppressed_viewing'`. Mentions are suppressed too only for the conversation being viewed.
+**Where the check runs.** DM pushes reach the coalescer from `chat.ts:268`; group pushes from
+`fanoutGroupNotifications` (`chat-groups.ts:570`), which calls `coalesceChatPushes` for every recipient (`:659`) except
+calendar invites. The viewing check is one exported function in `chat-push-coalescer.ts`,
+`applyViewingSuppression(supabase, conversationKey, items)`, called inside `coalesceChatPushes` (so DM and group
+messages and mentions are covered; a mention no longer pushes when its group is being viewed) and called directly by
+the two calendar-invite branches that skip the coalescer (`chat.ts`, `chat-groups.ts` fanout).
 **Second push path.** The vitana-v1 trigger `notify_on_chat_message` also writes `new_chat_message` rows, with
 `push_sent_at` NULL and no `conversation_key`, which `/push-dispatch` pushes. The cron derives the key for such a row
 from `data->>'message_id'` → `chat_messages(sender_id, group_id)` → `dm:<sender_id>` | `group:<group_id>` (one
 batched lookup per cron batch), then applies the same viewing check. Measured read-only 2026-10-21: the trigger is
 enabled, its live body differs from the repo's last migration (drift, recorded by the lane, not changed by this plan);
 over 7 days 155 messages produced notification rows, 1 of them two rows, and 8 rows had no `conversation_key` (the
-direct-insert fallback path). This plan does not change the trigger; the lane's integration test asserts exactly one
-push per DM per path, and none when viewing.
+direct-insert fallback path). Measured further (read-only, same day): in the last 120 days no `new_chat_message`
+row with the trigger's `url:'/inbox'` exists at all — the trigger's insert does not land today — while 21 rows in 21
+days come from another writer (`url` `/message…`, with `entity_id`), which the lane identifies read-only. **Dedup rule
+(owner: the push path, both orders covered):** (a) `/push-dispatch`, for an unpushed `new_chat_message` /
+`chat_mention` row, marks it handled with outcome `suppressed_duplicate` when another row of the same `user_id` and
+`data->>'message_id'` already has `push_sent_at` set; (b) `notifyUser`, before writing a chat row, marks any unpushed
+row of the same user and `message_id` handled with `suppressed_duplicate` (the gateway's own row is the one that
+pushes). This plan does not change the trigger. Tests: trigger-row-first and gateway-row-first orders → exactly one
+push; viewing → none.
 **I5 search (api-message-search).** `GET /chat/search?q=&scope=all|dm:<peerId>|group:<groupId>&from=&to=&type=
 any|image|video|file|voice|link&sender=<userId>&cursor=&limit≤50` → `{results:[{message_id, conversation_key,
 sender_id, created_at, snippet, message_type}], next_cursor}`. `q` ≥ 3 characters (the shortest a trigram index serves; shorter → 400), ILIKE on `content` and attachment
@@ -135,6 +148,7 @@ base.
 2. `api-viewing-presence` (P1, R13) — I4. Files: one migration (`chat_viewing_presence`, RLS on, no client policies,
    index `(user_id, conversation_key, expires_at)`, sweep of expired rows by the existing cron or `DELETE … WHERE
    expires_at < now()` on write), new `routes/chat-viewing.ts` mounted from `chat.ts` (`router.use('/viewing', …)`),
+   `routes/chat-groups.ts` (calendar-invite fanout branch), `services/notification-service-repository.ts` (dedup),
    `services/chat-push-coalescer.ts` (decision gains `viewing`), `services/notification-service.ts`
    (`suppressPush: 'coalesced' | 'viewing'`, outcome `suppressed_viewing`), `routes/scheduled-notifications.ts` +
    repository (the cron skips — marks `push_sent_at` with outcome `suppressed_viewing` — a `new_chat_message` row whose
