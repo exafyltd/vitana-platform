@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05215",
+  "kind": "docs",
+  "paths": [
+    "docs/validation/VTID-05215/**",
+    ".kiro/specs/pm-agent/lanes/p2-registry.md",
+    "docs/programs/*/program.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05215/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

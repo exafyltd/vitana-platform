@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05073",
+  "service": "gateway",
+  "note": "Read-only. Phase 1 extracts Operator Console functions from app.js into a new served operator-console.js and adds its <script> tag to index.html. The suite proves the Command Hub index is served, the new bundle file is reachable and carries a moved function, and the extraction-proof guard test passes.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Command Hub index is served",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "reason": "read-only GET: the Command Hub index HTML is served"
+    },
+    {
+      "kind": "http",
+      "name": "operator-console.js is served and carries a moved function",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/operator-console.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_body_contains": "function clearOperatorChatSession",
+      "reason": "read-only GET: the newly extracted bundle file is reachable and serves a function moved out of app.js"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/command-hub/vtid-05073-operator-console-extraction.test.ts",
+      "cwd": "services/gateway",
+      "reason": "extraction-proof guard: the moved functions are AST-identical to the base fixture and the top-level function multiset is unchanged across the bundle"
+    }
+  ]
+}

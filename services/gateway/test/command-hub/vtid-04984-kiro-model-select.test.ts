@@ -10,11 +10,22 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { extractedOperatorBlock, readCommandHubBundle } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: these call sites live inside functions extracted to
+// operator-console.js; source-check them against the whole bundle.
+const BUNDLE = readCommandHubBundle();
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// moved to operator-console.js; their module vars stayed in app.js.
+// extractedOperatorBlock() rebuilds the original executable slice unchanged.
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'console'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; value = ''; disabled = false; selected = false;
@@ -108,8 +119,8 @@ describe('VTID-04984 Kiro model dropdown', () => {
 
 describe('VTID-04984 wiring (source check)', () => {
   it('the fixed Kiro control holds the dropdown and each Kiro reply shows its model', () => {
-    expect(APP_JS).toContain('var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);');
-    expect(APP_JS).toContain("if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {");
+    expect(BUNDLE).toContain('var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);');
+    expect(BUNDLE).toContain("if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {");
   });
   it('the dropdown has its styles and the cache-bust is bumped', () => {
     expect(CSS).toContain('.chat-kiro-model-select');

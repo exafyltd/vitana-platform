@@ -1,0 +1,130 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [welcome-team] push failed for 11111111… (DM delivered): fcm down
+
+      296 |     pushed = !!r && (r.pushed > 0 || r.inapp);
+      297 |   } catch (err: any) {
+    > 298 |     console.warn(`[welcome-team] push failed for ${member.user_id.slice(0, 8)}… (DM delivered): ${err?.message ?? err}`);
+          |             ^
+      299 |   }
+      300 |
+      301 |   const fin = await repo.finishWelcome(sb, member.user_id, sender.slug, 'sent', inserted.id)
+
+      at deliverWelcome (src/services/welcome-team/welcome-team-service.ts:298:13)
+      at runWelcomeTeamTick (src/services/welcome-team/welcome-team-service.ts:212:16)
+      at Object.<anonymous> (test/vtid-05205-welcome-team.test.ts:426:5)
+
+  console.error
+    [VTID-04098][feature-flags] FEATURE_WELCOME_TEAM_ENV is set to "", which is not one of 'off' | 'staging-only' | 'staging+prod'. Resolving to 'off' — the feature is NOT enabled. Fix the task definition; this is a silent-disable, not a warning you can leave.
+
+      65 |   if (raw !== undefined && !warnedInvalid.has(name)) {
+      66 |     warnedInvalid.add(name);
+    > 67 |     console.error(
+         |             ^
+      68 |       `[VTID-04098][feature-flags] FEATURE_${name}_ENV is set to ${JSON.stringify(raw)}, which is not one of ` +
+      69 |         `'off' | 'staging-only' | 'staging+prod'. Resolving to '${DEFAULT_SETTINGS[name] ?? 'off'}' — the feature is ` +
+      70 |         `NOT enabled. Fix the task definition; this is a silent-disable, not a warning you can leave.`,
+
+      at readSetting (src/services/feature-flags.ts:67:13)
+      at isFeatureLive (src/services/feature-flags.ts:82:19)
+      at resolveWelcomeTeamConfig (src/services/welcome-team/config.ts:130:49)
+      at src/routes/scheduled-notifications.ts:1725:42
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:93:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:126:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at Function.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/vtid-05205-welcome-team.test.ts
+  VTID-05205: mode and settings
+    ✓ never runs on staging, whatever the switches say (7 ms)
+    ✓ off without the feature flag, without a rollout time, or without a mode (1 ms)
+    ✓ live needs the send switch AND the sender-names pre-flight; otherwise it stays shadow (1 ms)
+    ✓ defaults: the three verified sender ids, 0/1/2 days, MAXINA, closed pilot, de+en ready (1 ms)
+    ✓ account ids, timing and locales are configurable; bad values fall back (1 ms)
+    ✓ the public status never carries an account id (1 ms)
+  VTID-05205: which welcome is due
+    ✓ Mariia right after registration; Jovana only from day 1; Alex only from day 2 (1 ms)
+    ✓ a late tick never sends two welcomes close together (min gap) (1 ms)
+    ✓ a failed first attempt is retried once; a spent retry and an in-flight claim are never re-sent
+    ✓ a sender never welcomes themselves; an unavailable sender is skipped
+  VTID-05205: the welcome texts
+    ✓ first name only; no name ⇒ the no-name text (1 ms)
+    ✓ locale gate: a reviewed locale is used, any other gets English (1 ms)
+    ✓ every locale has all six texts with the {name} placeholder where expected and at most one emoji (9 ms)
+    ✓ Alex is a real person: no AI claim and no promise of an immediate reply, in any locale (1 ms)
+  VTID-05205: the tick (in-memory, fake clock)
+    ✓ a new member gets Mariia, then Jovana, then Alex — once each, on three different days (14 ms)
+    ✓ retries, repeat ticks and a second run never send a welcome twice (20 ms)
+    ✓ members who joined before the rollout never get a welcome (no retroactive sends) (5 ms)
+    ✓ test/service accounts get nothing; a failed exclusion lookup skips the whole tick before any write (4 ms)
+    ✓ a sender who is excluded or has no account sends nothing; the others still do (9 ms)
+    ✓ a sender who joins as a member gets the other two welcomes, never their own (10 ms)
+    ✓ closed pilot: only allowlisted members, counted from the rollout; an empty allowlist reaches nobody (13 ms)
+    ✓ shadow decides but writes nothing at all (1 ms)
+    ✓ off / staging configs do nothing at all (1 ms)
+    ✓ a failed DM write is retried once on a later tick, and never a third time (17 ms)
+    ✓ a failed push never undoes the DM (17 ms)
+    ✓ the recipient's language: reviewed locales as-is, others in English, missing name ⇒ no-name text (8 ms)
+    ✓ a member whose registration is not complete (no app_users row) waits (1 ms)
+    ✓ at most maxSendsPerTick DMs per invocation; the rest follow on the next tick
+  VTID-05205: the endpoints
+    ✓ the tick needs the internal token whatever the global auth mode is (1194 ms)
+    ✓ 503 when no internal token is configured (83 ms)
+    ✓ the staging gateway refuses the tick even with a valid token and every switch on (72 ms)
+    ✓ with the feature off the tick answers without touching the database (100 ms)
+    ✓ status is a read-only GET with the mode and no member or account data (155 ms)
+  VTID-05205: migration
+    ✓ one transaction, idempotent DDL
+    ✓ send-once key, RLS on with no policies, functions for service_role only (1 ms)
+    ✓ adds no trigger and touches no existing table
+
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        3.016 s
+Ran all test suites matching /test\/vtid-05205-welcome-team.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

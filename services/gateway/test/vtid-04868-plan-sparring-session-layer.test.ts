@@ -29,9 +29,16 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     const md = read('CLAUDE.md');
     expect(md).toContain('### Plan Sparring Gate (STANDING RULE — VTID-04868)');
     for (const n of [51, 52, 53, 54, 55]) expect(md).toMatch(new RegExp(`^${n}\\. \\*\\*`, 'm'));
-    expect(md).toContain('Plan → sparring → owner approval → VTID → code.');
+    // VTID-05214 reworded rule 51 to include the CI-sparred policy-approval path
+    // ("… owner approval (or, for a CI-sparred plan that converged, policy approval
+    // converged-auto-v1, VTID-05214) → VTID → code."). Pin the stable endpoints of the
+    // flow rather than the exact middle clause so a future wording tweak does not re-break it.
+    expect(md).toMatch(/Plan → sparring → owner approval[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
-    expect(md).toContain('**No fallback**');
+    // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
+    expect(md).toContain('**Fallback chain');
+    expect(md).toContain('`deepseek-v4-pro`');
+    expect(md).toContain('Never Google.');
     expect(md).toMatch(/Step 0 \(VTID-04868\): spar the plan first\./);
   });
 

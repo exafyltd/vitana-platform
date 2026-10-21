@@ -92,6 +92,14 @@ export interface ModelLogEntry {
   output_tokens: number;
   ok: boolean;
   error?: string;
+  /**
+   * VTID (sparring-model-fallback): true when this entry is the one-shot
+   * Sonnet 4.6 throttle fallback (the primary Opus 4.6 call was throttled).
+   * Makes every fallback visible in the stored model_log — never silent.
+   */
+  fallback?: boolean;
+  /** Which fallback tier answered: 'bedrock_fallback' (Sonnet 4.6) or 'deepseek' (last resort). */
+  fallback_tier?: 'bedrock_fallback' | 'deepseek';
 }
 
 /** One element of `rounds` (append-only). */

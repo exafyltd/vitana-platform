@@ -208,8 +208,11 @@ describe('VTID-05077 planner fallback rate on the autopilot screen', () => {
     expect(route).toMatch(/return res\.json\(\{ ok: true, \.\.\.summary, planner \}\)/);
     const app = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/app.js'), 'utf8');
     expect(app).toContain("label: 'Planner fallback 24h'");
+    // VTID-05272 (H0): the chip renders the summary the route returns.
+    expect(app).toContain("spend.planner.fallback_24h + '/' + spend.planner.plans_24h");
     const html = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/index.html'), 'utf8');
-    expect(html).toContain('/command-hub/app.js?v=20261120-vtid-05148');
+    // VTID-05272 (H0): the served pin — index.html was bumped by VTID-05082 after this test was written.
+    expect(html).toContain('/command-hub/app.js?v=20261121-vtid-05082');
   });
 
   it('plan versions record who wrote them (migration + insert)', () => {

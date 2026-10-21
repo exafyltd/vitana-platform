@@ -21,6 +21,7 @@
  */
 
 import { readFileSync } from 'fs';
+import { readCommandHubBundle } from './bundle';
 import { join } from 'path';
 
 const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
@@ -62,7 +63,10 @@ describe('T10 region 3: makeClickable helper', () => {
 });
 
 describe('T10 region 3: every converted <tr> row carries a real aria-label', () => {
-  const appJs = readFileSync(APP_JS_PATH, 'utf8');
+  // VTID-05073: the Operator task-queue row ("View task details:") moved to
+  // operator-console.js; the other converted rows stayed in app.js. Read the
+  // whole bundle so every label fragment resolves wherever it now lives.
+  const appJs = readCommandHubBundle();
 
   const expectedLabelFragments = [
     'View OASIS event details:',

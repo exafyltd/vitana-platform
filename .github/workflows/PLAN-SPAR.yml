@@ -30,6 +30,7 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: read # VTID-05272: the slot step lists PLAN-SPAR runs (read-only)
 
 concurrency:
   group: plan-spar-${{ github.event.pull_request.number }}
@@ -69,6 +70,17 @@ jobs:
           who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
           if [ "$who" = "ci-plan-spar" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; echo "➖ head commit is PLAN-SPAR's own" >> "$GITHUB_STEP_SUMMARY"; fi
 
+      # VTID-05272 (plan kiro-autonomy-fallback §7 rule 2): at most 2 sparring sessions in flight repo-wide (the
+      # Bedrock quota is shared with production). FIFO by run id; read-only; stops waiting after 90 min.
+      - name: Wait for a sparring slot
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f base/scripts/ci/plan-spar-slot/slot.mjs ]; then echo "no slot script at the base commit — not waiting"; exit 0; fi
+          node base/scripts/ci/plan-spar-slot/slot.mjs --repo "${{ github.repository }}" --run-id "$GITHUB_RUN_ID" \
+            --cap 2 --poll-s 20 --max-wait-min 90 --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Spar
         if: steps.guard.outputs.skip != 'true'
         env:
@@ -76,6 +88,7 @@ jobs:
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
           PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}   # resolveRef reads a declared spar_refs companion (e.g. vitana-v1); unused when none is declared
         run: |
           git -C head diff --name-only "$BASE_SHA"...HEAD > "$RUNNER_TEMP/changed.txt"
           node base/scripts/collab/plan-spar.mjs --dir head --base-sha "$BASE_SHA" --repo "${{ github.repository }}" \

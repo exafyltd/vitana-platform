@@ -1,0 +1,17 @@
+# 2026-10-19, Kiro IDE (Windows), branch kiro/plan-sparring-deepseek-fallback
+
+# DeepSeek API live check (staging key from Secrets Manager vitana/gateway/staging/deepseek-api-key, value never printed)
+GET  https://api.deepseek.com/models                  -> deepseek-flash, deepseek-v4-pro
+POST https://api.deepseek.com/chat/completions (forced tool call submit_review)
+  deepseek-flash   ok 1191ms finish=tool_calls args={"verdict": "converged"}
+  deepseek-v4-pro  ok 1217ms finish=tool_calls args={"verdict": "converged"}
+
+# Live end-to-end partner pass (temporary script, deleted after the run)
+# BEDROCK_ROLE_ARN, SUPABASE_URL, SUPABASE_SERVICE_ROLE unset -> Bedrock not_configured, no DB access
+npx tsx tmp-e2e-deepseek.ts   -> see outputs/live-deepseek-e2e.txt
+
+# Unit / integration
+cd services/gateway
+npx jest test/vtid-04868-plan-sparring-service test/vtid-04868-plan-sparring-stage test/llm-router test/vtid-05077 test/llm-safe-defaults-no-google
+  -> all pass (session-layer hook tests need bash; they pass in CI)
+npx tsc --noEmit -p .   -> exit 0

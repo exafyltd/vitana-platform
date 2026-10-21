@@ -9,11 +9,22 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { extractedOperatorBlock, readBundleFile } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: the key-controls functions were extracted to operator-console.js.
+const OPERATOR_CONSOLE = readBundleFile('operator-console.js');
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// moved to operator-console.js; their module vars stayed in app.js.
+// extractedOperatorBlock() rebuilds the original executable slice unchanged.
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'confirm', 'console'],
+  ['resetKiroKeyState'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; value = ''; type = ''; placeholder = ''; autocomplete = '';
@@ -178,7 +189,10 @@ describe('VTID-04999 Kiro key field', () => {
 describe('VTID-04999 wiring (source check)', () => {
   it('styles exist, no inline styles, and the cache-bust is bumped', () => {
     for (const cls of ['.kiro-key-input', '.kiro-key-btn--primary', '.kiro-key-btn--danger', '.kiro-key-note', '.kiro-key-form']) expect(CSS).toContain(cls);
-    const keyBlock = BLOCK.slice(BLOCK.indexOf('var _kiroKeyRequested'), BLOCK.indexOf('function renderKiroThreadPanel'));
+    // VTID-05073: the key-controls region (fetchKiroKeyStatus .. renderKiroThreadPanel)
+    // now lives in operator-console.js; the _kiroKeyRequested var stayed in app.js so
+    // it is no longer co-located with the functions. Same region, same checks.
+    const keyBlock = OPERATOR_CONSOLE.slice(OPERATOR_CONSOLE.indexOf('function fetchKiroKeyStatus'), OPERATOR_CONSOLE.indexOf('function renderKiroThreadPanel'));
     expect(keyBlock).not.toMatch(/\.style\b|style=/);
     expect(keyBlock).not.toMatch(/localStorage|sessionStorage/);
     const html = readFileSync(join(FE, 'index.html'), 'utf8');

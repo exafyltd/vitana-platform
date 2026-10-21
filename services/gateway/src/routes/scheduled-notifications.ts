@@ -17,6 +17,7 @@
  *   POST /api/v1/scheduled-notifications/signal-cleanup
  *   POST /api/v1/scheduled-notifications/night-push
  *   POST /api/v1/scheduled-notifications/whats-new         (VTID-04733)
+ *   POST /api/v1/scheduled-notifications/welcome-team-tick (VTID-05205)
  */
 
 import { Router, Request, Response } from 'express';
@@ -50,6 +51,8 @@ import { runCoachTick } from '../services/onboarding-coach/coach-service';
 import { resolveCoachConfig } from '../services/onboarding-coach/config';
 import { runCompanionTick } from '../services/companion/companion-service';
 import { resolveCompanionConfig, isSendMode } from '../services/companion/config';
+import { runWelcomeTeamTick } from '../services/welcome-team/welcome-team-service';
+import { resolveWelcomeTeamConfig } from '../services/welcome-team/config';
 const router = Router();
 
 // VTID-04677: every route below fans out notifications to members, so each
@@ -1705,6 +1708,34 @@ router.post('/companion-tick', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[companion] tick failed:', err?.message || err);
     return res.status(500).json({ ok: false, error: 'companion tick failed' });
+  }
+});
+
+// VTID-05205 — team welcome DMs tick (Mariia day 0, Jovana day 1, Alex Blue day 2).
+// Sibling of the coach tick, not part of it (plan S2): the coach has no live
+// mode yet, and these welcomes are not paced coaching touches. Same token rule
+// as the ticks above — enforced HERE whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE
+// says — and the staging gateway refuses outright (shared production database).
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-05205)
+router.post('/welcome-team-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runWelcomeTeamTick emits welcome_team.message.sent/failed per DM and one tick.completed per tick that decided something.
+
+  const config = resolveWelcomeTeamConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'welcome-team tick does not run on staging' });
+  }
+  if (config.mode !== 'shadow' && config.mode !== 'live') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runWelcomeTeamTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[welcome-team] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'welcome-team tick failed' });
   }
 });
 

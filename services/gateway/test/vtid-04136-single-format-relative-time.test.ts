@@ -25,11 +25,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
-const APP_JS = fs.readFileSync(
-  path.join(__dirname, '../src/frontend/command-hub/app.js'),
-  'utf8'
-);
+// VTID-05073: formatRelativeTime stays in app.js, but the Operator Console
+// extraction removed the functions that used to bound this suite's body
+// slice. Read the whole Command Hub bundle so the slice to the next
+// `\nfunction ` resolves against the real neighbour. Assertions unchanged.
+const APP_JS = readCommandHubBundle();
 
 const DECLARATION = /\nfunction formatRelativeTime\s*\(/g;
 

@@ -163,6 +163,11 @@ export type CicdEventType =
   // state transition, unlike the shadow tick), and a member's own settings change.
   | 'companion.message.sent'
   | 'companion.message.failed'
+  // VTID-05205: team welcome DMs (Mariia, Jovana, Alex Blue) — one per real
+  // send or failed send, plus one per tick that decided something.
+  | 'welcome_team.tick.completed'
+  | 'welcome_team.message.sent'
+  | 'welcome_team.message.failed'
   | 'companion.preferences.updated'
   // VTID-05143: a member dismissed a Unified Card System enrichment card (7-day cooldown).
   | 'enrichment_card.dismissed'
