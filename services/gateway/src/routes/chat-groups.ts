@@ -45,6 +45,8 @@ import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './chat-groups-repository';
+import * as chatRepo from './chat-repository';
+import { isUuidParam, NO_SEND_IDENTITY, annotateReplies } from './chat';
 import { tt } from '../i18n/catalog';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { fetchUnmentionableIds, sanitizeMentions, type ChatMention } from '../lib/chat-mentions';
@@ -237,6 +239,11 @@ router.get('/:id/messages', requireAuth, requireTenant, async (req: Request, res
   const { id: groupId } = req.params;
   const limit = Math.min(Number(req.query.limit) || 50, 100);
   const before = req.query.before as string | undefined;
+  const after = req.query.after as string | undefined; // VTID-05310: forward paging
+  const around = req.query.around as string | undefined; // VTID-05310: context window
+  if (around !== undefined && !isUuidParam(around)) {
+    return res.status(400).json({ ok: false, error: 'invalid_around' });
+  }
 
   const supabase = getSupabase();
 
@@ -245,13 +252,25 @@ router.get('/:id/messages', requireAuth, requireTenant, async (req: Request, res
     return res.status(403).json({ ok: false, error: 'not_a_member' });
   }
 
-  const { data, error } = await repo.listChatGroupMessages(supabase, { groupId, limit, before });
+  const scope = { kind: 'group' as const, groupId };
+  if (around) {
+    const win = await chatRepo.fetchWindowAround(supabase, repo.groupScopeQuery(supabase, groupId), around, limit);
+    if ('error' in win) {
+      console.error('[ChatGroups] Messages window error:', win.error);
+      return res.status(500).json({ ok: false, error: win.error.message });
+    }
+    if ('notFound' in win) return res.status(404).json({ ok: false, error: 'message_not_found' });
+    const rows = await annotateReplies(supabase, win.data, scope);
+    return res.json({ ok: true, data: rows, has_older: win.has_older, has_newer: win.has_newer });
+  }
+
+  const { data, error } = await repo.listChatGroupMessages(supabase, { groupId, limit, before, after });
   if (error) {
     console.error('[ChatGroups] Messages fetch error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  return res.json({ ok: true, data });
+  return res.json({ ok: true, data: await annotateReplies(supabase, data, scope) });
 });
 
 // ── POST /:id/send — Send group message ───────────────────────
@@ -261,10 +280,12 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
   const { id: groupId } = req.params;
-  const { content, message_type, content_data } = req.body as {
+  const { content, message_type, content_data, client_message_id, reply_to_message_id } = req.body as {
     content?: unknown;
     message_type?: unknown;
     content_data?: unknown;
+    client_message_id?: unknown;
+    reply_to_message_id?: unknown;
   };
 
   const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
@@ -325,7 +346,14 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     if (mentions.length > 0) (metadata as any).mentions = mentions;
   }
 
-  const { data, error } = await repo.insertChatGroupMessage(supabase, {
+  // VTID-05310: idempotent send + reply target inside this group.
+  const sendIdentity = client_message_id != null || reply_to_message_id != null
+    ? await chatRepo.resolveSendIdentity(supabase, { client_message_id, reply_to_message_id }, { kind: 'group', groupId })
+    : NO_SEND_IDENTITY;
+  if (!sendIdentity.ok) return res.status(400).json({ ok: false, error: sendIdentity.error });
+  if (sendIdentity.replyTo) metadata = { ...metadata, reply_to: { message_id: sendIdentity.replyTo } };
+
+  const row = {
     tenant_id: identity.tenant_id,
     sender_id: identity.user_id,
     receiver_id: null,
@@ -333,11 +361,20 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     content: trimmed,
     message_type: msgType,
     metadata,
-  });
+  };
+  const { data, error, duplicate } = sendIdentity.clientMessageId
+    ? await chatRepo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatGroupMessage)
+    : { ...(await repo.insertChatGroupMessage(supabase, row)), duplicate: false };
 
   if (error) {
     console.error('[ChatGroups] Send error:', error);
     return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  const replyId = sendIdentity.replyTo ?? (isUuidParam(data?.metadata?.reply_to?.message_id) ? data.metadata.reply_to.message_id : null);
+  // VTID-05310: a repeat of an already stored send — same row back, no fan-out, no @vitana reply.
+  if (duplicate) {
+    return res.status(200).json({ ok: true, data: { ...data, reply_to_message_id: replyId }, duplicate: true });
   }
 
   const firstAttachmentName: string | null = attachments.length > 0
@@ -382,7 +419,7 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     ).catch(err => console.warn('[ChatGroups] @vitana reply failed:', err.message));
   }
 
-  return res.status(201).json({ ok: true, data });
+  return res.status(201).json({ ok: true, data: { ...data, reply_to_message_id: replyId } });
 });
 
 // ── POST /:id/read — Mark group read up to now ────────────────

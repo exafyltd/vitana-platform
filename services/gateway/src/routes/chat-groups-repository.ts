@@ -72,11 +72,20 @@ export async function fetchChatGroupWithMembers(sb: SupabaseClient, groupId: str
 
 export async function listChatGroupMessages(
   sb: SupabaseClient,
-  args: { groupId: string; limit: number; before?: string },
+  args: { groupId: string; limit: number; before?: string; after?: string },
 ) {
+  // VTID-05310: `after` pages forward (ascending); otherwise newest first as before.
+  if (args.after) {
+    return sb.from('chat_messages').select('*').eq('group_id', args.groupId).gt('created_at', args.after).order('created_at', { ascending: true }).limit(args.limit);
+  }
   let q = sb.from('chat_messages').select('*').eq('group_id', args.groupId).order('created_at', { ascending: false }).limit(args.limit);
   if (args.before) q = q.lt('created_at', args.before);
   return q;
+}
+
+/** VTID-05310: base query of one group's messages, for the `around` window. */
+export function groupScopeQuery(sb: SupabaseClient, groupId: string): () => any {
+  return () => sb.from('chat_messages').select('*').eq('group_id', groupId);
 }
 
 // ─── Send / edit / delete ──────────────────────────────────────────────

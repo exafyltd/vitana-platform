@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05310",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "an unsigned POST /chat/delivered is refused (new route mounted)",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/chat/delivered",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned DM send is still refused after the idempotency change",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/api/v1/chat/send",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05310-chat-send-reliability.test.ts test/chat-vitana-reply.test.ts test/vtid-04917-invite-routes.test.ts test/vtid-04926-chat-group-mentions.test.ts test/routes/chat-groups-repository.test.ts",
+      "cwd": "services/gateway",
+      "reason": "duplicate client_message_id → one row and one push, 23505 race, pre-migration fallback, reply targets validated on send and on read, /delivered scoped to the receiver, around/after windows; every case needs a write so it is proven in CI, never on staging"
+    }
+  ]
+}
