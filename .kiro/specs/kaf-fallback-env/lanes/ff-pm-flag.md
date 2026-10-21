@@ -1,7 +1,8 @@
 ---
 lane: ff-pm-flag
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202610202351-3160
 depends_on: []
 executor: kiro
 seat: exafy
@@ -13,7 +14,7 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:41Z
+updated: 2026-10-21T00:30Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
 vtid: VTID-05281
 ---
@@ -33,3 +34,9 @@ seat exafy claims it.
 
 ### 2026-10-20T23:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05281 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T00:30Z · kiro-exafy-202610202351-3160 · ready → executing
+Claimed (collab-claim/kaf-fallback-env/ff-pm-flag), pipeline run wf_f16f7c2bcc131c71, slot 2. `GithubRestReader.variable`
+now returns the value only on a 200 with a string `value` and throws `GithubHttpError` otherwise (a 404 = unset or no
+access); `observeClaude` falls back to `env.CLAUDE_AVAILABLE` when the read throws or yields null/unparseable, a
+readable variable still wins, 4 h inputs unchanged. Tests B1-B7 in `observe-live.test.ts` (B1/B4/B5/B7 red on base,
+all green on head). Evidence + staging suite in `docs/validation/VTID-05281/`.

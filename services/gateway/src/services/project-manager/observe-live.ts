@@ -14,7 +14,8 @@
  *     `collab-driver/<slug>` (committer dates);
  *   - `plan(` PRs (spec files, head trailer, handoff + plan.md + sparring state
  *     at the head) and the PM's bookkeeping PRs `pm-agent/<slug>`;
- *   - the Claude inputs: repo variable CLAUDE_AVAILABLE (env fallback), the
+ *   - the Claude inputs: repo variable CLAUDE_AVAILABLE (env CLAUDE_AVAILABLE when
+ *     the variable is unreadable, unset or unparseable — VTID-05281), the
  *     oldest open `next_actor: claude` item and the newest `session_…` commit;
  *   - from Supabase: STAGING-VERIFY passes, Gate 2 records (pm_digests),
  *     ledger status, the sparring session of a plan PR.
@@ -22,7 +23,7 @@
  * merge), never a thrown tick.
  */
 import { canonicalPlanHash } from '../plan-sparring/canonical-hash';
-import { gh, ghPages, supaRest } from './github-rest';
+import { GithubHttpError, gh, ghPages, supaRest } from './github-rest';
 import type { PmObserver } from './observe';
 import type {
   AreaSeatRotation,
@@ -70,7 +71,11 @@ export interface GithubReader {
   commitFiles(repo: string, sha: string): Promise<string[]>;
   checkRuns(repo: string, sha: string): Promise<CheckRun[]>;
   behindBy(repo: string, base: string, head: string): Promise<number>;
-  /** A repository Actions variable; throws when it cannot be read. */
+  /**
+   * A repository Actions variable. Resolves the value when read; `null` only when
+   * the reader can prove "unset"; throws when it cannot be read (the REST reader:
+   * a 404 — unset or no access, indistinguishable — or a 200 without a string value).
+   */
   variable(repo: string, name: string): Promise<string | null>;
   /** Committer date of a branch tip (`refs/heads/<ref>`); null when the ref does not exist. */
   refDate(repo: string, ref: string): Promise<string | null>;
@@ -564,10 +569,13 @@ export class GithubObserver implements PmObserver {
     const r = this.deps.gh;
     let flag: boolean | null = null;
     const parseFlag = (v: string | null | undefined) => (v === 'false' ? false : v === 'true' ? true : null);
+    const envFlag = () => parseFlag(env.CLAUDE_AVAILABLE?.trim().toLowerCase());
+    // Precedence (plan kaf-fallback-env §3): a readable true/false variable wins;
+    // a read that threw, or returned null / an unparseable value → the env.
     try {
-      flag = parseFlag((await r.variable(PLATFORM, 'CLAUDE_AVAILABLE'))?.trim().toLowerCase());
+      flag = parseFlag((await r.variable(PLATFORM, 'CLAUDE_AVAILABLE'))?.trim().toLowerCase()) ?? envFlag();
     } catch {
-      flag = parseFlag(env.CLAUDE_AVAILABLE?.trim().toLowerCase());
+      flag = envFlag();
     }
     const oldestMs = openItems.map((t) => Date.parse(t)).filter((n) => !Number.isNaN(n)).sort((a, b) => a - b)[0];
     const oldest = oldestMs != null ? new Date(oldestMs).toISOString() : null;
@@ -695,8 +703,15 @@ export class GithubRestReader implements GithubReader {
     return r.data?.behind_by ?? 0;
   }
   async variable(repo: string, name: string): Promise<string | null> {
-    const r = await gh<{ value?: string }>(repo, `actions/variables/${enc(name)}`);
-    return r.data?.value ?? null;
+    // VTID-05281: GitHub answers 404 both for "not set" and for "this token has
+    // no Variables access", so a 404 (or a 200 without a string value) is
+    // unreadable, not unset — throw so observeClaude falls back to the env.
+    const r = await gh<{ value?: unknown }>(repo, `actions/variables/${enc(name)}`);
+    if (r.status === 200 && typeof r.data?.value === 'string') return r.data.value;
+    throw new GithubHttpError(
+      r.status,
+      r.status === 404 ? 'variable unreadable (404: unset or no access)' : `variable unreadable (${r.status}: no string value)`,
+    );
   }
   async refDate(repo: string, ref: string): Promise<string | null> {
     const r = await gh<{ commit?: { committer?: { date?: string } } }>(repo, `commits/${ref.split('/').map(enc).join('/')}`);

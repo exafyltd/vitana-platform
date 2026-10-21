@@ -1,0 +1,125 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+    [0m [90m 278 |[39m
+     [90m 279 |[39m   [36mprivate[39m log(msg[33m:[39m string)[33m:[39m [36mvoid[39m {
+    [31m[1m>[22m[39m[90m 280 |[39m     ([36mthis[39m[33m.[39mdeps[33m.[39mlog [33m?[39m[33m?[39m ((m[33m:[39m string) [33m=>[39m console[33m.[39mwarn([32m`[PM] observe: ${m}`[39m)))(msg)[33m;[39m
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 281 |[39m   }
+     [90m 282 |[39m
+     [90m 283 |[39m   [36masync[39m observe(mode[33m:[39m [33mPmMode[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mObservedState[39m[33m>[39m {[0m
+
+      at src/services/project-manager/observe-live.ts:280:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:280:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:405:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+FAIL test/project-manager/observe-live.test.ts
+  parsers
+    √ parseTrailers reads the §4.1 trailers (13 ms)
+    √ parseLaneLog splits executing entries, review entries and decisions (4 ms)
+    √ parseLaneLog accepts the " - " separator (1 ms)
+    √ reviewOnlySince: heads after which only review / pm-agent lane commits follow (3 ms)
+    √ reviewOnlySince stops at a commit that changes another file (2 ms)
+  GithubObserver
+    √ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (12 ms)
+    √ variable unreadable → env CLAUDE_AVAILABLE fallback, else null (5 ms)
+    √ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (4 ms)
+    √ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (56 ms)
+    √ staging verify + gate2 sent are read from the data reader (2 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    × B1: rejects on a 404 (unset or no access — unreadable) (4 ms)
+    √ B2: resolves the value on a 200 with a string value (1 ms)
+    √ B3: rejects on a 403 (30 ms)
+    × B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false (3 ms)
+    × B5: a 404 + env true → true; a 404 + no env → null (2 ms)
+    √ B6: a readable variable wins over the env (1 ms)
+    × B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h (6 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    √ applyLaneChange edits only the allowed keys and appends one log entry (4 ms)
+    √ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (2 ms)
+    √ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (1 ms)
+
+  ● GithubRestReader.variable + env fallback (VTID-05281) › B1: rejects on a 404 (unset or no access — unreadable)
+
+    expect(received).rejects.toThrow()
+
+    Received promise resolved instead of rejected
+    Resolved to value: null
+
+    [0m [90m 253 |[39m   it([32m'B1: rejects on a 404 (unset or no access — unreadable)'[39m[33m,[39m [36masync[39m () [33m=>[39m {
+     [90m 254 |[39m     fetchReturns([35m404[39m[33m,[39m { message[33m:[39m [32m'Not Found'[39m })[33m;[39m
+    [31m[1m>[22m[39m[90m 255 |[39m     [36mawait[39m expect([36mnew[39m [33mGithubRestReader[39m()[33m.[39mvariable([33mP[39m[33m,[39m [32m'CLAUDE_AVAILABLE'[39m))[33m.[39mrejects[33m.[39mtoThrow([35m/404/[39m)[33m;[39m
+     [90m     |[39m           [31m[1m^[22m[39m
+     [90m 256 |[39m   })[33m;[39m
+     [90m 257 |[39m
+     [90m 258 |[39m   it([32m'B2: resolves the value on a 200 with a string value'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at expect (node_modules/expect/build/index.js:113:15)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:255:11)
+
+  ● GithubRestReader.variable + env fallback (VTID-05281) › B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: false
+    Received: null
+
+    [0m [90m 270 |[39m     fetchReturns([35m404[39m[33m,[39m { message[33m:[39m [32m'Not Found'[39m })[33m;[39m
+     [90m 271 |[39m     [36mconst[39m s [33m=[39m [36mawait[39m [36mnew[39m [33mGithubObserver[39m({ gh[33m:[39m restVariableReader()[33m,[39m data[33m:[39m data()[33m,[39m repos[33m:[39m [[33mP[39m][33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m[33m,[39m env[33m:[39m { [33mCLAUDE_AVAILABLE[39m[33m:[39m [32m'false'[39m } })[33m.[39mobserve([32m'live'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 272 |[39m     expect(s[33m.[39mclaude[33m![39m[33m.[39mflag)[33m.[39mtoBe([36mfalse[39m)[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 273 |[39m   })[33m;[39m
+     [90m 274 |[39m
+     [90m 275 |[39m   it([32m'B5: a 404 + env true → true; a 404 + no env → null'[39m[33m,[39m [36masync[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:272:28)
+
+  ● GithubRestReader.variable + env fallback (VTID-05281) › B5: a 404 + env true → true; a 404 + no env → null
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: null
+
+    [0m [90m 276 |[39m     fetchReturns([35m404[39m[33m,[39m { message[33m:[39m [32m'Not Found'[39m })[33m;[39m
+     [90m 277 |[39m     [36mconst[39m a [33m=[39m [36mawait[39m [36mnew[39m [33mGithubObserver[39m({ gh[33m:[39m restVariableReader()[33m,[39m data[33m:[39m data()[33m,[39m repos[33m:[39m [[33mP[39m][33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m[33m,[39m env[33m:[39m { [33mCLAUDE_AVAILABLE[39m[33m:[39m [32m'true'[39m } })[33m.[39mobserve([32m'live'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 278 |[39m     expect(a[33m.[39mclaude[33m![39m[33m.[39mflag)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 279 |[39m     [36mconst[39m b [33m=[39m [36mawait[39m [36mnew[39m [33mGithubObserver[39m({ gh[33m:[39m restVariableReader()[33m,[39m data[33m:[39m data()[33m,[39m repos[33m:[39m [[33mP[39m][33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m[33m,[39m env[33m:[39m {} })[33m.[39mobserve([32m'live'[39m)[33m;[39m
+     [90m 280 |[39m     expect(b[33m.[39mclaude[33m![39m[33m.[39mflag)[33m.[39mtoBeNull()[33m;[39m
+     [90m 281 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:278:28)
+
+  ● GithubRestReader.variable + env fallback (VTID-05281) › B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: null
+
+    [0m [90m 295 |[39m     })[33m;[39m
+     [90m 296 |[39m     [36mconst[39m s [33m=[39m [36mawait[39m [36mnew[39m [33mGithubObserver[39m({ gh[33m:[39m r[33m,[39m data[33m:[39m data()[33m,[39m repos[33m:[39m [[33mP[39m][33m,[39m now[33m:[39m () [33m=>[39m [33mNOW[39m[33m,[39m env[33m:[39m { [33mCLAUDE_AVAILABLE[39m[33m:[39m [32m'true'[39m } })[33m.[39mobserve([32m'live'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 297 |[39m     expect(s[33m.[39mclaude[33m![39m[33m.[39mflag)[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m     |[39m                            [31m[1m^[22m[39m
+     [90m 298 |[39m     expect(claudeAvailability(s[33m.[39mclaude[33m,[39m [33mNOW[39m))[33m.[39mtoEqual({ available[33m:[39m [36mfalse[39m[33m,[39m reason[33m:[39m [32m'no_action_4h'[39m })[33m;[39m
+     [90m 299 |[39m   })[33m;[39m
+     [90m 300 |[39m })[33m;[39m[0m
+
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:297:28)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 16 passed, 20 total
+Snapshots:   0 total
+Time:        2.173 s, estimated 4 s
+Ran all test suites matching /test\\project-manager\\observe-live.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

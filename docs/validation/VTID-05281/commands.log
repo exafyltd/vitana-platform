@@ -1,0 +1,19 @@
+# VTID-05281 (kaf-fallback-env/ff-pm-flag) — commands, Windows 11 / PowerShell 5.1, cwd services/gateway
+# base = origin/main 0688a5998; head = this lane's commit
+npm ci --no-audit --no-fund                                   -> ok (799 packages)
+[base sources + new tests] npx jest test/project-manager/observe-live.test.ts --ci
+                                                              -> FAIL 4 failed / 16 passed / 20 (B1, B4, B5, B7 red) outputs/red-on-base.txt
+[head] npx jest test/project-manager/observe-live.test.ts --ci -> PASS 20 passed / 20 (outputs/green-head.txt)
+[head] npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts test/kiro-autonomy-fallback-proof.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts --ci
+                                                              -> 212 passed / 3 failed / 14 skipped / 229; 11 of 13 suites pass (outputs/jest-pm-suite.txt)
+       (kaf-staging-claude-available-wiring.test.ts is lane ff-stage-env's file; not on this branch, no match)
+       red 1: vtid-05127-phone-verify-switch-wiring "dry run without credentials" — same red on base (Windows: bash script spawn); not this lane's
+       red 2: staging-deploy-workflow-bash-syntax "bash -n" x2 — empty bash stderr under parallel load; alone on head:
+[head] npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts --ci -> PASS 7 passed / 7 (outputs/bash-syntax-head.txt)
+[base] npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts --ci
+                                                              -> 1 failed (phone-verify dry run, same as head) / 17 passed / 14 skipped
+[head] npm run typecheck                                       -> PASS (exit 0) outputs/typecheck.txt
+[head] npx tsc  (the build's compile step; prebuild/copy use rm/cp/mkdir -p, absent in Windows cmd) -> PASS (exit 0) outputs/build.txt
+[head] npm run lint                                            -> exit 2 "ESLint couldn't find a configuration file" — same on base (no gateway eslint config); outputs/lint.txt
+[head] git grep -E "workflow_dispatch|/dispatches|AWS-PROD-DEPLOY" -- services/gateway/src/services/project-manager/ -> no match
+CI on the PR head is the authority.
