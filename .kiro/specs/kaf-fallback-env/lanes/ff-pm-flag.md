@@ -49,3 +49,8 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4242
 Findings: blocking: CI and PR diff not verifiable (shell denied in the review session), re-review needed with gh and git; blocking: docs/validation/VTID-05281/outputs/build.txt is empty, so there is no build evidence; non-blocking: lint has no ESLint config, red on base and head alike; non-blocking: implementation matches the plan in the worktree, and red-to-green is recorded (4 red on base, 20/20 on head); non-blocking: staging-tests.json is read-only
 Next: the lane's seat records build output and a re-review runs with gh/git access
+### 2026-10-21T00:30Z · kiro-exafy-202610202351-3160 · review fix (round 1)
+`npm run build` re-run in full (Git Bash script shell) and recorded in `docs/validation/VTID-05281/outputs/build.txt`
+(exit 0). Lint recorded as a known pre-existing red (no ESLint config in services/gateway, same on base). CI evidence
+for the head in `commands.log`; the VALIDATOR-CHECK red was the PR body missing its validator markers, body fixed.
+No source change. Next: re-review with gh/git access.

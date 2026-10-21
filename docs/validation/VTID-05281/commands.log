@@ -14,6 +14,11 @@ npm ci --no-audit --no-fund                                   -> ok (799 package
                                                               -> 1 failed (phone-verify dry run, same as head) / 17 passed / 14 skipped
 [head] npm run typecheck                                       -> PASS (exit 0) outputs/typecheck.txt
 [head] npx tsc  (the build's compile step; prebuild/copy use rm/cp/mkdir -p, absent in Windows cmd) -> PASS (exit 0) outputs/build.txt
-[head] npm run lint                                            -> exit 2 "ESLint couldn't find a configuration file" — same on base (no gateway eslint config); outputs/lint.txt
+[head] npm run build  (review round 1; npm_config_script_shell = Git Bash so prebuild rm and copy-* cp/mkdir -p run)
+                                                              -> PASS (exit 0; tsc + copy-frontend + copy-data, dist artefacts present) outputs/build.txt
+[head] npm run lint                                            -> exit 2 "ESLint couldn't find a configuration file" — KNOWN PRE-EXISTING RED, same on base:
+       services/gateway has no ESLint config, so "lint green" cannot be met by any change; not caused by this lane; outputs/lint.txt
+[CI on PR head 29908fa95] gh pr checks 4242 -> 23 pass (Gateway Jest shards 1-4, Gateway Validation, Lane scope, Collab handoff, pr-gate, unit, validate, ...);
+       VALIDATOR-CHECK validate-pr red: PR body lacked VALIDATION_PROFILE / SCOPE_ALLOWLIST / ACCEPTANCE / MERGE_PAYLOAD_PREVIEW / OASIS_IMPACT markers -> body fixed (review round 1)
 [head] git grep -E "workflow_dispatch|/dispatches|AWS-PROD-DEPLOY" -- services/gateway/src/services/project-manager/ -> no match
 CI on the PR head is the authority.
