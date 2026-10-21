@@ -10,6 +10,7 @@ specs:
   - vitana-platform:retire-claude-code
   - vitana-platform:plan-spar-stale-session
   - vitana-platform:fix-4182-test-fallout
+  - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
   - vitana-platform:collab-kiro-governance
@@ -17,6 +18,7 @@ specs:
   - vitana-platform:kiro-autonomy-fallback
   - vitana-platform:kaf-fallback-env
   - vitana-platform:claude-md-cleanup
+  - vitana-platform:messenger-ux-v2
   - vitana-platform:ci-github-modernization
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
@@ -36,8 +38,10 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
 - `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
 - `vitana-platform:fix-4182-test-fallout` — staging suite + Jest pin left stale by #4182 (VTID-05082)
+- `vitana-platform:collab-queue-perf` — collab queue reads git in a constant number of processes
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:messenger-ux-v2` — Messenger: reliable sending, scroll, replies, media, search, sharing, push suppression
 - `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
 - `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
 - `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
