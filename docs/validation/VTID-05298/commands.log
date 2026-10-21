@@ -1,0 +1,7 @@
+# VTID-05298 lane-paths widening — verification commands
+# Diff vs the news PR #1475's changed files showed 3 paths outside the lane's declared globs:
+#   apps/mobile/src/ports/news.ts, apps/mobile/tests/news/**, scripts/native/mobile-ci-paths.generated.json
+git show origin/main:.kiro/specs/native-wave2-home-feed-news/lanes/news.md   # old paths (missing the 3)
+gh pr diff 1475 --repo exafyltd/vitana-v1 --name-only                        # the 3 out-of-scope files
+# Fix: add the 3 globs to news.md; add ports/tests/generated-file globs to home.md + community-hub.md.
+git diff --name-only origin/main...HEAD                                      # => only lane files + this evidence

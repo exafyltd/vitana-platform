@@ -1,0 +1,6 @@
+Lane-paths widening for native-wave2 lanes (Lane scope fix).
+news lane #1475 changed files that were outside the old paths:
+  apps/mobile/src/ports/news.ts
+  apps/mobile/tests/news/news.test.tsx
+  scripts/native/mobile-ci-paths.generated.json
+All three now covered by the widened news lane paths. home + community-hub widened pre-emptively.
