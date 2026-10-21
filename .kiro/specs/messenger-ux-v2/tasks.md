@@ -55,7 +55,10 @@ table.
   suppress; two devices, one viewing → suppressed; `active:false` → pushed.
 - A viewing-suppressed row has `push_sent_at` set; then presence expires and `/push-dispatch` runs → still no push.
 - Every caller listed in plan I4 is covered without being edited: one test each for the new-member-greeting DM, a
-  calendar invite (DM and group) and an ORB-tool DM payload (`sender_id` only) → suppressed when viewing.
+  calendar invite (DM and group) and an ORB-tool DM payload (`sender_id` only) → suppressed when viewing (invites: the
+  deliberate R13 scope of I4), pushed when not viewing; a `listing_interest` push is never suppressed.
+- Cron batch: N rows needing the `message_id` fallback → exactly one `chat_messages` select and one presence read
+  (asserted on the mock call counts).
 - Cron: a trigger-style row (`url:'/inbox'`, no `conversation_key`) is keyed via `sender_id`/`message_id`,
   suppressed when viewing; both write orders (trigger row first / gateway row first) → exactly one push, the other
   row `suppressed_duplicate`.

@@ -106,8 +106,15 @@ rows written without it, in `/push-dispatch` (`scheduled-notifications.ts:1252`)
   in-app row is written exactly like the `coalesced` branch (`notification-service.ts:870-899`): `push_sent_at` set at
   INSERT, no push, `push_outcome 'suppressed_viewing'`, so `/push-dispatch` never re-selects it after the presence
   expires. `NotifyUserOptions` is unchanged (the decision is internal). Mentions in a viewed group are suppressed too.
+  **Deliberate scope (owner R13: no push for incoming messages while the recipient views that conversation):**
+  calendar invites sent into a viewed DM/group are messages of that conversation and are suppressed too — the
+  invite card appears live in the open chat and the in-app row is kept. This replaces, for the viewing case only, the
+  coalescer's rule that invites are never coalesced (`chat.ts:268`), which stays unchanged for bursts. Types other
+  than `new_chat_message` / `chat_mention` (e.g. `listing_interest`, `chat.ts:228-236`) are never suppressed.
 - `/push-dispatch`, for an unpushed chat row: viewing → marked handled with `suppressed_viewing` (the existing
-  `markHandled`, :1306-1309).
+  `markHandled`, :1306-1309). Keys are resolved for the whole batch before the loop: rows without `conversation_key`,
+  `group_id` or `sender_id` get their sender/group from ONE `select id, sender_id, group_id from chat_messages where id
+  = any($message_ids)`, then ONE presence read for all (recipient, key) pairs — no per-row query.
 - **New outcome values persist.** `user_notifications_push_outcome_check` hard-codes the allowed values (live: the 9
   of VTID-04962 plus `coalesced`, `20261013180000_vtid_05137_chat_push_coalescing.sql:24`), and `recordPushOutcome`
   swallows a violation (`notification-service.ts:303`). The lane's migration therefore drops and re-adds that CHECK
