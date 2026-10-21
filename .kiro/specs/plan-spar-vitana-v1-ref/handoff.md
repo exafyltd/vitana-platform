@@ -58,3 +58,17 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 Implementation (`b38076f91`) merged into the PR head branch (#4202); the single `plan-spar.test.mjs`
 conflict was resolved keeping both the VTID-05273 late-lane suite and the lane's `spar_refs:` AC tests.
 PR retitled to the VTID-05299 form. Lane `wire-extra-refs` → in-review for the reviewer agent.
+
+### 2026-10-21T22:30Z · kiro-202610152203-0347 · ready for Claude/owner (governance-path PR)
+PR #4202 is COMPLETE and ready for Claude Code / owner to clear the protected-gate check and merge.
+Title `VTID-05299 (plan-spar-vitana-v1-ref/wire-extra-refs): forward a vitana-v1 ref into PLAN-SPAR`,
+impl merged in (`b38076f91`), reviewed APPROVED, `scope.json` with `collab_allow_initial` added. The
+only required check (`validate`) is green, along with pr-gate, unit, change-suite, scan, spar, CI
+scripts, Phase 2B. **Collab handoff / Lane scope stay red by design** — the lane edits protected gate
+files (`scripts/collab/plan-spar.mjs`, `.github/workflows/PLAN-SPAR.yml`) and so is a Claude/owner
+governance lane per `collaboration.md §7a`; only Claude Code / owner can clear the protected-gate check
+and merge. Kiro did NOT flip the lane to `executor: claude`, did NOT unlock a protected-gate file, did
+NOT force-push, did NOT merge — all correct for the implementer role.
+
+This PR is a prerequisite ONLY for future cross-repo auto-sparring (the `spar_refs` mechanism), not for
+the Spotlight redesign itself.
