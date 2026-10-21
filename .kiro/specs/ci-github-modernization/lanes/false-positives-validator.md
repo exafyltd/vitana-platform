@@ -52,3 +52,23 @@ REMIT == workflow `paths:` invariant still holds (gateway TS test unaffected). E
 Decision (impl-notes): left `scripts/ci/validate-pr-locally.cjs` (a local-dev mirror of the workflow,
 out of this lane's paths) unchanged — it still reuses the guard module and is not CI-enforced. Noted for
 a possible follow-up so its inline marker messages match the new consolidated one.
+
+### 2026-10-21T14:55Z · kiro-exafyltd-202610211448-63c7 · review
+review: changes
+head: 7c22c050a7cdb3b40ed1ae08c4c29006409cb664
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4256
+Scope, VTID and trigger scoping check out. The guard test is red on base and green on head. The PR is not a protected gate file. Head CI is green except 'validate', which was still pending.
+
+Blocking: the shipped template does not pass the gate it exists for. Its guidance comment contains the literal 'VALIDATION_PROFILE: one of ...' and 'OASIS_IMPACT: yes | no' lines before the real declarations. VALIDATOR-CHECK's unchanged first-match extractors read these as PROFILE=one (exit 21, unknown profile) and IMPACT=yes (exit 81, OASIS_PROOF required) when the comment is left in. The new test only checks that each marker appears somewhere, so it passes anyway.
+
+Fix: reword the comment so it has no 'MARKER:' tokens, or put the real declarations first. Add a test that runs the workflow's own extraction regexes on the shipped template and expects gateway_backend and no.
+
+Non-blocking: the template rewrite dropped the Handoff (VTID-05060) section and the Phase 2B checklist; the guard matches markers anywhere in the body while the extractors take the first match; recheck 'validate' on the new head.
+next_actor: kiro
+
+Collab-Session: kiro-exafyltd-202610211448-63c7
+Collab-Review: ci-github-modernization/false-positives-validator
+Collab-Verdict: changes
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: 7c22c050a7cdb3b40ed1ae08c4c29006409cb664
