@@ -49,7 +49,8 @@ decisions).
    and a `mt.support` settings block, applied where `feedback_tickets` are created/triaged, so a tenant's tickets carry
    its routing.
 2. THE SYSTEM SHALL surface the launching tenant's landing SEO/OG metadata from the brand pack through the public
-   registry read path; referral-invite attribution SHALL remain as-is (already tenant-scoped) — no change to crediting.
+   registry read path; the invite `/claim` attribution OASIS event SHALL carry the claiming member's tenant (never
+   `DEFAULT_TENANT_ID`); signup attribution in `admin-signups.ts` is fixed by mt-jobs VTID-05267, not here.
 3. Support routing SHALL be dark behind `mt.launch_support`.
 
 ### R5 — CI gate (lane `worker-test-gate`, executor claude)

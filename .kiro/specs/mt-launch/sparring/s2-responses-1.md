@@ -1,36 +1,36 @@
-# Responses — session 3857a677, round 1
+# Responses to sparring round 1 (session 2, `0de6a378-b304-4d63-b75b-3813dfcfbf75`)
 
 ```json
 [
   {
     "finding_id": "R1-F1",
     "disposition": "accepted",
-    "rationale": "Verified at services/gateway/src/routes/admin-signups.ts:205 — `const tenantId = process.env.DEFAULT_TENANT_ID;` and all three dispatchEvent calls (user.signup.completed :210, user.signup.referral :217, user.signup.shared_link :225) use that hardcoded default, not the signing-up user's actual tenant. The plan's claim that referral/invite attribution was 'already tenant-scoped' is false. Fixed: Problem #5 now states the DEFAULT_TENANT_ID bug explicitly; the support-landing lane now OWNS per-tenant referral attribution (resolve the real tenant from the referral code's owning tenant / invite record and dispatch against it), dark behind mt.launch_support, with a non-default-tenant Jest test; added a matching Risk. The founding_invites_30 intake item stays (the send is ops) but the attribution mechanism is now in-scope and fixed.",
-    "deferred_to": ""
+    "rationale": "Verified: no services/tenant-launch/ directory exists at the repo root, while the modelled files live at services/gateway/src/services/data-export-consent.ts (:83 tenantExportPolicy) and data-export-consent-repository.ts (:24 fetchTenantSettingsFeatureFlags). tasks.md and the pack-intake-admin lane paths already carried the full path, but plan.md, design.md and three lane bodies used the abbreviated one. Every occurrence now reads services/gateway/src/services/tenant-launch/tenant-feature-flag.ts (plan.md Fix x3, design.md, pack-intake-admin, tenant-owner-analytics and support-landing lane bodies).",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F2",
     "disposition": "accepted",
-    "rationale": "Verified: live-tool-catalog.ts exists only at services/gateway/src/orb/live/tools/live-tool-catalog.ts and is the ORB-live voice persona-switch tool (Devon handoff prose at :945-969), NOT a feedback-ticket router. The real ticket data-plane + specialist detection is services/gateway/src/routes/feedback-intake.ts (header :5-19 lists handoff-detect/start/turn/complete; KIND_BY_AGENT devon/sage/atlas/mira at :32-37). The plan's change sites (feedback-intake.ts, feedback-admin.ts) were correct; only the Problem #4 citation was wrong. Fixed: Problem #4 now cites feedback-intake.ts:32-37 as the specialist-detection site and explicitly notes live-tool-catalog.ts is a separate ORB-live concern. Lane scope unchanged (still correct).",
-    "deferred_to": ""
+    "rationale": "Verified the two precedents use named deny lists (vtid-05156-people-match-health-boundary.test.ts:23 HEALTH_TABLES regex; vtid-05025 :7). The plan now enumerates the read allowlist for owner-analytics: product_analytics_events (20260612140000_BOOTSTRAP_product_analytics_events.sql:18), product_analytics_daily_rollups (20260612140100_BOOTSTRAP_product_analytics_rollups.sql:8), tenant_pack_intake, tenant_content_pipeline, tenants, and RPC get_tenant_launch_readiness. The guard extracts every .from('…')/.rpc('…') identifier in the scanned files and fails on any name outside that list, with the inline HEALTH_TABLES deny regex as a second explicit check (moved to mt-identity isHealthTable() once it ships). Adding a table is a reviewed one-line test edit. Updated plan.md Tests, design.md, tasks.md P2, tenant-owner-analytics lane.",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F3",
     "disposition": "accepted",
-    "rationale": "Verified: isHealthTable() exists nowhere in the gateway at the pinned commit (git grep -l over services/gateway = 0), and vtid-05025-commerce-health-boundary.test.ts defines HEALTH_TABLES inline (7 occurrences, including the regex at :248). The plan did contradict itself (Tests implied inline regex; Depends-on said 'references the canonical list and does not keep its own'). Resolved to Option A, unblocked: the D18 test ships its own INLINE HEALTH_TABLES regex now (matching the vtid-05025 pattern), with no import of isHealthTable(); when mt-identity ships that predicate (O1) the inline list is replaced by importing it, tracked as a follow-up on mt-identity rather than a compile-time blocker. Fixed both the Tests section and the Depends-on section so they agree and neither tenant-owner-analytics nor worker-test-gate is blocked on an unshipped spec.",
-    "deferred_to": "mt-identity (isHealthTable import migration — follow-up, non-blocking)"
+    "rationale": "Verified no migration in supabase/migrations creates tenant_content_overrides at this tip (it is mt-packs' table). The publish repository call now maps a missing-relation error (Postgres 42P01, PostgREST PGRST205 'Could not find the table') to a typed DEPENDENCY_NOT_READY result: the handler answers 409 { ok:false, error:'DEPENDENCY_NOT_READY', dependency:'tenant_content_overrides' }, the row stays signed_off (no state change, no partial write) and an OASIS tenant.content.publish_blocked event is emitted, independent of the mt.launch_pipeline flag, so no uncaught 500. Jest pins both error codes. Chosen over a to_regclass pre-check because PostgREST cannot run to_regclass without a new RPC, and mapping the error covers the same case with no extra round trip. Updated plan.md Fix + Risks, design.md, tasks.md P5/P6, pack-intake-admin lane.",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F4",
     "disposition": "accepted",
-    "rationale": "support-landing imports tenant-feature-flag.ts, created by pack-intake-admin (same spec, same repo/seat). The plan already declared depends_on: pack-intake-admin, but lacked an explicit compile-order guard. Fixed: the support-landing Fix bullet now states its VTID is gated to merge AFTER pack-intake-admin's VTID is closed, so the imported file is guaranteed present before support-landing compiles. The lanes are NOT merged (CROSS-SPEC lane rule / §4.7 keep DB and code lanes separate and avoid over-merging); depends_on + VTID sequencing is the mechanism.",
-    "deferred_to": ""
+    "rationale": "Verified community-invites.ts:72-80: on 'attributed' the /claim route emits community_autopilot.invite.{attributed,rewarded} with vtid 'SYSTEM' and payload referral_id, referred_id, rewarded, reward_reason, no tenant; the route requires identity.user_id (:55). Fix: the support-landing lane adds tenant_id to that payload = the claiming member's verified identity.tenant_id, else resolvePrimaryTenant(identity.user_id) (services/tenancy/tenant-context.ts:43), unresolved => null, never DEFAULT_TENANT_ID, behind mt.launch_support; Jest proves a non-default-tenant claim carries its own tenant. community-invites.ts added to the lane paths (no other lane claims it). Scope correction made in the same pass: admin-signups.ts:205 (signup/referral dispatch pinned to DEFAULT_TENANT_ID) is now owned by mt-jobs lane jobs-automation-actor-tenant (VTID-05267, approved 2026-10-20, its paths include routes/admin-signups.ts), which resolves the new user's auth_user_id primary tenant; this spec no longer edits that file, to avoid two lanes editing the same lines. The stale 'already tenant-scoped, keep' notes in design.md, requirements.md (support/landing requirement 2), tasks.md P3 and the lane are corrected. Updated plan.md Problem/Fix/Risks, design.md, requirements.md, tasks.md P3b/P4, support-landing lane.",
+    "deferred_to": null
   },
   {
     "finding_id": "R1-F5",
     "disposition": "accepted",
-    "rationale": "Verified: community-invites.ts:79 is only the OASIS event payload (referral_id, referred_id, rewarded, reward_reason) inside the /claim emit block (:73-80); the attribution itself runs in claimInvite(sb, user_id, code, ...) at :65 with no tenant parameter. The line does not demonstrate tenant-scoped attribution. Fixed: Problem #5 removed community-invites.ts:79 as attribution evidence and now describes the /claim path (:54-82) as tenant-agnostic, reinforcing R1-F1 instead of obscuring it.",
-    "deferred_to": ""
+    "rationale": "The only caller of get_tenant_launch_readiness is the gateway under the service role, which already reads both service-role-only tables, so privilege elevation is unnecessary: the function becomes SECURITY INVOKER (removing the definer hijack vector outright), STABLE, with SET search_path = public, pg_catalog pinned in the definition (repo precedent supabase/migrations/20251228000000_vtid_01050_dev_bootstrap_context.sql:23), owned by the migration role, REVOKE EXECUTE FROM PUBLIC, anon, authenticated and GRANT EXECUTE TO service_role. pgTAP checks prosecdef = false, proconfig contains the search_path, and anon/authenticated lack EXECUTE. Updated plan.md Fix/Migrations/Tests, design.md, tasks.md P3, pack-intake-db lane.",
+    "deferred_to": null
   }
 ]
 ```

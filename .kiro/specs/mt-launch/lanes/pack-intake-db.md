@@ -36,3 +36,7 @@ Branch `kiro/mt-launch/pack-intake-db`; PR title `VTID-xxxxx (mt-launch/pack-int
 ### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
 Created and held. Two expand-only tables (`tenant_pack_intake`, `tenant_content_pipeline`) + a read-only
 `get_tenant_launch_readiness()` that never reads a health table. seat `hotmail` (DB/migrations), reviewer `exafy`.
+
+### 2026-10-20T19:00Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (0de6a378) — no path change
+R1-F5: `get_tenant_launch_readiness` is SECURITY INVOKER, STABLE, `SET search_path = public, pg_catalog`, EXECUTE only
+for service_role.

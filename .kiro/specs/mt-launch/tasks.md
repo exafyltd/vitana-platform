@@ -16,7 +16,8 @@ Allowed paths:
 - [ ] P1 `tenant_pack_intake` table + `(tenant_id, item_key)` PK + status CHECK + service-role-only RLS (mirror
       `product_analytics_events`). Expand-only, no backfill.
 - [ ] P2 `tenant_content_pipeline` table + `unique (tenant_id, locale, key)` + review_state CHECK + service-role RLS.
-- [ ] P3 `get_tenant_launch_readiness(p_tenant_id)` SECURITY DEFINER STABLE, reads only intake + `tenants`, no health table.
+- [ ] P3 `get_tenant_launch_readiness(p_tenant_id)` SECURITY INVOKER STABLE, `SET search_path = public, pg_catalog`,
+      EXECUTE revoked from PUBLIC/anon/authenticated, granted to service_role; reads only intake + `tenants`, no health table.
 - [ ] P4 MIGRATION-QUEUE rows for both files, ordered AFTER WS5 `tenant_content_overrides`, with rollback paths +
       pre/post checks noted; add both tables to `scripts/ci/migration-drift-baseline.json` (removed after apply by Claude).
 - [ ] P5 pgTAP: a non-service-role client read of either table fails; `get_tenant_launch_readiness` is read-only and
@@ -55,9 +56,11 @@ Allowed paths:
 - [ ] P4 `content-pipeline.ts` state machine (`generated→linted→in_review→signed_off→published`, `→rejected`);
       health-claim/leftover-brand findings block publish; undated warns.
 - [ ] P5 `publish.ts` writes to `tenant_content_overrides` ONLY from `signed_off`, then seeds i18n; all gated by
-      `isTenantFeatureLive(tenantId, 'mt.launch_pipeline')`.
-- [ ] P6 Vitest: the resolver (`=== true` on, missing/non-boolean/error ⇒ off, cache); linters (block/warn, allowlist),
-      route auth gates (non-admin 403, T_B admin blocked from T_A), publish refuses from non-`signed_off`;
+      `isTenantFeatureLive(tenantId, 'mt.launch_pipeline')`. A missing-relation error (`42P01` / `PGRST205`) maps to
+      409 `DEPENDENCY_NOT_READY` (row stays `signed_off`, OASIS `tenant.content.publish_blocked`), independent of the flag.
+- [ ] P6 Jest: the resolver (`=== true` on, missing/non-boolean/error ⇒ off, cache); linters (block/warn, allowlist),
+      route auth gates (non-admin 403, T_B admin blocked from T_A), publish refuses from non-`signed_off`; publish answers
+      409 `DEPENDENCY_NOT_READY` on `42P01` and on `PGRST205`;
       `docs/validation/<vtid>/` scope.json + staging-tests.json + plan copy.
 
 Acceptance: full `npm test` (gateway Jest) green incl. new suites; dark flag off = no behaviour change; Lane scope +
@@ -81,8 +84,9 @@ Allowed paths:
       `isTenantFeatureLive(tenantId, 'mt.launch_analytics')` (the resolver `pack-intake-admin` creates — imported read-only).
 - [ ] P2 D18 guard `mt-launch-owner-analytics-health-boundary.test.ts`: copy the VTID-05025 pattern; list the
       owner-analytics source files; assert no health-table match + no health repository import; explicit read allowlist
-      (unknown table = fail); health list references mt-identity `isHealthTable()`; self-test plants a read.
-- [ ] P3 Vitest: handlers tenant-scoped, no health read, non-admin 403, T_B admin blocked from T_A; `docs/validation/<vtid>/`.
+      `product_analytics_events`, `product_analytics_daily_rollups`, `tenant_pack_intake`, `tenant_content_pipeline`, `tenants`, RPC `get_tenant_launch_readiness` — every `.from('…')`/`.rpc('…')` name outside it fails; inline `HEALTH_TABLES` regex (as
+      `vtid-05025`), migrated to mt-identity `isHealthTable()` once it ships; self-test plants a read.
+- [ ] P3 Jest: handlers tenant-scoped, no health read, non-admin 403, T_B admin blocked from T_A; `docs/validation/<vtid>/`.
 
 Acceptance: full `npm test` green incl. the health-boundary guard; dark flag off = endpoints gated; Lane scope +
 sparring + weakening checks green.
@@ -95,6 +99,7 @@ Allowed paths:
 - `services/gateway/src/routes/feedback-admin.ts`
 - `services/gateway/src/routes/feedback-intake.ts`
 - `services/gateway/src/routes/landing-seo.ts`
+- `services/gateway/src/routes/community-invites.ts`
 - `services/gateway/test/mt-launch-support-landing.test.ts`
 - `docs/validation/VTID-mt-launch-support-landing/**`
 
@@ -104,8 +109,12 @@ Allowed paths:
 - [ ] P2 Call the resolver from `feedback-admin.ts` / `feedback-intake.ts` so a tenant's tickets carry its routing;
       no change to ticket pipeline contract (keep `npm run test:support` green).
 - [ ] P3 `landing-seo.ts`: surface the tenant's `landing`/`og_image` brand-pack fields through the public registry read
-      path (reuse the Lane-C whitelist; add no new registry key). Referral/invite attribution unchanged.
-- [ ] P4 Vitest + `npm run test:support`: resolver mapping, flag-off no-op, SEO/OG read shape; `docs/validation/<vtid>/`.
+      path (reuse the Lane-C whitelist; add no new registry key).
+- [ ] P3b `community-invites.ts` `/claim` (`:72-80`): add `tenant_id` (identity tenant, else `resolvePrimaryTenant`;
+      unresolved ⇒ null, never `DEFAULT_TENANT_ID`) to the attribution OASIS payload behind `mt.launch_support`.
+      `admin-signups.ts` is NOT touched (owned by mt-jobs VTID-05267).
+- [ ] P4 Jest + `npm run test:support`: resolver mapping, flag-off no-op, SEO/OG read shape, a non-default-tenant
+      `/claim` event carries its own `tenant_id`; `docs/validation/<vtid>/`.
 
 Acceptance: full `npm test` + `npm run test:support` green; dark flag off = no behaviour change; Lane scope + sparring +
 weakening checks green.

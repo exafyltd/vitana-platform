@@ -26,8 +26,9 @@
 - Support: `services/gateway/src/routes/feedback-admin.ts` (`GET /tenants/:tenantId/tickets`, `:221`),
   `routes/feedback-intake.ts`, `routes/feedback-admin-repository.ts` (`feedback_tickets`); specialists
   Devon/Sage/Atlas/Mira (`orb/live/tools/live-tool-catalog.ts:1006`). Rule 42c suite: `npm run test:support`.
-- Referral/invite attribution (already tenant-scoped, keep): `routes/automations.ts` (`/referrals`), `routes/community-invites.ts:78`,
-  `routes/admin-signups.ts:208-229` (`signup_attempts.referral_code`, `utm_*`), `routes/click-redirect.ts` referral validation.
+- Referral/invite attribution: `routes/automations.ts` (`/referrals`), `routes/admin-signups.ts:205-229` (dispatch pinned to
+  `DEFAULT_TENANT_ID` — fixed by mt-jobs VTID-05267, not here), `routes/community-invites.ts:72-80` (`/claim` OASIS event
+  without `tenant_id` — this spec's `support-landing` adds it), `routes/click-redirect.ts` referral validation.
 - `tenant_content_overrides` does **not** exist yet — `mt-packs` creates it. This spec only publishes INTO it.
 
 ## Design per lane
@@ -38,7 +39,8 @@ Two expand-only tables, no backfill, service-role-only RLS (gateway-mediated lik
   `item_key` is a free-text column constrained by an application enum (the WS8 checklist) — do not hard-code a DB enum
   type (keeps the list editable without a type migration); the API validates it.
 - `tenant_content_pipeline(id uuid pk, tenant_id uuid references tenants, locale text, key text, source_template text, candidate_value text, lint_report jsonb default '{}', review_state text check (…), reviewed_by uuid, signed_off_by uuid, published_at timestamptz, created_at timestamptz default now(), unique (tenant_id, locale, key))`.
-- `get_tenant_launch_readiness(p_tenant_id uuid) returns jsonb` — SECURITY DEFINER, STABLE, reads only
+- `get_tenant_launch_readiness(p_tenant_id uuid) returns jsonb` — SECURITY INVOKER, STABLE, `SET search_path = public,
+  pg_catalog`, EXECUTE revoked from PUBLIC/anon/authenticated and granted to service_role only; reads only
   `tenant_pack_intake` (+ `tenants`), never a health table; aggregates intake completeness.
 Migrations `20261101110000` / `20261101110100` (renumber if a later migration exists at build time); rollback drops
 both tables + the function; MIGRATION-QUEUE rows added in the same PR, ordered after WS5's `tenant_content_overrides`
@@ -51,7 +53,8 @@ with an explicit depends-on note. Read-only pre/post checks in `docs/validation/
   path segment only.
 - Content pipeline service `services/gateway/src/services/tenant-launch/` with pure linters
   `health-claim-linter.ts`, `leftover-brand-linter.ts`, `undated-claim-linter.ts` (each `(text) => Finding[]`), a
-  `content-pipeline.ts` state machine, and `publish.ts` writing to `tenant_content_overrides` only from `signed_off`.
+  `content-pipeline.ts` state machine, and `publish.ts` writing to `tenant_content_overrides` only from `signed_off`;
+  a missing table (`42P01`/`PGRST205`) ⇒ 409 `DEPENDENCY_NOT_READY`, row unchanged, independent of the flag.
   Leftover-brand allowlist = immutable identifiers (bundle id `com.exafy.maxina`, AASA appID, existing route aliases)
   pinned by test.
 - **Per-tenant dark-flag resolver** `services/gateway/src/services/tenant-launch/tenant-feature-flag.ts` (created in
@@ -72,13 +75,14 @@ with an explicit depends-on note. Read-only pre/post checks in `docs/validation/
   `/api/v1/admin/tenants/:tenantId/owner-analytics`, `requireTenantAdmin`, reading `product_analytics_events`/rollups +
   `get_tenant_launch_readiness` through a repository seam. Five read endpoints: signups, activation, journey, events,
   retention. Dark behind `isTenantFeatureLive(tenantId, 'mt.launch_analytics')` — the resolver `pack-intake-admin`
-  creates (`services/tenant-launch/tenant-feature-flag.ts`), imported read-only here (no path entry needed; importing
+  creates (`services/gateway/src/services/tenant-launch/tenant-feature-flag.ts`), imported read-only here (no path entry needed; importing
   does not change the file, so Lane scope is satisfied), which is why this lane `depends_on` `pack-intake-admin`.
 - **D18 guard:** `services/gateway/test/mt-launch-owner-analytics-health-boundary.test.ts` copies the VTID-05025
   pattern: it lists exactly the owner-analytics source files, asserts none match the health-table regex and none import
   a health repository, and a self-test plants a read to prove the regex works. The allowlist of readable tables is
-  explicit; any table not on it (unknown provenance) fails the test. The health-table list references mt-identity's
-  canonical `isHealthTable()` set (O1) rather than keeping its own.
+  explicit — `product_analytics_events`, `product_analytics_daily_rollups`, `tenant_pack_intake`, `tenant_content_pipeline`, `tenants`, RPC `get_tenant_launch_readiness` — and any `.from`/`.rpc` name not on it (unknown provenance) fails the test. The health-table
+  deny list is an inline `HEALTH_TABLES` regex now (as `vtid-05025`) and moves to mt-identity's canonical
+  `isHealthTable()` (O1) once it ships.
 
 ### support-landing (gateway code)
 - Support routing resolver `services/gateway/src/services/tenant-launch/support-routing.ts` reads
@@ -88,8 +92,8 @@ with an explicit depends-on note. Read-only pre/post checks in `docs/validation/
   read-only here (hence this lane `depends_on` `pack-intake-admin`); when off, behaviour is byte-identical to today (so
   `npm run test:support` stays green).
 - Landing SEO/OG: expose the tenant's `landing`/`og_image` brand-pack fields through the public registry read path
-  (reuse the Lane-C registry whitelist; a new key = a new migration + harness case — do not add keys here). Referral/invite
-  attribution unchanged.
+  (reuse the Lane-C registry whitelist; a new key = a new migration + harness case — do not add keys here). The `/claim` invite
+  OASIS event (`community-invites.ts:72-80`) gains `tenant_id`; `admin-signups.ts` signup attribution is mt-jobs VTID-05267's.
 
 ### worker-test-gate (governance, executor claude)
 - `.github/workflows/**` only: add the three linter suites + the D18 guard test + the golden assertion to the gateway
