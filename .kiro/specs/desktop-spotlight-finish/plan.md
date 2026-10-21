@@ -14,6 +14,14 @@ and baseline below is in `exafyltd/vitana-v1`**, pinned at
 `lib.mjs`, `config.json`, `eslint.config.js`, `eslint-rules/design/**`, `PR-GATE.yml` and the skeleton building blocks
 are byte-identical). This is the ref declared to the sparring partner via `spar_refs:` in `handoff.md`, so the partner
 reads these files directly. vitana-platform carries no code change for this plan.
+
+**Spar wiring note (2026-10-21).** `spar_refs:` only takes effect when the commit PLAN-SPAR checks out as its base
+(`pull_request.base.sha`) already contains `parseSparRefs` (vitana-platform #4202). The PR base is now advanced to
+`origin/main c74812569` (#4202 ancestor, `parseSparRefs` present), so the sparring partner reads the pinned vitana-v1
+ref `69d39ef344b578f1ff171e99c61295f51c4e1f50` and can cite its files directly. The earlier `evidence_floor_not_met`
+escalation was this wiring gap, not a plan defect (see `sparring/responses-2.md`); this note advances the plan text so
+the session re-plans against the corrected base.
+
 Premise paths, all in vitana-v1 at that ref:
 - Earlier plan: `.kiro/specs/desktop-spotlight/{requirements,design,tasks,handoff}.md` + `lanes/`.
 - Contract: `docs/design-system/SPOTLIGHT_RULES.md`. Manifest: `src/design/screen-manifest.json` (key `screens`,
