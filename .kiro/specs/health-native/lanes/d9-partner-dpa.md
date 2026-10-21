@@ -1,7 +1,7 @@
 ---
 lane: d9-partner-dpa
 state: in-review
-next_actor: owner
+next_actor: kiro
 vtid: VTID-05090
 depends_on: []
 executor: claude
@@ -19,7 +19,7 @@ paths:
   - "docs/SCREEN_INVENTORY.md"
   - "docs/validation/**"
   - "tests/**"
-updated: 2026-10-15T18:59Z
+updated: 2026-10-21T09:41Z
 ---
 # D9 — partners read and sign the data processing agreement
 
@@ -35,3 +35,5 @@ Then: re-run `drift` on #4057 → merge #4057 → merge #1342 → STAGING-VERIFY
 ## Log
 ### 2026-10-15T18:59Z · session_01VuZPi9pvHaUverAXRC1WvU · (backfill) → in-review
 Handed over to Kiro with the health-native spec. next_actor: owner.
+### 2026-10-21T09:41Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
