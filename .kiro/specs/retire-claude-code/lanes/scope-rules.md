@@ -162,3 +162,20 @@ commit times are the authoritative record. The headings stay as written (the log
 Next: reviewer seat `jtadic` appends `review: approve|changes` on the new head of this branch (trailer `Collab-Review`,
 front matter untouched). Then the owner gives an explicit per-PR merge instruction (bootstrap merge 2). The claim
 `collab-claim/retire-claude-code/scope-rules` is released after this push.
+
+### 2026-10-21T15:05Z · kiro-jtadic-202610201149-6b0b · review: approve
+Reviewer seat `jtadic`, PR #4210, reviewed head `0c988732c` (code unchanged since `ff06a9c3b`; `0c988732c` changes
+only this lane file: `executing → in-review` and the timestamp correction).
+- Acceptance S1–S3 / AC-1…AC-7 met. Where the code is narrower than the plan (no `_plan` permission edits; `merge:`
+  checked at `done`) the lane log records it under Decisions, and nothing grants more than the plan.
+- `node --test scripts/collab/queue.test.mjs` 43/43 at `0c988732c`. Two pre-existing tests changed contract, both
+  stricter; none removed.
+- This PR's checker: Lane scope ✅. Collab handoff reports only `ready → in-review`, the known false positive the owner
+  accepted on 2026-10-20 (option 1).
+- Bootstrap: main's `queue.mjs` against this PR reports only the old "governance path … needs executor: claude"
+  refusal (2 in Lane scope, 32 in Collab handoff) and nothing else.
+- My non-blocking findings (GitHub comment 6290234780) stay open as follow-ups; the timestamp correction above
+  addresses finding 1.
+Note for the merger: GitHub reports the PR as conflicting with main (`scripts/collab/queue.mjs`,
+`scripts/collab/queue.test.mjs`). Resolving that changes the head and the code, so it needs a fresh `jtadic` review on
+the new head before merge.
