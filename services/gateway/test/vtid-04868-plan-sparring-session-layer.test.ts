@@ -35,7 +35,10 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     // flow rather than the exact middle clause so a future wording tweak does not re-break it.
     expect(md).toMatch(/Plan → sparring → owner approval[\s\S]*?→ VTID → code\./);
     expect(md).toContain('Claude Opus 4.6 on AWS Bedrock');
-    expect(md).toContain('**No fallback**');
+    // Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek, never Google.
+    expect(md).toContain('**Fallback chain');
+    expect(md).toContain('`deepseek-v4-pro`');
+    expect(md).toContain('Never Google.');
     expect(md).toMatch(/Step 0 \(VTID-04868\): spar the plan first\./);
   });
 

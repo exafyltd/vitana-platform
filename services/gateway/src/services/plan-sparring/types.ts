@@ -98,6 +98,8 @@ export interface ModelLogEntry {
    * Makes every fallback visible in the stored model_log — never silent.
    */
   fallback?: boolean;
+  /** Which fallback tier answered: 'bedrock_fallback' (Sonnet 4.6) or 'deepseek' (last resort). */
+  fallback_tier?: 'bedrock_fallback' | 'deepseek';
 }
 
 /** One element of `rounds` (append-only). */

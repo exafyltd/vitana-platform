@@ -1,0 +1,703 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pipeline-main/.worktrees/kaf-fallback-env-ff-pm-flag/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05127-phone-verify-switch-wiring.test.ts
+  VTID-05127 production wiring step
+    √ reads both repository variables and calls the shared wiring script on the partial task definition (180 ms)
+    √ runs after the checkout and before step 2/2, so env_overrides can still switch it off (5 ms)
+    √ step 2/2 never strips the phone settings by name (2 ms)
+    √ the secret is only ever a valueFrom reference, never a plain value (4 ms)
+    √ pins the exact anchored ARN pattern (3 ms)
+  VTID-05127 wiring decision (scripts/ci/phone-verify-wiring.sh)
+    ○ skipped ARN + enabled → secret wired, PHONE_VERIFY_ENABLED=true, other entries kept
+    ○ skipped ARN + not enabled → secret wired, PHONE_VERIFY_ENABLED=false
+    ○ skipped no ARN + enabled → fails (on without its secret)
+    ○ skipped no ARN + not enabled → PHONE_VERIFY_ENABLED=false and the stale secret ref removed
+    ○ skipped rejects an ARN with wrong prefix
+    ○ skipped rejects an ARN with other account
+    ○ skipped rejects an ARN with suffix too short
+    ○ skipped rejects an ARN with trailing text
+    ○ skipped rejects an ARN with another secret with the same prefix
+    ○ skipped enabled value "TRUE" is off
+    ○ skipped enabled value " true" is off
+    ○ skipped enabled value "true " is off
+    ○ skipped enabled value "1" is off
+    ○ skipped enabled value "yes" is off
+  VTID-05127 staging wiring step
+    √ looks up the staging secret and never fails the deploy when it is absent (1 ms)
+    √ absent → PHONE_VERIFY_ENABLED=false; present → secret ref + true (merged by name via connected-apps.json) (1 ms)
+    √ runs before the roll step, which merges connected-apps.json by name and does not strip the phone settings itself (2 ms)
+  VTID-05127 setup script
+    √ grants only SendTextMessage, scoped to this account and region (2 ms)
+    × dry run without credentials stops at the account check and changes nothing (12 ms)
+    √ never prints the secret value (1 ms)
+
+  ● VTID-05127 setup script › dry run without credentials stops at the account check and changes nothing
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "nothing was changed"
+    Received string:    "undefinedundefined"
+
+    [0m [90m 189 |[39m     })[33m;[39m
+     [90m 190 |[39m     expect(res[33m.[39mstatus)[33m.[39mnot[33m.[39mtoBe([35m0[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 191 |[39m     expect([32m`${res.stdout}${res.stderr}`[39m)[33m.[39mtoContain([32m'nothing was changed'[39m)[33m;[39m
+     [90m     |[39m                                          [31m[1m^[22m[39m
+     [90m 192 |[39m   })[33m;[39m
+     [90m 193 |[39m
+     [90m 194 |[39m   test([32m'never prints the secret value'[39m[33m,[39m () [33m=>[39m {[0m
+
+      at Object.<anonymous> (test/vtid-05127-phone-verify-switch-wiring.test.ts:191:42)
+
+PASS test/project-manager/decide.test.ts
+  mergeDecision — all preconditions true → merge-eligible
+    √ the baseline lane is merge-eligible (35 ms)
+  mergeDecision — each precondition individually false → NO merge (mutation)
+    √ lane not verified (2 ms)
+    √ no PR (2 ms)
+    √ no VTID on the lane (3 ms)
+    √ no review entry (1 ms)
+    √ review from a different seat than reviewer_seat (1 ms)
+    √ review on a stale head sha (not current) (1 ms)
+    √ review verdict is changes, not approve (1 ms)
+    √ a required check (Lane scope) is not green (1 ms)
+    √ a required check (Collab handoff) is missing on the head (2 ms)
+    √ a required check is green but on a different head sha (1 ms)
+    √ Claude Approvals App check exists but is not success
+    √ Claude Approvals App check present AND success → still merge-eligible (2 ms)
+    √ merge conflict (not mergeable)
+    √ a depends_on lane is not done (2 ms)
+    √ a depends_on lane IS done → merge-eligible
+    √ PR title does not carry the lane VTID (1 ms)
+    √ lane declares no paths
+    √ self-review residual: review session id appears in the executing log
+  reassignDecision — stale ready / stale review
+    √ ready <24h → no reassign (1 ms)
+    √ ready >24h but seat ran automation in window → no reassign (1 ms)
+    √ ready >24h, no automation → reassign to next seat for area (1 ms)
+    √ ready >24h, no next seat for area → claude (1 ms)
+    √ review waiting >24h with no review entry → reassign review
+    √ review waiting >24h but a review already exists → no reassign (1 ms)
+    √ review waiting <24h → no reassign
+  parkDecision — 3 CI fails / risk flag / stale claim
+    √ PR failed CI on 3 consecutive pushes → park (2 ms)
+    √ PR failed CI on only 2 pushes → no park
+    √ reviewer flagged risk → park (1 ms)
+    √ claim >48h with no branch activity → park + release (1 ms)
+    √ claim >48h BUT with later branch activity → no park (1 ms)
+    √ claim <48h → no park (1 ms)
+    √ a done lane is never parked (2 ms)
+  gate2Decisions — all-verified vs 4h-elapsed timing
+    √ no lane verified yet → no gate2 (1 ms)
+    √ every deploying lane verified → gate2 (all_verified) (2 ms)
+    √ one verified, one not, <4h since first → no gate2 (1 ms)
+    √ one verified, one not, >4h since first → gate2 (four_hours_elapsed) (1 ms)
+    √ gate2 already sent → not re-sent (1 ms)
+    √ non-deploying lanes are ignored (no gate2)
+  decide — orchestration + mode gating + precedence
+    √ mode off → no decisions at all
+    √ park takes precedence over merge for a troubled verified lane (2 ms)
+    √ a clean merge-eligible lane yields exactly one merge decision (2 ms)
+    √ merge + gate2 can both appear for different lanes (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [PM] pm_lease: none → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: acquired → table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent → held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: held_by_other → table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/act.test.ts
+  act layer — mode gating
+    √ live: a merge-eligible decision calls safe-merge exactly once (130 ms)
+    √ dry_run: never calls safe-merge (3 ms)
+    √ off: never calls safe-merge (2 ms)
+  act layer — never deploys, dispatches, or allocates
+    √ acting on every decision kind touches only safe-merge, lane writes and the Gate-2 post (5 ms)
+  act layer — governance-path merge guard
+    √ a governance-path PR whose reviewer is NOT claude is refused, never merged (6 ms)
+    √ a governance-path PR whose reviewer IS claude is allowed to merge (3 ms)
+    √ governance helpers classify paths and reviewers correctly (2 ms)
+  act layer — safe-merge result handling
+    √ already-merged PR is a no-op success, not an error; lane set done (3 ms)
+    √ safe-merge refused (gate not met) → lane NOT set done (3 ms)
+  act layer — per-tick lease
+    √ lease absent (p1 migration not present) → tick no-ops, no action taken (3 ms)
+    √ lease held by another task → tick no-ops (2 ms)
+    √ default lease manager (no injection) is the fail-safe NoLeaseManager → no-op (4 ms)
+  act layer — Gate-2 batch
+    √ posts the run-view question with the full production..verified commit list; never deploys (6 ms)
+  act layer — reassign and park write lane-file state
+    √ reassign to a seat moves seat + next_actor (2 ms)
+    √ reassign to claude sets next_actor claude, no seat change (2 ms)
+    √ stale-claim park releases the claim (3 ms)
+  prNumberFromUrl
+    √ parses a PR number from a GitHub url (1 ms)
+    √ returns null for a url with no pull segment (1 ms)
+
+  console.log
+    [PM] pm_lease: none → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: none → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/governance.test.ts
+  T9-T12 merge on the reviewer agent accept
+    √ T9 governance lane + agent accept on the current head + checks green → merge decision and act merges (123 ms)
+    √ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept → merge (1 ms)
+    √ T11 agent accept on H, review-only commits after it (review_only_since [H]) → merge (2 ms)
+    √ T12 guard: a legacy claude review on a governance lane still merges (5 ms)
+  M1 protected gate files never merge on an agent accept alone
+    √ CLAUDE.md (20 ms)
+    √ scripts/collab/plan-spar.mjs (3 ms)
+    √ scripts/collab/queue.mjs (2 ms)
+    √ scripts/collab/protected-gate-files.json (3 ms)
+    √ services/gateway/src/services/plan-sparring/** (2 ms)
+    √ services/gateway/src/services/project-manager/governance.ts (15 ms)
+    √ .github/workflows/PLAN-SPAR.yml (2 ms)
+    √ .github/workflows/PR-GATE.yml (2 ms)
+    √ .github/workflows/AWS-PROD-*.yml (2 ms)
+    √ .kiro/agents/vitana-lane-reviewer.md (5 ms)
+    √ supabase/migrations/*vtid_ledger*.sql (2 ms)
+    √ supabase/migrations/*plan_sparring*.sql (2 ms)
+    √ a legacy claude review on the current head unlocks a protected file
+    √ the compiled-in list is never empty (1 ms)
+  M2-M5 reviews that do not count
+    √ M2 stale head: accept on an old head with no review-only commits → no merge (1 ms)
+    √ M2 review_only_since does not match a different earlier head (3 ms)
+    √ M3 reviewer "agent:someone-else" → no merge on a governance lane (1 ms)
+    √ M3 reviewer null → no merge on a governance lane (1 ms)
+    √ M3 reviewer "agent:vitana-lane-reviewer-fake" → no merge on a governance lane (1 ms)
+    √ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" → no merge on a governance lane (1 ms)
+    √ M4 agent changes on the current head → no merge (1 ms)
+    √ M5 agent review from a session in the executing log → no merge (1 ms)
+    √ decide() emits no merge for a protected-file PR with an agent accept (4 ms)
+  T25 parity with scripts/collab/protected-gate-files.json
+    √ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails) (27 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/fallback.test.ts
+  T1-T4 claudeAvailability (plan §3)
+    √ T1 flag false → unavailable, flag_false (31 ms)
+    √ T2 oldest item 5 h old, last Claude action 6 h ago → no_action_4h (2 ms)
+    √ T2b flag true does not override the 4 h rule (1 ms)
+    √ T3 oldest item 3 h old → available (1 ms)
+    √ T4 item 5 h old but Claude acted 1 h ago → available (1 ms)
+    √ missing claude observation → available (today’s behaviour) (2 ms)
+  T5-T8 fallback routing to the exceptions seat
+    √ T5 end of rotation, Claude unavailable → exafyltd, fallback true (20 ms)
+    √ T6 / M6 end of rotation, Claude available → claude, fallback false (9 ms)
+    √ T7 lane already on exafyltd, Claude unavailable → no self loop (null) (19 ms)
+    √ T8 park with Claude unavailable → actPark writes next_actor exafyltd (80 ms)
+    √ M6 park with Claude available → next_actor claude (5 ms)
+    √ decide() threads the availability into reassign (3 ms)
+  T13-T15 timers without a live plan driver
+    √ T13 ready 3 h, no driver (null heartbeat) → reassign with window 2 h (2 ms)
+    √ T14 guard: ready 3 h, heartbeat 1 min ago → no reassign (1 ms)
+    √ T14b a heartbeat older than 45 min counts as no driver (1 ms)
+    √ T15 claim 5 h, no activity, no driver → park stale_claim, window 4 h (1 ms)
+    √ T15b claim 5 h with a live driver → no park (48 h window) (2 ms)
+    √ cap 6: no reassign of a ready lane into a plan with 6 lanes executing|in-review (2 ms)
+  T16-T17 merge queue
+    √ T16 two eligible lanes in one repo → exactly one merge (oldest state_since) (6 ms)
+    √ T16b one merge per repo: lanes in different repos both merge (1 ms)
+    √ T17 behind main → update_branch, no merge (2 ms)
+    √ verify (W1): in-review lane with an agent accept on the current head → verify (2 ms)
+  T18 merge_plan
+    √ spec-only, converged, policy-approved plan( PR → merge_plan (3 ms)
+    √ none for a file outside the spec (1 ms)
+    √ none for plan hash mismatch (1 ms)
+    √ none for head commit not PLAN-SPAR
+    √ none for not converged (1 ms)
+    √ none for no policy approval (1 ms)
+    √ none for handoff not approved (1 ms)
+    √ none for no VTIDs (1 ms)
+    √ none for a red check (1 ms)
+    √ none for not mergeable
+    √ none for title of another slug (2 ms)
+    √ decide() emits merge_plan when no lane merge took the repo this tick (1 ms)
+    √ W2 bookkeeping PR (pm-agent only, spec + timings) → merge_bookkeeping (2 ms)
+  T19 Gate 2
+    √ one lane verified 5 h ago, the sibling parked → all_verified (5 ms)
+    √ gate2_sent per lane: a lane already sent is not re-sent, a newly verified sibling is (2 ms)
+  T20 tick default
+    √ pmTickIntervalMs default 120000; lease TTL = tick − 30 s (1 ms)
+  T22 ledger decision
+    √ executing lane with ledger row scheduled → one ledger decision; in_progress → none (4 ms)
+  M7 new decision kinds never reach deploy / dispatch / allocate
+    √ acting on every new kind uses only safe-merge, update-branch, lane writes and the ledger writer (6 ms)
+    √ no project-manager source file reaches a deploy, dispatch or VTID allocation path (139 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/timings.test.ts
+  T21 planTimings
+    √ computes every duration exactly (23 ms)
+    √ a missing source → null (never 0) and named in sources_unavailable (7 ms)
+  T23 Gate 2 evidence and message
+    √ evidence carries services, staging_verify, migrations, decisions_taken, timings, unavailable (18 ms)
+    √ a failing source fails open into unavailable[] (3 ms)
+    √ the poster writes one assistant message with the question and a pm_digests gate2 row; never deploys (5 ms)
+
+  console.log
+    [PM] pm_lease: none → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: acquired → held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: held_by_other → table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent → error (pg 57P01)
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [PM] pm_lease: error → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.warn
+    [PM] tick error: boom
+
+    [0m [90m 66 |[39m       }
+     [90m 67 |[39m     } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 68 |[39m       console[33m.[39mwarn([32m'[PM] tick error:'[39m[33m,[39m (err [36mas[39m [33mError[39m)[33m?[39m[33m.[39mmessage [33m||[39m err)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 69 |[39m     } [36mfinally[39m {
+     [90m 70 |[39m       running [33m=[39m [36mfalse[39m[33m;[39m
+     [90m 71 |[39m     }[0m
+
+      at Object.tick (src/services/project-manager/loop.ts:68:15)
+      at Object.<anonymous> (test/project-manager/loop.test.ts:119:5)
+
+PASS test/project-manager/loop.test.ts
+  T26 PgLeaseManager on pm_lease
+    √ row free → acquired (TTL passed through), last_lease acquired (69 ms)
+    √ held by another task (no row updated) → held_by_other (2 ms)
+    √ missing relation (42P01) → table_absent (3 ms)
+    √ missing relation (PGRST205) → table_absent (1 ms)
+    √ any other error → error (never throws) (4 ms)
+  startPmLoop
+    √ live → act tick (takes the lease); status shows the fallback (68 ms)
+    √ dry_run → decide-only tick (never takes the lease) (1 ms)
+    √ a tick error is caught; overlapping ticks are skipped (36 ms)
+
+PASS test/project-manager/tick-and-config.test.ts
+  config switches
+    √ PM_AGENT_ENABLED defaults off, true only on exactly "true" (17 ms)
+    √ PM_MODE defaults dry_run; accepts off/live; unknown → dry_run (1 ms)
+    √ tick interval defaults to 2 minutes (1 ms)
+  runDecideTick — observe → decide → report (no act)
+    √ with the stub observer (empty world) emits nothing and records a snapshot (3 ms)
+    √ reports each decision through the emitter (dry_run) (2 ms)
+    √ mode off → decide yields nothing even with lanes present (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+    [0m [90m 283 |[39m
+     [90m 284 |[39m   [36mprivate[39m log(msg[33m:[39m string)[33m:[39m [36mvoid[39m {
+    [31m[1m>[22m[39m[90m 285 |[39m     ([36mthis[39m[33m.[39mdeps[33m.[39mlog [33m?[39m[33m?[39m ((m[33m:[39m string) [33m=>[39m console[33m.[39mwarn([32m`[PM] observe: ${m}`[39m)))(msg)[33m;[39m
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 286 |[39m   }
+     [90m 287 |[39m
+     [90m 288 |[39m   [36masync[39m observe(mode[33m:[39m [33mPmMode[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mObservedState[39m[33m>[39m {[0m
+
+      at src/services/project-manager/observe-live.ts:285:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+PASS test/project-manager/observe-live.test.ts
+  parsers
+    √ parseTrailers reads the §4.1 trailers (3 ms)
+    √ parseLaneLog splits executing entries, review entries and decisions (3 ms)
+    √ parseLaneLog accepts the " - " separator (1 ms)
+    √ reviewOnlySince: heads after which only review / pm-agent lane commits follow (1 ms)
+    √ reviewOnlySince stops at a commit that changes another file (2 ms)
+  GithubObserver
+    √ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (15 ms)
+    √ variable unreadable → env CLAUDE_AVAILABLE fallback, else null (7 ms)
+    √ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (5 ms)
+    √ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (137 ms)
+    √ staging verify + gate2 sent are read from the data reader (4 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    √ B1: rejects on a 404 (unset or no access — unreadable) (271 ms)
+    √ B2: resolves the value on a 200 with a string value (2 ms)
+    √ B3: rejects on a 403 (17 ms)
+    √ B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false (4 ms)
+    √ B5: a 404 + env true → true; a 404 + no env → null (3 ms)
+    √ B6: a readable variable wins over the env (2 ms)
+    √ B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h (2 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    √ applyLaneChange edits only the allowed keys and appends one log entry (5 ms)
+    √ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (5 ms)
+    √ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (4 ms)
+
+  console.error
+    [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m   [36mif[39m (secrets[33m.[39mlength [33m===[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 173 |[39m     console[33m.[39merror([32m'[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)'[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 174 |[39m   }
+     [90m 175 |[39m
+     [90m 176 |[39m   [36mreturn[39m secrets[33m;[39m[0m
+
+      at getJwtSecrets (src/middleware/auth-supabase-jwt.ts:173:13)
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:325:19)
+      at optionalAuth (src/middleware/auth-supabase-jwt.ts:451:26)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at app.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/kiro-autonomy-fallback-proof.test.ts (7.034 s)
+  VTID-05277 proof 1: claudeAvailability (plan §3)
+    √ flag false → unavailable (flag_false) (40 ms)
+    √ flag true, unknown, or nothing observed → available (no silent fallback) (2 ms)
+    √ 4 h without a Claude Code action → unavailable (no_action_4h), flag true does not override (1 ms)
+  VTID-05277 proof 2: /mode and /status bodies
+    √ /mode is public and carries exactly ok, enabled, mode, executor_mode = kiro_fallback (51 ms)
+    √ /status stays auth-gated (401 without a token, 401 with an invalid bearer) (173 ms)
+    √ /status with the service token carries claude, fallback and last_lease (17 ms)
+    √ a tick that observes CLAUDE_AVAILABLE=false makes the default /mode report kiro_fallback (43 ms)
+    √ a tick with Claude available keeps the default /mode on claude_primary (17 ms)
+  VTID-05277 proof 3: end of rotation never goes to claude while unavailable
+    √ stale ready lane at the end of the rotation → exceptions seat, not claude (3 ms)
+    √ a stale review at the end of the rotation → exceptions seat, not claude (1 ms)
+    √ no decision of a fallback tick routes any job to claude (2 ms)
+    √ a parked lane goes to the exceptions seat while unavailable (1 ms)
+    √ control: Claude available → end of rotation still goes to claude (today’s routing) (2 ms)
+
+  console.error
+    [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m   [36mif[39m (secrets[33m.[39mlength [33m===[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 173 |[39m     console[33m.[39merror([32m'[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)'[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 174 |[39m   }
+     [90m 175 |[39m
+     [90m 176 |[39m   [36mreturn[39m secrets[33m;[39m[0m
+
+      at getJwtSecrets (src/middleware/auth-supabase-jwt.ts:173:13)
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:325:19)
+      at optionalAuth (src/middleware/auth-supabase-jwt.ts:451:26)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at app.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/project-manager/route.test.ts
+  GET /status auth
+    √ 401 without a bearer token (60 ms)
+    √ 401 with a wrong service token (64 ms)
+    √ 200 with the service token, returns mode + decisions (91 ms)
+  T24 /status fallback fields and the public /mode
+    √ /status with the token carries claude, fallback, build_lanes_in_flight, last_lease (65 ms)
+    √ /status defaults: Claude available, no fallback, last_lease null (50 ms)
+    √ /status without a token → 401 (10 ms)
+    √ /mode without a token → 200 with exactly ok, enabled, mode, executor_mode (10 ms)
+    √ /mode reports claude_primary when Claude is available (10 ms)
+
+  console.log
+    [CICD] PR #4242 merged for VTID-05217: mergedsha
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+PASS test/project-manager/safe-merge-fn.test.ts
+  safeMerge — clean merge
+    √ merges exactly once and returns result "merged" with status 200 (38 ms)
+  safeMerge — pr not open → already_merged no-op
+    √ returns result "already_merged", keeps the identical 400 pr_not_open body, and NEVER merges (2 ms)
+  safeMerge — refused outcomes (behaviour-preserving)
+    √ unauthorized repo → refused 403, no merge (2 ms)
+    √ pr not found → refused 404, no merge (2 ms)
+    √ invalid base → refused 400, no merge (2 ms)
+    √ checks failed → refused 400, no merge (1 ms)
+    √ governance blocked → refused 403, no merge (1 ms)
+
+FAIL test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts (11.141 s)
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (162 ms)
+    × AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (4513 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (7 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (7 ms)
+    × AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (2956 ms)
+    √ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (6 ms)
+    √ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (7 ms)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 24
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Pinned commit must already be on main (VTID-04709)\": ",
+    +   "job \"build-push-deploy\" step \"Stage codeintel source (VTID-04118 — RepoWise/Graphify image indexing)\": ",
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Connected Apps sign-in config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Jev decision config\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Live Rooms Daily key\": ",
+    +   "job \"build-push-deploy\" step \"Resolve dev-memory pack token\": ",
+    +   "job \"build-push-deploy\" step \"Resolve Kiro runner config\": ",
+    +   "job \"build-push-deploy\" step \"Audiobook Google narration flags\": ",
+    +   "job \"build-push-deploy\" step \"Community MCP flags\": ",
+    +   "job \"build-push-deploy\" step \"Resolve phone verification config\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service (1/2 — build the task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Register task-definition revision + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Diagnose failed rollout (service events + stopped tasks)\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=staging + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — Nova Sonic health surface present\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    +   "job \"build-push-deploy\" step \"Record deployed commit for STAGING-VERIFY (VTID-04715)\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+  ● VTID-03788: every run: step in the gateway deploy workflows is valid bash › AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  -  1
+    + Received  + 30
+
+    - Array []
+    + Array [
+    +   "job \"build-push-deploy\" step \"Resolve commit metadata + refresh BUILD_INFO\": ",
+    +   "job \"build-push-deploy\" step \"Preflight — verify ECR repo + ECS service exist\": ",
+    +   "job \"build-push-deploy\" step \"Resolve deploy source (promote-staging vs rebuild-main)\": ",
+    +   "job \"build-push-deploy\" step \"Build and push image (rebuild-main only)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (1/2 — image, commit stamp, always-pinned flags)\": ",
+    +   "job \"build-push-deploy\" step \"Capture rollback target (task definition live before this deploy)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Jev gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (drop dead secret refs)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (internal token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Live Rooms Daily key)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Kiro runner)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (dev-memory pack token)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reward payouts on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (routine runner on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (onboarding coach shadow mode on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (reminders dispatch on)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (Commerce MCP)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (calendar gates)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (data backend — VTID-05023)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (phone verification)\": ",
+    +   "job \"build-push-deploy\" step \"Build task-definition (2/2 — optional overrides) + register + roll the service\": ",
+    +   "job \"build-push-deploy\" step \"Smoke — env=production + deployed commit live\": ",
+    +   "job \"build-push-deploy\" step \"Verify reward sweep setting (live task definition)\": ",
+    +   "job \"build-push-deploy\" step \"Post-deploy verification (read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Report DAILY_API_KEY presence (live task definition, read-only)\": ",
+    +   "job \"build-push-deploy\" step \"Roll back to the previous task definition\": ",
+    +   "job \"build-push-deploy\" step \"Emit OASIS event + software_versions row (best-effort)\": ",
+    +   "job \"build-push-deploy\" step \"Summary\": ",
+    + ]
+
+    [0m [90m 113 |[39m       }
+     [90m 114 |[39m
+    [31m[1m>[22m[39m[90m 115 |[39m       expect(failures)[33m.[39mtoEqual([])[33m;[39m
+     [90m     |[39m                        [31m[1m^[22m[39m
+     [90m 116 |[39m     })[33m;[39m
+     [90m 117 |[39m
+     [90m 118 |[39m     [90m// VTID-03788 — the actual defect: GitHub Actions rejects the WHOLE[39m[0m
+
+      at Object.<anonymous> (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts:115:24)
+
+Test Suites: 2 failed, 11 passed, 13 total
+Tests:       3 failed, 14 skipped, 212 passed, 229 total
+Snapshots:   0 total
+Time:        14.391 s
+Ran all test suites matching /test\\project-manager|test\\kaf-staging-claude-available-wiring.test.ts|test\\kiro-autonomy-fallback-proof.test.ts|test\\orb\\live\\upstream\\staging-deploy-workflow-bash-syntax.test.ts|test\\vtid-05127-phone-verify-switch-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
