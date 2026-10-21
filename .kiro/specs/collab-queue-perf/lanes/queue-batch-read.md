@@ -1,6 +1,6 @@
 ---
 lane: queue-batch-read
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -9,8 +9,11 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-21T11:24Z
+updated: 2026-10-21T15:49Z
 vtid: VTID-05300
+claimed_by: kiro-202610181950-f0b7
+branch: kiro/collab-queue-perf/queue-batch-read
+pr: https://github.com/exafyltd/vitana-platform/pull/4188
 ---
 # Lane: queue-batch-read
 Tasks T1–T5 in `tasks.md`. Claude Code builds it because `scripts/collab/**` is a governance path. The VTID is
@@ -18,6 +21,23 @@ allocated by PLAN-SPAR on convergence.
 ## Log
 ### 2026-10-18T20:10Z · kiro-202610181950-f0b7 · ready
 Lane created with the plan.
-
 ### 2026-10-21T11:24Z · ci-plan-spar · ready (VTID allocated)
 VTID-05300 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T15:49Z · kiro-202610181950-f0b7 · ready → executing
+Built T1–T6 in PR https://github.com/exafyltd/vitana-platform/pull/4188 (branch
+`kiro/collab-queue-perf/queue-batch-read`, origin/main merged in). Every accepted finding (R1-F1..F4, R2-F1, R2-F2)
+is mapped to the code in `docs/validation/VTID-05300/plan-sparring.md`; `scope.json` kind infra.
+- `collect()`: 6 git processes per repo (≤ 8 without `origin/HEAD`), `log --cc` for merge-commit spec changes,
+  `maxBuffer` 256 MiB; `listClaims()` 2 (callers `claim`, `release`, `claims` unchanged); `loadPrograms()` 2.
+- Tests: `node --test "scripts/collab/*.test.mjs"` 101/101 pass (Windows, node 24).
+- Timing (owner's Windows machine, local reads, no fetch, machine loaded by parallel sessions):
+  `collect({ days: 30 })` vitana-platform 4.05 s / 4.45 s (6 spawns, 234 files, 62 claims), vitana-v1 9.24 s /
+  7.15 s (6 spawns, 46 files, 19 claims). Full CLI `queue.mjs --repo vitana-platform --repo vitana-v1`: before
+  (origin/main) 238.2 s, after 12.8 s and 6.9 s; same 283 rows, differing only in `updated`/last-log of lanes that
+  `pm-agent` pushed between the runs.
+- The lane stays `executing` in this PR: Collab handoff checks merge-base → head, and `ready → in-review` is not one
+  legal step. `in-review` follows as a lane-state commit.
+- Claim ref `collab-claim/collab-queue-perf/queue-batch-read` is held by `kiro-202610211043-0e91` (an earlier,
+  interrupted attempt of this same build; its uncommitted diff is the base of this update). Not broken (< 24 h);
+  every commit in this PR is from `kiro-202610181950-f0b7`.
+Next: reviewer agent on the current head; Lane scope needs `executor: claude` handling for this governance lane.

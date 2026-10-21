@@ -1,0 +1,15 @@
+# VTID-05324 commands (session kiro-hotmail-202610211408-c407, worktree on kiro/mt-launch/pack-intake-db)
+# first build: base origin/main 903b928281af3bac945bb6564bb899a1613d5abc (merged forward to 183af3e97 before push)
+# review round 1 fix: branch merged with origin/main 84fc0ca6a0d116f4e41dfd77c5125cb329b95f15; red/green re-recorded on it
+[services/gateway] npx jest test/mt-launch-pack-intake-pgtap.test.ts   (clean origin/main 84fc0ca6 + only the new test) -> exit 1, Tests: 15 failed, 2 passed, 17 total (assertion failures)   outputs/red-on-base.txt
+[services/gateway] npx jest test/mt-launch-pack-intake-pgtap.test.ts   (head, merged with 84fc0ca6)                      -> exit 0, Tests: 17 passed, 17 total   outputs/green-head.txt
+[services/gateway] npx tsc --noEmit   (head, merged with 84fc0ca6)                                                     -> exit 0, no output
+[services/gateway] npm run build (Git Bash script shell; prebuild uses rm)                      -> exit 0   outputs/build.txt (first build)
+[repo root] node --test scripts/ci/check-migration-drift.test.cjs                               -> exit 0, 8 pass / 0 fail   outputs/drift-test.txt (first build)
+[repo root] node scripts/collab/queue.mjs validate --base origin/main --head HEAD                -> exit 0, collab handoff valid   outputs/queue-validate.txt
+[repo root] node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD             -> exit 0, every change inside the lane paths   outputs/scope-check.txt
+[repo root] node scripts/ci/validate-pr-locally.cjs --base main                                  -> see outputs/validate-pr.txt (first build)
+# Superseded: the first base run (worktree mtl-base-pid without its own node_modules) failed 17/17 on a setup-tests.ts
+# module-resolution error, not on assertions; replaced by the run above.
+# No database command was run: no Postgres in this session; the pgTAP plan and a local dry-run were not executed
+# (covered by RUN-MIGRATION pre/post checks). Nothing applied to any live or staging database.
