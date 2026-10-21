@@ -10,7 +10,14 @@ than `20261101110000`, so the plan's numbers stand. The Jest suite fails if anot
 ## Red on base → green on head
 | Command (cwd `services/gateway`) | Base (`origin/main` + only the new test file) | Head |
 |---|---|---|
-| `npx jest test/mt-launch-pack-intake-pgtap.test.ts` | exit 1 — `Tests: 17 failed, 17 total` (migration files, queue rows, baseline entries and rollback absent) | exit 0 — `Tests: 17 passed, 17 total` |
+| `npx jest test/mt-launch-pack-intake-pgtap.test.ts` | exit 1 — `Tests: 15 failed, 2 passed, 17 total`: assertion failures (`Expected: true / Received: false`, empty migration source) because the migration files, queue rows, baseline entries and rollback are absent; no module-resolution error | exit 0 — `Tests: 17 passed, 17 total` |
+
+Base run re-recorded (review round 1) on clean `origin/main` @ `84fc0ca6a0d116f4e41dfd77c5125cb329b95f15` with only
+the test file added (every other lane change reverted for the run; `git diff --stat` vs base shows one file). The two
+tests that pass on base are negative guards that hold with no migration present: "never writes to WS5
+tenant_content_overrides" and "the health-table guard catches a planted read (self-test)". The first base run
+(`mtl-base-pid` without its own `node_modules`) failed on a `setup-tests.ts` module-resolution error and is superseded.
+Head re-run after merging the same `origin/main`.
 
 ## Other checks on head
 | Command | Result |
@@ -19,7 +26,8 @@ than `20261101110000`, so the plan's numbers stand. The Jest suite fails if anot
 | `node --test scripts/ci/check-migration-drift.test.cjs` (repo root) | exit 0 — 8 pass, 0 fail |
 
 ## Database dry-run
-No Postgres is available in this session (no docker/psql). The behavioural pgTAP plan is
+Not executed: neither the pgTAP plan nor a local migration dry-run was run, because no Postgres is available in this
+session (no docker/psql). They are covered by the RUN-MIGRATION pre/post checks at apply time. The behavioural pgTAP plan is
 `pgtap-pack-intake.sql` (throwaway database only); the read-only `pre-check.sql` / `post-check.sql` run with the
 RUN-MIGRATION apply. The Jest suite pins the same properties from the migration source in CI.
 
