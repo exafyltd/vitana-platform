@@ -18,3 +18,17 @@ node scripts/ci/validator-path-guard.cjs --pr-body-check docs/validation/VTID-05
 
 # Workflow YAML parses with js-yaml; step order correct, inline
 # "Require PR markers" step removed, "Require PR body declarations" step added.
+
+# --- review round 1 (blocking findings 1 & 2) ---------------------------------
+# Reworded the template's guidance comment so it no longer carries sample
+# "VALIDATION_PROFILE:" / "OASIS_IMPACT:" marker lines before the real ones.
+# Added 3 node:test cases that apply the workflow's OWN first-match regexes to
+# the shipped template file.
+node --test scripts/ci/validator-path-guard.test.cjs
+# => tests 9, pass 9, fail 0  (updated outputs/green-on-head.txt)
+
+# Proof the finding was real and is fixed: workflow extractors on the reviewed
+# template (7c22c050) vs the fixed head template.
+# reviewed:  PROFILE=one (exit 21),  IMPACT=yes (exit 81)
+# fixed:     PROFILE=gateway_backend, IMPACT=no
+# => outputs/template-extractor-fix.txt

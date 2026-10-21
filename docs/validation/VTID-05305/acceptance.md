@@ -39,4 +39,12 @@ AC-3 The guard test case is red on base (bare exit) and green on head
 AC-4 The trigger stays path-scoped to the gateway trees (no new PR types bitten)
   TEST: REMIT == VALIDATOR-CHECK.yml paths: (outputs/remit-parity.txt)
 
+AC-5 (review round 1) The SHIPPED template survives VALIDATOR-CHECK's own
+     first-match extractors: a PR opened straight from it reads
+     VALIDATION_PROFILE=gateway_backend and OASIS_IMPACT=no (not a sample marker
+     left in the guidance comment). Red on the reviewed template
+     (PROFILE=one -> exit 21, IMPACT=yes -> exit 81).
+  TEST: node --test scripts/ci/validator-path-guard.test.cjs (3 template cases)
+        proof: outputs/template-extractor-fix.txt
+
 OASIS_IMPACT: no

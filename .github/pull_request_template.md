@@ -23,13 +23,17 @@ Put the VTID in the PR TITLE, e.g.  VTID-05305 (slug/lane): short description
 ## Validator declarations
 
 <!--
-Required by VALIDATOR-CHECK for gateway PRs. Keep every line; fill in the values.
-- VALIDATION_PROFILE: one of  command_hub_frontend | gateway_backend
-- SCOPE_ALLOWLIST:    the path globs this PR is allowed to touch
-- ACCEPTANCE:         path to docs/validation/<VTID>/acceptance.md
-- MERGE_PAYLOAD_PREVIEW: what a merge deploys, or "none" for a CI-only change
-- OASIS_IMPACT:       yes | no  (yes also needs OASIS_PROOF: in acceptance.md)
-Add  DEPENDENCY_CHANGE: <why>  as well if this PR changes a lockfile.
+Required by VALIDATOR-CHECK for gateway PRs. Keep every declaration line below
+and fill in its value. Do NOT write the marker names (the "WORD:" forms) inside
+this comment — VALIDATOR-CHECK extracts the profile and OASIS impact with a
+first-match grep, so a sample marker here would be read instead of your real
+value. The fields, described without the literal markers:
+- the validation profile is one of  command_hub_frontend  or  gateway_backend
+- the scope allowlist is the set of path globs this PR may touch
+- the acceptance value is the path to docs/validation/<VTID>/acceptance.md
+- the merge payload preview is what a merge deploys, or "none" for CI-only
+- the OASIS impact is yes or no (yes also needs an OASIS proof in acceptance.md)
+If this PR changes a lockfile, add a dependency-change line explaining why.
 -->
 
 VALIDATION_PROFILE: gateway_backend
