@@ -4,7 +4,9 @@ title: Native Maxina app (iOS and Android)
 status: active
 priority: 3
 repos: [vitana-v1, vitana-platform]
-specs: []
+specs:
+  - vitana-platform:native-g1-wiring
+  - vitana-platform:native-wave2-home-feed-news
 docs:
   - vitana-v1:docs/programs/native-app/NATIVE-APP-PLAN.md
   - vitana-v1:docs/programs/native-app/EXTRACTION-ANALYSIS.md
