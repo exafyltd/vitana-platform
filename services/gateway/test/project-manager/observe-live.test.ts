@@ -5,6 +5,7 @@
  */
 import {
   GithubObserver,
+  GithubRestReader,
   parseLaneLog,
   parseTrailers,
   reviewOnlySince,
@@ -18,6 +19,7 @@ import {
   applyLaneChange,
   type GithubWriteClient,
 } from '../../src/services/project-manager/writers';
+import { claudeAvailability } from '../../src/services/project-manager/decide';
 import type { CheckRun } from '../../src/services/project-manager/types';
 
 const P = 'exafyltd/vitana-platform';
@@ -218,6 +220,82 @@ describe('GithubObserver', () => {
       repos: [P], now: () => NOW, env: {},
     }).observe('live');
     expect(s.lanes.find((x) => x.lane === 'pm-fallback')).toMatchObject({ staging_verified: true, staging_verified_at: '2026-10-20T19:55:00Z', gate2_sent: true });
+  });
+});
+
+// VTID-05281 (kaf-fallback-env/ff-pm-flag): the REST reader's CLAUDE_AVAILABLE
+// read and the env fallback (plan kaf-fallback-env §3, §5 B). fetch is spied;
+// nothing leaves the process.
+describe('GithubRestReader.variable + env fallback (VTID-05281)', () => {
+  const savedToken = process.env.GITHUB_SAFE_MERGE_TOKEN;
+  let fetchSpy: jest.SpyInstance;
+
+  const respond = (status: number, body: unknown) =>
+    ({ status, ok: status >= 200 && status < 300, text: async () => (body === undefined ? '' : JSON.stringify(body)) }) as unknown as Response;
+  const fetchReturns = (status: number, body?: unknown) => {
+    fetchSpy = jest.spyOn(global, 'fetch').mockImplementation(async () => respond(status, body));
+  };
+  /** The test reader with `variable` = the real REST reader over the spied fetch. */
+  const restVariableReader = (o: Partial<GithubReader> = {}) => {
+    const rest = new GithubRestReader();
+    return reader({ variable: (repo, name) => rest.variable(repo, name), ...o });
+  };
+
+  beforeEach(() => {
+    process.env.GITHUB_SAFE_MERGE_TOKEN = 'test-token-not-real';
+  });
+  afterEach(() => {
+    fetchSpy?.mockRestore();
+    if (savedToken === undefined) delete process.env.GITHUB_SAFE_MERGE_TOKEN;
+    else process.env.GITHUB_SAFE_MERGE_TOKEN = savedToken;
+  });
+
+  it('B1: rejects on a 404 (unset or no access — unreadable)', async () => {
+    fetchReturns(404, { message: 'Not Found' });
+    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).rejects.toThrow(/404/);
+  });
+
+  it('B2: resolves the value on a 200 with a string value', async () => {
+    fetchReturns(200, { name: 'CLAUDE_AVAILABLE', value: 'false' });
+    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).resolves.toBe('false');
+    expect(String(fetchSpy.mock.calls[0][0])).toBe(`https://api.github.com/repos/${P}/actions/variables/CLAUDE_AVAILABLE`);
+  });
+
+  it('B3: rejects on a 403', async () => {
+    fetchReturns(403, { message: 'Resource not accessible by integration' });
+    await expect(new GithubRestReader().variable(P, 'CLAUDE_AVAILABLE')).rejects.toThrow(/403/);
+  });
+
+  it('B4: a 404 on the variable → observer uses env CLAUDE_AVAILABLE=false', async () => {
+    fetchReturns(404, { message: 'Not Found' });
+    const s = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'false' } }).observe('live');
+    expect(s.claude!.flag).toBe(false);
+  });
+
+  it('B5: a 404 + env true → true; a 404 + no env → null', async () => {
+    fetchReturns(404, { message: 'Not Found' });
+    const a = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'true' } }).observe('live');
+    expect(a.claude!.flag).toBe(true);
+    const b = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: {} }).observe('live');
+    expect(b.claude!.flag).toBeNull();
+  });
+
+  it('B6: a readable variable wins over the env', async () => {
+    fetchReturns(200, { name: 'CLAUDE_AVAILABLE', value: 'true' });
+    const s = await new GithubObserver({ gh: restVariableReader(), data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'false' } }).observe('live');
+    expect(s.claude!.flag).toBe(true);
+  });
+
+  it('B7: the 4 h rule still applies — 404 + env true + a claude item > 4 h old with no session_ commit → no_action_4h', async () => {
+    fetchReturns(404, { message: 'Not Found' });
+    const OLD = LANE.replace('next_actor: kiro', 'next_actor: claude').replace('updated: 2026-10-20T19:30Z', 'updated: 2026-10-20T14:00Z');
+    const r = restVariableReader({
+      blob: async (_x, sha) => (sha.endsWith('pm-fallback.md') ? OLD : (await reader().blob(P, sha))),
+      commitsSince: async () => [],
+    });
+    const s = await new GithubObserver({ gh: r, data: data(), repos: [P], now: () => NOW, env: { CLAUDE_AVAILABLE: 'true' } }).observe('live');
+    expect(s.claude!.flag).toBe(true);
+    expect(claudeAvailability(s.claude, NOW)).toEqual({ available: false, reason: 'no_action_4h' });
   });
 });
 

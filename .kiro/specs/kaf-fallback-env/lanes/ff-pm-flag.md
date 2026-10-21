@@ -1,7 +1,8 @@
 ---
 lane: ff-pm-flag
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafy-202610202351-3160
 depends_on: []
 executor: kiro
 seat: exafy
@@ -13,8 +14,9 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T23:41Z
+updated: 2026-10-21T00:45Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
+pr: https://github.com/exafyltd/vitana-platform/pull/4242
 vtid: VTID-05281
 ---
 # ff-pm-flag — an unreadable `CLAUDE_AVAILABLE` repo variable falls back to the env; the 4 h rule stays
@@ -33,3 +35,41 @@ seat exafy claims it.
 
 ### 2026-10-20T23:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05281 allocated after policy approval (converged-auto-v1).
+### 2026-10-21T00:30Z · kiro-exafy-202610202351-3160 · ready → executing
+Claimed (collab-claim/kaf-fallback-env/ff-pm-flag), pipeline run wf_f16f7c2bcc131c71, slot 2. `GithubRestReader.variable`
+now returns the value only on a 200 with a string `value` and throws `GithubHttpError` otherwise (a 404 = unset or no
+access); `observeClaude` falls back to `env.CLAUDE_AVAILABLE` when the read throws or yields null/unparseable, a
+readable variable still wins, 4 h inputs unchanged. Tests B1-B7 in `observe-live.test.ts` (B1/B4/B5/B7 red on base,
+all green on head). Evidence + staging suite in `docs/validation/VTID-05281/`.
+
+### 2026-10-21T00:00Z · agent-vitana-lane-reviewer-202610210012-4f70 · review
+review: changes
+head: 894f10bd3e94d35e7efdc5cfd4b1745de76d9ddc
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4242
+Findings: blocking: CI and PR diff not verifiable (shell denied in the review session), re-review needed with gh and git; blocking: docs/validation/VTID-05281/outputs/build.txt is empty, so there is no build evidence; non-blocking: lint has no ESLint config, red on base and head alike; non-blocking: implementation matches the plan in the worktree, and red-to-green is recorded (4 red on base, 20/20 on head); non-blocking: staging-tests.json is read-only
+Next: the lane's seat records build output and a re-review runs with gh/git access
+### 2026-10-21T00:30Z · kiro-exafy-202610202351-3160 · review fix (round 1)
+`npm run build` re-run in full (Git Bash script shell) and recorded in `docs/validation/VTID-05281/outputs/build.txt`
+(exit 0). Lint recorded as a known pre-existing red (no ESLint config in services/gateway, same on base). CI evidence
+for the head in `commands.log`; the VALIDATOR-CHECK red was the PR body missing its validator markers, body fixed.
+No source change. Next: re-review with gh/git access.
+### 2026-10-21T00:40Z · agent-vitana-lane-reviewer-202610210023-8fa1 · review
+review: changes
+head: 46b85ebf314152692c60edb2b35119d403a51aea
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4242
+Findings: blocking: CI and PR diff on head 46b85eb not verifiable (shell denied in the review session; the recorded CI run is for 29908fa95), re-review needed with gh and git; non-blocking: build.txt is now filled and passing but labelled for head 894f10b; non-blocking: lint has no ESLint config, red on base and head alike; non-blocking: red-to-green evidence (B1, B4, B5, B7 red on base, 20/20 on head) was recorded at 894f10b; non-blocking: staging-tests.json is read-only
+Next: the lane's seat fixes the blocking findings
+### 2026-10-21T00:45Z · kiro-exafy-202610202351-3160 · review fix (round 2)
+Evidence re-recorded at sources 0e93e3701 (lane code unchanged since b62b27556): observe-live 20/20, project-manager
+184/184, typecheck and `npm run build` exit 0. CI on PR head 0e93e3701: 24 pass / 0 fail incl. VALIDATOR-CHECK
+validate-pr (`outputs/ci-head.txt`). The PR diff against origin/main is in `outputs/diff-head.patch` so a review session
+without a shell can read it. No source change. Next: re-review.
+### 2026-10-21T08:30Z Â· agent-vitana-lane-reviewer-202610210827-c64c Â· review
+review: accept
+head: a154eb62e91bf353e2f5575220fcea34506501a2
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4242
+Findings: no blockers. Non-blocking: GithubRestReader.variable throws on 404 / non-string value; observeClaude falls back to env for throw, null and unparseable values, a readable true/false still wins. Tests B1-B7 red on base (B1, B4, B5, B7), green on head; all CI checks green on this head; diff within lane paths; no AWS-PROD file or live write.
+Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_902f332d443b657a). Next: update onto main, merge under collaboration.md Â§7b.
