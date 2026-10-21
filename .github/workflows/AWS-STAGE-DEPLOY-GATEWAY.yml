@@ -492,6 +492,10 @@ jobs:
           # repo secret the workflow uses; plain env var on the task def, the
           # MARKETPLACE_SYNC_SECRET precedent on the prod workflow.
           DEV_AUTOPILOT_SCAN_TOKEN_VALUE: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+          # VTID-05282: the repo variable CLAUDE_AVAILABLE into the staging task
+          # definition (empty -> 'true'), so the Project Manager can fall back to
+          # process.env when its token cannot read the variable. Staging only.
+          CLAUDE_AVAILABLE_VALUE: ${{ vars.CLAUDE_AVAILABLE || 'true' }}
         # NOTE (VTID-03788): the comments below were relocated OUT of the run:
         # script below. That block's run: value had grown to 25,111 characters
         # (only ~7,400 of it is actual bash -- the rest was accumulated comments),
@@ -1151,6 +1155,7 @@ jobs:
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
+                 --arg CLAUDE_AVAILABLE "$CLAUDE_AVAILABLE_VALUE" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -1190,7 +1195,7 @@ jobs:
                                               "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
                                               "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
                                               "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID",
-                                              "PM_AGENT_ENABLED","PM_MODE") | not) ]
+                                              "PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -1218,7 +1223,7 @@ jobs:
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
                           {name:"PM_AGENT_ENABLED", value:"true"},
-                          {name:"PM_MODE", value:"live"},
+                          {name:"PM_MODE", value:"live"}, {name:"CLAUDE_AVAILABLE", value:$CLAUDE_AVAILABLE},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},

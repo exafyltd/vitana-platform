@@ -1,0 +1,29 @@
+# VTID-05282 (kaf-fallback-env/ff-stage-env) — commands, local Windows 11 / PowerShell 5.1, worktree on origin/main 0688a5998
+# cwd services/gateway unless noted. CI is the authority for bash -n (Git Bash used locally).
+
+## Red on base (new test, workflow at origin/main)
+npx jest test/kaf-staging-claude-available-wiring.test.ts --ci
+  -> FAIL: 4 failed, 1 passed, 5 total (the prod guard passes on base by design)   outputs/red-on-base.txt
+
+## Green on head
+npx jest test/kaf-staging-claude-available-wiring.test.ts --ci
+  -> PASS: 5 passed, 5 total   outputs/green-head.txt
+
+## Related suites on head, bash = Git Bash (C:\Program Files\Git\bin first on PATH)
+npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts test/kaf-staging-claude-available-wiring.test.ts test/kiro-autonomy-fallback-proof.test.ts --ci
+  -> 3 suites passed, 1 failed; tests 35 passed, 1 failed, 14 skipped, 50 total   outputs/jest-related-gitbash.txt
+  bash-syntax suite green incl. "no single run: step exceeds 20,000 characters" for stage and prod.
+  The 1 red is "VTID-05127 setup script › dry run without credentials" (spawns bash with PATH=/usr/bin:/bin, a Windows
+  environment issue): it is red on origin/main the same way (see below), not this lane's.
+
+## Same related suites with the default Windows bash (WSL stub) — head vs base
+head: 2 suites failed; 3 failed, 33 passed, 14 skipped, 50 total   outputs/jest-related.txt
+base: npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts --ci (workflow file at origin/main)
+  -> 3 failed, 15 passed, 14 skipped, 32 total   outputs/jest-related-on-base.txt
+  identical 3 reds on base and head (bash -n via the WSL stub + the 05127 dry run): environment, not this lane.
+
+## Workflow YAML parse (repo root)
+node -e "require('js-yaml').load(fs.readFileSync('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml','utf8'))"   -> ok
+
+## Collab validation (repo root)
+node scripts/collab/queue.mjs validate --base origin/main --head HEAD   -> exit 0
