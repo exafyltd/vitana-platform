@@ -5,7 +5,7 @@ executor: kiro
 next_actor: claude
 state: drafted
 author_seat: exafyltd
-updated: 2026-10-18T22:49Z
+updated: 2026-10-21T08:55Z
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -51,3 +51,6 @@ product code changed, no live system touched.
 
 ### 2026-10-18T22:49Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
+
+### 2026-10-21T08:55Z · kiro-202610182052-5ce2 · answered sparring round 1 (session 5fbb73a2)
+Answered round 1 of session 5fbb73a2 in `sparring/responses-1.md` (single session in `state.json`, so no `s<k>-` prefix). R1-F1 accepted: resolved by vitana-platform #4201 (VTID-05215; PLAN-SPAR.yml:97-101 resolves vitana-v1 main and passes `--extra-ref-vitana-v1`, plan-spar.mjs:383-384/:257 forward it as `extra_refs`); this session predates that merge, so its rounds stay vitana-platform-only and the plan block now quotes each vitana-v1 premise. R1-F2 accepted: the prose 'vitana-v1-ref session first' gate is removed; the normal converged/policy-approved path is the gate. R1-F3 accepted: verified vitana-v1 PR-GATE.yml:150-153 (Design ratchet, `id: design`, runs `gate.mjs ratchet-design`) and `design=` in the Verdict OUTCOMES at :177; plan re-pinned from 704b5def4 to vitana-v1@1a553367f (all premises unchanged; Verdict range corrected to :166-190). No VTID allocated, no product code changed, no live system touched.

@@ -6,10 +6,14 @@ The spec lives in `exafyltd/vitana-platform` (where PLAN-SPAR runs); all code, t
 live in `exafyltd/vitana-v1`, and every lane `paths:` entry is a vitana-v1 path.
 
 <!-- plan:begin -->
-## Repos and pinned refs (R1-F4)
+## Repos and pinned refs
 This spec and its sparring live in `exafyltd/vitana-platform` (PLAN-SPAR runs only there). **Every code path, command
-and baseline below is in `exafyltd/vitana-v1`**, pinned at `exafyltd/vitana-v1@704b5def4` (origin/main, 2026-10-18).
-vitana-platform carries no code change for this plan. Premise paths, all in vitana-v1 at that ref:
+and baseline below is in `exafyltd/vitana-v1`**, pinned at
+`exafyltd/vitana-v1@1a553367ff6622cc746c4720c6e3558e691b34dc` (origin/main, 2026-10-21; re-checked from the earlier pin
+704b5def4 — the 5 commits between them touch none of the files below except `src/components/messages/MessageInput.tsx`,
+whose `design.json` entry is unchanged at 1, and `design.json`, the manifest, `gate.mjs`, `lib.mjs`, `config.json`,
+`eslint.config.js` and `PR-GATE.yml` are byte-identical). vitana-platform carries no code change for this plan.
+Premise paths, all in vitana-v1 at that ref:
 - Earlier plan: `.kiro/specs/desktop-spotlight/{requirements,design,tasks,handoff}.md` + `lanes/`.
 - Contract: `docs/design-system/SPOTLIGHT_RULES.md`. Manifest: `src/design/screen-manifest.json` (key `screens`,
   346 entries: 329 `migrated`, 17 `legacy`), test `src/design/screen-manifest.test.ts`, sync `npm run design:manifest`
@@ -21,15 +25,20 @@ vitana-platform carries no code change for this plan. Premise paths, all in vita
   `gate.mjs:124` (`baseline-design <eslint-json>`); `scripts/ci/pr-gate/lib.mjs:112` (`countDesign`: severity-2
   `design/*` per file), `lib.mjs:132` (`chooseDesignBaseline`: BASE commit's baseline unless the PR changes
   `eslint-rules/design/**`); baseline `scripts/ci/pr-gate/baseline/design.json` (544 files, 3,705 errors at the ref);
-  test `scripts/ci/pr-gate/__tests__/design-ratchet.test.mjs`; CI step "Design ratchet" `.github/workflows/PR-GATE.yml:150-153`.
+  test `scripts/ci/pr-gate/__tests__/design-ratchet.test.mjs`; CI step "Design ratchet" `.github/workflows/PR-GATE.yml:150-153`
+  (`id: design`, `continue-on-error: true`, runs `node scripts/ci/pr-gate/gate.mjs ratchet-design "$RUNNER_TEMP/eslint.json"
+  --base "$BASE" --head "$HEAD"`), listed in the Verdict step's OUTCOMES as `design=${{ steps.design.outcome }}`
+  (`PR-GATE.yml:166-179`, the `design=` line at `:177`); the step's pass text is `gate.mjs:122` ("✅ **design ratchet**
+  (baseline: …) — no file gained design violations"), its fail text `gate.mjs:120` ("❌ **design ratchet** …").
 - Skeleton building blocks: `src/components/layout/spotlight/skeletons/ArchetypeSkeleton.tsx`, `VCardSkeleton` from
   `src/components/ui/vcard` (used at `src/components/community/spotlight/SocialStates.tsx:4`).
-Round 1 cited `exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs`, which is a different gate (no design check);
-the vitana-v1 gate above is the one every lane's PR runs. **Partner readability:** the sparring session is pinned only
-to vitana-platform today; giving it a vitana-v1 ref is the governance lane `native-g1-wiring/spar-vitana-v1-ref`
-(executor claude; `scripts/collab/plan-spar.mjs` sends `extra_refs: { 'exafyltd/vitana-v1': <sha> }`). Refs pin at
-session creation, so after that lane merges this plan is re-pushed to open a new session that can read vitana-v1.
-**Gating:** no lane of this spec moves `approved → executing` until a session with the vitana-v1 ref has sparred it.
+`exafyltd/vitana-platform:scripts/ci/pr-gate/gate.mjs` is a different gate (no design check); the vitana-v1 gate
+above is the one every lane's PR runs. **Partner readability:** merged in vitana-platform PR #4201 (VTID-05215,
+fa73aabd0, 2026-10-19T20:09Z): `.github/workflows/PLAN-SPAR.yml:97` resolves vitana-v1 `main` HEAD and `:101` passes
+`--extra-ref-vitana-v1 "$V1_SHA"`; `scripts/collab/plan-spar.mjs:383-384` turns it into
+`extra_refs: { 'exafyltd/vitana-v1': <sha> }` and `:257` sends it on session create. No separate gate in this plan:
+a sparring session that can read vitana-v1 verifies these premises directly, and the normal PLAN-SPAR approval path
+(converged → policy-approved) is the only gate before lanes get VTIDs.
 
 ## Goal
 Finish the Spotlight desktop redesign (vitana-v1 `.kiro/specs/desktop-spotlight/`, VTID-05105 … 05117) to its
@@ -39,7 +48,8 @@ the design contract (`docs/design-system/SPOTLIGHT_RULES.md`): no new archetype,
 no change to `eslint-rules/design/**` (so every lane is measured against the BASE commit's baseline, `lib.mjs:132`).
 
 ## Measured state (vitana-v1 origin/main 5c4632ea9, 2026-10-16, `npx eslint src/pages src/components -f json`;
-baseline and manifest totals re-checked unchanged at 704b5def4, 2026-10-18)
+baseline and manifest totals re-checked unchanged at 704b5def4, 2026-10-18, and at 1a553367f, 2026-10-21:
+`design.json` 544 files / 3,705 errors, manifest 346 = 329 `migrated` + 17 `legacy`)
 - `design/no-raw-palette` 3,220 lines in 411 files (the handover's "~3,340"; batch 1 #1411 took 60 files to 0).
 - `design/no-arbitrary-size` 359 lines in 208 files (420 values: 47 identical to a scale class, 38 within 2 px,
   335 to keep — 175 px > 2 px off, 113 vh/dvh, 13 %, 26 calc/vw/ch/min).
@@ -108,9 +118,10 @@ files outside every lane (chrome excepted). Eight lanes can run in parallel; `pu
   design violations"; then `node scripts/ci/pr-gate/gate.mjs baseline-design $TMP/eslint.json` and commit
   `scripts/ci/pr-gate/baseline/design.json` with only the lane's own files lowered (any other file's line changing
   in that diff is a lane-scope error). Same for `ratchet-eslint` / `baseline-eslint` (`baseline/eslint.json`).
-- **PR-GATE is report-only (R1-F3).** vitana-v1 `scripts/ci/pr-gate/config.json:2` has `"enforce": false`, so the
+- **PR-GATE is report-only.** vitana-v1 `scripts/ci/pr-gate/config.json:2` has `"enforce": false`, so the
   "Design ratchet" step (`PR-GATE.yml:150-153`, `continue-on-error`) only reports; the Verdict step
-  (`PR-GATE.yml:181-190`) prints "would fail: design …" instead of failing. This plan does not flip `enforce` (the
+  (`PR-GATE.yml:166-190`: OUTCOMES incl. `design=` at `:177`, `FAILED` list at `:181`, `enforce` read at `:182`,
+  report-only branch at `:189-190`) prints "would fail: design …" instead of failing. This plan does not flip `enforce` (the
   owner's kill switch). Instead the done criterion is explicit: a lane PR is not marked ready, and its reviewer seat
   does not pass it, unless that PR's PR-GATE summary shows "✅ design ratchet" and `design`, `eslint`, `tsc`,
   `scope` and `build` are absent from any "would fail" line. The reviewer records that line in the review.
