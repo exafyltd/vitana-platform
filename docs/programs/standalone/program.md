@@ -31,12 +31,12 @@ next_review: 2026-10-22
 Programme registry entry (VTID-05215). Every current `.kiro/specs/*` spec belongs to exactly one programme; specs that
 belong to none of the named programmes are listed here until the owner assigns them to one. Links only.
 
-- `vitana-platform:pm-agent` â€” Project Manager Agent
-- `vitana-platform:claude-sessions-handover` â€” handover of ongoing Claude Code sessions to Kiro
-- `vitana-platform:plan-spar-stale-session` â€” PLAN-SPAR re-runs dead in_progress sparring sessions
-- `vitana-platform:fix-4182-test-fallout` â€” staging suite + Jest pin left stale by #4182 (VTID-05082)
-- `vitana-v1:chat-ux` â€” chat UX
-- `vitana-v1:vitana-chat-markdown` â€” Vitana chat replies render Markdown
-- `vitana-platform:kiro-autonomy-fallback` â€” Claude Code optional; Kiro runs the pipeline end to end
-- `vitana-platform:kaf-fallback-env` â€” fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
-- `vitana-platform:claude-md-cleanup` â€” trim CLAUDE.md to project-specific rules (both repos)
+- `vitana-platform:pm-agent` — Project Manager Agent
+- `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
+- `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
+- `vitana-platform:fix-4182-test-fallout` — staging suite + Jest pin left stale by #4182 (VTID-05082)
+- `vitana-v1:chat-ux` — chat UX
+- `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
+- `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
+- `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
