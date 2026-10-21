@@ -15,7 +15,7 @@ $ node scripts/collab/queue.mjs claim claude-md-cleanup/rules-trim --session kir
 
 ## Line counts (before = origin/main 2ca278872, after = branch)
 $ (Get-Content <file>).Count
-CLAUDE.md                                   1021 -> 611
+CLAUDE.md                                   1021 -> 612
 .kiro/steering/vitana-kiro-notes.md           23 -> 19
 .kiro/steering/vitana-load-project-rules.md   26 -> 26
 .claude/CLAUDE.md                           unchanged (git diff --quiet origin/main...HEAD -- .claude/CLAUDE.md => exit 0)
@@ -40,7 +40,7 @@ PASS 22/22 tokens present                                                       
 $ node docs/validation/VTID-05280/check.mjs labels
 PASS no Part 1 label used twice within a section                                      # exit=0
 $ node docs/validation/VTID-05280/check.mjs lines
-CLAUDE.md 611 / .kiro/steering/vitana-kiro-notes.md 19 / .kiro/steering/vitana-load-project-rules.md 26   # exit=0
+CLAUDE.md 612 / .kiro/steering/vitana-kiro-notes.md 19 / .kiro/steering/vitana-load-project-rules.md 26   # exit=0
 $ node docs/validation/VTID-05280/check.mjs xref
 PASS every label cited in .claude/rules/** and .kiro/steering/** resolves             # exit=0
 $ git grep -n "git reset --hard" -- CLAUDE.md
@@ -88,3 +88,19 @@ this plan; the branch is rebased on latest origin/main 2ca278872)
 ## Doc lint
 # No markdown/doc linter is configured in this repository (no markdownlint config, no docs lint workflow; CI lint is
 # CICDL-CORE-LINT-SERVICES.yml for services only). The Kiro steering guard above is the doc check that applies.
+## Review fixes (reviewer agent, base head 00c9eb98a0f47f45d73d14a5a7d070874b039a9d)
+# Rule 48 cites "test-account rules IF–THEN 31, 31b, 32"; IF–THEN 26 restores "never dispatch EXEC-DEPLOY.yml, for
+# this or any other reason"; vitana-kiro-notes.md says "write to a live system (Supabase, AWS, gateway)"
+# (vitana-load-project-rules.md already said "live system": unchanged); AC-10 states the known false positive.
+# CLAUDE.md 611 -> 612 lines (rule 48 wraps one line longer); AC-3 and the counts above updated.
+$ node <task-dir>/evidence.mjs <wt> <v1-wt> <tmp>      # => mustKeepMissing 0, tokens 76, duplicates 0, xrefListed 711
+# outputs/must-keep-check.txt refreshed (only change: EXEC-DEPLOY.yml 1 -> 2 on the branch); other outputs identical
+$ node docs/validation/VTID-05280/check.mjs tokens|labels|xref   # => PASS / PASS / PASS, exit=0 each
+$ node docs/validation/VTID-05280/check.mjs lines
+CLAUDE.md 612 / .kiro/steering/vitana-kiro-notes.md 19 / .kiro/steering/vitana-load-project-rules.md 26   # exit=0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+tests 31, pass 31, fail 0                                                             # exit=0
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK                                                                     # exit=0
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/claude-md-cleanup/rules-trim
+collab handoff — 1 problem: .kiro/specs/claude-md-cleanup/lanes/rules-trim.md does not exist   # exit=1 (known false positive, AC-10)

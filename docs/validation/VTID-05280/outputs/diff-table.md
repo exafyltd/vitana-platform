@@ -3,7 +3,7 @@
 Per-removal detail and flag rows: `diff-review.md`. Token evidence: `must-keep-check.txt`. Numbering:
 `duplicate-labels.txt`. External references: `xref-sweep.md`.
 
-## `CLAUDE.md` (1021 → 611 lines)
+## `CLAUDE.md` (1021 → 612 lines)
 
 | Section | Removed | Condensed | Kept (substance) |
 |---|---|---|---|

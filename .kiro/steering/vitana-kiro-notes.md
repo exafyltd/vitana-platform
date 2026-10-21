@@ -14,6 +14,6 @@ inclusion: always
 - **Your role — `.claude/rules/collaboration.md` §7–§7b is the single source of truth.** Kiro runs the pipeline end to
   end: plans, builds and reviews (plan → CI sparring → CI VTID → build → reviewer agent → merge under §7b → staging →
   STAGING-VERIFY → Gate 2); Claude Code is optional (§7 Claude-unavailable mode). What you never do (§7a): allocate a
-  VTID by hand (CI does), deploy to production, merge except under §7b, write to live Supabase/AWS from session tools,
-  accept your own lane. The entry point for every owner task is `.kiro/steering/vitana-pipeline.md`; session start is
-  in `vitana-load-project-rules.md`.
+  VTID by hand (CI does), deploy to production, merge except under §7b, write to a live system (Supabase, AWS, gateway)
+  from session tools, accept your own lane. The entry point for every owner task is
+  `.kiro/steering/vitana-pipeline.md`; session start is in `vitana-load-project-rules.md`.

@@ -287,11 +287,12 @@ Owner decision 2026-09-26. Full process: `docs/DEPLOYMENT-PIPELINE.md`. Applies 
     green" — it is done when that run has passed on the exact deployed commit.
 47. **No suite, no merge.** **IF** a change deploys and no test proves it on staging → **THEN** write that test in the
     same PR. Never after the deploy, never "verified by looking".
-48. **Staging tests are read-only.** Staging writes to the production Supabase project (IF–THEN 31–32). Suites read,
-    render and probe; anything that needs a write is proven by CI unit/integration tests. **No automated test suite
-    ever targets production.** Production gets only read-only checks: the post-deploy verification (automatic rollback
-    on failure, VTID-04647) and scheduled health checks — unauthenticated GETs of health and build-info endpoints, no
-    sign-in, no writes, no browser suite. A browser suite runs on staging (VTID-04648).
+48. **Staging tests are read-only.** Staging writes to the production Supabase project (test-account rules IF–THEN 31,
+    31b, 32). Suites read, render and probe; anything that needs a write is proven by CI unit/integration tests. **No
+    automated test suite ever targets production.** Production gets only read-only checks: the post-deploy
+    verification (automatic rollback on failure, VTID-04647) and scheduled health checks — unauthenticated GETs of
+    health and build-info endpoints, no sign-in, no writes, no browser suite. A browser suite runs on staging
+    (VTID-04648).
 49. **Ready message — two channels only.** **IF** STAGING-VERIFY passes → **THEN** the Claude Code session that merged
     the change, and the Command Hub Operator Chat, ask the developer: *"Staging verified — ready for deployment to
     production?"*, with the verified commit, what passed, and **every commit between production and the verified
@@ -429,11 +430,11 @@ never frozen).
     or the Command Hub), never the defaults that ship the whole ref/staging build (`promote-staging` without
     `expected_commit`; `AWS-PROD-DEPLOY-FRONTEND.yml`/`DEPLOY.yml` `commit_sha` falling back to `github.sha`). **Never
     use `publish-to-prod.sh --ref`**: `workflow_dispatch` takes only a branch or tag, and the script wraps the dead
-    GCP-era `EXEC-DEPLOY.yml`, which is never dispatched. **A pinned commit ships the full snapshot, every ancestor
-    included:** before dispatching, diff it against the commit `/api/v1/admin/build-info` reports as live in
-    production (§15); every commit in range must be this session's own or separately approved by the user — else
-    **STOP and tell the user** exactly what else would ship. A PUBLISH promotion needs no extra scoping (it promotes
-    the full tested staging build by design).
+    GCP-era `EXEC-DEPLOY.yml` — never dispatch `EXEC-DEPLOY.yml`, for this or any other reason. **A pinned commit
+    ships the full snapshot, every ancestor included:** before dispatching, diff it against the commit
+    `/api/v1/admin/build-info` reports as live in production (§15); every commit in range must be this session's own
+    or separately approved by the user — else **STOP and tell the user** exactly what else would ship. A PUBLISH
+    promotion needs no extra scoping (it promotes the full tested staging build by design).
 
 ### AI & Autonomy (`AI-27`–`AI-31`, cited elsewhere as IF–THEN 27–31)
 - AI-27. **IF** you are about to point an LLM-routing stage (`llm_routing_policy` — planner/worker/validator/

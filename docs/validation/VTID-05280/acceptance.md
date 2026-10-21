@@ -11,8 +11,8 @@ TEST: node docs/validation/VTID-05280/check.mjs tokens  # => PASS 22/22 tokens p
 AC-2: No Part 1 label is used twice within a section (origin/main had collisions at 16–31).
 TEST: node docs/validation/VTID-05280/check.mjs labels  # => PASS no Part 1 label used twice within a section
 
-AC-3: Line counts after the change (plan target "roughly 400–550"; 611 — see Decisions in the PR body).
-TEST: node docs/validation/VTID-05280/check.mjs lines  # => CLAUDE.md 611, vitana-kiro-notes.md 19, vitana-load-project-rules.md 26
+AC-3: Line counts after the change (plan target "roughly 400–550"; 612 — see Decisions in the PR body).
+TEST: node docs/validation/VTID-05280/check.mjs lines  # => CLAUDE.md 612, vitana-kiro-notes.md 19, vitana-load-project-rules.md 26
 
 AC-4: Every ALWAYS/NEVER/IF–THEN label cited in a loaded rules file (`.claude/rules/**`, `.kiro/steering/**`)
 resolves to a kept label, the `AI-n` alias or the retired-number index (full sweep: `outputs/xref-sweep.md`).
@@ -34,9 +34,11 @@ AC-9: The diff touches only the lane paths and its own evidence; `.claude/CLAUDE
 TEST: git diff --name-only origin/main...HEAD  # => only CLAUDE.md, .kiro/steering/vitana-kiro-notes.md, .kiro/steering/vitana-load-project-rules.md, docs/validation/VTID-05280/**
 TEST: git diff --quiet origin/main...HEAD -- .claude/CLAUDE.md  # => exit 0
 
-AC-10: Kiro steering guard and collab validation pass on the branch.
+AC-10: The Kiro steering guard passes on the branch; collab validation fails only with the known false positive
+while the plan PR #4232 is unmerged (the lane file `.kiro/specs/claude-md-cleanup/lanes/rules-trim.md` exists only on
+that PR; collaboration.md §7b), and passes once #4232 is on main.
 TEST: node scripts/ci/kiro-steering/guard.cjs .  # => kiro-steering: OK
-TEST: node scripts/collab/queue.mjs validate --base origin/main --head HEAD  # => exit 0
+TEST: node scripts/collab/queue.mjs validate --base origin/main --head HEAD  # => exit 1 before #4232 merges, only "lanes/rules-trim.md does not exist"; exit 0 after
 
 AC-11: The steering files no longer carry the stale "about 1,000 lines" claim, and the session-start steps appear once
 (in `vitana-load-project-rules.md` step 4).

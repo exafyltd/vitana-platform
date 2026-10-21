@@ -49,7 +49,7 @@ break_glass | 1 | 1 | present
 PLAN_SPARRING_MODEL | 1 | 1 | present
 PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED | 1 | 1 | present
 publish-to-prod.sh | 3 | 1 | present
-EXEC-DEPLOY.yml | 1 | 1 | present
+EXEC-DEPLOY.yml | 1 | 2 | present
 AWS-STAGE-DEPLOY-GATEWAY.yml | 1 | 1 | present
 preview-aws-gateway.vitanaland.com | 1 | 1 | present
 cutover_gate | 1 | 1 | present
