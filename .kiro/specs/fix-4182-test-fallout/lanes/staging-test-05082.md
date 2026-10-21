@@ -1,6 +1,6 @@
 ---
 lane: staging-test-05082
-state: in-review
+state: verified
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -9,7 +9,7 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-21T21:51Z
+updated: 2026-10-21T22:37Z
 vtid: VTID-05266
 pr: https://github.com/exafyltd/vitana-platform/pull/4223
 claimed_by: kiro-hotmail-202610212137-725e
@@ -48,3 +48,20 @@ Close-out of the merged lane (queue sweep 2026-10-21, item 2). Lane claim taken 
   `in-review` when the PR opened, so this step makes up for that.
 
 Next: `in-review → verified` (merge record and STAGING-VERIFY), then `verified → done`, one step per PR.
+
+### 2026-10-21T22:37Z · kiro-hotmail-202610212137-725e · in-review → verified
+- Review: `agent:vitana-lane-reviewer (claude-sonnet-5.5)` accepted head `adab3b56496e9dfbbcee1e6a90334eabf4bf0c01` (entry
+  above). After that head, the merged head `2825c0992f6321a403a5a323ba90c759f0202ad9` added only the review entry
+  (`4a7bc3c27`) and a merge of `origin/main` (`2825c0992`). The lane's own files are unchanged.
+- PR https://github.com/exafyltd/vitana-platform/pull/4223 squash-merged to `main` 2026-10-21T08:16:01Z.
+- merge: 8f74d68caf4a0fb79f59efa03488cb396bfb8a4d
+- authority: §7b PM rule (agent accept, required checks green), and the owner instruction 2026-10-20 naming #4222,
+  #4223, #4225 ("you do it, claude is off , you have to do it, we have changed the rule"). Deploy path staging only.
+- STAGING-VERIFY: gateway run https://github.com/exafyltd/vitana-platform/actions/runs/39575858903 at
+  `a2d069ea03855d3491d94e924af572611d4f709c` passed, including the retargeted suite VTID-05082 (3/3; test #3 "deployed
+  svg-preview.js contains the SVG sanitizer/renderer" now passes). `8f74d68` is in that commit, and in the passing run
+  39658010525 at `b9e0db02`. That commit is now production, as STAGING-VERIFY reported at 2026-10-21T19:01Z.
+  This lane changes only test/validation files and deploys nothing, so it has no Gate 2.
+- This entry supersedes record PR #4245, closed because its branch name fails main's Collab handoff check.
+
+Next: `verified → done`.
