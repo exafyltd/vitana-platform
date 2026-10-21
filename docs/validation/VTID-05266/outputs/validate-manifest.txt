@@ -1,0 +1,2 @@
+docs/validation/VTID-05082/staging-tests.json (vtid VTID-05082) -> validateManifest ok exit=0
+docs/validation/VTID-05266/staging-tests.json (vtid VTID-05266) -> validateManifest ok exit=0
