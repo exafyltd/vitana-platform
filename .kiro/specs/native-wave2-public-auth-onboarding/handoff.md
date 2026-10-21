@@ -6,6 +6,8 @@ next_actor: kiro
 state: drafted
 author_seat: exafyltd
 updated: 2026-10-21T18:06Z
+spar_refs:
+  - exafyltd/vitana-v1: main
 ---
 # Handoff — Native Wave 2: Public / Auth / Onboarding / Legal screen ports
 Wave 2 public/auth/onboarding/legal screen-port batch of the native Maxina app program
