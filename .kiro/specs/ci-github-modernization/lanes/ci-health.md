@@ -1,0 +1,27 @@
+---
+lane: ci-health
+state: ready
+next_actor: kiro
+depends_on: []
+executor: claude
+seat: exafyltd
+reviewer_seat: claude
+paths:
+  - .github/workflows/CI-HEALTH.yml
+  - scripts/ci/health/**
+  - docs/validation/**
+updated: 2026-10-21T11:20Z
+---
+# Lane: ci-health
+
+Add a daily CI-health report (scheduled workflow + producer script + test) that reports flake rate,
+red-on-main age and per-check median/p90 duration, modelled on `ALERT-*.yml` / `TEST-CATALOG.yml`'s
+`schedule:`+publish shape. Turns the Phase-1 inventory into a standing signal. Tasks T1–T3 in `tasks.md`.
+`executor: claude` (new `.github/**` + `scripts/ci/**`; **not** a protected gate file → merges on a
+reviewer-agent accept). GitHub reads only, never against production. No VTID yet.
+
+## Log
+
+### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
+Lane created with the plan. Scope: new CI-HEALTH.yml, scripts/ci/health/**, validation docs. Evidence
+from inv-code §6 (no existing health aggregator; closest patterns named). No VTID yet.
