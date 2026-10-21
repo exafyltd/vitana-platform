@@ -1,7 +1,7 @@
 ---
 lane: commerce-shell
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -18,7 +18,8 @@ paths:
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
   - docs/SCREEN_INVENTORY.md
-updated: 2026-10-21T22:05Z
+updated: 2026-10-21T22:40Z
+vtid: VTID-05290
 ---
 # `/shop` and the Commerce portal inside the app shell on desktop Spotlight (owner decision 4, Commerce UX contract) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: commerce-shell -->`

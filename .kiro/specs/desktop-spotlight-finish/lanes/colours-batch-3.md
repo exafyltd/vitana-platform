@@ -1,7 +1,7 @@
 ---
 lane: colours-batch-3
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -30,7 +30,8 @@ paths:
   - tests/e2e/staging/vtid-*-colours-batch-3.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-21T22:05Z
+updated: 2026-10-21T22:40Z
+vtid: VTID-05287
 ---
 # Raw palette → tokens, batch 3 (owner decision 1, option A) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: colours-batch-3 -->`

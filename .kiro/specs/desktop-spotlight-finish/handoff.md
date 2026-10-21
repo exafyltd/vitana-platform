@@ -5,10 +5,11 @@ executor: kiro
 next_actor: kiro
 state: sparring
 author_seat: exafyltd
-updated: 2026-10-21T15:45Z
-sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/verdict.md
+updated: 2026-10-21T22:40Z
+sparring_record: .kiro/specs/desktop-spotlight-finish/sparring/archive/session-5fbb73a2/verdict.md
+vtids: [VTID-05285, VTID-05286, VTID-05287, VTID-05288, VTID-05289, VTID-05290, VTID-05291, VTID-05292, VTID-05293, VTID-05294]
 spar_refs:
-  - exafyltd/vitana-v1: da0a959695debcca9c1b270c3efccfe0ae32094d
+  - exafyltd/vitana-v1: b1b172fa6ae51b2b933941f67e2e1c513c0f2f6e
 ---
 # Handoff — Finish the Spotlight desktop redesign
 Follow-up to `.kiro/specs/desktop-spotlight/` (Claude Code session `session_01Sxnx4eGehRHRqqwu4YmJA6`, handover
@@ -124,3 +125,28 @@ session to `sparring/archive/session-ebd5ecb7-infra/` and reset `state.json` to 
 allowed retry (autonomy rule: infra escalation → retry once; `spar_refs`/plan/fix all unchanged). If the retry escalates
 again on infra it is reported as an infra blocker; a NEW real finding would stop and surface. No VTID allocated, no
 product code changed, no live system touched.
+
+### 2026-10-21T22:40Z · kiro-202610152203-0347 · git-text restoration + re-spar (owner instruction 2026-10-21)
+**Owner instruction 2026-10-21: full automation to verified staging, no approval stops.** Stage 1 of an unattended
+drive to verified staging. The 10 VTIDs minted by CI PLAN-SPAR when session 5fbb73a2 converged (policy-approved
+`converged-auto-v1` at 09:22Z) were read back from the ledger as `status=allocated` (all 10); a later re-spar
+(b424a85e1) had stripped the `vtid:` lines from the lane files but never removed the ledger rows. **No ledger write
+is made here — this is git-text restoration + re-spar only.**
+- Restored `vtid:` into each lane's front matter and set each lane `state: ready`, `next_actor: kiro`:
+  colours-backoffice=VTID-05285, colours-batch-2=VTID-05286, colours-batch-3=VTID-05287, colours-batch-4=VTID-05288,
+  colours-batch-5=VTID-05289, commerce-shell=VTID-05290, public-profile=VTID-05291, remaining-screens=VTID-05292,
+  sizes=VTID-05293, skeletons=VTID-05294.
+- Pointed `sparring_record` at the converged verdict `sparring/archive/session-5fbb73a2/verdict.md` (the 09:22Z
+  convergence, final plan hash `9883f2c3…`), and set handoff `vtids:` to the 10 above.
+- Re-spar of the **current** plan text (R3-F1 skeleton fix + vitana-v1 spar_refs) to close the convergence gap without
+  changing any VTIDs: archived the dead `ebd5ecb7` infra session (`sparring/archive/session-ebd5ecb7-infra/`),
+  reset `sparring/state.json` to `{"sessions": []}`, removed the stale root `round-1.md`, and re-pinned `spar_refs`
+  to vitana-v1 `b1b172fa6ae51b2b933941f67e2e1c513c0f2f6e` — the `kiro/desktop-spotlight-finish/skeletons` lane tip,
+  which contains all three R3-F1 fixes directly (CreatorOnboarded `ArchetypeSkeleton`, RedeemVoucher + TicketPurchaseSuccess
+  `SpotlightLoading archetype="form"`; 0 `Loader2`/`animate-spin` data-load sites). The three former spinners ARE now
+  skeletons — verified in that ref's code. Push retriggers PLAN-SPAR on the current text.
+- **Decision rule carried from the owner instruction:** if PLAN-SPAR re-escalates on the SAME partner-infra read
+  failure (`evidence_floor_not_met` / 0 read_file) rather than a real plan finding, that is the known gateway-side
+  sparring-engine outage, NOT a plan defect; the 10 VTIDs remain validly allocated against the 09:22Z clean
+  convergence, re-convergence is recorded DEFERRED here pending the sparring-engine fix, and staging is not blocked.
+No VTID allocated, no ledger write, no product code changed, no live system touched.

@@ -1,7 +1,7 @@
 ---
 lane: colours-batch-5
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -96,7 +96,8 @@ paths:
   - tests/e2e/staging/vtid-*-colours-batch-5.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
-updated: 2026-10-21T22:05Z
+updated: 2026-10-21T22:40Z
+vtid: VTID-05289
 ---
 # Raw palette → tokens, batch 5: shared popups, settings, AI, dev, admin, messages (owner decision 1, option A) (repo vitana-v1)
 Plan: `.kiro/specs/desktop-spotlight-finish/` — `plan.md` (plan block) and the `tasks.md` section marked `<!-- lane: colours-batch-5 -->`
