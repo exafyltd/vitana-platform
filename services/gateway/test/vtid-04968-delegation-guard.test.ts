@@ -242,9 +242,11 @@ describe('standing route check', () => {
     'partner-onboarding.ts post /:orgId/detect',
     'partner-onboarding.ts post /:orgId/verification/check',
     'partner-onboarding.ts post /:orgId/terms/accept',
+    // VTID-05090: signing the data processing agreement is the supplier's own act.
+    'partner-onboarding.ts post /:orgId/dpa/sign',
     'partner-onboarding.ts post /:orgId/submit',
   ];
-  const HUMAN_ONLY = ['/:orgId/terms/accept'];
+  const HUMAN_ONLY = ['/:orgId/terms/accept', '/:orgId/dpa/sign'];
 
   const dir = path.join(__dirname, '../src/routes');
   const files = fs.readdirSync(dir).filter((f) => /^partner-onboarding.*\.ts$/.test(f));

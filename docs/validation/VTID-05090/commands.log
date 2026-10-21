@@ -1,0 +1,33 @@
+# VTID-05090 — commands run (2026-10-12), worktree local/d9 from origin/main 2a3a73b91
+# No network endpoint, gateway, Supabase project or shared database was called.
+
+# Migration on a throwaway local Postgres 16 (the container's own empty local cluster; never a shared database)
+pg_ctlcluster 16 main start
+su postgres -c "PGHOST=/var/run/postgresql scripts/ci/sql-tests/run-partner-terms-test.sh"
+#  -> PASS vtid-04895 partner terms lifecycle
+#  -> PASS vtid-04909 partner terms german binding
+#  -> PASS vtid-05090 partner dpa lifecycle          (migration applied twice: idempotent)
+#  -> PASS vtid-04909 migration refuses unless empty (outputs/sql-partner-terms-dpa.log)
+
+# Jest (services/gateway)
+npx jest test/vtid-05090-partner-dpa.test.ts test/admin-partner-dpa.test.ts \
+  test/vtid-04478-partner-onboarding-checklist.test.ts test/vtid-04953-checklist-policy.test.ts \
+  test/vtid-04941-commerce-mcp-automation.test.ts test/admin-partner-terms.test.ts \
+  test/vtid-04910-partner-terms-draft-text.test.ts test/partner-onboarding.test.ts \
+  test/partner-onboarding-catalogue.test.ts test/partner-onboarding-connections.test.ts \
+  test/partner-onboarding-verification.test.ts test/vtid-04847-partner-onboarding-service.test.ts \
+  test/vtid-04933-partner-review.test.ts test/commerce-mcp.test.ts \
+  test/vtid-04940-commerce-mcp-supplier-data.test.ts test/vtid-04560-role-separation-regression.test.ts
+#  -> 16 suites, 464 tests passed (outputs/jest.txt)
+npx jest admin-partner commerce partner-onboarding partner-orgs vtid-04337 ... vtid-05090   # 39 suites, 854 tests passed
+npx jest vtid-04971 vtid-04844 test/orb                                                   # 282 suites, 4598 passed, 6 todo
+
+# Typecheck (services/gateway); TS2742 symlink noise filtered
+npx tsc --noEmit -p .
+#  -> only src/services/connected-apps/contacts-import.ts TS2307 'libphonenumber-js' (not installed in the
+#     symlinked node_modules; file untouched by this change) (outputs/tsc.txt)
+
+# Staging change suite validation (after the local commit)
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD \
+  --title "VTID-05090: partner data processing agreement (AVV) signable on Vitanaland"
+#  -> outputs/check-pr.txt

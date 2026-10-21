@@ -7,7 +7,10 @@
  * POST /:orgId/detect, and (VTID-04486) POST /:orgId/verification/check.
  * The catalogue step lives in partner-onboarding-catalogue.ts (VTID-04488),
  * connections in partner-onboarding-connections.ts (VTID-04499).
- * The remaining §6.2 endpoints (tracking test, DPA, billing mandate, Stripe
+ * VTID-05090: GET /:orgId/dpa and POST /:orgId/dpa/sign — the data
+ * processing agreement, signed by the supplier's own session; the checklist
+ * derives the `dpa` step from partner_dpa_signatures.
+ * The remaining §6.2 endpoints (tracking test, billing mandate, Stripe
  * Connect verification) each
  * write their own step row into
  * partner_onboarding_steps when they land; the checklist here already reads
@@ -29,6 +32,7 @@ import {
 } from '../services/partner-lifecycle';
 import {
   buildChecklist,
+  requiredSteps,
   type Checklist,
 } from '../services/partner-onboarding-checklist';
 import { getCallerId, isExafyAdmin, requireOrgAdmin } from './partner-orgs';
@@ -42,6 +46,14 @@ import {
 } from '../services/partner-onboarding-service';
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
+import {
+  availableDpaLocales,
+  dpaForDisplay,
+  loadCurrentDpa,
+  loadDpaBaselineVersions,
+  loadSignedDpaVersions,
+  parseSignBody,
+} from '../services/partner-dpa';
 import { VERIFICATION_LEVEL_REQUIRED, isCompleteOffering, verificationIsStale, type OfferingFields } from '../services/partner-onboarding-checklist';
 import { CATALOG_CHECK_CATEGORY } from '../services/catalog-check/validators';
 import {
@@ -186,6 +198,15 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
   const currentTerms = await loadCurrentTerms(supabase);
   const termsBaselineVersions = currentTerms ? await loadBaselineVersions(supabase, currentTerms) : undefined;
 
+  // VTID-05090: the DPA in force and this org's signatures, read on their own
+  // and only for types that need a DPA. Every read fails closed (missing table
+  // before the migration, read error → not published / none signed), so it
+  // can never fail the rest of the checklist — the step just shows open.
+  const needsDpa = requiredSteps(org.partner_type).includes('dpa');
+  const currentDpa = needsDpa ? await loadCurrentDpa(supabase) : null;
+  const dpaBaselineVersions = currentDpa ? await loadDpaBaselineVersions(supabase, currentDpa) : undefined;
+  const signedDpaVersions = currentDpa ? await loadSignedDpaVersions(supabase, org.id) : [];
+
   const [steps, terms, members] = await Promise.all([
     supabase.from('partner_onboarding_steps').select('step_key, status, detail, updated_at').eq('partner_organization_id', org.id),
     supabase.from('partner_terms_acceptances').select('terms_version').eq('partner_organization_id', org.id),
@@ -211,6 +232,9 @@ export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ chec
     acceptedTermsVersions: ((terms.data ?? []) as Array<{ terms_version: string }>).map((t) => t.terms_version),
     currentTermsVersion: currentTerms?.version ?? null,
     termsBaselineVersions,
+    signedDpaVersions,
+    currentDpaVersion: currentDpa?.version ?? null,
+    dpaBaselineVersions,
     memberCount: typeof members.count === 'number' ? members.count : 1,
     catalogueSource: catalogue.source,
   });
@@ -471,6 +495,161 @@ router.post('/:orgId/terms/accept', requireAuth, requireOrgAdmin(), async (req: 
   }
 
   return respondWithState(res, supabase, orgId, 200, { already_accepted: alreadyAccepted });
+});
+
+// ==================== DPA (VTID-05090) ====================
+
+/**
+ * VTID-05090: the data processing agreement in force, as the supplier reads it
+ * before signing — one language at a time (`?locale=`, German when missing),
+ * the binding German text, the signing declaration and the version's hash —
+ * and whether this org has signed it (under the re-sign baseline).
+ * Nothing published → `published: false, dpa: null`, never an error.
+ */
+router.get('/:orgId/dpa', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const orgId = req.params.orgId;
+  const { org, error: orgErr } = await loadOrg(supabase, orgId);
+  if (orgErr) return res.status(500).json({ ok: false, error: orgErr });
+  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
+  const required = isPartnerType(org.partner_type) && requiredSteps(org.partner_type).includes('dpa');
+
+  const current = await loadCurrentDpa(supabase);
+  if (!current) {
+    return res.status(200).json({
+      ok: true, required, published: false, dpa: null, signed: false, signed_at: null, signed_version: null, resign_required: false,
+    });
+  }
+
+  const baseline = await loadDpaBaselineVersions(supabase, current);
+  const { data, error } = await supabase
+    .from('partner_dpa_signatures')
+    .select('dpa_version, signed_at')
+    .eq('partner_organization_id', orgId);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+  const rows = (data ?? []) as Array<{ dpa_version: string; signed_at: string }>;
+  const signed = rows.find((r) => baseline.includes(r.dpa_version)) ?? null;
+  const locale = typeof req.query.locale === 'string' ? req.query.locale : null;
+
+  return res.status(200).json({
+    ok: true,
+    required,
+    published: true,
+    dpa: dpaForDisplay(current, locale),
+    signed: Boolean(signed),
+    signed_at: signed?.signed_at ?? null,
+    signed_version: signed?.dpa_version ?? null,
+    // Signed an earlier baseline, not this one: a material update needs re-signing.
+    resign_required: !signed && rows.length > 0,
+  });
+});
+
+router.post('/:orgId/dpa/sign', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const orgId = req.params.orgId;
+  const callerId = getCallerId(req);
+  const identity = (req as AuthenticatedRequest).identity;
+
+  // 1. Only the supplier's own session signs. An AI assistant's delegated
+  //    OAuth token — or a token whose origin cannot be established — is
+  //    refused before anything else is looked at.
+  const delegation = await requestDelegation(supabase, (req as AuthenticatedRequest).auth_raw_claims as Record<string, unknown> | undefined);
+  if (delegation !== 'direct' || !callerId) {
+    console.warn(`[VTID-05090] DPA signature refused for org ${orgId}: ${delegation} session`);
+    return res.status(403).json({
+      ok: false,
+      error: 'DPA_SIGNATURE_REQUIRES_SUPPLIER',
+      message: 'The data processing agreement is signed by the supplier on Vitanaland itself, never by an assistant.',
+    });
+  }
+
+  // 2. Nothing to sign until legal publishes a version.
+  const current = await loadCurrentDpa(supabase);
+  if (!current) return res.status(503).json({ ok: false, error: 'DPA_NOT_PUBLISHED' });
+
+  // 3. The text signed is exactly the text shown.
+  if (req.body?.dpa_version !== current.version) {
+    return res.status(409).json({ ok: false, error: 'DPA_VERSION_MISMATCH', current_version: current.version });
+  }
+  if (req.body?.content_sha256 !== current.content_sha256) {
+    return res.status(409).json({ ok: false, error: 'DPA_CONTENT_MISMATCH', current_version: current.version });
+  }
+
+  // 4. The language on screen — one this version carries. Recorded, never hashed.
+  const shownLocale = typeof req.body?.shown_locale === 'string' ? req.body.shown_locale : '';
+  const available = availableDpaLocales(current);
+  if (!available.includes(shownLocale)) {
+    return res.status(400).json({ ok: false, error: 'INVALID_SHOWN_LOCALE', available_locales: available });
+  }
+
+  // 5. Typed name, typed role, ticked declaration.
+  const parsed = parseSignBody(req.body);
+  if (!parsed.ok) return res.status(400).json({ ok: false, error: 'INVALID_SIGNATURE', field: parsed.field, message: parsed.error });
+
+  // 6–8. The organization, its need for a DPA, and enough company facts to name the contracting party.
+  const { org, error } = await loadOrg(supabase, orgId);
+  if (error) return res.status(500).json({ ok: false, error });
+  if (!org) return res.status(404).json({ ok: false, error: 'ORG_NOT_FOUND' });
+  if (!isPartnerType(org.partner_type) || !requiredSteps(org.partner_type).includes('dpa')) {
+    return res.status(409).json({ ok: false, error: 'DPA_NOT_REQUIRED' });
+  }
+  const missingFacts = (['legal_name', 'country'] as const).filter((k) => !org[k]);
+  if (missingFacts.length) return res.status(409).json({ ok: false, error: 'DPA_COMPANY_INCOMPLETE', missing: missingFacts });
+
+  // The record names the signer by the account's own email (from the verified identity).
+  const signerEmail = typeof identity?.email === 'string' ? identity.email.trim() : '';
+  if (!signerEmail) return res.status(403).json({ ok: false, error: 'ACCOUNT_EMAIL_REQUIRED' });
+
+  // 9. The signature row. IP, user agent, name and role stay in the row only.
+  const userAgent = typeof req.headers['user-agent'] === 'string' ? req.headers['user-agent'].slice(0, 500) : null;
+  const { error: insErr } = await supabase.from('partner_dpa_signatures').insert({
+    partner_organization_id: orgId,
+    dpa_version_id: current.id,
+    dpa_version: current.version,
+    content_sha256: current.content_sha256,
+    shown_locale: shownLocale,
+    signed_by: callerId,
+    signer_email: signerEmail,
+    signer_name: parsed.value.signer_name,
+    signer_role: parsed.value.signer_role,
+    declaration_confirmed: true,
+    org_snapshot: { legal_name: org.legal_name, country: org.country, vat_id: org.vat_id, website: org.website },
+    ip_address: req.ip ?? null,
+    user_agent: userAgent,
+  });
+  const alreadySigned = insErr?.code === '23505';
+  if (insErr && !alreadySigned) {
+    // A new version was published between the read and the insert: the
+    // database trigger refuses the stale version/hash.
+    if (/PARTNER_DPA_(VERSION_NOT_CURRENT|VERSION_UNKNOWN|CONTENT_MISMATCH)/.test(insErr.message ?? '')) {
+      return res.status(409).json({ ok: false, error: 'DPA_CONTENT_MISMATCH' });
+    }
+    return res.status(500).json({ ok: false, error: insErr.message });
+  }
+
+  if (!alreadySigned) {
+    await emitOasisEvent({
+      vtid: 'VTID-05090',
+      type: 'partner_org.dpa_signed',
+      source: 'partner-onboarding',
+      status: 'success',
+      message: `Partner organization ${orgId} signed the data processing agreement ${current.version}.`,
+      // No personal data: IP, user agent, email, signer name and role stay in the signature row only.
+      payload: {
+        partner_organization_id: orgId,
+        dpa_version: current.version,
+        dpa_version_id: current.id,
+        content_sha256: current.content_sha256,
+        shown_locale: shownLocale,
+        actor_id: callerId,
+      },
+      actor_id: callerId,
+    });
+  }
+
+  return respondWithState(res, supabase, orgId, 200, { already_signed: alreadySigned });
 });
 
 // ==================== Submit ====================

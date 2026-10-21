@@ -54,6 +54,30 @@ describe('B4 — service provider requirements', () => {
     expect(step(c, 'tracking_test')).toMatchObject({ required: false, status: 'not_required' });
     expect(step(c, 'billing_mandate')).toMatchObject({ required: false, status: 'not_required' });
   });
+
+  it('VTID-05090: dpa is not_required for a service provider, published or not, and never blocks live', () => {
+    for (const currentDpaVersion of [null, 'avv-1']) {
+      const c = buildChecklist(input({
+        currentDpaVersion,
+        storedSteps: ['verification', 'catalogue'].map((k) => ({ step_key: k, status: 'done' })),
+        catalogueSource: { connections: 0, completeOfferings: 1 },
+      }));
+      expect(step(c, 'dpa')).toEqual({ key: 'dpa', required: false, status: 'not_required' });
+      expect(evaluateVerification(c).outcome).toBe('live');
+    }
+  });
+
+  it('VTID-05090: a lab stays needs_action until a DPA version is published and signed', () => {
+    const base = {
+      storedSteps: ['verification', 'catalogue', 'results_channel'].map((k) => ({ step_key: k, status: 'done' })),
+      catalogueSource: { connections: 0, completeOfferings: 1 },
+    };
+    const waiting = buildChecklist(input(base, { partner_type: 'lab' }));
+    expect(step(waiting, 'dpa')).toMatchObject({ status: 'todo', missing: ['dpa_not_published'] });
+    expect(evaluateVerification(waiting)).toMatchObject({ outcome: 'needs_action', open_steps: ['dpa'] });
+    const signed = buildChecklist(input({ ...base, currentDpaVersion: 'avv-1', signedDpaVersions: ['avv-1'] }, { partner_type: 'lab' }));
+    expect(evaluateVerification(signed).outcome).toBe('live');
+  });
 });
 
 describe('B3 — mapping without an external catalogue connection', () => {

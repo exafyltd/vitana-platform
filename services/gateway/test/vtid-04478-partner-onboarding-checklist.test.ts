@@ -149,9 +149,66 @@ describe('engine decision', () => {
 });
 
 describe('parity with the migration', () => {
-  it('stores exactly the non-derived steps', () => {
+  it('stores exactly the non-derived steps (plus the legacy dpa value, VTID-05090)', () => {
     const m = MIGRATION.match(/step_key TEXT NOT NULL CHECK \(step_key IN \(([^)]*)\)/)!;
     const stored = m[1].split(',').map((v) => v.trim().replace(/^'|'$/g, '')).filter(Boolean);
-    expect(stored).toEqual(STEP_KEYS.filter((k) => !DERIVED_STEPS.includes(k)));
+    // VTID-05090: dpa is derived from partner_dpa_signatures now. The CHECK
+    // still allows a 'dpa' row (nothing altered or deleted); the engine ignores it.
+    expect(stored).toEqual(STEP_KEYS.filter((k) => !DERIVED_STEPS.includes(k) || k === 'dpa'));
+    expect(DERIVED_STEPS).toContain('dpa');
+  });
+});
+
+describe('VTID-05090 — the dpa step is derived from DPA signatures', () => {
+  const LAB_COMPANY = { legal_name: 'Labor GmbH', country: 'DE', vat_id: 'DE123456789', website: 'https://lab.example/' };
+  const labDone = (over: Partial<ChecklistInput> = {}) =>
+    input(
+      {
+        acceptedTermsVersions: ['2026-09'],
+        storedSteps: ['verification', 'catalogue', 'mapping', 'results_channel'].map((k) => ({ step_key: k, status: 'done' })),
+        catalogueSource: { connections: 1, completeOfferings: 0 },
+        ...over,
+      },
+      { partner_type: 'lab', ...LAB_COMPANY },
+    );
+  const dpa = (c: ReturnType<typeof buildChecklist>) => c.steps.find((s) => s.key === 'dpa')!;
+
+  it('a lab with no DPA version published: todo with dpa_not_published, never complete or live', () => {
+    const c = buildChecklist(labDone());
+    expect(dpa(c)).toEqual({ key: 'dpa', required: true, status: 'todo', missing: ['dpa_not_published'] });
+    expect(c.complete).toBe(false);
+    expect(c.next_step).toBe('dpa');
+    expect(evaluateVerification(c)).toMatchObject({ outcome: 'needs_action', open_steps: ['dpa'] });
+  });
+
+  it('signed under the current version → done, and a finished lab goes live', () => {
+    const c = buildChecklist(labDone({ currentDpaVersion: 'avv-1', signedDpaVersions: ['avv-1'] }));
+    expect(dpa(c).status).toBe('done');
+    expect(c.complete).toBe(true);
+    expect(evaluateVerification(c).outcome).toBe('live');
+  });
+
+  it('published but unsigned → todo naming the current version', () => {
+    expect(dpa(buildChecklist(labDone({ currentDpaVersion: 'avv-1' })))).toMatchObject({ status: 'todo', detail: { current_version: 'avv-1' } });
+  });
+
+  it('an editorial update keeps the signature; a material one (new baseline) reopens the step', () => {
+    const editorial = buildChecklist(labDone({ currentDpaVersion: 'avv-2', dpaBaselineVersions: ['avv-1', 'avv-2'], signedDpaVersions: ['avv-1'] }));
+    expect(dpa(editorial).status).toBe('done');
+    const material = buildChecklist(labDone({ currentDpaVersion: 'avv-2', dpaBaselineVersions: ['avv-2'], signedDpaVersions: ['avv-1'] }));
+    expect(dpa(material)).toMatchObject({ status: 'todo', detail: { current_version: 'avv-2' } });
+    expect(evaluateVerification(material).outcome).toBe('needs_action');
+  });
+
+  it('a stored dpa row no longer overrides the derived status', () => {
+    const c = buildChecklist(labDone({ storedSteps: [{ step_key: 'dpa', status: 'done' }] }));
+    expect(dpa(c)).toMatchObject({ status: 'todo', missing: ['dpa_not_published'] });
+  });
+
+  it('practitioner_clinic needs it too; a service provider does not (not_required, no missing code)', () => {
+    const clinic = buildChecklist(input({}, { partner_type: 'practitioner_clinic' }));
+    expect(dpa(clinic)).toMatchObject({ required: true, status: 'todo', missing: ['dpa_not_published'] });
+    const sp = buildChecklist(input({ currentDpaVersion: null }, { partner_type: 'service_provider' }));
+    expect(dpa(sp)).toEqual({ key: 'dpa', required: false, status: 'not_required' });
   });
 });

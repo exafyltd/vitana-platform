@@ -1138,6 +1138,11 @@ export type CicdEventType =
   | 'partner_terms.draft_saved'
   | 'partner_terms.version_published'
   | 'partner_terms.reacceptance_required'
+  // VTID-05090: partner data processing agreement (AVV)
+  | 'partner_org.dpa_signed'
+  | 'partner_dpa.draft_saved'
+  | 'partner_dpa.version_published'
+  | 'partner_dpa.resign_required'
   | 'partner_org.lifecycle_changed'
   // VTID-04481: website platform detection during onboarding
   | 'partner_org.platform_detected'

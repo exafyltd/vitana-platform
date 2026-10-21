@@ -157,9 +157,9 @@ export const DOMAIN_ATLAS: readonly AtlasDomain[] = [
     title: 'Commerce and Discover',
     summary:
       'Discover feed and search, merchants and products, affiliate sync (Awin, Shopify), click attribution, the universal cart and shopping agent, VCAOP, VAEA (the Business Hub referral assistant), and self-service partner onboarding.',
-    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^commerce-plugin-legal$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^admin-partner-review$/, /^community-marketplace$/, /^vaea/],
+    routes: [/^offers/, /^commerce-ai-setup$/, /^commerce-mcp$/, /^commerce-plugin-legal$/, /^shop-/, /^shopify-/, /^shopping-agent/, /^universal-cart/, /^discover-/, /^vcaop/, /^partner-/, /^awin-sync/, /^catalog-ingest/, /^click-redirect/, /^internal-marketplace-sync$/, /^cover-images$/, /^integrations/, /^connected-apps$/, /^connector-webhooks/, /^admin-marketplace/, /^admin-community-marketplace$/, /^admin-partner-health$/, /^admin-partner-terms$/, /^admin-partner-dpa$/, /^admin-partner-review$/, /^community-marketplace$/, /^vaea/],
     code: ['services/commerce/', 'services/commerce-ai-setup.ts', 'services/commerce-mcp.ts', 'services/partner-*.ts'],
-    tables: ['merchants', 'products', 'partner_organizations', 'partner_registry', 'affiliate_clicks', 'partner_terms_versions'],
+    tables: ['merchants', 'products', 'partner_organizations', 'partner_registry', 'affiliate_clicks', 'partner_terms_versions', 'partner_dpa_versions'],
     flags: ['PARTNER_INVITE_EMAIL_ENABLED', 'ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED', 'COMMERCE_MCP_ENABLED'],
     docs: ['CLAUDE.md §13c', 'docs/COMMERCE-SELF-SERVICE-PARTNER-ONBOARDING-SPEC.md', 'docs/MERCHANT_ONBOARDING_RUNBOOK.md'],
     aliases: ['commerce', 'discover', 'shop', 'merchants', 'merchant', 'products', 'partners', 'partner onboarding', 'onboarding', 'affiliate', 'awin', 'shopify'],

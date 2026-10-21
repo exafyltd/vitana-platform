@@ -1,0 +1,18 @@
+PASS test/partner-onboarding.test.ts
+PASS test/vtid-04933-partner-review.test.ts
+PASS test/partner-onboarding-catalogue.test.ts
+PASS test/commerce-mcp.test.ts
+PASS test/partner-onboarding-connections.test.ts
+PASS test/partner-onboarding-verification.test.ts
+PASS test/admin-partner-terms.test.ts
+PASS test/admin-partner-dpa.test.ts
+PASS test/vtid-05090-partner-dpa.test.ts
+PASS test/vtid-04941-commerce-mcp-automation.test.ts
+PASS test/vtid-04940-commerce-mcp-supplier-data.test.ts
+PASS test/vtid-04910-partner-terms-draft-text.test.ts
+PASS test/vtid-04847-partner-onboarding-service.test.ts
+PASS test/vtid-04953-checklist-policy.test.ts
+PASS test/vtid-04478-partner-onboarding-checklist.test.ts
+PASS test/vtid-04560-role-separation-regression.test.ts (6.862 s)
+Test Suites: 16 passed, 16 total
+Tests:       464 passed, 464 total

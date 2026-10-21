@@ -7,7 +7,8 @@
  * `decideAfterSubmit` returns, one guarded transition at a time.
  *
  * Step status comes from one of three places:
- *   - derived from facts the engine can see (account, company, terms, team);
+ *   - derived from facts the engine can see (account, company, terms, team,
+ *     and since VTID-05090 dpa — from the org's DPA signatures);
  *   - a row in partner_onboarding_steps, written by the step's own endpoint
  *     (verification, catalogue, mapping, tracking test, results channel,
  *     DPA, billing mandate — each lands with its own VTID);
@@ -36,7 +37,7 @@ export const STEP_STATUSES = ['todo', 'in_progress', 'done', 'failed', 'not_requ
 export type StepStatus = (typeof STEP_STATUSES)[number];
 
 /** Steps the engine can decide itself; a stored row never overrides them. */
-export const DERIVED_STEPS: readonly StepKey[] = ['account', 'company', 'terms', 'team'];
+export const DERIVED_STEPS: readonly StepKey[] = ['account', 'company', 'terms', 'dpa', 'team'];
 
 /**
  * Spec §6.1. `team` is optional for every type. `billing_mandate` is required
@@ -106,6 +107,15 @@ export interface ChecklistInput {
    * acceptances valid). Omitted: only the current version counts.
    */
   termsBaselineVersions?: string[];
+  /**
+   * VTID-05090: versions of the data processing agreement this org has
+   * signed (partner_dpa_signatures). Omitted: none.
+   */
+  signedDpaVersions?: string[];
+  /** VTID-05090: the DPA version in force, or null/omitted when none is published. */
+  currentDpaVersion?: string | null;
+  /** VTID-05090: every DPA version sharing the current version's re-sign baseline. Omitted: only the current version counts. */
+  dpaBaselineVersions?: string[];
   memberCount: number;
   /**
    * VTID-04953 (owner decision B3): where the catalogue comes from. With no
@@ -240,6 +250,23 @@ export function buildChecklist(input: ChecklistInput): Checklist {
           detail = { current_version: input.currentTermsVersion };
         }
         break;
+      case 'dpa': {
+        // VTID-05090: derived from the org's signatures, like terms. A stored
+        // `dpa` row in partner_onboarding_steps is ignored (nothing deletes it).
+        if (!isRequired) break;
+        const current = input.currentDpaVersion ?? null;
+        if (!current) {
+          // Pending legal text: nothing can be signed yet.
+          status = 'todo';
+          missing = ['dpa_not_published'];
+        } else if ((input.dpaBaselineVersions ?? [current]).some((v) => (input.signedDpaVersions ?? []).includes(v))) {
+          status = 'done';
+        } else {
+          status = 'todo';
+          detail = { current_version: current };
+        }
+        break;
+      }
       case 'team':
         status = input.memberCount > 1 ? 'done' : 'todo';
         break;

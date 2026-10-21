@@ -1,5 +1,6 @@
 #!/usr/bin/env bash
 # VTID-04895 / VTID-04909: runs the partner terms migration tests against throwaway databases.
+# VTID-05090: and the sibling partner DPA (AVV) migration test.
 # Needs PG* env vars (or a local socket) pointing at a disposable Postgres.
 # Refuses to run against anything that looks like Supabase or Aurora.
 set -euo pipefail
@@ -16,6 +17,9 @@ psql -X -q -v ON_ERROR_STOP=1 -d "$(fresh lifecycle)" -f vtid-04895-partner-term
 
 # VTID-04909 German binding on top of it.
 psql -X -q -v ON_ERROR_STOP=1 -d "$(fresh german)" -f vtid-04909-partner-terms-german.test.sql
+
+# VTID-05090 partner data processing agreement (a sibling of the terms tables).
+psql -X -q -v ON_ERROR_STOP=1 -d "$(fresh dpa)" -f vtid-05090-partner-dpa.test.sql
 
 # VTID-04909 guard: with a row present, the migration must refuse and change nothing.
 g="$(fresh guard)"

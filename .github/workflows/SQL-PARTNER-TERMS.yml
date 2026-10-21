@@ -1,18 +1,22 @@
 name: SQL-PARTNER-TERMS
-run-name: 'partner terms lifecycle against a throwaway Postgres [VTID: VTID-04895 VTID-04909] (${{ github.ref_name }})'
+run-name: 'partner terms + DPA lifecycle against a throwaway Postgres [VTID: VTID-04895 VTID-04909 VTID-05090] (${{ github.ref_name }})'
 
 # VTID-04895 — runs the partner terms lifecycle migration against a disposable
 # Postgres service container: published versions immutable, one published at a
 # time, publish/supersede, the re-acceptance baseline, append-only acceptances
 # with hash/version checks, the delegated-session lookup, privileges; and
-# (VTID-04909) German binding + the migration's empty-table guard. Never
-# runs against Supabase.
+# (VTID-04909) German binding + the migration's empty-table guard; and
+# (VTID-05090) the sibling partner DPA tables: immutability, one published,
+# hash incl. the signing declaration, append-only signatures, RLS, grants.
+# Never runs against Supabase.
 
 on:
   pull_request:
     paths:
       - 'supabase/migrations/*partner_terms*.sql'
       - 'scripts/ci/sql-tests/*partner-terms*'
+      - 'supabase/migrations/*partner_dpa*.sql'
+      - 'scripts/ci/sql-tests/*partner-dpa*'
       - '.github/workflows/SQL-PARTNER-TERMS.yml'
   workflow_dispatch:
 
@@ -46,3 +50,4 @@ jobs:
           grep -q "^PASS vtid-04895 partner terms lifecycle" /tmp/terms.log
           grep -q "^PASS vtid-04909 partner terms german binding" /tmp/terms.log
           grep -q "^PASS vtid-04909 migration refuses unless empty" /tmp/terms.log
+          grep -q "^PASS vtid-05090 partner dpa lifecycle" /tmp/terms.log
