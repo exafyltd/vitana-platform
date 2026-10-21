@@ -1,0 +1,18 @@
+{
+  "sessions": [
+    {
+      "id": "0793eaa6-86ee-4f43-aae1-b09739830129",
+      "submitted": [
+        1,
+        2
+      ],
+      "plan_text_sha": "56f72503",
+      "rounds": 3,
+      "verdict": "converged",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": "da595f4918a543b28cb2ae749559cc0711dd6287067b138fa7e71f1b11316543",
+      "policy_approved_at": "2026-10-21T11:22:26.915+00:00"
+    }
+  ]
+}
