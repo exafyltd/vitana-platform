@@ -9,7 +9,7 @@ reviewer_seat: exafyltd
 paths:
   - docs/validation/VTID-05082/staging-tests.json
   - docs/validation/**
-updated: 2026-10-20T23:30Z
+updated: 2026-10-21T08:46Z
 vtid: VTID-05266
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/fix-4182-test-fallout/staging-test-05082
@@ -39,3 +39,9 @@ Pipeline run wf_51b9f6f561a73c5d, slot 2. Claim held by this session. Tasks A1�
 Reviewed head adab3b56496e9dfbbcee1e6a90334eabf4bf0c01 (PR https://github.com/exafyltd/vitana-platform/pull/4223). Verdict: accept.
 Findings: no blockers. Non-blocking: an earlier PR-GATE Collab handoff run was cancelled; the rerun on the same head is green.
 Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_902f332d443b657a). Next: update onto main, merge under collaboration.md §7b, then jest-05077-cachebuster.
+### 2026-10-21T08:46Z · kiro-hotmail-202610151618-b437 · merged (§7b owner-directed)
+PR https://github.com/exafyltd/vitana-platform/pull/4223 squash-merged to `main` at 2026-10-21T08:16:01Z by `exafyltd`
+(head 2825c0992f6321a403a5a323ba90c759f0202ad9, all checks green incl. `validate`, Lane scope, Collab handoff).
+merge: 8f74d68caf4a0fb79f59efa03488cb396bfb8a4d
+authority: §7b, owner instruction 2026-10-20 naming #4222, #4223, #4225 ("continue"; earlier the same day: "you do it,
+claude is off, you have to do it, we have changed the rule"). Deploy path staging only; production stays the owner's PUBLISH at Gate 2.
