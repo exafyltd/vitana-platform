@@ -3,10 +3,11 @@ slug: plan-spar-vitana-v1-ref
 author: kiro
 author_seat: exafy
 executor: kiro
-next_actor: claude
-state: sparred
-updated: 2026-10-19T23:07Z
+next_actor: kiro
+state: approved
+updated: 2026-10-21T11:21Z
 sparring_record: .kiro/specs/plan-spar-vitana-v1-ref/sparring/verdict.md
+vtids: [VTID-05299]
 ---
 # Handoff — plan-spar-vitana-v1-ref
 
@@ -49,3 +50,6 @@ spar. Next: PLAN-SPAR round 1.
 
 ### 2026-10-19T23:07Z · ci-plan-spar · drafted → sparred
 Converged; approved by policy converged-auto-v1. VTID allocation is off — next_actor claude allocates.
+
+### 2026-10-21T11:21Z · ci-plan-spar · sparred → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

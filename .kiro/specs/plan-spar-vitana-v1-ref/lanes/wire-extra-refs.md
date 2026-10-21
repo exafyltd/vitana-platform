@@ -1,7 +1,7 @@
 ---
 lane: wire-extra-refs
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafy
@@ -12,7 +12,8 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - .github/workflows/PLAN-SPAR.yml
   - .kiro/specs/plan-spar-vitana-v1-ref/**
-updated: 2026-10-15T22:03Z
+updated: 2026-10-21T11:21Z
+vtid: VTID-05299
 ---
 # Lane: wire-extra-refs (repo vitana-platform)
 
@@ -28,3 +29,6 @@ Lane created with the plan. Declares the only lane of `plan-spar-vitana-v1-ref`:
 companion `vitana-v1` ref (`spar_refs:` in `handoff.md`) into PLAN-SPAR via `plan-spar.mjs`
 (`parseSparRefs`, `resolveRef`, `extra_refs`), one `env:` line in `PLAN-SPAR.yml`, and the unit tests.
 Held at `next_actor: claude` until PLAN-SPAR allocates the VTID on policy approval.
+
+### 2026-10-21T11:21Z · ci-plan-spar · ready (VTID allocated)
+VTID-05299 allocated after policy approval (converged-auto-v1).
