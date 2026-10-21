@@ -85,24 +85,37 @@ The owner wrote on 2026-10-16: "you can decide yourself and move on, get the red
    class where one exists; nearest class when the difference is ≤ 2 px; otherwise keep with
    `// design-allow-next-line: <reason>`.
 3. **Page spinners → skeletons** — owner approved 2026-10-16 (after asking to see the mobile version too).
-   `design/no-page-spinner` has **27 findings in 24 page files** (measured state). Those 24 files split into **19
-   data-loading page files** and **5 action-in-progress files**; findings (27) exceed files (24) because three files
-   carry two spinner sites each. The **19 data-loading page spinners** become skeletons on desktop (Spotlight) **and**
-   on mobile, using the same `ArchetypeSkeleton` / `VCardSkeleton` shaped like each page's final layout — header and
-   bottom nav stay, content cross-fades in, no layout shift. One shared `SpotlightLoading` (in
-   `src/components/layout/spotlight/skeletons/`, built on the existing `ArchetypeSkeleton`, `VCardSkeleton` and shadcn
-   `Skeleton`); no bespoke per-page skeletons. The **5 action-in-progress spinners** (`LiveRoomViewer`,
-   `CreatorOnboarded`, `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess`) keep a spinner, each with a
-   `design-allow-next-line: action in progress, not a data-load spinner` reason. These are action spinners (a
-   submit/redeem/delete is running), **not** data-load spinners, so SR-20 (skeleton in the archetype's shape, which
-   governs the initial data load) does not apply: each screen renders its migrated archetype immediately and only spins
-   on the user-triggered action. They therefore stay `migrated` (layout/archetype compliant) and reaching the
-   "every non-chrome entry at 0" goal is not in conflict with keeping the spinner — an allowed line is not counted by
-   `countDesign` (`lib.mjs:112`; `ALLOW_RX` suppresses the report, `_shared.js:10`), so the file still reads `0` in
-   `baseline-design`. **Lane ownership of the action-spinner pages:** `DeleteAccount`, `RedeemVoucher`,
-   `TicketPurchaseSuccess` are owned solely by `remaining-screens` (the lane that also flips their archetype in
-   Decision 4), which applies their allow reason in the same PR; `LiveRoomViewer` and `CreatorOnboarded` stay in
-   `skeletons`. An MP4 (spinner before vs skeleton after, desktop and mobile) goes to the owner.
+   `design/no-page-spinner` has **27 findings in 24 page files** (measured state). **The classification of each
+   spinner is derived from the actual code at the pinned ref (not asserted), after session eeb01b78 round 3 (R3-F1 /
+   re-raised R1-F3) proved an earlier "action-in-progress" claim false for three pages.** `no-page-spinner`
+   (`no-page-spinner.js:31`) flags any `Loader2`/`animate-spin` on a `/src/pages/**` file not inside a `Button`,
+   **regardless of why it spins**, so a data-load spinner on a `migrated` route is non-compliant with SR-20 and may not
+   be masked with a `design-allow-next-line`; it must become a skeleton. Grounded breakdown:
+   - **Data-load-gated spinners → `SpotlightLoading` skeleton in the Spotlight branch** (makes the route genuinely
+     SR-20 compliant and `migrated`, no allow-comment). This includes the 19 data-loading pages **plus** the three
+     pages an earlier draft wrongly kept as "action" spinners, now corrected:
+     - `RedeemVoucher.tsx:76` — spinner gated on `authLoading || voucherLoading` ("Loading your gift voucher"), a data
+       fetch → convert to the `form` skeleton in the Spotlight branch.
+     - `TicketPurchaseSuccess.tsx:64` — spinner gated on `loading || verifying` ("Confirming your purchase"), a data
+       fetch → convert to the `detail` skeleton in the Spotlight branch.
+     - `CreatorOnboarded.tsx` — the **Spotlight branch already renders `ArchetypeSkeleton archetype="form"`**
+       (`CreatorOnboarded.tsx:40`, VTID-05117); the residual `animate-spin` at `:123` is on the **flag-off/legacy**
+       path. Because `no-page-spinner` is static (flags the file regardless of branch), remove or skeletonise that
+       legacy spinner site too so the file reaches 0 without an allow-comment (the Spotlight path is already correct).
+     The skeletons use the shared `SpotlightLoading` (`src/components/layout/spotlight/skeletons/`, built on
+     `ArchetypeSkeleton` / `VCardSkeleton` / shadcn `Skeleton`); header and bottom nav stay, content cross-fades in, no
+     layout shift. No bespoke per-page skeletons.
+   - **Genuinely action-gated spinners keep a `design-allow-next-line` with an accurate reason.** Only a spinner gated
+     on a user-triggered mutation (e.g. a submit/claim/delete `isPending`), not on a fetch, qualifies. `LiveRoomViewer`
+     and any site that is truly action-gated keep an allow-comment whose reason matches the code; an allowed line is
+     not counted by `countDesign` (`lib.mjs:112`; `ALLOW_RX` suppresses the report, `_shared.js:10`), so the file
+     still reads `0` in `baseline-design`. **No page is marked `migrated` while a data-load spinner remains, and no
+     allow-reason is written that the code does not support.** Each lane's per-lane zero assertion (Test plan) proves
+     the owned files reach 0 by conversion, not by a false allow-comment.
+   **Lane ownership of these pages:** `DeleteAccount`, `RedeemVoucher`, `TicketPurchaseSuccess` are owned solely by
+   `remaining-screens` (the lane that also flips their archetype in Decision 4), which does the skeleton conversion in
+   the same PR; `CreatorOnboarded` and `LiveRoomViewer` stay in `skeletons`. An MP4 (spinner before vs skeleton after,
+   desktop and mobile) goes to the owner.
 4. **Older open items** — decided by Kiro under owner delegation 2026-10-16: public profile `/u/:identifier` and
    `/me/profile` → `detail` (contract §A lists public profile under `detail`); `/redeem`, `/delete-account` → `form`;
    `/tickets/success`, `/tickets/demo` → `detail`. **Every one of these archetype/status manifest edits is made only in
