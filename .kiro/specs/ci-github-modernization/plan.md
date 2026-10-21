@@ -47,24 +47,35 @@ signal.
 - **UNIT.yml is no longer a no-op.** VTID-04950 rewrote it to run every `scripts/**/*.test.{cjs,mjs}`
   via `node --test` (`UNIT.yml:16-20`). The brief's "UNIT.yml placeholder" premise is stale.
   (inv-code §1, inv-tests §5.)
-- **The real no-op / dead remnant is the commented-out "tests deferred" block in `CICDL-GATEWAY-CI.yml:113-133`**
-  ("# TESTS DEFERRED TO DEV-CICDL-0035" at :113, deferred-echo at :133, purpose comment at :5); real gateway tests already run in `TEST-SUITE.yml:48-61`
-  (Jest ~7.5k). So the fix is to delete the dead block, not re-enable it (that would duplicate
-  TEST-SUITE). Build+typecheck run in both `CICDL-GATEWAY-CI.yml:84-91` and the TEST-SUITE/PR-GATE
-  paths — the duplicate-jobs evidence. (inv-code §1, §5.)
+- **The real no-op / dead remnant is the commented-out "tests deferred" block in `CICDL-GATEWAY-CI.yml:112-118`**
+  ("# TESTS DEFERRED TO DEV-CICDL-0035" at :112, the six commented-out `Gateway Tests` step lines at
+  :113-118; purpose comment at :5). Lines 119-137 are the **live** `Report Validation Success` step and
+  must stay (its deferred-echo line is :133). So the fix deletes **only** the commented-out step lines
+  :113-118 (optionally updating the live echo at :133), never re-enabling it (that would duplicate the
+  real gateway Jest run in `TEST-SUITE.yml:48-61`, ~7.5k tests). (inv-code §1, §5.)
+- **The real gateway build+typecheck duplication is between `CICDL-GATEWAY-CI.yml` and
+  `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`, not TEST-SUITE/PR-GATE.** CICDL runs the gateway build at
+  :94-97 and typecheck at :103-106; `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml:16-21` installs gateway deps
+  and runs `npm run build` as well (and it is the sole required check, R4). `TEST-SUITE.yml` runs only
+  Jest for the gateway (`pnpm install` + `npx jest`, :63 onward — no build, no typecheck); platform
+  `PR-GATE.yml:77` installs gateway deps only conditionally for fix-VTIDs. The duplicate-build target is
+  therefore the CICDL ↔ ENFORCE pair. (inv-code §1, §5.)
 - **PR-GATE Verdict is report-only** (`scripts/ci/pr-gate/config.json` `enforce:false` since
   2026-10-07; the scope/sparring/weakening/red-green guards use `continue-on-error:true`). The two
   real blocking governance check runs are **Collab handoff** (`collab-handoff`) and **Lane scope**
   (`lane-scope`), which exit non-zero and the §7b rule requires green. (inv-rules §6.)
 - **Four confirmed pipeline false positives** (inv-rules §7, inv-code §3):
-  1. PLAN-SPAR round commits are pushed with `GITHUB_TOKEN` (`PLAN-SPAR.yml:84-98`, header 23-26)
-     unless the optional secret `PLAN_SPAR_PUSH_TOKEN` is set; a `GITHUB_TOKEN` push starts no
-     `pull_request` checks. Every merge needed `gh pr update-branch`.
+  1. PLAN-SPAR round commits are pushed with `GITHUB_TOKEN` when the optional secret
+     `PLAN_SPAR_PUSH_TOKEN` is absent — the checkout token selector is `PLAN-SPAR.yml:61`
+     (`token: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}`) and the push is `PLAN-SPAR.yml:116`
+     (`git push origin "HEAD:${HEAD_REF}"`); the behaviour note is the comment block at :17-19. A
+     `GITHUB_TOKEN` push starts no `pull_request` checks, so every merge needed `gh pr update-branch`.
   2. `validate-pr` (VALIDATOR-CHECK.yml) rejects a PR body without `VALIDATION_PROFILE` (exit 11) plus
      SCOPE_ALLOWLIST/ACCEPTANCE/MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT markers (exit 12-15); path-scoped
      to the gateway trees, so it bites gateway PRs on first push with no template/autofill.
   3. Collab handoff / Lane scope false-positives in `queue.mjs` (`scopeCheck` reviewer-seat equality
-     at ~:466-470; "one session per lane" counting `ci-plan-spar`/`pm-agent` as a second session;
+     at :590-599 — `seat` at :590, the `ok` branch :592-594; "one session per lane" counting
+     `ci-plan-spar`/`pm-agent` as a second session;
      protected-gate files under an owner instruction flagged because the unlock is a merge-time PM
      decision, not encoded in the check).
   4. "safe-merge refuses `.github/workflows/**`" — there is **no workflow named safe-merge**; the real
@@ -135,33 +146,57 @@ Eight lanes. Build concurrency is capped at 6 (§8a); lanes beyond that wait in 
 order. No two lanes edit the same file. Real `depends_on` only.
 
 1. **dead-workflows** — `executor: claude` (governance `.github/**`; not protected).
-   Remove `.github/workflows/VCAOP-CICD.yml` (dead GCP Cloud Run) with its evidence row; correct the
-   inventory's dead-list to today's tracked set (EXEC/STAGE-DEPLOY already gone; UNIT.yml already
-   fixed). Independent.
+   Remove `.github/workflows/VCAOP-CICD.yml` (dead GCP Cloud Run: `google-github-actions/auth@v2` :63,
+   `gcloud run deploy vcaop-api-dev` :77-78) with its evidence row; correct the inventory's dead-list to
+   today's tracked set (EXEC/STAGE-DEPLOY already gone; UNIT.yml already fixed). **Before the file is
+   deleted, migrate the two CI gates that only VCAOP-CICD.yml runs today** so they are not silently lost:
+   the vcaop `typecheck` (VCAOP-CICD.yml:37-39) and the guardrails gate
+   `npm run test:guardrails` = `jest --runInBand test/guardrails` (VCAOP-CICD.yml:40-42,
+   `services/vcaop/package.json`), both **absent** from the `vcaop` matrix entry in `TEST-SUITE.yml:111-113`
+   which runs only `npm test` (parallel `jest`). The `--runInBand` is deliberate (the guardrails suite is
+   written to fail under parallel workers). Because `TEST-SUITE.yml` is owned by lane 6 (no two lanes edit
+   one file), **the vcaop-matrix migration — add a `typecheck` step and a run-in-band `test:guardrails`
+   step to the vcaop entry — is done in lane 6**, and lane 1 `depends_on: [speed-path-filters]` for it:
+   lane 1 does not delete `VCAOP-CICD.yml` until lane 6 has landed those two gates in TEST-SUITE.
    Files: `.github/workflows/VCAOP-CICD.yml`, `docs/validation/<VTID>/**`.
    Test that fails on base: an inventory/no-dead-GCP assertion added to
    `scripts/ci/pr-gate/__tests__/` or a dedicated `scripts/ci/ci-inventory/*.test.mjs` that greps the
-   workflow tree for live GCP/Cloud-Run deploy markers and fails while `VCAOP-CICD.yml` exists.
+   workflow tree for live GCP/Cloud-Run deploy markers and fails while `VCAOP-CICD.yml` exists. The
+   TEST-SUITE vcaop `typecheck` + run-in-band `test:guardrails` assertion lives with lane 6 (the owner of
+   that file).
 
 2. **fake-checks-dedupe** — `executor: claude` (governance `.github/**`; not protected).
-   Delete the dead commented-out "tests deferred" block in `CICDL-GATEWAY-CI.yml:113-133` (real gateway
-   tests live in TEST-SUITE); de-duplicate the gateway build+typecheck that runs in both `CICDL-GATEWAY-CI.yml`
-   and TEST-SUITE/PR-GATE. Do **not** rewrite UNIT.yml (already real). Independent.
+   Delete **only** the dead commented-out `Gateway Tests` step at `CICDL-GATEWAY-CI.yml:113-118` (the
+   `# TESTS DEFERRED TO DEV-CICDL-0035` marker is :112; real gateway tests live in TEST-SUITE). **Do not
+   touch lines 119-137** — that is the live `Report Validation Success` step (optionally update its echo
+   at :133). De-duplicate the gateway **build** that runs in both `CICDL-GATEWAY-CI.yml` (build :94-97,
+   typecheck :103-106) and `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml:16-21` (the sole required check, which
+   also runs `npm run build` for `services/gateway`) — not TEST-SUITE/PR-GATE, which do not build the
+   gateway. Keep whichever single build covers the required path; if the two builds serve genuinely
+   different triggers (different path filters), record that and drop the de-dup rather than remove a build
+   the required check depends on. **`ENFORCE-FRONTEND-CANONICAL-SOURCE.yml` is the required check**, so any
+   edit to it is out of this lane's non-gate scope — if the chosen de-dup must edit that file, surface it
+   as a separate decision for Gate 2 rather than silently changing the required check. Do **not** rewrite
+   UNIT.yml (already real). Independent.
    Files: `.github/workflows/CICDL-GATEWAY-CI.yml`, `docs/validation/<VTID>/**`.
-   Proof: measured before/after job set + the no-dead-block inventory assertion from lane 1's test.
+   Proof: measured before/after job set + the no-dead-block inventory assertion from lane 1's test
+   (asserting the commented `Gateway Tests` step at :113-118 is gone and the live `Report Validation
+   Success` step is intact).
 
 3. **false-positives-collab** — `executor: claude`, **protected gate** (`scripts/collab/queue.mjs`).
-   Fix in one lane (same file; cannot split): reviewer-agent seat mismatch, `ci-plan-spar`/`pm-agent`
-   not counted as a second session on a `_plan` lane, and the Windows `C:\C:\` path + `rm`
-   cross-platform fixes in `queue.test.mjs`. `depends_on: []` by file, but **sequence behind open
+   Fix in one lane (same file; cannot split): reviewer-agent seat mismatch (the `scopeCheck()`
+   reviewer-seat equality branch at `queue.mjs:590-599` — `seat` at :590, the `ok` check :592-594),
+   `ci-plan-spar`/`pm-agent` not counted as a second session on a `_plan` lane, and the Windows `C:\C:\`
+   path + `rm` cross-platform fixes in `queue.test.mjs`. `depends_on: []` by file, but **sequence behind open
    #4210** (the authoritative governance scope-check rewrite, VTID-05259) and #4188 — do not run a
    parallel `queue.mjs` lane; if either is still open at build time, rebase onto its merged result.
    Keep every subcommand name/shape. Blocked on an owner instruction to merge (protected gate, Claude
    unavailable) — surface for Gate 2.
    Files: `scripts/collab/queue.mjs`, `scripts/collab/queue.test.mjs`, `docs/validation/<VTID>/**`.
    Test that fails on base: new cases in `scripts/collab/queue.test.mjs` encoding each wrongly-rejected
-   PR shape, asserted to pass scope-check (red on base because current `queue.mjs scope-check` rejects
-   them); plus a Windows-path case green on win32 and ubuntu.
+   PR shape, exercising the `scopeCheck()` path at `queue.mjs:587-600` and asserted to pass scope-check
+   (red on base because current `queue.mjs scope-check` rejects them); plus a Windows-path case green on
+   win32 and ubuntu.
 
 4. **false-positives-validator** — `executor: claude` (governance `.github/**` + `scripts/ci/**`; not
    protected).
@@ -175,30 +210,47 @@ order. No two lanes edit the same file. Real `depends_on` only.
    autofill behaviour (red on base = current bare `exit 11`).
 
 5. **plan-spar-checks** — `executor: claude`, **protected gate** (`.github/workflows/PLAN-SPAR.yml`).
-   Make PLAN-SPAR round commits start checks on the plan PR head: either dispatch the checks after the
-   push, or require/provision `PLAN_SPAR_PUSH_TOKEN` (the repo secret itself is **owner config → Gate
-   2**). Independent of other lanes. Blocked on an owner instruction to merge (protected gate) — surface
-   for Gate 2.
+   Make PLAN-SPAR round commits start checks on the plan PR head. The `PLAN_SPAR_PUSH_TOKEN || github.token`
+   fallback already exists (`PLAN-SPAR.yml:61`, push at :116); provisioning the PAT secret is owner config
+   and belongs in Gate 2, and the token path on its own writes no code. **So this lane takes the dispatch
+   path, unambiguously:** after the round-commit push (`PLAN-SPAR.yml:116`), add a step that runs only when
+   the push used `GITHUB_TOKEN` (i.e. `secrets.PLAN_SPAR_PUSH_TOKEN` is empty — a `GITHUB_TOKEN` push does
+   not itself start `pull_request` checks) and explicitly re-triggers the plan PR's checks on the new head.
+   Mechanism: `gh workflow run <id> --ref <head>` / `gh api .../actions/workflows/<id>/dispatches` is not
+   available for `pull_request`-triggered workflows, so instead re-dispatch via the PR's check surface —
+   the durable option is to have the step detect the empty-secret case and either (a) re-run the PR's
+   required workflows through `gh api repos/{owner}/{repo}/actions/runs/{run_id}/rerun` for the latest
+   runs on the prior head after the push, or (b) make the commit itself with a PAT when present and, when
+   absent, post a PR check via the Checks API marking the sparring push so the PM/land step knows to
+   `gh pr update-branch`. The lane must commit to one of these and spell out which workflows it targets and
+   how it detects the `GITHUB_TOKEN` vs PAT case; the test pins that observable contract. The PAT secret
+   itself stays **owner config → Gate 2**. Independent of other lanes. Blocked on an owner instruction to
+   merge (protected gate) — surface for Gate 2.
    Files: `.github/workflows/PLAN-SPAR.yml`, `scripts/collab/plan-spar.test.mjs` /
    `scripts/ci/plan-spar-slot/slot.test.mjs`, `docs/validation/<VTID>/**`.
    Test that fails on base: a case in `plan-spar.test.mjs` / `plan-spar-slot/slot.test.mjs` asserting
    the chosen fix's observable contract (checks are triggered on the bot head), red on base.
 
 6. **speed-path-filters** — `executor: claude`, **protected gate** (edits `PR-GATE.yml`).
-   Add caching to the uneven install steps, add path filters to **non-gate** jobs only, de-duplicate the
-   gateway build+typecheck, confirm and (if needed) re-balance the gateway Jest shards. Must not
-   path-filter the required gate jobs (PR-GATE/Lane scope/Collab handoff) — that wedges merges. Record
-   measured before/after critical path. Independent of the false-positive lanes by file, but it edits
-   `PR-GATE.yml` so keep it isolated. Blocked on an owner instruction to merge (protected gate) —
-   surface for Gate 2. Does **not** flip `enforce`.
+   Add caching to the uneven install steps, add path filters to **non-gate** jobs only, confirm and (if
+   needed) re-balance the gateway Jest shards. Must not path-filter the required gate jobs (PR-GATE/Lane
+   scope/Collab handoff) — that wedges merges. **This lane owns every `TEST-SUITE.yml` edit**, so it also
+   lands the vcaop-matrix migration lane 1 depends on: add a `typecheck` step and a run-in-band
+   `test:guardrails` step (`jest --runInBand test/guardrails`) to the `vcaop` matrix entry
+   (`TEST-SUITE.yml:111-113`), so deleting `VCAOP-CICD.yml` in lane 1 loses neither gate. The gateway
+   **build** de-dup itself is in lane 2 (CICDL ↔ ENFORCE); this lane does not change a gateway build step
+   and does not touch `CICDL-GATEWAY-CI.yml`. Record measured before/after critical path. It edits
+   `PR-GATE.yml` (protected gate) so keep it isolated. Blocked on an owner instruction to merge (protected
+   gate) — surface for Gate 2. Does **not** flip `enforce`.
    Files: `.github/workflows/PR-GATE.yml`, `.github/workflows/TEST-SUITE.yml`,
-   `.github/workflows/CICDL-GATEWAY-CI.yml` *(see note)*, `scripts/ci/test-suite/*.test.mjs` as needed,
-   `docs/validation/<VTID>/**`.
-   NOTE: `CICDL-GATEWAY-CI.yml` is also in lane 2. To keep files disjoint, the de-dup that touches
-   `CICDL-GATEWAY-CI.yml` is done **only** in lane 2; this lane touches PR-GATE/TEST-SUITE/shards only.
+   `scripts/ci/test-suite/*.test.mjs` as needed, `docs/validation/<VTID>/**`.
+   NOTE: `CICDL-GATEWAY-CI.yml` is edited **only** by lane 2 (not here). `TEST-SUITE.yml` is edited **only**
+   here (lane 1's vcaop-gate migration is done in this lane; lane 1 only deletes `VCAOP-CICD.yml`).
    `depends_on: [fake-checks-dedupe]`.
    Proof: `scripts/ci/test-suite/shard-union.test.mjs` / `rerun-policy.test.mjs` extended to pin the new
-   shard/skip contract (red on base), plus a measured-timings artifact for YAML-only changes.
+   shard/skip contract (red on base), plus the vcaop `typecheck` + run-in-band `test:guardrails` assertion
+   (red on base, where the vcaop matrix runs only `npm test`), plus a measured-timings artifact for
+   YAML-only changes.
 
 7. **stale-tests** — `executor: kiro` (seat `exafy`, reviewer `jtadic`) — the only straightforward Kiro
    lane (product + non-governance test files).
@@ -223,11 +275,15 @@ order. No two lanes edit the same file. Real `depends_on` only.
 
 ## Parallel / shared files / hot files
 
-- **Parallel by default**, build concurrency ≤ 6. Lanes 1, 2, 3, 4, 5, 8 are independent; 6 depends on
-  2; 7 is independent.
-- **Shared-file collisions avoided:** `CICDL-GATEWAY-CI.yml` is edited only by lane 2 (lane 6 is scoped
-  away from it via its NOTE and `depends_on`). `PR-GATE.yml` only by lane 6. `queue.mjs`/`queue.test.mjs`
-  only by lane 3.
+- **Parallel by default**, build concurrency ≤ 6. Lanes 2, 3, 4, 5, 8 are independent; 6 depends on 2
+  (CICDL build de-dup first); 1 depends on 6 (the vcaop `typecheck` + run-in-band `test:guardrails` gates
+  must land in `TEST-SUITE.yml` before `VCAOP-CICD.yml` is deleted); 7 is independent. Dependency order
+  for slotting: {2,3,4,5,8} → 6 → 1.
+- **Shared-file collisions avoided:** `CICDL-GATEWAY-CI.yml` edited only by lane 2. `TEST-SUITE.yml`
+  edited only by lane 6 (it carries lane 1's vcaop-gate migration; lane 1 only deletes `VCAOP-CICD.yml`).
+  `PR-GATE.yml` only by lane 6. `queue.mjs`/`queue.test.mjs` only by lane 3.
+  `ENFORCE-FRONTEND-CANONICAL-SOURCE.yml` (the required check) is edited by no lane; if lane 2's build
+  de-dup would need to, it is surfaced for Gate 2 instead.
 - **Hot file `CLAUDE.md`** (120 commits/60d) is **not edited by this plan** — no lane touches it. If a
   known-issues doc edit becomes necessary it goes under `docs/` or `.claude/rules/*`, not `CLAUDE.md`,
   to avoid the hot-file churn and the protected-gate review.
