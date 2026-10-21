@@ -11,7 +11,8 @@ paths:
   - apps/mobile/app/(app)/news/**
   - apps/mobile/app/(app)/post/**
   - apps/mobile/src/screens/news/**
-  - apps/mobile/src/ports/news.ts
+  - apps/mobile/src/ports/**
+  - apps/mobile/src/navigation/resolve.ts
   - apps/mobile/tests/news/**
   - apps/mobile/maestro/news/**
   - packages/core/manifest.json

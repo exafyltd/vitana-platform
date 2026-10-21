@@ -10,7 +10,8 @@ reviewer_seat: hotmail
 paths:
   - apps/mobile/app/(app)/home/**
   - apps/mobile/src/screens/home/**
-  - apps/mobile/src/ports/home.ts
+  - apps/mobile/src/ports/**
+  - apps/mobile/src/navigation/resolve.ts
   - apps/mobile/tests/home/**
   - apps/mobile/maestro/home/**
   - packages/core/manifest.json

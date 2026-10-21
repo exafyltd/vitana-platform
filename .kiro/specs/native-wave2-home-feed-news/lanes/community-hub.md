@@ -13,7 +13,8 @@ paths:
   - apps/mobile/app/(app)/intents/**
   - apps/mobile/app/(app)/search.tsx
   - apps/mobile/src/screens/community/**
-  - apps/mobile/src/ports/community.ts
+  - apps/mobile/src/ports/**
+  - apps/mobile/src/navigation/resolve.ts
   - apps/mobile/tests/community/**
   - apps/mobile/maestro/community/**
   - packages/core/manifest.json
