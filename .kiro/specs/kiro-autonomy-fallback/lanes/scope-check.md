@@ -1,10 +1,10 @@
 ---
 lane: scope-check
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -15,10 +15,10 @@ paths:
   - scripts/collab/protected-gate-files.json
   - .github/workflows/PR-GATE.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-20T18:48Z
+updated: 2026-10-22T18:21Z
 vtid: VTID-05276
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/scope-check
+parked_from: executing
 ---
 # scope-check — governance changes by Kiro with the reviewer agent (protected files excepted), lanes from the open plan( PR, Collab handoff check
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4 and §5 D, and the `scope-check` section of `tasks.md` are
@@ -53,3 +53,5 @@ Evidence: `docs/validation/VTID-05276/commands.log`. Next: reviewer agent `vitan
 ### 2026-10-20T19:10Z - agent:vitana-lane-reviewer - in-review -> review accept
 Reviewed head: e6d4fbd19f196f9abc5ae8ec0f4d7e2e26ed65f5. Verdict: accept. PR: https://github.com/exafyltd/vitana-platform/pull/4230. Non-blocking: validate-pr needs VALIDATION_PROFILE in the PR body; plan-PR trust depends on the ci-plan-spar trailer.
 Entry committed by the land step on the reviewer agent's behalf. Next: land (owner instruction 2026-10-20, collaboration.md §7b).
+### 2026-10-22T18:21Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
