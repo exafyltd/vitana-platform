@@ -17,6 +17,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import * as repo from './groups-events-tools-repository';
+import { isMtResolutionV2Enabled } from '../mt-flags';
 
 type Handler = (args: OrbToolArgs, id: OrbToolIdentity, sb: SupabaseClient) => Promise<OrbToolResult>;
 
@@ -357,7 +358,19 @@ export async function tool_join_group(
     // Best-effort: fire the same automation event the gateway join route
     // dispatches so the Welcome Squad (AP-0212/AP-0203) can react.
     try {
-      const tenantId = id.tenant_id || process.env.DEFAULT_TENANT_ID;
+      // VTID-05267 (mt-jobs/jobs-automation-actor-tenant) — the fallback site.
+      // The `id.tenant_id`-present path is already correct and must stay
+      // un-regressed on both flag states (resolveActorTenant returns a known
+      // tenant as is). Only the fallback changes: MT_RESOLUTION_V2 off ⇒
+      // DEFAULT_TENANT_ID (today); on ⇒ the user's primary tenant, and
+      // unresolvable ⇒ no dispatch (logged), never DEFAULT_TENANT_ID.
+      let tenantId: string | null | undefined;
+      if (isMtResolutionV2Enabled()) {
+        const { resolveActorTenant } = await import('../jobs/job-tenant-loop');
+        tenantId = await resolveActorTenant({ tenantId: id.tenant_id, userId: id.user_id });
+      } else {
+        tenantId = id.tenant_id || process.env.DEFAULT_TENANT_ID;
+      }
       if (tenantId) {
         const { dispatchEvent } = await import('../automation-executor');
         dispatchEvent(tenantId, 'community.member.joined', {
