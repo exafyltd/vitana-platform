@@ -84,25 +84,49 @@ handoff), staging-only merges and Gate 2 stay exactly as they are.
   its cursor; after deciding `run` it never returns `terminal-state` for the slot's state again, so it can never abort
   a running `code-N` / `land-N`. Sound because of §2.3.
 - **D3 Failure must not hang.** If the work branch **fails**, `any` would wait for the idle `-skip` watch forever. On
-  each later poll `-skip` reads the run's own engine state (`~/.kiro/sessions/*/workflows/<wf id>/workflow-state.json`,
-  wf id = RUN folder suffix) read-only; when the gated node's status is `failed` it appends one line to
-  `RUN/blockers.md` and returns `terminal-state`. `paused` (transient model error, restart) stays `idle`, so the engine
-  can still resume the lane. Missing or unparseable state → `idle` (fallback: the watchdog of item 4 reports the run).
-  The race then reports `completed`; the lane's `RUN/lanes/<id>/state.json` stays `done: false`, which the later steps
-  already report. Rationale: matches `lane-review.md`'s rule that a slot branch must end `completed` so `lanes`
-  (`allSettled`) does not fail the run.
+  each later poll `-skip` reads the run's own engine state read-only and inspects **the gated node named by its config
+  key `gatedNodeId`** (R1-F2: every `-skip`/`-go` watch config carries `gatedNodeId` — the workflow node id it guards,
+  e.g. `"gatedNodeId": "lane-slot-1"` for slot 1, `"investigate"`/`"spec"`/`"plan-pr"` for the planning group,
+  `"spar-loop"`/`"merge-plan"` for the approval group; these ids are stable top-level/repeat ids in the workflow JSON,
+  `:17/:42/:48/:55/:70/:82+`). The field it reads is a **best-effort fixture path `steps[<gatedNodeId>].status` inside
+  `workflow-state.json`** (documented as version-sensitive in `restart-watchdog.md`/the slot-sizing impl notes, pinned
+  to the installed engine's real file); when that status is `failed` it appends one line to `RUN/blockers.md` and
+  returns `terminal-state`. `paused` (transient model error, restart) stays `idle`, so the engine can still resume the
+  lane. Missing, unreadable or unparseable state → `idle` (fallback: the watchdog of item 4 reports the run). **Node
+  `fs` has no native glob (R1-F4):** both `run-gate.cjs` and `workflow-watchdog.mjs` resolve the run folder by
+  enumerating `os.homedir()/.kiro/sessions/` with `fs.readdirSync` and, for each entry, checking
+  `<dir>/workflows/<wf id>/workflow-state.json` existence before reading — never a `*` glob; a missing
+  `.kiro/sessions/` returns idle, covered by a test fixture. The race then reports `completed`; the lane's
+  `RUN/lanes/<id>/state.json` stays `done: false`, which the later steps already report. Rationale: matches
+  `lane-review.md`'s rule that a slot branch must end `completed` so `lanes` (`allSettled`) does not fail the run.
 - **D4 Gated groups.** (a) `lane-slot-1..6`: skip when `RUN/slots.json` `slots.N` is `null`. (b) `planning` =
   `investigate` + `spec` + `plan-pr`: skip when `RUN/run.json` `plan_pr` is non-null or `RUN/slots.json` exists.
   (c) `approval` = `spar-loop` + `merge-plan`: skip when `RUN/slots.json` exists (written only by `merge-plan`).
-  Template-safe: no step outside these groups reads an output inside them (only the repeats' own `stopWhen` and the
-  store watches read `{{…output}}`; `staging-verify` and `gate2` read none). `setup`, `staging-verify`, `gate2` are
-  not gated.
+  Each step keeps its existing id (`investigate`, `spec`, `plan-pr`, `spar-loop`, `merge-plan`, `lane-slot-1..6`);
+  D4 wraps it in place inside a `parallel joinPolicy any` group, it does **not** rename or relocate any step to a new
+  id (R1-F3 read "relocates" as an id change; it is a structural wrap of the same ids). Template-safe: no step outside
+  these groups reads an output inside them (only the repeats' own `stopWhen` and the store watches read `{{…output}}`;
+  `staging-verify` and `gate2` read none). `setup`, `staging-verify`, `gate2` are not gated.
+- **D4-migration (R1-F3): the structural change lands only after the watchdog, over zero in-flight runs.** §2.8 counts
+  seven paused runs; a run paused at a now-wrapped step must not resume against a changed workflow structure
+  unnoticed. Two mechanical safeguards: (1) **`slot-sizing` gains `depends_on: [restart-watchdog]`** so the watchdog
+  (which surfaces every paused/stale run at session start) is on `main` and in use before the workflow JSON changes
+  shape — the plan's own risk ladder D3→R2→watchdog then has no gap; (2) the `slot-sizing` merge commit comment must
+  record **"zero active pipeline runs at time of merge"**, confirmed with the watchdog tool, before `merge-plan`/§7b
+  merges it. §6 (serialized landing, up to date with `main`) and R2 (watchdog reports a stale-beat run) remain the
+  backstop for any run that was paused before the watchdog shipped.
 - **D5 Preflight spawns the CI commands; it does not re-implement them.** `queue.mjs validate` (head copy),
   `scope-check` from `git show <base>:scripts/collab/queue.mjs` + base `protected-gate-files.json` in a temp dir exactly
-  like `PR-GATE.yml:160-166`, `gate.mjs scope|sparring` of the **target repo** (`--repo`) with `--title`, `guard.cjs .`
-  + `guard.test.cjs`, and `node --test scripts/collab/*.test.mjs`. Rationale: byte-for-byte CI parity, follows open
-  `queue.mjs` changes (#4210, #4294) automatically, and touches no protected gate file. All results are collected,
-  printed together, exit 1 on any failure (each labelled `required` or `report-only in CI`).
+  like `PR-GATE.yml:160-166`, **all five PR-GATE Verdict checks** of the **target repo** (`--repo`) with `--title` —
+  `gate.mjs scope`, `gate.mjs sparring`, `gate.mjs weakening`, `gate.mjs red-green` (R1-F1: the Verdict composes
+  exactly these five with `kiro-steering`, `PR-GATE.yml:95-107`; omitting `weakening` or `red-green` broke the plan's
+  own byte-for-byte parity goal) — plus `guard.cjs .` + `guard.test.cjs` (the `kiro-steering` check), and `node --test
+  scripts/collab/*.test.mjs` (Collab tests). `gate.mjs red-green` exits early when the title has no fix-kind VTID
+  (`PR-GATE.yml:98-100`), so its cost on a plan or non-fix lane is negligible. Rationale: byte-for-byte CI parity,
+  follows open `queue.mjs` changes (#4210, #4294) automatically, and touches no protected gate file. All results are
+  collected, printed together, exit 1 on any failure; each result is labelled `required` (Lane scope, Collab handoff)
+  or `report-only in CI (until config.enforce=true)` for the five Verdict checks + kiro-steering, matching
+  `scripts/ci/pr-gate/config.json`'s `enforce` flag so preflight's labelling tracks CI as the flag flips.
 - **D6 Item 3 is a guard, not new races.** Racing side-effecting coder/planner steps across models would duplicate
   writes; the engine already pauses-and-resumes those on transient errors. The deliverable is a guard assertion that no
   step outside a reviewer race pins `modelId` and every pinned model is a chain model, plus the "Model chain" paragraph
@@ -127,10 +151,10 @@ No code interface crosses lanes. Shared conventions, fixed here:
 - Runbook wording owners: preflight owns `lane-code.md`, `planning.md`, `driver.md`; slot-sizing owns
   `lane-land.md`, `lane-review.md`; restart-watchdog owns `README.md` and the new `restart-watchdog.md`.
 
-## 5. Lanes (parallel, no shared file, no `depends_on`)
+## 5. Lanes (no shared file; one ordering edge, R1-F3)
 | lane | files (Lane scope `paths`) | red on base |
 |---|---|---|
-| `slot-sizing` (items 1 + 3) | `.kiro/workflows/vitana-pipeline.workflow.json`, `scripts/collab/run-gate.cjs`, `scripts/collab/run-gate.test.mjs`, `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs`, `.kiro/pipeline/lane-land.md`, `.kiro/pipeline/lane-review.md`, `docs/validation/VTID-*/**` | `run-gate.test.mjs` (module missing); `guard.test.cjs` "every lane slot / planning / approval group is gated" (structure absent); "no modelId outside a reviewer race" passes on base (regression guard, stated as such) |
+| `slot-sizing` (items 1 + 3) · `depends_on: [restart-watchdog]` (R1-F3) | `.kiro/workflows/vitana-pipeline.workflow.json`, `scripts/collab/run-gate.cjs`, `scripts/collab/run-gate.test.mjs`, `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs`, `.kiro/pipeline/lane-land.md`, `.kiro/pipeline/lane-review.md`, `docs/validation/VTID-*/**` | `run-gate.test.mjs` (module missing); `guard.test.cjs` "every lane slot / planning / approval group is gated" (structure absent); "no modelId outside a reviewer race" passes on base (regression guard, stated as such) |
 | `preflight` (item 2) | `scripts/collab/preflight.mjs`, `scripts/collab/preflight.test.mjs`, `.kiro/pipeline/lane-code.md`, `.kiro/pipeline/planning.md`, `.kiro/pipeline/driver.md`, `docs/validation/VTID-*/**` | `preflight.test.mjs` (module missing; runbook text absent) |
 | `restart-watchdog` (item 4) | `.kiro/hooks/vitana-workflow-watchdog.json`, `scripts/collab/workflow-watchdog.mjs`, `scripts/collab/workflow-watchdog.test.mjs`, `.kiro/pipeline/restart-watchdog.md`, `.kiro/pipeline/README.md`, `docs/validation/VTID-*/**` | `workflow-watchdog.test.mjs` (module and hook file missing) |
 `docs/validation/VTID-*/**`: each lane writes only its own `docs/validation/<its VTID>/`. All three lanes are
@@ -139,7 +163,10 @@ No code interface crosses lanes. Shared conventions, fixed here:
 `agent:vitana-lane-reviewer`. `reviewer_seat` omitted (legacy; `executor: claude` needs none, `queue.mjs:707-711`).
 
 ## 6. Parallel, shared files, hot files
-- All three lanes build in parallel; merges one at a time under `merge.lock`, each brought up to date with `main`.
+- `preflight` and `restart-watchdog` build in parallel; `slot-sizing` has one ordering edge
+  `depends_on: [restart-watchdog]` (R1-F3: the watchdog must be on `main` before the workflow JSON changes shape, and
+  slot-sizing merges only with "zero active pipeline runs" confirmed by the watchdog tool). Merges one at a time under
+  `merge.lock`, each brought up to date with `main`; `restart-watchdog` must be `done` before `slot-sizing` merges.
 - Shared files: none. Hot files (§8a): none. `.kiro/workflows/vitana-pipeline.workflow.json` is treated as hot:
   only `slot-sizing` edits it.
 - Protected gate files: none touched (`queue.mjs`, `protected-gate-files.json`, `PR-GATE.yml`, `PLAN-SPAR.yml`,
