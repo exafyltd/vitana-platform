@@ -1,0 +1,82 @@
+TAP version 13
+# Subtest: SessionStart: only this workspace's paused and stale-running runs are reported
+ok 1 - SessionStart: only this workspace's paused and stale-running runs are reported
+  ---
+  duration_ms: 73.710245
+  type: 'test'
+  ...
+# Subtest: restart pause vs user pause: user pauses are listed, never resumed
+ok 2 - restart pause vs user pause: user pauses are listed, never resumed
+  ---
+  duration_ms: 65.534305
+  type: 'test'
+  ...
+# Subtest: own run vs other session's run get different instructions
+ok 3 - own run vs other session's run get different instructions
+  ---
+  duration_ms: 65.722408
+  type: 'test'
+  ...
+# Subtest: UserPromptSubmit reports only the session's own runs
+ok 4 - UserPromptSubmit reports only the session's own runs
+  ---
+  duration_ms: 133.812352
+  type: 'test'
+  ...
+# Subtest: workspace match is case-insensitive with normalised separators on win32
+ok 5 - workspace match is case-insensitive with normalised separators on win32 # SKIP
+  ---
+  duration_ms: 0.166481
+  type: 'test'
+  ...
+# Subtest: missing sessions dir: falls back to run ids from .agents/tasks/pipeline-*/run.json, exit 0
+ok 6 - missing sessions dir: falls back to run ids from .agents/tasks/pipeline-*/run.json, exit 0
+  ---
+  duration_ms: 131.303339
+  type: 'test'
+  ...
+# Subtest: run.json is only a fallback: with engine state present it adds nothing
+ok 7 - run.json is only a fallback: with engine state present it adds nothing
+  ---
+  duration_ms: 67.976375
+  type: 'test'
+  ...
+# Subtest: malformed JSON is skipped, the rest is still reported
+ok 8 - malformed JSON is skipped, the rest is still reported
+  ---
+  duration_ms: 66.513952
+  type: 'test'
+  ...
+# Subtest: nothing found → empty stdout, exit 0; bad stdin → exit 0
+ok 9 - nothing found → empty stdout, exit 0; bad stdin → exit 0
+  ---
+  duration_ms: 120.853314
+  type: 'test'
+  ...
+# Subtest: read-only: no file is written in home or workspace
+ok 10 - read-only: no file is written in home or workspace
+  ---
+  duration_ms: 137.146374
+  type: 'test'
+  ...
+# Subtest: hook file: v1, SessionStart + UserPromptSubmit command hooks running the watchdog
+ok 11 - hook file: v1, SessionStart + UserPromptSubmit command hooks running the watchdog
+  ---
+  duration_ms: 0.370155
+  type: 'test'
+  ...
+# Subtest: vitana-pipeline-start.json hooks[0] is unchanged
+ok 12 - vitana-pipeline-start.json hooks[0] is unchanged
+  ---
+  duration_ms: 0.198407
+  type: 'test'
+  ...
+1..12
+# tests 12
+# suites 0
+# pass 11
+# fail 0
+# cancelled 0
+# skipped 1
+# todo 0
+# duration_ms 947.257143
