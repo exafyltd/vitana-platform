@@ -4,9 +4,9 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: approved
+state: drafted
 sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
-updated: 2026-10-22T12:10Z
+updated: 2026-10-22T12:40Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -77,3 +77,22 @@ record is `escalated` with the owner override recorded above and in
 responses-3.md. CI allocates the lane VTIDs — Kiro does not hand-allocate.
 Next: push; if CI does not auto-allocate on an owner-approved escalation, the
 override is on record for the exceptions path / PM to allocate against.
+
+### 2026-10-22T12:40Z · kiro-exafyltd-202610220802-4a74 · approved → drafted (CI re-sparred)
+The round-3 fixes changed the plan text, so CI PLAN-SPAR opened a FRESH sparring
+session (session 2, `b4758055…`, `s2-round-1.md`) rather than honouring the
+owner-override escalation on the old text. This is the cleaner path: if session
+2 converges, the record is converged + policy-approved and VTIDs allocate
+automatically (no override needed). State returned to `drafted`.
+
+Session 2 round 1: 1 blocker + 2 majors + 2 minors — all verified and ACCEPTED
+(s2-responses-1.md):
+- R1-F1 (blocker): adding 11 moments breaks the VTID-05101 "every moment" test
+  3 ways; the moments lane updates that test in-PR.
+- R1-F2 (major): set each moment's `topic` — null for setup cards,
+  'community' for E3/E6/E7.
+- R1-F3 (major): bulk seam must false-initialize all 11 per member, else a
+  no-profile-row member gets zero cards (`undefined !== false`).
+- R1-F4 (minor): diary_nudge is 40–50; enrichment band corrected to 21–39.
+- R1-F5 (minor): VTID attribution (CI allocates).
+Next: push to start session-2 round 2.

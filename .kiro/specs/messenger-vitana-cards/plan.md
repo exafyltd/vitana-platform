@@ -71,25 +71,37 @@ offered — otherwise a member would get a "Connect Instagram/Facebook" DM whose
 card taps into a 400 "not configured". E6/E7 return on their own once the
 credentials are provisioned, no code change.
 
-| Card | Offered only if… (via `eligibleEnrichmentCards`) |
-|---|---|
-| E1 Upload profile photo | no avatar |
-| E2 Add bio | bio ≤ 50 chars |
-| E3 Make first post | no post |
-| E4 Add interests | none |
-| E5 Set location | none |
-| E6 Connect Instagram | not connected AND Instagram OAuth client configured (else hidden by `unavailableEnrichmentCards()`) |
-| E7 Connect Facebook | not connected AND Facebook OAuth client configured (else hidden) |
-| E8 Connect calendar | no calendar connected |
-| E9 Import contacts | none |
-| E10 Enable notifications | no active device token |
-| E11 Add cover image | none |
+| Card | `topic` | Offered only if… (via `eligibleEnrichmentCards`) |
+|---|---|---|
+| E1 Upload profile photo | `null` | no avatar |
+| E2 Add bio | `null` | bio ≤ 50 chars |
+| E3 Make first post | `community` | no post |
+| E4 Add interests | `null` | none |
+| E5 Set location | `null` | none |
+| E6 Connect Instagram | `community` | not connected AND Instagram OAuth client configured (else hidden by `unavailableEnrichmentCards()`) |
+| E7 Connect Facebook | `community` | not connected AND Facebook OAuth client configured (else hidden) |
+| E8 Connect calendar | `null` | no calendar connected |
+| E9 Import contacts | `null` | none |
+| E10 Enable notifications | `null` | no active device token |
+| E11 Add cover image | `null` | none |
 
-Priorities sit below the shipped `vitana_index` (50–70) and `guided_journey_step`
-(65) so the daily habit and health cards keep precedence, and at or above
-`feature_tip` (20) / `invite_friend` (15) so a relevant setup step beats a
-generic tip on a quiet day. Exact per-card priority is set in the lane and
-pinned by a test.
+**Topic (R1-F2).** `pickMoment` drops any candidate whose `topic` is a toggle
+the member turned off. Setup/profile cards that are not community content
+(E1/E2/E4/E5/E8/E9/E10/E11) carry `topic: null` so they fire regardless of
+toggles — correct for setup tasks. The three cards with an explicit social
+action (E3 first post, E6/E7 social connect) carry `topic: 'community'` so a
+member who switched community off is not nudged to post or connect socials. A
+test asserts each moment's topic and that a community-off member gets none of
+E3/E6/E7.
+
+**Priority band (R1-F4, corrected).** The shipped `diary_nudge` is **40–50**
+(not 50–70). To honour "daily habit and health cards keep precedence", the 11
+enrichment moments are capped **at 39** — below `diary_nudge`'s minimum (40),
+`vitana_index` (50–70) and `guided_journey_step` (65), and above `feature_tip`
+(20) / `invite_friend` (15). So the band is **21–39**, E1 highest (39) → E11
+lowest, strictly below any health/habit moment. Pinned by a test asserting
+absolute values, including a freshly-lapsed-diary case where `diary_nudge`
+outranks every enrichment card.
 
 **Intent vs. display copy (R3-F2 resolution).** `enrichment-card-tips.ts` holds
 *display* copy (card face title/description, "never read by the voice
@@ -102,6 +114,23 @@ template referencing fact keys, or per-card constants), and passes
 writes in the member's language. This keeps NEVER-41 clean (the intent
 instructs, it is never the finished sentence) and requires no locale-coverage
 change (facts stay English).
+
+**Existing test to update (R1-F1, mandatory).** The VTID-05101 "every moment"
+test (`test/vtid-05101-companion-generators.test.ts:198+`) will break three
+ways when 11 moments are added: (1) the strict `.toEqual` on the 6-key
+`COMPANION_MOMENTS.map(m=>m.key)` list; (2) the `expect(c).not.toBeNull()` loop,
+because the `rich` fixture has no `eligibleEnrichmentCardTypes`; (3) the
+`intent` prefix regex `/^(Warmly greet|Greet) the member/`. The
+`companion-enrichment-moments` lane MUST update this test in the same PR:
+extend `rich` with `eligibleEnrichmentCardTypes` (all 11), update the key set to
+17 (or split so the F-moment contract stays pinned separately), and relax/split
+the intent-prefix assertion so enrichment intents (which open with their own
+instruction) are allowed. This is not optional — the build fails otherwise.
+
+**VTID attribution (R1-F5).** CI PLAN-SPAR allocates the lane VTIDs on
+convergence; the new files' JSDoc headers, the tick's `enrichment_unavailable`
+field, and the OASIS event payload carry the allocated VTID (Kiro does not
+hand-allocate).
 
 ### Explicitly NOT in scope (sparring corrections)
 - **No new Index or diary moments.** The shipped `vitana_index` and
@@ -138,6 +167,14 @@ Genuinely new (the real work):
    contact, active device token, and the `user_enrichment_cards` dismissal
    rows. Add a `FetchEnrichmentCompletions` seam to the companion tick deps so
    tests can stub it without a DB.
+   **False-initialization contract (mandatory, R1-F3):** `eligibleEnrichmentCards`
+   requires `completions.get(t) === false` (strict) — `undefined` is NOT
+   eligible. So the bulk seam MUST initialize every member's completion map
+   with `false` for all 11 card types BEFORE applying query results (exactly as
+   `computeCompletions` does with `facts.profile ?? {}` and as `signals.ts`
+   seeds `journey: null` per member). A member with no `profiles` row must come
+   out with E1/E2/E4/E5/E11 = `false` (eligible), not absent. Test fixture
+   includes a member with no profile row asserting those are `false`.
    **Error contract (mandatory):** the seam MUST follow the same
    `Promise.allSettled` / `unavailable[]` pattern as `fetchMemberSignals`
    (`signals.ts`) and MUST NEVER throw — a per-source failure adds a label to

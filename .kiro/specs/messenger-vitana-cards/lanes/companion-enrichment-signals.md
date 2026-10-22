@@ -30,6 +30,11 @@ ReadonlySet<EnrichmentCardType>` on `MemberContext` via
 `eligibleEnrichmentCards(completions, dismissRows, 'messenger', now,
 unavailableEnrichmentCards())` — so moments never need `now`.
 
+Contract (R1-F3, s2): initialize every member's completion map to `false` for
+all 11 card types BEFORE applying query rows (`eligibleEnrichmentCards` needs
+`=== false`, not `undefined`). A member with no `profiles` row must yield
+E1/E2/E4/E5/E11 = false (eligible). Test fixture includes such a member.
+
 ### 2026-10-22T08:20Z · kiro-exafyltd-202610220802-4a74 · ready
 Created in sparring round-1 rewrite (R1-F4/R1-F5): the enrichment resolver is
 per-member with no bulk form, so the bulk read is its own lane. Awaiting CI

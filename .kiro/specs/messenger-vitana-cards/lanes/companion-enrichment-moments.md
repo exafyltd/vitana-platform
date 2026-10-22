@@ -36,6 +36,15 @@ Contracts:
 - R3-F2: each moment's `intent` is an English composer instruction (featureTip
   pattern); `ENRICHMENT_CARD_TIPS[Ex].title.en`/`.description.en` go in `facts`
   (`card_title`/`card_description`), never used as the `intent` string.
+- R1-F1 (s2): update `test/vtid-05101-companion-generators.test.ts` in this PR
+  — extend `rich` with `eligibleEnrichmentCardTypes` (all 11), move to the
+  17-key set (or split the F-moment pin), relax the intent-prefix regex.
+- R1-F2 (s2): set each moment's `topic` per the plan table — `null` for
+  E1/E2/E4/E5/E8/E9/E10/E11, `'community'` for E3/E6/E7. Test: a community-off
+  member gets none of E3/E6/E7.
+- R1-F4 (s2): enrichment priority band is **21–39** (below `diary_nudge` min 40),
+  E1=39 → E11=21. Priority-pin test asserts absolute values incl. a lapsed-diary
+  case where `diary_nudge` wins.
 
 ### 2026-10-22T08:20Z · kiro-exafyltd-202610220802-4a74 · ready
 Rescoped in sparring round-1 rewrite (R1-F1): F1/F7/F8 removed (already
