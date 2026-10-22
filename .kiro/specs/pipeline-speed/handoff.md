@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: approved
-updated: 2026-10-22T17:50Z
+state: executing
+updated: 2026-10-22T20:49Z
 sparring_record: .kiro/specs/pipeline-speed/sparring/verdict.md
 vtids: [VTID-05336, VTID-05337, VTID-05338]
 ---
@@ -28,3 +28,5 @@ under §7b.
 
 ### 2026-10-22T17:50Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
+### 2026-10-22T20:49Z · kiro-202610220829-5884 · approved → executing
+First lane PR merged: exafyltd/vitana-platform#4337 (restart-watchdog, `ee0c731aa52168378729ef546c685f36c4f97afe`). Lanes slot-sizing (#4339) and preflight (#4340) follow, one merge at a time; slot-sizing only after restart-watchdog is `done` and with the zero-active-runs record (plan D4-migration).
