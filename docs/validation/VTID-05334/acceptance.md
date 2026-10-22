@@ -2,10 +2,11 @@
 
 ## Red → green
 New test `existing suites may set only allowlisted, non-production env` in `scripts/ci/staging-verify/lib.test.cjs`:
-- origin/main + the new test only: `# pass 61 # fail 0 `
-- this branch, `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs`: `# pass 69 # fail 0 `
-  (`workflow.test.cjs` is run by no CI job — R2-F2 builder note — so its local result is recorded here; it includes the
-  check that `runExisting` passes no token and no `...process.env`.)
+- commit `5a232d889` (origin/main + the new test only), `node --test scripts/ci/staging-verify/lib.test.cjs`:
+  `not ok 9 - existing suites may set only allowlisted, non-production env (staging-verify-runner-fix) # pass 61 # fail 1`
+- this branch, same command: `# pass 62 # fail 0`
+- this branch, `node --test scripts/ci/staging-verify/workflow.test.cjs`: `# pass 7 # fail 0` (run by no CI job — R2-F2
+  builder note — so recorded here; it checks that `runExisting` passes no token and no `...process.env`).
 
 ## What changed
 - `STAGING-VERIFY.yml` `verify`: `runs-on: ubuntu-24.04` (was `ubuntu-latest` = ubuntu-26.04, where Playwright
