@@ -24,6 +24,10 @@ paths:
   - src/pages/health/WellnessServices.tsx
   - src/pages/memory/Diary.tsx
   - src/pages/memory/Recall.tsx
+  # VTID-05286: shared design-constant source for VitanaIndexDetail (also read by the Calendar) + its two design-pin guards
+  - src/lib/index-look.ts
+  - src/lib/vitana-index-next-steps.test.ts
+  - src/components/calendar/vcal/typography.test.ts
   - tests/e2e/staging/vtid-*-colours-batch-2.staging.spec.ts
   - scripts/ci/pr-gate/baseline/design.json
   - scripts/ci/pr-gate/baseline/eslint.json
@@ -91,3 +95,23 @@ Vitest failure, pre-existing on the lane's own tip faeb79807 (it also fails with
 - Recommendation: option (a) in a dedicated follow-up (tokenise `index-look.ts` + update both guard tests + add
   those files to this lane's paths + visual-verify Calendar on staging), since the Spotlight contract applies to
   every screen. Needs owner/author direction because it re-skins an out-of-scope surface. No live system touched.
+
+### 2026-10-22T14:10Z - kiro-202610152203-0347 - deeper finding (hero tokenisation breaks Calendar WCAG guard)
+Attempted the proper fix (tokenise shared `src/lib/index-look.ts` to match the page). The class-string constants map
+cleanly (INDEX_CARD/HERO_CLASS/EYEBROW/TILE/NEXT_UP/NEXT_UP_CHIP all become exact substrings of the tokenised page,
+so `index-look.test.ts` + `vitana-index-next-steps.test.ts` would pass). BUT `INDEX_HERO_STYLE` cannot be
+tokenised cleanly:
+- The Calendar guard `src/components/calendar/vcal/typography.test.ts` (L77-82) parses INDEX_HERO_STYLE's
+  `backgroundColor`/`backgroundImage` with `/hsl\((\d+), (\d+)%, (\d+)%\)/` and runs a WCAG contrast check
+  (expects 4 literal hsl stops, ratio >= 3). Replacing the literals with `hsl(var(--surface-page*))` yields 0 stops
+  -> that Calendar test FAILS. The test needs literal hsl values it can resolve.
+- The page's tokenised hero is NOT visually identical to the old one: old = pale blue
+  (`hsl(200,80%,91%) / 212,72%,94% / 225,65%,95%`); `--surface-page-from/via/to` (index.css L225-227) =
+  `270 100% 98% / 214 100% 97% / 327 73% 97%` = a violet->blue->pink gradient. No existing token reproduces the
+  old pale-blue gradient, so "nearest token, Calendar visually identical, no new tokens" is not achievable for the
+  hero. This is a real visible re-skin introduced by the lane's page tokenisation, plus an accessibility-guard break.
+Conclusion: this is more than a trivial token swap and crosses into a design decision (accept the hero re-skin on both
+Index + Calendar, and update the Calendar WCAG guard to resolve tokens) or keep the hero literal on the shared const
+(page/const diverge). Per the owner's instruction, a non-trivial shared-constant fix needs independent review before
+merge. #1456 left NOT merged at baseline-only merge a8d96dfd0 (class-const fix staged locally, unpushed). The other
+four conflicting lanes (batch-3/4/5, backoffice) continue meanwhile. No live system touched.
