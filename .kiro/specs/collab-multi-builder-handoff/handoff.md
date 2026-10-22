@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: kiro
 state: drafted
-updated: 2026-10-22T07:43Z
+updated: 2026-10-22T08:06Z
 ---
 # Handoff — collab-multi-builder-handoff
 
@@ -20,3 +20,8 @@ Owner decision 2026-10-22: fix Collab handoff first, no `--admin` on #4198, gove
 protected-file review. Pushed as a `plan(` PR. No VTID, no code.
 Supersedes #4293, whose second commit edited the lane file its first commit created (a `_plan` commit may only create
 a lane file); recreated as one commit rather than force-pushing.
+
+### 2026-10-22T08:06Z · kiro-exafyltd-202610220742-67f3 · re-plan after partner escalation
+Session 1 escalated on `evidence_floor_not_met`: the partner cited no file it had read. That is not a plan
+finding, so there is nothing to answer. Added an explicit premise-check list (files and line ranges) to the plan
+block; the changed text starts the re-plan session (`plan-spar.mjs:307`, max 2 sessions).

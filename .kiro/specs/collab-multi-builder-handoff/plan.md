@@ -26,6 +26,16 @@ Pinned: `exafyltd/vitana-platform@5f76b3ab2`.
   counts toward the merge (§7b), so such a lane cannot land. Example: commerce-step-owner/gateway-step-owner (#4198),
   five `kiro-exafy-…` sessions, 2026-10-19 → 2026-10-21.
 
+## Premise checks (files to read)
+Each premise above is checkable by reading these files at the pinned ref:
+1. `scripts/collab/queue.mjs` lines 560–605 — `sessionsByLane`, the "one session per lane" error, the `claimed_by` check.
+2. `scripts/collab/queue.mjs` lines 488–500 — `commitsInRange` (`git log --no-merges`, the trailers read).
+3. `scripts/collab/queue.mjs` lines 60–70 and 704–720 — `SESSION_RE`, `seatOf`, and `scopeCheck`'s seat rule.
+4. `scripts/collab/queue.mjs` lines 674–690 — `PERM` and the base-revision fold-back.
+5. `scripts/collab/queue.mjs` lines 870–910 — `claim` (no-force push) and `release` (holder or 24 h `--stale`).
+6. `scripts/collab/protected-gate-files.json` — `scripts/collab/queue.mjs` is listed.
+7. `scripts/collab/queue.test.mjs` lines 88–125 — the fixture helpers (`fixture`, `commit` with trailers, `seedSpec`).
+
 ## Change (lane `sequential-builders`, `scripts/collab/queue.mjs` only)
 Replace the single-session rule in `validateRange` with this one. A lane's **builder sessions** are the sessions of
 the commits in range whose `Collab-Lane` is the lane, excluding `pm-agent` and `ci-plan-spar` (as today).
