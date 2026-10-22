@@ -71,7 +71,9 @@ returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first 
 8. **Gate 2** when every lane is `done` and STAGING-VERIFY passed on the last merge commit: *"Staging verified — ready for
    deployment to production?"* with the verified commit, the STAGING-VERIFY run link, test counts, every commit between
    production and it, the migrations in the release, "Decisions taken" and `docs/validation/<plan VTID>/timings.json`.
-   The Project Manager posts it; an interactive driver also says it in the session. Production stays the owner's PUBLISH.
+   The Project Manager posts it; an interactive driver also says it in the session. Production stays the owner's PUBLISH,
+   or — when the owner explicitly commands it in an interactive session — the driver publishes itself under
+   `collaboration.md` §7c (full, or only one session's changes). An automation-started driver never publishes.
 9. **Done**: plan `done`, `_plan` claim released, and the heartbeat ref removed as the last action
    (`git push origin --delete refs/heads/collab-driver/<slug>`; it holds no work).
 10. **Wait**: nothing to do now (checks running, review pending) → heartbeat, poll every 2–3 min, loop.
@@ -83,7 +85,7 @@ stops when the run's time is almost up: last heartbeat, everything pushed, claim
 wake-up resumes from git.
 
 ## Never
-Never allocate a VTID by hand, never deploy to production or dispatch a production workflow, never run PUBLISH or
-`publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
+Never allocate a VTID by hand, never deploy to production or dispatch a production workflow except an owner-commanded
+publish in an interactive session (§7c), never run `publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
 file in the lane's PR), never test against production, never skip, disable or loosen a test, never force-push, never
 accept your own lane.

@@ -22,4 +22,5 @@ Runtimes:
 - **Kiro Web:** follow `.kiro/pipeline/driver.md` in one continuous session (no workflow engine there).
 
 The owner is asked only Gate 2 and an escalated sparring verdict (plus the §7 stop cases). Everything in between
-runs without questions. VTIDs come only from CI PLAN-SPAR. Production only via the owner's PUBLISH.
+runs without questions. VTIDs come only from CI PLAN-SPAR. Production only via the owner's PUBLISH, or a publish Kiro runs on
+the owner's explicit command in the conversation (full, or one session's changes only; `collaboration.md` §7c).

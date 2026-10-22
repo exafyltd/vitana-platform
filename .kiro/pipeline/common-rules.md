@@ -36,7 +36,9 @@
    converged plan, do not make it: log finding, needed change, user-visible effect and a behaviour-preserving
    alternative in `blockers.md` as deferred, and continue.
 6. **Never:** allocate a VTID by hand (only CI PLAN-SPAR allocates); deploy to production; run or dispatch PUBLISH,
-   `scripts/deploy/publish-to-prod.sh` or any `AWS-PROD-DEPLOY-*`; write to Supabase or any live system from session
+   `scripts/deploy/publish-to-prod.sh` or any `AWS-PROD-DEPLOY-*` — the only exception is a publish the owner
+   explicitly commands in an interactive conversation (`collaboration.md` §7c: full, or one session's changes only;
+   never in a workflow step or automation run, never `publish-to-prod.sh`); write to Supabase or any live system from session
    tools (a DB change is a migration file in the lane PR); test against production; skip, disable or loosen a test;
    accept your own lane. Staging tests are read-only.
 7. **Gateway calls** (`gateway.vitanaland.com`, `preview-aws-gateway.vitanaland.com`): always
