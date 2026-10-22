@@ -17,7 +17,8 @@ paths:
   - .kiro/pipeline/lane-land.md
   - .kiro/pipeline/lane-review.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:20Z
+updated: 2026-10-22T17:50Z
+vtid: VTID-05338
 ---
 # slot-sizing — empty lane slots and resumed planning cost zero agent sessions; no stray model pin (items 1 + 3)
 Plan: `.kiro/specs/pipeline-speed/plan.md` §2.1-2.5, §2.7, D1-D4, D6, and the `slot-sizing` section of `tasks.md` are
@@ -29,3 +30,6 @@ JSON is owned by this lane only; open plan #4243 lane `reviewer-fix` must not be
 ### 2026-10-22T11:20Z · kiro-202610220829-5884 · created → ready
 Lane created with the plan (owner: "yes, execute your recommendation", 2026-10-21). Next: PLAN-SPAR; once `vtid:` is
 set, seat exafy claims it.
+
+### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
+VTID-05338 allocated after policy approval (converged-auto-v1).

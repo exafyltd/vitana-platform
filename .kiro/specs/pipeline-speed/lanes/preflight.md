@@ -15,7 +15,8 @@ paths:
   - .kiro/pipeline/planning.md
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:20Z
+updated: 2026-10-22T17:50Z
+vtid: VTID-05336
 ---
 # preflight — every CI governance check of a lane or plan PR, locally, in one pass (item 2)
 Plan: `.kiro/specs/pipeline-speed/plan.md` §2.6, D5, and the `preflight` section of `tasks.md` are authoritative.
@@ -27,3 +28,6 @@ governance path; Kiro seat `exafy` builds it under kiro-autonomy-fallback. Spawn
 ### 2026-10-22T11:20Z · kiro-202610220829-5884 · created → ready
 Lane created with the plan (owner: "yes, execute your recommendation", 2026-10-21). Next: PLAN-SPAR; once `vtid:` is
 set, seat exafy claims it.
+
+### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
+VTID-05336 allocated after policy approval (converged-auto-v1).

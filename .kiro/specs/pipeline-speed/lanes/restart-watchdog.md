@@ -15,7 +15,8 @@ paths:
   - .kiro/pipeline/restart-watchdog.md
   - .kiro/pipeline/README.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:20Z
+updated: 2026-10-22T17:50Z
+vtid: VTID-05337
 ---
 # restart-watchdog — workflow runs paused by an agent restart are surfaced at session start (item 4)
 Plan: `.kiro/specs/pipeline-speed/plan.md` §2.8, D7, and the `restart-watchdog` section of `tasks.md` are
@@ -27,3 +28,6 @@ state. `.kiro/hooks/vitana-pipeline-start.json` stays unchanged. Protected gate 
 ### 2026-10-22T11:20Z · kiro-202610220829-5884 · created → ready
 Lane created with the plan (owner: "yes, execute your recommendation", 2026-10-21). Next: PLAN-SPAR; once `vtid:` is
 set, seat exafy claims it.
+
+### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
+VTID-05337 allocated after policy approval (converged-auto-v1).

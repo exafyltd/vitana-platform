@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T11:20Z
+state: approved
+updated: 2026-10-22T17:50Z
+sparring_record: .kiro/specs/pipeline-speed/sparring/verdict.md
+vtids: [VTID-05336, VTID-05337, VTID-05338]
 ---
 # Handoff — pipeline-speed (empty slots and resumed planning cost nothing; one-pass preflight; no stray model pin; restart watchdog)
 Planner: Kiro seat `exafy` (session kiro-202610220829-5884, workflow run `wf_561cf354d2648029`). Plan: `plan.md`
@@ -23,3 +25,6 @@ now. Premises checked against vitana-platform `origin/main` `64575e6f1` from thr
 tests, rules). No VTID allocated, no code changed, no live system touched. Next: PLAN-SPAR spars this PR; this session
 answers each round in `sparring/responses-<n>.md`; on convergence CI allocates the lane VTIDs and the plan PR merges
 under §7b.
+
+### 2026-10-22T17:50Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
