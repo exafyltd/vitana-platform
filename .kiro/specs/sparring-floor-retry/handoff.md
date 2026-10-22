@@ -111,3 +111,14 @@ converged/approved, both responses files present). Merge of the plan PR is left 
 interactive driver (an automation run never merges). The PM has reassigned the lane `seat` claude→exafyltd
 (`stale_ready`, Claude unavailable) on its branch; the lane stays `ready` for the exceptions seat `exafyltd`,
 still `executor: claude`. `_plan` claim released at end of run; next wake-up resumes from git.
+
+### 2026-10-22T08:04Z · kiro-exafy-202610220801-d3a6 · driver resume (automation wake-up W)
+Fallback wake-up for seat `exafy`. Previous driver heartbeat was ~57 min old (stale, > 45 min), so this run took it
+over (fresh heartbeat sha 0b221b38, from `kiro-exafy-202610220701-ff54`) and held the `_plan` claim (sha 4a63721f).
+State unchanged from the two prior wake-ups: `plan-driver.mjs next` returns one action, build `floor-retry-code`,
+which an automation-started driver may not take — the lane is `executor: claude` and a governance path
+(`scripts/collab/**`), and the PM has reassigned its `seat` to the exceptions seat `exafyltd` on
+`pm-agent/sparring-floor-retry` (Claude unavailable, §7). No sparring round awaits a response; the plan PR is already
+on `main`; merges and the `pm-agent` PR #4249 belong to the Project Manager / an interactive driver, never an
+automation run. Lane left `ready` for the exceptions seat `exafyltd`. No VTID, no code change, no merge, no
+live-system write. `_plan` claim released at end of run; next wake-up resumes from git.
