@@ -23,3 +23,7 @@ the 5th-argument enforcement is made a call-site + test requirement.
   }
 ]
 ```
+
+<!-- re-trigger PLAN-SPAR synchronize for head 2447dbdeb (the round-2 answer run
+was coalesced by the one-run-per-PR concurrency group and executed against the
+round-1 head instead; this no-op edit re-fires the path trigger). -->
