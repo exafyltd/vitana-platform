@@ -16,7 +16,9 @@ tapped in full.
    `SidebarInset` (`exafyltd/vitana-v1:src/components/ui/sidebar.tsx:338`) use `min-h-*`, not a fixed height.
    `MobileAppShell` (`exafyltd/vitana-v1:src/components/mobile/MobileAppShell.tsx:60-64`) wraps the page in a
    `flex-1 min-h-0 overflow-hidden` div. No ancestor has a bounded height, so that div grows with its content and clips
-   nothing vertically. Scrolling ends when the bottom of the page content reaches the bottom of the viewport.
+   nothing vertically. The same holds one level up for `AppLayout`'s `<main className="flex-1 min-h-0 overflow-hidden">`
+   (`exafyltd/vitana-v1:src/components/AppLayout.tsx:511`): the outer flex container is `min-h-screen`, not `h-screen`
+   (`:493`), so no definite height is resolved anywhere in the chain. Scrolling ends when the bottom of the page content reaches the bottom of the viewport.
 3. `MobileBottomNav` (`exafyltd/vitana-v1:src/components/mobile/MobileBottomNav.tsx:153`) is `fixed bottom-0`, about 72 px plus
    `env(safe-area-inset-bottom)`. The Orb FAB is `position: fixed`,
    `bottom: calc(var(--appilix-bottom-nav-height, 72px) - 46px)` (`exafyltd/vitana-v1:src/index.css:859-875`), about 72 px tall, so it
@@ -38,8 +40,11 @@ finding. The premises above rest on these files: `src/pages/MatchesPage.tsx`, `s
 ## Change (one lane, `matches-list-clearance`, repo vitana-v1)
 - `src/pages/MatchesPage.tsx`, legacy (phone) tree only: the outer wrapper gets bottom padding that clears the bar,
   the Orb and the safe area, and is reset on `md`:
-  `pb-[calc(var(--appilix-bottom-nav-height,72px)_+_env(safe-area-inset-bottom,0px)_+_4rem)] md:pb-6`
-  (≈ 72 + inset + 64 px: the Orb's ≤36 px overhang plus at least a 28 px gap below the last card). It is tied to the same CSS
+  `pb-[calc(var(--appilix-bottom-nav-height,72px)_+_env(safe-area-inset-bottom,0px)_+_90px)] md:pb-6`
+  (≈ 72 + inset + 90 px). The 90 px matches the existing fixed-overlay clearance of `.maxina-signin-page`
+  (`exafyltd/vitana-v1:src/index.css:878-883`). It covers the Orb's observed ≤36 px overhang (the Orb is
+  Appilix-injected and no height for it is defined in the repo), leaves ≥54 px of headroom if the Orb grows, and
+  the code comment names that sizing. It is tied to the same CSS
   variable the Orb uses, so a different Appilix bar height moves both together. `p-4 md:p-6` stays for the other
   sides. The wrapper also gets `data-testid="matches-page"`.
 - The Spotlight tree, the data hook, the list markup and the empty/loading states stay unchanged.
