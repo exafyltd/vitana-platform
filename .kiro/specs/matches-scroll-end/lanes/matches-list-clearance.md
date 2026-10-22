@@ -1,6 +1,6 @@
 ---
 lane: matches-list-clearance
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -12,7 +12,7 @@ paths:
   - src/pages/MatchesPage.tsx
   - src/pages/MatchesPage.bottom-clearance.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-22T09:45Z
+updated: 2026-10-22T10:05Z
 claimed_by: kiro-exafyltd-202610220833-d231
 branch: kiro/matches-scroll-end/matches-list-clearance
 pr: https://github.com/exafyltd/vitana-v1/pull/1490
@@ -38,3 +38,13 @@ Claimed (`collab-claim/matches-scroll-end/matches-list-clearance`). Built M1–M
 `kiro/matches-scroll-end/matches-list-clearance` (5a360a2a8, base `b8a4efbd3`): PR https://github.com/exafyltd/vitana-v1/pull/1490.
 M1 test written first, red on `origin/main` (no `matches-page` wrapper), green on the lane head. Together with
 `vtid-05117-leftovers-2.test.tsx`: 26/26. M2 padding `+ 90px` as sparred. M3 `docs/validation/VTID-05332/` (staging-tests.json, commands.log).
+
+### 2026-10-22T10:05Z · kiro-exafyltd-202610220833-d231 · executing → in-review
+exafyltd/vitana-v1#1490 head `fa4de8fbf` (lane commit `5a360a2a8` plus a merge of origin/main `3d144939c`): the new
+test plus `vtid-05117-leftovers-2` pass 26/26 locally on the merged head. CI on that head: everything green except
+`Lane scope`, `preview-e2e` (PR-GATE) and `ORB parity` (NATIVE-CI). All three failed fetching from vitana-platform
+with `API rate limit exceeded for user ID 171726573` / HTTP 403 (infra, not code); they are re-run once the limit
+resets. The reviewer agent `vitana-lane-reviewer` is not registered in this Kiro Web session ("not found in
+registry"), so the lane stays `in-review` for it and no other model is substituted.
+Owner instruction in this Kiro Web session 2026-10-22: "yes" to "re-spar, build the fix and merge it to staging".
+That is recorded as the §7b owner-named authority for exafyltd/vitana-v1#1490. It merges only with every check green.
