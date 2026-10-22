@@ -87,3 +87,16 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-22T17:04Z · kiro-exafy-202610221701-0923 · driver wake-up (automation, item W)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback VTID-05271). Took over a stale driver
+heartbeat (prior `kiro-exafy-202610221601-80c3`, >45 min old) and wrote a fresh one on
+`refs/heads/collab-driver/sparring-floor-retry`; hold the `_plan` claim. Resumed from git: plan converged and
+approved by policy `converged-auto-v1` (verdict.md, state.json session 3b3d1387, plan hash d7ba69f7…), VTID-05240;
+plan PR already merged (only open PR is the pm-agent bookkeeping #4249); no open sparring round; no lane PR; no
+in-review lane. `plan-driver.mjs next` returns exactly one action: build `floor-retry-code`. That lane is
+`executor: claude` and a governance path (`scripts/collab/**`, incl. the protected gate file
+`scripts/collab/plan-spar.mjs`), so an automation-started driver may not build it (driver.md "Automation-started
+driver"; collaboration.md §7a) — it waits for Claude Code, or the exceptions seat `exafyltd` if Claude goes
+unavailable under the §7 4h rule. No other action is open to this driver. Keeping the driver heartbeat live was the
+wake-up's purpose; no code changed, no VTID allocated, no merge, no live-system write. Next wake-up resumes from git.
