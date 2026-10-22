@@ -20,7 +20,7 @@ paths:
   - docs/validation/VTID-*/**
 branch: kiro/kiro-autonomy-fallback/steering-rules
 pr: https://github.com/exafyltd/vitana-platform/pull/4226
-updated: 2026-10-22T18:17Z
+updated: 2026-10-22T18:21Z
 vtid: VTID-05278
 parked_from: executing
 ---
@@ -62,4 +62,6 @@ Findings (non-blocking): validate-pr needs a VALIDATION_PROFILE line in the PR b
 keeps the stale two-seat parenthetical (later governance lane); some CI still running at review time.
 Entry committed by the land step on the reviewer agent's behalf. Next: land (owner instruction 2026-10-20, ).
 ### 2026-10-22T18:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T18:21Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
