@@ -92,12 +92,13 @@ A new plan starts at `drafted`, a new lane at `ready`.
   Collab-Session: <reviewer session>
   Collab-Review: <slug>/<lane-id>
   Collab-Verdict: accept | changes
-  Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+  Collab-Reviewer: agent:vitana-lane-reviewer (<model>)
   Collab-Reviewed-Head: <40-hex PR head the agent reviewed>
   ```
-  `Collab-Review` stays the lane key (scope-check depends on it); the verdict is `Collab-Verdict`. Body:
+  `<model>` is the chain model the agent ran on: `claude-sonnet-5.5`, `claude-opus-5.5` or `claude-sonnet-4.5`
+  (`REVIEWER_AGENT_MODELS`, PM `governance.ts`). `Collab-Review` stays the lane key (scope-check depends on it); the verdict is `Collab-Verdict`. Body:
   `### <ISO time> · <session> · review`, then `review: accept|changes`, `head: <sha>`,
-  `reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)`, PR link, findings summary, next actor. The reviewer
+  `reviewer: agent:vitana-lane-reviewer (<model>)`, PR link, findings summary, next actor. The reviewer
   session is never a session in the lane's executing log. An entry counts for the **current head** when
   `Collab-Reviewed-Head` equals the PR head, or every commit after it only appends review entries to this lane file
   (front matter unchanged) or is a `pm-agent` lane-state commit.
@@ -169,8 +170,8 @@ approvals, you run it end to end"). Kiro accounts carry the work because each ha
 
 **The pipeline:** `plan(<slug>)` PR → CI PLAN-SPAR (partner chain unchanged: Bedrock Opus 4.6 → Sonnet 4.6 → DeepSeek)
 → policy approval (`converged-auto-v1`) → **CI allocates a fresh VTID per lane** (never Kiro by hand) → Kiro builds
-the lanes in parallel (§8a) → the reviewer agent `vitana-lane-reviewer` (Kiro custom agent, model `claude-sonnet-5.5`,
-read-only) returns `accept` or `changes` → `verified` → merge to `main` under §7b → staging auto-deploy →
+the lanes in parallel (§8a) → the reviewer agent `vitana-lane-reviewer` (Kiro custom agent, model chain
+`claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`, read-only) returns `accept` or `changes` → `verified` → merge to `main` under §7b → staging auto-deploy →
 STAGING-VERIFY → Gate 2 *"Staging verified — ready for deployment to production?"*. Production only by the owner's
 PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, re-runs, sparring rounds or VTIDs.
 
@@ -185,12 +186,15 @@ PUBLISH. **No per-PR owner approvals**: no question about git, push, PR, merge, 
   with its local partner; the owner then answers Gate 1 as before.
 - **Building — the lane's seat** (Kiro). `executor: claude` lanes go to Claude Code when it is available, else to the
   exceptions seat.
-- **Accepting — the reviewer agent** `agent:vitana-lane-reviewer (claude-sonnet-5.5)`. Per lane, independently and in
+- **Accepting — the reviewer agent** `agent:vitana-lane-reviewer (<model>)`, `<model>` from its chain. Per lane, independently and in
   parallel: the builder claims → implements → PR → `in-review` → the reviewer agent checks the diff against the lane's
   `tasks.md` acceptance, the lane `paths`, CI on the current head, red→green proof, no test weakening, no
   production/live writes → the calling session commits the review entry (§3). `changes` sends the lane back to
-  `executing`. The model unavailable → the agent fails loudly (`model_unavailable`), the lane stays `in-review`, no
-  other model is substituted. A builder never accepts its own lane; `reviewer_seat` is legacy.
+  `executing`. A chain model unavailable → another chain model reviews at once (owner 2026-10-21: never wait on an
+  unavailable model; the Kiro IDE recipe races one review step pinned per chain model in a `joinPolicy: "any"`
+  parallel, the Kiro Web driver tries them in order); a model outside the chain fails loudly (`model_unavailable`),
+  each model reviews a head at most once, and when all three fail the review stops loudly (recipe: the slot fails
+  with the engine's record; driver: a logged blocker, the lane is parked). A builder never accepts its own lane; `reviewer_seat` is legacy.
 - **Merging and Gate 2 — the Project Manager** (`services/gateway/src/services/project-manager/`) by the PM merge
   rule (§7b); while the PM is not `live`, the plan driver (Kiro) applies the same rule. Gate 2 goes to the Command Hub
   Operator Chat with the evidence: STAGING-VERIFY link, test counts, verified commit, every commit between production
@@ -238,7 +242,7 @@ attempts park with the five-part stop message (§7); `next_actor: claude` only w
 The Project Manager merges a lane PR — and **the plan driver (Kiro) applies the same rule while the PM is not
 `live`** — when ALL of these hold:
 - the lane is `verified` and the review entry (§3) is `Collab-Verdict: accept` from
-  `agent:vitana-lane-reviewer (claude-sonnet-5.5)` on the PR's current head;
+  `agent:vitana-lane-reviewer (<model>)` (`<model>` in its chain) on the PR's current head;
 - every required check is green, incl. **Lane scope** and **Collab handoff**;
 - the PR is up to date with latest `main` and its checks were re-run on that head (serialized landing, §8a); no
   conflict;
