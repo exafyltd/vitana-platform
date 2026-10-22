@@ -4,6 +4,14 @@ via the manifest/closure process, `apps/mobile/parity/ledger.json`, DE-first i18
 backend, no gateway change, no migration). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this
 folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5 Wave 2.
 <!-- plan:begin -->
+## Cross-repo sparring
+This plan's implementation lives in `exafyltd/vitana-v1` (native app `apps/mobile/**`, `packages/core/**`, the parity
+ledger, i18n shards), while the plan PR itself is in `exafyltd/vitana-platform`. Every load-bearing premise the
+sparring partner must verify — the parity-ledger rows for `"lane": "public-auth"`, the `src/App.tsx` routes, the
+`PublicAppShell` branch and the public/auth/onboarding/legal web source pages and their class-A/class-B module
+classification — is therefore a vitana-v1 file. The partner reads those files through the `spar_refs`
+(`exafyltd/vitana-v1: main`) declared in `handoff.md`, which PLAN-SPAR forwards as `extra_refs`; findings about the
+frontend half must cite vitana-v1 paths read via that ref.
 ## Goal
 Wave 2 public / auth / onboarding / legal screen-port batch of the native Maxina app: port the signed-out storefront,
 the auth surfaces and onboarding/legal screens — the web destinations the parity ledger assigns to
