@@ -1,0 +1,57 @@
+---
+lane: jobs-automation-actor-tenant
+state: ready
+next_actor: kiro
+depends_on: [jobs-tenant-loop]
+executor: kiro
+seat: jtadic
+reviewer_seat: exafy
+paths:
+  - services/gateway/src/routes/community.ts
+  - services/gateway/src/routes/match-feedback.ts
+  - services/gateway/src/routes/matchmaking.ts
+  - services/gateway/src/routes/admin-signups.ts
+  - services/gateway/src/services/orb-tools/groups-events-tools.ts
+  - services/gateway/test/
+  - docs/validation/
+updated: 2026-10-20T17:43Z
+vtid: VTID-05267
+---
+# jobs-automation-actor-tenant — automation events carry the actor's real tenant (repo vitana-platform)
+
+Plan: `.kiro/specs/mt-jobs/plan.md` (authoritative) and the `jobs-automation-actor-tenant` section of `tasks.md`
+(A1–A3, allowed paths, acceptance). Design: `design.md`.
+
+Six direct-pin sites (`community.ts:274,382,482`, `match-feedback.ts:280`, `matchmaking.ts:576`,
+`admin-signups.ts:205`) and one fallback site (`groups-events-tools.ts:357-360`, `id.tenant_id || DEFAULT_TENANT_ID`)
+resolve the actor's real tenant via `resolveActorTenant` (from `jobs-tenant-loop`, built on the already-shipped
+`resolvePrimaryTenant`, `services/tenancy/tenant-context.ts:43`, VTID-05149 — no direct `user_tenants` read) when the
+flag is on; off,
+`DEFAULT_TENANT_ID` unchanged. The fallback site already tries the session tenant first — annotate it separately and
+pin its `id.tenant_id`-present path with a dedicated no-regression test (A2). Depends on `jobs-tenant-loop` for the
+resolver.
+
+**Held:** `next_actor: owner` until PLAN-SPAR allocates this lane's VTID and flips it to `next_actor: kiro`. Rules
+(collaboration §7a): no VTID allocation, no `_plan` claim, no `handoff.md` edit, no merge/approve, no deploy, no
+Supabase/AWS write. Work only inside the allowed paths. Branch `kiro/mt-jobs/jobs-automation-actor-tenant`; PR title
+`VTID-xxxxx (mt-jobs/jobs-automation-actor-tenant): …`; commit trailers `Collab-Session: <your kiro session id>` and
+`Collab-Lane: mt-jobs/jobs-automation-actor-tenant`. When the PR is open: set `state: in-review`, `next_actor: kiro`
+(reviewer seat `exafy`), `pr: <url>`, append a log entry, release the claim.
+
+## Log
+### 2026-10-15T16:40Z · kiro-hotmail-202610151618-b437 · created → ready
+Depends on `jobs-tenant-loop` (shared resolver). Seat `jtadic`, reviewer `exafy`.
+### 2026-10-18T20:07Z u{00B7} kiro-hotmail-202610151618-b437 u{00B7} re-spar round (s2-round-1 R1-F3)
+Split the dispatch sites into six direct pins + one fallback (groups-events-tools.ts:357-360). The fallback''s id.tenant_id-present path is already correct and gets a dedicated no-regression test. Paths unchanged.
+
+### 2026-10-20T17:30Z · kiro-hotmail-202610151618-b437 · spar session 2 round 1 (76c3c99c) — no path change
+R1-F1: `resolvePrimaryTenant` already exists (`services/tenancy/tenant-context.ts:43`, VTID-05149); the resolver reuses
+it instead of reading `user_tenants` directly.
+
+### 2026-10-20T17:45Z · kiro-hotmail-202610151618-b437 · spar session 2 round 2 — no path change
+R2-F2: actor per site — `req.identity` only at `community.ts:382`; the bearer token `sub` (after the user-scoped call
+succeeded) at `community.ts:274/482`, `match-feedback.ts:280`, `matchmaking.ts:576`; the new user `auth_user_id` at the
+public `/log-result` (`admin-signups.ts:205`); the ORB tool identity at `groups-events-tools.ts:360`.
+
+### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
+VTID-05267 allocated after policy approval (converged-auto-v1).
