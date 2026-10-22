@@ -6,6 +6,8 @@ next_actor: claude
 state: drafted
 author_seat: exafyltd
 updated: 2026-10-21T17:59Z
+spar_refs:
+  - exafyltd/vitana-v1: main
 ---
 # Handoff — Native Wave 2: Profile / Settings / Support / Connectors screen ports
 Wave 2 screen-port batch of the Maxina native app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
