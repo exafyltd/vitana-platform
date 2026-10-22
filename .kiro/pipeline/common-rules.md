@@ -17,7 +17,7 @@
    `{"event":"…","lane":"<id>|null","at":"<ISO-8601 UTC>","ref":"<sha|url>"}` in `timings/<step id>.jsonl`
    (only that step writes it); prefer GitHub timestamps over the local clock.
 4. **Merge authority = the §7b PM merge rule.** The Project Manager merges; while it is not `live`, the land step
-   applies the same rule: review entry `Collab-Verdict: accept` from `agent:vitana-lane-reviewer (claude-sonnet-5.5)` on
+   applies the same rule: review entry `Collab-Verdict: accept` from `agent:vitana-lane-reviewer (<chain model>)` on
    the PR's current head, every required check green on that head incl. Lane scope and Collab handoff, PR up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. A change to a protected gate file (`scripts/collab/protected-gate-files.json`) never
@@ -36,7 +36,9 @@
    converged plan, do not make it: log finding, needed change, user-visible effect and a behaviour-preserving
    alternative in `blockers.md` as deferred, and continue.
 6. **Never:** allocate a VTID by hand (only CI PLAN-SPAR allocates); deploy to production; run or dispatch PUBLISH,
-   `scripts/deploy/publish-to-prod.sh` or any `AWS-PROD-DEPLOY-*`; write to Supabase or any live system from session
+   `scripts/deploy/publish-to-prod.sh` or any `AWS-PROD-DEPLOY-*` — the only exception is a publish the owner
+   explicitly commands in an interactive conversation (`collaboration.md` §7c: full, or one session's changes only;
+   never in a workflow step or automation run, never `publish-to-prod.sh`); write to Supabase or any live system from session
    tools (a DB change is a migration file in the lane PR); test against production; skip, disable or loosen a test;
    accept your own lane. Staging tests are read-only.
 7. **Gateway calls** (`gateway.vitanaland.com`, `preview-aws-gateway.vitanaland.com`): always

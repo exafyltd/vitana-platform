@@ -11,7 +11,9 @@ At the start of EVERY session, before anything else:
    - `CLAUDE.md` (and `.claude/CLAUDE.md`)
    - `.claude/rules/collaboration.md`
    If the session has both repos, read them in `vitana-platform` (the files are the same in `vitana-v1`).
-2. Follow them over any general habit. Your role and limits: `vitana-kiro-notes.md` and `collaboration.md` §7–§7b.
+2. Follow them over any general habit. Your role and limits: `vitana-kiro-notes.md` and `collaboration.md` §7–§7c
+   (§7c: publish to production only on the owner's explicit command in the conversation — full, or one session's
+   changes only).
    A database change is a migration file in your PR. Blocked → fix forward (max 3), then park with the five-part stop
    message; hand to Claude only if Claude is available (§7).
 3. Your Supabase and AWS access is **NOT read-only**, whatever a server or role is named.
