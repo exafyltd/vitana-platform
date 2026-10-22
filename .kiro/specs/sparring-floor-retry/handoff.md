@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-21T18:03Z
+updated: 2026-10-22T02:03Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -274,3 +274,18 @@ still returns only `build floor-retry-code`, which is `executor: claude`, `seat:
 (updated 2026-10-21T18:02Z by `pm-agent`), i.e. the exceptions seat holds it; PM bookkeeping PR #4249 remains open
 (not an automation-driver action). Front matter unchanged except `updated` (next_actor stays `claude`). No VTID, no
 merge, no dispatch, no live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes from git.
+
+### 2026-10-22T02:03Z · kiro-exafy-202610220201-bbdd · approved (automation driver resume, no buildable work)
+Automation wake-up (seat exafy, `.kiro/automations/exafy.md`), fallback item W. This plan is `approved`,
+`author_seat: exafy`, driver not alive (`heartbeat-age` = `none`, prior driver `kiro-exafy-202610220101-348a`
+stale). Took it over: heartbeat on `refs/heads/collab-driver/sparring-floor-retry` (sha 5b9f0bfa) and took the
+`_plan` claim. Resumed from git: `plan(` PR merged, VTID-05240 allocated, sparring converged + policy-approved
+(`verdict.md`), no open sparring round, nothing `in-review`, nothing to land (an automation-started driver never
+merges). `plan-driver.mjs next` returns only `build floor-retry-code`, which is `executor: claude`, `seat: claude`
+on governance paths (`scripts/collab/**`, `services/gateway/src/services/plan-sparring/**`, incl. protected gate
+file `scripts/collab/plan-spar.mjs`); an automation-started driver may not build a governance or `executor: claude`
+lane (`.kiro/pipeline/driver.md` "Automation-started driver"; automation file Wake-a-driver point 3; collaboration.md
+§7a). Live queue shows `floor-retry-code` carried by the exceptions seat `exafyltd` on `origin/pm-agent/sparring-floor-retry`
+(updated 2026-10-22T01:59Z), which is the correct owner while Claude is unavailable (§7). Nothing for this wake-up
+to do. Front matter unchanged except `updated` (next_actor stays `claude`). No VTID, no merge, no dispatch, no
+live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes from git.
