@@ -13,7 +13,7 @@ paths:
 claimed_by: kiro-202610181950-f0b7
 branch: kiro/i18n-audit-nightly-off/workflow-off
 pr: https://github.com/exafyltd/vitana-v1/pull/1470
-updated: 2026-10-22T11:10Z
+updated: 2026-10-22T12:41Z
 vtid: VTID-05284
 ---
 # Lane: workflow-off
@@ -46,3 +46,12 @@ Answers to the reviewer agent's `changes` (claude-opus-5.5, run wf_be5dda405bd8e
   (named PR #4250), recorded at merge. Only `paths` gains `scripts/i18n-audit-llm.mjs`, which plan change 4 and
   `tasks.md` T4 already approved. `validate` (the only required check) is green.
 - Lane scope on vitana-v1#1470 reads this lane file from vitana-platform `main`; it turns green once this PR merges.
+### 2026-10-22T12:41Z · kiro-202610181950-f0b7 · executing (review round 2 answered)
+Collab handoff (PR-GATE `queue.mjs validate`) was red on `a43f925c0` for one reason, reproduced locally:
+`.kiro/specs/i18n-audit-nightly-off: not listed by any docs/programs/<id>/program.md`. The plan PR never registered
+the spec. Fixed by a `_plan` commit adding `vitana-platform:i18n-audit-nightly-off` to
+`docs/programs/standalone/program.md` (after merging `origin/main`); local `validate` now reports all valid.
+Lane scope keeps two governance-artifact messages on this owner-named PR: `paths` changed on an `executor: claude`
+lane (only a `session_…` session may change it), and the registry line sits outside the lane's `paths`. Neither is a
+test or build. This PR merges under the §7b governance-artifact false-positive rule (`--admin`), authorized by the owner
+for this PR on 2026-10-21. Required check on vitana-platform `main`: `validate` (green).
