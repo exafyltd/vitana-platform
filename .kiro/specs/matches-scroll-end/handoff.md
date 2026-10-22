@@ -3,11 +3,12 @@ slug: matches-scroll-end
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
-state: drafted
+next_actor: claude
+state: parked
 spar_refs:
   - exafyltd/vitana-v1: b8a4efbd31b43001f65150e6316056cfcde18248
-updated: 2026-10-22T08:55Z
+updated: 2026-10-22T08:51Z
+parked_from: drafted
 ---
 # Handoff — matches-scroll-end
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610220833-d231). Plan: `plan.md`.
@@ -29,3 +30,6 @@ partner had no vitana-v1 ref pinned, so it could read none of them. Fix: `spar_r
 `b8a4efbd3` (`origin/main`, the commit the premises were checked on). Every premise in `plan.md` now names its file
 with the repo prefix. The plan is unchanged in substance. This is a re-plan inside the sparring loop, not an owner
 stop. If it escalates again, the plan is parked with the five-part message.
+
+### 2026-10-22T08:51Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
