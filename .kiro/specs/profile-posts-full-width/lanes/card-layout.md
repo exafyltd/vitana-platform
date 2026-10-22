@@ -13,7 +13,7 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T12:43Z
+updated: 2026-10-22T13:02Z
 claimed_by: kiro-exafyltd-202610220818-5273
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
@@ -70,4 +70,6 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T12:39Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T12:43Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-22T13:02Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
