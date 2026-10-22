@@ -95,7 +95,15 @@ function check(root) {
  * model or drops the fail-loudly / protected-file rules is a red test, not a quiet edit.
  */
 const REVIEWER = '.kiro/agents/vitana-lane-reviewer.md';
-const REVIEWER_MODEL = 'claude-sonnet-5.5';
+// Ordered reviewer model fallback chain. MIRROR of services/gateway/src/services/project-manager/governance.ts
+// REVIEWER_AGENT_MODELS (guard.test.cjs pins both to the same values). The engine takes one modelId per step and fails
+// a step whose pinned model cannot be served, so each repeat that reviews holds ONE `parallel` with joinPolicy `any`
+// whose branches are `[review step pinned to chain model i, store watch]`, in chain order: the first branch to finish
+// wins, a failed branch is tolerated, the parallel fails only when all three fail. The agent's front matter may be
+// unset or a chain model.
+const REVIEWER_MODELS = Object.freeze(['claude-sonnet-5.5', 'claude-opus-5.5', 'claude-sonnet-4.5']);
+// The watch command that copies a finished review step's output to RUN/reviews/ (the reviewer agent stays read-only).
+const STORE_COMMAND = 'node scripts/collab/store-review.cjs';
 const WORKFLOW = '.kiro/workflows/vitana-pipeline.workflow.json';
 const HOOK = '.kiro/hooks/vitana-pipeline-start.json';
 const PIPELINE_DIR = '.kiro/pipeline';
@@ -108,8 +116,9 @@ const REQUIRED_BODY = [
   'model_unavailable',
   '"verdict"', '"head_sha"', '"findings"', '"severity"', '"model"', '"agent"',
   'Collab-Session:', 'Collab-Review:', 'Collab-Verdict:',
-  `Collab-Reviewer: agent:vitana-lane-reviewer (${REVIEWER_MODEL})`, 'Collab-Reviewed-Head:',
+  'Collab-Reviewer: agent:vitana-lane-reviewer (<model>)', 'Collab-Reviewed-Head:',
   'protected-gate-files.json',
+  `Model chain: ${REVIEWER_MODELS.map((m) => '`' + m + '`').join(' → ')}`,
 ];
 // Bundled Kiro workflow agents a recipe may use; workspace agents come from .kiro/agents/*.md.
 const BUNDLED_AGENTS = ['wf-coder', 'wf-planner', 'wf-code-reviewer', 'wf-design', 'wf-design-reviewer'];
@@ -148,7 +157,9 @@ function checkAgents(root) {
   } else {
     const fm = parseFrontMatter(frontMatter(agent));
     if (fm.name !== 'vitana-lane-reviewer') errors.push(`${REVIEWER}: name must be vitana-lane-reviewer`);
-    if (fm.model !== REVIEWER_MODEL) errors.push(`${REVIEWER}: model must be ${REVIEWER_MODEL}`);
+    if (fm.model !== undefined && !REVIEWER_MODELS.includes(fm.model)) {
+      errors.push(`${REVIEWER}: model must be unset (the review step pins it) or one of ${REVIEWER_MODELS.join(', ')}`);
+    }
     const tools = asList(fm.tools);
     const extra = tools.filter((t) => !ALLOWED_TOOLS.has(t));
     if (tools.length === 0 || extra.length) {
@@ -171,7 +182,23 @@ function checkAgents(root) {
     const reviewSteps = [];
     walkNodes(wf.steps, (n) => { if (n.type === 'step' && n.agent === 'vitana-lane-reviewer') reviewSteps.push(n); });
     if (reviewSteps.length === 0) errors.push(`${WORKFLOW}: no step uses agent vitana-lane-reviewer`);
-    for (const s of reviewSteps) if (s.modelId !== REVIEWER_MODEL) errors.push(`${WORKFLOW}: review step ${s.id} must pin modelId ${REVIEWER_MODEL}`);
+    for (const s of reviewSteps) {
+      if (!REVIEWER_MODELS.includes(s.modelId)) {
+        errors.push(`${WORKFLOW}: review step ${s.id} modelId must be one of ${REVIEWER_MODELS.join(', ')}`);
+      }
+    }
+    const raced = new Set();
+    walkNodes(wf.steps, (n) => {
+      if (n.type !== 'repeat') return;
+      if (!JSON.stringify(n.steps || []).includes('"vitana-lane-reviewer"')) return;
+      for (const e of reviewRace(n)) errors.push(`${WORKFLOW}: ${n.id} ${e}`);
+      for (const p of (n.steps || []).filter((s) => s && s.type === 'parallel')) {
+        walkNodes([p], (s) => { if (s.type === 'step' && s.agent === 'vitana-lane-reviewer') raced.add(s.id); });
+      }
+    });
+    for (const s of reviewSteps) {
+      if (!raced.has(s.id)) errors.push(`${WORKFLOW}: review step ${s.id} must be a branch of a lane slot's joinPolicy any review race`);
+    }
     walkNodes(wf.steps, (n) => {
       if (n.type === 'parallel' && JSON.stringify(n).includes('"vitana-lane-reviewer"') && (n.branches || []).length > MAX_PARALLEL_LANES) {
         errors.push(`${WORKFLOW}: ${n.id} has more than ${MAX_PARALLEL_LANES} parallel lane branches`);
@@ -214,6 +241,35 @@ function checkAgents(root) {
 }
 
 /**
+ * The review race of one lane slot (repeat `slot`): exactly one direct `parallel` child with joinPolicy `any` holds
+ * every reviewer step; its branches are, in chain order, `sequence [review step pinned to REVIEWER_MODELS[i], command
+ * watch STORE_COMMAND with config.model = that model and config.output = {{<review step id>.output}}]`.
+ */
+function reviewRace(slot) {
+  const errors = [];
+  const races = (slot.steps || []).filter((s) => s && s.type === 'parallel' && JSON.stringify(s).includes('"vitana-lane-reviewer"'));
+  if (races.length !== 1) return [`must hold its review steps in exactly one parallel review race (got ${races.length})`];
+  const race = races[0];
+  if (race.joinPolicy !== 'any') errors.push(`review race ${race.id} must use joinPolicy any (an unavailable model must not fail the slot)`);
+  const branches = race.branches || [];
+  const models = branches.map((b) => (b && b.type === 'sequence' && b.steps && b.steps[0] ? b.steps[0].modelId : undefined));
+  if (JSON.stringify(models) !== JSON.stringify(REVIEWER_MODELS)) {
+    errors.push(`review race ${race.id} must have one branch per chain model in order ${REVIEWER_MODELS.join(' -> ')} (got ${models.map(String).join(' -> ')})`);
+  }
+  branches.forEach((b, i) => {
+    const [rv, st, ...rest] = (b && b.steps) || [];
+    const okReview = b && b.type === 'sequence' && rv && rv.type === 'step' && rv.agent === 'vitana-lane-reviewer';
+    const c = st && st.config;
+    const okStore = st && st.type === 'watch' && st.handler === 'command' && c && c.command === STORE_COMMAND
+      && c.model === (rv && rv.modelId) && okReview && c.output === `{{${rv.id}.output}}` && rest.length === 0;
+    if (!okReview || !okStore) {
+      errors.push(`review race ${race.id} branch ${i + 1} must be a sequence [vitana-lane-reviewer step, command watch '${STORE_COMMAND}' storing that step's output for its model]`);
+    }
+  });
+  return errors;
+}
+
+/**
  * Structural validation of a Kiro workflow recipe, mirroring the Kiro workflow schema: node types step / sequence /
  * repeat / parallel / watch with their required keys and enums, unique ids, at most 50 steps, nesting depth at most 8,
  * a repeat has exactly one of stopCondition / stopWhen, fileCheck is strict, every agent is known, and every
@@ -234,8 +290,12 @@ function validateWorkflow(wf, workspaceAgents) {
   const STEP_KEYS = new Set(['type', 'id', 'agent', 'prompt', 'artifacts', 'captureOutput', 'completion', 'modelId', 'effortLevel']);
   const ids = new Set();
   const templates = [];
+  // node id -> the joinPolicy any branches it sits in ("<parallel id>#<branch index>"): a failed or aborted branch of
+  // such a parallel has no captured output, and a template naming it from outside that branch fails at run time.
+  const anyPath = new Map();
+  let curAny = [];
   let stepCount = 0;
-  const collect = (at, text) => { for (const m of text.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) templates.push([at, m[1]]); };
+  const collect = (at, text) => { for (const m of text.matchAll(/\{\{\s*([^}]+?)\s*\}\}/g)) templates.push([at, m[1], curAny]); };
   function stop(sc, where) {
     if (!sc || typeof sc !== 'object') { errors.push(`${where}: stopCondition must be an object`); return; }
     const known = ['containsText', 'fileCheck', 'completionSignal'];
@@ -256,7 +316,7 @@ function validateWorkflow(wf, workspaceAgents) {
     if (depth > 8) errors.push(`${where}: nesting deeper than 8`);
     if (typeof n.id !== 'string' || !n.id) errors.push(`${where}: id required`);
     else if (ids.has(n.id)) errors.push(`duplicate id ${n.id}`);
-    else ids.add(n.id);
+    else { ids.add(n.id); anyPath.set(n.id, curAny); }
     switch (n.type) {
       case 'step':
         stepCount++;
@@ -292,10 +352,22 @@ function validateWorkflow(wf, workspaceAgents) {
       case 'parallel':
         if (!['all', 'allSettled', 'any'].includes(n.joinPolicy)) errors.push(`${where}: joinPolicy must be all, allSettled or any`);
         if (!Array.isArray(n.branches) || n.branches.length === 0) errors.push(`${where}: branches required`);
-        for (const c of n.branches || []) node(c, depth + 1, true);
+        (n.branches || []).forEach((c, i) => {
+          const outer = curAny;
+          if (n.joinPolicy === 'any') curAny = [...outer, `${n.id}#${i}`];
+          node(c, depth + 1, true);
+          curAny = outer;
+        });
         break;
       case 'watch':
         if (typeof n.handler !== 'string' || !n.handler) errors.push(`${where}: handler required`);
+        if (n.config !== undefined) {
+          if (!n.config || typeof n.config !== 'object' || Array.isArray(n.config)) errors.push(`${where}: config must be an object`);
+          else {
+            if (typeof n.config.command === 'string' && /\{\{/.test(n.config.command)) errors.push(`${where}: a command watch's command must be static (no {{template}})`);
+            for (const v of Object.values(n.config)) if (typeof v === 'string') collect(n.id, v);
+          }
+        }
         break;
       default:
         errors.push(`unknown node type ${n.type}`);
@@ -303,15 +375,20 @@ function validateWorkflow(wf, workspaceAgents) {
   }
   for (const n of wf.steps) node(n, 1, false);
   if (stepCount > 50) errors.push(`more than 50 step nodes (${stepCount})`);
-  for (const [at, expr] of templates) {
+  for (const [at, expr, from] of templates) {
     const out = /^([\w-]+)\.output$/.exec(expr);
     const ok = Object.prototype.hasOwnProperty.call(inputs, expr) || expr === 'previous.output' || (out && ids.has(out[1]));
-    if (!ok) errors.push(`${at}: unknown template {{${expr}}}`);
+    if (!ok) { errors.push(`${at}: unknown template {{${expr}}}`); continue; }
+    const inside = out ? anyPath.get(out[1]) || [] : [];
+    const outsideOf = inside.find((b) => !from.includes(b));
+    if (outsideOf) {
+      errors.push(`${at}: {{${expr}}} reads a node of joinPolicy any branch ${outsideOf} from outside that branch (a failed or aborted branch has no output)`);
+    }
   }
   return errors;
 }
 
-module.exports = { check, checkAgents, validateWorkflow, parseFrontMatter, frontMatter, fileLinks };
+module.exports = { check, checkAgents, validateWorkflow, parseFrontMatter, frontMatter, fileLinks, REVIEWER_MODELS, STORE_COMMAND };
 
 if (require.main === module) {
   const errors = check(path.resolve(process.argv[2] || '.'));
