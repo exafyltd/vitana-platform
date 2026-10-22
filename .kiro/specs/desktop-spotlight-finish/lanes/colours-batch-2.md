@@ -67,3 +67,27 @@ The prior VTID came from session 5fbb73a2, which converged on a vitana-platform 
 mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
 `next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
 fresh VTID bound to the new sparring record. No live system touched.
+
+
+### 2026-10-22T13:40Z - kiro-202610152203-0347 - BLOCKED (real test failure, needs decision)
+Resolved the baseline conflict by regenerating design/eslint baselines (every batch-2-owned src file reads 0 in the
+regenerated design baseline). Pushed merge commit a8d96dfd0 to the PR branch. PR-GATE then surfaced a REAL (non-infra)
+Vitest failure, pre-existing on the lane's own tip faeb79807 (it also fails without my merge; it passes on main):
+
+- 2 files, 3 tests fail: `src/lib/vitana-index-next-steps.test.ts` and `src/lib/index-look.test.ts`.
+- Cause: this lane tokenised `src/pages/health/VitanaIndexDetail.tsx` (raw palette -> Spotlight tokens), but the
+  page's design is pinned by a SHARED constants module `src/lib/index-look.ts` (still raw: `border-slate-100
+  bg-white`, `hsl(200, 80%, 91%)`, `bg-teal-50 text-teal-700` ...). The guard tests assert the page source still
+  contains those raw strings; after tokenisation it no longer does, so they fail.
+- `src/lib/index-look.ts` is NOT just a test fixture: it is imported at runtime by the Calendar surface
+  (`src/pages/Calendar.tsx` and `src/components/calendar/vcal/{Disclosure,GuideCard,sections,views}.tsx`). Its
+  doc comment: "The calendar follows the Index page." So the only in-place fixes each change behaviour or scope:
+  (a) tokenise `index-look.ts` to match the page -> re-skins the Calendar (out of this lane's paths, visually
+      unverified here); the Spotlight-contract-consistent option, but a visible Calendar change nobody reviewed.
+  (b) revert the pinned elements of VitanaIndexDetail.tsx -> leaves the lane's own page partly un-tokenised.
+  (c) retire/relax the two guards -> removes the anti-drift protection they exist for.
+- None is a mechanical baseline/merge resolution, and all touch files outside the lane's declared `paths`
+  (would also fail Lane scope). This blocks the serialized conflicting chain (batch-3/4/5/backoffice follow batch-2).
+- Recommendation: option (a) in a dedicated follow-up (tokenise `index-look.ts` + update both guard tests + add
+  those files to this lane's paths + visual-verify Calendar on staging), since the Spotlight contract applies to
+  every screen. Needs owner/author direction because it re-skins an out-of-scope surface. No live system touched.

@@ -1,6 +1,6 @@
 ﻿---
 lane: sizes
-state: executing
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -103,3 +103,12 @@ The prior VTID came from session 5fbb73a2, which converged on a vitana-platform 
 mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
 `next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
 fresh VTID bound to the new sparring record. No live system touched.
+
+
+### 2026-10-22T13:20Z - kiro-202610152203-0347 - merged to main (done)
+PR #1458 (VTID-05293) merged to vitana-v1 `main`. merge: `d8c29bc97afb7c4cdf65ad23869560ee1d7ae6d0`.
+Conflict on `scripts/ci/pr-gate/baseline/design.json` + `baseline/eslint.json` resolved by regenerating both from
+`eslint . -f json` on the merged tree (`gate.mjs baseline-design|baseline-eslint`); every sizes-owned file reads 0
+in the regenerated design baseline. A pr-gate run failed first on a `public.ecr.aws` postgres pull (registry data
+limit) and was re-run once, then green incl. Lane scope.
+authority: owner instruction 2026-10-21 (full automation to verified staging, collaboration.md section 7b).
