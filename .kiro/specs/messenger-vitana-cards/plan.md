@@ -52,11 +52,24 @@ Facebook, add photo/bio/cover, etc.) appearing only when relevant.
 
 ### In scope — E1–E11 as personalized companion moments
 Add 11 new `COMPANION_MOMENTS` entries, one per enrichment card, each eligible
-only when the member is **incomplete AND not in a dismissal cooldown** for that
-card — using the existing shared rule `eligibleEnrichmentCards()`
-(`services/gateway/src/services/enrichment/card-catalog.ts`), which already
-takes completion state + `user_enrichment_cards` dismissal rows and applies the
-7-day cooldown, "done or dismissed anywhere disappears everywhere".
+only when the member is **incomplete AND not in a dismissal cooldown AND the
+card's action is available on this stack** — using the existing shared rule
+`eligibleEnrichmentCards(completions, dismissRows, screen, now, unavailable)`
+(`services/gateway/src/services/enrichment/card-catalog.ts`), which takes
+completion state + `user_enrichment_cards` dismissal rows + an `unavailable`
+set, and applies the 7-day cooldown, "done or dismissed anywhere disappears
+everywhere".
+
+**The `unavailable` fifth argument is mandatory, not optional.** The companion
+engine MUST pass `unavailableEnrichmentCards()`
+(`services/gateway/src/services/enrichment/card-availability.ts`) exactly as the
+`/api/v1/enrichment-cards` route does (`routes/enrichment-cards.ts:82`). On
+every current deployment the Meta OAuth clients
+(`INSTAGRAM_CLIENT_ID/SECRET`, `FACEBOOK_CLIENT_ID/SECRET`) are absent, so
+`unavailableEnrichmentCards()` returns `{E6, E7}` and those cards must NOT be
+offered — otherwise a member would get a "Connect Instagram/Facebook" DM whose
+card taps into a 400 "not configured". E6/E7 return on their own once the
+credentials are provisioned, no code change.
 
 | Card | Offered only if… (via `eligibleEnrichmentCards`) |
 |---|---|
@@ -65,8 +78,8 @@ takes completion state + `user_enrichment_cards` dismissal rows and applies the
 | E3 Make first post | no post |
 | E4 Add interests | none |
 | E5 Set location | none |
-| E6 Connect Instagram | not connected |
-| E7 Connect Facebook | not connected |
+| E6 Connect Instagram | not connected AND Instagram OAuth client configured (else hidden by `unavailableEnrichmentCards()`) |
+| E7 Connect Facebook | not connected AND Facebook OAuth client configured (else hidden) |
 | E8 Connect calendar | no calendar connected |
 | E9 Import contacts | none |
 | E10 Enable notifications | no active device token |
@@ -114,10 +127,32 @@ Genuinely new (the real work):
    contact, active device token, and the `user_enrichment_cards` dismissal
    rows. Add a `FetchEnrichmentCompletions` seam to the companion tick deps so
    tests can stub it without a DB.
+   **Error contract (mandatory):** the seam MUST follow the same
+   `Promise.allSettled` / `unavailable[]` pattern as `fetchMemberSignals`
+   (`signals.ts`) and MUST NEVER throw — a per-source failure adds a label to
+   `unavailable` and returns normally (return shape analogous to
+   `SignalsResult`, e.g. `{ by: Map<string, EnrichmentCompletionResult>,
+   unavailable: string[] }`). It is added to the existing
+   `Promise.all([...])` at `companion-service.ts:131`; if it threw, the whole
+   tick would reject and zero members would be decided that tick. A test
+   asserts: when the profiles bulk query rejects, the seam returns an empty map
+   + `unavailable: ['enrichment_profiles']` and the tick continues, enrichment
+   moments simply not firing.
 2. **MemberContext fields:** `incompleteEnrichmentCards` /
    `enrichmentDismissRows` (or an equivalent shape feeding
    `eligibleEnrichmentCards`).
-3. **11 enrichment moments** gated through `eligibleEnrichmentCards`.
+3. **11 enrichment moments** gated through
+   `eligibleEnrichmentCards(..., unavailableEnrichmentCards())`.
+   **Priority-scale trap (mandatory):** `EligibleEnrichmentCard.priority`
+   returned by `eligibleEnrichmentCards()` is a **1-based catalog ordering**
+   (1 = E1 … 11 = E11, lower = more valuable) used for News Feed display — it is
+   on the OPPOSITE scale from `pickMoment` priorities (higher wins: greeting 10,
+   invite 15, tip 20, Index 50–70). It MUST NOT be used as
+   `MomentCandidate.priority`. Each of the 11 moments assigns an explicit
+   companion-scale priority in **the 20–49 range** (above `featureTip` 20, below
+   `vitanaIndex` 50), preserving the catalog order among themselves (E1 highest
+   → E11 lowest within that band). The priority-pin test asserts **absolute**
+   values, not relative ordering, so a wrong-scale value is caught.
 
 ## 4. Lanes
 

@@ -10,12 +10,16 @@
       contact, active device token.
 - [ ] 2. Bulk-read the `user_enrichment_cards` dismissal rows for the same ids.
 - [ ] 3. Add a `FetchEnrichmentCompletions` seam to the companion tick deps so
-      tests can stub it without a DB.
+      tests can stub it without a DB. The seam MUST use `Promise.allSettled` /
+      `unavailable[]` like `fetchMemberSignals` and MUST NEVER throw (it joins
+      the `Promise.all` at `companion-service.ts:131`).
 - [ ] 4. Expose the per-member completion map + dismissal rows on
       `MemberContext` in the shape `eligibleEnrichmentCards()` consumes.
 - [ ] 5. Unit tests: bulk reads equal the per-member resolver on the same
       fixtures (semantics match, incl. social `is_active && disconnected_at IS
-      NULL` and the calendar-app allowlist).
+      NULL` and the calendar-app allowlist); AND when the profiles bulk query
+      rejects, the seam returns an empty map + `unavailable:
+      ['enrichment_profiles']` and does not throw.
 
 **Acceptance:** `MemberContext` carries correct completion + dismissal state for
 every member in a multi-member page, with no per-member query storm, proven by
@@ -25,18 +29,21 @@ tests that compare bulk vs the existing per-member resolver.
 ## Lane: companion-enrichment-moments
 
 - [ ] 6. Add 11 `COMPANION_MOMENTS` entries (E1–E11), each eligible only when
-      the member is incomplete AND not in a dismissal cooldown for that card,
-      gated through `eligibleEnrichmentCards(completions, dismissRows, screen,
-      now)`.
-- [ ] 7. Set each moment's priority below `vitana_index` (50–70) and
-      `guided_journey_step` (65), at/above `feature_tip` (20) / `invite_friend`
-      (15); English `intent` per card (never a hardcoded spoken sentence);
-      reuse `enrichment-card-tips.ts` copy (no new strings).
+      the member is incomplete AND not in a dismissal cooldown AND the card is
+      available, gated through `eligibleEnrichmentCards(completions, dismissRows,
+      screen, now, unavailableEnrichmentCards())`.
+- [ ] 7. Assign each moment an explicit companion-scale priority in **20–49**
+      (above `feature_tip` 20, below `vitana_index` 50), E1 highest → E11
+      lowest. Do NOT reuse `EligibleEnrichmentCard.priority` (1-based,
+      lower=better — opposite scale). English `intent` per card (never a
+      hardcoded spoken sentence); reuse `enrichment-card-tips.ts` copy.
 - [ ] 8. Do NOT add/alter F1/F2/F3/F7/F8 or the Index/diary moments.
-- [ ] 9. Unit tests: incomplete+non-dismissed member → that card eligible;
-      completed member → never; dismissed-elsewhere member → suppressed for 7
-      days; enrichment never outranks Index/journey; a test pins that
-      `COMPANION_MOMENTS` is unchanged except the new E-moments.
+- [ ] 9. Unit tests: incomplete+non-dismissed+available member → that card
+      eligible; completed member → never; dismissed-elsewhere member →
+      suppressed 7 days; **with Meta OAuth env unset, no E6/E7 moment regardless
+      of completion**; enrichment never outranks Index/journey; priority-pin
+      test asserts absolute values; a test pins `COMPANION_MOMENTS` unchanged
+      except the new E-moments.
 
 **Acceptance:** a member missing a setup step is offered exactly that enrichment
 card (highest-priority eligible), a completed or recently-dismissed member is

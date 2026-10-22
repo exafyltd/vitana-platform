@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: drafted
-updated: 2026-10-22T08:20Z
+updated: 2026-10-22T11:30Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -41,3 +41,16 @@ against the code and ACCEPTED. Rewrote the plan:
 Lanes now: companion-enrichment-signals → companion-enrichment-moments →
 messenger-companion-verification. Responses in sparring/responses-1.md.
 Next: push to start round 2.
+
+### 2026-10-22T11:30Z · kiro-exafyltd-202610220802-4a74 · drafted (sparring round 2 answered)
+CI PLAN-SPAR round 2: 1 blocker + 1 major + 1 minor — all verified and ACCEPTED.
+- R2-F1 (blocker): must pass `unavailableEnrichmentCards()` as the 5th arg to
+  `eligibleEnrichmentCards`; with Meta OAuth unset (every current stack) E6/E7
+  are hidden, else a Connect-Instagram DM would 400 on tap.
+- R2-F2 (major): the `FetchEnrichmentCompletions` seam must use allSettled /
+  `unavailable[]` and never throw, or a DB error aborts the whole tick.
+- R2-F3 (minor): don't use the 1-based catalog priority as the moment priority;
+  assign explicit companion-scale 20–49, E1 highest → E11 lowest.
+Plan, both affected lanes, and tasks updated. Responses in
+sparring/responses-2.md. Next: push to start round 3 (cap is 3 rounds for a
+standard change).
