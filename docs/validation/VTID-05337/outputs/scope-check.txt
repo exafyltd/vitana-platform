@@ -1,0 +1,4 @@
+✅ **lane scope** — lane pipeline-speed/restart-watchdog: every change is inside its paths
+
+⚠️ 75287232: kiro-202610220829-5884 names no seat; lane pipeline-speed/restart-watchdog belongs to seat exafy
+⚠️ af4620b9: kiro-202610220829-5884 names no seat; lane pipeline-speed/restart-watchdog belongs to seat exafy

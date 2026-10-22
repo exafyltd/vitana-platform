@@ -1,0 +1,24 @@
+VTID-05301 — ci-health lane — verification commands
+====================================================
+
+# Base: files absent on origin/main (test trivially red — import unresolved)
+git cat-file -e origin/main:scripts/ci/health/report.mjs        -> fatal: does not exist  (PASS: red on base)
+git cat-file -e origin/main:scripts/ci/health/report.test.mjs   -> fatal: does not exist  (PASS: red on base)
+
+# Head: producer test green
+node --test scripts/ci/health/report.test.mjs                   -> tests 9, pass 9, fail 0  (PASS)
+
+# Head: producer smoke run on an empty run set yields a well-formed report
+node scripts/ci/health/report.mjs --runs _empty.json --out _out.json
+    -> schema vitana.ci-health/v1, workflows [], coverageGap x3 (playwright-e2e, shell-test, python-test)  (PASS)
+
+# Head: workflow YAML parses
+node _yamlcheck.cjs .github/workflows/CI-HEALTH.yml             -> YAML OK  (PASS)
+
+Notes:
+- The test uses only node:test / node:assert and local imports, so UNIT.yml
+  (which runs every scripts/**/*.test.{cjs,mjs} via `node --test` with no install)
+  runs it with no dependencies.
+- `node --test scripts/ci/health/` (bare directory) is not a glob in this Node
+  version and errors MODULE_NOT_FOUND; UNIT.yml passes an explicit file list from
+  `find`, which is the enforced path. The explicit-file run above is authoritative.
