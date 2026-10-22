@@ -7,7 +7,7 @@ next_actor: kiro
 state: approved
 spar_refs:
   - exafyltd/vitana-v1: b8a4efbd31b43001f65150e6316056cfcde18248
-updated: 2026-10-22T09:27Z
+updated: 2026-10-22T09:35Z
 sparring_record: .kiro/specs/matches-scroll-end/sparring/verdict.md
 vtids: [VTID-05332]
 ---
@@ -59,3 +59,13 @@ from #4300.
 
 ### 2026-10-22T09:27Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-22T09:35Z · kiro-exafyltd-202610220833-d231 · approved (plan PR merge)
+Session bab84cf4 converged in round 2 (both minor findings accepted: 90 px buffer, `main` overflow premise). Policy
+`converged-auto-v1` approved it and CI allocated VTID-05332 to lane `matches-list-clearance`. The plan PR #4301 is
+merged so the lane reads its spec from `main`. Authority: §7b, plus the owner's instruction of 2026-10-22 ("yes":
+re-spar, build, merge to staging). `--admin` is used only for the governance-artifact false positive
+**Collab handoff**: "commits from 2 sessions (kiro-…, ci-plan-spar)" on a `_plan` lane. That is a known bug, fixed
+by lane `ci-github-modernization/false-positives-collab` (VTID-05304, T2) and not on `main` yet. Every other check
+on c328c12d3 is green (PR-GATE, Lane scope, unit, validate). Spec-only PR, no product code.
+Next: this session claims `matches-list-clearance` and builds it.
