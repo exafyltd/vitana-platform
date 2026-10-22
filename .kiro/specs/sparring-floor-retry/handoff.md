@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-22T10:02Z
+updated: 2026-10-22T12:00Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -103,3 +103,22 @@ automation driver (§7b). Nothing else for this seat's driver to do now.
 
 Kept the heartbeat fresh and am stopping per the automation's "do at most ONE item, then stop" rule. Next wake-up
 resumes from git. No VTID allocated, no merge, no live-system write.
+
+### 2026-10-22T12:00Z · kiro-exafy-202610221200-f6f4 · approved (automation wake-up: driver resumed, same no-op as 10:02Z)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback). W item again: this plan is `approved`,
+`author_seat: exafy`, driver heartbeat stale (`heartbeat-age` was `none` on the main-reachable ref). Took over the
+driver from `kiro-exafy-202610221101-cba4` (heartbeat sha 43e9e5f5), claimed `_plan` (sha adca8f7c).
+
+State is unchanged from the 10:02Z resume. `plan-driver.mjs next` still returns exactly one action: build
+`floor-retry-code` (VTID-05240), which is `executor: claude` / `seat: claude` and touches governance paths
+(`scripts/collab/**`, incl. protected gate file `plan-spar.mjs`). An automation-started driver never builds a
+governance or `executor: claude` lane (`.kiro/pipeline/driver.md` "Automation-started driver"; collaboration §7a), so
+this run does not build it — it stays with Claude Code / the exceptions seat `exafyltd`. No sparring round open (both
+sessions terminal in `sparring/state.json`: session 2 converged, policy-approved 2026-10-19T18:29Z), no lane
+`in-review`, no lane build branch exists (`kiro/sparring-floor-retry/floor-retry-code` absent on origin), no failed
+check to fix forward. The only open PR touching this plan is #4249 (`pm-agent/sparring-floor-retry`, PM bookkeeping) —
+the PM merges that, not an automation driver (§7b).
+
+Nothing buildable for this seat's driver. Kept the heartbeat fresh and stopping per the automation's "do at most ONE
+item, then stop" rule (starting/resuming the driver was that one item). Next wake-up resumes from git. No VTID, no
+merge, no dispatch, no live-system write.
