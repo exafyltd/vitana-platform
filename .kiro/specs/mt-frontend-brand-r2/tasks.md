@@ -51,7 +51,8 @@ Allowed paths:
 
       AuthGuard retry-slug test for `activeTenantSlug({ tenantSlug: null, candidates: [stored], registry })`: a
       registry-listed stored slug is returned, an unlisted one gives `maxina` (the literals at
-      `src/components/AuthGuard.tsx:267,271`). A test that `App.tsx` calls `useTenantMeta()` inside
+      `src/components/AuthGuard.tsx:267,271`; call site per plan.md: `retrySlug` computed once with
+      `tenantSlug: null`, `registry: currentRegistrySync()`, written at `:267` and used at `:271`). A test that `App.tsx` calls `useTenantMeta()` inside
       `AppHooksInitializer` (`App.tsx:469`).
 - [ ] BR6 Staging spec `tests/e2e/staging/vtid-<vtid>-brand-surface.staging.spec.ts` (read-only, preview host only,
       non-GET guard): `/commerce/join` + voucher landing show Maxina title/favicon and `/maxina` portal link;

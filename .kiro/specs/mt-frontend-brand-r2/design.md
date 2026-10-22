@@ -27,7 +27,9 @@ re-planned under this new slug, sparred in a fresh session, and get two new VTID
   step. An anonymous signup has no tenant (`src/hooks/useTenant.tsx:53-54`) and posts `maxina`, exactly today's literal.
 - **B2:** the stored slug is used only by the pure `activeTenantSlug()` in AuthGuard's OAuth retry
   (`src/components/AuthGuard.tsx:267,271`), and only if the registry lists it (`findBySlug`, as at
-  `useTenant.tsx:62`). It never reaches `signUp` metadata (s2 R1-F3). The two CommerceJoin tests (`oauth-first.test.ts:29`, `routing.test.ts:53-55`) move from the
+  `useTenant.tsx:62`). It never reaches `signUp` metadata (s2 R1-F3). Call site (s2 R2-F2): one
+  `retrySlug = activeTenantSlug({ tenantSlug: null, candidates: [readStoredTenantSlug('tenant_slug')], registry:
+  currentRegistrySync() })`, written to localStorage at `:267` and used in `redirectTo` at `:271`. The two CommerceJoin tests (`oauth-first.test.ts:29`, `routing.test.ts:53-55`) move from the
   literal to the active slug.
 - **Mount:** one `useTenantMeta()` call in `AppHooksInitializer` (`src/App.tsx:469`, rendered at `:772`).
 - **Review findings (`review-round-1.json`, head 7a8b2ab7):** 1–2 (bot files) → fresh branch, all 11 locales, drift 0;

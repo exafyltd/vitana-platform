@@ -104,6 +104,12 @@ plan), rebuilt so Lane scope can pass:
       `useTenant.tsx:62`), else `maxina`.
 
     A stored slug never reaches `supabase.auth.signUp` metadata (sparring s2 R1-F3).
+  - AuthGuard call site (s2 R2-F2). `AuthGuardProps` has only `children` and `allowGuest` (`AuthGuard.tsx:13-22`), so
+    `tenantSlug` is always `null` here; it exists for callers that already know the slug. `AuthGuard.tsx:7` already
+    imports `currentRegistrySync`/`findBySlug`. Inside the retry handler, before `:267`:
+    `const retrySlug = activeTenantSlug({ tenantSlug: null, candidates: [readStoredTenantSlug('tenant_slug')], registry: currentRegistrySync() });`
+    then `:267` becomes `localStorage.setItem('tenant_slug', retrySlug);` (the validated slug, not the raw stored
+    value) and `:271` becomes `redirectTo: window.location.origin + '/' + retrySlug`. No other AuthGuard line changes.
   - `useTenantMeta()` sets `document.title` + favicon only (no OG, original R1-F4), mounted by one call in
     `AppHooksInitializer` (`App.tsx:469`).
 - BR2 Ship `tenantBrand.json` in all 11 active locales (DE first, du-form; `{brand}` kept; `ar` RTL text) so
@@ -147,6 +153,20 @@ change:
   - Switching the `--brand-*` writes to HSL: MaxinaPortal's `#FF7BAC` (`:234`) would start rendering on Maxina.
 
 The two lanes' path sets are disjoint from each other and from the four live `mt-frontend-brand` lanes.
+
+## Lane paths (complete; identical to each lane file's `paths:` front matter)
+Created in this PR with these exact lists (s2 R2-F1). Every new or modified file of the Fix is in them, so the BR3 gate
+`git diff --name-only origin/main...HEAD ⊆ paths` and CI Lane scope can pass. `scopeCheck` matches globs
+(`queue.mjs:112` `globToRegex`), and `docs/validation/<vtid>/` is exempt (`:689`).
+- `brand-surface-r2`: `src/pages/CommerceJoin.tsx`, `src/pages/CommerceJoin.oauth-first.test.ts`,
+  `src/pages/CommerceJoin.routing.test.ts`, `src/components/AuthGuard.tsx`, `src/pages/RedeemVoucher.tsx`,
+  `src/components/voucher/RedemptionLanding.tsx`, `src/lib/store-links.ts`, `src/lib/store-links.test.ts`,
+  `src/hooks/useTenantMeta.ts` (new), `src/hooks/useTenantMeta.test.ts` (new), `src/App.tsx`,
+  `src/i18n/{de,en,es,sr,fr,pl,pt,ru,tr,zh,ar}/tenantBrand.json` (11 explicit entries, new),
+  `docs/SCREEN_INVENTORY.md`, `tests/e2e/staging/vtid-*-brand-surface.staging.spec.ts` (new). The BR5 tests live in
+  `useTenantMeta.test.ts` and the two CommerceJoin tests; `src/hooks/useTenant.tsx` is only imported, not edited.
+- `theme-tokens-r2`: `src/lib/tenant-theme.ts` (new), `src/lib/tenant-theme.test.ts` (new), `src/hooks/useTenant.tsx`,
+  `src/hooks/useTenant.theme.test.tsx` (new), `tests/e2e/staging/vtid-*-theme-tokens.staging.spec.ts` (new).
 
 ## Migrations
 None.
