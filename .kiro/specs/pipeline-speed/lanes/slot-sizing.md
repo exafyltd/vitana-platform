@@ -1,11 +1,10 @@
 ---
 lane: slot-sizing
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafy
-claimed_by: kiro-202610220829-5884
 branch: kiro/pipeline-speed/slot-sizing
 pr: 4339
 area: platform
@@ -20,7 +19,7 @@ paths:
   - .kiro/pipeline/lane-land.md
   - .kiro/pipeline/lane-review.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T23:12Z
+updated: 2026-10-22T23:25Z
 vtid: VTID-05338
 ---
 # slot-sizing — empty lane slots and resumed planning cost zero agent sessions; no stray model pin (items 1 + 3)
@@ -57,3 +56,5 @@ merge: 1e0d29ca71ee9dff2bbf4d50ca7ae5c84bd94311 · authority: §7b PM rule (owne
 Follow-ups (non-blocking): the lane front matter has `depends_on: []` while plan §5 names `depends_on: [restart-watchdog]` (order enforced by hand at this merge); the remaining non-blocking findings of runs wf_f45f35c5d5a68957 (6) and wf_27ec82f7c5f9d6e9 (5). Next: verified.
 ### 2026-10-22T23:12Z · kiro-202610220829-5884 · in-review → verified
 Acceptance met on vitana-platform `main` (contains merge `1e0d29ca71ee9dff2bbf4d50ca7ae5c84bd94311` (#4339)): 57, 57, 0. Nothing deploys, so no Gate 2. authority: §7b PM rule (owner instruction 2026-10-21). Next: done.
+### 2026-10-22T23:25Z · kiro-202610220829-5884 · verified → done
+Lane closed under §7b (owner instruction 2026-10-21: "yes, execute your recommendation", "now you can run fully end to end without stopping"); merge `1e0d29ca71ee9dff2bbf4d50ca7ae5c84bd94311` (#4339). Claim released.
