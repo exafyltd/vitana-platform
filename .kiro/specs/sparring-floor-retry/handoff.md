@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-19T18:45Z
+updated: 2026-10-22T10:02Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -87,3 +87,19 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-22T10:02Z · kiro-exafy-202610221001-dbf8 · approved (automation wake-up: driver resumed, no buildable item)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback). This plan is the W item: `approved`,
+`author_seat: exafy`, driver heartbeat ~56 min old (stale). Took over the driver from `kiro-exafy-202610220901-eaeb`
+(heartbeat sha 24b70cb0), claimed `_plan`.
+
+`plan-driver.mjs next` returns exactly one action: build `floor-retry-code` (VTID-05240). That lane is
+`executor: claude`, `seat: claude`, and touches governance paths (`scripts/collab/**`, incl. the protected gate file
+`plan-spar.mjs`). An automation-started driver never builds a governance lane or an `executor: claude` lane
+(`.kiro/pipeline/driver.md` "Automation-started driver"; collaboration §7a), so this run does not build it — it is
+left to Claude Code / the exceptions seat `exafyltd`. No sparring round is open, no lane is `in-review`, no lane PR
+has a failed check to fix forward. Open PR #4249 is the PM's bookkeeping PR (`pm-agent`), merged by the PM, not by an
+automation driver (§7b). Nothing else for this seat's driver to do now.
+
+Kept the heartbeat fresh and am stopping per the automation's "do at most ONE item, then stop" rule. Next wake-up
+resumes from git. No VTID allocated, no merge, no live-system write.
