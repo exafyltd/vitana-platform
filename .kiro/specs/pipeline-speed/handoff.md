@@ -1,0 +1,30 @@
+---
+slug: pipeline-speed
+author: kiro
+author_seat: exafy
+executor: kiro
+next_actor: kiro
+state: approved
+updated: 2026-10-22T17:50Z
+sparring_record: .kiro/specs/pipeline-speed/sparring/verdict.md
+vtids: [VTID-05336, VTID-05337, VTID-05338]
+---
+# Handoff — pipeline-speed (empty slots and resumed planning cost nothing; one-pass preflight; no stray model pin; restart watchdog)
+Planner: Kiro seat `exafy` (session kiro-202610220829-5884, workflow run `wf_561cf354d2648029`). Plan: `plan.md`
+(between the plan markers), sparred by CI PLAN-SPAR. Detail: `tasks.md`. Lanes (held at `ready` until PLAN-SPAR
+allocates each lane's VTID), all parallel, no shared file, no `depends_on`: `slot-sizing`, `preflight`,
+`restart-watchdog`. All `executor: claude` (governance paths), built by Kiro seat `exafy` under kiro-autonomy-fallback
+(`CLAUDE_AVAILABLE=false`). Acceptance by the reviewer agent `vitana-lane-reviewer`. Deploys nothing: done = every lane
+merged with green required checks (no STAGING-VERIFY, no Gate 2).
+## Log
+### 2026-10-22T11:20Z · kiro-202610220829-5884 · created → drafted
+Owner instruction 2026-10-21 in the Kiro IDE session: "yes, execute your recommendation" (cut time-to-completion of
+the Kiro pipeline without weakening any quality gate; quality over quantity). Scope: the four items of `plan.md` §1;
+out of scope as listed in §11. #4295 (reviewer 3-model race) is merged (`91d26a156`), so every lane bases on `main`
+now. Premises checked against vitana-platform `origin/main` `64575e6f1` from three read-only investigations (code,
+tests, rules). No VTID allocated, no code changed, no live system touched. Next: PLAN-SPAR spars this PR; this session
+answers each round in `sparring/responses-<n>.md`; on convergence CI allocates the lane VTIDs and the plan PR merges
+under §7b.
+
+### 2026-10-22T17:50Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
