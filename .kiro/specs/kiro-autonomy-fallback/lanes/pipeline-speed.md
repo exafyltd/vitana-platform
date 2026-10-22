@@ -1,10 +1,10 @@
 ---
 lane: pipeline-speed
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -23,10 +23,10 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - services/gateway/test/vtid-05077-planner-fallback-and-thinking.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T18:45Z
+updated: 2026-10-22T18:17Z
 vtid: VTID-05272
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/pipeline-speed
+parked_from: executing
 ---
 # pipeline-speed — continuous plan driver, Jest shards, PLAN-SPAR slots, per-lane STAGING-VERIFY attribution, unblock main
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.7, §7 and §5 H, and the `pipeline-speed` section of `tasks.md` are
@@ -66,3 +66,5 @@ Reviewed head e32b4ff92e41e4f95e3ae520f6623b08cd523503, PR https://github.com/ex
 Collab-Review: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Session: kiro-202610201934-3583
+### 2026-10-22T18:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
