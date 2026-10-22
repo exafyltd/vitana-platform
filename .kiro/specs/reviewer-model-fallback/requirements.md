@@ -6,7 +6,7 @@ The reviewer agent's verdict counts on any model of `REVIEWER_AGENT_MODELS`
 current head only. This plan does not alter that behaviour unless the sparring partner finds a defect in it.
 
 ## R2 — Claude only, exact identity
-No non-Claude model can enter the chain; near-miss reviewer strings never count (`governance.test.ts:216-241`).
+No non-Claude model can enter the chain; near-miss reviewer strings never count (`governance.test.ts:216-247`).
 
 ## R3 — A CI VTID for the change
 The lane's VTID comes from CI PLAN-SPAR after policy approval (`converged-auto-v1`), never by hand.

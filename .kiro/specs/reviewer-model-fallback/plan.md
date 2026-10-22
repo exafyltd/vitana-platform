@@ -20,7 +20,7 @@ Among its 15 files it changed gateway code:
   - line 130: `AGENT_REVIEWER_VALUES` accepts `agent:vitana-lane-reviewer (<m>)` for every chain model;
   - line 133-134: `isAgentReview` therefore counts an `accept` from any chain model (used at lines 162 and 196 and by
     `decide.ts:213` `isAgentReview(review)` in the verify decision).
-- `services/gateway/test/project-manager/governance.test.ts` lines 216-241: chain order, Claude-only, exact identity
+- `services/gateway/test/project-manager/governance.test.ts` lines 216-247: chain order, Claude-only, exact identity
   strings accepted, near-miss strings rejected.
 
 The gateway staging deploy of `91d26a15` was verified by STAGING-VERIFY run 39749935077: 20/20 tests passed, but the
@@ -45,10 +45,10 @@ it with tests and gives it the coverage rule 47 requires.
   `agent:vitana-lane-reviewer` or `agent:vitana-lane-reviewer (<m>)` with `<m>` one of the three chain models, the
   verdict is `accept`, and it is on the PR's current head (`reviewOnCurrentHead`, unchanged).
 - Any other model string, a suffix, a missing parenthesis, another agent name or a `null` reviewer never counts
-  (`governance.test.ts:221-241`).
+  (`governance.test.ts:221-247`).
 - The chain is Claude-only (`governance.test.ts:218`); no Google or non-Claude model can enter it.
 - Protected gate files, legacy seat approvals, governance-lane rules and the stale-head rule are unchanged.
-- The chain is mirrored in `scripts/ci/kiro-steering/guard.cjs:104` `REVIEWER_MODELS`; `guard.test.cjs:92-97` parses
+- The chain is mirrored in `scripts/ci/kiro-steering/guard.cjs:104` `REVIEWER_MODELS`; `guard.test.cjs:92-99` parses
   the governance.ts literal and asserts parity (run by PR-GATE). Both landed in the same commit and are unchanged here.
 
 ## Scope (lane `chain-coverage`)
@@ -58,17 +58,23 @@ it with tests and gives it the coverage rule 47 requires.
   - `GET /api/v1/project-manager/mode` → 200, `{ok: true}` (public route, `routes/project-manager.ts`): proves the
     PM module that imports `governance.ts` loaded on the deployed commit;
   - `GET /api/v1/project-manager/status` with an invalid bearer → 401 (`rejected_probe`): auth gate unchanged;
-  - `existing`: `npx jest test/project-manager` in `services/gateway` — the governance unit tests are the proof of
-    the chain behaviour, because the PM's merge decision cannot be exercised read-only on staging (rule 48).
+  - `existing`: `ref: npx jest test/project-manager`, `cwd: services/gateway`, with the mandatory `reason`
+    (`lib.cjs:192`, ≥10 chars), e.g. "Pins the reviewer fallback chain order, Claude-only constraint, and exact
+    accepted/rejected identity strings from governance.ts AGENT_REVIEWER_VALUES" — the governance unit tests are the
+    proof of the chain behaviour, because the PM's merge decision cannot be exercised read-only on staging (rule 48).
 - `docs/validation/commit-coverage.json` — one `covers[]` entry
   `{sha: 91d26a1560763d0835d85276cda7d139e496aa12, vtid: <VTID>, reason: <this suite covers the governance.ts chain change of #4295>, approved_by: "owner, 2026-10-21 reviewer fallback instruction; converged-auto-v1 <sparring record>"}`,
   in the format `scripts/ci/staging-verify/lib.cjs:280-292` parses.
 - `docs/validation/<VTID>/plan-sparring.md` — copy of the sparring record and verdict.
 - Lane `paths` also list `services/gateway/src/services/project-manager/governance.ts` and
-  `services/gateway/test/project-manager/governance.test.ts` so that a code amendment the sparring partner requires
-  can be made in the same lane. governance.ts is a protected gate file (collaboration.md §3a): a lane PR that changes
-  it needs a legacy `claude` review on the current head or the owner's instruction, in addition to the reviewer-agent
-  accept. If no amendment is required, the lane PR changes only `docs/validation/**`.
+  `services/gateway/test/project-manager/governance.test.ts`: this lane is the recorded owner of the `91d26a15`
+  governance.ts change. The `chain-coverage` lane PR itself is docs-only (`docs/validation/**`) and does not change
+  either file. governance.ts is a protected gate file (`governance.ts:43` `PROTECTED_GATE_GLOBS`):
+  `governanceMergeAllowed` (`governance.ts:180`) unlocks it only with a legacy `claude` approve
+  (`isLegacyClaudeReview`, `governance.ts:137`: verdict `approve`, `reviewer_seat: claude`, no `reviewer`) on the
+  current head; agent accepts are not evaluated for it and there is no owner-instruction path in the PM. If a code
+  amendment to governance.ts ever becomes necessary, it goes in its own separate PR that states it needs a legacy
+  `claude` review (in practice a seat-`claude` approve or an owner admin merge) — never through the automated PM merge.
 
 ## Out of scope
 
@@ -80,6 +86,9 @@ it with tests and gives it the coverage rule 47 requires.
 
 ## Verification
 
+- Manifest validated locally before the lane PR is raised (pre-merge `check-pr` exits early for a docs-only PR,
+  `run.mjs:469` / `lib.cjs:36` deploy paths):
+  `node -e "const lib=require('./scripts/ci/staging-verify/lib.cjs'); const m=JSON.parse(require('fs').readFileSync('docs/validation/<VTID>/staging-tests.json','utf8')); const v=lib.validateManifest(m,{vtid:'<VTID>',service:'gateway'}); if(!v.ok){console.error(v.errors);process.exit(1);}"`.
 - Local: `npx jest test/project-manager` and `npx tsc --noEmit` in `services/gateway`;
   `node --test scripts/ci/kiro-steering/guard.test.cjs`; `node --test scripts/ci/staging-verify/lib.test.cjs` (coverage parse).
 - The commit-coverage entry is validated by `lib.cjs` `parseCommitCoverage` (full 40-hex sha, VTID pattern,
