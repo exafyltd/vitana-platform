@@ -16,7 +16,7 @@ paths:
   - services/gateway/src/services/automation-executor.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-22T19:06Z
+updated: 2026-10-22T19:10Z
 vtid: VTID-05270
 ---
 # jobs-tenant-loop — shared mt-flags + active-tenant loop (repo vitana-platform)
@@ -64,4 +64,6 @@ shared `resolveActorTenant({ tenantId, userId })` + `jwtSubject(token)` helpers 
 ### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05270 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T19:06Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T19:10Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
