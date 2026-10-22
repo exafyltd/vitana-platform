@@ -1,7 +1,7 @@
 ---
 lane: chain-coverage
 state: ready
-next_actor: owner
+next_actor: kiro
 depends_on: []
 executor: kiro
 seat: exafy
@@ -12,7 +12,8 @@ paths:
   - docs/validation/**
   - services/gateway/src/services/project-manager/governance.ts
   - services/gateway/test/project-manager/governance.test.ts
-updated: 2026-10-22T13:10Z
+updated: 2026-10-22T13:37Z
+vtid: VTID-05335
 ---
 # Lane: chain-coverage
 
@@ -25,3 +26,6 @@ requires an amendment (protected gate file: needs a legacy `claude` review or th
 
 ### 2026-10-22T13:10Z · kiro-hotmail-202610221300-c70d · ready
 Lane created with the plan. No VTID yet (CI allocates on convergence).
+
+### 2026-10-22T13:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05335 allocated after policy approval (converged-auto-v1).

@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T13:10Z
+state: approved
+updated: 2026-10-22T13:37Z
+sparring_record: .kiro/specs/reviewer-model-fallback/sparring/verdict.md
+vtids: [VTID-05335]
 ---
 # Handoff — reviewer-model-fallback
 
@@ -25,3 +27,6 @@ Lanes:
 ### 2026-10-22T13:10Z · kiro-hotmail-202610221300-c70d · drafted
 Spec written from origin/main `e1e68614` (governance.ts:35/41/130/133, governance.test.ts:216-241, lib.cjs:280-325).
 Pushed as `plan(reviewer-model-fallback)` PR for PLAN-SPAR. No VTID allocated by this session. Next: PLAN-SPAR round 1.
+
+### 2026-10-22T13:37Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
