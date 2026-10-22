@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-22T02:03Z
+updated: 2026-10-22T09:03Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -289,3 +289,22 @@ lane (`.kiro/pipeline/driver.md` "Automation-started driver"; automation file Wa
 (updated 2026-10-22T01:59Z), which is the correct owner while Claude is unavailable (§7). Nothing for this wake-up
 to do. Front matter unchanged except `updated` (next_actor stays `claude`). No VTID, no merge, no dispatch, no
 live-system write. Releasing the `_plan` claim on stop; the next wake-up resumes from git.
+
+### 2026-10-22T09:03Z · kiro-exafy-202610220901-eaeb · driver woken (automation run, item W) — no action for an automation driver
+Kiro Web automation `exafy` (`.kiro/automations/exafy.md`), seat exafy. Item W: this is the one approved plan with
+`author_seat: exafy` whose driver was not alive (`heartbeat-age` = `none`). Wrote the first heartbeat on
+`refs/heads/collab-driver/sparring-floor-retry` (took over the stale tip of `kiro-exafyltd-202610220801-d3a6`, >45 min
+old) and claimed `sparring-floor-retry/_plan`. I am now this plan's driver.
+
+`plan-driver.mjs next` returns exactly one action: `build floor-retry-code`. An **automation-started driver never
+builds a governance lane or an `executor: claude` lane** (`driver.md` §"Automation-started driver"), and `floor-retry-code`
+is both — `executor: claude`, seat `claude`, `paths` entirely in protected/governance space (`scripts/collab/plan-spar*.mjs`,
+`services/gateway/src/services/plan-sparring/**`). There is no other action available: no open sparring round, no
+`in-review` lane, no lane PR to fix-forward, nothing an automation driver may merge. The lane stays `ready` with
+`next_actor: kiro` (PLAN-SPAR hardcodes `kiro` on allocation though `executor: claude`); it belongs to Claude Code /
+the exceptions seat under collaboration §7, not to this automation run.
+
+Per the automation's item W and `driver.md`, I did the one item (establish a live driver), leave the plan state and the
+lane untouched, write a last heartbeat, and release the `_plan` claim so the lane is not blocked — the next wake-up (or
+an interactive driver / the exceptions seat when it builds the `executor: claude` lane) resumes from git. No VTID, no
+code change, no merge, no live-system write.
