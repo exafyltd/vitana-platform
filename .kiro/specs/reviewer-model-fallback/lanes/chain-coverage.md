@@ -12,7 +12,7 @@ paths:
   - docs/validation/**
   - services/gateway/src/services/project-manager/governance.ts
   - services/gateway/test/project-manager/governance.test.ts
-updated: 2026-10-22T18:10Z
+updated: 2026-10-22T18:14Z
 vtid: VTID-05335
 ---
 # Lane: chain-coverage
@@ -32,4 +32,6 @@ VTID-05335 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T18:06Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T18:10Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T18:14Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
