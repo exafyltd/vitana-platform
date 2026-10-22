@@ -47,9 +47,12 @@ i18n key (+ mirrors), at most a `@vitana/core` re-export line, and parity-row st
    `@/lib/memory-learning-api`, `@/lib/timeline-api` and `@/lib/diary-index-sync` all import
    `@/lib/community-gateway` (`memory-api.ts:8`, `diary-index-sync.ts:1`), so every runtime data path in the cluster
    is class-B: memory garden/add-memory/what-Vitana-knows, learning switches/usage, timeline, and every diary
-   capture/entry/feedback module. These are re-implemented natively against the `@vitana/core` gateway helper
-   (`createGatewayFetch`/`gatewayJson`, already wired in `apps/mobile/src/auth/gateway.ts`) and the native supabase
-   client (`@supabase/supabase-js`, already a native dep) — **not** given a `@vitana/core` re-export. **No clean
+   capture/entry/feedback module. These are re-implemented natively against the native gateway helper in
+   `apps/mobile/src/auth/gateway.ts` (`getGateway()`/`gatewayGet()`, which wrap `@vitana/core/gateway`'s
+   `createGatewayFetch`/`gatewayJson` imported via `src/ports/core` — gateway.ts does not itself export those two
+   symbols) and the native Supabase client reached through the `core` port (`@vitana/core/supabase` →
+   `apps/mobile/src/auth/client.ts`; `@supabase/supabase-js` is a native dep but screen code never imports it
+   directly, per the ports-only rule) — **not** given a `@vitana/core` re-export. **No clean
    full-module class-A re-export exists** in either cluster. The only genuinely pure logic (`timeline-meta.tsx`
    pillar/catalog maps, `routine-text.ts` phrasing, `gardenCategoryKey`, `formatIndexDelta`) is **mirrored** natively
    (into DE-first i18n keys and small native helpers), not re-exported, because it either pulls web-only deps

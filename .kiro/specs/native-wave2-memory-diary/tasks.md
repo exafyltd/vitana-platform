@@ -5,8 +5,11 @@ them exactly; anything outside them is a plan change (log it, set `next_actor: c
 else park per collaboration §7a). VTIDs are assigned by CI after PLAN-SPAR converges; do not start a lane before its
 `vtid:` is set in `lanes/<id>.md`. All commands run from `apps/mobile/` unless noted; `assertNotProduction()` and the
 no-production-profile rule make every command offline. The whole cluster is **class-B native re-implementation**
-against the `@vitana/core` gateway helper + native supabase client — no `@vitana/core` re-export is expected
-(ledger-findings §3); the re-export task below fires only if a genuinely pure class-A helper is found.
+against the native gateway helper in `apps/mobile/src/auth/gateway.ts` (`getGateway()`/`gatewayGet()`, wrapping
+`@vitana/core/gateway`'s `createGatewayFetch`/`gatewayJson`) and the native Supabase client reached through the
+`core` port (`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js`
+import in screen code (design §2 ports-only rule) — so no `@vitana/core` re-export is expected (ledger-findings §3);
+the re-export task below fires only if a genuinely pure class-A helper is found.
 
 <!-- lane: memory -->
 ## Lane `memory` · executor Kiro · seat exafyltd → reviewer_seat hotmail
@@ -20,8 +23,10 @@ sources `src/pages/Memory.tsx` (124), `memory/Timeline.tsx` (66), `memory/Recall
   **mirrored** into native helpers + i18n keys, not re-exported), add its `packages/core/manifest.json` line + a
   re-export in `packages/core/src/**`, then `node scripts/native/core-closure.mjs --write` and commit the regenerated
   `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json` in the SAME PR. Default:
-  no core change — the class-B data paths are re-implemented natively against `createGatewayFetch`/`gatewayJson`
-  (`apps/mobile/src/auth/gateway.ts`) and the native supabase client.
+  no core change — the class-B data paths are re-implemented natively against the native gateway helper
+  (`getGateway()`/`gatewayGet()` in `apps/mobile/src/auth/gateway.ts`, wrapping `@vitana/core/gateway`'s
+  `createGatewayFetch`/`gatewayJson`) and the native Supabase client via the `core` port (`@vitana/core/supabase`
+  → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js` import in screen code.
   Files: `packages/core/manifest.json`, `packages/core/src/**`, `packages/core/closure.generated.json`,
   `scripts/native/mobile-ci-paths.generated.json` (only if a class-A promotion happens).
   Verify (repo root): `node scripts/native/core-closure.mjs --check` passes; `apps/mobile` → `npm run typecheck` green.
@@ -80,16 +85,21 @@ photo/audio capture use new native deps.
 
 - [ ] 1. Core re-export (conditional — class-A only): same rule as memory task 1 — only if a genuinely pure class-A
   helper is found (ledger-findings §3 found none; `gardenCategoryKey`/`formatIndexDelta` live inside class-B modules
-  and are re-derived natively). Default: no core change — diary data paths re-implemented natively against the core
-  gateway helper + native supabase client.
+  and are re-derived natively). Default: no core change — diary data paths re-implemented natively against the native
+  gateway helper (`getGateway()`/`gatewayGet()` in `apps/mobile/src/auth/gateway.ts`, wrapping
+  `@vitana/core/gateway`'s `createGatewayFetch`/`gatewayJson`) and the native Supabase client via the `core` port
+  (`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js` import in
+  screen code.
   Files: `packages/core/manifest.json`, `packages/core/src/**`, `packages/core/closure.generated.json`,
   `scripts/native/mobile-ci-paths.generated.json` (only if a class-A promotion happens).
   Verify (repo root): `node scripts/native/core-closure.mjs --check`; `apps/mobile` → `npm run typecheck` green.
 - [ ] 2. Native deps + permissions: add `expo-image-picker` and a native audio recorder (`expo-audio`/`expo-av`,
   pick the one consistent with `apps/mobile/`) to `apps/mobile/package.json`; add the camera / photo-library /
-  microphone permission strings to `app.json` / `app.config`. These replace web's browser Supabase-Storage upload +
-  MediaRecorder / Web Speech (class-B, device-only).
-  Files: `apps/mobile/package.json`, `apps/mobile/app.json` (or `app.config.*`).
+  microphone permission strings to the app's Expo config `apps/mobile/app.config.ts` (the app uses `app.config.ts`,
+  there is no `app.json`). Both paths are in this lane's `paths` allow-list (and only this lane's) so the PR-GATE
+  Lane scope check passes. These replace web's browser Supabase-Storage upload + MediaRecorder / Web Speech
+  (class-B, device-only).
+  Files: `apps/mobile/package.json`, `apps/mobile/app.config.ts`.
   Verify: `npm run typecheck`; `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
 - [ ] 3. Daily Diary screen (one route, `tab` param): `apps/mobile/app/(app)/daily-diary/index.tsx` +
   `apps/mobile/src/screens/diary/DailyDiaryScreen.tsx`, reading `tab` (`health` default | `bugs`) to pick the
@@ -115,6 +125,8 @@ photo/audio capture use new native deps.
 - [ ] 6. Flip the lane's parity rows to `native` and verify: `node scripts/native/parity-ledger.mjs --sync` (status
   edited by hand to `native` for all 3 diary rows — they flip together), then `--check`.
   Files: `apps/mobile/parity/ledger.json` (diary rows only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
+  `scope.json` must list **every** touched path, including the task-2 dependency/permission files
+  (`apps/mobile/package.json`, `apps/mobile/app.config.ts`), so it does not under-report the lane footprint.
   Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
 - [ ] 7. **(depends-on-owner / G1 — `next_actor: owner`)** Device-runtime parity: Maestro journey(s)
   `apps/mobile/maestro/diary/*.yaml`, iOS simulator + Android emulator screenshots at the device sizes, screenshot
@@ -131,8 +143,11 @@ photo/audio capture use new native deps.
 
 ## Acceptance (every lane; the reviewer agent checks these)
 - Requirements R1–R6 met for the lane's screens; mobile-web parity, N2/N3 composition, class-B data paths
-  re-implemented natively against the `@vitana/core` gateway helper + native supabase client (no web component
-  import), `@vitana/core` the only web bridge; any class-A promotion done in-PR with the generated files committed.
+  re-implemented natively against the native gateway helper (`getGateway()`/`gatewayGet()` in
+  `apps/mobile/src/auth/gateway.ts`, wrapping `@vitana/core/gateway`) and the native Supabase client via the `core`
+  port (`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js` import
+  in screen code, never a web component import; `@vitana/core` the only web bridge; any class-A promotion done in-PR
+  with the generated files committed.
 - `npm run typecheck`, `npm test`, `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green; `node scripts/native/parity-ledger.mjs --check`
   green with the lane's rows `native`; `node scripts/native/core-closure.mjs --check` green.

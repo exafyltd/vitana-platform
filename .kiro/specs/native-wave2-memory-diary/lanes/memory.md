@@ -36,9 +36,11 @@ App.tsx cites) in `requirements.md` R0.2: `src/pages/Memory.tsx` (124 lines, rou
 `src/App.tsx:1620`), `src/pages/memory/Permissions.tsx` (62 lines, `src/App.tsx:1625`).
 **Goal.** Port the Memory overview, Timeline, Recall and Permissions screens to native on the N3 shell at 1:1
 mobile-web parity. Every memory data path is **class-B** (ledger-findings §3: `memory-api`, `memory-learning-api`,
-`timeline-api` all import `@/lib/community-gateway`) — re-implemented natively against the `@vitana/core` gateway
-helper (`createGatewayFetch`/`gatewayJson`, already wired in `apps/mobile/src/auth/gateway.ts`) and the native
-supabase client, NOT core-extracted. Recall's body is static mock data + an honest empty state (`SpotlightEmpty`),
+`timeline-api` all import `@/lib/community-gateway`) — re-implemented natively against the native gateway helper in
+`apps/mobile/src/auth/gateway.ts` (`getGateway()`/`gatewayGet()`, wrapping `@vitana/core/gateway`'s
+`createGatewayFetch`/`gatewayJson`) and the native Supabase client reached through the `core` port
+(`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js` import in
+screen code — NOT core-extracted. Recall's body is static mock data + an honest empty state (`SpotlightEmpty`),
 so it ports as a pure presentational screen. Pillar/catalog text (`timeline-meta.tsx`) and routine phrasing
 (`routine-text.ts`) are **mirrored** into DE-first i18n keys, not re-exported (they still pull web-only deps).
 Flips all 4 rows to `native`.

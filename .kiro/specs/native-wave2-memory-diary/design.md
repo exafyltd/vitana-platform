@@ -53,11 +53,14 @@ add-memory / what-Vitana-knows (`AddMemoryDialog`, `WhatVitanaKnows`, `MemoryCat
 learning (`LearningSwitches`, `UsageDataCard`, `RoutinesCard`), the whole timeline (`TimelineBody`,
 `IndexSpotlightCard`, `TimelineRows`, `TimelineDetailSheet`), and every diary capture / entry / feedback module
 (`DiaryEntryList`, `TextDiaryEditor`, `PhotoDiaryUploader`, `UnifiedCaptureCard`, `FeedbackReportList` →
-`MyTicketsList`, `FeedbackRecorder`). These are re-implemented natively against the `@vitana/core` gateway helper
-(`createGatewayFetch`/`gatewayJson`, already wired in `apps/mobile/src/auth/gateway.ts`) and the native supabase
-client (`@supabase/supabase-js`, already a native dep) — **not** given a `@vitana/core` re-export, because a core
-re-export would pull the class-B module into the `core-closure.mjs` BFS where its `community-gateway`/supabase import
-fails `--check` (`m.own !== 'A'`).
+`MyTicketsList`, `FeedbackRecorder`). These are re-implemented natively against the native gateway helper in
+`apps/mobile/src/auth/gateway.ts` — `getGateway()` / `gatewayGet()`, which wrap `@vitana/core/gateway`'s
+`createGatewayFetch` / `gatewayJson` imported via `src/ports/core` (gateway.ts does **not** itself export the two
+`@vitana/core` symbols) — and the native Supabase client reached through the `core` port (`@vitana/core/supabase`
+re-exported by `src/ports/core.ts`, backed by `apps/mobile/src/auth/client.ts`; `@supabase/supabase-js` is already a
+native dep but screen code never imports it directly, per the ports-only rule in §2) — **not** given a `@vitana/core`
+re-export, because a core re-export would pull the class-B module into the `core-closure.mjs` BFS where its
+`community-gateway`/supabase import fails `--check` (`m.own !== 'A'`).
 
 **No clean full-module class-A re-export exists** in either cluster. The only genuinely pure logic is embedded
 presentation helpers that native **mirrors**, not re-exports, because they still pull web-only deps or live inside a
@@ -85,8 +88,10 @@ and writes the learning prefs / usage export through `memory-learning-api` re-im
 `UnifiedCaptureCard` + `TextDiaryEditor` + `PhotoDiaryUploader` + `DiaryEntryList`; bugs mode shows
 `FeedbackReportList` (→ `MyTicketsList`). All class-B. The native re-implementation:
 
-- **Text entry** → native editor saving through `memory-api.saveDiaryEntry` (`/api/v1/...memory/diary`) via the core
-  gateway helper; entry list reads + deletes (`deleteDiaryEntry`) with a native supabase realtime subscription.
+- **Text entry** → native editor saving through the `memory-api.saveDiaryEntry` path (`/api/v1/...memory/diary`) via
+  the native gateway helper (`getGateway()`/`gatewayGet()` in `apps/mobile/src/auth/gateway.ts`); entry list reads +
+  deletes (`deleteDiaryEntry`) with a native supabase realtime subscription on the client reached through the `core`
+  port (`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`), never a direct `@supabase/supabase-js` import.
 - **Photo** → `expo-image-picker` for selection, upload to **Supabase Storage** (same bucket as web) + the gateway
   index sync (`diary-index-sync`). Replaces web's Supabase-Storage-from-browser + `<input type=file>`.
 - **Audio** → a native expo audio recorder (`expo-audio`/`expo-av`) + native/back-end STT, replacing web's
@@ -95,8 +100,11 @@ and writes the learning prefs / usage export through `memory-learning-api` re-im
   re-implemented natively.
 
 `expo-image-picker` and the expo audio recorder are **new native deps** added to `apps/mobile/package.json` in this
-lane's PR; `app.json`/`app.config` permission strings (camera, photo library, microphone) are added with them.
-Capture is a device-only path: the offline unit tests fake the picker/recorder; the live exercise is the G1 task.
+lane's PR; the camera / photo-library / microphone permission strings are added to the app's Expo config
+`apps/mobile/app.config.ts` (the app uses `app.config.ts`, there is no `app.json`). Both `apps/mobile/package.json`
+and `apps/mobile/app.config.ts` are in the `diary` lane's `paths` allow-list (and only the `diary` lane's — `memory`
+touches neither) so the PR-GATE Lane scope check passes, and both are listed in the lane's `scope.json`. Capture is a
+device-only path: the offline unit tests fake the picker/recorder; the live exercise is the G1 task.
 
 ## 3. Disjointness (no overlap, no orphan)
 
@@ -133,7 +141,8 @@ Capture is a device-only path: the offline unit tests fake the picker/recorder; 
    parity-row **status** flips. The lane adds a native route file and a status flip, nothing in
    `src/navigation/registry/`. `parity-scope.json` already maps `/memory` and `/daily-diary` to `memory-diary`.
 5. **Diary capture uses native deps** (`expo-image-picker` for photo, an expo audio recorder + native/back-end STT
-   for audio), added in the `diary` lane PR with their permission strings; these replace the web MediaRecorder / Web
+   for audio), added in the `diary` lane PR to `apps/mobile/package.json` with their permission strings in
+   `apps/mobile/app.config.ts` (both in the `diary` lane `paths` only); these replace the web MediaRecorder / Web
    Speech / browser Supabase-Storage upload and are class-B, not core-extractable (ledger-findings §3).
 6. **Runtime verification is deferred to G1** (owner gate). Lanes land the ports with offline build + fake-gateway
    unit tests green; the simulator/Maestro/screenshot-parity pass — and the diary camera/microphone live exercise —

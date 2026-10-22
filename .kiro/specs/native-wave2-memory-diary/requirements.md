@@ -60,8 +60,10 @@ RTL side) are **not** reproduced — the native kit's corrected behaviour is use
 1.4 Business logic, query keys, hooks, types are consumed through `@vitana/core` where a module is class-A. **The
 cluster's runtime data paths are all class-B** (ledger-findings §3: they import `@/lib/community-gateway` via
 `memory-api`/`memory-learning-api`/`timeline-api`/`diary-index-sync`, or `@/integrations/supabase/client`) — these
-are **re-implemented natively** against the `@vitana/core` gateway helper (`createGatewayFetch`/`gatewayJson`,
-`apps/mobile/src/auth/gateway.ts`) and the native supabase client, NOT core-extracted. A web module a lane needs that
+are **re-implemented natively** against the native gateway helper in `apps/mobile/src/auth/gateway.ts`
+(`getGateway()`/`gatewayGet()`, wrapping `@vitana/core/gateway`'s `createGatewayFetch`/`gatewayJson`) and the native
+Supabase client reached through the `core` port (`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never
+a direct `@supabase/supabase-js` import in screen code (design §2 ports-only rule) — NOT core-extracted. A web module a lane needs that
 IS genuinely pure (class-A) and not yet re-exported is added to `packages/core/manifest.json` with a re-export in the
 same lane PR and `node scripts/native/core-closure.mjs --write` run (program §3). `@vitana/core` is the only
 web→native bridge; ESLint bans `@/` and relative paths into the web `src/` from app code. Pure presentation helpers
@@ -70,7 +72,9 @@ that pull web-only deps (`timeline-meta.tsx`, `routine-text.ts`) are **mirrored*
 1.5 Diary capture is re-implemented with native deps: photo upload → `expo-image-picker` (upload to Supabase
 Storage, as on web); audio capture → a native expo audio recorder (`expo-audio`/`expo-av`) + native/back-end STT (web
 uses MediaRecorder + Web Speech / backend STT). These new native deps are added to `apps/mobile/package.json` in the
-`diary` lane PR (ledger-findings §3).
+`diary` lane PR, with the camera / photo-library / microphone permission strings added to the app's Expo config
+`apps/mobile/app.config.ts` (the app uses `app.config.ts`, there is no `app.json`); both paths are in the `diary`
+lane's `paths` allow-list and are listed in its `scope.json` (ledger-findings §3).
 
 ## R2 — i18n (11 locales) + RTL
 

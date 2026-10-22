@@ -14,6 +14,8 @@ paths:
   - apps/mobile/src/navigation/resolve.ts
   - apps/mobile/tests/diary/**
   - apps/mobile/maestro/diary/**
+  - apps/mobile/package.json
+  - apps/mobile/app.config.ts
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**
@@ -38,11 +40,16 @@ reads the `tab` query param — the three rows flip to `native` together.
 (`UnifiedCaptureCard`), text editor (`TextDiaryEditor`), photo upload (`PhotoDiaryUploader`), entry list
 (`DiaryEntryList`) and the bug/feedback report list (`FeedbackReportList` → `MyTicketsList`), with the health/bugs
 mode from the `tab` query param. Every diary data module is **class-B** (ledger-findings §3): diary rows read/
-write/delete through `memory-api`/supabase realtime, so they are re-implemented natively against the `@vitana/core`
-gateway helper + native supabase client, NOT core-extracted. **Photo upload** → native `expo-image-picker` + Supabase
+write/delete through `memory-api`/supabase realtime, so they are re-implemented natively against the native gateway
+helper in `apps/mobile/src/auth/gateway.ts` (`getGateway()`/`gatewayGet()`, wrapping `@vitana/core/gateway`'s
+`createGatewayFetch`/`gatewayJson`) and the native Supabase client reached through the `core` port
+(`@vitana/core/supabase` → `apps/mobile/src/auth/client.ts`) — never a direct `@supabase/supabase-js` import in
+screen code — NOT core-extracted. **Photo upload** → native `expo-image-picker` + Supabase
 Storage (web uses Supabase Storage); **audio capture** → a native expo audio recorder (`expo-audio`/`expo-av`) +
 native/back-end STT (web uses MediaRecorder + Web Speech / backend STT). `expo-image-picker` and the expo audio
-recorder are **new native deps** not yet in `apps/mobile/package.json` — added in this lane's PR. Flips all 3 rows
+recorder are **new native deps** not yet in `apps/mobile/package.json` — added in this lane's PR, which is why this
+lane's `paths` (and only this lane's — `memory` touches neither) include `apps/mobile/package.json` and
+`apps/mobile/app.config.ts` (the app's real Expo config; there is no `app.json` in `apps/mobile/`). Flips all 3 rows
 to `native`.
 **Acceptance (the reviewer agent checks these):**
 - Requirements R1–R6 for all 3 rows (one screen, tab param); mobile-web parity; `@vitana/core`-only web bridge for
