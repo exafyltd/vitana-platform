@@ -17,7 +17,18 @@ never writes the ledger. `vitana-v1#1485` is closed unmerged with its branch kep
 
 ## Evidence base (what the partner can read)
 - **vitana-v1 at `96becaed99bdb91d0a999a4f516a3f68cd6d4bc3`** (its `origin/main` at re-plan time), declared in
-  `handoff.md` `spar_refs`. Every `vitana-v1` `file:line` below is at that SHA unless marked "PR evidence".
+  `handoff.md` `spar_refs`. Every `vitana-v1` `file:line` below is at that SHA unless marked "PR evidence". Files
+  named without a repo are vitana-v1 files. That includes `scripts/native/gen-tokens.mjs`, `packages/tokens/**`,
+  `scripts/i18n-*.mjs` and `.github/workflows/{PR-GATE,I18N-PROPAGATE,i18n-check}.yml`; only `scripts/collab/**` is
+  vitana-platform. Full vitana-v1 paths of the files the lanes touch:
+  - `src/components/AuthGuard.tsx`
+  - `src/pages/RedeemVoucher.tsx`
+  - `src/components/voucher/RedemptionLanding.tsx`
+  - `src/lib/store-links.ts`
+  - `src/pages/portals/MaxinaPortal.tsx`
+  - `src/hooks/useTenant.tsx`
+  - `src/lib/tenant-registry.ts`
+  - `src/lib/retired-tenants.ts`
 - **vitana-platform at this PR's base** for `scripts/collab/**`. vitana-v1's Lane-scope job fetches
   `scripts/collab/queue.mjs` from vitana-platform main (`vitana-v1/.github/workflows/PR-GATE.yml:318-326`), so the
   checker cited below is the platform copy.
@@ -49,21 +60,28 @@ never writes the ledger. `vitana-v1#1485` is closed unmerged with its branch kep
 2. **B1 is blocked by tests outside paths.** The literal is at `src/pages/CommerceJoin.tsx:142,149,176`, and the
    header `:9-12` says "Maxina only, deliberately". Two tests pin it: `CommerceJoin.oauth-first.test.ts:29`
    (`queryParams: { tenant_slug: 'maxina' }`) and `CommerceJoin.routing.test.ts:53-55`. Neither file was in the old
-   lane's paths. Other literals the lane owns (B2–B5, unchanged scope): `AuthGuard.tsx:267,271` (`|| 'maxina'`),
-   `RedemptionLanding.tsx:47,51` (`/maxina?redirectTo=`), `:61-62` (logo + alt `MAXINA`),
-   `RedeemVoucher.tsx:66,104,131,157` (`navigate("/maxina")`), and `store-links.ts:6,31`. The mount point
+   lane's paths. Other literals the lane owns (B2–B5, unchanged scope):
+   - `src/components/AuthGuard.tsx:267,271` (`|| 'maxina'`)
+   - `src/components/voucher/RedemptionLanding.tsx:47,51` (`/maxina?redirectTo=`) and `:61-62` (logo + alt `MAXINA`)
+   - `src/pages/RedeemVoucher.tsx:66,104,131,157` (`navigate("/maxina")`)
+   - `src/lib/store-links.ts:6,31`
+
+   Anonymous visitors have no tenant: `TenantProvider` resolves one only when `user` is set
+   (`src/hooks/useTenant.tsx:53-54`), and it accepts a stored slug only if the registry lists it (`:62`).
+   `readStoredTenantSlug` (`src/lib/retired-tenants.ts:61-76`) returns any stored canonical value. The mount point
    `AppHooksInitializer` is at `src/App.tsx:469` and is rendered at `:772`.
 3. **theme-tokens' approach is wrong.**
    - `src/index.css:137-140` (`:root`) and `:384-387` (`.dark`) already declare `--brand-accent: 339 89% 49%` (pink),
      so `--primary: var(--brand-accent, …)` would render pink for Maxina, where `--primary` is `222.2 47.4% 11.2%`
      (`:24`) / `210 40% 98%` (`:269`). The old plan's "fallback == compiled value" premise is false.
-   - `useTenant.tsx:123-133` writes `safeHex(...)` values (hex; `safeHex` at `src/lib/tenant-registry.ts:115`), and
-     `MaxinaPortal.tsx:232-237` writes `#FF7BAC`/`#FFF5F8`/`#1A1A1A`. `tailwind.config.ts:61,65-66` emit
+   - `src/hooks/useTenant.tsx:123-133` writes `safeHex(...)` values (hex; `safeHex` at `src/lib/tenant-registry.ts:115`),
+     and `src/pages/portals/MaxinaPortal.tsx:232-237` writes `#FF7BAC`/`#FFF5F8`/`#1A1A1A`. `tailwind.config.ts:61,65-66` emit
      `hsl(var(--ring))`/`hsl(var(--primary))`, and `index.css:6` requires HSL, so a hex in that chain is an invalid
      colour.
-   - `scripts/native/gen-tokens.mjs:97-104` substitutes only `var(--x)` (no fallback form), so `--primary` would drop
-     out of `packages/tokens` (`packages/tokens/src/contract.ts:73-79` `SEMANTIC_KEYS` includes `primary`, `ring`),
-     breaking native.
+   - vitana-v1 `scripts/native/gen-tokens.mjs:97-104` (`substituteVars`) substitutes only `var(--x)` (no fallback
+     form). It reads `src/index.css` `:root`/`.dark` and `tailwind.config.ts` (`:8-11`), and `--check` fails on any
+     difference (`:19`). So `--primary` would drop out of vitana-v1 `packages/tokens`
+     (`packages/tokens/src/contract.ts:73-79` `SEMANTIC_KEYS` includes `primary`, `ring`), breaking native.
    - The C2 golden `src/lib/tenant-registry.maxina-golden.test.tsx:172-187` asserts that nothing consumes
      `var(--brand-*)`. An approach that never reads `var(--brand-*)` keeps it true.
 
@@ -77,24 +95,35 @@ plan), rebuilt so Lane scope can pass:
   `github-actions[bot]` commit, re-trailered `Collab-Lane: mt-frontend-brand-r2/brand-surface-r2`. If a pick
   conflicts with main, re-implement it to the spec below instead of resolving toward the PR.
 - What the lane introduces (absent at the pinned SHA):
-  - `src/hooks/useTenantMeta.ts` exporting `activeTenantSlug({ tenantSlug, hostname, candidates })`, a pure function,
-    and `useActiveTenantSlug()`. It returns the `useTenant()` slug when set, else a stored canonical slug
-    (`readStoredTenantSlug`, as `AuthGuard.tsx:74`), else `maxina`. `vitanaland.com` and the preview host therefore
-    resolve to `maxina`, exactly today's literal.
+  - `src/hooks/useTenantMeta.ts` exporting two functions:
+    - `useActiveTenantSlug()` returns `useTenant().tenant?.slug ?? 'maxina'`. It never reads localStorage. An
+      anonymous signup (no tenant, `useTenant.tsx:53-54`) therefore posts `maxina`, exactly today's literal, and a
+      session on a resolved tenant posts that tenant.
+    - `activeTenantSlug({ tenantSlug, candidates, registry })` is a pure function used only by AuthGuard's OAuth retry
+      (B2). Order: `tenantSlug`, else the first candidate the registry lists (`findBySlug`, the same guard as
+      `useTenant.tsx:62`), else `maxina`.
+
+    A stored slug never reaches `supabase.auth.signUp` metadata (sparring s2 R1-F3).
   - `useTenantMeta()` sets `document.title` + favicon only (no OG, original R1-F4), mounted by one call in
     `AppHooksInitializer` (`App.tsx:469`).
 - BR2 Ship `tenantBrand.json` in all 11 active locales (DE first, du-form; `{brand}` kept; `ar` RTL text) so
   I18N-PROPAGATE's drift is 0 and it pushes nothing. `screens.json` and `i18n-source-stamps/**` are deliberately not in
   paths, so any bot touch stays visible as a Lane-scope error.
 - BR4 B1: `CommerceJoin.tsx` `const tenantSlug = useActiveTenantSlug()` replaces the literal at `:142,149,176`, and the
-  `:9-12` comment is reworded. Both CommerceJoin tests are now in paths: `oauth-first.test.ts:29` and
-  `routing.test.ts:55` assert `tenant_slug: tenantSlug` plus that `tenantSlug` comes from `useActiveTenantSlug()`.
+  `:9-12` comment is reworded (the explicit default lives on in `?? 'maxina'`). Both CommerceJoin tests are now in
+  paths: `oauth-first.test.ts:29` and `routing.test.ts:55` assert `tenant_slug: tenantSlug` plus that `tenantSlug` comes from `useActiveTenantSlug()`.
   The wrong-tenant warning (`routing.test.ts:53-54`) is kept, reworded.
-- BR5 B7: a signup unit test (mocked `supabase.auth.signUp`, no network) asserts the active slug for a mocked `acme`
-  tenant and `maxina` without one. An AuthGuard retry-slug test covers `activeTenantSlug({ tenantSlug: null,
-  candidates: [stored] })`. A test asserts that `App.tsx` calls `useTenantMeta()` inside `AppHooksInitializer`.
+- BR5 B7: unit tests with a mocked `supabase.auth.signUp` and no network:
+  - Signup `options.data.tenant_slug` is `acme` for a mocked active `acme` tenant.
+  - It is `maxina` with no tenant.
+  - It is `maxina` with no tenant and `localStorage.tenant_slug = 'acme'`. This guards s2 R1-F3.
+  - AuthGuard retry: `activeTenantSlug` returns a registry-listed stored slug, and `maxina` for an unlisted one.
+  - `App.tsx` calls `useTenantMeta()` inside `AppHooksInitializer`.
 - BR3 Pre-push gate: stamp drift 0 for every locale, audit 100.0% for the 10 non-DE locales, and
-  `git diff --name-only origin/main...HEAD` ⊆ paths.
+  `git diff --name-only origin/main...HEAD` ⊆ paths. The new `tenantBrand` keys show as "never stamped". That is
+  expected and is not drift: `i18n-stamp-source.mjs` files them under `unstamped` (`:289`), counts only mismatches into
+  `totalDrift` (`:293`) and exits 1 only on `totalDrift > 0` (`:335-342`). I18N-PROPAGATE's COUNT (`:86-88`) matches
+  only the drift line. So no stamp file is needed, and `i18n-source-stamps/**` stays outside paths (s2 R1-F4).
 
 **Lane `theme-tokens-r2` (kiro, seat exafyltd, vitana-v1).** Runtime HSL overrides for non-default tenants only; no CSS
 change:

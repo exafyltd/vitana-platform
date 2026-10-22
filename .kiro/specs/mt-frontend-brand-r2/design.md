@@ -18,12 +18,16 @@ re-planned under this new slug, sparred in a fresh session, and get two new VTID
   nothing to propagate: ship every active locale of the new namespace in the lane's own commits.
 - **Paths** are an explicit list (no `src/i18n/*/…` glob), so a bot touch to any other namespace stays red. Not in paths
   on purpose: `i18n-source-stamps/**`, `src/i18n/en/screens.json`.
-- **BR0 precondition:** I18N-PROPAGATE counts repo-wide drift (`I18N-PROPAGATE.yml:108-116`). If main itself drifts,
+- **New keys are "never stamped", not drift** (`scripts/i18n-stamp-source.mjs:289,293,335-342`), so shipping all
+  11 locales without a stamp file keeps `--check-all` and I18N-PROPAGATE's COUNT (`:86-88`) at 0 (s2 R1-F4).
+- **BR0 precondition:** I18N-PROPAGATE counts repo-wide drift (`I18N-PROPAGATE.yml:86-116`). If main itself drifts,
   no lane can keep the bot out, so the lane checks main first and stops (`next_actor: claude`) instead of pushing.
 - **B1** uses `useActiveTenantSlug()`, new in this lane (`src/hooks/useTenantMeta.ts` does not exist at the pinned
-  SHA; the code is reused from `#1485`, PR evidence). It resolves the `useTenant()` slug, then a stored canonical slug
-  (`readStoredTenantSlug`, as at `AuthGuard.tsx:74`), then `maxina`. So `vitanaland.com` and the preview host keep
-  today's literal. The two CommerceJoin tests (`oauth-first.test.ts:29`, `routing.test.ts:53-55`) move from the
+  SHA; the code is reused from `#1485`, PR evidence). It is `useTenant().tenant?.slug ?? 'maxina'`, with no localStorage
+  step. An anonymous signup has no tenant (`src/hooks/useTenant.tsx:53-54`) and posts `maxina`, exactly today's literal.
+- **B2:** the stored slug is used only by the pure `activeTenantSlug()` in AuthGuard's OAuth retry
+  (`src/components/AuthGuard.tsx:267,271`), and only if the registry lists it (`findBySlug`, as at
+  `useTenant.tsx:62`). It never reaches `signUp` metadata (s2 R1-F3). The two CommerceJoin tests (`oauth-first.test.ts:29`, `routing.test.ts:53-55`) move from the
   literal to the active slug.
 - **Mount:** one `useTenantMeta()` call in `AppHooksInitializer` (`src/App.tsx:469`, rendered at `:772`).
 - **Review findings (`review-round-1.json`, head 7a8b2ab7):** 1–2 (bot files) → fresh branch, all 11 locales, drift 0;

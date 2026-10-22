@@ -39,14 +39,20 @@ Allowed paths:
       After each push confirm I18N-PROPAGATE skipped `pivot`/`collect` (no new `github-actions[bot]` commit); if one
       appears, stop and log it — never re-push to force it.
 - [ ] BR4 B1: `CommerceJoin.tsx` `const tenantSlug = useActiveTenantSlug()` used at `:142,149,176`; header comment
-      `:9-12` says "the active tenant's slug, which is `maxina` on every host serving this page today".
+      `:9-12` says "the active tenant's slug, `maxina` when there is none (every anonymous visitor today)".
       `oauth-first.test.ts:29` → `queryParams: { tenant_slug: tenantSlug }`, `routing.test.ts:55` →
       `tenant_slug: tenantSlug`; keep the wrong-tenant comment (reworded); assert `tenantSlug` comes from
-      `useActiveTenantSlug()` and `activeTenantSlug({ hostname: 'vitanaland.com' }) === 'maxina'`.
-- [ ] BR5 B7: signup unit test (mocked `supabase.auth.signUp`, no network) asserts `options.data.tenant_slug` is the
-      active slug (`acme` in a TenantProvider mock) and `maxina` without one; AuthGuard retry-slug test for
-      `activeTenantSlug({ tenantSlug: null, candidates: [stored] })` (the literals at `AuthGuard.tsx:267,271`); a test
-      that `App.tsx` calls `useTenantMeta()` inside `AppHooksInitializer` (`App.tsx:469`).
+      `useActiveTenantSlug()` and that the hook is `useTenant().tenant?.slug ?? 'maxina'` with no storage read.
+- [ ] BR5 B7: signup unit test (mocked `supabase.auth.signUp`, no network) asserts `options.data.tenant_slug`:
+      - `acme` in a TenantProvider mock with an active `acme` tenant;
+      - `maxina` without a tenant;
+      - `maxina` without a tenant but with `localStorage.tenant_slug = 'acme'` (`useActiveTenantSlug()` never reads
+        storage).
+
+      AuthGuard retry-slug test for `activeTenantSlug({ tenantSlug: null, candidates: [stored], registry })`: a
+      registry-listed stored slug is returned, an unlisted one gives `maxina` (the literals at
+      `src/components/AuthGuard.tsx:267,271`). A test that `App.tsx` calls `useTenantMeta()` inside
+      `AppHooksInitializer` (`App.tsx:469`).
 - [ ] BR6 Staging spec `tests/e2e/staging/vtid-<vtid>-brand-surface.staging.spec.ts` (read-only, preview host only,
       non-GET guard): `/commerce/join` + voucher landing show Maxina title/favicon and `/maxina` portal link;
       `docs/validation/<vtid>/staging-tests.json` lists it plus the Vitest refs.
