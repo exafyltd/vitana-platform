@@ -19,4 +19,5 @@ AC-5 (C2) — Backfill loop tenant source: `MT_RESOLUTION_V2=true` and no `MEMOR
 TEST: services/gateway/test/vtid-05268-community-scan-tenant.test.ts › C2 backfill loop tenant source
 TEST: services/gateway/test/vtid-04786-memory-embedding-backfill-loop.test.ts (unchanged, green)
 AC-6 (C4) — `plan.md`, `scope.json`, `staging-tests.json` in this directory.
+TEST: docs/validation/VTID-05268/staging-tests.json (STAGING-VERIFY: `GET /alive` after the staging deploy, read-only)
 OASIS_IMPACT: yes — `community_autopilot.scan.completed` gains a `per_tenant` array only when `MT_RESOLUTION_V2=true`; the six existing top-level fields keep their names and types (backward-compatible). Flag off ⇒ byte-identical payload. Still one event per call.
