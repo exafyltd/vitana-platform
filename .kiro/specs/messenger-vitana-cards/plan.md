@@ -1,192 +1,179 @@
 # Messenger Vitana Cards — Plan
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
-Vitana chat inside the Messenger, delivered by the existing Vitana Companion
-Messages engine.
+Vitana chat, delivered by the existing Vitana Companion Messages engine.
 
 <!-- plan:begin -->
 
 ## 1. Summary
 
 Vitana is the member's everyday life companion. The direct Vitana chat
-(`/inbox/u/00000000-0000-0000-0000-000000000001`) should carry the same
-Unified Card System recommendations the member already sees in the News Feed
-and on other screens — but **deeply personalized**: a card is shown only when
-it is relevant to *this* member. If the member has not connected their
-calendar, Vitana suggests connecting it; once connected, that card never shows
-again. If the member never writes a diary entry, Vitana nudges them weekly.
+(`/inbox/u/00000000-0000-0000-0000-000000000001`) already receives one
+personalized Vitana DM per day from the **Vitana Companion Messages engine**
+(VTID-05099/05100/05101, `services/gateway/src/services/companion/`). That
+engine already ships these moments: `morning_greeting` (F4), `vitana_index`
+(F2), `guided_journey_step` (F1), `diary_nudge` (F3), `feature_tip` (F8),
+`invite_friend` (F7). It already reads usage signals, paces via the guide
+pacer, delivers a card as a Vitana DM, and `MessageBubble` renders it.
 
-This is **mostly reuse**. The hard part — a per-member engine that picks one
-card per day for the Vitana DM thread, respects completion/usage signals,
-paces itself, and composes a warm note — already exists and is deployed as the
-**Vitana Companion Messages engine** (VTID-05099/05100/05101,
-`services/gateway/src/services/companion/`). This plan extends that engine's
-moment list and wires the enrichment completion signals into it; it does not
-build a new delivery system, a new card renderer, or a new pacer.
+**What this plan adds is exactly one thing: the 11 enrichment cards (E1–E11)
+as new companion moments, gated so each is offered only when the member has
+NOT completed AND has not dismissed it.** It does not re-create any shipped
+moment, does not add parallel Index/diary moments, and does not change the
+cadence of shipped moments. The "deeply personalized" and "weekly reminder"
+behaviour the owner asked for is **already provided** by the shipped
+`vitana_index` (repeatAfterDays 3) and `diary_nudge` (repeatAfterDays 4)
+moments; the new value is the enrichment set (connect calendar / Instagram /
+Facebook, add photo/bio/cover, etc.) appearing only when relevant.
 
 **Decisions taken (owner, this conversation):**
-- **One card per day** in the Vitana chat (the companion engine's existing
-  one-moment-per-member-per-local-day model). Not a multi-card strip.
-- **Lab tests are OUT of scope** — a separate follow-up plan
-  (`messenger-vitana-cards-labs`), because no lab-upload table or card type
-  exists and it carries health-data/consent work.
-- **Usage-gated feature cards (F4 voice, F5 matches, F10 media) are held for
-  Phase 2**, not shown ungated in Phase 1. Rationale: the owner's intent is
-  "promote only if unused"; showing them ungated would violate that. They ship
-  when their usage signal exists.
+- **One card per day** — the companion engine's existing model. Not a strip.
+- **Lab tests OUT of scope** — a separate follow-up plan
+  (`messenger-vitana-cards-labs`): no lab-upload table or card type exists and
+  it carries health-data/consent work.
+- **Usage-gated feature cards (F4 voice, F5 matches, F10 media) held for a
+  later plan**, not shown ungated.
+
+**Corrections after sparring round 1 (all accepted):**
+- F1/F7/F8 and the Index/diary cadences are **already shipped** — removed from
+  scope. The lane adds ONLY E1–E11.
+- Dropped the `companion-weekly-reminders` lane: the weekly reminders already
+  exist as shipped moments; adding parallel ones would race `pickMoment` and
+  never win.
+- The staging test cannot assert a delivered card: the engine is
+  `disabled-on-staging` unconditionally. Staging verification is the
+  established pattern (GET `/api/v1/companion/status` = `disabled-on-staging`);
+  moment selection is proven by offline unit/integration tests.
+- The enrichment completion read is **not** "one batched read" — the resolver
+  is per-member with no bulk form. A bulk read (completion + dismissal) is its
+  own lane and the single biggest piece of real work.
 
 ## 2. Scope
 
-### In scope (Phase 1 — ship now, signals already exist)
-Wire these cards into the companion moment list for the Messenger surface,
-each gated on its existing completion signal so it shows only when relevant:
+### In scope — E1–E11 as personalized companion moments
+Add 11 new `COMPANION_MOMENTS` entries, one per enrichment card, each eligible
+only when the member is **incomplete AND not in a dismissal cooldown** for that
+card — using the existing shared rule `eligibleEnrichmentCards()`
+(`services/gateway/src/services/enrichment/card-catalog.ts`), which already
+takes completion state + `user_enrichment_cards` dismissal rows and applies the
+7-day cooldown, "done or dismissed anywhere disappears everywhere".
 
-| Card | Gate (show only if…) | Signal (exists today) |
-|---|---|---|
-| E1 Upload profile photo | no avatar | `profiles.avatar_url` |
-| E2 Add bio | bio ≤ 50 chars | `profiles.bio` |
-| E3 Make first post | no post | `profile_posts` |
-| E4 Add interests | none | `profiles.interests` |
-| E5 Set location | none | `profiles.location` |
-| E6 Connect Instagram | not connected | `social_connections` |
-| E7 Connect Facebook | not connected | `social_connections` |
-| E8 Connect calendar | no calendar connected | `connected_app_settings` |
-| E9 Import contacts | none | `contacts` |
-| E10 Enable notifications | no active token | `user_device_tokens` |
-| E11 Add cover image | none | `profiles.cover_url` / `universal_intent_cover_url` |
-| F7 Invite a friend | engaged member | `user_active_days` |
-| F8 Did You Know (feature tip) | tip not yet shown | `feature-tips` + `companion_messages_ledger` |
-| F1 Guided Journey step | in guided journey | `user_guided_journey_state` |
+| Card | Offered only if… (via `eligibleEnrichmentCards`) |
+|---|---|
+| E1 Upload profile photo | no avatar |
+| E2 Add bio | bio ≤ 50 chars |
+| E3 Make first post | no post |
+| E4 Add interests | none |
+| E5 Set location | none |
+| E6 Connect Instagram | not connected |
+| E7 Connect Facebook | not connected |
+| E8 Connect calendar | no calendar connected |
+| E9 Import contacts | none |
+| E10 Enable notifications | no active device token |
+| E11 Add cover image | none |
 
-Plus two **recurring weekly** moments (reappear regardless of completion, via
-`repeatAfterDays: 7`, reusing the companion ledger — no new mechanism):
+Priorities sit below the shipped `vitana_index` (50–70) and `guided_journey_step`
+(65) so the daily habit and health cards keep precedence, and at or above
+`feature_tip` (20) / `invite_friend` (15) so a relevant setup step beats a
+generic tip on a quiet day. Exact per-card priority is set in the lane and
+pinned by a test. Copy reuses `enrichment-card-tips.ts`; each moment carries an
+English `intent` (never a hardcoded spoken sentence — §13b / NEVER-41).
 
-| Card | Cadence | Signal |
-|---|---|---|
-| Improve your Vitana Index | weekly | index snapshot |
-| Make a daily diary entry | weekly (nudge if lapsed) | `diary_entries` recency |
+### Explicitly NOT in scope (sparring corrections)
+- **No new Index or diary moments.** The shipped `vitana_index` and
+  `diary_nudge` already deliver the weekly-style reminders; `pickMoment` has no
+  surface-specific lists, so a second moment for the same card type would race
+  and never win. If the owner later wants a different Index/diary cadence, that
+  is a one-line change to the existing moment's `repeatAfterDays`, documented
+  as a behaviour change — a separate decision, not this plan.
+- **No F1/F7/F8 additions.** Already shipped (VTID-05101); retained unchanged.
+- **No staging assertion of a delivered card.** Engine is
+  `disabled-on-staging`.
+- **Lab tests, F4/F5/F10, a pinned `EnrichmentCardStrip` header, boost cards in
+  the messenger** — all out of scope.
 
-### Phase 2 (same plan, after a usage signal is built/activated)
-- **F4 Talk to Vitana** — show only if the member has never used voice.
-  Requires `voice_session_facts` (migration `20261001120000_vtid_04776`) to be
-  **applied + backfilled** first. Until then, F4 is not added to the Messenger
-  moment list.
-- **F5 Find a Match** — show only if the member does not use Matches. Requires
-  a durable "ever engaged with Matches" signal (today only "unseen today"
-  exists in `daily_matches`). Build the signal, then wire the card.
-- **F10 Upload Video/Music** — show only if the member has not uploaded media.
-  Requires a "has uploaded media" signal. Build, then wire.
+## 3. Architecture (reuse map, corrected)
 
-### Out of scope
-- **Lab tests** — follow-up plan `messenger-vitana-cards-labs`.
-- **A pinned `EnrichmentCardStrip` header in the chat** — rejected in favour of
-  the one-per-day companion DM (owner decision). The frontend `messenger`
-  catalog stub stays inert.
-- **Boost cards G1/G2/G3 in the messenger** — not added; the companion engine's
-  single personalized pick already covers the profile-completion / streak
-  intents through its own moments. Revisit only if the owner asks.
+Reused unchanged:
+- `companion/moments.ts` `COMPANION_MOMENTS`, `pickMoment`, `MomentCandidate`.
+- `companion/signals.ts` `fetchMemberSignals` (bulk, per page of member ids) →
+  `MemberContext`.
+- `companion/delivery.ts` (Vitana DM + pacer touch `messenger_companion`).
+- `enrichment/card-catalog.ts` `eligibleEnrichmentCards(completions,
+  dismissRows, screen, now)` — the shared eligibility rule.
+- `guide/presence-pacer.ts`, `data/enrichment-card-tips.ts`,
+  vitana-v1 `MessageBubble.tsx` (renders the card; no vitana-v1 change).
 
-## 3. Architecture (reuse map)
-
-The companion engine already does everything the delivery needs:
-- **Selection:** `services/gateway/src/services/companion/moments.ts`
-  (`COMPANION_MOMENTS`, `pickMoment`) — picks one moment per member per local
-  day; each moment has `cardType`, an English `intent` (§13b spoken-intent
-  rule — never a hardcoded sentence), `priority`, and `repeatAfterDays`.
-- **Personalization context:** `signals.ts` builds `MemberContext` (usage
-  signals, batched per page of members). `tipAlreadyCovered()` in `moments.ts`
-  already demonstrates "don't promote what they use" (suppresses the
-  vitana-index tip when an index exists, the diary tip when a diary entry
-  exists).
-- **Completion signals (E1–E11):** the enrichment completion resolver
-  (`services/gateway/src/services/enrichment/completion-resolver.ts`,
-  `card-catalog.ts` `eligibleEnrichmentCards()`) already computes which
-  enrichment cards are incomplete for a member, from source tables only. This
-  plan injects that result into `MemberContext` so the enrichment moments gate
-  on it.
-- **Delivery:** `delivery.ts` inserts the card as a Vitana DM with
-  `metadata.card = { kind:'vitana_card', card_type, params }` into the
-  `/inbox/u/<vitana-bot>` thread; `MessageBubble.tsx` (vitana-v1) renders it
-  inline (VTID-05100, live).
-- **Pacing:** `guide/presence-pacer.ts` `canSurfaceProactively(id,
-  'messenger_companion')` enforces one touch per surface per day, pauses, and
-  caps; `backoff.ts` adds unreplied back-off. `delivery.ts` already records the
-  touch. No new pacer.
-- **Copy:** `data/enrichment-card-tips.ts` (E/G cards, all gateway locales) and
-  `data/feature-tips.ts` (feature/tip cards). New moments reuse existing copy;
-  any genuinely new string is added with full locale coverage (the
-  locale-coverage test enforces it).
-
-**Net new backend code is small:** new `COMPANION_MOMENTS` entries for the
-enrichment cards + the two weekly reminders, and a `MemberContext` field
-carrying the enrichment-completion map (one extra read, batched with the
-existing signal reads). No schema change in Phase 1.
+Genuinely new (the real work):
+1. **Bulk enrichment completion + dismissal reads.** The per-member
+   `loadEnrichmentCardState()` issues ~8 per-member queries and has no bulk
+   form. Build bulk reads in `companion-repository.ts` mirroring
+   `fetchJourneyStates`/`fetchActiveDaysSince` (`inChunks`/`inChunksPaged`,
+   one IN-clause per source table across all member ids in the page): profiles
+   fields, any-post, active social connections, enabled calendar app, any
+   contact, active device token, and the `user_enrichment_cards` dismissal
+   rows. Add a `FetchEnrichmentCompletions` seam to the companion tick deps so
+   tests can stub it without a DB.
+2. **MemberContext fields:** `incompleteEnrichmentCards` /
+   `enrichmentDismissRows` (or an equivalent shape feeding
+   `eligibleEnrichmentCards`).
+3. **11 enrichment moments** gated through `eligibleEnrichmentCards`.
 
 ## 4. Lanes
 
-- **Lane `companion-enrichment-moments`** (gateway):
-  inject the enrichment completion map into `MemberContext`
-  (`signals.ts`/`companion-repository.ts`), add `COMPANION_MOMENTS` entries for
-  E1–E11 gated on incompleteness and for F1/F7/F8, each with English intent and
-  priority. No new copy where a tip/enrichment entry already exists.
+- **Lane `companion-enrichment-signals`** (gateway): the bulk completion +
+  dismissal reads and the `MemberContext` fields + tick-deps seam. This is the
+  dependency for the moments lane. Paths:
+  `services/gateway/src/services/companion/**`, `services/gateway/test/**`.
+- **Lane `companion-enrichment-moments`** (gateway, depends on
+  `companion-enrichment-signals`): the 11 E1–E11 moments gated via
+  `eligibleEnrichmentCards`, priorities, intents (reusing
+  `enrichment-card-tips.ts` copy), and the selection tests. Paths:
+  `services/gateway/src/services/companion/**`, `services/gateway/test/**`.
+- **Lane `messenger-companion-verification`** (gateway, depends on the moments
+  lane): run-mode doc + the established staging test (status =
+  `disabled-on-staging`) + offline integration proof that an incomplete member
+  gets the right enrichment card and a complete/dismissed member does not.
   Paths: `services/gateway/src/services/companion/**`,
-  `services/gateway/test/**`.
-- **Lane `companion-weekly-reminders`** (gateway):
-  add the two recurring moments — "Improve your Vitana Index" and "Make a diary
-  entry" — with `repeatAfterDays: 7`, gated/paced via the existing ledger;
-  confirm the Index moment's existing `repeatAfterDays` is reconciled (it uses
-  3 today) or add a distinct weekly Messenger moment so other surfaces are
-  unaffected. Paths: `services/gateway/src/services/companion/**`,
-  `services/gateway/test/**`.
-- **Lane `messenger-surface-wiring`** (gateway + verification):
-  confirm the companion engine targets the Messenger surface for these moments
-  and that `screen='messenger'`/`messenger_companion` plumbing is consistent;
-  add the staging test and run-mode note (the engine defaults to shadow mode —
-  Phase 1 must state how it is enabled for verification without writing to
-  production). Paths: `services/gateway/src/services/companion/**`,
   `services/gateway/test/**`, `docs/validation/**`.
 
-Lanes are independent except that `companion-weekly-reminders` and
-`companion-enrichment-moments` both edit `moments.ts` — declared as a shared
-file; they are sequenced, not parallel, per §8a hot-file rule.
+`companion-enrichment-moments` and `companion-enrichment-signals` both touch
+`moments.ts`/companion files — sequenced, not parallel (§8a). The moments lane
+starts only after the signals lane is `done`.
 
 ## 5. Testing
 
-- Unit: each new moment is selectable only when its gate says the member is
-  incomplete / has not used the feature; completed members never get it
-  (follow `vtid-05100-companion-delivery.test.ts` and the completion-resolver
-  tests).
-- Weekly cadence: a moment with `repeatAfterDays: 7` is not re-picked within 7
-  days and is eligible after, driven by the `companion_messages_ledger`.
-- Pacer: one touch per member per day on `messenger_companion`; a paused member
-  gets nothing.
-- Delivery shape: the DM carries `metadata.card.kind='vitana_card'` with the
-  right `card_type`; `MessageBubble` renders it (existing vitana-v1 test).
-- Locale coverage: any new copy passes the enrichment/feature tip
-  locale-coverage test.
-- Staging: a read-only staging test under `docs/validation/<VTID>/` that signs
-  in as the test user and asserts the Vitana thread can render a card payload
-  (no writes to production; shadow/staff mode only).
+- Bulk reads return correct per-member completion + dismissal maps over a
+  multi-member page (stubbed Supabase, following `signals` test patterns).
+- Moment selection: an incomplete, non-dismissed member is offered the
+  highest-priority eligible enrichment card; a completed member never is; a
+  member who dismissed E8 elsewhere does not get E8 during the 7-day cooldown
+  (drives `eligibleEnrichmentCards` with dismissal rows).
+- Priority: enrichment moments never outrank `vitana_index`/
+  `guided_journey_step`; pinned by a test.
+- No duplicate/parallel moments for F1–F8 / Index / diary (a test asserts
+  `COMPANION_MOMENTS` card-type/key set is unchanged except the new E-moments).
+- Locale coverage: no new copy needed (reuses `enrichment-card-tips.ts`); if
+  any string is added, the existing coverage test enforces all locales.
+- Staging: GET `/api/v1/companion/status` → `mode: disabled-on-staging`
+  (read-only), matching VTID-05100/05101.
 
 ## 6. Risks and open questions
 
-1. **Companion run mode.** The engine defaults to shadow (decides, logs, sends
-   nothing) unless `COMPANION_SEND_ENABLED` + mode is flipped. Phase 1 must
-   verify selection logic in staff/shadow mode and must NOT enable live sends
-   as part of this plan without an explicit owner step — enabling member-facing
-   DMs is a product go-live, separate from wiring the moments.
-2. **"Same cards as the feed" vs one-per-day.** Reconciled by owner decision:
-   one per day. The feed still shows several; the chat shows one personalized
-   pick. Not a code gap.
-3. **Index moment `repeatAfterDays` today is 3.** Changing it to 7 affects
-   other surfaces. Mitigation: add a distinct Messenger weekly moment rather
-   than retune the shared one, unless sparring prefers reconciliation.
-4. **`user_active_days` is undocumented** (referenced in code, absent from
-   `DATABASE_SCHEMA.md`). Confirm it is populated before relying on the F7
-   invite gate; if not, drop F7 from Phase 1.
-5. **Phase 2 depends on `voice_session_facts` being applied** — that migration
-   is committed but not applied and needs owner approval (naming the file and
-   database) per the collaboration migration rule. Phase 2 lanes are not
-   started until that is done.
+1. **Bulk read cost/correctness.** Seven source tables + dismissal rows, bulk,
+   per page. Must match the per-member resolver's semantics exactly
+   (e.g. social `is_active && disconnected_at IS NULL`, calendar app allowlist).
+   Mitigation: unit tests compare bulk vs per-member on the same fixtures.
+2. **Engine run mode.** `disabled-on-staging` always; live sends need
+   `COMPANION_SEND_ENABLED` + mode in production. This plan does NOT enable
+   live member DMs — that is a separate owner go-live step. So Phase 1
+   completion means "built, tested, selectable", not "members see it".
+3. **`user_active_days` undocumented** (used by the shipped invite/feature-tip
+   gates, not by this plan's E-moments). No new dependency on it here.
+4. **Later plan, F4 collision:** the shipped `morning_greeting` already emits
+   `cardType:'F4'` as the priority-10 fallback. A future "never used voice" F4
+   moment must change the greeting's card type (e.g. to null/a greeting type)
+   to avoid two F4s competing. Recorded here so the follow-up plan accounts for
+   it; not part of this plan.
 
 <!-- plan:end -->
