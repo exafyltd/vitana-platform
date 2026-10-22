@@ -13,7 +13,7 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T00:54Z
+updated: 2026-10-22T00:56Z
 branch: kiro/kaf-fallback-env/ff-stage-env
 vtid: VTID-05282
 pr: https://github.com/exafyltd/vitana-platform/pull/4241
@@ -51,4 +51,6 @@ Entry committed by the land step on the reviewer agent's behalf (finish-staging 
 ### 2026-10-22T00:52Z · pm-agent · executing → parked
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-22T00:54Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T00:56Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
