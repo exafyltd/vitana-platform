@@ -1,6 +1,6 @@
 ---
 lane: card-layout
-state: in-review
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,11 +13,11 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T13:02Z
-claimed_by: kiro-exafyltd-202610220818-5273
+updated: 2026-10-22T13:06Z
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
 vtid: VTID-05330
+parked_from: in-review
 ---
 # Profile Posts tab card — avatar header on top, post full width (vitana-v1)
 Plan: `.kiro/specs/profile-posts-full-width/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -73,3 +73,5 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T13:02Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-22T13:06Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
