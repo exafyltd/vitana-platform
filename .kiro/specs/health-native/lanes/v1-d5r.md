@@ -13,7 +13,7 @@ paths:
   - "docs/validation/**"
   - "tests/**"
   - "supabase/functions/**"
-updated: 2026-10-22T07:28Z
+updated: 2026-10-22T07:54Z
 ---
 # V1-D5R — account deletion calls member-residue erasure (vitana-v1 #1388)
 
@@ -668,4 +668,6 @@ reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T07:24Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T07:28Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-22T07:54Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
