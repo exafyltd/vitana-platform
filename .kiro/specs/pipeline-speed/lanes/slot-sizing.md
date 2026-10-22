@@ -17,7 +17,7 @@ paths:
   - .kiro/pipeline/lane-land.md
   - .kiro/pipeline/lane-review.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T20:46Z
+updated: 2026-10-22T20:50Z
 vtid: VTID-05338
 ---
 # slot-sizing — empty lane slots and resumed planning cost zero agent sessions; no stray model pin (items 1 + 3)
@@ -34,4 +34,6 @@ set, seat exafy claims it.
 ### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
 VTID-05338 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T20:46Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T20:50Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
