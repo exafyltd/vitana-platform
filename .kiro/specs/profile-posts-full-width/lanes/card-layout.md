@@ -13,7 +13,7 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T10:05Z
+updated: 2026-10-22T10:30Z
 claimed_by: kiro-exafyltd-202610220818-5273
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
@@ -50,3 +50,16 @@ exafyltd/vitana-v1#1489 head `14a1bdc47`: pr-gate, Lane scope, i18n, preview-dep
 https://d2w0cqhh9jhjpj.cloudfront.net/pr-1489/. Next: reviewer agent `vitana-lane-reviewer` on the current head.
 Owner instruction in the Kiro Web session 2026-10-22: "yes, continue all the way to staging" (merge #1489 to main →
 staging), recorded as §7b authority for #1489.
+
+### 2026-10-22T10:30Z · kiro-exafyltd-202610220818-5273 · in-review (merged to main on owner instruction; review pending)
+merge: 3d144939ce1082b6c4aab3d2850bd65f9ebf2a9d (exafyltd/vitana-v1#1489, squash, head `14a1bdc47`, all checks green,
+up to date with main). authority: owner instruction in this Kiro Web session 2026-10-22, "yes, continue all the way
+to staging" (§7b owner-named PR). The reviewer agent `vitana-lane-reviewer` was not available in this session, so
+the lane stays `in-review` until it reviews; no other model was substituted.
+Staging: AWS Stage Deploy Community App (ECS) success (https://github.com/exafyltd/vitana-v1/actions/runs/39755973072).
+DEPLOY.yml `aws_prod` skipped by the staging-first gate — production untouched.
+STAGING-VERIFY https://github.com/exafyltd/vitana-platform/actions/runs/39757004449: FAILED 18/25 — none from this lane.
+PASS: VTID-05330 Vitest. FAIL (infra): Playwright cannot install chromium on the ubuntu26.04 runner (smoke ×2 and the
+VTID-05330 staging spec never ran); FAIL VTID-05298/VTID-05296 native suites (Expo config / jest root). Same
+runner failure on earlier STAGING-VERIFY runs; not re-run (deterministic). No Gate 2 until STAGING-VERIFY is green.
+Next: reviewer agent review of #1489 head `14a1bdc47`; runner/Playwright fix (outside this lane) then STAGING-VERIFY.
