@@ -2936,6 +2936,18 @@ Related caps to keep in sync:
 |---|---|---|
 | `GET /conversations` (gateway) | `?limit`, default **250**, max 500 | Inbox list |
 | `GET /conversation/:peerId` (gateway) | `?limit` default 50, max 100, `?before` ISO cursor | One page of thread history; `before` drives scrollback |
+| `GET /conversation/:peerId?around=<id>` / `?after=<iso>` (VTID-05310) | `limit/2` each side | Context window around one message (404 outside the DM pair) / forward paging; same on `GET /chat/groups/:id/messages` |
+| `POST /delivered` (VTID-05310) | ≤ 200 `message_ids` | Sets `delivered_at` only where `receiver_id` = caller and it is NULL |
+
+**Idempotency and delivery (VTID-05310, migration `20261021140000_vtid_05310_chat_send_reliability.sql`).**
+`chat_messages.client_message_id uuid NULL` with the partial unique index
+`uq_chat_messages_sender_client_message_id (sender_id, client_message_id) WHERE client_message_id IS NOT NULL`:
+`POST /chat/send` and `POST /chat/groups/:id/send` accept an optional `client_message_id`; a repeat (or a lost race,
+SQLSTATE 23505) returns `200 { duplicate: true }` with the stored row and sends no push.
+`chat_messages.delivered_at timestamptz NULL` (DMs only; `/chat/read` also fills it). Replies: an optional
+`reply_to_message_id` must be a message of the same DM pair or group and is stored as `metadata.reply_to =
+{ message_id }` (an id, never content); every read endpoint returns `reply_to_message_id` only when that target is in
+the same conversation (a forged value from a direct insert reads as null).
 
 ---
 
