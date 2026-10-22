@@ -1,11 +1,10 @@
 ---
 lane: restart-watchdog
-state: executing
+state: done
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafy
-claimed_by: kiro-202610220829-5884
 branch: kiro/pipeline-speed/restart-watchdog
 pr: https://github.com/exafyltd/vitana-platform/pull/4337
 area: platform
@@ -18,7 +17,7 @@ paths:
   - .kiro/pipeline/restart-watchdog.md
   - .kiro/pipeline/README.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T18:45Z
+updated: 2026-10-22T21:29Z
 vtid: VTID-05337
 ---
 # restart-watchdog — workflow runs paused by an agent restart are surfaced at session start (item 4)
@@ -54,3 +53,10 @@ Collab-Review: pipeline-speed/restart-watchdog
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
 Collab-Reviewed-Head: 5582f108e61e411aea0387f3a89fce78948998f7
+### 2026-10-22T20:49Z · kiro-202610220829-5884 · executing → in-review
+merge: ee0c731aa52168378729ef546c685f36c4f97afe · authority: §7b PM rule (owner instruction 2026-10-21: "yes, execute your recommendation", "now you can run fully end to end without stopping"). exafyltd/vitana-platform#4337 squash-merged 2026-10-22T20:47:29Z. Reviewer accept: agent:vitana-lane-reviewer (claude-opus-5.5) on `5582f108e61e411aea0387f3a89fce78948998f7` (run wf_91efeebdbdd1db37; first accept wf_58eeea0f0ba61b49 on `75287232e`), entry-only commit `928302667`, then `gh pr update-branch` (main's commits only, `34cf5931b`). All 10 checks green (validate, Collab handoff, Lane scope, validate-pr incl.), no `--admin`. The lane could not be `verified` before the merge: Collab handoff allows one state edge per PR against `main` (`ready → executing` here), so the edges follow as closing records.
+Follow-ups (non-blocking): the second review's 5 non-blocking findings (run wf_91efeebdbdd1db37); the engine run-folder layout stays version-sensitive (documented in `restart-watchdog.md`). Next: verified (one edge per PR).
+### 2026-10-22T21:11Z · kiro-202610220829-5884 · in-review → verified
+Acceptance met on vitana-platform `main` (contains `ee0c731aa52168378729ef546c685f36c4f97afe`): `node --test scripts/collab/workflow-watchdog.test.mjs` → 12, 12, 0; `.kiro/hooks/vitana-workflow-watchdog.json` and `.kiro/pipeline/restart-watchdog.md` on `main`. Nothing deploys, so no Gate 2. merge: ee0c731aa52168378729ef546c685f36c4f97afe · authority: §7b PM rule (owner instruction 2026-10-21). Next: done.
+### 2026-10-22T21:29Z · kiro-202610220829-5884 · verified → done
+Lane closed under §7b (owner instruction 2026-10-21: "yes, execute your recommendation", "now you can run fully end to end without stopping"); merge exafyltd/vitana-platform#4337 (`ee0c731aa52168378729ef546c685f36c4f97afe`). Closing records #4353 (`8450c4e7f22f7b71fdf2c8bd471f1657c06fe2e0`), #4354 (`6dcddb5c29d80f4ed810093e23865d00dcf61b0c`). Claim released.
