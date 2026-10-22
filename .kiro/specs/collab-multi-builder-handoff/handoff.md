@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: claude
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T08:06Z
+state: approved
+updated: 2026-10-22T09:01Z
+sparring_record: .kiro/specs/collab-multi-builder-handoff/sparring/verdict.md
+vtids: [VTID-05331]
 ---
 # Handoff — collab-multi-builder-handoff
 
@@ -25,3 +27,6 @@ a lane file); recreated as one commit rather than force-pushing.
 Session 1 escalated on `evidence_floor_not_met`: the partner cited no file it had read. That is not a plan
 finding, so there is nothing to answer. Added an explicit premise-check list (files and line ranges) to the plan
 block; the changed text starts the re-plan session (`plan-spar.mjs:307`, max 2 sessions).
+
+### 2026-10-22T09:01Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
