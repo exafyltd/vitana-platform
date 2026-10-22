@@ -15,7 +15,7 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T15:30Z
+updated: 2026-10-22T15:34Z
 branch: kiro/staging-verify-runner-fix/runner
 vtid: VTID-05334
 parked_from: executing
@@ -41,4 +41,6 @@ Evidence `docs/validation/VTID-05334/`. Next: reviewer agent on the PR head, the
 ### 2026-10-22T15:26Z · pm-agent · executing → parked
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-22T15:30Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T15:34Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
