@@ -12,7 +12,7 @@ paths:
   - services/gateway/src/services/memory-embedding-backfill-loop.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-22T19:06Z
+updated: 2026-10-22T19:10Z
 vtid: VTID-05268
 ---
 # jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
@@ -51,4 +51,6 @@ keeps today's six top-level payload fields (backward-compatible) and adds `per_t
 ### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05268 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T19:06Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T19:10Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
