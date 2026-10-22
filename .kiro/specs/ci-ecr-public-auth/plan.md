@@ -7,15 +7,21 @@ change_class: standard
 Since VTID-05017 (2026-10-09) every image we build from our own Dockerfiles takes its base image from
 `public.ecr.aws/docker/library/*`, and it pulls **anonymously**. VTID-05017 deferred authenticated pulls on purpose
 (`docs/validation/VTID-05017/plan-sparring.md:29-30`: "needs IAM changes on the OIDC role"). Anonymous ECR Public
-pulls are limited per source IP, and GitHub-hosted runners share IPs, so the limit now trips the same way Docker
-Hub's did:
-- `exafyltd/vitana-platform` run 39421081117 (`AWS-STAGE-DEPLOY-GATEWAY.yml`, 2026-10-20) failed at `docker build`
-  with `429 Too Many Requests` pulling `public.ecr.aws/docker/library/node:20-alpine`.
-- `exafyltd/vitana-v1` run 39681916225 (`AWS-STAGE-DEPLOY-FRONTEND.yml`) hit the same 429 twice.
+pulls have a 500 GB/month data cap and 1 pull/s. GitHub-hosted runners share source IPs, so the cap now trips
+the same way Docker Hub's did. Read from the run logs (`gh run view --attempt 1 --log-failed`):
+- `exafyltd/vitana-platform` run 39421081117 (AWS Stage Deploy Gateway, `3063c9543`, 2026-10-20), attempt 1, at
+  `docker build`: `GET https://public.ecr.aws/v2/docker/library/node/manifests/sha256:fb4cd12c…: 429 Too Many
+  Requests` / `toomanyrequests: Data limit exceeded`. Attempt 2 (re-run) succeeded.
+- `exafyltd/vitana-v1` run 39681916225 (AWS Stage Deploy Community App, `aa3fb55f2`, 2026-10-21), attempt 1,
+  at `Build and push image`: the same 429 `Data limit exceeded` twice, once for `node` (`sha256:fb4cd12c…`) and once
+  for `nginx` (`sha256:516475cc…`). Attempt 2 got past the build and failed later at `Trigger STAGING-VERIFY`
+  (`PLATFORM_DISPATCH_TOKEN not set`), which is a separate issue and out of scope.
 
-AWS's ECR Public docs say an authenticated pull uses a token from `aws ecr-public get-login-password --region
-us-east-1` (ECR Public auth exists only in `us-east-1`), and authenticated pulls get a far higher limit than
-anonymous ones. No new infrastructure is needed: every affected job already has AWS credentials.
+The AWS ECR Public docs (registry authentication, service quotas) say an authenticated pull uses a token from
+`aws ecr-public get-login-password --region us-east-1` (ECR Public auth exists only in `us-east-1`). Authenticated
+pulls are not subject to the unauthenticated data cap, and they get 10 pulls/s per account instead of 1 per IP.
+Beyond the free tier, their data transfer bills to the account. No new infrastructure is needed: every affected
+job already has AWS credentials.
 
 ## Premises (checked read-only against `origin/main`: vitana-platform `5f76b3ab2`, vitana-v1 `7dfee6877`)
 1. **Dockerfiles that pull `public.ecr.aws`** (`git grep public.ecr.aws -- '*Dockerfile*'`):

@@ -22,7 +22,8 @@ change `.github/**`, and they go to the exceptions seat `exafyltd` while Claude 
 ## Log
 ### 2026-10-22T08:00Z · kiro-hotmail-202610220740-e0de · created → drafted
 Plan drafted from a read-only investigation of the `public.ecr.aws` 429 failures: platform run 39421081117
-(gateway staging deploy, `node:20-alpine`, 2026-10-20) and v1 run 39681916225 (frontend staging deploy, twice).
+(gateway staging deploy, `node:20-alpine`, 2026-10-20) and v1 run 39681916225 (frontend staging deploy, attempt 1: `node` and `nginx`). All of them show
+`toomanyrequests: Data limit exceeded`, the 500 GB/month unauthenticated cap.
 Premises are checked against vitana-platform `origin/main` @ `5f76b3ab2` and vitana-v1 `origin/main` @ `7dfee6877`
 (file:line in `plan.md`). IAM: the deploy identities most likely lack `sts:GetServiceBearerToken` (staging user) and
 both `ecr-public:GetAuthorizationToken` + `sts:GetServiceBearerToken` (prod OIDC role). This comes from the
