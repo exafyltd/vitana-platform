@@ -1,10 +1,10 @@
 ---
 lane: pm-fallback
-state: executing
+state: parked
 next_actor: kiro
 depends_on: [scope-check]
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -15,10 +15,10 @@ paths:
   - services/gateway/src/index.ts
   - services/gateway/test/project-manager/**
   - docs/validation/VTID-*/**
-updated: 2026-10-20T20:05Z
+updated: 2026-10-22T19:17Z
 vtid: VTID-05274
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/pm-fallback
+parked_from: executing
 ---
 # pm-fallback — the PM acts live, falls back to the exceptions seat, merges on the reviewer agent's accept, sends Gate 2
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §3, §4 and §5 C, and the `pm-fallback` section of `tasks.md` are
@@ -59,3 +59,5 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4233
 Findings: no blockers. Non-blocking: Lane scope red by design (protected governance.ts, merge needs legacy claude review or owner instruction); merge_conflict_count unsourced; some CI still running.
 next actor: claude (protected gate file)
 Entry committed by the land step on the reviewer agent's behalf. Next: land (merge under owner instruction §7b).
+### 2026-10-22T19:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
