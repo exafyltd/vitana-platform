@@ -12,7 +12,7 @@ paths:
   - src/pages/MatchesPage.tsx
   - src/pages/MatchesPage.bottom-clearance.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-22T10:30Z
+updated: 2026-10-22T12:31Z
 claimed_by: kiro-exafyltd-202610220833-d231
 branch: kiro/matches-scroll-end/matches-list-clearance
 pr: https://github.com/exafyltd/vitana-v1/pull/1490
@@ -64,3 +64,5 @@ STAGING-VERIFY https://github.com/exafyltd/vitana-platform/actions/runs/39762027
 chromium on the runner (smoke ×2, the VTID-05330 browser spec), and the native VTID-05298/05296 suites (Expo config /
 jest root). These are the same failures as run 39757004449 before this merge. No Gate 2 until STAGING-VERIFY is green.
 Next: reviewer agent on #1490 head `425e9d88b`; the runner/Playwright fix (another lane), then STAGING-VERIFY.
+### 2026-10-22T12:31Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
