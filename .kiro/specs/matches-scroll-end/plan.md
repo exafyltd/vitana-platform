@@ -28,6 +28,13 @@ tapped in full.
 5. `useRealMatches(50)` (`MatchesPage.tsx:44`) returns up to 50 rows and every row is rendered. Nothing is clipped by a count or a
    `max-h`/`overflow` on the list.
 
+## Files to read (all in `exafyltd/vitana-v1` at the pinned ref)
+Re-spar from session 1: both earlier sessions (#4300) failed every `read_file`, which is a gateway outage and not a
+finding. The premises above rest on these files: `src/pages/MatchesPage.tsx`, `src/components/AppLayout.tsx`,
+`src/components/ui/sidebar.tsx`, `src/components/mobile/MobileAppShell.tsx`, `src/components/mobile/MobileBottomNav.tsx`,
+`src/index.css`, `src/pages/AutopilotDashboard.tsx`, `src/pages/MobileSettings.tsx`, and the test-style reference
+`src/pages/vtid-05117-leftovers-2.test.tsx`.
+
 ## Change (one lane, `matches-list-clearance`, repo vitana-v1)
 - `src/pages/MatchesPage.tsx`, legacy (phone) tree only: the outer wrapper gets bottom padding that clears the bar,
   the Orb and the safe area, and is reset on `md`:
