@@ -4,6 +4,7 @@ state: executing
 next_actor: kiro
 claimed_by: kiro-202610220829-5884
 branch: kiro/pipeline-speed/preflight
+pr: https://github.com/exafyltd/vitana-platform/pull/4340
 depends_on: []
 executor: claude
 seat: exafy
@@ -41,4 +42,4 @@ Claimed (`collab-claim/pipeline-speed/preflight`), seat exafy, workflow run `wf_
 red-green`, Kiro steering; reports every failure grouped and labelled, exit 1 on any; unchecked parts are failures)
 and `scripts/collab/preflight.test.mjs` (13 tests, red on base 11/13); `lane-code.md`, `planning.md` and `driver.md`
 run preflight before every push. No edit to `queue.mjs`, `gate.mjs`, `lib.mjs` or `PR-GATE.yml`. Evidence:
-`docs/validation/VTID-05336/`.
+`docs/validation/VTID-05336/`. PR #4340 (preflight on its own head: 8/8 checks pass).
