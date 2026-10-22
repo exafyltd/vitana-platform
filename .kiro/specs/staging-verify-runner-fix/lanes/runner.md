@@ -15,7 +15,7 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T15:26Z
+updated: 2026-10-22T15:30Z
 branch: kiro/staging-verify-runner-fix/runner
 vtid: VTID-05334
 parked_from: executing
@@ -39,4 +39,6 @@ Claimed. Test first (`5a232d889`: lib.test.cjs 61 pass / 1 fail on main + test),
 suites in `lib.cjs`, passed by `runExisting`. lib.test.cjs 62/62, workflow.test.cjs 7/7 (local, R2-F2).
 Evidence `docs/validation/VTID-05334/`. Next: reviewer agent on the PR head, then §7b land; then lane `manifests`.
 ### 2026-10-22T15:26Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T15:30Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
