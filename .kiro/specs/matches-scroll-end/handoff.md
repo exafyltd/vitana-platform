@@ -3,11 +3,11 @@ slug: matches-scroll-end
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: claude
+next_actor: owner
 state: parked
 spar_refs:
   - exafyltd/vitana-v1: b8a4efbd31b43001f65150e6316056cfcde18248
-updated: 2026-10-22T08:51Z
+updated: 2026-10-22T09:05Z
 parked_from: drafted
 ---
 # Handoff — matches-scroll-end
@@ -33,3 +33,18 @@ stop. If it escalates again, the plan is parked with the five-part message.
 
 ### 2026-10-22T08:51Z · ci-plan-spar · drafted → parked
 Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
+
+### 2026-10-22T09:05Z · kiro-exafyltd-202610220833-d231 · parked (stop: sparring infra, not the plan)
+Diagnosis (read-only `select` on `plan_sparring_sessions`, no write): both sparring sessions (2f06c46a 08:42Z,
+d8888c7c 08:49Z) logged **every partner `read_file` / `list_dir` as `ok:false`**, 17/17 and 12/12. That includes
+`exafyltd/vitana-platform:package.json`, and both repo refs were pinned (`repo_refs` has v1 `b8a4efbd3`, platform
+`91d26a156`). Only `search` worked. So the evidence floor could not be met by any plan. The same pattern hit
+`collab-multi-builder-handoff` at 07:43Z/07:44Z. Sessions at 07:54Z–08:30Z read files normally (e.g.
+`profile-posts-full-width`, 16/16 OK). The model log also shows Bedrock Opus 4.6 `Too many tokens per day` (fallback
+to Sonnet 4.6). The escalation is a gateway file-read outage that was classified as `evidence_floor_not_met`
+(non-retryable), and it used up `MAX_SESSIONS = 2`.
+Lane `matches-list-clearance` was **not started**: no VTID, no branch pushed, no PR. The fix and its test were
+written and proven only in a local checkout (new test red on v1 `origin/main` `b8a4efbd3`, green with the fix:
+2 files, 26 tests). No new lint error (7 = the baseline count), no new tsc error in the file.
+Owner decision needed: re-spar this plan once the gateway's repo reads work again (reset `sparring/` for a fresh
+session), or name another path. Next actor: owner.
