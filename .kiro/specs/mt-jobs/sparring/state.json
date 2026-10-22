@@ -1,0 +1,29 @@
+{
+  "sessions": [
+    {
+      "id": "76885c51-8a45-42c8-b13b-4ef87ccccef6",
+      "submitted": [],
+      "plan_text_sha": "a5452f3",
+      "rounds": 1,
+      "verdict": "escalated",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": "bcd47854fa8c99a8476d5f5f1fe114d435c779392a8e1b09377903d6246fcfd4",
+      "policy_approved_at": null
+    },
+    {
+      "id": "76c3c99c-cf9a-4e72-aec4-4995d7755ae7",
+      "submitted": [
+        1,
+        2
+      ],
+      "plan_text_sha": "811e09f4",
+      "rounds": 3,
+      "verdict": "converged",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": "c3023d84d9569cee2297af1615f1b175701df8585840c36e64ad7f6d427cb4ac",
+      "policy_approved_at": "2026-10-20T17:42:15.373+00:00"
+    }
+  ]
+}
