@@ -1,10 +1,10 @@
 ---
 lane: reviewer-agent
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -22,11 +22,11 @@ paths:
   - .kiro/workflows/vitana-pipeline.workflow.json
   - .kiro/hooks/vitana-pipeline-start.json
   - docs/validation/VTID-*/**
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/reviewer-agent
 pr: https://github.com/exafyltd/vitana-platform/pull/4229
-updated: 2026-10-20T18:48Z
+updated: 2026-10-22T18:25Z
 vtid: VTID-05275
+parked_from: executing
 ---
 # reviewer-agent — reviewer agent + pipeline recipe (vitana-lane-reviewer on claude-sonnet-5.5, runbooks, IDE workflow, SessionStart hook)
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §4.1, §4.2 and §5 G, and the `reviewer-agent` section of `tasks.md`
@@ -64,3 +64,5 @@ Non-blocking: the protected gate file `.kiro/agents/vitana-lane-reviewer.md` is 
 changes need a legacy claude review or an owner instruction); the shell allow-list globs for `git -C * diff*` /
 `fetch origin*` would also accept options such as `--output=<file>` (plan 5 G verbatim, worth tightening in a
 follow-up); earlier red/cancelled validate-pr, pr-gate and Lane scope runs on this head are superseded by later green runs.
+### 2026-10-22T18:25Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
