@@ -13,9 +13,11 @@
     },
     {
       "id": "f6ce4455-d462-4a10-8e98-82927189a637",
-      "submitted": [],
+      "submitted": [
+        1
+      ],
       "plan_text_sha": "9818a44c",
-      "rounds": 1,
+      "rounds": 2,
       "verdict": "in_progress",
       "infra": false,
       "retryable": false,
