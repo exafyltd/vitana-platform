@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05270",
+  "service": "gateway",
+  "note": "Read-only (rule 48). mt-jobs/jobs-tenant-loop ships dark: MT_RESOLUTION_V2 is not set on staging, so every converted job runs today's single DEFAULT_TENANT_ID pass. No schedule is triggered against staging and no POST is sent; the fan-out, the per-tick flag evaluation and the active-tenant read (tenants is_active AND NOT is_platform, one query each for tenants and tenant_settings) are proven by Jest. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build with the new job-tenant-loop modules boots (index.ts requires them at startup)"
+    },
+    {
+      "kind": "http",
+      "name": "scheduled-notifications health reports its auth mode",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/scheduled-notifications/health",
+      "expect_status": 200,
+      "reason": "read-only GET: the converted router is mounted and answers"
+    },
+    {
+      "kind": "existing",
+      "name": "job tenant loop (flag matrix, active-tenant read, heartbeat, cron + scheduled-notification fan-out)",
+      "ref": "npx jest test/vtid-05270-job-tenant-loop.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the active-tenant count the loop would use is asserted against the tenants/tenant_settings read shape; the fan-out is never triggered on staging"
+    }
+  ]
+}
