@@ -1,0 +1,31 @@
+---
+lane: chain-coverage
+state: ready
+next_actor: kiro
+depends_on: []
+executor: kiro
+seat: exafy
+area: platform
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+repos: [exafyltd/vitana-platform]
+paths:
+  - docs/validation/**
+  - services/gateway/src/services/project-manager/governance.ts
+  - services/gateway/test/project-manager/governance.test.ts
+updated: 2026-10-22T13:37Z
+vtid: VTID-05335
+---
+# Lane: chain-coverage
+
+Adds the read-only staging suite, the `commit-coverage.json` entry for `91d26a15` and the sparring record copy for the
+reviewer-chain change of #4295. Tasks T1–T4 in `tasks.md`. governance.ts / governance.test.ts change only if sparring
+requires an amendment (protected gate file: needs a legacy `claude` review or the owner's instruction). Held at
+`next_actor: owner` until PLAN-SPAR allocates the VTID on convergence.
+
+## Log
+
+### 2026-10-22T13:10Z · kiro-hotmail-202610221300-c70d · ready
+Lane created with the plan. No VTID yet (CI allocates on convergence).
+
+### 2026-10-22T13:37Z · ci-plan-spar · ready (VTID allocated)
+VTID-05335 allocated after policy approval (converged-auto-v1).
