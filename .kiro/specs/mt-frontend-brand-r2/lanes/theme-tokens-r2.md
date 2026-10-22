@@ -14,7 +14,7 @@ paths:
   - src/hooks/useTenant.tsx
   - src/hooks/useTenant.theme.test.tsx
   - tests/e2e/staging/vtid-*-theme-tokens.staging.spec.ts
-updated: 2026-10-22T11:20Z
+updated: 2026-10-22T14:00Z
 ---
 # theme-tokens-r2 — tenant theme renders via runtime HSL overrides (repo vitana-v1)
 
@@ -31,6 +31,19 @@ PR title `VTID-xxxxx (mt-frontend-brand-r2/theme-tokens-r2): …`; trailers `Col
 `Collab-Lane: mt-frontend-brand-r2/theme-tokens-r2`. Deploys (frontend): ships
 `docs/validation/<vtid>/staging-tests.json`; done when STAGING-VERIFY passed on its merge commit.
 Shared files: none.
+
+## Escalation carry-over (session 2, round 3)
+
+Sparring session 2 escalated at round 3 (`sparring/s2-round-3.md`). `plan.md` is unchanged. These are binding
+acceptance criteria for this lane (they override TT1/TT2 where they conflict) and apply only if the owner approves the
+plan as escalated. The full text is in `tasks.md` → "Escalation carry-over".
+
+- **R3-F1** [major]: `tenantThemeVars` leaves `--ring` untouched for non-Maxina tenants (only `--primary` and
+  `--primary-foreground` are set). The `acme` test asserts that `--primary` and `--ring` are distinct (no inline
+  `--ring`; ring keeps the stylesheet value at `src/index.css:41` / `:286`).
+- **R3-F2** [minor]: the theme effect returns a cleanup that calls `removeProperty` on the union of the `--brand-*` keys
+  plus `--primary`, `--primary-foreground` and `--ring`. It runs before every tenant change and on unmount. Vitest:
+  acme → Maxina, and acme → tenant-without-brandAccent, both clear the inline vars.
 
 ## Log
 ### 2026-10-22T11:20Z · kiro-hotmail-202610212135-3b9f · created → ready

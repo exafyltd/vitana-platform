@@ -92,3 +92,21 @@ Acceptance: "acme sets --primary" red on V1 main, green on head; Maxina case gre
 equal sha256 of `dist/assets/*.css` (both hashes in `commands.log`); C2 golden green and unchanged; ESLint `design/*` +
 `i18n/*` clean on new files. Never edit `src/index.css`, `tailwind.config.ts`, `scripts/native/gen-tokens.mjs` or
 `packages/**`.
+
+## Escalation carry-over (session 2, round 3)
+
+Sparring session `c351f749-3076-4fba-87b0-25aba2df8c15` escalated at round 3 (`sparring/s2-round-3.md`, plan hash
+`253a715b903a2e4c945dd544eaa187122e50e75a26b9e687554bf75fec8fad75`); MAX_SESSIONS is 2, so there is no session 3.
+`plan.md` is unchanged. The two open findings below are binding acceptance criteria for lane `theme-tokens-r2` and
+override TT1/TT2 where they conflict. Both apply only if the owner approves the plan as escalated.
+
+- [ ] **R3-F1** [major] (`--primary`/`--ring` collapsed onto one accent): `tenantThemeVars` leaves `--ring` untouched
+      for non-Maxina tenants. It sets only `--primary` and `--primary-foreground`, so `--ring` keeps the stylesheet
+      value (`src/index.css:41` light, `:286` dark). The `acme` test asserts that computed `--primary` and `--ring`
+      are distinct values (primary = accent triplet, ring = stylesheet value, no inline `--ring`), not a copy.
+- [ ] **R3-F2** [minor] (theme effect cleanup under-specified): the `useTenant.tsx` theme effect returns a cleanup
+      that calls `removeProperty` on the union of the `--brand-*` keys (`--brand-accent`, `--brand-bg`, `--brand-fg`)
+      plus `--primary`, `--primary-foreground` and `--ring`. It runs before every tenant change (React effect cleanup,
+      deps `[tenant]`) and on unmount. Vitest cases in `useTenant.theme.test.tsx`: acme → Maxina clears the inline
+      vars, and acme → tenant-without-brandAccent clears the inline vars (inline `--primary`, `--primary-foreground`,
+      `--ring` all `''` afterwards).
