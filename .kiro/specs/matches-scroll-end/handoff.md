@@ -5,7 +5,9 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: drafted
-updated: 2026-10-22T08:50Z
+spar_refs:
+  - exafyltd/vitana-v1: b8a4efbd31b43001f65150e6316056cfcde18248
+updated: 2026-10-22T08:55Z
 ---
 # Handoff — matches-scroll-end
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610220833-d231). Plan: `plan.md`.
@@ -20,3 +22,10 @@ the fixed bottom bar and the Orb (premises in `plan.md`). No VTID allocated, no 
 touched.
 Next: PLAN-SPAR spars the `plan(matches-scroll-end)` PR. On convergence CI writes the VTID into the lane and this
 session builds it.
+
+### 2026-10-22T08:55Z · kiro-exafyltd-202610220833-d231 · drafted (re-plan after escalation)
+Round 1 (session 2f06c46a) escalated on `evidence_floor_not_met`: every file the plan cites is in vitana-v1, and the
+partner had no vitana-v1 ref pinned, so it could read none of them. Fix: `spar_refs` pins `exafyltd/vitana-v1` at
+`b8a4efbd3` (`origin/main`, the commit the premises were checked on). Every premise in `plan.md` now names its file
+with the repo prefix. The plan is unchanged in substance. This is a re-plan inside the sparring loop, not an owner
+stop. If it escalates again, the plan is parked with the five-part message.
