@@ -15,7 +15,7 @@ paths:
   - scripts/collab/protected-gate-files.json
   - .github/workflows/PR-GATE.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-22T18:25Z
+updated: 2026-10-22T18:29Z
 vtid: VTID-05276
 branch: kiro/kiro-autonomy-fallback/scope-check
 parked_from: executing
@@ -56,4 +56,6 @@ Entry committed by the land step on the reviewer agent's behalf. Next: land (own
 ### 2026-10-22T18:21Z · pm-agent · executing → parked
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-22T18:25Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T18:29Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
