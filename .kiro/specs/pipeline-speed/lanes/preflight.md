@@ -1,6 +1,6 @@
 ---
 lane: preflight
-state: in-review
+state: verified
 next_actor: kiro
 claimed_by: kiro-202610220829-5884
 branch: kiro/pipeline-speed/preflight
@@ -18,7 +18,7 @@ paths:
   - .kiro/pipeline/planning.md
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T22:44Z
+updated: 2026-10-22T23:18Z
 vtid: VTID-05336
 ---
 # preflight — every CI governance check of a lane or plan PR, locally, in one pass (item 2)
@@ -54,3 +54,5 @@ Collab-Reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
 Collab-Reviewed-Head: a14fcdf2c1d6d6397c6c556f81ba932f8c5fadb0
 ### 2026-10-22T22:44Z · kiro-202610220829-5884 · executing → in-review
 merge: 62d5e2ecf55d2498cac59a88553fa4587f36ef34 · authority: §7b PM rule (owner instruction 2026-10-21). exafyltd/vitana-platform#4340 squash-merged 2026-10-22T22:29:46Z, last of the three (one merge at a time). Review round 1 (wf_27b4cb00217adf88): `changes`, one blocking finding (VALIDATOR-CHECK red: PR body had no VALIDATION_PROFILE / markers, evidence pack missing) — fixed by `a14fcdf2c` (acceptance.md + outputs/) and the PR body markers. Round 2 accept: agent:vitana-lane-reviewer (claude-opus-5.5) on `a14fcdf2c1d6d6397c6c556f81ba932f8c5fadb0` (run wf_5d72b688787bced8), entry-only commit `b24c45114`, then `gh pr update-branch` (main's commits only, `cf9694a5c`). All 10 checks green incl. validate-pr, no `--admin`. Next: verified.
+### 2026-10-22T23:18Z · kiro-202610220829-5884 · in-review → verified
+Acceptance met on vitana-platform `main` (contains merge `62d5e2ecf55d2498cac59a88553fa4587f36ef34` (#4340)): 13, 13, 0. Nothing deploys, so no Gate 2. authority: §7b PM rule (owner instruction 2026-10-21). Next: done.
