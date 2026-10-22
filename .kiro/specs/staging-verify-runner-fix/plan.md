@@ -17,8 +17,7 @@ never really ran start running.
 ## Measured state
 Run https://github.com/exafyltd/vitana-platform/actions/runs/39757004449 (community-app @ `3d144939`), 18/25 passed.
 The 7 failures have three causes, none in product code:
-1. **Runner image.** `.github/workflows/STAGING-VERIFY.yml:89` (`verify`) and `:227` (`report`) use
-   `runs-on: ubuntu-latest`, which GitHub now resolves to `ubuntu-26.04` (log: "Image: ubuntu-26.04"). The runner
+1. **Runner image.** `.github/workflows/STAGING-VERIFY.yml:89` (`verify`) uses `runs-on: ubuntu-latest`, which GitHub now resolves to `ubuntu-26.04` (log: "Image: ubuntu-26.04"). The runner
    (`scripts/ci/staging-verify/run.mjs:255`) runs `npx playwright install chromium --with-deps` with Playwright
    1.51.0, which fails: *"Playwright does not support chromium on ubuntu26.04-x64"*. So both smoke Playwright tests and
    every `playwright` change suite (here VTID-05330's) fail before they start. 3 failures.
@@ -38,10 +37,11 @@ Constraints from the runner: `existing` refs are split on spaces and spawned wit
 
 ## Changes
 ### Lane `runner` (vitana-platform)
-1. `STAGING-VERIFY.yml` `verify` and `report`: `runs-on: ubuntu-24.04` (pinned, a Playwright 1.51 supported image),
-   with a comment naming this failure. No other workflow change.
+1. `STAGING-VERIFY.yml` `verify` only: `runs-on: ubuntu-24.04` (pinned, a Playwright 1.51 supported image), with a
+   comment naming this failure (R1-F3). `report` runs no browser and stays `ubuntu-latest`. No other workflow change.
 2. Optional per-test `env` for `existing` suites, closed by an allowlist:
-   - `lib.cjs` `validateTest` `existing`: `env` is optional. If present, it must be an object whose keys are in
+   - `lib.cjs` `validateTest` `existing`: `env` is optional. If present and not a plain object (null, array,
+     string), it is a manifest error (R1-F2). Otherwise it must be an object whose keys are in
      `EXISTING_ENV_ALLOW = { APP_PROFILE: /^(development|test-g1)$/ }`. Any other key, or any other value (including
      `production`), is a manifest error. Export `existingEnv(t)`, which returns the validated object or `{}`.
    - `run.mjs` `runExisting`: env = `{ PATH, HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) }`. No secret and
@@ -59,17 +59,26 @@ Constraints from the runner: `existing` refs are split on spaces and spawned wit
    uses. It never builds a production profile (`app.config.ts:37` refuses one).
 
 ## Order and parallelism
-`runner` first (merged on platform `main`, where STAGING-VERIFY reads the runner); then `manifests`. A vitana-v1 merge
-that only changes `docs/**` does not trigger `AWS-STAGE-DEPLOY-FRONTEND.yml` (`paths` at lines 36-45), so after both
-lanes are on `main` the driver re-runs the failed STAGING-VERIFY run 39757004449 once (the §7a re-run allowlist,
-attempt 1: it failed for infrastructure). That run verifies the same deployed commit with the fixed runner and
-manifests. No shared files between lanes. Hot files: none.
+`runner` first, then `manifests` (`depends_on: [runner]`). The ordering is mechanical, not prose (R1-F2): the §7b
+merge rule merges a lane only when every `depends_on` lane is `done`, and lane `manifests`' acceptance requires
+`existingEnv` to be exported by vitana-platform `main`'s `lib.cjs` (checked with `node -e` in the lane, recorded in its
+PR) before it merges. No shared files between lanes. Hot files: none.
+
+**How the fix is verified (R1-F1).** STAGING-VERIFY checks out vitana-v1 at the commit under test
+(`STAGING-VERIFY.yml:164-172`) and reads its manifests there (`run.mjs:374`), so a re-run of the old run 39757004449
+(at `3d144939`) cannot see the manifest fixes, and is not used. A vitana-v1 merge that only changes `docs/**` does not
+trigger `AWS-STAGE-DEPLOY-FRONTEND.yml` (`paths`, lines 36-45), and agents do not dispatch workflows (§7a). So the
+proof is the **first STAGING-VERIFY community-app run on a vitana-v1 `main` commit that contains both lanes and
+`3d144939`**, started by the next staging deploy of any app change (deploys run several times a day: 10:12 and 09:30
+today). Its change suites include VTID-05330, VTID-05298 and VTID-05296 read from that head. If no app change deploys
+within 4 h of the last lane merge, the driver asks the owner (one five-part message) to run STAGING-VERIFY
+`workflow_dispatch` with `service: community-app` and `commit_sha` = vitana-v1 `main`; the driver never dispatches it.
 
 ## Tests and evidence
 - `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs` green; the new
   cases red on main.
 - `lib.validateManifest` run on both edited manifests (in the `manifests` lane) → `ok: true`.
-- Proof of run: STAGING-VERIFY on the staging commit shows the Playwright smoke, VTID-05330's spec and the native
+- Proof of run: the STAGING-VERIFY run defined above (a vitana-v1 `main` commit after both lanes) shows the Playwright smoke, VTID-05330's spec and the native
   suites executing (pass or a real failure), not failing at install or setup.
 
 ## Risks
