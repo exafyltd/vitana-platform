@@ -7,6 +7,7 @@ executor: claude
 seat: exafy
 claimed_by: kiro-202610220829-5884
 branch: kiro/pipeline-speed/slot-sizing
+pr: 4339
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
