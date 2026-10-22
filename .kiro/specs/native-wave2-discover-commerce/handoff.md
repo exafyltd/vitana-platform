@@ -8,6 +8,8 @@ author_seat: exafyltd
 updated: 2026-10-21T13:30Z
 sparring_record: .kiro/specs/native-wave2-discover-commerce/sparring/verdict.md
 vtids: []
+spar_refs:
+  - exafyltd/vitana-v1: main
 ---
 # Handoff — Native Wave 2: Discover / Commerce / Cart / Orders screen ports
 Second Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
