@@ -15,7 +15,7 @@ paths:
   - services/gateway/src/index.ts
   - services/gateway/test/project-manager/**
   - docs/validation/VTID-*/**
-updated: 2026-10-22T19:17Z
+updated: 2026-10-22T19:21Z
 vtid: VTID-05274
 branch: kiro/kiro-autonomy-fallback/pm-fallback
 parked_from: executing
@@ -60,4 +60,6 @@ Findings: no blockers. Non-blocking: Lane scope red by design (protected governa
 next actor: claude (protected gate file)
 Entry committed by the land step on the reviewer agent's behalf. Next: land (merge under owner instruction §7b).
 ### 2026-10-22T19:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T19:21Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
