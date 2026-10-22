@@ -12,7 +12,7 @@ paths:
   - scripts/ci/test-suite/shard-union.test.mjs
   - scripts/ci/test-suite/rerun-policy.test.mjs
   - docs/validation/**
-updated: 2026-10-22T20:13Z
+updated: 2026-10-22T20:17Z
 vtid: VTID-05307
 parked_from: ready
 ---
@@ -54,4 +54,6 @@ two entries. Paths unchanged.
 ### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05307 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T20:13Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T20:17Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
