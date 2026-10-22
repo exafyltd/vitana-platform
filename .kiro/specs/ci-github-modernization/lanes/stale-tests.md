@@ -11,7 +11,7 @@ paths:
   - src/components/messages/ConversationView.deeplink-scroll.vtid-05201.test.tsx
   - src/components/messages/ConversationView.tsx
   - docs/validation/**
-updated: 2026-10-22T07:20Z
+updated: 2026-10-22T07:24Z
 vtid: VTID-05308
 ---
 # Lane: stale-tests
@@ -261,4 +261,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T07:16Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T07:20Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T07:24Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
