@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: b8a4efbd31b43001f65150e6316056cfcde18248
-updated: 2026-10-22T09:15Z
+updated: 2026-10-22T09:27Z
+sparring_record: .kiro/specs/matches-scroll-end/sparring/verdict.md
+vtids: [VTID-05332]
 ---
 # Handoff — matches-scroll-end
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610220833-d231). Plan: `plan.md`.
@@ -54,3 +56,6 @@ work, then build the lane and merge it to staging. This follows the #4251/#4253 
 `origin/main`. #4300 stays open as the escalation record, and its chain is copied unchanged to
 `sparring-record-pr4300/`. `MAX_SESSIONS` is not raised and no state file was edited. The plan text is unchanged
 from #4300.
+
+### 2026-10-22T09:27Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

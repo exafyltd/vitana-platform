@@ -12,7 +12,8 @@ paths:
   - src/pages/MatchesPage.tsx
   - src/pages/MatchesPage.bottom-clearance.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-22T08:50Z
+updated: 2026-10-22T09:27Z
+vtid: VTID-05332
 ---
 # matches-list-clearance — the phone Matches list scrolls to its last card (repo vitana-v1)
 Plan: `.kiro/specs/matches-scroll-end/plan.md` (in vitana-platform) and the `matches-list-clearance` section of
@@ -25,3 +26,6 @@ no live writes.
 ### 2026-10-22T08:50Z · kiro-exafyltd-202610220833-d231 · created → ready
 Created and held. Premise: the phone tree of `MatchesPage.tsx` has only 16 px bottom padding, so the fixed bottom bar
 and the Orb cover the last card when scrolling ends.
+
+### 2026-10-22T09:27Z · ci-plan-spar · ready (VTID allocated)
+VTID-05332 allocated after policy approval (converged-auto-v1).
