@@ -1,6 +1,6 @@
 ---
 lane: ff-stage-env
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,11 +13,11 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T08:30Z
+updated: 2026-10-22T00:52Z
 branch: kiro/kaf-fallback-env/ff-stage-env
 vtid: VTID-05282
-claimed_by: kiro-202610202258-2232
 pr: https://github.com/exafyltd/vitana-platform/pull/4241
+parked_from: executing
 ---
 # ff-stage-env — `CLAUDE_AVAILABLE` from the repo variable into the staging task definition
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 A, and the `ff-stage-env` section of `tasks.md`, are
@@ -48,3 +48,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4241
 Findings: no blockers. Non-blocking: S1-S3 match tasks.md (env line before run:, --arg before TASK_ROLE, strip + single upsert next to PM_MODE); staging workflow only, AWS-PROD-DEPLOY-GATEWAY.yml untouched and the wiring test asserts prod has no CLAUDE_AVAILABLE. Both prior blockers fixed: conversation-flag-pins.generated.ts regenerated and added to lane paths; validate-pr green on this head. Wiring test new (5 tests, red on base). The red Gateway Jest shard 1/4 / Gateway Service Tests / Test Suite Summary are the inherited vtid-04868-plan-sparring-session-layer.test.ts:42 failure (#4239 removed the pinned CLAUDE.md line on main), not caused by this PR and non-required. Lane scope / Collab handoff red = governance-artifact false positive (claimed_by seat changed between rounds), same class as the accepted #4223.
 Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_dbe93c5aad069d99). Next: update onto main, merge under collaboration.md §7b.
+### 2026-10-22T00:52Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
