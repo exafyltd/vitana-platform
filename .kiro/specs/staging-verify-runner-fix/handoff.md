@@ -27,3 +27,9 @@ Next: PLAN-SPAR spars the `plan(staging-verify-runner-fix)` PR; this session ans
 
 ### 2026-10-22T11:14Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-22T11:15Z · kiro-exafyltd-202610220818-5273 · approved (builder notes)
+Converged round 2 (policy `converged-auto-v1`); VTID-05334 `runner`, VTID-05333 `manifests`. Builder notes from the
+minor round-2 findings: R2-F1 — the deploy trigger `paths` block is `AWS-STAGE-DEPLOY-FRONTEND.yml` lines 36-54, with
+no `docs/**`. R2-F2 — `workflow.test.cjs` is run by no CI job; the `runner` lane runs it locally and records the output
+in its PR; adding it to `STAGING-TESTS-REQUIRED.yml` is outside this plan's lane paths (follow-up).
