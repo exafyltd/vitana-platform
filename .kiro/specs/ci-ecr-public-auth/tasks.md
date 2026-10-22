@@ -53,9 +53,11 @@ Allowed paths (in `exafyltd/vitana-v1`):
 
 - [ ] V1. Insert the login step (`design.md` "Step") in `AWS-STAGE-DEPLOY-FRONTEND.yml` after `:156` and in
   `AWS-PROD-DEPLOY-FRONTEND.yml` after `:178`. Line numbers as of `origin/main` @ `7dfee6877`; re-check them.
-- [ ] V2. `src/lib/deploy-workflow.ecr-public-auth.test.ts`: the guard from `design.md` (Vitest, in the style of
-  `src/lib/deploy-workflow.vtid-04908.test.ts`; root `Dockerfile`, build context `.`). Record red on `origin/main`
-  and green on the lane head.
+- [ ] V2. `src/lib/deploy-workflow.ecr-public-auth.test.ts`: the guard from `design.md`, structure inline in
+  `plan.md` change 2 (Vitest; `readFileSync`/`slice` style of `src/lib/deploy-workflow.vtid-04908.test.ts:10-17`,
+  Dockerfile `FROM` scan as in platform `vtid-05017-base-images-ecr-public.test.ts`; no new dependency, v1 has no
+  yaml parser; root `Dockerfile`, build context `.`; sanity test that both frontend build jobs were checked).
+  Record red on `origin/main` and green on the lane head.
 - [ ] V3. `docs/validation/<VTID>/staging-tests.json`, read-only: GET `https://preview-aws.vitanaland.com/` returns
   200 and serves the bundle of the merge commit. Plus `commands.log`.
 

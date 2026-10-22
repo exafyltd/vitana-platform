@@ -53,11 +53,12 @@
 ## Guard (both repos)
 ```
 for wf in .github/workflows/AWS-*-DEPLOY-*.yml:
-  for job in yaml.jobs:
+  for job in jobs:   # platform: js-yaml jobs.<id>.steps; v1 (no yaml dep): split text by "^  <id>:$" / "^      - name:"
     builds = steps whose run contains "docker build"
     for each build: dockerfile = -f <file> | <context>/Dockerfile (honour a leading `cd <dir>`)
     if no dockerfile has a FROM public.ecr.aws/ line: skip job
     login = first step whose run has "aws ecr-public get-login-password --region us-east-1" and "public.ecr.aws"
     assert login exists, index(login) < index(first build), index(login) > index(configure-aws-credentials, if any)
     assert login.run contains "else" and "::warning"
+assert checked_jobs >= expected   # platform: 4 build jobs; v1: stage + prod build-push-deploy
 ```

@@ -119,8 +119,23 @@ never goes to a log: it is piped on stdin and unset, and only the CLI's stderr (
 ### 2. A CI guard that every affected build job has the step (both lanes)
 - platform: `services/gateway/test/ci-ecr-public-auth-workflows.test.ts` (Jest, `js-yaml` is already a gateway
   dependency; same source-check style as `services/gateway/test/vtid-05017-base-images-ecr-public.test.ts`).
-- v1: `src/lib/deploy-workflow.ecr-public-auth.test.ts` (Vitest; same style as
-  `src/lib/deploy-workflow.vtid-04908.test.ts`).
+- v1: `src/lib/deploy-workflow.ecr-public-auth.test.ts` (Vitest). Reference files, both checked on v1
+  `origin/main` `f2233d9bc`: `src/lib/deploy-workflow.vtid-04908.test.ts:10-17` (exists: `readFileSync` of the
+  workflow from `ROOT = join(__dirname, '..', '..')`, then `indexOf`/`slice` between step names) and the platform
+  `services/gateway/test/vtid-05017-base-images-ecr-public.test.ts` (Dockerfile `FROM` scan). v1 has no `yaml` /
+  `js-yaml` dependency in `package.json`, so the v1 test adds none: it splits each workflow into jobs by the
+  two-space `^  <job-id>:$` keys under `jobs:` and into steps by `^      - name:`, in file order, and applies the
+  same assertions as below on that text. Its structure, inline:
+  1. `ROOT = join(__dirname, '..', '..')`; list `.github/workflows/AWS-*-DEPLOY-*.yml` with `readdirSync`.
+  2. For each job, find the steps whose text contains `docker build`; the build context is the last argument
+     (`.` for v1), the Dockerfile is `-f <file>` or `<context>/Dockerfile`.
+  3. Read that Dockerfile; skip the job unless a `FROM` line names `public.ecr.aws/`.
+  4. Assert: a login step (contains `aws ecr-public get-login-password --region us-east-1`, `docker login` and
+     `public.ecr.aws`) exists, its index is after `configure-aws-credentials` and before the first build step, and
+     its text has the `else` branch with `::warning`.
+  5. A sanity test asserts at least one job was checked per repo (v1: both `AWS-STAGE-DEPLOY-FRONTEND.yml` and
+     `AWS-PROD-DEPLOY-FRONTEND.yml` `build-push-deploy`), so an empty glob or a broken splitter cannot pass silently.
+  The platform test does the same with `js-yaml` (`jobs.<id>.steps[]`), plus the same sanity test (its four jobs).
 Each test parses every `.github/workflows/AWS-*-DEPLOY-*.yml` in its repo. For every job with a `run:` step
 containing `docker build`, it resolves the Dockerfile that step builds (`-f <file>` or `<context>/Dockerfile`,
 relative to the step's `cd`/context). If any `FROM` line in it names `public.ecr.aws/`, the job must have a step
