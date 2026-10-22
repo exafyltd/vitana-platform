@@ -4,6 +4,19 @@ via the manifest/closure process, `apps/mobile/parity/ledger.json`, DE-first i18
 backend, no gateway change, no migration). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this
 folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5 Wave 2.
 <!-- plan:begin -->
+## Cross-repo sparring
+This plan's implementation lives in `exafyltd/vitana-v1` (native app `apps/mobile/**`, `packages/core/**`, the parity
+ledger, i18n shards), while the plan PR itself is in `exafyltd/vitana-platform`. Every load-bearing premise the
+sparring partner must verify — the class-A/class-B classification of `src/lib/horizonBuckets.ts` and
+`src/lib/vitana-projection.ts`, the `packages/core/manifest.json` autopilot type re-export, the parity-ledger rows and
+`src/App.tsx` routes — is a vitana-v1 file, read through the `spar_refs` (`exafyltd/vitana-v1: main`) declared in
+`handoff.md`.
+
+## Sparring status
+Rounds 1–2 ran blind: `spar_refs` is applied only at `client.create`, so the in-progress round-1 session could never
+acquire vitana-v1 read access (`responses-2.md`, finding R2-F1). A fresh session is required so the partner can verify
+the frontend premises; this plan-text change sets up the `replan` path (a changed plan on an escalated, non-infra
+session creates a new session with `spar_refs` applied).
 ## Goal
 Wave 2 screen-port batch of the native Maxina app: port the My Journey / guided-mode / autopilot cluster — the 2
 web destinations the parity ledger assigns to `"lane": "journey-autopilot"` — to the native app (`apps/mobile/`) at
