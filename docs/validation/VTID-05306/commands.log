@@ -1,0 +1,15 @@
+VTID-05306 — lane plan-spar-checks (CI-only, producer-only needs-rebase signal)
+
+Red → green proof (scripts/ci/plan-spar-slot/slot.test.mjs, VTID-05306 case):
+- RED on base (origin/main PLAN-SPAR.yml: statuses:write present from the plan merge, but NO needs-rebase step):
+    node --test --test-name-pattern="VTID-05306" scripts/ci/plan-spar-slot/slot.test.mjs
+    => pass 0, fail 1 — "the status step comes after the round-commit push" (see red-on-base.txt)
+- GREEN on head (needs-rebase step added):
+    node --test scripts/ci/plan-spar-slot/slot.test.mjs
+    => tests 6, pass 6, fail 0 (see green-on-head.txt)
+
+Lane path tests (unaffected, confirmed still green):
+- node --test scripts/collab/plan-spar.test.mjs  => tests 27, pass 27, fail 0
+
+Workflow YAML parse check:
+- node -e "js-yaml load PLAN-SPAR.yml" => parsed ok; jobs.spar.steps = 9 (8 named + 1 unnamed setup-node); permissions.statuses = write
