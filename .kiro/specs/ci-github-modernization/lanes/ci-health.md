@@ -1,6 +1,6 @@
 ---
 lane: ci-health
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -10,8 +10,9 @@ paths:
   - .github/workflows/CI-HEALTH.yml
   - scripts/ci/health/**
   - docs/validation/**
-updated: 2026-10-21T12:26Z
+updated: 2026-10-22T20:13Z
 vtid: VTID-05301
+parked_from: ready
 ---
 # Lane: ci-health
 
@@ -29,3 +30,5 @@ from inv-code §6 (no existing health aggregator; closest patterns named). No VT
 
 ### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05301 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T20:13Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
