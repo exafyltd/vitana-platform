@@ -14,11 +14,18 @@
  * caller is not a member of is 403.
  *
  * `q` ≥ 3 characters (the shortest a trigram index serves) → ILIKE on the text,
- * with LIKE wildcards escaped (a `%` matches a literal `%`), plus the first
- * attachment's file name. Backed by the pg_trgm GIN index of
- * 20261022090000_vtid_05309_chat_message_search.sql (without it the search
- * still works, as a scan). Newest first, cursor = (created_at, id).
- * Rate-limited per member (30 searches / minute).
+ * with LIKE wildcards escaped (a `%` matches a literal `%`; PostgREST still
+ * reads `*` as a wildcard — the literal re-check below drops those extra rows),
+ * plus the first attachment's file name. Two queries: the text one is served
+ * by the pg_trgm GIN index of 20261022090000_vtid_05309_chat_message_search.sql
+ * (an OR with unindexed file-name arms could not use it); the file-name one
+ * only reads attachment rows. Without the index the search still works, as a
+ * scan. Newest first, cursor = (created_at, id) of the last row looked at.
+ * Rate-limited per member (30 searches / minute, per gateway task).
+ *
+ * Paging: results are re-checked after the database query, so a page can hold
+ * fewer than `limit` results — even none — while `next_cursor` is set. Keep
+ * paging until `next_cursor` is null.
  */
 import { Router, Request, Response } from 'express';
 import rateLimit from 'express-rate-limit';
@@ -35,6 +42,8 @@ export const SNIPPET_RADIUS = 60;
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const SEARCH_TYPES = new Set(['any', 'image', 'video', 'file', 'voice', 'link']);
 const LINK_RE = /https?:\/\/\S+/i;
+// PostgREST's timestamptz text (microseconds kept: the cursor's tie-break needs the exact value).
+const ISO_TS_RE = /^\d{4}-\d{2}-\d{2}[T ]\d{2}:\d{2}:\d{2}(\.\d{1,6})?(Z|[+-]\d{2}(:?\d{2})?)$/;
 
 function getSupabase(): SupabaseClient {
   return createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
@@ -72,7 +81,7 @@ export function decodeCursor(raw: unknown): Cursor | null {
   if (typeof raw !== 'string' || !raw) return null;
   try {
     const [created_at, id] = Buffer.from(raw, 'base64url').toString('utf8').split('|');
-    if (!created_at || !id || !UUID_RE.test(id) || !Number.isFinite(Date.parse(created_at))) return null;
+    if (!created_at || !id || !UUID_RE.test(id) || !ISO_TS_RE.test(created_at)) return null;
     return { created_at, id };
   } catch {
     return null;
@@ -95,6 +104,8 @@ export interface SearchRow {
 export function isVisibleTo(row: SearchRow, me: string, tenantId: string, myGroups: ReadonlySet<string>): boolean {
   if (row.tenant_id !== tenantId) return false;
   if (row.group_id) return myGroups.has(row.group_id);
+  // A DM has both ends (a deleted group's rows keep group_id NULL and no receiver).
+  if (!row.receiver_id) return false;
   return row.sender_id === me || row.receiver_id === me;
 }
 
@@ -108,6 +119,10 @@ export function inScope(row: SearchRow, scope: SearchScope, me: string): boolean
 export function conversationKeyOf(row: SearchRow, me: string): string {
   if (row.group_id) return `group:${row.group_id}`;
   return `dm:${row.sender_id === me ? row.receiver_id : row.sender_id}`;
+}
+
+function fileNamesOf(att: Record<string, any>): string[] {
+  return [att.filename, att.name].filter((n): n is string => typeof n === 'string' && n.length > 0);
 }
 
 function attachmentsOf(row: SearchRow): Array<Record<string, any>> {
@@ -136,7 +151,7 @@ export function matchesType(row: SearchRow, type: string): boolean {
 export function matchesQuery(row: SearchRow, q: string): boolean {
   const needle = q.toLowerCase();
   if ((row.content ?? '').toLowerCase().includes(needle)) return true;
-  return attachmentsOf(row).some((a) => String(a.filename ?? a.name ?? '').toLowerCase().includes(needle));
+  return attachmentsOf(row).some((a) => fileNamesOf(a).some((n) => n.toLowerCase().includes(needle)));
 }
 
 /** ±60 characters around the first hit (text), else the matching file name. */
@@ -148,25 +163,43 @@ export function snippetFor(row: SearchRow, q: string, radius = SNIPPET_RADIUS): 
     const end = Math.min(text.length, at + q.length + radius);
     return `${start > 0 ? '…' : ''}${text.slice(start, end)}${end < text.length ? '…' : ''}`;
   }
-  const file = attachmentsOf(row).map((a) => String(a.filename ?? a.name ?? '')).find((n) => n.toLowerCase().includes(q.toLowerCase()));
+  const file = attachmentsOf(row).flatMap(fileNamesOf).find((n) => n.toLowerCase().includes(q.toLowerCase()));
   return file ?? text.slice(0, radius * 2);
 }
 
 /** The PostgREST `or` filter of the rows `me` may see. */
 export function visibilityFilter(me: string, groupIds: readonly string[]): string {
-  const parts = [`and(group_id.is.null,sender_id.eq.${me})`, `and(group_id.is.null,receiver_id.eq.${me})`];
+  const parts = [
+    `and(group_id.is.null,receiver_id.not.is.null,sender_id.eq.${me})`,
+    `and(group_id.is.null,receiver_id.eq.${me})`,
+  ];
   if (groupIds.length > 0) parts.push(`group_id.in.(${groupIds.join(',')})`);
   return parts.join(',');
 }
 
-/** The PostgREST `or` filter of rows containing `q` (text or the first attachment's file name). */
-export function queryFilter(q: string): string {
-  const v = quoteFilterValue(`%${escapeLike(q)}%`);
-  return [
-    `content.ilike.${v}`,
-    `metadata->attachments->0->>filename.ilike.${v}`,
-    `metadata->attachments->0->>name.ilike.${v}`,
-  ].join(',');
+/** The ILIKE pattern of `q` (escaped, quoted for PostgREST). */
+export function likeValue(q: string): string {
+  return quoteFilterValue(`%${escapeLike(q)}%`);
+}
+
+/** The PostgREST `or` filter of attachment rows whose first attachment's file name contains `q`. */
+export function fileNameFilter(q: string): string {
+  const v = likeValue(q);
+  return [`metadata->attachments->0->>filename.ilike.${v}`, `metadata->attachments->0->>name.ilike.${v}`].join(',');
+}
+
+/** The cursor filter: rows strictly after (created_at, id) in newest-first order. Values quoted. */
+export function cursorFilter(c: Cursor): string {
+  const at = quoteFilterValue(c.created_at);
+  return `created_at.lt.${at},and(created_at.eq.${at},id.lt.${c.id})`;
+}
+
+/** Newest first, (created_at, id) descending, without duplicates. */
+export function mergeNewestFirst(a: SearchRow[], b: SearchRow[]): SearchRow[] {
+  const byId = new Map<string, SearchRow>();
+  for (const r of [...a, ...b]) if (!byId.has(r.id)) byId.set(r.id, r);
+  return Array.from(byId.values()).sort((x, y) =>
+    x.created_at < y.created_at ? 1 : x.created_at > y.created_at ? -1 : x.id < y.id ? 1 : x.id > y.id ? -1 : 0);
 }
 
 // ── Route ──────────────────────────────────────────────────────────────────
@@ -175,7 +208,7 @@ const searchLimiter = rateLimit({
   windowMs: 60 * 1000,
   max: 30,
   keyGenerator: (req: Request) => `u:${(req as AuthenticatedRequest).identity?.user_id ?? 'anon'}`,
-  validate: false,
+  validate: { xForwardedForHeader: false },
   message: { ok: false, error: 'RATE_LIMIT_EXCEEDED' },
   standardHeaders: true,
   legacyHeaders: false,
@@ -221,29 +254,40 @@ router.get('/', requireAuth, requireTenant, searchLimiter, async (req: Request, 
 
     // Rows are post-filtered (type, defence in depth), so scan a few pages' worth.
     const scan = Math.min(limit * 3, 150);
-    let query = sb
-      .from('chat_messages')
-      .select('id, tenant_id, sender_id, receiver_id, group_id, content, message_type, metadata, created_at')
-      .eq('tenant_id', tenantId)
-      .neq('message_type', 'system');
-    if (scope.kind === 'all') {
-      query = query.or(visibilityFilter(me, Array.from(myGroups)));
-    } else if (scope.kind === 'dm') {
-      query = query.is('group_id', null).or(`and(sender_id.eq.${me},receiver_id.eq.${scope.peerId}),and(sender_id.eq.${scope.peerId},receiver_id.eq.${me})`);
-    } else {
-      query = query.eq('group_id', scope.groupId);
-    }
-    query = query.or(queryFilter(q));
-    if (sender) query = query.eq('sender_id', sender);
-    if (from) query = query.gte('created_at', from);
-    if (to) query = query.lte('created_at', to);
-    if (type === 'voice') query = query.in('message_type', ['voice', 'attachment']);
-    else if (type === 'image' || type === 'video' || type === 'file') query = query.eq('message_type', 'attachment');
-    if (cursor) query = query.or(`created_at.lt.${cursor.created_at},and(created_at.eq.${cursor.created_at},id.lt.${cursor.id})`);
-    const { data, error } = await query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(scan);
-    if (error) throw new Error(error.message);
+    const base = () => {
+      let query = sb
+        .from('chat_messages')
+        .select('id, tenant_id, sender_id, receiver_id, group_id, content, message_type, metadata, created_at')
+        .eq('tenant_id', tenantId)
+        .neq('message_type', 'system');
+      if (scope.kind === 'all') {
+        query = query.or(visibilityFilter(me, Array.from(myGroups)));
+      } else if (scope.kind === 'dm') {
+        query = query.is('group_id', null).or(`and(sender_id.eq.${me},receiver_id.eq.${scope.peerId}),and(sender_id.eq.${scope.peerId},receiver_id.eq.${me})`);
+      } else {
+        query = query.eq('group_id', scope.groupId);
+      }
+      if (sender) query = query.eq('sender_id', sender);
+      if (from) query = query.gte('created_at', from);
+      if (to) query = query.lte('created_at', to);
+      if (cursor) query = query.or(cursorFilter(cursor));
+      return query;
+    };
+    const page = (query: any) => query.order('created_at', { ascending: false }).order('id', { ascending: false }).limit(scan);
 
-    const rows = ((data as SearchRow[] | null) ?? []);
+    // 1) the text (trigram index); 2) file names of attachment rows (no index needed: few rows).
+    let textQuery = base().ilike('content', `%${escapeLike(q)}%`);
+    if (type === 'voice') textQuery = textQuery.in('message_type', ['voice', 'attachment']);
+    else if (type === 'image' || type === 'video' || type === 'file') textQuery = textQuery.eq('message_type', 'attachment');
+    let fileQuery = base().in('message_type', ['attachment', 'voice']).or(fileNameFilter(q));
+    if (type === 'image' || type === 'video' || type === 'file') fileQuery = fileQuery.eq('message_type', 'attachment');
+    const [textRes, fileRes] = await Promise.all([page(textQuery), type === 'link' ? Promise.resolve({ data: [], error: null }) : page(fileQuery)]);
+    if (textRes.error) throw new Error(textRes.error.message);
+    if (fileRes.error) throw new Error(fileRes.error.message);
+    // Only the first `scan` rows of the merge are looked at; the cursor is the
+    // last one, so nothing either query returned beyond it is skipped.
+    const data = mergeNewestFirst((textRes.data as SearchRow[] | null) ?? [], (fileRes.data as SearchRow[] | null) ?? []).slice(0, scan);
+    const rows = data;
     const results: Array<Record<string, unknown>> = [];
     let last: SearchRow | null = null;
     for (const row of rows) {

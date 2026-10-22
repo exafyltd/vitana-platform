@@ -3,9 +3,11 @@
 // Authorization is the point of these tests: user C never sees an A↔B DM, a
 // non-member never sees a group's messages, another tenant never, and a group
 // scope the caller is not in is 403. The in-memory Supabase below applies the
-// simple filters (eq / is / neq / in) but IGNORES every `or` filter, as if the
-// visibility filter were wrong — so the route's second, row-level check is what
-// keeps the results clean. The `or` strings themselves are asserted separately.
+// simple filters (eq / is / neq / in / ilike) and the cursor, but IGNORES every
+// other `or` filter, as if the visibility filter were wrong — so the route's
+// second, row-level check is what keeps the results clean. With
+// `ignoreTenantEq` it also ignores the tenant filter. The `or` strings
+// themselves are asserted separately.
 
 import express from 'express';
 import request from 'supertest';
@@ -21,18 +23,38 @@ const T2 = 'bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb';
 type Row = Record<string, any>;
 const db: Record<string, Row[]> = { chat_messages: [], chat_group_members: [] };
 const orCalls: string[] = [];
+let ignoreTenantEq = false;
+// SQL LIKE (backslash escapes) → RegExp, case-insensitive.
+function likeToRegExp(p: string): RegExp {
+  let out = '';
+  for (let i = 0; i < p.length; i++) {
+    const ch = p[i];
+    if (ch === '\\' && i + 1 < p.length) { out += p[++i].replace(/[.*+?^${}()|[\]\\]/g, '\\$&'); continue; }
+    if (ch === '%') out += '[\\s\\S]*';
+    else if (ch === '_') out += '[\\s\\S]';
+    else out += ch.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  }
+  return new RegExp(`^${out}$`, 'i');
+}
+const CURSOR_OR = /^created_at\.lt\."([^"]+)",and\(created_at\.eq\."([^"]+)",id\.lt\.([0-9a-f-]+)\)$/;
 class Q {
   private f: Array<(r: Row) => boolean> = [];
   private lim = 1000;
   constructor(private t: string) {}
   select() { return this; }
-  eq(c: string, v: unknown) { this.f.push((r) => r[c] === v); return this; }
+  eq(c: string, v: unknown) { if (!(c === 'tenant_id' && ignoreTenantEq)) this.f.push((r) => r[c] === v); return this; }
+  ilike(c: string, p: string) { const re = likeToRegExp(p); this.f.push((r) => re.test(String(r[c] ?? ''))); return this; }
   neq(c: string, v: unknown) { this.f.push((r) => r[c] !== v); return this; }
   is(c: string, v: null) { this.f.push((r) => (r[c] ?? null) === v); return this; }
   in(c: string, vs: unknown[]) { this.f.push((r) => vs.includes(r[c])); return this; }
   gte(c: string, v: string) { this.f.push((r) => r[c] >= v); return this; }
   lte(c: string, v: string) { this.f.push((r) => r[c] <= v); return this; }
-  or(s: string) { orCalls.push(s); return this; }
+  or(s: string) {
+    orCalls.push(s);
+    const m = CURSOR_OR.exec(s);
+    if (m) this.f.push((r) => r.created_at < m[1] || (r.created_at === m[2] && r.id < m[3]));
+    return this;
+  }
   order() { return this; }
   limit(n: number) { this.lim = n; return this; }
   then(resolve: any, reject: any) {
@@ -54,7 +76,7 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
 }));
 
 import searchRouter, {
-  escapeLike, quoteFilterValue, parseScope, encodeCursor, decodeCursor, snippetFor, visibilityFilter, queryFilter,
+  escapeLike, quoteFilterValue, parseScope, encodeCursor, decodeCursor, snippetFor, visibilityFilter, likeValue, fileNameFilter, cursorFilter,
 } from '../src/routes/chat-search';
 
 const app = express();
@@ -73,6 +95,7 @@ const search = (qs: string) => request(app).get(`/chat/search?${qs}`);
 beforeEach(() => {
   n = 0;
   orCalls.length = 0;
+  ignoreTenantEq = false;
   caller = { user_id: C, tenant_id: T1 };
   db.chat_group_members = [
     { user_id: A, group_id: G, tenant_id: T1 },
@@ -112,7 +135,21 @@ describe('authorization (the visibility filter is ignored by the mock; the row c
     caller = { user_id: A, tenant_id: T1 };
     await search('q=plan');
     expect(orCalls[0]).toBe(visibilityFilter(A, [G]));
-    expect(orCalls[0]).toBe(`and(group_id.is.null,sender_id.eq.${A}),and(group_id.is.null,receiver_id.eq.${A}),group_id.in.(${G})`);
+    expect(orCalls[0]).toBe(`and(group_id.is.null,receiver_id.not.is.null,sender_id.eq.${A}),and(group_id.is.null,receiver_id.eq.${A}),group_id.in.(${G})`);
+  });
+
+  it('another tenant\'s rows are dropped by the row check even when the tenant filter is broken', async () => {
+    ignoreTenantEq = true;
+    const r = await search('q=plan');
+    expect(r.body.results.map((x: any) => x.snippet)).not.toContain('other tenant plan');
+    expect(r.body.results).toHaveLength(2);
+  });
+
+  it('a deleted group\'s rows (group_id NULL, no receiver) never show as a DM', async () => {
+    db.chat_messages.push(msg({ sender_id: C, content: 'plan from a deleted group' }));
+    const r = await search('q=plan');
+    expect(r.body.results.map((x: any) => x.conversation_key)).not.toContain('dm:null');
+    expect(r.body.results.map((x: any) => x.snippet)).not.toContain('plan from a deleted group');
   });
 
   it('scope=group:<id> for a non-member → 403; for a member → only that group', async () => {
@@ -147,13 +184,13 @@ describe('query rules', () => {
     const r = await search(`q=${encodeURIComponent('00%')}`);
     expect(r.body.results.map((x: any) => x.snippet)).toEqual(['we hit 100% today']);
     expect(escapeLike('a%b_c\\d')).toBe('a\\%b\\_c\\\\d');
-    expect(orCalls).toContain(queryFilter('00%'));
-    expect(queryFilter('00%')).toContain(`content.ilike.${quoteFilterValue('%00\\%%')}`);
+    expect(orCalls).toContain(fileNameFilter('00%'));
+    expect(likeValue('00%')).toBe(quoteFilterValue('%00\\%%'));
   });
 
   it('the q filter value is quoted, so commas and parentheses cannot break out of it', () => {
     expect(quoteFilterValue('%a,b)c"d%')).toBe('"%a,b)c\\"d%"');
-    expect(queryFilter('x),or(id.neq.0')).not.toMatch(/ilike\.%x\),or\(/);
+    expect(fileNameFilter('x),or(id.neq.0')).not.toMatch(/ilike\.%x\),or\(/);
   });
 
   it('type=image returns only messages whose attachments include an image', async () => {
@@ -181,6 +218,12 @@ describe('query rules', () => {
     expect((await search('q=plan&type=gif')).status).toBe(400);
     expect((await search('q=plan&from=yesterday')).status).toBe(400);
     expect((await search('q=plan&cursor=zzz')).status).toBe(400);
+    // Date.parse accepts these, the strict ISO check does not: never reaches the filter.
+    for (const ts of ['Oct 21 2026 (x,y)', '1', '2026-10-21, 10:00']) {
+      const bad = Buffer.from(`${ts}|${A}`, 'utf8').toString('base64url');
+      expect((await search(`q=plan&cursor=${bad}`)).status).toBe(400);
+    }
+    expect(decodeCursor(encodeCursor({ created_at: '2026-10-21T10:00:00.123456+00:00', id: A }))?.created_at).toBe('2026-10-21T10:00:00.123456+00:00');
   });
 
   it('newest first with a cursor; the next page continues where the first ended', async () => {
@@ -191,8 +234,36 @@ describe('query rules', () => {
     const c = decodeCursor(p1.body.next_cursor)!;
     expect(c.id).toBe(p1.body.results[1].message_id);
     expect(orCalls.some((o) => o.startsWith('created_at.lt.'))).toBe(false);
-    await search(`q=plan+item&limit=2&cursor=${p1.body.next_cursor}`);
-    expect(orCalls).toContain(`created_at.lt.${c.created_at},and(created_at.eq.${c.created_at},id.lt.${c.id})`);
+    const p2 = await search(`q=plan+item&limit=2&cursor=${p1.body.next_cursor}`);
+    expect(orCalls).toContain(cursorFilter(c));
+    expect(p2.body.results.map((x: any) => x.snippet)).toEqual(['plan item 2', 'plan item 1']);
+    const p3 = await search(`q=plan+item&limit=2&cursor=${p2.body.next_cursor}`);
+    expect(p3.body.results.map((x: any) => x.snippet)).toEqual(['plan item 0']);
+    expect(p3.body.next_cursor).toBeNull();
+  });
+
+  it('a full scan window of rows the re-check drops gives a short page with a cursor', async () => {
+    // limit=1 → scan window 3; three newer A↔B rows (invisible to C) fill it.
+    for (let i = 0; i < 3; i++) db.chat_messages.push(msg({ sender_id: A, receiver_id: B, content: `hidden plan ${i}` }));
+    const r = await search('q=plan&limit=1');
+    expect(r.body.results).toEqual([]);
+    expect(r.body.next_cursor).toEqual(expect.any(String));
+    const next = await search(`q=plan&limit=1&cursor=${r.body.next_cursor}`);
+    expect(next.body.results.map((x: any) => x.snippet)).toEqual(['a plan for C']);
+  });
+
+  it('type=voice and type=link', async () => {
+    db.chat_messages.push(msg({ sender_id: A, receiver_id: C, message_type: 'voice', content: 'voice plan',
+      metadata: { attachments: [{ type: 'voice', url: 'u' }] } }));
+    db.chat_messages.push(msg({ sender_id: A, receiver_id: C, content: 'plan at https://example.com/x' }));
+    expect((await search('q=plan&type=voice')).body.results.map((x: any) => x.snippet)).toEqual(['voice plan']);
+    expect((await search('q=plan&type=link')).body.results.map((x: any) => x.snippet)).toEqual(['plan at https://example.com/x']);
+  });
+
+  it('a file name is matched by "name" too when "filename" is set', async () => {
+    db.chat_messages.push(msg({ sender_id: A, receiver_id: C, message_type: 'attachment', content: '',
+      metadata: { attachments: [{ type: 'file', filename: 'x.pdf', name: 'Quarterly-Report.pdf' }] } }));
+    expect((await search('q=quarterly')).body.results.map((x: any) => x.snippet)).toEqual(['Quarterly-Report.pdf']);
   });
 });
 
@@ -209,5 +280,17 @@ describe('helpers', () => {
     expect(parseScope('dm:x')).toBeNull();
     const c = { created_at: '2026-10-21T10:00:00.000Z', id: A };
     expect(decodeCursor(encodeCursor(c))).toEqual(c);
+  });
+});
+
+describe('rate limit', () => {
+  it('the 31st search within a minute by one member → 429 (another member is not affected)', async () => {
+    caller = { user_id: '77777777-7777-4777-8777-777777777777', tenant_id: T1 };
+    for (let i = 0; i < 30; i++) expect((await search('q=plan')).status).toBe(200);
+    const r = await search('q=plan');
+    expect(r.status).toBe(429);
+    expect(r.body.error).toBe('RATE_LIMIT_EXCEEDED');
+    caller = { user_id: '88888888-8888-4888-8888-888888888888', tenant_id: T1 };
+    expect((await search('q=plan')).status).toBe(200);
   });
 });
