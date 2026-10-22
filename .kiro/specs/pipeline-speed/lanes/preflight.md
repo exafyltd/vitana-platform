@@ -15,7 +15,7 @@ paths:
   - .kiro/pipeline/planning.md
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T20:50Z
+updated: 2026-10-22T20:54Z
 vtid: VTID-05336
 ---
 # preflight — every CI governance check of a lane or plan PR, locally, in one pass (item 2)
@@ -34,4 +34,6 @@ VTID-05336 allocated after policy approval (converged-auto-v1).
 ### 2026-10-22T20:46Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T20:50Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T20:54Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
