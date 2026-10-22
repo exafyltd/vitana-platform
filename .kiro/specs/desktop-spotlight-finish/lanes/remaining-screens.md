@@ -1,6 +1,6 @@
 ---
 lane: remaining-screens
-state: executing
+state: done
 next_actor: kiro
 depends_on: [skeletons, public-profile, commerce-shell]
 executor: kiro
@@ -69,3 +69,8 @@ The prior VTID came from session 5fbb73a2, which converged on a vitana-platform 
 mechanism, so the partner never read vitana-v1 (handoff log 2026-10-21T09:43Z). Cleared `vtid:` and set
 `next_actor: claude`; the re-spar (vitana-v1 now declared in handoff `spar_refs:`) re-converges and CI auto-allocates a
 fresh VTID bound to the new sparring record. No live system touched.
+
+### 2026-10-22T13:00Z - kiro-202610152203-0347 - merged to main (done)
+PR #1452 (VTID-05292) merged clean to vitana-v1 `main`. merge: `11b4e2ba2617b9d7541ca39c69d1b343696d84fd`.
+authority: owner instruction 2026-10-21 (full automation to verified staging, collaboration.md section 7b).
+All PR-GATE checks green incl. Lane scope; staging auto-deploy follows. No live system written from session tools.
