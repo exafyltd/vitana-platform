@@ -1,0 +1,177 @@
+﻿ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/mt-jobs-community-scan-tenant/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/routes/autopilot-recommendations.test.ts (7.165 s)
+  GET /api/v1/autopilot/recommendations
+    âˆš no role: uses the RPC fallback path and returns annotated recommendations (388 ms)
+    âˆš no role: computes has_more when RPC returns more than limit+1 rows (54 ms)
+    âˆš no role: RPC transport failure returns 400 (21 ms)
+    âˆš role=developer: queries by role directly (system-wide, non-community source) (36 ms)
+    âˆš role=community, no user id: rejected by the router-level auth gate before reaching the handler (9 ms)
+    âˆš role=community with user id: returns the community rec with wave/horizon enrichment (26 ms)
+    âˆš role=community: retired-action recs (unknown source_ref) are filtered out (107 ms)
+    âˆš role=community: falls back to the no-source_type query when the primary query is empty, then dedups (154 ms)
+    âˆš role=community: auto-generates when queue has zero "new" recs, and re-fetches on success (109 ms)
+    âˆš role-based: RPC-equivalent transport failure returns 400 (31 ms)
+    âˆš clamps limit to [1,100] and offset to >=0 (33 ms)
+  GET /api/v1/autopilot/recommendations/count
+    âˆš no role: returns the RPC count (19 ms)
+    âˆš no role: RPC failure returns 400 (19 ms)
+    âˆš role-based: developer count is the number of listed rows (27 ms)
+    âˆš role-based: transport failure degrades to count=0, not an error (28 ms)
+  POST /api/v1/autopilot/recommendations/generate-personal
+    âˆš 401 when no user id is present (35 ms)
+    âˆš 503 when Supabase is not configured (51 ms)
+    âˆš 400 when the user has no resolvable tenant (58 ms)
+    âˆš happy path: resolves tenant then delegates to generatePersonalRecommendations (39 ms)
+    âˆš falls back to DEFAULT_TENANT_ID when no primary tenant row exists (34 ms)
+    âˆš returns 500 when generation itself fails (18 ms)
+  POST /api/v1/autopilot/recommendations/:id/activate
+    community role
+      âˆš 503 when Supabase is not configured (42 ms)
+      âˆš 404 when the recommendation does not exist (30 ms)
+      âˆš 403 when the rec is not a community-sourced recommendation (29 ms)
+      âˆš 403 when the rec belongs to another user (cross-user isolation) (10 ms)
+      âˆš VTID-04464: 403 when the rec has no owner (user_id null) â€” no ownership bypass (21 ms)
+      âˆš 400 when the rec is not in an activatable state (23 ms)
+      âˆš 200 idempotent when already activated (18 ms)
+      âˆš happy path: patches status, emits OASIS, and returns the navigate action (32 ms)
+      âˆš creates a calendar event for actions that declare calendar_event metadata (78 ms)
+      âˆš auto-replenishes when this was the last "new" recommendation (46 ms)
+    developer/admin (VTID-creating) role
+      âˆš 400 when the RPC transport fails (8 ms)
+      âˆš 400 when the RPC reports a business-logic failure (12 ms)
+      âˆš happy path: creates a VTID, emits OASIS event, and returns vtid_ref (14 ms)
+      âˆš already_activated: skips alignment/spec/bridge side effects (30 ms)
+      âˆš creates an oasis_specs draft from the recommendation snapshot on fresh activation (42 ms)
+      âˆš dispatches to the executor bridge for dev_autopilot-sourced recs (29 ms)
+  POST /api/v1/autopilot/recommendations/:id/reject
+    âˆš happy path: passes reason through to the RPC (31 ms)
+    âˆš 400 on RPC transport failure (12 ms)
+    âˆš 400 when the RPC reports a business-logic failure (32 ms)
+    âˆš community role: fires a fire-and-forget guarded regeneration (9 ms)
+  POST /api/v1/autopilot/recommendations/:id/snooze
+    âˆš happy path: defaults to 24 hours (13 ms)
+    âˆš clamps hours to [1,168] (20 ms)
+    âˆš 400 on RPC transport failure (15 ms)
+    âˆš 400 when the RPC reports a business-logic failure (20 ms)
+  POST /api/v1/autopilot/recommendations/generate
+    role=community
+      âˆš 401 when no user id present (8 ms)
+      âˆš 500 when regeneration fails (9 ms)
+      âˆš 200 with generated=0 and a reason when the guard fires (9 ms)
+      âˆš 200 with a fresh batch on success (26 ms)
+    developer/admin (analyzer-sourced) generation
+      âˆš 400 when no valid sources are given (13 ms)
+      âˆš happy path: runs generation, emits start/completion OASIS events (13 ms)
+      âˆš 500 when generation fails, emits a failure OASIS event (25 ms)
+      âˆš notifies the triggering user and surfaces a high-impact rec when generated>0 (11 ms)
+  GET /api/v1/autopilot/recommendations/sources
+    âˆš happy path: maps analyzer source rows (23 ms)
+    âˆš 400 on RPC failure (33 ms)
+  GET /api/v1/autopilot/recommendations/history
+    âˆš happy path: paginates and strips the lookahead row (31 ms)
+    âˆš passes trigger_type through to the RPC (23 ms)
+    âˆš 400 on RPC failure (37 ms)
+  POST /api/v1/autopilot/recommendations/:id/complete
+    âˆš 401 when no user id is present (12 ms)
+    âˆš happy path: completes and returns the reward (25 ms)
+    âˆš emits a milestone event when the last onboarding rec is completed (28 ms)
+    âˆš 404 when the RPC reports the recommendation was not found (17 ms)
+    âˆš 403 when the RPC reports the rec belongs to another user (cross-user isolation) (17 ms)
+    âˆš 403 when the RPC reports the rec is system-wide (not user-scoped) (10 ms)
+    âˆš 400 when the rec is not in a completable state (13 ms)
+    âˆš 500 on RPC transport failure (181 ms)
+  GET /api/v1/autopilot/recommendations/health
+    âˆš always returns ok:true with the endpoint inventory (16 ms)
+  CA-2 role-scoped lineups
+    âˆš a plain member sending ?role=admin gets their own community lineup, never everyone's (139 ms)
+    âˆš a plain member sending ?role=developer without the role granted is narrowed to community (157 ms)
+    âˆš a member granted developer (check_role_permitted) gets the system lineup (69 ms)
+    âˆš a plain member with no hint does not get the legacy all-system RPC view (130 ms)
+    âˆš a role without a lineup yet (professional) gets an empty list, not someone else's (43 ms)
+    âˆš a plain member cannot take the Dev Autopilot activation path with ?role=developer (343 ms)
+  CA-3 typed actions
+    âˆš a voice activation of a medium-risk action returns a read-back and changes nothing (2 ms)
+    âˆš an app activation runs the typed action and returns its result (31 ms)
+  CA-4 drafts
+    âˆš a voice "yes" to a public post never publishes it and never activates the row (2 ms)
+    âˆš the app preview edit is stored and carried into the composer route (34 ms)
+    âˆš POST /:id/draft saves the member's text for their own drafted suggestion (9 ms)
+    âˆš POST /:id/draft refuses someone else's suggestion and suggestions with nothing to draft (14 ms)
+  CA-5 community-scan endpoint
+    âˆš a member cannot trigger the scan (12 ms)
+    âˆš an exafy admin (or the internal token) runs it and gets the summary (9 ms)
+  VTID-04523 lineup cap (owner decision 3)
+    âˆš GET role=community: serves only the top 3 open rows, keeps activated rows, and reports no next page (17 ms)
+    âˆš GET role=community: rows with a typed action survive the retired-source filter (39 ms)
+    âˆš GET role=developer: not capped (developer findings are a different surface) (18 ms)
+    âˆš GET /count role=community: the badge never exceeds 3 (18 ms)
+    âˆš GET /count role=developer: unchanged (VTID-04668: counted from the listed rows) (23 ms)
+    âˆš voice list: lists the same top 3, including typed-action scan rows (35 ms)
+
+PASS test/vtid-05270-job-tenant-loop.test.ts (14.055 s)
+  isJobsTenantLoopEnabled
+    âˆš MT_RESOL    âˆš MT_RESOLUTION_V2=undefined flags={"mt":{"jobs_tenant_loop":true}} â‡    âˆš MT_RESOL    âˆš MT_RESOLUTION_V2=false flags={"mt":{"jobs_tenant_loop":t    âˆš MT_RESOLUTION_V    âˆš MT_RESOLUTION_V2=true flags=undef    âˆš MT_RESOLUTION_    âˆš MT_RESOLUTION_V2=true flag    âˆš MT_RESOLUTION_    âˆš MT_RESOLUTION_V2=true flags={"mt"    âˆš MT_RESO    âˆš MT_RESOLUTION_V2=true flags={"mt":{"jobs_tenant_loop":false}} â‡    âˆš     âˆš MT_RESOLUTION_V2=true flags={"mt":{"jobs_tenant_loop":true}} â  activeTenantI  a    âˆš master     âˆš master off â‡’ [DEFAULT_TENANT_ID] with no     âˆš master     âˆš master on â‡’ flagged active non-platform tenants âˆª DEFAULT, one quer    âˆš DEFAULT    âˆš DEFAULT_TENANT_ID stays in the list when its own flag is off or it is not in the acti    âˆš a failed    âˆš a failed tenant read degrades to [DEFAULT_TENA    âˆš forEachA    âˆš forEachActiveTenant gives each tenant its own context +   tenantTimezone     âˆš uses the    âˆš uses the tenant setting, falls back to Europe/Berlin without a row or with a   resolveJobTena  re    âˆš identity    âˆš identity tenant beats body tenant; either â‡’ exactly one, on both fla    âˆš no tenan    âˆš no tenant â‡’ DEFAULT off, active tenants on, [] off without a  resolveActorTe  resolveActorTena    âˆš known te    âˆš known tenant wins; else the primary tenant; unresolvable â‡’ null, never D    âˆš jwtSubje    âˆš jwtSubject decodes sub, null on  heartbeat loop     âˆš registra    âˆš registration gate: today without the master; also opens on MT_RESOLUTION_V2 without DEFAULT_TE    âˆš master     âˆš master off â‡’ one DEFAULT_TENANT_ID cycle per tick, no     âˆš master on, no DEFAULT_TENANT_ID â‡’ loops the active flagged tenants (6 ms)
+    âˆš a tenant flag flipped off between two ticks stops that tenant on the next tick (no restart) (9 ms)
+    âˆš empty tenant list â‡’ no-op
+  runHeartbeatCycle per-tenant clock
+    âˆš two tenants both run a due heartbeat automation in one tick, then each waits its own interval (302 ms)
+  /automations/cron/:id
+    âˆš master off, no tenant â‡’ one DEFAULT_TENANT_ID pass, response unchanged (259 ms)
+    âˆš master on, two active tenants, no tenant â‡’ one executeAutomation per tenant (98 ms)
+    âˆš master on, explicit body tenant â‡’ exactly one pass for it (73 ms)
+    âˆš no tenant anywhere â‡’ 400 as today (53 ms)
+  /scheduled-notifications routes
+    âˆš diary-r    âˆš diary-reminder: master off â‡’ one DEFAULT_TENANT_ID pass, response unch    âˆš diary-r    âˆš diary-reminder: master on, no tenant â‡’ two passes, one per t    âˆš nested    âˆš nested /morning-briefing with a tenant (AP-0501) runs once for that tenant, fla    âˆš a user    âˆš a user with a scheduler-written morning_briefing_ready row in that tenant within 20 h is ski
+PASS test/vtidPASS test/vtid-04505-community-autopilot  scanners
+    âˆš index:    âˆš index: the weakest pillar gets a matching own-data     âˆš index:    âˆš index: nothing when every pillar is h    âˆš diary:    âˆš diary: opens the diary after 3 quiet days, never dra    âˆš messag    âˆš messages: a reply draft to the person who wrote, only after 12    âˆš every     âˆš every candidate carries a registry actio  ranker
+    âˆš caps a    âˆš caps at 3, one per ca    âˆš open r    âˆš open rows use up slots and their cate    âˆš a temp    âˆš a template rejected twice in 30 days is supp    âˆš the sa    âˆš the same target is not proposed again within 1    âˆš a neve    âˆš a never-used feature gets the novelty  runner
+    âˆš is due    âˆš is due only at local 07     âˆš rows a    âˆš rows are in the member's language with a typed action and an     âˆš writes    âˆš writes nothing unless COMMUNITY_AUTOPILOT_SCAN_ENABLED is exactly     âˆš never     âˆš never scans or targets a test/service ac    âˆš member    âˆš members outside 07/17 local are not scanned by the
+PASS test/vtid-04786-memory-embedding-backfill-loop.test.ts
+  AP-0910 back  AP-0910 backfill loop configuration    âˆš starts    âˆš starts only on the exact flag with a tenant id, in live delivery    âˆš never     âˆš never starts in shadow mode, whatever the flag says (staging shares the production dat    âˆš parses    âˆš parses a comma-separated tenan    âˆš docume    âˆš documents why the heartbeat loop could not carry it: the handler is shadow-  AP-0910 back  AP-0910 backfill tick (VTID-04786)
+    âˆš runs a tenant that has never run or ran longer than 30 min ago (3 ms)
+    âˆš skips a tenant another gateway task ran inside the in    âˆš report    âˆš reports a failed run and a governance skip sepa  AP-0910 back  AP-0910 backfill loop wiring    âˆš the ga    âˆš the gateway starts the loop a    âˆš produc    âˆš production pins the loop on for Maxina; staging doe
+PASS test/vtidPASS test/vtid-04786-memory-embedding-backfill-heartbeat.test  AP-0910 runs  AP-0910 runs from the heartbeat loop    âˆš is a h    âˆš is a heartbeat job every 30 min, deduplicated across gateway    âˆš skips     âˆš skips when another gateway task already ran it inside the in    âˆš the gu    âˆš the guard runs before the job executes, and only for opted-i    âˆš drains    âˆš drains 200 rows per store p
+PASS test/vtid-PASS test/vtid-05268-community-scan-tenant.test.ts
+  C1 runCommunityScan({ tenantId })
+    âˆš without a tenant: platform-wide primary members, as today (6 ms)
+    âˆš a member primary in A and secondary in B is scanned only in A's pass (3 ms)
+    âˆš the tenant timezone is the final default of the member clock (2 ms)
+  C1/C1b runCommunityScanForTenants
+    âˆš two tenants: each member once, totals summed, per_tenant added (2 ms)
+    âˆš no tenants: an empty tick with today's top-level fields
+  C1b /community-scan route: one event p    âˆš     âˆš flag off: one platform-wide run, payload identical to today (no per_tenant) (    âˆš     âˆš flag on: active non-platform tenants only, ONE event with summed totals + per_tenant     âˆš     âˆš flag on with user_id: the single-member operator check stays one run   C2 bac  C2 backfill loop tenant    âˆš     âˆš master off: the env list, as today (no env list â‡’ not started)    âˆš     âˆš master on, no env list: activeTenantIds() on every tick    âˆš     âˆš master on with an env list: the env list stays the pinned override    âˆš     âˆš master on never starts the writing loop in shadow mode
+Test SuiTest Suites: 6 passed, 6 total
+Tests:       158 passed, 158 total
+Snapshots:   0 total
+Time:        41.367 s
+Ran all test suites matching /test\\vtid-05268-community-scan-tenant.test.ts|test\\vtid-04505-community-autopilot-scan.test.ts|test\\vtid-04786-memory-embedding-backfill-loop.test.ts|test\\vtid-04786-memory-embedding-backfill-heartbeat.test.ts|test\\routes\\autopilot-recommendations.test.ts|test\\vtid-05270-job-tenant-loop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/mt-jobs-community-scan-tenant/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-05268-community-scan-tenant.test.ts (13.515 s)
+  C1 runCommunityScan({ tenantId })
+    âˆš without a tenant: platform-wide primary members, as today (122 ms)
+    âˆš a member primary in A and secondary in B is scanned only in A's pass (2 ms)
+    âˆš the tenant timezone is the final default of the member clock (3 ms)
+  C1/C1b runCommunityScanForTenants
+    âˆš two tenants: each member once, totals summed, per_tenant added (5 ms)
+    âˆš no tenants: an empty tick with today's top-level fields (2 ms)
+  C1b /community-scan route: one event per tick
+    âˆš flag off: one platform-wide run, payload identical to today (no per_tenant) (7924 ms)
+    âˆš flag on: active non-platform tenants only, ONE event with summed totals + per_tenant (73 ms)
+    âˆš flag on with user_id: the single-member operator check stays one run (13 ms)
+  C2 backfill loop tenant source
+    âˆš master off: the env list, as today (no env list â‡’ not started) (2 ms)
+    âˆš master on, no env list: activeTenantIds() on every tick (2 ms)
+    âˆš master on with an env list: the env list stays the pinned override (2 ms)
+    âˆš master on never starts the writing loop in shadow mode (2 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        14.906 s
+Ran all test suites matching /test\\vtid-05268-community-scan-tenant.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
