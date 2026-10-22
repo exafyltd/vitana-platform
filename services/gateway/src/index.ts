@@ -1840,9 +1840,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
       // VTID-01250: Start Heartbeat Loop for autopilot automations
       try {
-        const heartbeatEnabled = process.env.AUTOPILOT_HEARTBEAT_ENABLED === 'true';
+        // VTID-05270 (mt-jobs): the gate also opens on MT_RESOLUTION_V2=true, and
+        // the tenant list is evaluated INSIDE each tick (runHeartbeatTick), so a
+        // flag flip takes effect on the next tick. Master off ⇒ today's single
+        // DEFAULT_TENANT_ID pass.
+        const { shouldRegisterHeartbeat, runHeartbeatTick } = require('./services/jobs/job-tenant-loop');
         const heartbeatTenantId = process.env.DEFAULT_TENANT_ID;
-        if (heartbeatEnabled && heartbeatTenantId) {
+        if (shouldRegisterHeartbeat(process.env)) {
           const { runHeartbeatCycle } = require('./services/automation-executor');
           const HEARTBEAT_INTERVAL_MS = parseInt(process.env.AUTOPILOT_HEARTBEAT_INTERVAL_MS || '60000', 10);
           let heartbeatRunning = false;
@@ -1850,9 +1854,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
             if (heartbeatRunning) return; // skip if previous cycle still running
             heartbeatRunning = true;
             try {
-              const result = await runHeartbeatCycle(heartbeatTenantId);
-              if (result.executed.length > 0 || result.failed.length > 0) {
-                console.log(`[Heartbeat] executed=${result.executed.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
+              const result = await runHeartbeatTick(runHeartbeatCycle);
+              if (result.executed > 0 || result.failed > 0) {
+                console.log(`[Heartbeat] executed=${result.executed} skipped=${result.skipped} failed=${result.failed}`);
               }
             } catch (err: any) {
               console.warn('[Heartbeat] Cycle error:', err.message || err);
@@ -1860,7 +1864,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
               heartbeatRunning = false;
             }
           }, HEARTBEAT_INTERVAL_MS);
-          console.log(`💓 Autopilot heartbeat loop started (interval: ${HEARTBEAT_INTERVAL_MS}ms, tenant: ${heartbeatTenantId.slice(0, 8)}…)`);
+          console.log(`💓 Autopilot heartbeat loop started (interval: ${HEARTBEAT_INTERVAL_MS}ms, tenant: ${heartbeatTenantId ? `${heartbeatTenantId.slice(0, 8)}…` : 'active tenants (MT_RESOLUTION_V2)'})`);
         } else {
           console.log('⏸️ Autopilot heartbeat loop disabled — set AUTOPILOT_HEARTBEAT_ENABLED=true and DEFAULT_TENANT_ID to enable');
         }
