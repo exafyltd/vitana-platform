@@ -55,6 +55,19 @@ outside this one item.
 ### 2026-10-18T22:12Z · ci-plan-spar · escalated (partner unavailable)
 The sparring partner could not review (model_unavailable). Not a plan problem: Claude Code looks at the partner, then re-runs.
 
+### 2026-10-22T13:00Z · kiro-exafy-202610221300-0bb2 · approved (automation driver resume; no actionable item)
+Automation wake-up (seat `exafy`, item W). Took over the stale driver (previous heartbeat ~58 min old,
+`kiro-exafy-202610221200-f6f4`) and wrote a fresh heartbeat on `refs/heads/collab-driver/sparring-floor-retry`; hold
+the `_plan` claim. `plan-driver.mjs next` returns only `build floor-retry-code`, but that lane is `executor: claude`
+and a governance path (`scripts/collab/plan-spar.mjs` is a protected gate file, plus `services/gateway/.../plan-sparring/**`).
+Per `.kiro/automations/exafy.md` (W step 3) and `.kiro/pipeline/driver.md` (Automation-started driver), an
+automation-started driver never builds a governance or `executor: claude` lane and never merges — it carries lanes to
+`verified` and leaves build/merge to Claude Code (or the exceptions seat `exafyltd`) and the Project Manager. No open
+lane PR, no sparring round open, nothing `in-review`, nothing to merge. So there is no action for this driver.
+`CLAUDE_AVAILABLE` is unreadable here (HTTP 403, a token-permission limit = no override per §7). Lane stays `ready`,
+waiting on Claude Code / the exceptions seat to build `floor-retry-code` (VTID-05240). No build, no merge, no VTID, no
+live write. Heartbeat is live for the next wake-up to resume.
+
 ### 2026-10-19T17:30Z · kiro-exafy-202610181845-661d · drafted (re-spar after the daily-limit outage)
 Session 798679a9 escalated `model_unavailable` (Opus and Sonnet both hit the daily limit). That is an infra outage
 and is retryable. Pushing again now that the DeepSeek last-resort tier (#4192) is live on staging and production
