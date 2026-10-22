@@ -1,6 +1,6 @@
 ---
 lane: runner
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,7 +15,9 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:14Z
+updated: 2026-10-22T11:40Z
+claimed_by: kiro-exafyltd-202610220818-5273
+branch: kiro/staging-verify-runner-fix/runner
 vtid: VTID-05334
 ---
 # STAGING-VERIFY runner: pinned image and allowlisted suite env (vitana-platform)
@@ -30,3 +32,9 @@ Lane drafted with the plan. Next: PLAN-SPAR; once CI writes the VTID, seat `exaf
 
 ### 2026-10-22T11:14Z · ci-plan-spar · ready (VTID allocated)
 VTID-05334 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-22T11:40Z · kiro-exafyltd-202610220818-5273 · ready → executing
+Claimed. Test first (`5a232d889`: lib.test.cjs 61 pass / 1 fail on main + test), then the fix: `verify` pinned to
+`ubuntu-24.04` (`report` unchanged, R1-F3), allowlisted `env` (`APP_PROFILE` = development|test-g1) for `existing`
+suites in `lib.cjs`, passed by `runExisting`. lib.test.cjs 62/62, workflow.test.cjs 7/7 (local, R2-F2).
+Evidence `docs/validation/VTID-05334/`. Next: reviewer agent on the PR head, then §7b land; then lane `manifests`.

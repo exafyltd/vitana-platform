@@ -6,6 +6,7 @@
     "scripts/ci/staging-verify/lib.cjs",
     "scripts/ci/staging-verify/lib.test.cjs",
     "scripts/ci/staging-verify/run.mjs",
+    ".kiro/specs/staging-verify-runner-fix/lanes/runner.md",
     "docs/validation/VTID-05334/**"
   ],
   "sparring_record": "docs/validation/VTID-05334/plan-sparring.md",
