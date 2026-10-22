@@ -44,6 +44,8 @@ tests that compare bulk vs the existing per-member resolver.
       English composer instruction (featureTip pattern); pass
       `ENRICHMENT_CARD_TIPS[Ex].title.en`/`.description.en` as `facts`
       (`card_title`/`card_description`), never as the `intent` string (R3-F2).
+      Set `repeatAfterDays` per the §2 table — 4 for E1/E2/E4/E5/E11, 7 for
+      E3/E6/E7/E8/E9/E10 (R2-F2), and the exact priorities 29–39 from the table.
 - [ ] 8. Do NOT add/alter F1/F2/F3/F7/F8 or the Index/diary moments.
 - [ ] 8a. Update `test/vtid-05101-companion-generators.test.ts` in the same PR
       (R1-F1): extend the `rich` fixture with `eligibleEnrichmentCardTypes` (all
@@ -55,8 +57,10 @@ tests that compare bulk vs the existing per-member resolver.
       of completion**; **community-off member gets none of E3/E6/E7**; **a
       freshly-lapsed-diary member gets diary_nudge, not an enrichment card**; a
       no-profile-row member is eligible for E1/E2/E4/E5/E11 (false-init,
-      R1-F3); enrichment never outranks Index/journey/diary; priority-pin test
-      asserts absolute values (21–39); a test pins `COMPANION_MOMENTS` unchanged
+      R1-F3); **an ignored (not completed, not dismissed) E1 yesterday is not
+      re-offered today (repeatAfterDays, R2-F2)**; enrichment never outranks
+      Index/journey/diary; priority-pin test asserts absolute values (29–39); a
+      test pins `COMPANION_MOMENTS` unchanged
       except the new E-moments.
 
 **Acceptance:** a member missing a setup step is offered exactly that enrichment

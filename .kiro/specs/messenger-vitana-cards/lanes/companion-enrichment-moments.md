@@ -45,6 +45,10 @@ Contracts:
 - R1-F4 (s2): enrichment priority band is **21–39** (below `diary_nudge` min 40),
   E1=39 → E11=21. Priority-pin test asserts absolute values incl. a lapsed-diary
   case where `diary_nudge` wins.
+- R2-F2 (s2): set `repeatAfterDays` per the §2 table — 4 for E1/E2/E4/E5/E11,
+  7 for E3/E6/E7/E8/E9/E10. Test: ignored E1 yesterday → not re-offered today.
+- R2-F3 (s2): the companion call site passes `unavailableEnrichmentCards()`
+  explicitly; test asserts no E6/E7 with Meta env unset.
 
 ### 2026-10-22T08:20Z · kiro-exafyltd-202610220802-4a74 · ready
 Rescoped in sparring round-1 rewrite (R1-F1): F1/F7/F8 removed (already

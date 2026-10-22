@@ -6,7 +6,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
-updated: 2026-10-22T12:40Z
+updated: 2026-10-22T13:10Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -96,3 +96,16 @@ Session 2 round 1: 1 blocker + 2 majors + 2 minors — all verified and ACCEPTED
 - R1-F4 (minor): diary_nudge is 40–50; enrichment band corrected to 21–39.
 - R1-F5 (minor): VTID attribution (CI allocates).
 Next: push to start session-2 round 2.
+
+### 2026-10-22T13:10Z · kiro-exafyltd-202610220802-4a74 · drafted (session-2 round 2 answered)
+Session 2 round 2: 1 blocker + 1 major + 1 minor — all verified and ACCEPTED
+(s2-responses-2.md):
+- R2-F1 (blocker): §2 said 21–39 but §3 still said 20–49 (undid R1-F4). Now
+  21–39 everywhere; §2 table lists explicit priorities 29–39.
+- R2-F2 (major): no repeatAfterDays → a card fires daily. Set 4 for
+  E1/E2/E4/E5/E11, 7 for E3/E6/E7/E8/E9/E10; added a no-re-offer test.
+- R2-F3 (minor): the 5th arg is not TS-enforced; the companion call site passes
+  `unavailableEnrichmentCards()` explicitly with a test proving no E6/E7 when
+  Meta env is unset.
+Plan §2 table now carries topic + repeatAfterDays + priority per card. Next:
+push to start session-2 round 3 (final round of this session).

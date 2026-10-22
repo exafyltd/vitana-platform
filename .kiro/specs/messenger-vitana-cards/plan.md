@@ -71,19 +71,31 @@ offered — otherwise a member would get a "Connect Instagram/Facebook" DM whose
 card taps into a 400 "not configured". E6/E7 return on their own once the
 credentials are provisioned, no code change.
 
-| Card | `topic` | Offered only if… (via `eligibleEnrichmentCards`) |
-|---|---|---|
-| E1 Upload profile photo | `null` | no avatar |
-| E2 Add bio | `null` | bio ≤ 50 chars |
-| E3 Make first post | `community` | no post |
-| E4 Add interests | `null` | none |
-| E5 Set location | `null` | none |
-| E6 Connect Instagram | `community` | not connected AND Instagram OAuth client configured (else hidden by `unavailableEnrichmentCards()`) |
-| E7 Connect Facebook | `community` | not connected AND Facebook OAuth client configured (else hidden) |
-| E8 Connect calendar | `null` | no calendar connected |
-| E9 Import contacts | `null` | none |
-| E10 Enable notifications | `null` | no active device token |
-| E11 Add cover image | `null` | none |
+**Enforcement (R2-F3).** TypeScript will NOT catch an omitted 5th arg — its
+signature defaults `unavailable = new Set()`, so a call missing it compiles and
+silently surfaces E6/E7. Since the only two callers are the enrichment-cards
+route and this new companion tick, the signals lane passes `unavailable`
+explicitly at the single companion call site, and the lane adds a unit test
+that asserts: with `INSTAGRAM_CLIENT_ID`/`FACEBOOK_CLIENT_ID` unset, the
+companion tick offers no E6/E7 for a member who is incomplete on both — proving
+the argument is wired, not relying on the doc word "mandatory".
+
+| Card | `topic` | `repeatAfterDays` | priority | Offered only if… (via `eligibleEnrichmentCards`) |
+|---|---|---|---|---|
+| E1 Upload profile photo | `null` | 4 | 39 | no avatar |
+| E2 Add bio | `null` | 4 | 38 | bio ≤ 50 chars |
+| E3 Make first post | `community` | 7 | 37 | no post |
+| E4 Add interests | `null` | 4 | 36 | none |
+| E5 Set location | `null` | 4 | 35 | none |
+| E6 Connect Instagram | `community` | 7 | 34 | not connected AND Instagram OAuth client configured (else hidden by `unavailableEnrichmentCards()`) |
+| E7 Connect Facebook | `community` | 7 | 33 | not connected AND Facebook OAuth client configured (else hidden) |
+| E8 Connect calendar | `null` | 7 | 32 | no calendar connected |
+| E9 Import contacts | `null` | 7 | 31 | none |
+| E10 Enable notifications | `null` | 7 | 30 | no active device token |
+| E11 Add cover image | `null` | 4 | 29 | none |
+
+(Priorities 29–39 sit in the 21–39 band, all strictly below `diary_nudge` 40;
+`repeatAfterDays` 4 for profile cards, 7 for connector/social cards — R2-F2.)
 
 **Topic (R1-F2).** `pickMoment` drops any candidate whose `topic` is a toggle
 the member turned off. Setup/profile cards that are not community content
@@ -208,10 +220,21 @@ Genuinely new (the real work):
    on the OPPOSITE scale from `pickMoment` priorities (higher wins: greeting 10,
    invite 15, tip 20, Index 50–70). It MUST NOT be used as
    `MomentCandidate.priority`. Each of the 11 moments assigns an explicit
-   companion-scale priority in **the 20–49 range** (above `featureTip` 20, below
-   `vitanaIndex` 50), preserving the catalog order among themselves (E1 highest
-   → E11 lowest within that band). The priority-pin test asserts **absolute**
-   values, not relative ordering, so a wrong-scale value is caught.
+   companion-scale priority in **the 21–39 range** (strictly above `featureTip`
+   20 — not a tie — and strictly below `diary_nudge`'s floor of 40), E1=39 →
+   E11=21 (catalog order preserved). The priority-pin test asserts **absolute**
+   values from this range, not relative ordering. (This matches §2; the earlier
+   "20–49" was the pre-R1-F4 band and is superseded — R2-F1.)
+
+4. **repeatAfterDays per moment (R2-F2, mandatory).** `repeatAfterDays` defaults
+   to nothing meaningful; an incomplete card with no repeat window fires EVERY
+   day until done/dismissed (the 7-day cooldown only starts on an explicit
+   dismiss, not on an ignored DM). Every shipped moment has a non-zero window
+   (index 3, journey 2, diary 4, tip 5, invite 14). Owner decision for the
+   enrichment moments: **profile/setup cards E1, E2, E4, E5, E11 →
+   `repeatAfterDays: 4`; connector/social cards E3, E6, E7, E8, E9, E10 →
+   `repeatAfterDays: 7`.** Added as a column to the §2 table. Test: a member who
+   got but ignored E1 yesterday does not get E1 again today.
 
 ## 4. Lanes
 
