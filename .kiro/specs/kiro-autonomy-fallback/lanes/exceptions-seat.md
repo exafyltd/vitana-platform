@@ -1,10 +1,10 @@
 ---
 lane: exceptions-seat
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -18,11 +18,11 @@ paths:
   - docs/programs/areas.yaml
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/exceptions-seat
 pr: https://github.com/exafyltd/vitana-platform/pull/4228
-updated: 2026-10-20T18:36Z
+updated: 2026-10-22T18:25Z
 vtid: VTID-05271
+parked_from: executing
 ---
 # exceptions-seat — Claude Routine jobs to seat exafyltd, automations as driver wake-ups, Kiro Web driver
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §3 and §5 E, and the `exceptions-seat` section of `tasks.md` are
@@ -79,3 +79,5 @@ Delta since dba622a (driver.md generalised for kiro-steering guard) verified; un
 Lane scope = known non-required false positive; allowlist, Routine duties, driver wake-ups and no-VTID/no-merge constraints hold.
 Non-blocking: validate, validate-pr and naming checks were still running at review time.
 Entry committed by the land step on the reviewer agent's behalf. Next: land (merge under owner instruction §7b).
+### 2026-10-22T18:25Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
