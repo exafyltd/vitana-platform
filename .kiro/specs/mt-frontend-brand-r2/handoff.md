@@ -3,11 +3,12 @@ slug: mt-frontend-brand-r2
 author: kiro
 author_seat: hotmail
 executor: kiro
-next_actor: kiro
-state: drafted
+next_actor: claude
+state: parked
 spar_refs:
   - exafyltd/vitana-v1: 96becaed99bdb91d0a999a4f516a3f68cd6d4bc3
-updated: 2026-10-22T11:20Z
+updated: 2026-10-22T13:34Z
+parked_from: drafted
 ---
 # Handoff — mt-frontend-brand-r2 (Amendment 1 of mt-frontend-brand: brand-surface paths and theme-tokens approach)
 
@@ -32,3 +33,6 @@ converged plan (`plan-spar.mjs:348`) and lane `paths` are frozen for Kiro (`queu
 read-only against vitana-platform `origin/main`, vitana-v1 `origin/main` @ `e9258f980` and `vitana-v1#1485` @
 `14cdc2adf`. Protected gate files touched: none. No VTID allocated, no code changed, no live system touched. Next:
 PLAN-SPAR spars this PR; on convergence CI allocates the two lane VTIDs.
+
+### 2026-10-22T13:34Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
