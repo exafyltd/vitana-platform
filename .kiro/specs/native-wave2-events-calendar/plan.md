@@ -77,10 +77,22 @@ files and parity-row status flips.
    `scripts/native/mobile-ci-paths.generated.json` are **shared-by-line** across the three lanes: each extracting lane
    adds its own manifest lines and, **in the same PR**, runs `node scripts/native/core-closure.mjs --write` and
    commits the regenerated `packages/core/closure.generated.json` + `scripts/native/mobile-ci-paths.generated.json`, so
-   `--check` passes. A merge conflict in those three files is resolved by keeping **both** lanes' entries.
-4. **No hard cross-lane dependency.** The three lanes own disjoint `apps/mobile/` subtrees and disjoint core entry
-   files, so all three run in parallel (`depends_on: []`). If a later finding shows a shared native card twin is
-   needed across lanes, the owning lane is named and a `depends_on` added — not assumed now.
+   `--check` passes. **These two generated files are produced wholesale by `core-closure.mjs`, not appended by hand**,
+   so when a second lane lands on main after the first, its PR does **not** text-merge them: it rebases on the updated
+   main, re-runs `node scripts/native/core-closure.mjs --write`, and commits the freshly regenerated output (which now
+   contains both lanes' closures). `packages/core/manifest.json` entries are append-only and a conflict there is
+   resolved by keeping **both** lanes' lines; the two `*.generated.json` files are always resolved by re-running
+   `--write` on the merged tree, never by a hand-merge. The serialized fallback in Decision 4 applies if the
+   regenerate-on-rebase step cannot keep the three lanes conflict-free in practice.
+4. **No hard cross-lane dependency, with a serialized fallback.** The three lanes own disjoint `apps/mobile/`
+   subtrees and disjoint core entry files, so all three run in parallel (`depends_on: []`). The only files all three
+   touch are the two wholesale-regenerated `*.generated.json` closure files and append-only `manifest.json`, handled
+   by the regenerate-on-rebase rule in Decision 3. **Fallback (decided at lane-build if that rule does not keep the
+   three conflict-free):** the two non-`events-meetups` lanes take `depends_on: [events-meetups]` so the core
+   entries land serialized — `events-meetups` first, then `calendar-reminders` and `live-rooms` rebase on its merged
+   closure. That `depends_on` edit is a change to the `lanes/<id>.md` files, which a `_plan` commit may not make, so
+   it is not applied here; it is recorded as the named fallback for the lane-build step. If a later finding shows a
+   shared native card twin is needed across lanes, the owning lane is named and a `depends_on` added — not assumed now.
 5. **No new routes / registry / manifest.** Ports of screens already in `App.tsx` + `screens.json`; a native Expo
    Router file is not an `App.tsx` route, so the "new page needs screens.json/exclusions.json + screen-manifest +
    parity rows" rule does not fire — only parity-row **status** flips (`not_started`→`in_progress`→`native`). The 6
