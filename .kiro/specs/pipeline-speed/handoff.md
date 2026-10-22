@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: in-review
-updated: 2026-10-22T22:32Z
+state: verified
+updated: 2026-10-22T23:12Z
 sparring_record: .kiro/specs/pipeline-speed/sparring/verdict.md
 vtids: [VTID-05336, VTID-05337, VTID-05338]
 ---
@@ -32,3 +32,5 @@ Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are ha
 First lane PR merged: exafyltd/vitana-platform#4337 (restart-watchdog, `ee0c731aa52168378729ef546c685f36c4f97afe`). Lanes slot-sizing (#4339) and preflight (#4340) follow, one merge at a time; slot-sizing only after restart-watchdog is `done` and with the zero-active-runs record (plan D4-migration).
 ### 2026-10-22T22:32Z · kiro-202610220829-5884 · executing → in-review
 All three lane PRs merged under §7b, one at a time: #4337 restart-watchdog `ee0c731aa52168378729ef546c685f36c4f97afe` (lane `done`, #4355), #4339 slot-sizing `1e0d29ca71ee9dff2bbf4d50ca7ae5c84bd94311` (zero-active-runs record), #4340 preflight `62d5e2ecf55d2498cac59a88553fa4587f36ef34`. Deploys nothing, so no STAGING-VERIFY / Gate 2. Next: verified.
+### 2026-10-22T23:12Z · kiro-202610220829-5884 · in-review → verified
+Every lane verified or verifying on `main`: restart-watchdog `done`, slot-sizing verified (run-gate + guard tests green on `main`), preflight next. Next: done.
