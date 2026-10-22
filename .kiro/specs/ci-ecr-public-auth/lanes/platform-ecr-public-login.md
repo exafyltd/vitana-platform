@@ -1,7 +1,7 @@
 ---
 lane: platform-ecr-public-login
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafyltd
@@ -15,7 +15,8 @@ paths:
   - scripts/aws/iam/ci-ecr-public-pull-policy.json
   - scripts/aws/iam/ci-ecr-public-pull-iam-check.sh
   - docs/validation/**
-updated: 2026-10-22T08:00Z
+updated: 2026-10-22T08:07Z
+vtid: VTID-05328
 ---
 # platform-ecr-public-login — authenticated public.ecr.aws pulls in platform deploy builds (repo vitana-platform)
 Plan: `.kiro/specs/ci-ecr-public-auth/plan.md` and the `platform-ecr-public-login` section of `tasks.md`
@@ -33,3 +34,6 @@ policy is a file plus a read-only check script; the owner or an IAM admin applie
 Created and held. Premise: four platform deploy jobs (plus the kiro-runner CI build job) build
 `public.ecr.aws` Dockerfiles with anonymous pulls. Gateway staging run 39421081117 failed with 429 on
 `node:20-alpine` (2026-10-20).
+
+### 2026-10-22T08:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05328 allocated after policy approval (converged-auto-v1).

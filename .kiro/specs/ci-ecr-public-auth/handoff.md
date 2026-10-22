@@ -4,8 +4,10 @@ author: kiro
 author_seat: hotmail
 executor: claude
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T08:00Z
+state: approved
+updated: 2026-10-22T08:07Z
+sparring_record: .kiro/specs/ci-ecr-public-auth/sparring/verdict.md
+vtids: [VTID-05328, VTID-05329]
 ---
 # Handoff — ci-ecr-public-auth
 Planner: Kiro seat `hotmail` (session kiro-hotmail-202610220740-e0de). Plan: `plan.md` (between the plan
@@ -35,3 +37,6 @@ the workflow lanes can merge before the IAM change is applied.
 `put-role-policy` commands it prints. That is a live IAM write. No Kiro or CI session does it (§7a).
 Protected gate files in scope: `.github/workflows/AWS-PROD-*.yml` in both repos (§3a). Those hunks need a legacy
 Claude review or the owner's instruction before merge.
+
+### 2026-10-22T08:07Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

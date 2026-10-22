@@ -1,7 +1,7 @@
 ---
 lane: v1-ecr-public-login
 state: ready
-next_actor: claude
+next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafyltd
@@ -11,7 +11,8 @@ paths:
   - .github/workflows/AWS-PROD-DEPLOY-FRONTEND.yml
   - src/lib/deploy-workflow.ecr-public-auth.test.ts
   - docs/validation/**
-updated: 2026-10-22T08:00Z
+updated: 2026-10-22T08:07Z
+vtid: VTID-05329
 ---
 # v1-ecr-public-login — authenticated public.ecr.aws pulls in the frontend deploy builds (repo vitana-v1)
 Plan: `.kiro/specs/ci-ecr-public-auth/plan.md` (in vitana-platform) and the `v1-ecr-public-login` section of
@@ -28,3 +29,6 @@ falls back to anonymous pulls with a warning. Branch `<claude|kiro>/ci-ecr-publi
 ### 2026-10-22T08:00Z · kiro-hotmail-202610220740-e0de · created → ready
 Created and held. Premise: both frontend deploy jobs build the root `Dockerfile` (`public.ecr.aws` node + nginx)
 with anonymous pulls. Run 39681916225 hit 429 twice.
+
+### 2026-10-22T08:07Z · ci-plan-spar · ready (VTID allocated)
+VTID-05329 allocated after policy approval (converged-auto-v1).
