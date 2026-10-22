@@ -20,7 +20,7 @@ paths:
   - docs/validation/VTID-*/**
 branch: kiro/kiro-autonomy-fallback/exceptions-seat
 pr: https://github.com/exafyltd/vitana-platform/pull/4228
-updated: 2026-10-22T18:25Z
+updated: 2026-10-22T18:29Z
 vtid: VTID-05271
 parked_from: executing
 ---
@@ -80,4 +80,6 @@ Lane scope = known non-required false positive; allowlist, Routine duties, drive
 Non-blocking: validate, validate-pr and naming checks were still running at review time.
 Entry committed by the land step on the reviewer agent's behalf. Next: land (merge under owner instruction §7b).
 ### 2026-10-22T18:25Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T18:29Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
