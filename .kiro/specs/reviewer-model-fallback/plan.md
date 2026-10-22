@@ -75,6 +75,15 @@ it with tests and gives it the coverage rule 47 requires.
   current head; agent accepts are not evaluated for it and there is no owner-instruction path in the PM. If a code
   amendment to governance.ts ever becomes necessary, it goes in its own separate PR that states it needs a legacy
   `claude` review (in practice a seat-`claude` approve or an owner admin merge) — never through the automated PM merge.
+- Keeping governance.ts in the lane `paths` (ownership traceability: the coverage entry and the lane must name the
+  file whose change rule 47 counts) has a merge consequence: `governanceMergeAllowed` checks
+  `pr?.files ?? lane.paths` (`governance.ts:175-185`, called from `decide.ts:184`). The live observer supplies
+  `pr.files` from `pulls/<n>/files` for an active lane PR (`observe-live.ts:384-405`, `:683`), so normally the
+  docs-only PR is judged on its real files and merges on the reviewer-agent accept. If `pr.files` is absent
+  (`types.ts:106-107`: absent = unknown, lane paths are checked), the PR falls into the protected-gate fork and is
+  **not** guaranteed to merge on the agent accept: it then needs a legacy `claude` approve (seat-`claude` or an owner
+  admin merge) on the current head. The plan accepts that: the driver does not route around it; a lane stuck on
+  `protected_gate_file` is parked with the five-part stop message for the owner.
 
 ## Out of scope
 
