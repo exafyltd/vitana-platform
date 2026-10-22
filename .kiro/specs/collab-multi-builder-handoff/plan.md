@@ -38,7 +38,14 @@ Each premise above is checkable by reading these files at the pinned ref:
 
 ## Change (lane `sequential-builders`, `scripts/collab/queue.mjs` only)
 Replace the single-session rule in `validateRange` with this one. A lane's **builder sessions** are the sessions of
-the commits in range whose `Collab-Lane` is the lane, excluding `pm-agent` and `ci-plan-spar` (as today).
+the commits in range whose `Collab-Lane` is the lane, excluding `pm-agent` (as today, `:570`) and `ci-plan-spar` (**newly excluded**: the guard becomes `k.session !== PM_AGENT && k.session !== CI_PLAN_SPAR`, with a VTID comment as at `:569`; today `ci-plan-spar` only stays out because it always carries `<slug>/_plan`).
+
+**Commit order (sparring R1-F1/R2-F1, R1-F2/R2-F2).** `commitsInRange` (`:490`, also used by `scopeCheck`, `:628`) is not
+changed. A new helper `builderOrder(repo, base, head)` runs `git rev-list --topo-order --reverse --no-merges <base>..<head>`
+(one process) and returns the shas oldest-first. The multi-session branch of `validateRange` takes the existing `commits`
+array, keeps the lane's builder commits, and orders them by their index in `builderOrder` (match on `.sha`). No
+committer dates are used: topological contiguity is the overlap test, and the claim ref (one holder) prevents real-time
+overlap.
 1. **One session:** unchanged — pass, and `claimed_by` (if set) must equal it.
 2. **Two or more sessions** pass only when ALL hold; each failing rule is its own error message:
    a. **Same declared seat.** The lane declares `seat` (read from the merge-base revision of the lane file when it exists
@@ -48,11 +55,13 @@ the commits in range whose `Collab-Lane` is the lane, excluding `pm-agent` and `
    b. **No reviewer as builder.** No builder session equals `reviewer_seat`'s seat, is a reviewer-agent id, or has
       written a review entry on this lane (a `Collab-Review: <lane>` commit in range, or a review entry header
       `### … · <session> · review…` in the lane file at head).
-   c. **No overlap.** In commit order (`--topo-order --reverse`), each session's commits form one contiguous run
-      (A A B B passes; A B A fails), and each run starts no earlier (committer date) than the previous run ends.
-   d. **Every takeover logged.** Every builder session is named in the lane log at head — as an entry author
-      (`### <time> · <session> · …`) or in an entry's text written by a later session of the same seat.
-   e. **Current holder.** `claimed_by` (if set) equals the **last** builder session.
+   c. **No overlap.** In `builderOrder`, each session's builder commits form one contiguous run (A A B B passes;
+      A B A fails).
+   d. **Every takeover logged.** Every builder session's id appears in the lane file's `## Log` section at head (not the
+      front matter, so `claimed_by` never counts): as an entry author (`### <time> · <session> · …`) or named in an
+      entry, e.g. a takeover entry listing the sessions it continues. One string search per session; no authorship of
+      body text is inferred (sparring R1-F3/R2-F3). Who may write the lane file is unchanged (`scopeCheck` seat rule).
+   e. **Current holder.** `claimed_by` (if set) equals the **last** builder session in `builderOrder`.
 3. Unchanged: the claim mechanism (one holder at a time, release or the 24 h `--stale` rule), `scopeCheck` (paths,
    governance, protected files, seat of lane-file commits, base-revision `PERM`), the reviewer rules and `Collab-Verdict`
    requirements, trailers on every commit, branch naming, and every test and CI gate. No path, permission or
@@ -68,7 +77,7 @@ Each new case is written first and recorded failing on `origin/main` where today
 5. Sequential same-seat builders where one commit changes a file outside the lane's `paths` → `scopeCheck` fails.
 6. A single-builder lane → pass (unchanged), incl. the `claimed_by` check.
 Plus: B not named in the lane log → fail (takeover not logged); `claimed_by` = A after B took over → fail.
-Run: `node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/plan-driver.test.mjs`.
+Run: `node --test scripts/collab/*.test.mjs` (the glob CI runs, `.github/workflows/PR-GATE.yml:133`).
 Change suite `docs/validation/<VTID>/staging-tests.json`: one `existing` entry running those suites (CI script only;
 nothing on staging changes).
 
