@@ -20,6 +20,7 @@ paths:
   - packages/core/manifest.json
   - packages/core/closure.generated.json
   - packages/core/src/**
+  - packages/core/extract.json
   - scripts/native/mobile-ci-paths.generated.json
   - apps/mobile/parity/ledger.json
   - src/i18n/*/sharingNative.json
