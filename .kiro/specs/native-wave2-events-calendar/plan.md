@@ -4,6 +4,20 @@ via the manifest/closure process, `apps/mobile/parity/ledger.json`, DE-first i18
 backend, no gateway change, no migration). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this
 folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5 Wave 2.
 <!-- plan:begin -->
+## Cross-repo sparring
+This plan's implementation lives in `exafyltd/vitana-v1` (native app `apps/mobile/**`, `packages/core/**`, the parity
+ledger, i18n shards), while the plan PR itself is in `exafyltd/vitana-platform`. Every load-bearing premise the
+sparring partner must verify — the 22-row parity-ledger partition for `"lane": "events-calendar"`, the class-A/class-B
+closures, `lib/vcal/time.ts` and `liveRoom.ts`, the ERROR-level i18n locale rule and the `src/App.tsx` routes — is a
+vitana-v1 file, read through the `spar_refs` (`exafyltd/vitana-v1: main`) declared in `handoff.md`.
+
+## Sparring status
+Rounds 1–2 ran blind: `spar_refs` is applied only at `client.create`, never at `client.round`
+(`scripts/collab/plan-spar.mjs:333`), so the in-progress round-1 session never acquired vitana-v1 read access
+(`responses-2.md`, findings R1-F1 / R1-F4). The spec folder (including `handoff.md` with the `spar_refs` block) is on
+this PR HEAD branch, not the pinned base commit — PLAN-SPAR reads it from the plan tree. A fresh session is required
+so the partner can verify the frontend premises; this plan-text change sets up the `replan` path (a changed plan on an
+escalated, non-infra session creates a new session with `spar_refs` applied).
 ## Goal
 Second Wave 2 screen-port batch of the native Maxina app: port the events / meetups / calendar / reminders /
 live-rooms cluster — the **22 web destinations the parity ledger assigns to `"lane": "events-calendar"`** — to the
