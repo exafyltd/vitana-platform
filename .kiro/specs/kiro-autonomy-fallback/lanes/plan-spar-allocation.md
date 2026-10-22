@@ -13,7 +13,7 @@ paths:
   - scripts/collab/plan-spar.mjs
   - scripts/collab/plan-spar.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T18:17Z
+updated: 2026-10-22T18:21Z
 vtid: VTID-05273
 branch: kiro/kiro-autonomy-fallback/plan-spar-allocation
 pr: https://github.com/exafyltd/vitana-platform/pull/4227
@@ -63,4 +63,6 @@ Next: re-review by agent:vitana-lane-reviewer (claude-sonnet-5.5).
 Reviewed head 62a84eeb1426093d1a7a67fb1186406b1d5a2c2a. Verdict: accept. Prior blocker fixed (validate-pr green). Late-lane retry, per-lane idempotence, single sparring binding on the first lane, next_actor kiro with reason, untouched partner chain/rounds and no hand allocation all verified; 9 new tests red->green. Non-blocking: PR-GATE wiring of plan-spar.test.mjs is owned by lane scope-check.
 PR: https://github.com/exafyltd/vitana-platform/pull/4227
 ### 2026-10-22T18:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T18:21Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
