@@ -1,6 +1,6 @@
 ---
 lane: plan-spar-checks
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -11,8 +11,9 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - scripts/ci/plan-spar-slot/slot.test.mjs
   - docs/validation/**
-updated: 2026-10-21T12:26Z
+updated: 2026-10-22T20:13Z
 vtid: VTID-05306
+parked_from: ready
 ---
 # Lane: plan-spar-checks
 
@@ -69,3 +70,5 @@ change needing a staging deploy, so it is **deferred to a separate gateway lane*
 
 ### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05306 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T20:13Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
