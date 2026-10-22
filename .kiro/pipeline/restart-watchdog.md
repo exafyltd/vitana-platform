@@ -22,10 +22,16 @@ surfaces such runs at the next session start and on every prompt of the session 
 ## What the agent does with the report
 - **Own run** (`parentSessionId` = this session): call `inspect_workflow <id>`, then `update_workflow` with
   `update_status running`.
-- **Another session's run:** open that session (the engine resumes a run parked on its parent's authority when the
-  parent loads) or press Resume in the workflow panel. A session never resumes a run it does not own.
-- **Paused by the user** (`stopInitiator: "user"`): listed as "paused by user — not resumed"; it stays paused.
-- **Running, stale heartbeat:** the engine instance that drove it is gone; inspect it from its owning session.
+- **Another session's run:** open that session or press Resume in the workflow panel. The engine's startup sweep
+  auto-resumes only a run whose parked steps are all watch steps (engine log event
+  `workflow.sweep.auto_resuming_watch_parked_run`); any other paused run waits for its owner. A session never resumes
+  a run it does not own.
+- **Paused by the user** (`stopInitiator: "user"`): listed as "paused by user — not resumed"; it stays paused (the
+  sweep skips it too: `workflow.sweep.user_park_not_auto_resumed`).
+- **Running, stale heartbeat:** no `run.beat` for 10 minutes, so probably no engine instance is driving it any more.
+  The engine itself treats a beat as stale after 4.5 beat intervals (`staleAfterMs`) and its sweep then turns the run
+  into `paused` (`workflow.sweep.reconciling_stale_run`); until that sweep runs, inspect the run from its owning
+  session (`inspect_workflow <id>`) before resuming it.
 
 ## Authority and limits
 - The engine's own state is the authority; the watchdog only reads it. It writes no file, makes no network call and
