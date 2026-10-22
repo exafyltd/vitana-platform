@@ -20,6 +20,7 @@ specs:
   - vitana-platform:claude-md-cleanup
   - vitana-platform:messenger-ux-v2
   - vitana-platform:ci-github-modernization
+  - vitana-platform:ci-ecr-public-auth
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -46,3 +47,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
 - `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
+- `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
