@@ -24,6 +24,7 @@ specs:
   - vitana-platform:matches-scroll-end
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:reviewer-model-fallback
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -54,3 +55,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
 - `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
+- `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
