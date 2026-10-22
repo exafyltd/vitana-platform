@@ -22,6 +22,7 @@ specs:
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
   - vitana-platform:matches-scroll-end
+  - vitana-platform:pipeline-speed
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -50,3 +51,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
+- `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
