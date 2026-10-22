@@ -18,7 +18,7 @@ paths:
   - DATABASE_SCHEMA.md
   - services/gateway/test/vtid-*-chat-send-reliability.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T07:25Z
+updated: 2026-10-22T07:29Z
 vtid: VTID-05310
 ---
 # api-send-reliability
@@ -399,4 +399,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T07:21Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T07:25Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-22T07:29Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
