@@ -192,9 +192,10 @@ sub-split would not keep file subtrees disjoint.
 
 - Rows: `MEMORY.DAILY_DIARY` (`/daily-diary`), `MEMORY.DIARY`
   (`/daily-diary?tab=health`), `MEMORY.DIARY_BUGS` (`/daily-diary?tab=bugs`).
-- Native route file (new): `apps/mobile/app/(app)/daily-diary.tsx` → `/daily-diary`,
-  reading the `tab` query param (health|bugs) to pick the mode. (Single route;
-  all 3 rows flip together.)
+- Native route file (new): `apps/mobile/app/(app)/daily-diary/index.tsx` →
+  `/daily-diary` (under the `app/(app)/daily-diary/**` subtree), reading the
+  `tab` query param (health|bugs) to pick the mode. (Single route; all 3 rows
+  flip together.)
 - Native screen subtree (new): `apps/mobile/src/screens/diary/**`
   (DailyDiaryScreen + UnifiedCapture, TextDiaryEditor, PhotoDiaryUploader,
   DiaryEntryList, FeedbackReportList re-implemented class-B).
@@ -207,12 +208,13 @@ sub-split would not keep file subtrees disjoint.
 
 **Partition check:** 4 (memory) + 3 (diary) = 7 = every selected row, each in
 exactly one lane. Native route subtrees (`app/(app)/memory/**` vs
-`app/(app)/daily-diary.tsx`) and screen subtrees (`src/screens/memory/**` vs
+`app/(app)/daily-diary/**`) and screen subtrees (`src/screens/memory/**` vs
 `src/screens/diary/**`) are disjoint. **0 overlap, 0 orphan — confirmed.**
 
-> Note: the native `/daily-diary` route is `app/(app)/daily-diary.tsx` (one
-> segment), outside the `memory/` folder, so even though both clusters share the
-> ledger prefix mapping, their native file trees do not collide.
+> Note: the native `/daily-diary` route is `app/(app)/daily-diary/index.tsx`
+> (under the `app/(app)/daily-diary/**` subtree), outside the `memory/` folder,
+> so even though both clusters share the ledger prefix mapping, their native file
+> trees do not collide.
 
 ---
 

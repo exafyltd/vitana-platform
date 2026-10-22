@@ -72,8 +72,8 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ### 2026-10-21T19:13Z · kiro-planner · created → ready
 Lane drafted with the plan (`state: drafted` in `handoff.md`). The 3 rows and the paths were computed from the
 vitana-v1 origin/main parity ledger and `src/App.tsx` so no file belongs to two lanes. The 3 rows are one web page
-with a `tab` param → one native route (`app/(app)/daily-diary.tsx` under the `daily-diary/**` subtree), all three
-flip together. No deps — runs in parallel with `memory`. Next: PLAN-SPAR spars the
+with a `tab` param → one native route (`app/(app)/daily-diary/index.tsx` under the `daily-diary/**` subtree), all
+three flip together. No deps — runs in parallel with `memory`. Next: PLAN-SPAR spars the
 `plan(native-wave2-memory-diary)` PR; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-memory-diary/diary --session <id>`). No VTID allocated, no product code changed, no
 live system touched.
