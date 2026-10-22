@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05300",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    ".kiro/specs/collab-queue-perf/lanes/queue-batch-read.md",
+    "docs/validation/VTID-05300/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05300/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
