@@ -65,9 +65,11 @@ nothing on staging changes).
 ## Lane and review
 - `sequential-builders` — `executor: claude` because `scripts/collab/queue.mjs` is a protected gate file (`scopeCheck`
   refuses it for any other executor; `scripts/collab/protected-gate-files.json`); built by the exceptions seat
-  `exafyltd` while Claude Code is unavailable (§7). Reviewer `agent:vitana-lane-reviewer`. Being a protected file, it
-  merges only with the normal protected-file review: a legacy Claude review on the current head or the owner's
-  explicit instruction naming the PR, plus every check green.
+  `exafyltd` while Claude Code is unavailable (§7), so `seat: exafyltd`. Reviewer `reviewer_seat: jtadic`: the reviewer
+  agent reviews only `executor: kiro` lanes (`validateLane`), as with the merged `collab-queue-perf/queue-batch-read`
+  lane (`executor: claude`, seat reviewer). Being a protected file, it merges only with the normal protected-file
+  review on the current head: a legacy Claude review, or the owner's explicit instruction naming the PR, plus every
+  check green.
 - Paths: `scripts/collab/queue.mjs`, `scripts/collab/queue.test.mjs`, `docs/validation/**`.
 
 ## Out of scope

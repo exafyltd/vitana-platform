@@ -4,7 +4,8 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: claude
-reviewer_seat: agent:vitana-lane-reviewer
+seat: exafyltd
+reviewer_seat: jtadic
 paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
