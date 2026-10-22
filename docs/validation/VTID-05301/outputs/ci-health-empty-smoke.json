@@ -1,0 +1,27 @@
+{
+  "schema": "vitana.ci-health/v1",
+  "generatedAt": "2026-10-22T08:01:05.512Z",
+  "branch": "main",
+  "windowRuns": 0,
+  "workflows": [],
+  "coverageGap": [
+    {
+      "kind": "playwright-e2e",
+      "glob": "e2e/**/*.spec.*",
+      "approxCount": 50,
+      "note": "No required check runs the ~50 Playwright/e2e specs."
+    },
+    {
+      "kind": "shell-test",
+      "glob": "scripts/**/*test*.sh",
+      "approxCount": null,
+      "note": "Shell test scripts in vitana-platform run under no required check."
+    },
+    {
+      "kind": "python-test",
+      "glob": "scripts/**/test_*.py",
+      "approxCount": null,
+      "note": "Python test scripts in vitana-platform run under no required check."
+    }
+  ]
+}
