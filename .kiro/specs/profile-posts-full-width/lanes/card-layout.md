@@ -1,6 +1,6 @@
 ---
 lane: card-layout
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -13,7 +13,7 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T09:40Z
+updated: 2026-10-22T10:05Z
 claimed_by: kiro-exafyltd-202610220818-5273
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
@@ -44,3 +44,9 @@ migration on the moved lines (`14a1bdc47`). Local: layout test 4/4, `src/compone
 `docs/validation/VTID-05330/screenshots/` (phone text x 93→37, media 260→356 px; desktop identical to main).
 Next: once this lane-state PR is on main, set `in-review`; the reviewer agent `vitana-lane-reviewer` reviews
 the v1 PR head; then land under §7b.
+
+### 2026-10-22T10:05Z · kiro-exafyltd-202610220818-5273 · executing → in-review
+exafyltd/vitana-v1#1489 head `14a1bdc47`: pr-gate, Lane scope, i18n, preview-deploy, preview-e2e green; preview
+https://d2w0cqhh9jhjpj.cloudfront.net/pr-1489/. Next: reviewer agent `vitana-lane-reviewer` on the current head.
+Owner instruction in the Kiro Web session 2026-10-22: "yes, continue all the way to staging" (merge #1489 to main →
+staging), recorded as §7b authority for #1489.
