@@ -23,9 +23,13 @@ Allowed paths:
 - `docs/SCREEN_INVENTORY.md`
 - `tests/e2e/staging/vtid-*-brand-surface.staging.spec.ts`
 
+- [ ] BR0 Precondition on the lane base, before any commit: `node scripts/i18n-stamp-source.mjs --check-all` reports 0
+      changed and `node scripts/i18n-audit.mjs` shows every ga locale at 100.0%. If not, main itself would trigger
+      I18N-PROPAGATE (`I18N-PROPAGATE.yml:108-122`): stop, log it, set `next_actor: claude` and push nothing.
 - [ ] BR1 Fresh branch `kiro/mt-frontend-brand-r2/brand-surface-r2` from V1 main. Cherry-pick the code of `e31230ac6`
-      and `7a8b2ab74` only — never the bot commits `e7e62ca89`, `3c56f18e1`, `14cdc2adf`. Every commit carries
-      `Collab-Lane: mt-frontend-brand-r2/brand-surface-r2`.
+      and `7a8b2ab74` only, never the bot commits `e7e62ca89`, `3c56f18e1`, `14cdc2adf`. A pick that conflicts with
+      main is re-implemented to plan.md's spec instead (`useTenantMeta.ts`/`useActiveTenantSlug()` do not exist at
+      vitana-v1 `96becaed9`). Every commit carries `Collab-Lane: mt-frontend-brand-r2/brand-surface-r2`.
 - [ ] BR2 i18n: DE first (du-form) `tenantBrand.json` (`goToPortal: "Zu {brand}"`, `logoAlt: "Logo von {brand}"`), EN
       mirror, then the 9 other locales (by hand or `node scripts/translate-keys.mjs --provider=deepseek --locale=<code>`
       restricted to `tenantBrand.json`; discard any other file it writes). `{brand}` in every value; `ar` RTL text.
@@ -41,7 +45,8 @@ Allowed paths:
       `useActiveTenantSlug()` and `activeTenantSlug({ hostname: 'vitanaland.com' }) === 'maxina'`.
 - [ ] BR5 B7: signup unit test (mocked `supabase.auth.signUp`, no network) asserts `options.data.tenant_slug` is the
       active slug (`acme` in a TenantProvider mock) and `maxina` without one; AuthGuard retry-slug test for
-      `activeTenantSlug({ tenantSlug: null, candidates: [stored] })`.
+      `activeTenantSlug({ tenantSlug: null, candidates: [stored] })` (the literals at `AuthGuard.tsx:267,271`); a test
+      that `App.tsx` calls `useTenantMeta()` inside `AppHooksInitializer` (`App.tsx:469`).
 - [ ] BR6 Staging spec `tests/e2e/staging/vtid-<vtid>-brand-surface.staging.spec.ts` (read-only, preview host only,
       non-GET guard): `/commerce/join` + voucher landing show Maxina title/favicon and `/maxina` portal link;
       `docs/validation/<vtid>/staging-tests.json` lists it plus the Vitest refs.
@@ -49,7 +54,7 @@ Acceptance: the four targeted Vitest files green and the signup assertion red on
 except failures already red on main (listed in `commands.log`, e.g. `ConversationView.deeplink-scroll.vtid-05201`);
 CI Lane scope green on the final head with no `github-actions[bot]` commit; `i18n-check.yml` stamps + register green;
 ESLint `i18n/*` + `design/*` clean on changed files; RTL unaffected; `src/App.tsx` diff = one import + one
-`useTenantMeta();` (pinned by `useTenantMeta.test.ts:178-186`).
+`useTenantMeta();` (pinned by the BR5 mount test).
 
 <!-- lane: theme-tokens-r2 -->
 ## theme-tokens-r2 — tenant theme renders via runtime HSL overrides (repo vitana-v1)
@@ -65,7 +70,8 @@ Allowed paths:
       `tenantThemeVars` → `{}` for Maxina, null and no-accent tenants; `--primary`, `--ring`, `--primary-foreground`
       for `acme`.
 - [ ] TT2 `useTenant.tsx` effect: keep the `--brand-*` writes; apply `tenantThemeVars` after them; `removeProperty`
-      exactly those keys on cleanup / tenant change; update the "nothing consumes them yet — C2" comment.
+      exactly those keys on cleanup / tenant change; update the "nothing consumes them yet — C2" comment
+      (`useTenant.tsx:123`). Test pattern: `src/hooks/useTenant.registry.test.tsx`.
       `useTenant.theme.test.tsx` (jsdom, mocked registry + Supabase, no network): Maxina inline `--primary` is `''`;
       `acme` gets the triplet; acme → Maxina clears it; `--brand-*` writes unchanged.
 - [ ] TT3 `node scripts/native/gen-tokens.mjs --check` exit 0; byte identity (below); full `npx vitest run`.

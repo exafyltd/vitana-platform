@@ -5,9 +5,11 @@ Authoritative plan: `plan.md` (between the plan markers). Evidence of record:
 
 ## Route
 `mt-frontend-brand` converged and was policy-approved; PLAN-SPAR treats an edit of a converged plan as `nothing_to_do`
-(`plan-spar.mjs:348`) and lane `paths` cannot change in a Kiro PR (`queue.mjs:678-687`). So the two failing lanes are
-re-planned under this new slug, sparred in a fresh session (session 1: `sparring/round-<n>.md`, answers in
-`sparring/responses-<n>.md`), and get two new VTIDs from CI. Superseded: `mt-frontend-brand/brand-surface`
+(`plan-spar.mjs:348`) and lane `paths` cannot change in a Kiro PR (`queue.mjs:679-688`). So the two failing lanes are
+re-planned under this new slug, sparred in a fresh session, and get two new VTIDs from CI. Session 1 escalated with
+`evidence_floor_not_met`: no `spar_refs` was declared, so the partner could not read vitana-v1. Session 2 (files
+`sparring/s2-round-<n>.md`, answers in `sparring/s2-responses-<n>.md`) reads vitana-v1 at
+`96becaed99bdb91d0a999a4f516a3f68cd6d4bc3` via `handoff.md` `spar_refs`. Every vitana-v1 `file:line` here is at that SHA. Superseded: `mt-frontend-brand/brand-surface`
 (VTID-05242), `mt-frontend-brand/theme-tokens` (VTID-05246).
 
 ## brand-surface-r2
@@ -16,9 +18,14 @@ re-planned under this new slug, sparred in a fresh session (session 1: `sparring
   nothing to propagate: ship every active locale of the new namespace in the lane's own commits.
 - **Paths** are an explicit list (no `src/i18n/*/…` glob), so a bot touch to any other namespace stays red. Not in paths
   on purpose: `i18n-source-stamps/**`, `src/i18n/en/screens.json`.
-- **B1** uses the PR's `useActiveTenantSlug()` (`src/hooks/useTenantMeta.ts:68-88` on `#1485`), which resolves to
-  `maxina` on `vitanaland.com` and the unmapped staging host (`useTenantMeta.test.ts:87-94`). The two CommerceJoin
-  tests move from the literal to the active slug.
+- **BR0 precondition:** I18N-PROPAGATE counts repo-wide drift (`I18N-PROPAGATE.yml:108-116`). If main itself drifts,
+  no lane can keep the bot out, so the lane checks main first and stops (`next_actor: claude`) instead of pushing.
+- **B1** uses `useActiveTenantSlug()`, new in this lane (`src/hooks/useTenantMeta.ts` does not exist at the pinned
+  SHA; the code is reused from `#1485`, PR evidence). It resolves the `useTenant()` slug, then a stored canonical slug
+  (`readStoredTenantSlug`, as at `AuthGuard.tsx:74`), then `maxina`. So `vitanaland.com` and the preview host keep
+  today's literal. The two CommerceJoin tests (`oauth-first.test.ts:29`, `routing.test.ts:53-55`) move from the
+  literal to the active slug.
+- **Mount:** one `useTenantMeta()` call in `AppHooksInitializer` (`src/App.tsx:469`, rendered at `:772`).
 - **Review findings (`review-round-1.json`, head 7a8b2ab7):** 1–2 (bot files) → fresh branch, all 11 locales, drift 0;
   3 (B1) → BR4; 4 (B7) → BR5; 5 (local vitest failures) → `commands.log` as pre-existing; 6 (`App.tsx` hunk) → quoted
   in the PR body; 7 (AuthGuard i18n/RTL/Spotlight) → PR body states no new string/layout/classes, ESLint output attached.
@@ -32,7 +39,7 @@ useTenant effect (tenant resolved)
 cleanup / tenant change → removeProperty(each key of vars)
 ```
 - Maxina never receives an inline `--primary`, so the computed value is the stylesheet's (`index.css:24` light,
-  `:269` dark). No CSS source changes → built CSS byte-identical. Native tokens come from `index.css` /
+  `:269` dark; `--ring` `:41` / `:286`). The pink `--brand-accent` (`index.css:138`, `:385`) is never read. No CSS source changes → built CSS byte-identical. Native tokens come from `index.css` /
   `tailwind.config.ts` only (`gen-tokens.mjs:8-11`) → no drift. A non-default tenant gets a valid
   `hsl(H S% L%)` because the override is a triplet, never a hex.
 - Conservative decision: only scheme-neutral variables. `--background`/`--foreground` would break `.dark`; shadcn

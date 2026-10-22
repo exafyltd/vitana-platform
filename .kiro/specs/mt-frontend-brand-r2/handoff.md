@@ -5,6 +5,8 @@ author_seat: hotmail
 executor: kiro
 next_actor: kiro
 state: drafted
+spar_refs:
+  - exafyltd/vitana-v1: 96becaed99bdb91d0a999a4f516a3f68cd6d4bc3
 updated: 2026-10-22T11:20Z
 ---
 # Handoff — mt-frontend-brand-r2 (Amendment 1 of mt-frontend-brand: brand-surface paths and theme-tokens approach)
