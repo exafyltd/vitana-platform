@@ -13,7 +13,7 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T12:31Z
+updated: 2026-10-22T12:35Z
 claimed_by: kiro-exafyltd-202610220818-5273
 branch: kiro/profile-posts-full-width/card-layout
 pr: https://github.com/exafyltd/vitana-v1/pull/1489
@@ -64,4 +64,6 @@ VTID-05330 staging spec never ran); FAIL VTID-05298/VTID-05296 native suites (Ex
 runner failure on earlier STAGING-VERIFY runs; not re-run (deterministic). No Gate 2 until STAGING-VERIFY is green.
 Next: reviewer agent review of #1489 head `14a1bdc47`; runner/Playwright fix (outside this lane) then STAGING-VERIFY.
 ### 2026-10-22T12:31Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-22T12:35Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
