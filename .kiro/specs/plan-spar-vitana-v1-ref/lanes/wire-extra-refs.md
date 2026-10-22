@@ -12,7 +12,7 @@ paths:
   - scripts/collab/plan-spar.test.mjs
   - .github/workflows/PLAN-SPAR.yml
   - .kiro/specs/plan-spar-vitana-v1-ref/**
-updated: 2026-10-21T22:03Z
+updated: 2026-10-22T22:06Z
 vtid: VTID-05299
 ---
 # Lane: wire-extra-refs (repo vitana-platform)
@@ -41,3 +41,5 @@ on `main`) into the impl-carrying branch. One content conflict in `plan-spar.tes
 late-lane allocation suite and this lane's 8 `spar_refs:` AC tests; dropped the obsolete `R1-F1: extraRefs`
 test (it passes `extraRefs` into `step()`, an API this impl removed — `step()` now reads `spar_refs` from
 `handoff.md` and resolves internally). `node --check` clean. Lane → in-review for the reviewer agent.
+### 2026-10-22T22:06Z · pm-agent · update
+reassign review jtadic→exafyltd (stale_review, Claude unavailable)
