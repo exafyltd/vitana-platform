@@ -10,6 +10,17 @@
       "retryable": false,
       "final_plan_hash": "7c81713690e43fb8518e3ec52dcac7481af02b7a2be27ebea2c36ab849365f3c",
       "policy_approved_at": null
+    },
+    {
+      "id": "c351f749-3076-4fba-87b0-25aba2df8c15",
+      "submitted": [],
+      "plan_text_sha": "f3f38906",
+      "rounds": 1,
+      "verdict": "in_progress",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": null,
+      "policy_approved_at": null
     }
   ]
 }
