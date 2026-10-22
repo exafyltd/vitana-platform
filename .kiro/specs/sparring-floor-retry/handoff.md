@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-19T18:45Z
+updated: 2026-10-22T01:02Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -87,3 +87,16 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-22T01:02Z · kiro-exafy-202610220101-348a · driver wake-up (automation, item W)
+Automation run (`.kiro/automations/exafy.md`, plan `kiro-autonomy-fallback` VTID-05271). Item W: this plan is
+`approved`, `author_seat: exafy`, and its driver was not alive (`heartbeat-age` → `none`; took over stale driver
+`kiro-exafy-202610212301-f1e2`). Wrote the driver heartbeat on `refs/heads/collab-driver/sparring-floor-retry`
+(sha 3be1030a) and took the `_plan` claim. Resumed from git: the `plan(` PR has converged and merged (spec is on
+`origin/main`), VTID-05240 allocated; the sole lane `floor-retry-code` is `ready`. `plan-driver.mjs next` returns
+one action — `build floor-retry-code`. That lane is `executor: claude` and a governance path
+(`scripts/collab/**`, `services/gateway/src/services/plan-sparring/**`), so an **automation-started driver never
+builds it** (driver.md "Automation-started driver"; collaboration.md §7a). No sparring round is open, no lane is
+in-review, nothing to fix-forward, and an automation driver never merges. So there is no action this run may take:
+the lane waits for Claude Code. Last heartbeat written, state pushed, `_plan` claim released. The next wake-up
+resumes from git. No VTID allocated, no live-system write, no merge, no production action.
