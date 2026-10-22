@@ -28,6 +28,8 @@ import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
+import { resolveActorTenant, jwtSubject } from '../services/jobs/job-tenant-loop';
 import { requireAuth, requireTenant, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from './community-repository';
 
@@ -89,6 +91,30 @@ function getBearerToken(req: Request): string | null {
     return null;
   }
   return authHeader.slice(7);
+}
+
+/**
+ * VTID-05267 (mt-jobs/jobs-automation-actor-tenant): run `dispatch` for the
+ * tenant an actor's automation event belongs to.
+ * - MT_RESOLUTION_V2 off ⇒ DEFAULT_TENANT_ID, synchronously (today).
+ * - On ⇒ the actor's real tenant via resolveActorTenant (a known tenant, else
+ *   the user's primary tenant); unresolvable ⇒ nothing is dispatched (the
+ *   resolver logs it), never DEFAULT_TENANT_ID.
+ */
+function dispatchForActorTenant(
+  actor: { tenantId?: string | null; userId?: string | null },
+  dispatch: (tenantId: string) => void
+): void {
+  if (!isMtResolutionV2Enabled()) {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) dispatch(tenantId);
+    return;
+  }
+  resolveActorTenant(actor)
+    .then((tenantId) => {
+      if (tenantId) dispatch(tenantId);
+    })
+    .catch((err) => console.warn(`[VTID-05267] actor tenant resolution failed:`, err?.message || err));
 }
 
 /**
@@ -271,13 +297,13 @@ router.post('/groups/:id/join', async (req: Request, res: Response) => {
     );
 
     // Dispatch automation event for community.member.joined
-    const tenantId = process.env.DEFAULT_TENANT_ID;
-    if (tenantId) {
+    // VTID-05267: actor = the bearer token's `sub` (the RPC above accepted the token).
+    dispatchForActorTenant({ userId: jwtSubject(token) }, (tenantId) => {
       dispatchEvent(tenantId, 'community.member.joined', {
         group_id: groupId,
         membership_id: data?.membership_id,
       }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
-    }
+    });
 
     console.log(`[${VTID}] User joined group: ${groupId}`);
 
@@ -379,12 +405,14 @@ router.post('/global-groups/:id/view', requireAuth, async (req: AuthenticatedReq
   }
 
   const userId = req.identity?.user_id;
-  const tenantId = process.env.DEFAULT_TENANT_ID;
-  if (tenantId && userId) {
-    dispatchEvent(tenantId, 'user.group.viewed', {
-      user_id: userId,
-      group_id: groupId,
-    }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
+  // VTID-05267: actor = the verified identity (requireAuth).
+  if (userId) {
+    dispatchForActorTenant({ tenantId: req.identity?.tenant_id, userId }, (tenantId) => {
+      dispatchEvent(tenantId, 'user.group.viewed', {
+        user_id: userId,
+        group_id: groupId,
+      }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
+    });
   }
 
   // impact-allow-no-oasis: a page view is telemetry, not a state transition
@@ -479,13 +507,14 @@ router.post('/global-groups/:id/join', async (req: Request, res: Response) => {
     // Dispatch the automation event WITH user_id (only on a genuinely new
     // join) so AP-0212 (Welcome Squad) / AP-0203 can fire.
     if (!alreadyMember) {
-      const tenantId = process.env.DEFAULT_TENANT_ID;
-      if (tenantId) {
+      // VTID-05267: actor = the bearer token's `sub` (userId, decoded above;
+      // the user-scoped membership calls above accepted the token).
+      dispatchForActorTenant({ userId }, (tenantId) => {
         dispatchEvent(tenantId, 'community.member.joined', {
           group_id: groupId,
           user_id: userId,
         }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
-      }
+      });
     }
 
     console.log(`[${VTID}] User ${userId.slice(0, 8)}… joined global group ${groupId} (new=${!alreadyMember})`);
