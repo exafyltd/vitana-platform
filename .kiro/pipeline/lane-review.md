@@ -23,10 +23,19 @@ template naming it fails the step (the steering guard rejects such a template).
 being tried one after another. No slot ever waits on an unavailable model, but when all three are up, all three
 start a review and the fastest wins, so the reviewing model is not always `claude-sonnet-5.5`. Every chain model is
 an accepted reviewer (`REVIEWER_AGENT_MODELS`), so the gate is the same whichever wins.
-**All three fail:** `reviews-N` fails at once (no wait), which ends that lane slot with the engine's failure record
-naming each branch; the other slots run on (`lanes` is `allSettled`), then the run stops before staging, since
-`allSettled` still resolves to failed. Each model has then been tried exactly once on that head. A relaunch of the
-recipe resumes from the state files and races the three models once more.
+**All three fail:** `reviews-N` fails at once (no wait), which fails that slot's repeat with the engine's failure
+record naming each branch. The slot's gate race (`slot-N`, `joinPolicy: "any"` of `slot-N-skip` and the repeat)
+would then wait on the idle skip watch, so `slot-N-skip` reads the run's engine state, appends one line to
+`RUN/blockers.md` and ends the race; the other slots run on, and the lane's state keeps `done: false` for the later
+steps to report. Each model has then been tried exactly once on that head. A relaunch of the recipe resumes from the
+state files and races the three models once more.
+**Only review steps pin a model.** Every other step (setup, planning, sparring, code, land, staging, Gate 2) carries
+no `modelId`: it inherits the launching session's model, and on a transient model error (5xx, throttling) the engine
+pauses it and resumes it, so it does not fail on an unavailable model. Racing those steps across models like the
+reviews would run their side effects (commits, pushes, PRs, merges) more than once, so they are not raced. The
+steering guard fails a `modelId` on any step outside a reviewer race and any pin outside this chain. The plan
+sparring partner has its own chain on `main` (CLAUDE.md rule 53: Opus 4.6 → Sonnet 4.6 → DeepSeek; plan
+`sparring-model-fallback`).
 
 ## When the agent reviews
 Only if `RUN/lanes/<LANE>/state.json` has `done: false`, `status: in_review`, and

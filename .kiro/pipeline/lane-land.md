@@ -4,7 +4,9 @@ Binding: `common-rules.md`. Paths as in `lane-code.md`. Always write `RUN/lanes/
 true` exactly when the status becomes `landed`, `parked` or `skipped`.
 
 1. Slot empty or state missing → write `{"status":"skipped","done":true,"notes":["no lane state"]}` when a lane id
-   exists, then go to 4.
+   exists, then go to 4. An empty slot normally never reaches this step: the gate skips it (`slot-N-skip` /
+   `slot-N-go`, `node scripts/collab/run-gate.cjs`, zero agent sessions); this stays the fallback when the gate
+   cannot read RUN.
 2. **Review outputs** (status `in_review`): this iteration's review race (`lane-review.md`: one pinned review step
    per chain model in a `joinPolicy: "any"` parallel, first finished wins) has ended; read the stored outputs
    `RUN/reviews/<LANE>-<head7>.out-<model>.md` in chain order (`claude-sonnet-5.5`, `claude-opus-5.5`,

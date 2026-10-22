@@ -1,10 +1,12 @@
 ---
 lane: slot-sizing
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafy
+claimed_by: kiro-202610220829-5884
+branch: kiro/pipeline-speed/slot-sizing
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -17,7 +19,7 @@ paths:
   - .kiro/pipeline/lane-land.md
   - .kiro/pipeline/lane-review.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T17:50Z
+updated: 2026-10-22T18:41Z
 vtid: VTID-05338
 ---
 # slot-sizing — empty lane slots and resumed planning cost zero agent sessions; no stray model pin (items 1 + 3)
@@ -33,3 +35,10 @@ set, seat exafy claims it.
 
 ### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
 VTID-05338 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T18:41Z · kiro-202610220829-5884 · ready → executing
+Claimed by seat exafy (Claude unavailable, Kiro builds the `executor: claude` lane). Built `scripts/collab/run-gate.cjs`
+(skip/go gate; D3 terminal rule on the engine's observed state layout) and `run-gate.test.mjs`; the recipe wraps
+`lane-slot-1..6` and `investigate` / `spec` / `plan-pr` / `spar-loop` / `merge-plan` in gate races; `guard.cjs` asserts
+the gates and that no step outside a reviewer race pins `modelId`; `lane-land.md` / `lane-review.md` updated.
+Evidence: `docs/validation/VTID-05338/`. Merge waits for lane `restart-watchdog` (plan §6, D4-migration). Next:
+reviewer agent.
