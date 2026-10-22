@@ -5,7 +5,7 @@ author_seat: exafy
 executor: claude
 next_actor: claude
 state: approved
-updated: 2026-10-19T18:45Z
+updated: 2026-10-22T23:05Z
 sparring_record: .kiro/specs/sparring-floor-retry/sparring/verdict.md
 vtids: [VTID-05240]
 ---
@@ -87,3 +87,22 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-22T23:05Z · kiro-exafy-202610222301-e73d · driver wake-up (automation, item W)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback VTID-05271). Both repos cloned fresh,
+project rules loaded. Of the exafy-seat plans only `sparring-floor-retry` matched item W (`approved`,
+`author_seat: exafy`, driver heartbeat tip `c9b5dc32` from 2026-10-22T20:04:15Z, ~179 min old > 45 min). Took over
+the stale heartbeat (prior `kiro-exafy-202610222001-fe59`) and wrote a fresh one (`9d824b66`) on
+`refs/heads/collab-driver/sparring-floor-retry`; hold the `_plan` claim. Resumed from git: plan is converged and
+policy-approved (`converged-auto-v1`, verdict.md, state.json session 3b3d1387, plan hash d7ba69f7…), VTID-05240;
+plan PR already merged (spec is on `main`); no open sparring round (sessions 12379be3 escalated/non-retryable,
+3b3d1387 converged); the `floor-retry-code` lane is still `ready` (never built) and the Project Manager has
+reassigned it to the exceptions seat `exafyltd` (branch `pm-agent/sparring-floor-retry`, Claude-unavailable mode,
+§7 4h rule); no in-review lane; the only exafy-authored open PRs for this plan are the `_plan` driver-log bookkeeping
+branches. `plan-driver.mjs next` returns exactly one action: build `floor-retry-code` — `executor: claude` on a
+governance path (`scripts/collab/**`, incl. the protected gate file `scripts/collab/plan-spar.mjs`). An
+automation-started driver may not build a governance or `executor: claude` lane (driver.md "Automation-started
+driver"; collaboration.md §7a), and the lane is now the exceptions seat `exafyltd`'s, not exafy's. No other action
+is open to this driver. Keeping the driver heartbeat live was the wake-up's whole purpose (item W = resuming the
+driver). No code changed, no VTID allocated, no merge, no workflow dispatched, no live-system write. Next wake-up
+resumes from git.
