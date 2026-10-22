@@ -12,7 +12,7 @@ paths:
   - src/pages/MatchesPage.tsx
   - src/pages/MatchesPage.bottom-clearance.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-22T10:05Z
+updated: 2026-10-22T10:30Z
 claimed_by: kiro-exafyltd-202610220833-d231
 branch: kiro/matches-scroll-end/matches-list-clearance
 pr: https://github.com/exafyltd/vitana-v1/pull/1490
@@ -48,3 +48,19 @@ resets. The reviewer agent `vitana-lane-reviewer` is not registered in this Kiro
 registry"), so the lane stays `in-review` for it and no other model is substituted.
 Owner instruction in this Kiro Web session 2026-10-22: "yes" to "re-spar, build the fix and merge it to staging".
 That is recorded as the §7b owner-named authority for exafyltd/vitana-v1#1490. It merges only with every check green.
+
+### 2026-10-22T10:30Z · kiro-exafyltd-202610220833-d231 · in-review (merged to main on owner instruction; review pending)
+merge: 13bd83a0c6158089a74a48a37f81c6fa584b5b7a (exafyltd/vitana-v1#1490, squash, head `425e9d88b`). Every check
+on that head was green (PR-GATE incl. Lane scope and preview-e2e, NATIVE-CI incl. ORB parity), mergeable `clean`, up
+to date with main `3d144939c`. The earlier reds were a GitHub API rate limit, cleared by the allowed PR-GATE re-run
+and a new evidence commit. authority: owner instruction in this Kiro Web session 2026-10-22, "yes" to "re-spar,
+build the fix and merge it to staging" (§7b owner-named PR). The reviewer agent `vitana-lane-reviewer` is not
+registered in this session, so the lane stays `in-review` until it reviews `425e9d88b`. No other model was
+substituted.
+Staging: AWS Stage Deploy Community App (ECS) success (https://github.com/exafyltd/vitana-v1/actions/runs/39761340311).
+DEPLOY.yml `aws_prod` was skipped by the cutover gate, so production is untouched.
+STAGING-VERIFY https://github.com/exafyltd/vitana-platform/actions/runs/39762027991 FAILED overall:
+**PASS VTID-05332** (this lane's Vitest suite). The failures are outside this lane: Playwright cannot install
+chromium on the runner (smoke ×2, the VTID-05330 browser spec), and the native VTID-05298/05296 suites (Expo config /
+jest root). These are the same failures as run 39757004449 before this merge. No Gate 2 until STAGING-VERIFY is green.
+Next: reviewer agent on #1490 head `425e9d88b`; the runner/Playwright fix (another lane), then STAGING-VERIFY.
