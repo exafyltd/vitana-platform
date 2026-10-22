@@ -1,10 +1,12 @@
 ---
 lane: restart-watchdog
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafy
+claimed_by: kiro-202610220829-5884
+branch: kiro/pipeline-speed/restart-watchdog
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -15,7 +17,7 @@ paths:
   - .kiro/pipeline/restart-watchdog.md
   - .kiro/pipeline/README.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T17:50Z
+updated: 2026-10-22T18:45Z
 vtid: VTID-05337
 ---
 # restart-watchdog — workflow runs paused by an agent restart are surfaced at session start (item 4)
@@ -31,3 +33,7 @@ set, seat exafy claims it.
 
 ### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
 VTID-05337 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T18:45Z · kiro-202610220829-5884 · ready → executing
+Claimed (collab-claim ref), worktree on origin/main 1d5cfda68. Built W1-W4: `scripts/collab/workflow-watchdog.mjs`,
+`scripts/collab/workflow-watchdog.test.mjs` (12 tests, red on base 9/12, green 12/12), `.kiro/hooks/vitana-workflow-watchdog.json`,
+`.kiro/pipeline/restart-watchdog.md`, one README line. Evidence: `docs/validation/VTID-05337/`.
