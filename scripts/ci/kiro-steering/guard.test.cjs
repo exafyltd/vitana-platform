@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { check, checkAgents, validateWorkflow, parseFrontMatter, frontMatter, REVIEWER_MODELS, STORE_COMMAND } = require('./guard.cjs');
+const { check, checkAgents, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, REVIEWER_MODELS, STORE_COMMAND, GATE_COMMAND, GATED_STEPS } = require('./guard.cjs');
 
 function repo(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-steer-'));
@@ -197,6 +197,64 @@ test('workflow: nothing outside a review race branch reads a review output (a fa
   const w3 = wf();
   walk(w3.steps, (s) => { if (s.id === 'store-3') s.config.command = 'node x.cjs {{review-3.output}}'; });
   assert.match(validateWorkflow(w3, new Set(['vitana-lane-reviewer'])).join('\n'), /command must be static/);
+});
+// VTID-05338 (plan pipeline-speed, lane slot-sizing): skip gates and the model-pin regression guard.
+function node(w0, id) { let r = null; walk(w0.steps, (s) => { if (s.id === id) r = s; }); return r; }
+test('workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair', () => {
+  const w = wf();
+  assert.deepStrictEqual(gateErrors(w), []);
+  const gated = [];
+  walk(w.steps, (n) => { if (n.type === 'watch' && n.config.command === GATE_COMMAND) gated.push(`${n.config.gatedNodeId}:${n.config.role}`); });
+  const want = [...GATED_STEPS, ...[1, 2, 3, 4, 5, 6].map((n) => `lane-slot-${n}`)];
+  assert.deepStrictEqual([...gated].sort(), want.flatMap((t) => [`${t}:go`, `${t}:skip`]).sort());
+  for (const n of [1, 2, 3, 4, 5, 6]) {
+    const race = node(w, `slot-${n}`);
+    assert.strictEqual(race.joinPolicy, 'any');
+    assert.strictEqual(race.branches[0].id, `slot-${n}-skip`);
+    assert.strictEqual(race.branches[1].id, `lane-slot-${n}`);
+    assert.strictEqual(race.branches[1].steps[0].id, `slot-${n}-go`);
+    assert.strictEqual(race.branches[1].stopWhen, `{{land-${n}.output}} contains VITANA_SLOT_DONE`);
+    assert.deepStrictEqual(race.branches[0].config.gatedStepIds, [`code-${n}`, `review-${n}`, `review-${n}-b`, `review-${n}-c`, `land-${n}`]);
+  }
+  for (const id of GATED_STEPS) {
+    const race = node(w, `${id}-gate`);
+    assert.strictEqual(race.joinPolicy, 'any', id);
+    assert.deepStrictEqual(race.branches[1].steps.map((s) => s.id), [`${id}-go`, id]);
+  }
+  assert.match(node(w, 'setup').prompt, /`plan_pr`/);
+  assert.match(node(w, 'setup').prompt, /`steps_done`/);
+  // Removing a gate fails.
+  const wBare = wf(); const i = wBare.steps.findIndex((s) => s.id === 'spec-gate'); wBare.steps[i] = node(wBare, 'spec');
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wBare) }), /spec must be gated by exactly one node scripts\/collab\/run-gate\.cjs skip\/go pair \(got 0/);
+  const wGo = wf(); node(wGo, 'lane-slot-2').steps.shift();
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wGo) }), /lane-slot-2 must be gated by exactly one .* \(got 1/);
+});
+test('workflow: a gate race in the wrong shape or with the wrong watch recipe fails', () => {
+  const e = (mut) => { const w = wf(); mut(w); return gateErrors(w).join('\n'); };
+  assert.match(e((w) => { node(w, 'slot-3').branches.reverse(); }), /lane-slot-3 must sit in a parallel joinPolicy any \[watch lane-slot-3-skip, work\] gate race/);
+  assert.match(e((w) => { node(w, 'investigate-gate').joinPolicy = 'allSettled'; }), /investigate must sit in a parallel joinPolicy any/);
+  assert.match(e((w) => { node(w, 'plan-pr-gate').branches.push({ type: 'step', id: 'zz', agent: 'wf-coder', prompt: 'p' }); }), /plan-pr must sit in a parallel joinPolicy any/);
+  assert.match(e((w) => { const s = node(w, 'merge-plan-work').steps; s.reverse(); }), /merge-plan: the gate race's work branch must be a sequence \[go watch, merge-plan\]/);
+  assert.match(e((w) => { const r = node(w, 'lane-slot-4'); r.steps.push(r.steps.shift()); }), /lane-slot-4: the gate race's work branch must be the slot repeat with its go watch as first child/);
+  assert.match(e((w) => { node(w, 'slot-1-skip').idleTimeoutSec = 120; }), /slot-1-skip of lane-slot-1: idleTimeoutSec must be at least 86400/);
+  assert.match(e((w) => { node(w, 'spec-go').config.role = 'skip'; }), /spec-go of spec: config\.role must be go/);
+  assert.match(e((w) => { node(w, 'spar-loop-skip').config.gatedNodeId = 'spar'; }), /gate watches name spar/);
+  assert.match(e((w) => { node(w, 'slot-5-go').config.gatedStepIds = ['code-5']; }), /slot-5-go of lane-slot-5: config\.gatedStepIds must list/);
+  assert.match(e((w) => { node(w, 'slot-6-skip').config.slot = '1'; }), /slot-6-skip of lane-slot-6: config\.slot must be the slot number/);
+  assert.match(e((w) => { node(w, 'investigate-skip').config.pollIntervalSec = 10; }), /pollIntervalSec and commandTimeoutSec must be 30/);
+  assert.match(e((w) => { node(w, 'spec-skip').config.slot = '1'; }), /gatedStepIds and slot are for lane slots only/);
+  assert.match(e((w) => { node(w, 'plan-pr-go').config.run = '{{task}}'; }), /config\.run must be \{\{setup\.output\}\}/);
+  const wTmpl = wf(); node(wTmpl, 'spec-skip').config.command = 'node scripts/collab/run-gate.cjs {{task}}';
+  assert.match(validateWorkflow(wTmpl, new Set(['vitana-lane-reviewer'])).join('\n'), /command must be static/);
+});
+test('workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)', () => {
+  assert.doesNotMatch(errs({}), /pins modelId/);
+  for (const id of ['setup', 'code-1', 'spar', 'land-6', 'staging-verify', 'inv-code']) {
+    const w = wf(); node(w, id).modelId = 'claude-sonnet-5.5';
+    assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), new RegExp(`step ${id} pins modelId claude-sonnet-5\\.5; only reviewer race steps pin a model`), id);
+  }
+  const w = wf(); node(w, 'review-2-b').modelId = 'claude-opus-4.8';
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /step review-2-b pins modelId claude-opus-4\.8/);
 });
 test('workflow: at most 6 lanes build in parallel', () => {
   const w = wf();
