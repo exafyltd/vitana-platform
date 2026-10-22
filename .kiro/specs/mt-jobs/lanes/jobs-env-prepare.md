@@ -11,8 +11,9 @@ paths:
   - scripts/aws/setup-eventbridge-daily-feature-tip.sh
   - scripts/aws/setup-eventbridge-cron-migration.sh
   - docs/validation/
-updated: 2026-10-20T17:43Z
+updated: 2026-10-22T19:06Z
 vtid: VTID-05269
+seat: exafyltd
 ---
 # jobs-env-prepare — EventBridge schedules stop pinning one tenant (repo vitana-platform)
 
@@ -40,3 +41,5 @@ Reworded E1/body: the tenant is NOT in a schedule target input. whats-new.sh/dai
 
 ### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05269 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T19:06Z · pm-agent · update
+reassign lane →exafyltd (stale_ready, Claude unavailable)
