@@ -58,7 +58,16 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
   `apps/mobile/src/health-sync` export the module owns) — it does **not** re-implement OS permission requests or
   ingest. If the module export is not yet on main when a lane needs it, the lane renders the affordance against a
   typed stub behind the same ingest-off flag and records the dependency in its log (`next_actor: kiro`), exactly as
-  N5a itself stubbed N3/N4 before they landed. The standalone **Connected Apps** settings screen
+  N5a itself stubbed N3/N4 before they landed. **The stub is a pinned interface with a contract test (R1-F5):** since
+  `n5a-health-sync` (VTID-05184) is owner-blocked on C1/D10 with no near-term timeline, `health-hub` does not write an
+  ad-hoc stub — it vendors the module's public read-only-until-enabled entry **signature** from the open green
+  `vitana-v1 #1398` branch (readable even though unmerged), encodes it as an explicit TypeScript `interface` the stub
+  implements, and adds a **contract test** that imports both the stub and — through the real module path — the N5a
+  export and asserts structural compatibility (a type-level assignability assertion plus a runtime shape check). The
+  test compiles against the stub today and exercises the real export the moment N5a lands on main; if N5a's entry
+  changes shape in between, the contract test fails in NATIVE-CI rather than shipping a silently broken delegate call.
+  The lane log records a `next_actor: kiro` task to re-vendor the signature from C1's merge commit when N5a lands.
+  The standalone **Connected Apps** settings screen
   (`SETTINGS.CONNECTED_APPS /settings/connected-apps`) and the `/connectors?tab=health` screen are **NOT** in this
   cluster — the parity ledger assigns them to `"lane": "profile-settings-support"`, a different Wave 2 batch.
 - **Consent on reads.** Every health-data read (Vitana Index `vitana_index_scores`, `lab_reports`, supplements,
@@ -132,6 +141,10 @@ module + chip twins).
   member already has RLS access to (the fetch uses the same `user_id = auth.uid()`-scoped query as web) and that no
   code path issues a non-GET to the gateway or Supabase (network guard), and that the in-screen Health Sync affordance
   does not itself request an OS permission or ingest (it delegates to the `n5a-health-sync` module).
+- **Health Sync stub contract test (R1-F5):** a test asserts the `health-hub` typed stub is structurally compatible
+  with the `n5a-health-sync` public read-only entry — a type-level assignability assertion against the vendored
+  `interface` plus a runtime shape check — importing the real export through its module path so the check flips from
+  stub to real export automatically when N5a lands on main, failing NATIVE-CI if the shapes diverge.
 - **Core extraction deliverable: run `--write` AND commit the generated files, not just `--check`.** The lane that adds
   the pure-helper re-export entries to `packages/core/src/` (health-hub) MUST also run
   `node scripts/native/core-closure.mjs --write` and commit the regenerated `packages/core/closure.generated.json` and
