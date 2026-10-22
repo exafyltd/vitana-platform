@@ -1,6 +1,6 @@
 ---
 lane: steering-rules
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -18,11 +18,11 @@ paths:
   - .kiro/steering/vitana-collaboration.md
   - .kiro/steering/vitana-pipeline.md
   - docs/validation/VTID-*/**
-claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kiro-autonomy-fallback/steering-rules
 pr: https://github.com/exafyltd/vitana-platform/pull/4226
-updated: 2026-10-20T18:22Z
+updated: 2026-10-22T18:17Z
 vtid: VTID-05278
+parked_from: executing
 ---
 # steering-rules — rule text first: Claude optional, PM merge rule, plan driver, parallel rule, measurement (both repos)
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §5 A and the `steering-rules` section of `tasks.md` are authoritative.
@@ -61,3 +61,5 @@ PRs: https://github.com/exafyltd/vitana-platform/pull/4226, https://github.com/e
 Findings (non-blocking): validate-pr needs a VALIDATION_PROFILE line in the PR body; the CLAUDE.md roles paragraph
 keeps the stale two-seat parenthetical (later governance lane); some CI still running at review time.
 Entry committed by the land step on the reviewer agent's behalf. Next: land (owner instruction 2026-10-20, ).
+### 2026-10-22T18:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
