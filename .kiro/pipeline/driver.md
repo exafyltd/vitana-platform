@@ -48,11 +48,14 @@ returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first 
    3 attempts per lane; the 4th failure parks the lane (`parked`, `parked_from`, `next_actor: owner`) with the
    five-part message. A failed PLAN-SPAR, PR-GATE or STAGING-VERIFY run on attempt 1 that failed for infra reasons may
    be re-run once (`collaboration.md` §7a re-run allowlist, matched on the workflow path).
-4. **Review an `in-review` lane** with the reviewer agent `vitana-lane-reviewer` (model `claude-sonnet-5.5`), run as its own
-   agent session on the PR's current head. Write its §4.2 verdict as the §4.1 review entry (trailers `Collab-Session`,
-   `Collab-Review: <slug>/<lane>`, `Collab-Verdict`, `Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)`,
-   `Collab-Reviewed-Head`). The driver never reviews a lane itself and never substitutes another model: no agent or
-   `model_unavailable` → the lane stays `in-review`, go on with other actions. `changes` → the lane goes back to
+4. **Review an `in-review` lane** with the reviewer agent `vitana-lane-reviewer` (model chain `claude-sonnet-5.5` →
+   `claude-opus-5.5` → `claude-sonnet-4.5`), run as its own agent session on the PR's current head. Write its §4.2 verdict
+   as the §4.1 review entry (trailers `Collab-Session`, `Collab-Review: <slug>/<lane>`, `Collab-Verdict`,
+   `Collab-Reviewer: agent:vitana-lane-reviewer (<model it ran on>)`, `Collab-Reviewed-Head`). The driver never
+   reviews a lane itself and never uses a model outside the chain: `model_unavailable` or a model failure → note the
+   model as tried for that head, start the next review session on the next chain model at once, never wait or loop
+   on one model (each model once per head); all three failed → one blocker, the lane is parked, go on with other
+   actions. `changes` → the lane goes back to
    `executing` and its builder fixes every finding.
 5. **Build a `ready` lane** whose `depends_on` lanes are `done`, up to 6 lanes `executing|in-review` per plan; two
    lanes on the same hot file never at once (§8a). Claim it, branch `kiro/<slug>/<lane>` from `origin/main`, write each
@@ -68,7 +71,9 @@ returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first 
 8. **Gate 2** when every lane is `done` and STAGING-VERIFY passed on the last merge commit: *"Staging verified — ready for
    deployment to production?"* with the verified commit, the STAGING-VERIFY run link, test counts, every commit between
    production and it, the migrations in the release, "Decisions taken" and `docs/validation/<plan VTID>/timings.json`.
-   The Project Manager posts it; an interactive driver also says it in the session. Production stays the owner's PUBLISH.
+   The Project Manager posts it; an interactive driver also says it in the session. Production stays the owner's PUBLISH,
+   or — when the owner explicitly commands it in an interactive session — the driver publishes itself under
+   `collaboration.md` §7c (full, or only one session's changes). An automation-started driver never publishes.
 9. **Done**: plan `done`, `_plan` claim released, and the heartbeat ref removed as the last action
    (`git push origin --delete refs/heads/collab-driver/<slug>`; it holds no work).
 10. **Wait**: nothing to do now (checks running, review pending) → heartbeat, poll every 2–3 min, loop.
@@ -80,7 +85,7 @@ stops when the run's time is almost up: last heartbeat, everything pushed, claim
 wake-up resumes from git.
 
 ## Never
-Never allocate a VTID by hand, never deploy to production or dispatch a production workflow, never run PUBLISH or
-`publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
+Never allocate a VTID by hand, never deploy to production or dispatch a production workflow except an owner-commanded
+publish in an interactive session (§7c), never run `publish-to-prod.sh`, never write to Supabase or any live system from a session tool (a database change is a migration
 file in the lane's PR), never test against production, never skip, disable or loosen a test, never force-push, never
 accept your own lane.
