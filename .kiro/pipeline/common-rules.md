@@ -17,7 +17,7 @@
    `{"event":"…","lane":"<id>|null","at":"<ISO-8601 UTC>","ref":"<sha|url>"}` in `timings/<step id>.jsonl`
    (only that step writes it); prefer GitHub timestamps over the local clock.
 4. **Merge authority = the §7b PM merge rule.** The Project Manager merges; while it is not `live`, the land step
-   applies the same rule: review entry `Collab-Verdict: accept` from `agent:vitana-lane-reviewer (claude-sonnet-5.5)` on
+   applies the same rule: review entry `Collab-Verdict: accept` from `agent:vitana-lane-reviewer (<chain model>)` on
    the PR's current head, every required check green on that head incl. Lane scope and Collab handoff, PR up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. A change to a protected gate file (`scripts/collab/protected-gate-files.json`) never

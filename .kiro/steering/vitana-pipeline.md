@@ -1,7 +1,7 @@
 # Vitana pipeline — the default for every session (VTID-05278)
 
 Every owner task that results in a commit runs the Vitana pipeline end to end: `plan(<slug>)` PR → CI PLAN-SPAR →
-CI-allocated VTIDs → parallel lanes → reviewer agent `vitana-lane-reviewer` (`claude-sonnet-5.5`) → serialized merge
+CI-allocated VTIDs → parallel lanes → reviewer agent `vitana-lane-reviewer` (`claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`) → serialized merge
 to `main` under the PM merge rule → staging auto-deploy → STAGING-VERIFY → Gate 2 *"Staging verified — ready for
 deployment to production?"*. Rules: `.claude/rules/collaboration.md` §7–§8b.
 
