@@ -24,6 +24,7 @@ specs:
   - vitana-platform:matches-scroll-end
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:i18n-audit-nightly-off
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
