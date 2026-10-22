@@ -110,6 +110,30 @@ jobs:
           Collab-Lane: ${slug}/_plan"
           git push origin "HEAD:${HEAD_REF}"
 
+      # lane plan-spar-checks (VTID-05306, R3-F2 option B): producer-only needs-rebase signal.
+      # When PLAN_SPAR_PUSH_TOKEN is empty the round above was pushed with GITHUB_TOKEN, which starts no
+      # pull_request checks on the new bot head — so mark that head with a `plan-spar/needs-rebase` commit
+      # status. The consumer (a PM/land step that reads this status and runs `gh pr update-branch` so checks
+      # start under a re-push) is a gateway change needing a staging deploy and is deferred to a separate lane;
+      # until it exists this status is posted but never read, so today's behaviour is unchanged. Re-dispatch,
+      # re-run and the Checks API are not usable here (plan R2-F1). When the PAT secret is present the push
+      # already starts checks and this step is skipped.
+      - name: Signal needs-rebase on the bot head (GITHUB_TOKEN push)
+        if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          sha=$(git -C head rev-parse HEAD)
+          who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
+          if [ "$who" != "ci-plan-spar" ]; then echo "head $sha is not a PLAN-SPAR round commit — no status posted"; exit 0; fi
+          gh api -X POST "repos/${{ github.repository }}/statuses/${sha}" \
+            -f context='plan-spar/needs-rebase' \
+            -f state='pending' \
+            -f target_url="$RUN_URL" \
+            -f description='GITHUB_TOKEN push started no checks — update the branch to re-run them'
+          echo "➖ posted plan-spar/needs-rebase on $sha" >> "$GITHUB_STEP_SUMMARY"
+
       - name: Comment
         if: steps.guard.outputs.skip != 'true'
         env:

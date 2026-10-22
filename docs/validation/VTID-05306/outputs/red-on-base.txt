@@ -1,0 +1,29 @@
+﻿
+Γä╣ pass 0
+Γä╣ fail 1
+Γ£û failing 
+tests:
+  AssertionEr
+ror [ERR_ASSE
+RTION]: the 
+status step 
+comes after 
+the 
+round-commit 
+push
+      at Test
+Context.<anon
+ymous> (file:
+///C:/Users/d
+stev/vitana-p
+latform-1/.wo
+rktrees/ci-gi
+thub-moderniz
+ation-plan-sp
+ar-checks2/sc
+ripts/ci/plan
+-spar-slot/sl
+ot.test.mjs:6
+4:10)
+
+
