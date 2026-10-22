@@ -65,6 +65,20 @@ test('existing suites are limited to test-runner commands and need a reason', ()
   assert.equal(ok([{ kind: 'existing', ref: 'npm run x && rm -rf /', reason: 'chaining is not allowed' }]).ok, false);
 });
 
+test('existing suites may set only allowlisted, non-production env (staging-verify-runner-fix)', () => {
+  const base = { kind: 'existing', ref: 'npm run bundle', cwd: 'apps/mobile', reason: 'the native bundle still builds' };
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'development' } }]).ok, true);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'test-g1' } }]).ok, true);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'production' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'development', GITHUB_TOKEN: 'x' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: { NODE_OPTIONS: '--require=/tmp/x.js' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: ['APP_PROFILE=development'] }]).ok, false);
+  assert.equal(ok([{ ...base, env: 'APP_PROFILE=development' }]).ok, false);
+  assert.deepEqual(lib.existingEnv({ ...base, env: { APP_PROFILE: 'development' } }), { APP_PROFILE: 'development' });
+  assert.deepEqual(lib.existingEnv(base), {});
+  assert.deepEqual(lib.existingEnv({ ...base, env: { APP_PROFILE: 'production' } }), {});
+});
+
 test('manifest identity and shape are checked', () => {
   assert.equal(lib.validateManifest({ vtid: 'VTID-1', service: 'gateway', tests: [{ kind: 'http', path: '/' }] }, { vtid: 'VTID-09999' }).ok, false);
   assert.equal(lib.validateManifest({ vtid: 'VTID-09999', service: 'community-app', tests: [{ kind: 'http', path: '/' }] }, { service: 'gateway' }).ok, false);
