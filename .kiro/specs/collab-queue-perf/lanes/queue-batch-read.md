@@ -1,6 +1,6 @@
 ---
 lane: queue-batch-read
-state: executing
+state: in-review
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -9,7 +9,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-21T15:49Z
+updated: 2026-10-22T18:02Z
 vtid: VTID-05300
 claimed_by: kiro-202610181950-f0b7
 branch: kiro/collab-queue-perf/queue-batch-read
@@ -41,3 +41,5 @@ is mapped to the code in `docs/validation/VTID-05300/plan-sparring.md`; `scope.j
   interrupted attempt of this same build; its uncommitted diff is the base of this update). Not broken (< 24 h);
   every commit in this PR is from `kiro-202610181950-f0b7`.
 Next: reviewer agent on the current head; Lane scope needs `executor: claude` handling for this governance lane.
+### 2026-10-22T18:02Z · kiro-202610181950-f0b7 · executing → in-review
+Missing §7b record: exafyltd/vitana-platform#4188 (`84fc0ca6a0d116f4e41dfd77c5125cb329b95f15`) was merged under collaboration.md §7b (PM merge rule) on the owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping") (run end to end). Recorded now. Next: verified (one edge per PR).
