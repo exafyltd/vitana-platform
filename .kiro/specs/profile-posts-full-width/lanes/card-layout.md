@@ -13,7 +13,8 @@ paths:
   - src/components/profile/shared/tabs/ProfilePostsTab.*.test.tsx
   - tests/e2e/staging/vtid-*-profile-posts-full-width.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T08:40Z
+updated: 2026-10-22T08:46Z
+vtid: VTID-05330
 ---
 # Profile Posts tab card — avatar header on top, post full width (vitana-v1)
 Plan: `.kiro/specs/profile-posts-full-width/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -28,3 +29,6 @@ Supabase/AWS/storage, no test against production; the staging spec is read-only.
 ### 2026-10-22T08:40Z · kiro-exafyltd-202610220818-5273 · created → ready
 Lane drafted with the plan (`state: drafted` in `handoff.md`). Next: PLAN-SPAR spars the plan; once CI writes the
 VTID here, seat `exafyltd` claims the lane.
+
+### 2026-10-22T08:46Z · ci-plan-spar · ready (VTID allocated)
+VTID-05330 allocated after policy approval (converged-auto-v1).
