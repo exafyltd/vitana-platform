@@ -1,6 +1,6 @@
 ---
 lane: speed-path-filters
-state: ready
+state: parked
 next_actor: kiro
 depends_on: [fake-checks-dedupe]
 executor: claude
@@ -12,8 +12,9 @@ paths:
   - scripts/ci/test-suite/shard-union.test.mjs
   - scripts/ci/test-suite/rerun-policy.test.mjs
   - docs/validation/**
-updated: 2026-10-21T12:26Z
+updated: 2026-10-22T20:13Z
 vtid: VTID-05307
+parked_from: ready
 ---
 # Lane: speed-path-filters
 
@@ -52,3 +53,5 @@ two entries. Paths unchanged.
 
 ### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05307 allocated after policy approval (converged-auto-v1).
+### 2026-10-22T20:13Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
