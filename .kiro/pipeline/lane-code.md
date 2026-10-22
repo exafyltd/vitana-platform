@@ -21,13 +21,13 @@ files are read-only. Only the land step sets `done`.
   end `waiting`. All landed → **implement**.
 - `changes_requested`: `review_rounds` already 3 → `parked` (findings to `blockers.md`). Else fetch BRANCH (the land
   step committed the review entry on top), fast-forward WT, read the verdict JSON + entry in `RUN/reviews/`, fix every
-  blocking finding (common rule 5), re-verify, update `impl-notes.md`, commit, push, `head_sha`,
-  `review_rounds`+1, status `in_review`; timing `lane_fix_pushed`.
+  blocking finding (common rule 5), re-verify, update `impl-notes.md`, commit, run preflight (step 7), fix every
+  error, then push, `head_sha`, `review_rounds`+1, status `in_review`; timing `lane_fix_pushed`.
 - `ci_failed`: `ci_fix_attempts` already 3 → `parked`. Else read `RUN/lanes/<LANE>/ci-failure.md` and
-  `gh run view <id> --log-failed`, fix within the lane's paths, re-verify, commit, push, `ci_fix_attempts`+1, status
-  `in_review`. A red that `main` itself has on the same test is not the lane's: stay `accepted`, wait for `main`.
+  `gh run view <id> --log-failed`, fix within the lane's paths, re-verify, commit, run preflight (step 7), fix every
+  error, then push, `ci_fix_attempts`+1, status `in_review`. A red that `main` itself has on the same test is not the lane's: stay `accepted`, wait for `main`.
 - `needs_update`: merge `origin/main` into BRANCH in WT (merge commit, never rebase or force), resolve within the
-  lane's paths, re-verify, push, `head_sha`, status `in_review`.
+  lane's paths, re-verify, run preflight (step 7), fix every error, then push, `head_sha`, status `in_review`.
 
 ## Implement
 1. Session id = `RUN/run.json` `seats[<lane seat>]`; missing → `queue.mjs session-id --agent kiro --seat <seat>`,
@@ -47,8 +47,11 @@ files are read-only. Only the land step sets `done`.
    Project Manager's writes and the review entry, collaboration.md §2). Log every
    protected gate file the lane changes in `decisions.md`. Hot files only if the lane owns them.
 7. Verify locally until green and record every command with pass/fail counts in `docs/validation/<VTID>/commands.log`
-   and `RUN/lanes/<LANE>/impl-notes.md`: collab scripts → `node --test scripts/collab/*.test.mjs` (+ `queue.mjs
-   validate --base origin/main --head HEAD`, `queue.mjs scope-check` where it applies); gateway → in
+   and `RUN/lanes/<LANE>/impl-notes.md`. **Governance checks: one preflight run** after the last commit, in WT
+   (`node <vitana-platform>/scripts/collab/preflight.mjs --repo <WT> --base origin/main --head HEAD --branch <BRANCH>
+   --title "<PR title>"`; a vitana-v1 lane passes its v1 WT as `--repo`): it runs the Collab tests, `queue.mjs validate` (head copy), Lane scope (base copy of
+   `queue.mjs`), the PR-GATE `gate.mjs` checks and Kiro steering together and prints every failure at once; fix every
+   error, re-run until it passes, keep its output in `commands.log`. Then the area checks: gateway → in
    `services/gateway` (`npm ci` if `node_modules` is missing) `npx jest <changed tests>`, `npm run typecheck`,
    `npm run build` (+ `npm run test:operator` / `test:support` / `test:roles` when their area is touched); frontend →
    `npm test`, `npm run lint`, `npm run build`; workflow YAML → parse each file; Kiro files → `node --test
@@ -56,7 +59,8 @@ files are read-only. Only the land step sets `done`.
    against the same command on base before calling it the lane's.
 8. A deploying lane (touches a path a staging deploy workflow watches) ships
    `docs/validation/<VTID>/staging-tests.json`: read-only (GET or a rejected probe), staging only, never production.
-9. Commit with the trailers and bot identity, push (protocol), open the PR (base `main`, ready when local checks are
+9. Commit with the trailers and bot identity, run preflight (step 7) on that commit, fix every error, then push
+   (protocol), open the PR (base `main`, ready when local checks are
    green; title `VTID-NNNNN (<slug>/<LANE>): <lane title>`), body: summary, tests + counts, red → green proof, paths,
    `Review: agent:vitana-lane-reviewer (claude-sonnet-5.5)`, session id, merge authority (collaboration.md §7b). A lane
    spanning both repos opens one PR per repo with the same VTID.

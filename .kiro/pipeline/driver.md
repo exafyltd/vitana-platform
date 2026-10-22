@@ -39,12 +39,16 @@ yes/no decision needed). Git, push, PR, merges under §7b, re-runs, sparring rou
 
 ## Loop (one action at a time, then the next)
 `node vitana-platform/scripts/collab/plan-driver.mjs next --slug <slug> --repo vitana-platform --repo vitana-v1 --cap 6 --json`
-returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first one. Without the script, use the same order:
+returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first one. Without the script, use the same order.
+Preflight before every push of a `plan(` or lane branch: `node vitana-platform/scripts/collab/preflight.mjs --repo
+<checkout> --base origin/main --head HEAD --branch <branch> --title "<PR title>"` runs every CI governance check
+(Collab tests, `queue.mjs validate`, Lane scope, PR-GATE, Kiro steering) in one pass; fix every error it prints, re-run
+until it passes, then push.
 1. **Answer an open sparring round** (a `round-<n>.md` without its `responses` file): one disposition per finding,
-   update the plan block, commit `responses-<n>.md` + `plan.md` on the `plan(` PR branch, push. PLAN-SPAR runs the next
+   update the plan block, commit `responses-<n>.md` + `plan.md` on the `plan(` PR branch, run preflight, then push. PLAN-SPAR runs the next
    round. An escalated verdict is an owner stop. VTIDs come only from CI PLAN-SPAR after policy approval, never by hand.
 2. **Merge the `plan(` PR** after convergence, under §7b, so the lanes read their files from `main`.
-3. **Fix forward** a lane whose PR head has a failed check: read the log, fix inside the lane's `paths`, push. At most
+3. **Fix forward** a lane whose PR head has a failed check: read the log, fix inside the lane's `paths`, run preflight, then push. At most
    3 attempts per lane; the 4th failure parks the lane (`parked`, `parked_from`, `next_actor: owner`) with the
    five-part message. A failed PLAN-SPAR, PR-GATE or STAGING-VERIFY run on attempt 1 that failed for infra reasons may
    be re-run once (`collaboration.md` §7a re-run allowlist, matched on the workflow path).
@@ -60,7 +64,7 @@ returns the ordered actions (lane `pipeline-speed`, plan §5 H). Take the first 
 5. **Build a `ready` lane** whose `depends_on` lanes are `done`, up to 6 lanes `executing|in-review` per plan; two
    lanes on the same hot file never at once (§8a). Claim it, branch `kiro/<slug>/<lane>` from `origin/main`, write each
    new behaviour's test first and record it red on `origin/main`, implement only inside the lane's `paths`, run the
-   checks of `tasks.md`, commit with `Collab-Session` / `Collab-Lane` trailers, push, open the PR
+   checks of `tasks.md`, commit with `Collab-Session` / `Collab-Lane` trailers, run preflight, then push, open the PR
    `VTID-xxxxx (<slug>/<lane>): …`, set the lane `in-review`.
 6. **Land an accepted lane** under the §7b merge rule: accept on the current head, every check run green, up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
