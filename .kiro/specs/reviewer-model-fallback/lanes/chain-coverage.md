@@ -12,7 +12,7 @@ paths:
   - docs/validation/**
   - services/gateway/src/services/project-manager/governance.ts
   - services/gateway/test/project-manager/governance.test.ts
-updated: 2026-10-22T20:06Z
+updated: 2026-10-22T20:10Z
 vtid: VTID-05335
 parked_from: ready
 ---
@@ -71,4 +71,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T19:42Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-22T20:06Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T20:10Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
