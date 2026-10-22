@@ -1,11 +1,10 @@
 ---
 lane: ff-pm-flag
-state: executing
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafy-202610202351-3160
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -14,10 +13,11 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-21T00:45Z
+updated: 2026-10-22T00:52Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
 pr: https://github.com/exafyltd/vitana-platform/pull/4242
 vtid: VTID-05281
+parked_from: executing
 ---
 # ff-pm-flag — an unreadable `CLAUDE_AVAILABLE` repo variable falls back to the env; the 4 h rule stays
 Plan: `.kiro/specs/kaf-fallback-env/plan.md` §3 and §5 B, and the `ff-pm-flag` section of `tasks.md`, are
@@ -73,3 +73,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4242
 Findings: no blockers. Non-blocking: GithubRestReader.variable throws on 404 / non-string value; observeClaude falls back to env for throw, null and unparseable values, a readable true/false still wins. Tests B1-B7 red on base (B1, B4, B5, B7), green on head; all CI checks green on this head; diff within lane paths; no AWS-PROD file or live write.
 Entry committed by the land step on the reviewer agent's behalf (finish-staging run, wf_902f332d443b657a). Next: update onto main, merge under collaboration.md Â§7b.
+### 2026-10-22T00:52Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
