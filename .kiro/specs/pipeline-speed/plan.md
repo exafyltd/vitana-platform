@@ -74,9 +74,9 @@ handoff), staging-only merges and Gate 2 stay exactly as they are.
    `.kiro/hooks/vitana-pipeline-start.json` (SessionStart agent hook, pinned by `guard.cjs:219-228`).
 
 ## 3. Design decisions
-- **D1 Gate races, not new keys.** Each gated group becomes `parallel joinPolicy any` of
+- **D1 Gate races, not new keys.** Each gated step becomes `parallel joinPolicy any` of
   `[watch <id>-skip, <work>]`. The work branch starts with a `watch <id>-go`. Both watches run the new static command
-  `node scripts/collab/run-gate.cjs`. On an empty slot / finished planning, `-skip` returns `terminal-state` at its
+  `node scripts/collab/run-gate.cjs`. On an empty slot / finished step, `-skip` returns `terminal-state` at its
   first poll and `-go` stays `idle`: the race completes and no agent step ever starts (zero sessions). Otherwise `-go`
   returns `new-activity` and `-skip` stays `idle`. Rationale: the engine supports no condition key, and a repeat
   always runs one iteration; a watch is the only node that costs no session and no step budget.
@@ -84,29 +84,48 @@ handoff), staging-only merges and Gate 2 stay exactly as they are.
   its cursor; after deciding `run` it never returns `terminal-state` for the slot's state again, so it can never abort
   a running `code-N` / `land-N`. Sound because of §2.3.
 - **D3 Failure must not hang.** If the work branch **fails**, `any` would wait for the idle `-skip` watch forever. On
-  each later poll `-skip` reads the run's own engine state read-only and inspects **the gated node named by its config
-  key `gatedNodeId`** (R1-F2: every `-skip`/`-go` watch config carries `gatedNodeId` — the workflow node id it guards,
-  e.g. `"gatedNodeId": "lane-slot-1"` for slot 1, `"investigate"`/`"spec"`/`"plan-pr"` for the planning group,
-  `"spar-loop"`/`"merge-plan"` for the approval group; these ids are stable top-level/repeat ids in the workflow JSON,
-  `:17/:42/:48/:55/:70/:82+`). The field it reads is a **best-effort fixture path `steps[<gatedNodeId>].status` inside
-  `workflow-state.json`** (documented as version-sensitive in `restart-watchdog.md`/the slot-sizing impl notes, pinned
-  to the installed engine's real file); when that status is `failed` it appends one line to `RUN/blockers.md` and
-  returns `terminal-state`. `paused` (transient model error, restart) stays `idle`, so the engine can still resume the
-  lane. Missing, unreadable or unparseable state → `idle` (fallback: the watchdog of item 4 reports the run). **Node
-  `fs` has no native glob (R1-F4):** both `run-gate.cjs` and `workflow-watchdog.mjs` resolve the run folder by
-  enumerating `os.homedir()/.kiro/sessions/` with `fs.readdirSync` and, for each entry, checking
+  each later poll `-skip` reads the run's own engine state read-only. Every `-skip`/`-go` watch config carries
+  `gatedNodeId` (R1-F2: the workflow node id it guards — `lane-slot-1..6`, `investigate`, `spec`, `plan-pr`,
+  `spar-loop`, `merge-plan`; stable ids, `:17/:42/:48/:55/:70/:82+`) and, for lane slots, `gatedStepIds` (R2-F2: the
+  step ids inside the gated subtree — `code-N`, the three slot-N reviewer steps, `land-N`). **Terminal rule (R2-F2):**
+  `steps[<gatedNodeId>].status` ∈ {`failed`,`cancelled`,`aborted`}, **or** any id in `gatedStepIds` has one of those
+  statuses while none of `gatedStepIds` is `running` → append one line to `RUN/blockers.md` and return
+  `terminal-state`. A `repeat` with `onMaxIterations: continue` that exhausts completes its branch normally, so the
+  race completes without this rule. `paused` (transient model error, restart) is **pinned non-terminal**: it stays
+  `idle` so the engine can still resume the lane; a paused run is surfaced by the watchdog (D7). Missing, unreadable
+  or unparseable state → `idle`. **Field paths are pinned to the installed engine (R2-F2):** the slot-sizing coder
+  captures a real (redacted) `workflow-state.json` of a run with a failed step inside a repeat, records the observed
+  path(s) in `docs/validation/<VTID>/commands.log`, and encodes them as inline fixtures in `run-gate.test.mjs`
+  (failed-at-repeat, failed-inner-step-in-repeat, failed-inner-step-in-wrapper, paused, running, missing); if the
+  engine records the failure elsewhere, the reader follows the observed path and the test pins it. **Node `fs` has no
+  native glob (R1-F4):** both `run-gate.cjs` and `workflow-watchdog.mjs` resolve the run folder by enumerating
+  `os.homedir()/.kiro/sessions/` with `fs.readdirSync` and, for each entry, checking
   `<dir>/workflows/<wf id>/workflow-state.json` existence before reading — never a `*` glob; a missing
   `.kiro/sessions/` returns idle, covered by a test fixture. The race then reports `completed`; the lane's
   `RUN/lanes/<id>/state.json` stays `done: false`, which the later steps already report. Rationale: matches
   `lane-review.md`'s rule that a slot branch must end `completed` so `lanes` (`allSettled`) does not fail the run.
-- **D4 Gated groups.** (a) `lane-slot-1..6`: skip when `RUN/slots.json` `slots.N` is `null`. (b) `planning` =
-  `investigate` + `spec` + `plan-pr`: skip when `RUN/run.json` `plan_pr` is non-null or `RUN/slots.json` exists.
-  (c) `approval` = `spar-loop` + `merge-plan`: skip when `RUN/slots.json` exists (written only by `merge-plan`).
-  Each step keeps its existing id (`investigate`, `spec`, `plan-pr`, `spar-loop`, `merge-plan`, `lane-slot-1..6`);
-  D4 wraps it in place inside a `parallel joinPolicy any` group, it does **not** rename or relocate any step to a new
-  id (R1-F3 read "relocates" as an id change; it is a structural wrap of the same ids). Template-safe: no step outside
-  these groups reads an output inside them (only the repeats' own `stopWhen` and the store watches read `{{…output}}`;
-  `staging-verify` and `gate2` read none). `setup`, `staging-verify`, `gate2` are not gated.
+- **D3a Watch recipe (R2-F3).** Both watches: `handler: command`, `command: node scripts/collab/run-gate.cjs`
+  (static), `pollIntervalSec: 30`, `commandTimeoutSec: 30`, `idleTimeoutSec: 86400` (24 h, above a 40-iteration
+  slot's wall time; if the installed engine schema caps it lower, the value is set to the cap and the cap plus the
+  engine's on-timeout behaviour are recorded in `commands.log`). Config keys `role: "skip"|"go"`, `gatedNodeId`,
+  `gatedStepIds` (lane slots), `slot` (lane slots) — templated, never in `command` (`guard.cjs` keeps `command`
+  static). Return contract: `-skip` first poll: skip → `terminal-state`; run → `idle`, cursor `{decided:"run"}`;
+  later polls: `terminal-state` only by the D3 terminal rule, else `idle`. `-go` first poll: run → `new-activity`;
+  skip → `idle` (aborted when the race completes). `guard.test.cjs` asserts every gated race has exactly one `-skip`
+  and one `-go` watch with this config; `run-gate.test.mjs` runs the idle-then-detect-failure sequence (poll 1 run →
+  idle, poll 2 running → idle, poll 3 paused → idle, poll 4 inner step failed → `terminal-state` + one
+  `blockers.md` line).
+- **D4 Gated steps (R2-F1: per step, not per group).** (a) `lane-slot-1..6`: skip when `RUN/slots.json` `slots.N` is
+  `null`. (b) `investigate`, `spec`, `plan-pr` **each** in its own race: skip when its id is in `RUN/run.json`
+  `steps_done`, or `plan_pr` is non-null, or `RUN/slots.json` exists. (c) `spar-loop`, `merge-plan` each in its own
+  race: skip when its id is in `steps_done` or `RUN/slots.json` exists (written only by `merge-plan`). A plan resumed
+  mid-planning (`steps_done: [setup, investigate, spec]`, `plan_pr: null`, no `slots.json`) therefore runs only
+  `plan-pr` onwards — `run-gate.test.mjs` fixture, plus "fresh run: none skip" and "`plan-pr` done: all three skip".
+  Each step keeps its existing id; D4 wraps it in place inside a `parallel joinPolicy any`, it does **not** rename or
+  relocate any step (R1-F3). Watches cost no session and no step budget (§2.5), so per-step races add no step nodes.
+  Template-safe: no step outside these races reads an output inside them (only the repeats' own `stopWhen` and the
+  store watches read `{{…output}}`; `staging-verify` and `gate2` read none). `setup`, `staging-verify`, `gate2` are
+  not gated.
 - **D4-migration (R1-F3): the structural change lands only after the watchdog, over zero in-flight runs.** §2.8 counts
   seven paused runs; a run paused at a now-wrapped step must not resume against a changed workflow structure
   unnoticed. Two mechanical safeguards: (1) **`slot-sizing` gains `depends_on: [restart-watchdog]`** so the watchdog
@@ -145,8 +164,9 @@ handoff), staging-only merges and Gate 2 stay exactly as they are.
 No code interface crosses lanes. Shared conventions, fixed here:
 - `RUN` resolution: `run-gate.cjs` imports `runDirFrom` from `scripts/collab/store-review.cjs` (exported, `:24-30`);
   it does not copy it. `workflow-watchdog.mjs` has its own read-only scan (different input: all runs, not one).
-- `RUN/run.json` fields read by the gate: `plan_pr` (object or `null`), `steps_done` (array of step ids);
-  `RUN/slots.json` `slots` (`{"1": "<lane-id>"|null, …}`). The `setup` prompt (slot-sizing) states these fields.
+- `RUN/run.json` fields read by the gate: `plan_pr` (object or `null`), `steps_done` (array of step ids; decides the
+  per-step skips of D4, R2-F1); `RUN/slots.json` `slots` (`{"1": "<lane-id>"|null, …}`). The `setup` prompt
+  (slot-sizing) states these fields.
 - Preflight runs `guard.cjs`; slot-sizing's new guard assertions are picked up without a preflight change.
 - Runbook wording owners: preflight owns `lane-code.md`, `planning.md`, `driver.md`; slot-sizing owns
   `lane-land.md`, `lane-review.md`; restart-watchdog owns `README.md` and the new `restart-watchdog.md`.
@@ -154,7 +174,7 @@ No code interface crosses lanes. Shared conventions, fixed here:
 ## 5. Lanes (no shared file; one ordering edge, R1-F3)
 | lane | files (Lane scope `paths`) | red on base |
 |---|---|---|
-| `slot-sizing` (items 1 + 3) · `depends_on: [restart-watchdog]` (R1-F3) | `.kiro/workflows/vitana-pipeline.workflow.json`, `scripts/collab/run-gate.cjs`, `scripts/collab/run-gate.test.mjs`, `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs`, `.kiro/pipeline/lane-land.md`, `.kiro/pipeline/lane-review.md`, `docs/validation/VTID-*/**` | `run-gate.test.mjs` (module missing); `guard.test.cjs` "every lane slot / planning / approval group is gated" (structure absent); "no modelId outside a reviewer race" passes on base (regression guard, stated as such) |
+| `slot-sizing` (items 1 + 3) · `depends_on: [restart-watchdog]` (R1-F3) | `.kiro/workflows/vitana-pipeline.workflow.json`, `scripts/collab/run-gate.cjs`, `scripts/collab/run-gate.test.mjs`, `scripts/ci/kiro-steering/guard.cjs`, `scripts/ci/kiro-steering/guard.test.cjs`, `.kiro/pipeline/lane-land.md`, `.kiro/pipeline/lane-review.md`, `docs/validation/VTID-*/**` | `run-gate.test.mjs` (module missing; incl. the D4 mid-planning resume fixture and the D3a idle-then-detect-failure sequence); `guard.test.cjs` "every lane slot / planning / approval step is gated" and "every gated race carries the D3a watch recipe" (structure absent); "no modelId outside a reviewer race" passes on base (regression guard, stated as such) |
 | `preflight` (item 2) | `scripts/collab/preflight.mjs`, `scripts/collab/preflight.test.mjs`, `.kiro/pipeline/lane-code.md`, `.kiro/pipeline/planning.md`, `.kiro/pipeline/driver.md`, `docs/validation/VTID-*/**` | `preflight.test.mjs` (module missing; runbook text absent) |
 | `restart-watchdog` (item 4) | `.kiro/hooks/vitana-workflow-watchdog.json`, `scripts/collab/workflow-watchdog.mjs`, `scripts/collab/workflow-watchdog.test.mjs`, `.kiro/pipeline/restart-watchdog.md`, `.kiro/pipeline/README.md`, `docs/validation/VTID-*/**` | `workflow-watchdog.test.mjs` (module and hook file missing) |
 `docs/validation/VTID-*/**`: each lane writes only its own `docs/validation/<its VTID>/`. All three lanes are
@@ -185,7 +205,8 @@ No code interface crosses lanes. Shared conventions, fixed here:
   `scope-check` as in `PR-GATE.yml:160-166`; after `preflight` lands: `node scripts/collab/preflight.mjs --repo .
   --base origin/main --head HEAD --branch <branch> --title "<PR title>"`.
 - Red-on-base output for every new test recorded in `docs/validation/<VTID>/commands.log`. Tests use temp-dir
-  fixtures only, never the real `~/.kiro` or a live system; no network beyond read-only `gh` in preflight.
+  fixtures only, never the real `~/.kiro` or a live system; no network beyond read-only `gh` in preflight. The one
+  real-engine read (D3 field-path capture) is a read-only copy, redacted, into an inline test fixture.
 - Deploys nothing (no `services/gateway/**`, no frontend): no `staging-tests.json`, no STAGING-VERIFY, no Gate 2.
   Done = every lane merged with green Lane scope + Collab handoff (+ unit).
 
@@ -193,13 +214,15 @@ No code interface crosses lanes. Shared conventions, fixed here:
 `docs/validation/<plan VTID>/timings.json` (`vitana.plan-timings/v1`, collaboration.md §8b; staging fields `null`,
 `sources_unavailable: ["staging_verify"]`), written by the plan driver in the plan's closing record PR. Plus a
 before/after count per run of spawned agent sessions (engine `sessions.json`), recorded in `slot-sizing`'s
-`commands.log`: target 0 sessions for an empty slot and for planning/approval on a resumed plan.
+`commands.log`: target 0 sessions for an empty slot and for each already-finished planning/approval step on a resumed
+plan.
 
 ## 9. Risks
 - R1 Engine internals: watch semantics and the run-state layout are undocumented and version-sensitive. Mitigation:
-  fixtures pinned to the installed engine's real files, every read tolerant of absence (→ `idle` / silent), the guard
-  keeps the recipe within the schema.
-- R2 Hang on failure (D3) if engine state cannot be read: surfaced by the watchdog as "running, stale beat".
+  fixtures pinned to the installed engine's real files (D3), every read tolerant of absence (→ `idle` / silent), the
+  guard keeps the recipe within the schema (D3a).
+- R2 Hang on failure (D3) if engine state cannot be read, or a `-skip` watch hits the engine's idle timeout (D3a):
+  surfaced by the watchdog as "running, stale beat".
 - R3 Preflight drift: avoided by spawning CI's own commands (D5); preflight is advisory and CI stays the gate.
 - R4 Watchdog cannot resume another session's run itself (engine authority rule) — documented in
   `restart-watchdog.md`; it only reports and instructs.

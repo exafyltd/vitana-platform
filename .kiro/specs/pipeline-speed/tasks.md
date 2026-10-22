@@ -11,32 +11,43 @@ protected gate file, `CLAUDE.md`, `.claude/**` or `.kiro/steering/**` change; no
 <!-- lane: slot-sizing -->
 ## Lane `slot-sizing` — empty slots and resumed planning cost zero sessions; no stray model pin (items 1 + 3)
 - [ ] S1 New `scripts/collab/run-gate.cjs` (CommonJS like `store-review.cjs`; imports its exported `runDirFrom`).
-      Reads stdin `{cursor, config, workspacePath}`; `config` = `{run: "{{setup.output}}", mode: "slot"|"planning"|
-      "approval", role: "skip"|"go", slot: "N"}`. Prints one JSON line `{status: "idle"|"new-activity"|
-      "terminal-state", cursor}` and always exits 0 (exit codes are unreliable on Windows). Rules (plan D1-D4):
-      `go` → `new-activity` when the group has work, else `idle`; `skip` → first poll decides and pins
-      `cursor.decided`; `skip`+nothing to do → `terminal-state`; after `decided: "run"` → `terminal-state` only when
-      the run's engine state (`~/.kiro/sessions/*/workflows/<wf id>/workflow-state.json`, read-only, wf id = RUN
-      folder suffix) shows the gated node `failed` (then one line appended to `RUN/blockers.md`), else `idle`;
-      `paused` stays `idle`; unreadable RUN or engine state → `idle` for `skip`, and for `go` the work runs (fail
-      open to today's behaviour, never skip work on missing data). Node status path inside `workflow-state.json`
-      taken from a real state file of the installed engine and pinned as a fixture.
+      Reads stdin `{cursor, config, workspacePath}`; `config` = `{run: "{{setup.output}}", role: "skip"|"go",
+      gatedNodeId: "<step or repeat id>", gatedStepIds: [...] (lane slots), slot: "N" (lane slots)}`. Prints one
+      JSON line `{status: "idle"|"new-activity"|"terminal-state", cursor}` and always exits 0 (exit codes are
+      unreliable on Windows). Rules (plan D1-D4, D3a): skip decision per gated step — lane slot: `slots.N` is `null`;
+      `investigate`/`spec`/`plan-pr`: id in `run.json` `steps_done`, or `plan_pr` non-null, or `slots.json` exists;
+      `spar-loop`/`merge-plan`: id in `steps_done` or `slots.json` exists. `go` first poll → `new-activity` when the
+      step has work, else `idle`; `skip` first poll decides and pins `cursor.decided`; nothing to do → `terminal-state`;
+      after `decided: "run"` → `terminal-state` only by the D3 terminal rule (the run's engine state
+      `~/.kiro/sessions/*/workflows/<wf id>/workflow-state.json`, read-only, wf id = RUN folder suffix: `gatedNodeId`
+      `failed`/`cancelled`/`aborted`, or any `gatedStepIds` entry in one of those statuses while none is `running`;
+      then one line appended to `RUN/blockers.md`), else `idle`; `paused` stays `idle` (pinned non-terminal);
+      unreadable RUN or engine state → `idle` for `skip`, and for `go` the work runs (fail open to today's behaviour,
+      never skip work on missing data). Status field paths taken from a real (redacted) state file of the installed
+      engine with a failed step inside a repeat, recorded in `commands.log` and pinned as fixtures.
 - [ ] S2 `.kiro/workflows/vitana-pipeline.workflow.json`: wrap each `lane-slot-N` as
       `parallel slot-N joinPolicy any [watch slot-N-skip, repeat lane-slot-N]` with `watch slot-N-go` as the repeat's
-      first child (repeat `stopWhen`, review races and `land-N` unchanged); wrap `investigate`+`spec`+`plan-pr` as
-      `planning` and `spar-loop`+`merge-plan` as `approval` the same way (`planning-skip`/`planning-go`,
-      `approval-skip`/`approval-go`). Watches: `handler: command`, static `node scripts/collab/run-gate.cjs`,
-      `pollIntervalSec: 10`, `commandTimeoutSec: 60` (as the store watches). `setup` prompt states that `run.json`
-      carries `plan_pr` and `steps_done`. Step count stays 40, depth ≤ 8, max 6 lane branches.
+      first child (repeat `stopWhen`, review races and `land-N` unchanged); wrap each of `investigate`, `spec`,
+      `plan-pr`, `spar-loop`, `merge-plan` in its own race the same way (`<id>-skip` / `<id>-go`), every step id kept.
+      Watches (D3a): `handler: command`, static `node scripts/collab/run-gate.cjs`, `pollIntervalSec: 30`,
+      `commandTimeoutSec: 30`, `idleTimeoutSec: 86400` (or the installed engine's cap, recorded in `commands.log`).
+      `setup` prompt states that `run.json` carries `plan_pr` and `steps_done`. Step count stays 40, depth ≤ 8, max 6
+      lane branches.
 - [ ] S3 `scripts/ci/kiro-steering/guard.cjs` + `guard.test.cjs`: accept the wrapped slot (the review race stays a
       direct `parallel` child of the slot repeat, `reviewRace` unchanged in substance); new assertions: every lane slot
-      and the `planning`/`approval` groups are gated by a `run-gate.cjs` skip/go pair; gate watches use the static
-      command; **no step outside a reviewer race pins `modelId`, and every pinned `modelId` is in `REVIEWER_MODELS`**
+      and each of `investigate`, `spec`, `plan-pr`, `spar-loop`, `merge-plan` is gated by exactly one `run-gate.cjs`
+      skip/go pair carrying the D3a recipe (`gatedNodeId`, `gatedStepIds` for slots, static command,
+      `idleTimeoutSec` ≥ 86400 or the recorded cap); **no step outside a reviewer race pins `modelId`, and every pinned `modelId` is in `REVIEWER_MODELS`**
       (item 3; passes on base — declared a regression guard); a test that a gate race in the wrong shape fails.
 - [ ] S4 New `scripts/collab/run-gate.test.mjs` (node:test, temp RUN + fake engine state dirs via env override of
       the home dir): empty slot → skip `terminal-state` / go `idle`; filled slot → skip `idle` on every poll incl.
-      after `run.json` changes / go `new-activity`; resumed plan (`plan_pr` set) → planning skipped; `slots.json`
-      present → approval skipped; gated node `failed` → `terminal-state` + one blockers line; `paused` → `idle`;
+      after `run.json` changes / go `new-activity`; fresh run → no planning step skipped; mid-planning resume
+      (`steps_done: [setup, investigate, spec]`, `plan_pr: null`, no `slots.json`) → `investigate`/`spec` skipped,
+      `plan-pr` runs; `plan-pr` done (`plan_pr` set) → all three skipped; `slots.json` present → `spar-loop` and
+      `merge-plan` skipped; failure fixtures (failed-at-repeat, failed-inner-step-in-repeat,
+      failed-inner-step-in-wrapper) → `terminal-state` + one blockers line; `paused`/`running` → `idle`; the
+      idle-then-detect-failure sequence (run → idle, running → idle, paused → idle, inner step failed →
+      `terminal-state`);
       missing/malformed files → go runs, skip idle; never writes outside `RUN/blockers.md`. A simulated walk of the
       recipe (repeat runs iteration 0 before `stopWhen`) asserts 0 agent steps for an empty slot and for planning +
       approval on a resumed run, and the unchanged number for a filled slot.
