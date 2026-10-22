@@ -19,7 +19,7 @@ paths:
   - "docs/SCREEN_INVENTORY.md"
   - "docs/validation/**"
   - "tests/**"
-updated: 2026-10-22T13:13Z
+updated: 2026-10-22T13:17Z
 ---
 # D9 — partners read and sign the data processing agreement
 
@@ -802,4 +802,6 @@ reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T13:09Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-22T13:13Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-22T13:17Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
