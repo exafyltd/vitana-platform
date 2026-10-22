@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { check, checkAgents, validateWorkflow } = require('./guard.cjs');
+const { check, checkAgents, validateWorkflow, parseFrontMatter, frontMatter, REVIEWER_MODELS, STORE_COMMAND } = require('./guard.cjs');
 
 function repo(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-steer-'));
@@ -81,9 +81,24 @@ test('agents: check() runs the agent checks only where scripts/collab/queue.mjs 
 test('agents: a missing reviewer agent fails', () => {
   assert.match(errs({ [AGENT]: null }), /vitana-lane-reviewer\.md missing/);
 });
-test('agents: the reviewer must run on claude-sonnet-5.5', () => {
-  assert.match(errs({ [AGENT]: real(AGENT).replace('model: claude-sonnet-5.5', 'model: claude-opus-4.8') }), /model must be claude-sonnet-5\.5/);
-  assert.match(errs({ [AGENT]: real(AGENT).replace('model: claude-sonnet-5.5\n', '') }), /model must be claude-sonnet-5\.5/);
+test('agents: the reviewer front matter pins no model (the review step pins it) or a chain model only', () => {
+  assert.strictEqual(parseFrontMatter(frontMatter(real(AGENT))).model, undefined);
+  const withModel = (m) => real(AGENT).replace('\ntools:\n', `\nmodel: ${m}\ntools:\n`);
+  for (const ok of REVIEWER_MODELS) assert.doesNotMatch(errs({ [AGENT]: withModel(ok) }), /model must be/, ok);
+  for (const bad of ['claude-opus-4.8', 'auto', 'gemini-2.5-pro']) {
+    assert.match(errs({ [AGENT]: withModel(bad) }), /model must be unset \(the review step pins it\) or one of claude-sonnet-5\.5, claude-opus-5\.5, claude-sonnet-4\.5/, bad);
+  }
+});
+test('agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)', () => {
+  assert.deepStrictEqual([...REVIEWER_MODELS], ['claude-sonnet-5.5', 'claude-opus-5.5', 'claude-sonnet-4.5']);
+  const gov = real('services/gateway/src/services/project-manager/governance.ts');
+  const m = gov.match(/REVIEWER_AGENT_MODELS: readonly string\[\] = Object\.freeze\(\[([^\]]*)\]\)/);
+  assert.ok(m, 'REVIEWER_AGENT_MODELS literal not found in governance.ts');
+  assert.deepStrictEqual([...m[1].matchAll(/'([^']+)'/g)].map((x) => x[1]), [...REVIEWER_MODELS]);
+  assert.ok(REVIEWER_MODELS.every((x) => x.startsWith('claude-')));
+});
+test('agents: the reviewer names the full model chain', () => {
+  assert.match(errs({ [AGENT]: real(AGENT).split('`claude-opus-5.5`').join('`claude-x`') }), /Model chain/);
 });
 test('agents: the reviewer name is fixed', () => {
   assert.match(errs({ [AGENT]: real(AGENT).replace('name: vitana-lane-reviewer', 'name: other') }), /name must be vitana-lane-reviewer/);
@@ -104,7 +119,7 @@ test('agents: the reviewer fails loudly when its model is unavailable', () => {
   assert.match(errs({ [AGENT]: real(AGENT).split('model_unavailable').join('model_gone') }), /model_unavailable/);
 });
 test('agents: the reviewer prompt carries the verdict keys and every review-entry trailer', () => {
-  for (const t of ['Collab-Verdict:', 'Collab-Reviewed-Head:', 'Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)', 'Collab-Review:']) {
+  for (const t of ['Collab-Verdict:', 'Collab-Reviewed-Head:', 'Collab-Reviewer: agent:vitana-lane-reviewer (<model>)', 'Collab-Review:']) {
     assert.match(errs({ [AGENT]: real(AGENT).split(t).join('X-Gone:') }), /missing/, t);
   }
   assert.match(errs({ [AGENT]: real(AGENT).split('"head_sha"').join('"head"') }), /"head_sha"/);
@@ -125,16 +140,63 @@ test('workflow: input is the owner task text only', () => {
 test('workflow: a recipe that does not parse fails', () => {
   assert.match(errs({ [WORKFLOW]: '{ nope' }), /does not parse/);
 });
-test('workflow: every review step is pinned to vitana-lane-reviewer on claude-sonnet-5.5', () => {
+test('workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel', () => {
   const w = wf();
-  let n = 0;
-  walk(w.steps, (s) => { if (s.agent === 'vitana-lane-reviewer') { n++; assert.strictEqual(s.modelId, 'claude-sonnet-5.5', s.id); } });
-  assert.ok(n >= 1);
-  walk(w.steps, (s) => { if (s.agent === 'vitana-lane-reviewer') s.modelId = 'auto'; });
-  assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /modelId claude-sonnet-5\.5/);
+  let slots = 0;
+  walk(w.steps, (n) => {
+    if (n.type !== 'repeat' || !JSON.stringify(n.steps).includes('"vitana-lane-reviewer"')) return;
+    slots++;
+    const race = n.steps.filter((s) => s.type === 'parallel');
+    assert.strictEqual(race.length, 1, n.id);
+    assert.strictEqual(race[0].joinPolicy, 'any', n.id);
+    assert.deepStrictEqual(race[0].branches.map((b) => b.steps[0].modelId), [...REVIEWER_MODELS], n.id);
+    for (const b of race[0].branches) {
+      assert.strictEqual(b.steps[1].type, 'watch');
+      assert.strictEqual(b.steps[1].config.command, STORE_COMMAND);
+      assert.strictEqual(b.steps[1].config.model, b.steps[0].modelId);
+      assert.strictEqual(b.steps[1].config.output, `{{${b.steps[0].id}.output}}`);
+    }
+    assert.ok(!n.steps.some((s) => s.agent === 'vitana-lane-reviewer'), `${n.id}: no review step outside the race`);
+  });
+  assert.strictEqual(slots, 6);
+  for (const bad of [undefined, 'auto', 'claude-opus-4.8', 'gemini-2.5-pro']) {
+    const wBad = wf();
+    walk(wBad.steps, (s) => { if (s.agent === 'vitana-lane-reviewer') s.modelId = bad; });
+    assert.match(errs({ [WORKFLOW]: JSON.stringify(wBad) }), /modelId must be one of claude-sonnet-5\.5, claude-opus-5\.5, claude-sonnet-4\.5/, String(bad));
+  }
+  const race = (w0, n) => { let r = null; walk(w0.steps, (s) => { if (s.id === `reviews-${n}`) r = s; }); return r; };
+  const wJoin = wf(); race(wJoin, 1).joinPolicy = 'allSettled';
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wJoin) }), /review race reviews-1 must use joinPolicy any/);
+  const wDrop = wf(); race(wDrop, 1).branches.pop();
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wDrop) }), /review race reviews-1 must have one branch per chain model/);
+  const wSwap = wf(); const r2 = race(wSwap, 2); r2.branches.reverse();
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wSwap) }), /review race reviews-2 must have one branch per chain model/);
+  const wStore = wf(); race(wStore, 3).branches[1].steps[1].config.model = 'claude-sonnet-5.5';
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wStore) }), /reviews-3 branch 2 must be a sequence/);
+  const wNoStore = wf(); race(wNoStore, 4).branches[0].steps.pop();
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wNoStore) }), /reviews-4 branch 1 must be a sequence/);
+  const wSeq = wf();
+  walk(wSeq.steps, (n) => {
+    if (n.id !== 'lane-slot-5') return;
+    const r = n.steps.find((s) => s.type === 'parallel');
+    n.steps.splice(n.steps.indexOf(r), 1, ...r.branches.map((b) => b.steps[0]));
+  });
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wSeq) }), /lane-slot-5 must hold its review steps in exactly one parallel review race/);
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(wSeq) }), /review step review-5 must be a branch of a lane slot's joinPolicy any review race/);
   const w2 = wf();
   walk(w2.steps, (s) => { if (s.agent === 'vitana-lane-reviewer') s.agent = 'wf-code-reviewer'; });
   assert.match(errs({ [WORKFLOW]: JSON.stringify(w2) }), /no step uses agent vitana-lane-reviewer/);
+});
+test('workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)', () => {
+  const w = wf();
+  walk(w.steps, (s) => { if (s.id === 'land-1') s.prompt += '\n{{review-1-b.output}}'; });
+  assert.match(validateWorkflow(w, new Set(['vitana-lane-reviewer'])).join('\n'), /land-1: \{\{review-1-b\.output\}\} reads a node of joinPolicy any branch reviews-1#1/);
+  const w2 = wf();
+  walk(w2.steps, (s) => { if (s.id === 'store-2') s.config.output = '{{review-2-c.output}}'; });
+  assert.match(validateWorkflow(w2, new Set(['vitana-lane-reviewer'])).join('\n'), /store-2: \{\{review-2-c\.output\}\} reads a node of joinPolicy any branch reviews-2#2/);
+  const w3 = wf();
+  walk(w3.steps, (s) => { if (s.id === 'store-3') s.config.command = 'node x.cjs {{review-3.output}}'; });
+  assert.match(validateWorkflow(w3, new Set(['vitana-lane-reviewer'])).join('\n'), /command must be static/);
 });
 test('workflow: at most 6 lanes build in parallel', () => {
   const w = wf();
