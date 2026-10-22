@@ -308,3 +308,13 @@ Per the automation's item W and `driver.md`, I did the one item (establish a liv
 lane untouched, write a last heartbeat, and release the `_plan` claim so the lane is not blocked — the next wake-up (or
 an interactive driver / the exceptions seat when it builds the `executor: claude` lane) resumes from git. No VTID, no
 code change, no merge, no live-system write.
+
+### 2026-10-22T11:03Z · kiro-exafy-202610221101-cba4 · driver re-woken (automation run, item W) — no action for an automation driver
+Hourly exafy wake-up. Same situation as the 09:03Z entry: of this seat's `author_seat: exafy` plans with no live
+driver (`sparring-floor-retry` approved, `plan-spar-vitana-v1-ref` in-review, `sparring-model-fallback` drafted), only
+`sparring-floor-retry` is `approved|executing`, so W selected it. Its heartbeat had gone stale again; wrote a fresh
+heartbeat (took over the stale tip of `kiro-exafy-202610221001-dbf8`) and hold the `_plan` claim — the plan has a live
+driver again. The only lane `floor-retry-code` is `executor: claude` on governance paths, which an automation-started
+driver never builds, and the exceptions seat `exafyltd` is already carrying it on `pm-agent/sparring-floor-retry` (§7
+Claude-unavailable mode). No sparring round, no in-review lane, nothing to merge. One item done (live driver); leaving
+plan state and lane untouched; releasing the `_plan` claim on stop. No VTID, no code change, no merge, no live write.
