@@ -3,11 +3,13 @@ slug: staging-verify-runner-fix
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-22T11:00Z
+updated: 2026-10-22T11:14Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/staging-verify-runner-fix/sparring/verdict.md
+vtids: [VTID-05333, VTID-05334]
 ---
 # Handoff — STAGING-VERIFY: runner image, native suite commands, bundle profile
 Owner, 2026-10-22 (Kiro Web): "ok, let's fix the verification first". This unblocks Gate 2 for VTID-05330 (vitana-v1
@@ -22,3 +24,6 @@ lane `runner` gets `seat: exafyltd` although `scripts/**` maps to `platform` (se
 this session to run the fix end to end and the lane is mixed (`.github/**` is not in any specific area). No VTID
 allocated, no live system touched.
 Next: PLAN-SPAR spars the `plan(staging-verify-runner-fix)` PR; this session answers each round.
+
+### 2026-10-22T11:14Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

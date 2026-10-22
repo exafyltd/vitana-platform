@@ -15,7 +15,8 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:00Z
+updated: 2026-10-22T11:14Z
+vtid: VTID-05334
 ---
 # STAGING-VERIFY runner: pinned image and allowlisted suite env (vitana-platform)
 Plan: `.kiro/specs/staging-verify-runner-fix/` — `plan.md` and the `tasks.md` section `<!-- lane: runner -->`.
@@ -26,3 +27,6 @@ allowlist, no live write, no test against production.
 ## Log
 ### 2026-10-22T11:00Z · kiro-exafyltd-202610220818-5273 · created → ready
 Lane drafted with the plan. Next: PLAN-SPAR; once CI writes the VTID, seat `exafyltd` claims it.
+
+### 2026-10-22T11:14Z · ci-plan-spar · ready (VTID allocated)
+VTID-05334 allocated after policy approval (converged-auto-v1).
