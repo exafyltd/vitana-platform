@@ -1,10 +1,10 @@
 ---
 lane: plan-spar-allocation
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: exafyltd
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -13,11 +13,11 @@ paths:
   - scripts/collab/plan-spar.mjs
   - scripts/collab/plan-spar.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-20T19:05Z
+updated: 2026-10-22T18:17Z
 vtid: VTID-05273
-claimed_by: kiro-exafy-202610201807-2a87
 branch: kiro/kiro-autonomy-fallback/plan-spar-allocation
 pr: https://github.com/exafyltd/vitana-platform/pull/4227
+parked_from: executing
 ---
 # plan-spar-allocation — CI allocates late lane VTIDs (retry, idempotent), no hand-off to Claude
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` §5 B and the `plan-spar-allocation` section of `tasks.md` are
@@ -62,3 +62,5 @@ Next: re-review by agent:vitana-lane-reviewer (claude-sonnet-5.5).
 ### 2026-10-20 · agent:vitana-lane-reviewer (claude-sonnet-5.5) · review
 Reviewed head 62a84eeb1426093d1a7a67fb1186406b1d5a2c2a. Verdict: accept. Prior blocker fixed (validate-pr green). Late-lane retry, per-lane idempotence, single sparring binding on the first lane, next_actor kiro with reason, untouched partner chain/rounds and no hand allocation all verified; 9 new tests red->green. Non-blocking: PR-GATE wiring of plan-spar.test.mjs is owned by lane scope-check.
 PR: https://github.com/exafyltd/vitana-platform/pull/4227
+### 2026-10-22T18:17Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
