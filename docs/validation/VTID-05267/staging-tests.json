@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05267",
+  "service": "gateway",
+  "note": "Read-only (rule 48). mt-jobs/jobs-automation-actor-tenant ships dark: MT_RESOLUTION_V2 is not set on staging, so all seven dispatch sites keep tagging automation events with DEFAULT_TENANT_ID. The changed routes are member writes (join, feedback, match state, signup log), so no request is sent to them on staging; the per-site actor resolution is proven by Jest. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build with the converted route modules boots"
+    },
+    {
+      "kind": "existing",
+      "name": "automation events carry the actor's tenant (seven sites, flag matrix)",
+      "ref": "npx jest test/vtid-05267-automation-actor-tenant.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the changed routes only write; their dispatch tenant is proven in CI, never by a staging POST"
+    }
+  ]
+}
