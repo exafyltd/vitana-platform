@@ -1,6 +1,6 @@
 ---
 lane: staging-proof
-state: executing
+state: parked
 next_actor: kiro
 depends_on: [steering-rules, plan-spar-allocation, pm-fallback, scope-check, exceptions-seat, reviewer-agent, pipeline-speed]
 executor: kiro
@@ -12,10 +12,10 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/test/kiro-autonomy-fallback-proof.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-20T21:40Z
+updated: 2026-10-22T20:41Z
 vtid: VTID-05277
-claimed_by: kiro-exafyltd-202610201618-c018
 branch: kiro/kaf-staging-proof-r2
+parked_from: executing
 ---
 # staging-proof â€” the pipeline proven on staging in fallback mode with zero Claude Code actions
 Plan: `.kiro/specs/kiro-autonomy-fallback/plan.md` Â§4.6, Â§4.9 and Â§5 F, and the `staging-proof` section of `tasks.md`
@@ -86,3 +86,5 @@ history; the PR is matched by its trailers. The staging `/mode` `kiro_fallback` 
 Reviewed head 1f1732938d1e0983169c4293e6931e2c40927566 (PR https://github.com/exafyltd/vitana-platform/pull/4238). Verdict: accept.
 Findings: no blockers. Non-blocking: fallback asserted on /mode (status 401-probed); staging /mode red until PM fix-forward; zero-claude-proof is F4 post-Gate-2; some CI jobs still running.
 Entry committed by the land step on the reviewer agent's behalf. Next: merge by the PM in fallback mode (plan section 5 F).
+### 2026-10-22T20:41Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
