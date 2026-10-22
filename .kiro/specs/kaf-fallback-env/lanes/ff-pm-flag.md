@@ -13,7 +13,7 @@ paths:
   - services/gateway/src/services/project-manager/observe-live.ts
   - services/gateway/test/project-manager/observe-live.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-22T00:54Z
+updated: 2026-10-22T00:56Z
 branch: kiro/kaf-fallback-env/ff-pm-flag
 pr: https://github.com/exafyltd/vitana-platform/pull/4242
 vtid: VTID-05281
@@ -76,4 +76,6 @@ Entry committed by the land step on the reviewer agent's behalf (finish-staging 
 ### 2026-10-22T00:52Z · pm-agent · executing → parked
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-22T00:54Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T00:56Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
