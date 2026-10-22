@@ -89,8 +89,19 @@ Priorities sit below the shipped `vitana_index` (50–70) and `guided_journey_st
 (65) so the daily habit and health cards keep precedence, and at or above
 `feature_tip` (20) / `invite_friend` (15) so a relevant setup step beats a
 generic tip on a quiet day. Exact per-card priority is set in the lane and
-pinned by a test. Copy reuses `enrichment-card-tips.ts`; each moment carries an
-English `intent` (never a hardcoded spoken sentence — §13b / NEVER-41).
+pinned by a test.
+
+**Intent vs. display copy (R3-F2 resolution).** `enrichment-card-tips.ts` holds
+*display* copy (card face title/description, "never read by the voice
+pipeline") — it is NOT a composer intent and must not be used as the moment's
+`intent`. Following the shipped `featureTip` pattern exactly: each enrichment
+moment uses an English `intent` *instruction* to the composer (one shared
+template referencing fact keys, or per-card constants), and passes
+`ENRICHMENT_CARD_TIPS[Ex].title.en` / `.description.en` as `facts`
+(`card_title` / `card_description`) — English source data for the model, which
+writes in the member's language. This keeps NEVER-41 clean (the intent
+instructs, it is never the finished sentence) and requires no locale-coverage
+change (facts stay English).
 
 ### Explicitly NOT in scope (sparring corrections)
 - **No new Index or diary moments.** The shipped `vitana_index` and
@@ -138,9 +149,20 @@ Genuinely new (the real work):
    asserts: when the profiles bulk query rejects, the seam returns an empty map
    + `unavailable: ['enrichment_profiles']` and the tick continues, enrichment
    moments simply not firing.
-2. **MemberContext fields:** `incompleteEnrichmentCards` /
-   `enrichmentDismissRows` (or an equivalent shape feeding
-   `eligibleEnrichmentCards`).
+2. **MemberContext field (R3-F1 resolution — pre-compute in the tick):**
+   `Moment.build(ctx)` has no `Date`, only `ctx.localDate: string`, so it
+   cannot call `eligibleEnrichmentCards(..., now, ...)` correctly (using
+   `new Date(ctx.localDate)` gives midnight UTC and silently breaks the 7-day
+   dismissal cooldown). Therefore the eligible set is computed **in the tick
+   loop**, where the real `now` is in scope (`companion-service.ts:88`), BEFORE
+   `ctx` is built: call
+   `eligibleEnrichmentCards(completions, dismissRows, 'messenger', now,
+   unavailableEnrichmentCards())` and store the result on `MemberContext` as
+   `eligibleEnrichmentCardTypes: ReadonlySet<EnrichmentCardType>`. Each
+   enrichment moment just checks `ctx.eligibleEnrichmentCardTypes.has('E1')` —
+   no `eligibleEnrichmentCards` call and no `now` inside `build()`. Test:
+   member dismisses E8 at T; tick at T+3d → E8 moment returns null; tick at
+   T+8d → E8 fires.
 3. **11 enrichment moments** gated through
    `eligibleEnrichmentCards(..., unavailableEnrichmentCards())`.
    **Priority-scale trap (mandatory):** `EligibleEnrichmentCard.priority`

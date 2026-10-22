@@ -29,6 +29,13 @@ Contracts:
   the moment priority. Assign each moment an explicit companion-scale priority
   in 20–49 (above featureTip 20, below vitanaIndex 50), E1 highest → E11 lowest.
   Priority-pin test asserts absolute values.
+- R3-F1: moments read `ctx.eligibleEnrichmentCardTypes` (the pre-computed set
+  from the signals lane, built with the tick's real `now`). Moments never call
+  `eligibleEnrichmentCards` and never construct a `Date` from `localDate`. Test:
+  dismissed E8 at T → null at T+3d, fires at T+8d.
+- R3-F2: each moment's `intent` is an English composer instruction (featureTip
+  pattern); `ENRICHMENT_CARD_TIPS[Ex].title.en`/`.description.en` go in `facts`
+  (`card_title`/`card_description`), never used as the `intent` string.
 
 ### 2026-10-22T08:20Z · kiro-exafyltd-202610220802-4a74 · ready
 Rescoped in sparring round-1 rewrite (R1-F1): F1/F7/F8 removed (already

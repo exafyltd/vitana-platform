@@ -13,8 +13,11 @@
       tests can stub it without a DB. The seam MUST use `Promise.allSettled` /
       `unavailable[]` like `fetchMemberSignals` and MUST NEVER throw (it joins
       the `Promise.all` at `companion-service.ts:131`).
-- [ ] 4. Expose the per-member completion map + dismissal rows on
-      `MemberContext` in the shape `eligibleEnrichmentCards()` consumes.
+- [ ] 4. In the tick loop (real `now` in scope, before building `ctx`) call
+      `eligibleEnrichmentCards(completions, dismissRows, 'messenger', now,
+      unavailableEnrichmentCards())` and expose the result on `MemberContext` as
+      `eligibleEnrichmentCardTypes: ReadonlySet<EnrichmentCardType>` (R3-F1).
+      Moments never construct a `Date` from `localDate`.
 - [ ] 5. Unit tests: bulk reads equal the per-member resolver on the same
       fixtures (semantics match, incl. social `is_active && disconnected_at IS
       NULL` and the calendar-app allowlist); AND when the profiles bulk query
@@ -28,15 +31,16 @@ tests that compare bulk vs the existing per-member resolver.
 <!-- lane: companion-enrichment-moments -->
 ## Lane: companion-enrichment-moments
 
-- [ ] 6. Add 11 `COMPANION_MOMENTS` entries (E1–E11), each eligible only when
-      the member is incomplete AND not in a dismissal cooldown AND the card is
-      available, gated through `eligibleEnrichmentCards(completions, dismissRows,
-      screen, now, unavailableEnrichmentCards())`.
+- [ ] 6. Add 11 `COMPANION_MOMENTS` entries (E1–E11), each gated only by
+      `ctx.eligibleEnrichmentCardTypes.has('Ex')` (the pre-computed set from
+      task 4). Moments do NOT call `eligibleEnrichmentCards` or build a `Date`.
 - [ ] 7. Assign each moment an explicit companion-scale priority in **20–49**
       (above `feature_tip` 20, below `vitana_index` 50), E1 highest → E11
       lowest. Do NOT reuse `EligibleEnrichmentCard.priority` (1-based,
-      lower=better — opposite scale). English `intent` per card (never a
-      hardcoded spoken sentence); reuse `enrichment-card-tips.ts` copy.
+      lower=better — opposite scale). Each `intent` is an English composer
+      instruction (featureTip pattern); pass
+      `ENRICHMENT_CARD_TIPS[Ex].title.en`/`.description.en` as `facts`
+      (`card_title`/`card_description`), never as the `intent` string (R3-F2).
 - [ ] 8. Do NOT add/alter F1/F2/F3/F7/F8 or the Index/diary moments.
 - [ ] 9. Unit tests: incomplete+non-dismissed+available member → that card
       eligible; completed member → never; dismissed-elsewhere member →

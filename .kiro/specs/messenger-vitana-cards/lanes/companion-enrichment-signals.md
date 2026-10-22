@@ -24,6 +24,12 @@ Contract (R2-F2): the seam uses `Promise.allSettled` / `unavailable[]` like
 (it is in the `Promise.all` at `companion-service.ts:131`). Test: profiles query
 rejects → empty map + `unavailable:['enrichment_profiles']`, tick continues.
 
+Contract (R3-F1): this lane also computes the eligible set in the tick loop
+(real `now` in scope) and stores `eligibleEnrichmentCardTypes:
+ReadonlySet<EnrichmentCardType>` on `MemberContext` via
+`eligibleEnrichmentCards(completions, dismissRows, 'messenger', now,
+unavailableEnrichmentCards())` — so moments never need `now`.
+
 ### 2026-10-22T08:20Z · kiro-exafyltd-202610220802-4a74 · ready
 Created in sparring round-1 rewrite (R1-F4/R1-F5): the enrichment resolver is
 per-member with no bulk form, so the bulk read is its own lane. Awaiting CI

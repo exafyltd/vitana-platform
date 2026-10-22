@@ -4,8 +4,9 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T11:30Z
+state: approved
+sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
+updated: 2026-10-22T12:10Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -54,3 +55,25 @@ CI PLAN-SPAR round 2: 1 blocker + 1 major + 1 minor — all verified and ACCEPTE
 Plan, both affected lanes, and tasks updated. Responses in
 sparring/responses-2.md. Next: push to start round 3 (cap is 3 rounds for a
 standard change).
+
+### 2026-10-22T12:10Z · kiro-exafyltd-202610220802-4a74 · drafted → approved (owner override)
+CI PLAN-SPAR round 3 verdict was `escalated` — the 3-round cap was reached, not
+a dispute. The partner acknowledged all round-2 findings as fully addressed and
+raised two new ones (R3-F1 major: dismissal-cooldown `now` not reachable inside
+`Moment.build`; R3-F2 minor: intent vs. display copy). Both verified and
+accepted; plan/lanes/tasks updated (responses-3.md).
+
+**Owner decision (this conversation, 2026-10-22): Option B — approve the plan
+as-is with the two round-3 fixes applied.** Owner override of the escalated
+verdict. The owner was presented the escalation with both findings and a
+recommendation; the owner chose to proceed without another sparring cycle.
+
+State set to `approved`. Lanes ready: companion-enrichment-signals →
+companion-enrichment-moments → messenger-companion-verification.
+
+**VTID allocation note:** the `vtid_ledger` trigger requires an
+escalated+owner-approved (or converged+policy-approved) sparring record. This
+record is `escalated` with the owner override recorded above and in
+responses-3.md. CI allocates the lane VTIDs — Kiro does not hand-allocate.
+Next: push; if CI does not auto-allocate on an owner-approved escalation, the
+override is on record for the exceptions path / PM to allocate against.
