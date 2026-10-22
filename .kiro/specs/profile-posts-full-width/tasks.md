@@ -3,10 +3,11 @@
 <!-- lane: card-layout -->
 ## Lane `card-layout` — header on top, post full width (vitana-v1)
 - [ ] L1 Vitest `ProfilePostsTab.layout.test.tsx` written first; record it red on vitana-v1 `origin/main`.
-- [ ] L2 `PostCardWithInteractions`: header row = avatar + name/handle/time/delete (`flex items-center gap-3`);
-      text/background block, image, video moved below it as full-width siblings (plan §Change 1-2).
-- [ ] L3 Mobile edge-to-edge media and background block (`-mx-5`, no rounding/shadow); desktop restored with
-      `md:ps-14 md:mx-0 md:rounded-xl md:shadow-md` (plan §Change 3-4).
+- [ ] L2 `PostCardWithInteractions`: two-column grid; header (avatar `md:row-span-2` + name/handle/time/delete,
+      `items-center md:items-start`); body (text/background block, image, raw video wrapper) `col-span-2` on
+      phones, `md:col-span-1 md:col-start-2` from md (plan §Change 1-2).
+- [ ] L3 Phones: image `FeedMedia`, raw video wrapper and background block edge to edge (`-mx-5`, no
+      rounding/shadow); from md `md:mx-0 md:rounded-xl` (+ `md:shadow-md` on image/video) (plan §Change 3-4).
 - [ ] L4 Playwright screenshots 390×844 and 1400×900 of the Posts tab (text post, image post, video post),
       inspected; attached to the PR.
 - [ ] L5 `docs/validation/<VTID>/` with `scope.json`, `acceptance.md`, `staging-tests.json` and the read-only
