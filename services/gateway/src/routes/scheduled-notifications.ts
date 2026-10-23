@@ -41,6 +41,7 @@ import {
   WHATS_NEW_CREATED_BY_PREFIX, WHATS_NEW_MIN_GAP_HOURS,
 } from '../services/whats-new-publisher';
 import * as repo from './scheduled-notifications-repository';
+import { withJobTenants } from '../services/jobs/job-tenant-loop';
 import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
@@ -103,6 +104,16 @@ async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ 
 // ── Helper: extract tenant_id from body or use default ───────
 function getTenantId(req: Request): string | null {
   return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// ── VTID-05270 (mt-jobs): tenant fan-out for the getTenantId-driven routes ──
+// Master off (MT_RESOLUTION_V2 unset) ⇒ the handler gets getTenantId(req) and
+// the live response, exactly as before. Master on ⇒ a body tenant_id runs once
+// for that tenant (AP-0501 → /morning-briefing never re-fans out); no body
+// tenant ⇒ one pass per active tenant (resolveJobTenants). Per-user timezones
+// and the findRecentlyNotified idempotency check stay inside each pass.
+function jobRoute(handler: (req: Request, res: Response, tenantId: string | null) => unknown) {
+  return withJobTenants(handler, getTenantId, { getClient: getServiceClient as any });
 }
 
 /**
@@ -474,8 +485,7 @@ function composeMorningBriefing(ctx: BriefingContext): string {
   return parts.join(' ');
 }
 
-router.post('/morning-briefing', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/morning-briefing', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -540,7 +550,7 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
     (skippedDuplicate ? `, ${skippedDuplicate} skipped as already briefed today` : ''),
   );
   return res.status(200).json({ ok: true, dispatched, skipped_duplicate: skippedDuplicate });
-});
+}));
 
 // =============================================================================
 // POST /daily-pace-notifications — Hourly UTC (claude/daily-pace-notifications)
@@ -567,9 +577,8 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 // every user's local 19:00 hour regardless of their tz offset (including
 // fractional offsets like Asia/Kathmandu UTC+5:45).
 // =============================================================================
-router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
+router.post('/daily-pace-notifications', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   // auth: scheduled-notifications-auth (VTID-04677)
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   // Debug params for on-call / manual testing:
@@ -741,13 +750,12 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
   }
 
   return res.status(200).json({ ok: true, dispatched, skipped, errors });
-});
+}));
 
 // =============================================================================
 // POST /diary-reminder — Daily 9 PM UTC
 // =============================================================================
-router.post('/diary-reminder', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/diary-reminder', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -768,7 +776,7 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /daily-feature-tip — Daily 17:00 UTC (BOOTSTRAP-DAILY-FEATURE-TIP)
@@ -785,8 +793,7 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
 }
 
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/daily-feature-tip', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/daily-feature-tip', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -885,7 +892,7 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
     console.error('[Scheduled] daily_feature_tip exception:', err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
-});
+}));
 
 // =============================================================================
 // POST /whats-new — Daily 16:00 UTC (VTID-04733)
@@ -900,11 +907,10 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 // WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
 // =============================================================================
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/whats-new', async (req: Request, res: Response) => {
+router.post('/whats-new', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
     return res.status(200).json({ ok: true, skipped: 'disabled' });
   }
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1007,13 +1013,12 @@ router.post('/whats-new', async (req: Request, res: Response) => {
     console.error('[Scheduled] whats_new exception:', err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
-});
+}));
 
 // =============================================================================
 // POST /weekly-digest — Sunday 6 PM UTC
 // =============================================================================
-router.post('/weekly-digest', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-digest', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1034,13 +1039,12 @@ router.post('/weekly-digest', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /weekly-summary — Sunday 8 AM UTC
 // =============================================================================
-router.post('/weekly-summary', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-summary', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1061,13 +1065,12 @@ router.post('/weekly-summary', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_activity_summary → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /weekly-reflection — Friday 8 PM UTC
 // =============================================================================
-router.post('/weekly-reflection', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-reflection', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1088,7 +1091,7 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /meetup-reminders — RETIRED (VTID-04374)
@@ -1113,12 +1116,11 @@ router.post('/meetup-reminders', (_req: Request, res: Response) => {
 // in-app inbox.
 // =============================================================================
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/upcoming-events', async (req: Request, res: Response) => {
+router.post('/upcoming-events', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   // impact-allow-no-oasis
   // Fan-out only — reads calendar_events and dispatches push notifications.
   // No state transition worth recording; mirrors the other scheduled-
   // notification handlers in this file (morning-briefing, diary-reminder).
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1164,13 +1166,12 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] upcoming_event_today → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /recommendation-expiry — Daily 10 AM UTC
 // =============================================================================
-router.post('/recommendation-expiry', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/recommendation-expiry', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1200,13 +1201,12 @@ router.post('/recommendation-expiry', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] recommendation_expires_soon → ${dispatched} notifications`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /signal-cleanup — Daily 3 AM UTC
 // =============================================================================
-router.post('/signal-cleanup', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/signal-cleanup', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1234,7 +1234,7 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] signal_cleanup → ${cleaned} signals expired`);
   return res.status(200).json({ ok: true, cleaned });
-});
+}));
 
 // =============================================================================
 // POST /push-dispatch — Cloud Scheduler, every minute
@@ -1522,8 +1522,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
 const NIGHT_PUSH_LOCAL_HOUR = 22;
 
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/night-push', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/night-push', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   // Debug params for on-call / manual testing, same convention as
@@ -1634,7 +1633,7 @@ router.post('/night-push', async (req: Request, res: Response) => {
   }
 
   return res.status(200).json({ ok: true, dispatched, skipped, errors });
-});
+}));
 
 // =============================================================================
 // Health check
