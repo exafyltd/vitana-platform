@@ -312,12 +312,6 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     metadata = { ...invite.metadata };
     trimmed = invite.content;
   }
-  // VTID-05311: a shared item stores only { kind, id }; the sender must see it.
-  if (msgType === SHARED_CONTENT_TYPE) {
-    const shared = await checkSharedContentSend(req, content_data);
-    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
-    metadata = { ...shared.metadata };
-  }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
   if (msgType === 'text') {
@@ -356,6 +350,16 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
       groupId,
     });
     if (!allowed.ok) return res.status(INVITE_REFUSED_STATUS).json(inviteRefusedBody());
+  }
+
+  // VTID-05311: after membership and the retry lookup (a retried share gets its
+  // stored row): the sender must see the item; it is stored as { kind, id },
+  // plus the mentions list, which is sanitized right below like any other.
+  if (msgType === SHARED_CONTENT_TYPE) {
+    const shared = await checkSharedContentSend(req, content_data, trimmed);
+    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
+    const clientMentions = (metadata as any).mentions;
+    metadata = { ...shared.metadata, ...(clientMentions !== undefined ? { mentions: clientMentions } : {}) };
   }
 
   // VTID-04926: never store what the client claims about mentions — only the

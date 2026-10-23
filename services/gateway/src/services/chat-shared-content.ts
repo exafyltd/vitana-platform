@@ -8,10 +8,13 @@
  * so RLS decides what each person may see. The sender's own permissions are
  * checked the same way before the message is stored.
  *
- * The service-role client is used for two yes/no questions only, never for
+ * The service-role client is used for yes/no questions only, never for
  * content: does the item exist at all (so "deleted" can be told apart from
- * "restricted"), and is a profile a test / service account (those are never
- * shown, CLAUDE.md IF–THEN 45).
+ * "restricted" — not for profiles, whose ids are user ids: every unreadable
+ * profile is "restricted"), and is the profile / the post's author / the
+ * event's creator a test or service account (never shown, CLAUDE.md 43/45).
+ * Posts are shown only while `moderation_status = 'active'` (hidden / removed
+ * posts and banned authors' posts are what the feed hides too).
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
@@ -43,6 +46,9 @@ function clip(text: unknown, max = DESCRIPTION_MAX): string {
   return s.length > max ? `${s.slice(0, max - 1)}…` : s;
 }
 
+/** A shared message's caption (optional text next to the card). */
+export const SHARED_CAPTION_MAX = 1000;
+
 const TABLE: Record<SharedKind, { table: string; key: string }> = {
   post: { table: 'profile_posts', key: 'id' },
   event: { table: 'global_community_events', key: 'id' },
@@ -50,34 +56,39 @@ const TABLE: Record<SharedKind, { table: string; key: string }> = {
   profile: { table: 'global_community_profiles', key: 'user_id' },
 };
 
-type Found = { title: string; description: string; image_url: string | null; url: string } | null;
+type Found = { title: string; description: string; image_url: string | null; url: string; owner: string | null } | null;
 
 /** The item as the viewer may see it (user-scoped client), or null when RLS hides it / it is gone. */
 async function readAsViewer(userSb: SupabaseClient, ref: SharedRef): Promise<Found> {
   const { table, key } = TABLE[ref.kind];
   if (ref.kind === 'post') {
-    const { data, error } = await userSb.from(table).select('id, user_id, content, image_url').eq(key, ref.id).maybeSingle();
+    const { data, error } = await userSb.from(table).select('id, user_id, content, image_url')
+      .eq(key, ref.id).eq('moderation_status', 'active').maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return null;
     const row = data as { user_id: string; content: string | null; image_url: string | null };
-    const { data: author } = await userSb.from('global_community_profiles').select('display_name').eq('user_id', row.user_id).maybeSingle();
+    // The author's name as the viewer may see it (a hidden profile → no name).
+    const { data: author, error: authorError } = await userSb.from('global_community_profiles').select('display_name').eq('user_id', row.user_id).maybeSingle();
+    if (authorError) throw new Error(authorError.message);
     return {
       title: clip((author as { display_name?: string } | null)?.display_name, 80),
       description: clip(row.content),
       image_url: row.image_url ?? null,
       url: `/post/post/${ref.id}`,
+      owner: row.user_id,
     };
   }
   if (ref.kind === 'event') {
-    const { data, error } = await userSb.from(table).select('id, title, description, image_url, slug').eq(key, ref.id).maybeSingle();
+    const { data, error } = await userSb.from(table).select('id, title, description, image_url, slug, created_by').eq(key, ref.id).maybeSingle();
     if (error) throw new Error(error.message);
     if (!data) return null;
-    const row = data as { title: string | null; description: string | null; image_url: string | null; slug: string | null };
+    const row = data as { title: string | null; description: string | null; image_url: string | null; slug: string | null; created_by: string | null };
     return {
       title: clip(row.title, 120),
       description: clip(row.description),
       image_url: row.image_url ?? null,
       url: row.slug ? `/e/${row.slug}` : `/pub/events/${ref.id}`,
+      owner: row.created_by ?? null,
     };
   }
   if (ref.kind === 'product') {
@@ -90,6 +101,7 @@ async function readAsViewer(userSb: SupabaseClient, ref: SharedRef): Promise<Fou
       description: clip(row.description),
       image_url: Array.isArray(row.images) && row.images.length > 0 ? row.images[0] : null,
       url: `/discover/product/${ref.id}`,
+      owner: null,
     };
   }
   const { data, error } = await userSb.from(table).select('user_id, display_name, bio, avatar_url').eq(key, ref.id).maybeSingle();
@@ -101,13 +113,17 @@ async function readAsViewer(userSb: SupabaseClient, ref: SharedRef): Promise<Fou
     description: clip(row.bio),
     image_url: row.avatar_url ?? null,
     url: `/u/${ref.id}`,
+    owner: ref.id,
   };
 }
 
 /** Does the item exist at all (service role, a yes/no only)? */
 async function exists(serviceSb: SupabaseClient, ref: SharedRef): Promise<boolean> {
   const { table, key } = TABLE[ref.kind];
-  const { data, error } = await serviceSb.from(table).select(key).eq(key, ref.id).maybeSingle();
+  let q = serviceSb.from(table).select(key).eq(key, ref.id);
+  // A delisted product is gone for members (deleted), not access-restricted.
+  if (ref.kind === 'product') q = q.eq('is_active', true);
+  const { data, error } = await q.maybeSingle();
   if (error) throw new Error(error.message);
   return !!data;
 }
@@ -122,14 +138,20 @@ export async function resolveSharedPreview(
   serviceSb: SupabaseClient,
   ref: SharedRef,
 ): Promise<SharedPreview> {
-  if (ref.kind === 'profile') {
-    const excluded = await fetchExcludedTestServiceAccountIds(serviceSb);
-    if (excluded.has(ref.id)) return { available: false, kind: ref.kind, id: ref.id, reason: 'restricted' };
-  }
+  const restricted: SharedPreview = { available: false, kind: ref.kind, id: ref.id, reason: 'restricted' };
   const found = await readAsViewer(userSb, ref);
-  if (found) return { available: true, kind: ref.kind, id: ref.id, ...found };
+  if (found) {
+    if (found.owner) {
+      const excluded = await fetchExcludedTestServiceAccountIds(serviceSb);
+      if (excluded.has(found.owner)) return restricted;
+    }
+    const { owner: _owner, ...card } = found;
+    return { available: true, kind: ref.kind, id: ref.id, ...card };
+  }
+  // Profile ids are user ids: never reveal whether a member has a hidden profile.
+  if (ref.kind === 'profile') return restricted;
   const there = await exists(serviceSb, ref);
-  return { available: false, kind: ref.kind, id: ref.id, reason: there ? 'restricted' : 'deleted' };
+  return there ? restricted : { available: false, kind: ref.kind, id: ref.id, reason: 'deleted' };
 }
 
 /** May the sender share this item (they can see it themselves)? */

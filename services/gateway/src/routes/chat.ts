@@ -35,23 +35,27 @@ import * as repo from './chat-repository';
 import chatSearchRouter from './chat-search';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getBearerToken } from '../lib/tenant-role-auth';
-import { SHARED_CONTENT_TYPE, parseSharedRef, resolveSharedPreview, senderCanShare } from '../services/chat-shared-content';
+import { SHARED_CONTENT_TYPE, SHARED_CAPTION_MAX, parseSharedRef, resolveSharedPreview, senderCanShare } from '../services/chat-shared-content';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
 
 /**
  * VTID-05311: the send-side check of a shared item, shared by DM and group
- * send. 400 invalid ref, 401 no token, 403 the sender cannot see the item,
- * 503 the check could not run. On success the only metadata stored is
- * `{ kind, id }`.
+ * send. 400 invalid ref / caption too long, 401 no token, 403 the sender cannot
+ * see the item, 503 the check could not run. On success the item is stored as
+ * `{ kind, id }` only (the route may add its own server-validated fields:
+ * `reply_to`, a group's sanitized `mentions`). `content` is an optional
+ * caption of the sender's own words (≤ 1000 characters), never item data.
  */
 export async function checkSharedContentSend(
   req: Request,
   contentData: unknown,
+  caption = '',
 ): Promise<{ ok: true; metadata: { kind: string; id: string } } | { ok: false; status: number; error: string }> {
   const ref = parseSharedRef(contentData);
   if (!ref) return { ok: false, status: 400, error: 'invalid_shared_content' };
+  if (caption.length > SHARED_CAPTION_MAX) return { ok: false, status: 400, error: 'caption_too_long' };
   const token = getBearerToken(req);
   if (!token) return { ok: false, status: 401, error: 'unauthorized' };
   try {
@@ -172,10 +176,10 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     metadata = { ...invite.metadata };
     trimmedContent = invite.content;
   }
-  // VTID-05311: a shared post / event / product / profile stores only
-  // { kind, id }; the sender must be able to see the item themselves.
+  // VTID-05311: a shared post / event / product / profile is stored as
+  // { kind, id } (+ the server's reply_to); the sender must be able to see it.
   if (msgType === SHARED_CONTENT_TYPE) {
-    const shared = await checkSharedContentSend(req, content_data);
+    const shared = await checkSharedContentSend(req, content_data, trimmedContent);
     if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
     metadata = { ...shared.metadata };
   }
