@@ -5,6 +5,22 @@ backend, no gateway change, no migration). Spec: `handoff.md`, `tasks.md`, `lane
 vitana-v1 `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021) §5 Wave 2, and
 `docs/programs/health-hub/HEALTH-HUB-PLAN.md` (VTID-05020) for the health-data consent boundary.
 <!-- plan:begin -->
+## Cross-repo sparring
+This plan's implementation lives in `exafyltd/vitana-v1` (native app `apps/mobile/**`, `packages/core/**`, the parity
+ledger, i18n shards), while the plan PR itself is in `exafyltd/vitana-platform`. Every load-bearing premise the
+sparring partner must verify — the IO-freedom of `src/lib/vitanaIndex.ts`, the 4+4+16=24 parity-ledger partition for
+`"lane": "health"`, the no-health-data claim for `Plans.tsx`/`WellnessServices.tsx`, and the N5a export signature on
+`vitana-v1` main — is a vitana-v1 file, read through the `spar_refs` (`exafyltd/vitana-v1: main`) declared in
+`handoff.md`. The `main` ref is valid: `resolveRef` (`scripts/collab/plan-spar.mjs:80-83`) resolves any non-SHA ref
+via the GitHub commits API to a concrete SHA at `client.create` time; the SHA-only restriction in the older
+`plan-spar-vitana-v1-ref` design note was superseded by that shipped implementation.
+
+## Sparring status
+Rounds 1–2 ran blind: `spar_refs` is applied only at `client.create`, never at `client.round`
+(`scripts/collab/plan-spar.mjs:333`), so the in-progress round-1 session never acquired vitana-v1 read access
+(`responses-2.md`, finding R1-F1). A fresh session is required so the partner can verify the frontend premises; this
+plan-text change (plus the R1-F5 fix) sets up the `replan` path (a changed plan on an escalated, non-infra session
+creates a new session with `spar_refs` applied).
 ## Goal
 Wave 2 screen-port batch of the native Maxina app: port the **health / Vitana Index / biology** cluster — the 24 web
 destinations the parity ledger assigns to `"lane": "health"` — plus the **in-screen Health Sync UI** (the
@@ -58,15 +74,20 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
   `apps/mobile/src/health-sync` export the module owns) — it does **not** re-implement OS permission requests or
   ingest. If the module export is not yet on main when a lane needs it, the lane renders the affordance against a
   typed stub behind the same ingest-off flag and records the dependency in its log (`next_actor: kiro`), exactly as
-  N5a itself stubbed N3/N4 before they landed. **The stub is a pinned interface with a contract test (R1-F5):** since
-  `n5a-health-sync` (VTID-05184) is owner-blocked on C1/D10 with no near-term timeline, `health-hub` does not write an
-  ad-hoc stub — it vendors the module's public read-only-until-enabled entry **signature** from the open green
-  `vitana-v1 #1398` branch (readable even though unmerged), encodes it as an explicit TypeScript `interface` the stub
-  implements, and adds a **contract test** that imports both the stub and — through the real module path — the N5a
-  export and asserts structural compatibility (a type-level assignability assertion plus a runtime shape check). The
-  test compiles against the stub today and exercises the real export the moment N5a lands on main; if N5a's entry
-  changes shape in between, the contract test fails in NATIVE-CI rather than shipping a silently broken delegate call.
-  The lane log records a `next_actor: kiro` task to re-vendor the signature from C1's merge commit when N5a lands.
+  N5a itself stubbed N3/N4 before they landed. **The stub is a pinned interface with a contract test (R1-F5):** the
+  `n5a-health-sync` **module code is already merged to vitana-v1 `main`** (#1398 → `8fea5e652`, 2026-10-14), but its
+  ingest contract is owner-blocked on C1 (#4107) / D10 (the `d10-consents` migration) with no near-term timeline, and
+  `n5a-health-sync.md:16-19` records that the remaining Kiro work is to **re-vendor the Health Sync contract from C1's
+  merge commit** (not from the #1398 branch). So `health-hub` does not write an ad-hoc stub — it vendors the module's
+  public read-only-until-enabled entry **signature** from the N5a export **as landed on `vitana-v1` main**
+  (`8fea5e652`, verified against the live file in the fresh vitana-v1-pinned sparring session), encodes it as an
+  explicit TypeScript `interface` the stub implements, and adds a **contract test** that imports both the stub and —
+  through the real module path — the N5a export and asserts structural compatibility (a type-level assignability
+  assertion plus a runtime shape check). The test compiles against the stub today and exercises the real export the
+  moment the ingest flag can turn on; if the N5a entry changes shape in between, the contract test fails in NATIVE-CI
+  rather than shipping a silently broken delegate call. The lane log records a `next_actor: kiro` task to
+  **re-pin the vendored signature to C1's merge commit** once C1 lands and the contract is re-vendored, so the stub
+  and the contract test track the final contract shape, not an interim one.
   The standalone **Connected Apps** settings screen
   (`SETTINGS.CONNECTED_APPS /settings/connected-apps`) and the `/connectors?tab=health` screen are **NOT** in this
   cluster — the parity ledger assigns them to `"lane": "profile-settings-support"`, a different Wave 2 batch.
