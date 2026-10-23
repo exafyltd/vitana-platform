@@ -1,0 +1,5 @@
+$ npx jest test/vtid-05309-chat-message-search.test.ts   # on origin/main 5f76b3ab2 (route, mount and migration removed)
+    Cannot find module '../src/routes/chat-search' from 'test/vtid-05309-chat-message-search.test.ts'
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Head: 15 passed.

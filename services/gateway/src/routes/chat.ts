@@ -9,6 +9,7 @@
  *   POST   /read               — Mark messages from a peer as read
  *   POST   /delivered          — Mark received DMs as delivered (VTID-05310)
  *   GET    /unread-count       — Total unread message count
+ *   GET    /search             — Message search in the caller's DMs and groups (VTID-05309, routes/chat-search.ts)
  */
 
 import { Router, Request, Response } from 'express';
@@ -30,9 +31,13 @@ import { tt } from '../i18n/catalog';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
+import chatSearchRouter from './chat-search';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
+
+// VTID-05309: GET /search — message search across the caller's DMs and groups (routes/chat-search.ts).
+router.use('/search', chatSearchRouter);
 
 // VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
 // (see below). Module-level because this route file is a singleton Express
