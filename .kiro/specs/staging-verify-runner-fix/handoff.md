@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: approved
 author_seat: exafyltd
-updated: 2026-10-22T12:20Z
+updated: 2026-10-23T10:40Z
 spar_refs:
   - exafyltd/vitana-v1: main
 sparring_record: .kiro/specs/staging-verify-runner-fix/sparring/verdict.md
@@ -47,3 +47,10 @@ serves `13bd83a0c`. The valid trigger is a staging deploy of vitana-v1 `main` (`
 push or `workflow_dispatch`), which dispatches STAGING-VERIFY for the deployed commit itself. Agents do not dispatch
 it (§7a), so it comes from the next app merge or from the owner.
 Next: STAGING-VERIFY community-app on the first staging deploy at or after `3b446e6f`; then Gate 2.
+
+### 2026-10-23T10:40Z · kiro-exafyltd-202610220818-5273 · approved (fix-forward lane added)
+STAGING-VERIFY community-app run https://github.com/exafyltd/vitana-platform/actions/runs/39870086198 on staging
+`77cb11280` (ubuntu-24.04): 31/32 — Playwright smoke ×6, VTID-05330 browser + Vitest, VTID-05298/05296 native suites
+all PASS. One FAIL: VTID-05297 `npm run bundle` (no APP_PROFILE; that manifest landed after lane `manifests`). Added
+lane `manifests-05297` (fix-forward #1, plan block unchanged). Next: CI allocates its VTID; build; then a staging deploy
+at or after its merge re-runs STAGING-VERIFY; then Gate 2.

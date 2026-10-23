@@ -24,3 +24,13 @@ Collab handoff and Lane scope green; no live write.
 
 **Acceptance (reviewer agent):** only the two manifests change; no suite is removed or weakened (every existing entry
 is still present); the commands pass locally; PR-GATE and Lane scope green.
+
+<!-- lane: manifests-05297 -->
+## Lane `manifests-05297` — VTID-05297 bundle profile (vitana-v1, fix-forward)
+- [ ] F1 `VTID-05297/staging-tests.json`: the `npm run bundle` entry gets `"env": { "APP_PROFILE": "development" }`;
+      no other entry changes.
+- [ ] F2 The manifest passes `lib.validateManifest` from vitana-platform `main`; `APP_PROFILE=development npm run bundle`
+      exports in `apps/mobile` with the runner's minimal env.
+
+**Acceptance (reviewer agent):** only that one entry changes; no suite removed or weakened; PR-GATE and Lane scope
+green.
