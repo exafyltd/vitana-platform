@@ -87,3 +87,17 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-23T05:02Z · kiro-exafy-202610230501-76ae · approved (automation wake-up W, no build)
+Automation fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback VTID-05271), seat exafy.
+Item W: `sparring-floor-retry` is the only approved/executing plan with `author_seat: exafy` whose driver was not
+alive (`heartbeat-age` = none). Took over the stale heartbeat (prior `kiro-exafy-202610230401-426c`), wrote a fresh
+one (`7919948f`) on `refs/heads/collab-driver/sparring-floor-retry`, held the `_plan` claim, resumed from git.
+State: converged + policy-approved (`converged-auto-v1`, VTID-05240), plan PR already merged to main. No open
+sparring round, no in-review lane. `plan-driver.mjs next` returns one action — build `floor-retry-code` — an
+`executor: claude`, `seat: claude` lane on governance paths (`scripts/collab/**` incl. the protected gate file
+`scripts/collab/plan-spar.mjs`, and `services/gateway/src/services/plan-sparring/**`). An automation-started driver
+may not build a governance or `executor: claude` lane and never merges (driver.md "Automation-started driver";
+collaboration.md §7a). That lane goes to Claude Code when available, else to the exceptions seat `exafyltd`.
+No code changed, no VTID allocated, no merge, no workflow dispatched, no live-system write. Front matter unchanged.
+Note: three prior wake-up log PRs (#4345, #4359, #4365) recording the same finding are still open and unmerged.
