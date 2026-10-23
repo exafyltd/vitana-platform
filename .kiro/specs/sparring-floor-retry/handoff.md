@@ -87,3 +87,16 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-23T06:03Z · kiro-exafy-202610230601-dc92 · approved (automation wake-up W; no buildable action)
+Fallback wake-up (plan `kiro-autonomy-fallback`, VTID-05271). Took over the stale driver heartbeat
+(previous tip `kiro-exafy-202610230501-76ae`) and hold the `_plan` claim. Driver loop `next` returns a single
+action: build `floor-retry-code`. An **automation-started driver never builds a governance lane or an
+`executor: claude` lane** and never merges (`driver.md` "Automation-started driver"; `.kiro/automations/exafy.md`
+W step 3). This plan's only lane is both: `executor: claude`, `seat: claude`, touching the governance/protected
+paths `scripts/collab/plan-spar.mjs` and `services/gateway/src/services/plan-sparring/**`. There is no open
+sparring round to answer (sparring converged, session 3b3d1387, policy-approved 2026-10-19T18:29Z), no `in-review`
+lane, and no lane PR to fix forward or merge. So the loop resolves to Wait for this driver: the lane stays
+`ready` for Claude Code (or the exceptions seat `exafyltd` while Claude is unavailable, collaboration §7). Front
+matter unchanged (`state: approved`, `next_actor: claude`). No VTID allocated, no workflow dispatched, no merge,
+no live-system write. Final heartbeat written; `_plan` claim released on stop.
