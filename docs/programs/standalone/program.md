@@ -13,6 +13,7 @@ specs:
   - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:collab-multi-builder-handoff
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
   - vitana-platform:kiro-autonomy-fallback
