@@ -13,6 +13,7 @@ specs:
   - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:collab-multi-builder-handoff
   - vitana-platform:collab-kiro-governance
   - vitana-platform:kiro-primary-executor
   - vitana-platform:kiro-autonomy-fallback
@@ -24,6 +25,9 @@ specs:
   - vitana-platform:matches-scroll-end
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:reviewer-model-fallback
+  - vitana-platform:i18n-audit-nightly-off
+  - vitana-platform:pipeline-speed
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -54,3 +58,5 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
 - `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
+- `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
+- `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog

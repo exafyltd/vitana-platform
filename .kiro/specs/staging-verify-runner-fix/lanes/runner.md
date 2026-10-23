@@ -1,6 +1,6 @@
 ---
 lane: runner
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,10 +15,10 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - scripts/ci/staging-verify/run.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-22T11:40Z
-claimed_by: kiro-exafyltd-202610220818-5273
+updated: 2026-10-22T16:04Z
 branch: kiro/staging-verify-runner-fix/runner
 vtid: VTID-05334
+parked_from: executing
 ---
 # STAGING-VERIFY runner: pinned image and allowlisted suite env (vitana-platform)
 Plan: `.kiro/specs/staging-verify-runner-fix/` — `plan.md` and the `tasks.md` section `<!-- lane: runner -->`.
@@ -38,3 +38,13 @@ Claimed. Test first (`5a232d889`: lib.test.cjs 61 pass / 1 fail on main + test),
 `ubuntu-24.04` (`report` unchanged, R1-F3), allowlisted `env` (`APP_PROFILE` = development|test-g1) for `existing`
 suites in `lib.cjs`, passed by `runExisting`. lib.test.cjs 62/62, workflow.test.cjs 7/7 (local, R2-F2).
 Evidence `docs/validation/VTID-05334/`. Next: reviewer agent on the PR head, then §7b land; then lane `manifests`.
+### 2026-10-22T15:26Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T15:30Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T15:34Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T15:38Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-22T16:04Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd

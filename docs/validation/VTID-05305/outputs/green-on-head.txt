@@ -1,0 +1,17 @@
+﻿Γ£ö a complete PR body (from the template) passes with code 0 (4.0176ms)
+Γ£ö a missing profile fails with the historic exit 11, not a bare message (2.0285ms)
+Γ£ö an empty body reports ALL five missing declarations at once (2.0993ms)
+Γ£ö each marker keeps its own historic exit code when it is the first missing (1.1893ms)
+Γ£ö a non-string body is treated as empty, never throws (0.5536ms)
+Γ£ö the CLI --pr-body-check exits 0 for a complete body and 11 for a missing profile (371.6345ms)
+Γ£ö the shipped PR template extracts VALIDATION_PROFILE=gateway_backend under the workflow regex (1.0936ms)
+Γ£ö the shipped PR template extracts OASIS_IMPACT=no under the workflow regex (0.7533ms)
+Γ£ö the shipped PR template passes prBodyRequirements (every marker present) (0.7403ms)
+Γä╣ tests 9
+Γä╣ suites 0
+Γä╣ pass 9
+Γä╣ fail 0
+Γä╣ cancelled 0
+Γä╣ skipped 0
+Γä╣ todo 0
+Γä╣ duration_ms 578.3787

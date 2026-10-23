@@ -11,4 +11,9 @@ deployment to production?"*. Rules: `.claude/rules/collaboration.md` §7–§8b.
   are Gate 2 and an escalated sparring verdict, plus the stop cases of `collaboration.md` §7 (security or data-loss
   risk, a failure surviving 3 fix-forward attempts, anything touching production).
 - VTIDs come only from CI PLAN-SPAR; never hand-allocate.
-- Production only by the owner's PUBLISH after Gate 2. Never test against or write to production or any live system.
+- Production after Gate 2: the owner's PUBLISH in the Command Hub, **or Kiro publishes when the owner explicitly
+  commands it in this conversation** — either a full publish (the same promotion as the Command Hub button, pinned to
+  the commit that passed STAGING-VERIFY) or a session-scoped publish of only the changes one session made (this
+  session or a session id the owner names), pinned per CLAUDE.md IF–THEN 26 — stop and tell the owner if anything else
+  would ship. Never in an unattended run. Rules: `collaboration.md` §7c. Never test against or write to production or
+  any live system.
