@@ -12,7 +12,7 @@ paths:
   - services/gateway/src/services/commerce-mcp.ts
   - services/gateway/test/**
   - docs/validation/**
-updated: 2026-10-23T10:17Z
+updated: 2026-10-23T10:21Z
 vtid: VTID-05238
 ---
 # Lane: gateway-step-owner (repo vitana-platform)
@@ -25,4 +25,6 @@ Lane created with the plan.
 ### 2026-10-19T13:36Z · ci-plan-spar · ready (VTID allocated)
 VTID-05238 allocated after policy approval (converged-auto-v1).
 ### 2026-10-23T10:17Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-23T10:21Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
