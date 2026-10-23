@@ -38,6 +38,7 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-invite';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
+import { SHARED_CONTENT_TYPE } from '../services/chat-shared-content';
 import { createClient, SupabaseClient } from '@supabase/supabase-js';
 import { notifyUser } from '../services/notification-service';
 import { coalesceChatPushes, chatConversationKey, type ChatPushItem, type PreparedChatPush } from '../services/chat-push-coalescer';
@@ -46,7 +47,7 @@ import { processConversationTurn } from '../services/conversation-client';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './chat-groups-repository';
 import * as chatRepo from './chat-repository';
-import { isUuidParam, NO_SEND_IDENTITY, annotateReplies } from './chat';
+import { isUuidParam, NO_SEND_IDENTITY, annotateReplies, checkSharedContentSend } from './chat';
 import { tt } from '../i18n/catalog';
 import { bulkGetUserLocales } from '../i18n/server-locale';
 import { fetchUnmentionableIds, sanitizeMentions, type ChatMention } from '../lib/chat-mentions';
@@ -289,7 +290,7 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
   };
 
   const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
-  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE]);
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE, SHARED_CONTENT_TYPE]);
   if (!allowedTypes.has(msgType)) {
     return res.status(400).json({ ok: false, error: 'invalid_message_type' });
   }
@@ -311,13 +312,19 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
     metadata = { ...invite.metadata };
     trimmed = invite.content;
   }
+  // VTID-05311: a shared item stores only { kind, id }; the sender must see it.
+  if (msgType === SHARED_CONTENT_TYPE) {
+    const shared = await checkSharedContentSend(req, content_data);
+    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
+    metadata = { ...shared.metadata };
+  }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
   if (msgType === 'text') {
     if (trimmed.length === 0) {
       return res.status(400).json({ ok: false, error: 'content is required' });
     }
-  } else if (trimmed.length === 0 && attachments.length === 0) {
+  } else if (msgType !== SHARED_CONTENT_TYPE && trimmed.length === 0 && attachments.length === 0) {
     return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
   }
 
@@ -419,7 +426,7 @@ router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: R
       fanoutBody,
       data.id,
       new Set(mentions.map(m => m.user_id)),
-      msgType === CALENDAR_INVITE_TYPE,
+      msgType === CALENDAR_INVITE_TYPE ? 'calendar_invite' : msgType === SHARED_CONTENT_TYPE ? 'shared_content' : null,
     );
   } catch (err: any) {
     console.warn('[ChatGroups] Fanout failed:', err?.message || err);
@@ -628,8 +635,12 @@ async function fanoutGroupNotifications(
   content: string,
   messageId: string,
   mentionedIds: ReadonlySet<string> = new Set(),
-  isCalendarInvite = false,
+  // A calendar invite / shared item gets a generic line in each member's language
+  // (never the item's content) and always pushes on its own.
+  genericKind: 'calendar_invite' | 'shared_content' | null = null,
 ): Promise<void> {
+  const isCalendarInvite = genericKind === 'calendar_invite';
+  const isGeneric = genericKind !== null;
   const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
     repo.fetchChatGroupName(supabase, groupId),
     repo.listChatGroupMemberIds(supabase, groupId),
@@ -659,9 +670,12 @@ async function fanoutGroupNotifications(
     : new Map();
 
   // VTID-05104: an invite push is generic, in each member's own language.
-  const inviteLocales = isCalendarInvite
+  const inviteLocales = isGeneric
     ? await bulkGetUserLocales(supabase, recipients.map((m) => m.user_id)).catch(() => new Map())
     : new Map();
+  const genericBody = (_userId: string, locale: unknown) => (isCalendarInvite
+    ? tt('notif.calendar_invite.body', locale as string, { name: senderName })
+    : tt('notif.chat_shared_content.body', locale as string, { name: senderName }));
 
   const items: ChatPushItem[] = recipients.map((m): ChatPushItem => {
     const userId = m.user_id;
@@ -671,7 +685,7 @@ async function fanoutGroupNotifications(
         kind: 'mention',
         payload: {
           title: tt('notif.chat_mention.title', mentionLocales.get(userId), { sender: senderName, group: groupName }),
-          body,
+          body: genericKind === 'shared_content' ? genericBody(userId, mentionLocales.get(userId)) : body,
           data: {
             type: 'chat_mention',
             group_id: groupId,
@@ -688,9 +702,7 @@ async function fanoutGroupNotifications(
       kind: 'message',
       payload: {
         title: groupName,
-        body: isCalendarInvite
-          ? tt('notif.calendar_invite.body', inviteLocales.get(userId), { name: senderName })
-          : `${senderName}: ${body}`,
+        body: isGeneric ? genericBody(userId, inviteLocales.get(userId)) : `${senderName}: ${body}`,
         data: {
           type: 'new_group_message',
           group_id: groupId,
@@ -707,7 +719,7 @@ async function fanoutGroupNotifications(
   // VTID-05137: one batched read decides, per member, whether this message
   // pushes or joins the burst already in their tray. A calendar invite is an
   // event of its own and always pushes unchanged.
-  const prepared = isCalendarInvite
+  const prepared = isGeneric
     ? items.map((i): PreparedChatPush => ({ userId: i.userId, payload: i.payload }))
     : await coalesceChatPushes(supabase, chatConversationKey({ groupId, senderId }), items);
   const typeFor = new Map(items.map((i) => [i.userId, i.kind === 'mention' ? 'chat_mention' : 'new_chat_message']));
