@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: claude
 next_actor: kiro
 state: approved
-updated: 2026-10-22T09:01Z
+updated: 2026-10-23T09:05Z
 sparring_record: .kiro/specs/collab-multi-builder-handoff/sparring/verdict.md
 vtids: [VTID-05331]
 ---
@@ -30,3 +30,13 @@ block; the changed text starts the re-plan session (`plan-spar.mjs:307`, max 2 s
 
 ### 2026-10-22T09:01Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-23T09:05Z · kiro-jtadic-202610230823-7721 · approved (driver takeover, stale claim broken)
+Driver session for this plan. The `_plan` claim of kiro-exafyltd-202610220742-67f3 was 25 h old with no commit on
+`kiro/collab-multi-builder-handoff/plan-v2` since 2026-10-22T09:01Z and no driver heartbeat ever, so I broke it with
+`release --stale` (§5) and took the `_plan` claim and the driver heartbeat (§8). Reason: this plan unblocks
+`commerce-step-owner/gateway-step-owner` (#4198, Collab handoff red on five sequential `kiro-exafy-…` sessions), whose
+driver I also hold. Merged `origin/main` into this branch (48 commits behind, no conflict). Next: plan PR #4294 lands
+under §7b so lane `sequential-builders` reads its files from `main`; that lane is `executor: claude`, seat `exafyltd`
+(it changes the protected `scripts/collab/queue.mjs`), so it is built by Claude Code or the exceptions seat
+`exafyltd`, not by this driver's seat, and merges only with a `claude` review or the owner's instruction (§3a).
