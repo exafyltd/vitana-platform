@@ -10,6 +10,7 @@
  *   POST   /delivered          — Mark received DMs as delivered (VTID-05310)
  *   GET    /unread-count       — Total unread message count
  *   GET    /search             — Message search in the caller's DMs and groups (VTID-05309, routes/chat-search.ts)
+ *   GET    /shared-preview     — Card of a shared post/event/product/profile for the caller (VTID-05311)
  */
 
 import { Router, Request, Response } from 'express';
@@ -32,9 +33,61 @@ import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../se
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
 import chatSearchRouter from './chat-search';
+import { createUserSupabaseClient } from '../lib/supabase-user';
+import { getBearerToken } from '../lib/tenant-role-auth';
+import { SHARED_CONTENT_TYPE, SHARED_CAPTION_MAX, parseSharedRef, resolveSharedPreview, senderCanShare } from '../services/chat-shared-content';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
+
+/**
+ * VTID-05311: the send-side check of a shared item, shared by DM and group
+ * send. 400 invalid ref / caption too long, 401 no token, 403 the sender cannot
+ * see the item, 503 the check could not run. On success the item is stored as
+ * `{ kind, id }` only (the route may add its own server-validated fields:
+ * `reply_to`, a group's sanitized `mentions`). `content` is an optional
+ * caption of the sender's own words (≤ 1000 characters), never item data.
+ */
+export async function checkSharedContentSend(
+  req: Request,
+  contentData: unknown,
+  caption = '',
+): Promise<{ ok: true; metadata: { kind: string; id: string } } | { ok: false; status: number; error: string }> {
+  const ref = parseSharedRef(contentData);
+  if (!ref) return { ok: false, status: 400, error: 'invalid_shared_content' };
+  if (caption.length > SHARED_CAPTION_MAX) return { ok: false, status: 400, error: 'caption_too_long' };
+  const token = getBearerToken(req);
+  if (!token) return { ok: false, status: 401, error: 'unauthorized' };
+  try {
+    const allowed = await senderCanShare(createUserSupabaseClient(token), getSupabase(), ref);
+    if (!allowed) return { ok: false, status: 403, error: 'share_not_allowed' };
+  } catch (err: any) {
+    console.warn(`[Chat] shared-content check failed: ${err?.message || err}`);
+    return { ok: false, status: 503, error: 'share_check_unavailable' };
+  }
+  return { ok: true, metadata: { kind: ref.kind, id: ref.id } };
+}
+
+/**
+ * VTID-05311: GET /shared-preview?kind=&id= — the card of a shared item for
+ * the CALLER, resolved with the caller's own permissions (user-scoped client,
+ * RLS decides). `{ available:true, title, description, image_url, url }` or
+ * `{ available:false, reason:'deleted'|'restricted' }`.
+ */
+router.get('/shared-preview', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const ref = parseSharedRef({ kind: req.query.kind, id: req.query.id });
+  if (!ref) return res.status(400).json({ ok: false, error: 'invalid_shared_content' });
+  const token = getBearerToken(req);
+  if (!token) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  try {
+    const preview = await resolveSharedPreview(createUserSupabaseClient(token), getSupabase(), ref);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    return res.json({ ok: true, ...preview });
+  } catch (err: any) {
+    console.warn(`[Chat] shared-preview failed: ${err?.message || err}`);
+    return res.status(503).json({ ok: false, error: 'preview_unavailable' });
+  }
+});
 
 // VTID-05309: GET /search — message search across the caller's DMs and groups (routes/chat-search.ts).
 router.use('/search', chatSearchRouter);
@@ -85,7 +138,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
-  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE]);
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE, SHARED_CONTENT_TYPE]);
   if (!allowedTypes.has(msgType)) {
     return res.status(400).json({ ok: false, error: 'invalid_message_type' });
   }
@@ -123,13 +176,20 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     metadata = { ...invite.metadata };
     trimmedContent = invite.content;
   }
+  // VTID-05311: a shared post / event / product / profile is stored as
+  // { kind, id } (+ the server's reply_to); the sender must be able to see it.
+  if (msgType === SHARED_CONTENT_TYPE) {
+    const shared = await checkSharedContentSend(req, content_data, trimmedContent);
+    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
+    metadata = { ...shared.metadata };
+  }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
   if (msgType === 'text') {
     if (trimmedContent.length === 0) {
       return res.status(400).json({ ok: false, error: 'content is required' });
     }
-  } else if (trimmedContent.length === 0 && attachments.length === 0) {
+  } else if (msgType !== SHARED_CONTENT_TYPE && trimmedContent.length === 0 && attachments.length === 0) {
     return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
   }
 
@@ -264,6 +324,11 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       const receiverLocale = await getUserLocale(supabase, receiver_id);
       notifBodyFinal = tt('notif.calendar_invite.body', receiverLocale, { name: senderName });
     }
+    if (msgType === SHARED_CONTENT_TYPE) {
+      // VTID-05311: a generic line, never the shared item's content.
+      const receiverLocale = await getUserLocale(supabase, receiver_id);
+      notifBodyFinal = tt('notif.chat_shared_content.body', receiverLocale, { name: senderName });
+    }
 
     if (isListingInterest) {
       const receiverLocale = await getUserLocale(supabase, receiver_id);
@@ -308,7 +373,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       // VTID-05137: plain chat messages are coalesced per conversation (one
       // push per burst). Calendar invites and listing-interest pushes are
       // events of their own and always go out unchanged.
-      } else if (notifType === 'new_chat_message' && msgType !== CALENDAR_INVITE_TYPE) {
+      } else if (notifType === 'new_chat_message' && msgType !== CALENDAR_INVITE_TYPE && msgType !== SHARED_CONTENT_TYPE) {
         const [prepared] = await coalesceChatPushes(
           supabase,
           chatConversationKey({ senderId: identity.user_id }),
