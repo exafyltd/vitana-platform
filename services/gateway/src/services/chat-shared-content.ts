@@ -2,8 +2,9 @@
  * VTID-05311 (messenger-ux-v2/api-shared-content, plan I6) — a community post,
  * event, Discover product or member profile shared into a chat.
  *
- * The message stores only `{ kind, id }` (metadata). Nothing of the item is
- * copied: every viewer resolves the card with THEIR OWN permissions — the
+ * The message stores the item only as `{ kind, id }` (metadata; the routes
+ * add their own server-validated `reply_to` and, in groups, the sanitized
+ * `mentions`). Nothing of the item is copied: every viewer resolves the card with THEIR OWN permissions — the
  * user-scoped Supabase client (anon key + the viewer's JWT, lib/supabase-user),
  * so RLS decides what each person may see. The sender's own permissions are
  * checked the same way before the message is stored.

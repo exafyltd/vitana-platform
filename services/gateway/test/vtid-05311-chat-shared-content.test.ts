@@ -361,6 +361,28 @@ describe('sending a shared item', () => {
     expect(r.body.error).toBe('not_a_member');
   });
 
+  it('group: mentions in the caption are sanitized (members only) and the mention push is the catalog line', async () => {
+    const OUT = '99999999-9999-4999-8999-999999999999';
+    serviceDb.global_community_profiles.push({ user_id: ME, display_name: 'Me Myself', is_visible: true });
+    const r = await request(app()).post(`/chat/groups/${GROUP}/send`).set(as(ME)).send({
+      message_type: 'shared_content', content: 'for you @Peer Person and @Stranger',
+      content_data: { kind: 'event', id: EVENT, mentions: [{ user_id: PEER, display_name: 'Peer Person' }, { user_id: OUT, display_name: 'Stranger' }] },
+    });
+    expect(r.status).toBe(201);
+    expect(serviceDb.chat_messages.at(-1)!.metadata).toEqual({ kind: 'event', id: EVENT, mentions: [{ user_id: PEER, display_name: 'Peer Person' }] });
+    expect(mockNotifyUser).toHaveBeenCalledTimes(1);
+    expect(mockNotifyUser.mock.calls[0][2]).toBe('chat_mention');
+    expect(mockNotifyUser.mock.calls[0][3].body).toBe('Me Myself shared something with you');
+  });
+
+  it('group: a caption over 1000 characters → 400', async () => {
+    const r = await request(app()).post(`/chat/groups/${GROUP}/send`).set(as(ME)).send({
+      message_type: 'shared_content', content: 'x'.repeat(1001), content_data: { kind: 'event', id: EVENT },
+    });
+    expect(r.status).toBe(400);
+    expect(r.body.error).toBe('caption_too_long');
+  });
+
   it('group: the sender cannot see the item → 403', async () => {
     caller = PEER;
     const r = await request(app()).post(`/chat/groups/${GROUP}/send`).set(as(PEER)).send({
