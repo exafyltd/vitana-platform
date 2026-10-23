@@ -92,3 +92,7 @@ within 4 h of the last lane merge, the driver asks the owner (one five-part mess
 Gateway STAGING-VERIFY (its failure on run 39749935077 has a different cause, out of scope), PR-GATE `preview-e2e`
 (report-only; `PR-GATE.yml` is a protected gate file), product code, production workflows, every other manifest.
 <!-- plan:end -->
+
+## Fix-forward lanes (outside the sparred plan block)
+- `manifests-05297` (2026-10-23): VTID-05297 `npm run bundle` gets `env: {APP_PROFILE: development}`, the same change as
+  plan §Changes 6 for a manifest that landed after lane `manifests` (STAGING-VERIFY run 39870086198, 31/32).
