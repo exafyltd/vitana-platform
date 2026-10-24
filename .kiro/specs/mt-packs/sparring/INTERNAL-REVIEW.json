@@ -1,0 +1,26 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-packs/plan.md",
+      "issue": "plan.md ##Problem #2 and lanes/persona-pack.md cite getEffectiveConfig at :659; it is declared at :658 (export async function getEffectiveConfig). Harmless one-line drift.",
+      "fix": "Optionally change ':659' to ':658' in plan.md and lanes/persona-pack.md."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-packs/lanes/brand-content-templating.md",
+      "issue": "The lane paths include services/gateway/src/i18n/** but B1 only edits the tt() catalog render path (catalog.ts). The glob is wider than needed, though it stays within one service dir and reaches no governance path so Lane scope still protects it.",
+      "fix": "Optionally narrow to services/gateway/src/i18n/catalog.ts (plus any specific shard the render touches). Not required."
+    }
+  ],
+  "resolved": [
+    {
+      "severity": "HIGH",
+      "ref": "HIGH-1",
+      "file": ".kiro/specs/mt-packs/lanes/frontend-brand-neutralise.md",
+      "issue": "Lane paths (and the matching tasks.md 'Allowed paths') listed 'src/components/orb/**', which matches no files in vitana-v1 (no src/components/orb directory); task F2 ('widget passes tenant pre-login context (host/slug)') edits the external window.VitanaOrb widget boot code, which was not in paths, so the PR-GATE Lane scope check would have redded F2's widget half.",
+      "resolution": "Removed 'src/components/orb/**' from both the lane 'paths' and the frontend-brand-neutralise 'Allowed paths' in tasks.md; added the real widget-boot files F2 edits: src/hooks/useOrbVoiceWidget.ts (where orb.init(...initialContext...) is called) and src/lib/orbActivate.ts (session-start entry points). orbWidgetSession.ts/orbWidgetReady.ts carry no host/slug context and were deliberately omitted. tasks.md F2 reworded to name the real injection sites. Re-ran queue.mjs validators on handoff.md + all 7 lanes = 0 errors; tasks.md Allowed paths == lane paths for all lanes."
+    }
+  ]
+}
