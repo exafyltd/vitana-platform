@@ -1,0 +1,9 @@
+# VTID-05268 commands (services/gateway, Windows, session kiro-hotmail-202610211107-9463)
+# base: origin/main 5f76b3ab2d97577f43af0a1e33c95e44cceb587e
+npx jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts
+#   head: 1 suite, 12/12 passed
+#   base (red by construction, not run): runCommunityScanForTenants and backfillTenantsForTick do not exist on base, and runCommunityScan ignores tenantId (A's pass would scan all 4 members)
+npx jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts test/vtid-04505-community-autopilot-scan.test.ts test/vtid-04786-memory-embedding-backfill-loop.test.ts test/vtid-04786-memory-embedding-backfill-heartbeat.test.ts test/routes/autopilot-recommendations.test.ts test/vtid-05270-job-tenant-loop.test.ts
+#   head: 6 suites, 158/158 passed
+npx tsc --noEmit
+#   59 errors, all TS2742 (inferred type names a path through the local node_modules junction); none in this lane's files; same set as VTID-05270 locally. CI tsc on Linux is the authority.
