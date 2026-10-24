@@ -1,0 +1,17 @@
+{
+  "verdict": "APPROVED",
+  "findings": [
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-community-isolation/plan.md",
+      "issue": "Founding migration line citations are slightly stale: premise 5 / the founding-pool lane cite 20261003100000_vtid_04859_founding_1000.sql:57,:60,:127, but the tenant_id NOT NULL column and the seat_number UNIQUE CHECK (BETWEEN 1 AND 1000) are around L44-45 in the file. Every stated fact (column exists NOT NULL, global UNIQUE/CHECK, table-wide max(seat_number)+1 at ~L127, platform-wide advisory lock, claim_founding_seat(p_user_id, p_tenant_id) resolving tenant from user_tenants) is correct; only the two column line numbers are off.",
+      "fix": "Update the column citations to their actual position (~L43-45) or drop exact line numbers for the column facts and keep them only for the max(seat_number) line."
+    },
+    {
+      "severity": "LOW",
+      "file": ".kiro/specs/mt-community-isolation/design.md",
+      "issue": "A legacy sibling members table (global_group_members, created by vitana-v1/.../20250917153624_*.sql) is not addressed. The 2025-10-10 migration added the newer global_community_group_members table this spec correctly targets, but the older global_group_members is neither tenant-scoped nor declared out of scope. The spec's four named tables are the right current ones, so this is not a correctness bug; it is a loose end a successor could misread as covered.",
+      "fix": "Add a one-line note in design 'What exists' or Out-of-scope stating whether global_group_members is dead/deprecated and intentionally excluded."
+    }
+  ]
+}
