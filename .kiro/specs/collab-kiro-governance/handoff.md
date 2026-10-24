@@ -5,7 +5,7 @@ author_seat: exafyltd
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-10-20T11:26Z
+updated: 2026-10-20T11:32Z
 sparring_record: .kiro/specs/collab-kiro-governance/sparring/verdict.md
 vtids: [VTID-05260, VTID-05261]
 ---
@@ -30,3 +30,8 @@ Converged in round 3; policy-approved (converged-auto-v1). VTID-05260 `owner-gov
 `retry-partner-invalid`. The converging round's two minor findings are recorded as acceptance notes on T1 and T4 in
 `tasks.md`; the approved plan block is unchanged. Next: seat exafy builds `owner-governance` (its PR uses the one-time
 Lane-scope override, plan A.5); then this plan's author adds `governance: owner` to `retry-partner-invalid`.
+
+### 2026-10-20T11:32Z · kiro-exafyltd-202610201024-84c9 · plan merged to main (§7b)
+Owner instruction 2026-10-20 "ok, go ahead and merge" (for #4211). Squash-merged as 817dd897 with all 9 PR checks green
+(Lane scope included); plan-only PR, nothing deployed. Lane `owner-governance` (VTID-05260) is ready for seat exafy;
+`retry-partner-invalid` (VTID-05261) waits for it.
