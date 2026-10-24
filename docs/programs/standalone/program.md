@@ -28,6 +28,7 @@ specs:
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:pipeline-speed
+  - vitana-platform:fix-04868-claude-md-test
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -60,3 +61,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
 - `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
+- `vitana-platform:fix-04868-claude-md-test` — VTID-04868 session-layer test pins the current CLAUDE.md §4.1 sparring rule (gateway Jest red since #4239)
