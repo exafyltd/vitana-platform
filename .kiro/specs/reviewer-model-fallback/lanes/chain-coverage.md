@@ -12,7 +12,7 @@ paths:
   - docs/validation/**
   - services/gateway/src/services/project-manager/governance.ts
   - services/gateway/test/project-manager/governance.test.ts
-updated: 2026-10-24T04:06Z
+updated: 2026-10-24T04:34Z
 vtid: VTID-05335
 parked_from: ready
 ---
@@ -655,4 +655,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-24T04:02Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-24T04:06Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-24T04:34Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
