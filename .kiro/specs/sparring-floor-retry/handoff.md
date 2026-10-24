@@ -87,3 +87,30 @@ mention them in the PR:
 
 After merge and the staging deploy: push once on each of the 10 stranded mt-* plans (author seat hotmail). Each
 should get a new session id with the session count unchanged.
+
+### 2026-10-22T17:04Z · kiro-exafy-202610221701-0923 · driver wake-up (automation, item W)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback VTID-05271). Took over a stale driver
+heartbeat (prior `kiro-exafy-202610221601-80c3`, >45 min old) and wrote a fresh one on
+`refs/heads/collab-driver/sparring-floor-retry`; hold the `_plan` claim. Resumed from git: plan converged and
+approved by policy `converged-auto-v1` (verdict.md, state.json session 3b3d1387, plan hash d7ba69f7…), VTID-05240;
+plan PR already merged (only open PR is the pm-agent bookkeeping #4249); no open sparring round; no lane PR; no
+in-review lane. `plan-driver.mjs next` returns exactly one action: build `floor-retry-code`. That lane is
+`executor: claude` and a governance path (`scripts/collab/**`, incl. the protected gate file
+`scripts/collab/plan-spar.mjs`), so an automation-started driver may not build it (driver.md "Automation-started
+driver"; collaboration.md §7a) — it waits for Claude Code, or the exceptions seat `exafyltd` if Claude goes
+unavailable under the §7 4h rule. No other action is open to this driver. Keeping the driver heartbeat live was the
+wake-up's purpose; no code changed, no VTID allocated, no merge, no live-system write. Next wake-up resumes from git.
+
+### 2026-10-22T20:01Z · kiro-exafy-202610222001-fe59 · driver wake-up (automation, item W)
+Fallback wake-up (`.kiro/automations/exafy.md`, plan kiro-autonomy-fallback VTID-05271). Of the exafy-seat plans
+only `sparring-floor-retry` matched item W (approved, `author_seat: exafy`, driver heartbeat ~118 min old >45 min);
+`pipeline-speed` has a live driver (heartbeat ~6 min). Took over the stale heartbeat (prior
+`kiro-exafy-202610221801-ed06`) and wrote a fresh one on `refs/heads/collab-driver/sparring-floor-retry`; hold the
+`_plan` claim. Resumed from git: plan still converged/policy-approved (`converged-auto-v1`, VTID-05240); no open
+sparring round; no `floor-retry-code` lane PR (lane never built); no in-review lane; open PRs are only the `_plan`
+bookkeeping ones (pm-agent #4249, prior driver-log #4324). `plan-driver.mjs next` still returns exactly one action:
+build `floor-retry-code` — `executor: claude` on a governance path (`scripts/collab/**`, incl. protected gate file
+`scripts/collab/plan-spar.mjs`), which an automation-started driver may not build (driver.md "Automation-started
+driver"; collaboration.md §7a). The lane waits on Claude Code, or the exceptions seat `exafyltd` under the §7 4h
+rule. Nothing else is open to this driver. Heartbeat refreshed; no code changed, no VTID, no merge, no live-system
+write. Next wake-up resumes from git.
