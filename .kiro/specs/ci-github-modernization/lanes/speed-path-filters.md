@@ -12,7 +12,7 @@ paths:
   - scripts/ci/test-suite/shard-union.test.mjs
   - scripts/ci/test-suite/rerun-policy.test.mjs
   - docs/validation/**
-updated: 2026-10-25T20:05Z
+updated: 2026-10-25T20:09Z
 vtid: VTID-05307
 parked_from: ready
 ---
@@ -1342,4 +1342,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-25T20:01Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-25T20:05Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-25T20:09Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
