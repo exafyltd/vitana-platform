@@ -24,9 +24,10 @@ question to approve `commit-coverage.json` entries for these 10 merges plus the 
    - the covering VTID's `docs/validation/<VTID>/staging-tests.json` must exist and pass `validateManifest`
      (`lib.cjs:211-221`), or that commit is still `missing`.
    An `existing` test must match `EXISTING_REF` (`lib.cjs:121-124`): `npm run <script>` or `npx vitest run <paths>`.
-3. Each merge's branch commits name its lane VTID. Suites already exist in vitana-v1 for VTID-05290
-   (`docs/validation/VTID-05290/staging-tests.json`), VTID-05291 and VTID-05294. None exist for VTID-05285–05289,
-   05292 or 05293.
+3. Each merge's branch commits name its lane VTID, and on vitana-v1 `fb9b6d843` **every one of the 10 VTIDs already
+   has a valid suite**, `exafyltd/vitana-v1:docs/validation/VTID-0528{5..9},VTID-0529{0..4}/staging-tests.json` (Playwright
+   staging specs `tests/e2e/staging/vtid-052xx-*.staging.spec.ts`). The suites exist; only the coverage mapping is
+   missing.
 4. The 10 merges (full sha → lane → VTID), from `git log --format=%B <sha>^1..<sha>`:
    `aa3fb55f204d689c957aa20f2b2d14dda9a19ada` skeletons 05294 · `624618db1bd9f874525b69eb90c16333184278f7` commerce-shell 05290 ·
    `b8a4efbd31b43001f65150e6316056cfcde18248` public-profile 05291 · `11b4e2ba2617b9d7541ca39c69d1b343696d84fd` remaining-screens 05292 ·
@@ -46,20 +47,12 @@ question to approve `commit-coverage.json` entries for these 10 merges plus the 
 - New `docs/validation/commit-coverage.json` (same schema as the platform file): 10 entries, each with the full sha
   from premise 4, its lane VTID, a reason ("merge commit of desktop-spotlight-finish/<lane>; its branch commits carry
   <VTID>; the subject has none"), and `approved_by: "owner, Kiro session kiro-exafyltd-202610220833-d231, 2026-10-26 ('Yes, I approve')"`.
-- New `staging-tests.json` (`service: community-app`, `kind: existing`), all verified green on `fb9b6d843`:
-  - VTID-05285: `npx vitest run` the three backoffice colours tests (3 files, 4 tests);
-  - VTID-05286: `npx vitest run` the three batch-2 tests (3 files, 34 tests);
-  - VTID-05287, VTID-05288, VTID-05289: `npm run test:design-contract` (the `src/design` vitest plus the pr-gate
-    tests plus the steering guard). The `reason` says this is the design-contract guard only, because these lanes
-    added no test;
-  - VTID-05292: `npx vitest run src/components/tickets/remaining-screens.spotlight.test.tsx src/design/screen-manifest.test.ts` (27 tests);
-  - VTID-05293: `npx vitest run src/design` (51 tests).
+- No new `staging-tests.json`: the covering suites already exist (premise 3).
 - No app code, no workflow, no change to VTID-05290/05291/05294. The other plan's lane files are not edited: this plan
   only adds evidence in the folders that plan never created.
 
 ## Test plan
-- Local: each suite above passes on vitana-v1 `fb9b6d843` (done, see the lane's `commands.log`). A `planRange` dry
-  run with `lib.cjs` over production `1a553367ff66` → lane head lists `missing: []`, all 10 merges `covered`, and
+- Local: each suite above passes on vitana-v1 `fb9b6d843` (done, see the lane's `commands.log`). A `planRange` dry run with `lib.cjs` over production `1a553367ff66` → lane head lists `missing: []`, all 10 merges `covered`, and
   every manifest valid.
 - Staging: the merge is docs-only, so the frontend deploy's `paths` filter does not fire. Under §7d the plan driver
   dispatches `AWS-STAGE-DEPLOY-FRONTEND.yml` on `main`, which deploys and triggers STAGING-VERIFY for that commit.

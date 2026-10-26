@@ -7,8 +7,7 @@ Allowed paths: `docs/validation/commit-coverage.json`, `docs/validation/VTID-*/*
 
 - [ ] C1. `docs/validation/commit-coverage.json`: the 10 entries of `plan.md` premise 4 (full sha, lane VTID,
   reason, `approved_by` naming the owner's 2026-10-26 approval).
-- [ ] C2. `staging-tests.json` for VTID-05285, 05286, 05287, 05288, 05289, 05292, 05293 as listed in `plan.md`
-  "Change" (`service: community-app`, `kind: existing`, refs that match `EXISTING_REF`).
+- [ ] C2. No new suite for VTID-05285–05294: they exist on main (plan premise 3). Confirm each validates.
 - [ ] C3. `docs/validation/<lane VTID>/staging-tests.json` (the lane's own suite: the same refs) and `commands.log`.
   It records each suite green, plus a `planRange` dry run (`missing: []`, 10 covered, 0 invalid) that is red
   without the coverage file.
