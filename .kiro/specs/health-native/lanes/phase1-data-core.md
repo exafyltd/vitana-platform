@@ -14,7 +14,7 @@ paths:
   - "DATABASE_SCHEMA.md"
   - "docs/programs/health-hub/**"
   - "docs/validation/**"
-updated: 2026-10-26T05:21Z
+updated: 2026-10-26T05:25Z
 ---
 # Phase 1 data core — A2, B2, B3, C1, C2 (gateway)
 
@@ -2405,4 +2405,6 @@ reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-26T05:17Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-26T05:21Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-26T05:25Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
