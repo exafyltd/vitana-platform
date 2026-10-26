@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: case 1: links and fileMatchPattern globs are prefixed; front matter stays first; inclusion kept
+ok 1 - case 1: links and fileMatchPattern globs are prefixed; front matter stays first; inclusion kept
+  ---
+  duration_ms: 122.218164
+  type: 'test'
+  ...
+# Subtest: case 2: identical link-free v1 file written once; differing or linked files per repo
+ok 2 - case 2: identical link-free v1 file written once; differing or linked files per repo
+  ---
+  duration_ms: 119.035624
+  type: 'test'
+  ...
+# Subtest: case 3: the driver file is always-included and links driver, common-rules, planning
+ok 3 - case 3: the driver file is always-included and links driver, common-rules, planning
+  ---
+  duration_ms: 118.234987
+  type: 'test'
+  ...
+# Subtest: case 4: stale marked files removed, unmarked files untouched, nothing written in a repo
+ok 4 - case 4: stale marked files removed, unmarked files untouched, nothing written in a repo
+  ---
+  duration_ms: 124.878511
+  type: 'test'
+  ...
+# Subtest: case 5: --check is clean after a run and fails on missing target, stale file and nested link
+ok 5 - case 5: --check is clean after a run and fails on missing target, stale file and nested link
+  ---
+  duration_ms: 635.516875
+  type: 'test'
+  ...
+# Subtest: case 6: the real checkout(s) generate a clean set
+ok 6 - case 6: the real checkout(s) generate a clean set
+  ---
+  duration_ms: 181.942601
+  type: 'test'
+  ...
+# Subtest: R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+ok 7 - R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+  ---
+  duration_ms: 96.777097
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1476.680988

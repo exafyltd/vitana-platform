@@ -1,0 +1,9 @@
+# red on base: origin/main 8ce6c78083 + the new test only (scripts/collab/kiro-web-steering.mjs does not exist)
+$ node --test scripts/collab/kiro-web-steering.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'scripts/collab/kiro-web-steering.mjs' imported from scripts/collab/kiro-web-steering.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+# tests 1
+# pass 0
+# fail 1
+exit=1
