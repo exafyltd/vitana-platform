@@ -3,10 +3,10 @@ change_class: standard
 ---
 # plan(kiro-web-parity): Kiro Web session kit — ready tools, enforced local checks before commit/push, CI wait without manual polling
 Author: Kiro, seat `exafy`, session `kiro-exafy-202610261526-5cd7` (Kiro Web). Repo: `exafyltd/vitana-platform` only.
-Premises pinned to `origin/main` `55cc5bbadc`. Detail: `tasks.md`; lane file: `lanes/session-kit.md`.
-Sibling plan: `kiro-web-steering` (#4378, session `kiro-exafyltd-202610261510-099d`) mirrors the repos' steering to the
-workspace root. This plan does **not** touch steering generation, `AGENTS.md` or `docs/kiro/**`; no shared file except
-the one-line program entry in `docs/programs/standalone/program.md`.
+Premises pinned to `origin/main` `b117ce6216` (contains `kiro-web-steering`, #4378/#4379). Detail: `tasks.md`; lane file: `lanes/session-kit.md`.
+Sibling plan `kiro-web-steering` (VTID-05339, merged as #4379) mirrors the repos' steering to the workspace root
+(`scripts/collab/kiro-web-steering.mjs`). This plan does **not** touch steering generation, `AGENTS.md` or
+`docs/kiro/**`; it only reads the generator's `--check` result. No shared file except the one-line program entry.
 <!-- plan:begin -->
 ## 1. Goal
 Owner, 2026-10-26 (Kiro Web): *"The goal is Claude Code parity in execution speed, quality, and autonomy—not just
@@ -17,35 +17,38 @@ to appear faster."* This plan delivers the parts that are not steering: dependen
 fresh sandbox, the Claude Code PostToolUse typecheck and the preflight enforced locally before a commit/push, and a
 bounded CI wait that prints the failed log instead of manual polling.
 
-## 2. Today (verified in this session, Kiro Web, 2026-10-26, `origin/main` `55cc5bbadc`)
-Observed by probes (evidence: `docs/validation/<VTID>/probes.md`):
-1. **Claude Code hooks never run here.** `.claude/settings.json` hooks point at `/home/user/vitana-platform`; the repos
-   are at `/projects/sandbox/<repo>`; `scripts/codeintel/session-setup.sh` is reached only through
-   `.claude/hooks/session-start-codeintel-setup.sh:19`, which exits unless `CLAUDE_CODE_REMOTE=true`.
-2. **Code intelligence install fails as written.** `~/.local` is read-only in the sandbox, so `uv tool install
-   repowise` fails (`failed to create directory /root/.local/share/uv/tools: Read-only file system`) and so does the
-   pip `--user` fallback of `session-setup.sh:64-73`. Writable: `~/.cache`, `/tmp`, the workspace. A venv under
-   `~/.cache/vitana-codeintel/venv` installs both tools in 3 s; with it on `PATH`, `session-setup.sh --foreground`
-   seeded RepoWise from the CI index and built Graphify in 118 s (`state: ready`, 4733 pages); `repowise search` and
-   `repowise context` answered in 2-4 s.
-3. **MCP registration is not available to the session:** writing `<workspace>/.kiro/settings/mcp.json` is denied by a
-   platform permission rule. RepoWise is usable as a CLI only.
-4. **Gateway dependencies are missing** in a fresh sandbox (`services/gateway/node_modules` absent); `npm ci` takes
-   13 s. Full `tsc --noEmit` 78 s; with `--incremental --tsBuildInfoFile` under `~/.cache` the warm re-run is 7 s.
-5. **Workspace-root Kiro hooks do execute** (`<workspace>/.kiro/hooks/*.json`, picked up mid-session, also inside
-   sub-agents): a `PreToolUse` command hook with matcher `execute_bash` blocked a command with exit 2 and its stderr
-   reached the agent; its stdin is `{session_id, hook_event_name, cwd, tool_name, tool_input}`. A `PostToolUse` hook
-   on `fs_write`/`str_replace` runs, but its stdout/stderr (exit 0 or 2) does **not** reach the agent. Only the
-   **first** hook entry of a file runs; a second entry in the same file never fired, while two files both fired.
-   Matchers are regexes (`fs_write|str_replace` works). A `SessionStart` hook did not fire for a sub-agent session.
-   The repo's own `.kiro/hooks/*.json` are not read (they sit one level below the workspace root).
-6. **GitHub:** REST via `gh api` works (`push: true`); GraphQL is refused by the proxy ("GraphQL pass-through is not
-   supported"); `gh variable get CLAUDE_AVAILABLE` returns 403; `gh api …/jobs/<id>/logs` returns 404 but
-   `gh run view <id> --log-failed` works.
-7. **Preflight** (`scripts/collab/preflight.mjs`) passes on `main` in 12 s; nothing enforces running it before a push.
-8. **Sub-agents run concurrently** (two probes overlapped 24 s of 25 s); the reviewer agent definition is reachable
-   when copied to `<workspace>/.kiro/agents/` (it answered the no-model probe with `model_unavailable` as defined).
-
+## 2. Today (`origin/main` `b117ce6216`; repo premises are file:line, sandbox premises are probes of this session)
+Repo:
+1. `.claude/settings.json:53` — the Claude Code PostToolUse typecheck runs `cd /home/user/vitana-platform/services/gateway
+   && npx tsc --noEmit` after each Edit/Write under `services/gateway/src`; Kiro Web never reads this file and the repos
+   are not at `/home/user`.
+2. `.claude/hooks/session-start-codeintel-setup.sh:19` — `[ "${CLAUDE_CODE_REMOTE:-}" = "true" ] || exit 0`: the only
+   caller of `scripts/codeintel/session-setup.sh` exits outside Claude Code remote.
+3. `scripts/codeintel/session-setup.sh:71-79` — `install_tool` tries `uv tool install` (`:75`) then
+   `python3 -m pip install --user` (`:77`); both write under `~/.local`.
+4. `.kiro/pipeline/driver.md:43` — "Preflight before every push of a `plan(` or lane branch"; nothing enforces it.
+   `scripts/collab/preflight.mjs:27-28` and `:117` — the working-tree checks need `--head` = the checked-out HEAD.
+5. `.kiro/pipeline/common-rules.md:62` — polling every 2-3 min inside bounded scripts; no such script exists for CI checks.
+6. `scripts/collab/queue.mjs:85` — `scripts/collab/**` is a governance path; `:234` lets an `executor: kiro` lane with
+   a reviewer-agent `reviewer_seat` change one that is not a protected gate file
+   (`scripts/collab/protected-gate-files.json` does not list the new files).
+7. `.github/workflows/PR-GATE.yml:140` — `node --test scripts/collab/*.test.mjs`, so a new collab test runs in CI.
+8. `scripts/collab/kiro-web-steering.mjs:13-15` — the merged generator and its `--check` (exit 1 on any problem).
+Sandbox (Kiro Web, 2026-10-26; commands and outputs go to `docs/validation/<VTID>/probes.md`):
+9. `~/.local` is read-only: `uv tool install repowise` → `failed to create directory /root/.local/share/uv/tools:
+   Read-only file system`. `~/.cache` is writable; a venv there installs repowise 0.59.0 + graphify 0.9.96 in 3 s, and
+   with it on `PATH` `session-setup.sh --foreground` reached `state: ready` (RepoWise seeded from the CI index, 4733
+   pages; Graphify built) in 118 s; `repowise search` / `context` answer in 2-4 s.
+10. Writing `<workspace>/.kiro/settings/mcp.json` is denied by a platform permission rule: no MCP registration.
+11. Fresh sandbox: `services/gateway/node_modules` absent; `npm ci` 13 s; full `tsc --noEmit` 78 s; warm
+    `--incremental` re-run 7 s.
+12. `<workspace>/.kiro/hooks/*.json` command hooks execute (the repos' own `.kiro/hooks` do not): a `PreToolUse` hook on
+    `execute_bash` blocked a command with exit 2 and its stderr reached the agent; stdin is `{session_id,
+    hook_event_name, cwd, tool_name, tool_input}`. `PostToolUse` on `fs_write`/`str_replace` runs but its output never
+    reaches the agent. Only the **first** hook entry of a file runs. `SessionStart` was not seen to fire.
+13. GitHub: REST via `gh api` works (`push: true`); GraphQL refused by the proxy; `gh variable get` → 403;
+    `gh run view <id> --log-failed` works.
+14. Sub-agents run concurrently; the reviewer agent works when copied to `<workspace>/.kiro/agents/`.
 ## 3. Change — one lane `session-kit` (vitana-platform)
 **Lane file:** `executor: kiro`, `reviewer_seat: agent:vitana-lane-reviewer` (`scripts/collab/**` is a governance path,
 `queue.mjs:85`; an `executor: kiro` lane may change one with the reviewer agent, `queue.mjs:231-234`), `seat: exafy`,
@@ -56,7 +59,7 @@ Observed by probes (evidence: `docs/validation/<VTID>/probes.md`):
 `--workspace`, else the parent of the vitana-platform checkout holding the script; repos found by `origin`.
 Subcommands:
 1. `setup [--wait]` — idempotent, never fails the session (exit 0, problems listed):
-   a. writes the generated hooks (one hook per file, §2.5) under `<workspace>/.kiro/hooks/`, each carrying the marker
+   a. writes the generated hooks (one hook per file, §2.12) under `<workspace>/.kiro/hooks/`, each carrying the marker
       `"generatedBy": "vitana-platform/scripts/collab/kiro-web-session.mjs"`; stale marked files are removed, unmarked
       files never touched; nothing is written inside a repository:
       - `vitana-web-guard.json` — `PreToolUse`, matcher `^execute_bash$`, runs `node <platform>/scripts/collab/kiro-web-session.mjs guard`;
@@ -69,8 +72,7 @@ Subcommands:
       pip fallback), then `scripts/codeintel/session-setup.sh --foreground <repo>` per repo with the venv on `PATH`
       (the script is reused unchanged); `--wait` runs the same in the foreground;
    d. prints the `status` report.
-2. `status [--json] [--check]` — readiness of: workspace steering present (`<workspace>/.kiro/steering/*.md`, from
-   `kiro-web-steering`), generated hooks, reviewer agent copy, gateway/v1 `node_modules`, RepoWise/Graphify state
+2. `status [--json] [--check]` — readiness of: workspace steering (`kiro-web-steering.mjs --check` exit 0, §2.8), generated hooks, reviewer agent copy, gateway/v1 `node_modules`, RepoWise/Graphify state
    (`~/.cache/vitana-codeintel/<repo>.json`), `gh api user`, GraphQL (reported unsupported, not a failure), presence
    (never the value) of `DEV_MEMORY_PACK_TOKEN` / `GATEWAY_SERVICE_TOKEN`. With a token present it prints the morning
    pack (`.claude/hooks/session-start-dev-memory-pack.sh`, reused). `--check` exits 1 when a required item is missing.
@@ -85,7 +87,9 @@ Subcommands:
      origin/main --head <sha or HEAD> --branch <b>` with `--title` from the open PR of that branch (`gh api`, REST)
      when one exists; failure → exit 2 with preflight's failure block on stderr. A pass is cached per
      `(repo, head sha)` so a retried push does not re-run it. When the pushed sha is not the checked-out `HEAD`, the
-     guard blocks and says so (preflight judges the working tree, `preflight.mjs:26-27`).
+     guard blocks and says so (`preflight.mjs:117`). A lane push before its PR exists carries the title as
+     `PR_TITLE='…' git push …`; without a PR and without `PR_TITLE` the guard blocks and asks for it (preflight
+     fails without `--title`). The failure shown is preflight's FAIL lines without the queue table.
    - pushes of `collab-claim/**`, `collab-driver/**`, ref deletions, and every other command → exit 0 at once.
    - an internal error (bad stdin, missing script) → exit 0 with a stderr note; the guard never blocks on its own bug.
      It adds checks only; it never skips or loosens one, and CI stays the gate.
