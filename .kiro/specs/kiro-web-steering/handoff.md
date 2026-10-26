@@ -23,3 +23,8 @@ VTID, no code.
 
 ### 2026-10-26T15:30Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-26T15:36Z · kiro-exafyltd-202610261510-099d · approved (driver: merging the plan PR)
+Converged in round 2; policy-approved (`converged-auto-v1`), VTID-05339 for lane `web-steering`. The converging
+round's one minor finding, R2-F1, is recorded as an acceptance note in `tasks.md`; the approved plan block is
+unchanged. Next: merge this `plan(` PR under §7b, then build `web-steering`.

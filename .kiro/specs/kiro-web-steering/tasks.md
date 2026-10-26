@@ -28,3 +28,6 @@ every command and pass/fail counts, `red-on-base.txt`). Acceptance below is what
 - The docs separate documented (URL), observed (this session) and assumed behaviour, and keep every stop case
   (Gate 2, escalated sparring verdict, migration-file approval, §7 stop cases) unchanged.
 - Deploys nothing.
+- **R2-F1 (converging round, minor):** vitana-v1 has `.kiro/steering/` today (8 files at `fb9b6d843`). A known Vitana
+  checkout (origin `exafyltd/vitana-platform|vitana-v1`) under the workspace without `.kiro/steering/` is skipped
+  with a printed note (`--json`: `skipped`), not an error, and a test covers it.
