@@ -16,6 +16,7 @@ paths:
   - docs/kiro/**
   - docs/validation/VTID-*/**
 updated: 2026-10-26T15:30Z
+vtid: VTID-05339
 ---
 # Lane: web-steering (repo vitana-platform)
 Tasks T1–T5 in `tasks.md`. `executor: kiro` with the reviewer agent: `scripts/collab/**` is a governance path, and
@@ -24,3 +25,6 @@ the two new files are not protected gate files. The VTID is allocated by PLAN-SP
 ## Log
 ### 2026-10-26T15:30Z · kiro-exafyltd-202610261510-099d · ready
 Lane created with the plan.
+
+### 2026-10-26T15:30Z · ci-plan-spar · ready (VTID allocated)
+VTID-05339 allocated after policy approval (converged-auto-v1).
