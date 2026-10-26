@@ -29,6 +29,7 @@ specs:
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
+  - vitana-platform:kiro-web-parity
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -62,3 +63,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
+- `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
