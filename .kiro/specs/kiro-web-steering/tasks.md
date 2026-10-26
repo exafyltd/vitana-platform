@@ -11,8 +11,9 @@ every command and pass/fail counts, `red-on-base.txt`). Acceptance below is what
 - [ ] T1 `scripts/collab/kiro-web-steering.test.mjs` (plan §4 cases 1–6) written first; red on `origin/main`
       recorded in `docs/validation/<VTID>/red-on-base.txt`.
 - [ ] T2 `scripts/collab/kiro-web-steering.mjs` per plan §3 A (rules A1–A6).
-- [ ] T3 `AGENTS.md`: append the "Kiro Web: load the Vitana steering" section (plan §3 B); the existing Codex rule
-      text stays byte-identical.
+- [ ] T3 `AGENTS.md`: append the "Kiro Web: load the Vitana steering" section (plan §3 B). It opens with the scope
+      sentence (Kiro Web only; Codex, Claude Code and Kiro IDE ignore it). The existing Codex rule text stays
+      byte-identical.
 - [ ] T4 `docs/kiro/kiro-web-bootstrap.md` and `docs/kiro/cloud-config/vitana-kiro-web-bootstrap.md` (plan §3 C, D).
 - [ ] T5 Local checks: `node --test scripts/collab/*.test.mjs`, `node scripts/collab/kiro-web-steering.mjs` then
       `--check` on the session workspace (both repos), preflight on the lane head; all in `commands.log`.

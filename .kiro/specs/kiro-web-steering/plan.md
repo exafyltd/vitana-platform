@@ -41,9 +41,20 @@ Repo, verified at `55cc5bbadc`:
   lane with `reviewer_seat: agent:vitana-lane-reviewer` change one that is not a protected gate file
   (`scripts/collab/protected-gate-files.json` does not list the new files).
 - `.github/workflows/PR-GATE.yml:140` runs `node --test scripts/collab/*.test.mjs` (Collab tests).
-- `AGENTS.md` (14 lines) holds only the Codex repository-scope rule; identical in vitana-v1.
+- `AGENTS.md` holds only the Codex repository-scope rule (`AGENTS.md:1-15`); identical in vitana-v1. Several
+  runtimes read it (Codex, Kiro, others).
+- Observed after a first generated set was written (same session): the always-included files loaded with their links
+  inlined, but Kiro cut the last inlined link (`vitana-platform/.claude/CLAUDE.md`) with "Truncated steering
+  reference … read the file". The total always set with links is ~123 KB. An inline size cap exists; its value is not
+  documented.
 
 ## 3. Change — one lane `web-steering` (vitana-platform)
+**Lane file** (`lanes/web-steering.md`): `executor: kiro`, `reviewer_seat: agent:vitana-lane-reviewer` (the two
+`scripts/collab/` files are a governance path, `queue.mjs:85`, which an `executor: kiro` lane may change only with the
+reviewer agent, `queue.mjs:231-234`), `seat: exafyltd`, `paths`: `scripts/collab/kiro-web-steering.mjs`,
+`scripts/collab/kiro-web-steering.test.mjs`, `AGENTS.md`, `docs/kiro/**`, `docs/validation/VTID-*/**`. None matches a
+glob in `scripts/collab/protected-gate-files.json` (checked: that list names `queue.mjs`, `plan-spar.mjs`,
+`protected-gate-files.json` under `scripts/collab/`, plus `CLAUDE.md`, workflows, gateway and migration files).
 **A. Generator `scripts/collab/kiro-web-steering.mjs`** (Node ≥ 20, no dependencies, ESM, exports its functions):
 `node vitana-platform/scripts/collab/kiro-web-steering.mjs [--workspace <dir>] [--check] [--json]`.
 1. Workspace = `--workspace`, else the parent directory of the repository that contains the script. Repos = direct
@@ -66,8 +77,13 @@ Repo, verified at `55cc5bbadc`:
    that itself contains `#[[file:]]` (recursive resolution is undocumented, so a nested link is reported, not
    assumed). Exit 0 prints the file list with byte counts.
 **B. `AGENTS.md`** — a section "Kiro Web: load the Vitana steering", appended under the existing Codex rule (which
-stays verbatim): when `<workspace>/.kiro/steering/vitana-platform--vitana-pipeline.md` is missing, run
+stays verbatim). Its first sentence scopes it: it applies only to a Kiro Web session (a Kiro session whose workspace
+root is the folder the repos are cloned into); Codex, Claude Code and Kiro IDE sessions ignore it. Then: when
+`<workspace>/.kiro/steering/vitana-platform--vitana-load-project-rules.md` is missing, run
 `node vitana-platform/scripts/collab/kiro-web-steering.mjs` before anything else, then follow the loaded rules.
+**A7.** The run output and `--json` report the byte total of the always-included set with links inlined, so a
+truncation risk is visible; the doc (C) says a truncated inlined file must be read in full with a file read (the
+truncation notice says the same).
 **C. `docs/kiro/kiro-web-bootstrap.md`** — what is documented vs observed vs assumed (with kiro.dev URLs); the
 supported setup: (1) the one-time Configuration Sync upload of `docs/kiro/cloud-config/vitana-kiro-web-bootstrap.md`
 as a user-level steering file (persists across sandboxes), (2) AGENTS.md as the in-repo trigger, (3) the exact
@@ -93,7 +109,10 @@ IDE workflow. Deploys nothing (no staging deploy workflow watches these paths), 
 
 ## 6. Risks
 - Context size: the always set grows by vitana-v1's `CLAUDE.md` (27.5 KB) and `.claude/CLAUDE.md` (8.8 KB), the same
-  load a multi-root IDE workspace carries (each root's always files). Accepted; reported by `--check` byte counts.
+  load a multi-root IDE workspace carries (each root's always files). Kiro truncates past an undocumented cap (seen on
+  the last file, `vitana-platform/.claude/CLAUDE.md`, a generated RepoWise index, not rule text). Accepted: the rule
+  files (`CLAUDE.md` Part 1, steering, driver) came through whole; the byte total is reported (A7) and the doc names
+  the read-in-full fallback. No file is dropped or reordered to fit, because that would change which rules load.
 - Kiro Web may start loading repo-root steering as documented; then rules load twice with different paths. The
   generated copies stay equivalent, so behaviour is the same; the doc names this.
 - The Configuration Sync upload is an owner action in the Kiro UI; Kiro cannot do it. Until it is done, AGENTS.md and
