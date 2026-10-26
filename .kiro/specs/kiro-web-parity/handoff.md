@@ -25,3 +25,8 @@ entry. No VTID, no code.
 
 ### 2026-10-26T16:14Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-26T16:17Z · kiro-exafy-202610261526-5cd7 · approved (driver)
+Session 2 converged in round 2 (`abb7d483-…`, plan hash `14b373b9…`), policy `converged-auto-v1` at
+2026-10-26T16:11:27Z; CI allocated VTID-05340 to lane `session-kit`. Round 1 of session 1 escalated on the partner's
+evidence floor with no findings (`round-1.md`). Next: merge this `plan(` PR under §7b, then build `session-kit`.
