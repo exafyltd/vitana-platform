@@ -3,11 +3,12 @@ slug: spotlight-commit-coverage
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
-state: drafted
+next_actor: claude
+state: parked
 spar_refs:
   - exafyltd/vitana-v1: fb9b6d843602f504a9ebfd794d4156ccfcda431f
-updated: 2026-10-26T09:20Z
+updated: 2026-10-26T09:55Z
+parked_from: drafted
 ---
 # Handoff — spotlight-commit-coverage
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610220833-d231). Plan: `plan.md`. Lane: `lanes/coverage-manifests.md`
@@ -39,3 +40,6 @@ Next: owner decision on #4351.
 #4351 is merged (`55cc5bbad`, owner instruction 2026-10-26), and PLAN-SPAR runs again. Session 78d00a62 escalated on
 `evidence_floor_not_met`: a read-only query shows 16/16 partner reads `ok:false`, the gateway read outage. Waited
 20 min, then re-planned: premise 6 records this and lists the files to read. This uses the last allowed session.
+
+### 2026-10-26T09:55Z · ci-plan-spar · drafted → parked
+Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
