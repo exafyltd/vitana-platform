@@ -1,0 +1,28 @@
+VTID-05338 (pipeline-speed/slot-sizing) — new tests run against origin/main 1478926bbee844953505f2bab89002ea5defc935
+(git archive of scripts/collab, scripts/ci/kiro-steering, .kiro, governance.ts, CLAUDE.md, .claude/rules into a temp
+dir; the lane's new run-gate.test.mjs and guard.test.cjs copied in; Windows, Node 24.11.1).
+
+== node --test scripts/collab/run-gate.test.mjs (on base)
+# Error: Cannot find module './run-gate.cjs'
+not ok 1 - scripts\\collab\\run-gate.test.mjs
+# tests 1
+# pass 0
+# fail 1
+
+== node --test scripts/ci/kiro-steering/guard.test.cjs (new tests on base)
+not ok 7 - this repository passes            <- extraction artefact: the temp dir holds a subset of the repo
+not ok 28 - workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+not ok 29 - workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+not ok 30 - workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+# tests 37
+# pass 33
+# fail 4
+
+Test 30 is red on base only because the guard check it exercises is new (its error text does not exist on base).
+The property it guards already holds on base, as plan section 5 declares (regression guard):
+== stray modelId pins in the base recipe (a step pinning modelId outside a reviewer joinPolicy any race)
+stray pins on base: 0 []
+
+== the same tests on the lane head (green)
+node --test scripts/collab/run-gate.test.mjs          -> tests 20, pass 20, fail 0
+node --test scripts/ci/kiro-steering/guard.test.cjs   -> tests 37, pass 37, fail 0

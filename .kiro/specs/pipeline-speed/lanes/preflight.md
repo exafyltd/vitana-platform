@@ -1,7 +1,9 @@
 ---
 lane: preflight
-state: ready
+state: done
 next_actor: kiro
+branch: kiro/pipeline-speed/preflight
+pr: https://github.com/exafyltd/vitana-platform/pull/4340
 depends_on: []
 executor: claude
 seat: exafy
@@ -15,7 +17,7 @@ paths:
   - .kiro/pipeline/planning.md
   - .kiro/pipeline/driver.md
   - docs/validation/VTID-*/**
-updated: 2026-10-22T17:50Z
+updated: 2026-10-22T23:35Z
 vtid: VTID-05336
 ---
 # preflight — every CI governance check of a lane or plan PR, locally, in one pass (item 2)
@@ -31,3 +33,27 @@ set, seat exafy claims it.
 
 ### 2026-10-22T17:50Z · ci-plan-spar · ready (VTID allocated)
 VTID-05336 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-22T19:30Z · kiro-202610220829-5884 · ready → executing
+Claimed (`collab-claim/pipeline-speed/preflight`), seat exafy, workflow run `wf_561cf354d2648029` slot 2, branch
+`kiro/pipeline-speed/preflight`. Changed: new `scripts/collab/preflight.mjs` (spawns the Collab tests, head-copy
+`queue.mjs validate`, base-copy `queue.mjs scope-check` as `PR-GATE.yml:160-166`, `gate.mjs scope|sparring|weakening|
+red-green`, Kiro steering; reports every failure grouped and labelled, exit 1 on any; unchecked parts are failures)
+and `scripts/collab/preflight.test.mjs` (13 tests, red on base 11/13); `lane-code.md`, `planning.md` and `driver.md`
+run preflight before every push. No edit to `queue.mjs`, `gate.mjs`, `lib.mjs` or `PR-GATE.yml`. Evidence:
+`docs/validation/VTID-05336/`. PR #4340 (preflight on its own head: 8/8 checks pass).
+### 2026-10-22T22:15Z · agent-vitana-lane-reviewer-202610222214-8173 · review: accept
+Reviewed exafyltd/vitana-platform#4340 at head `a14fcdf2c1d6d6397c6c556f81ba932f8c5fadb0` (run wf_5d72b688787bced8; read-only, no suites re-run). No blocking
+findings. Non-blocking (follow-ups): none blocking; delta since the changes verdict (wf_27b4cb00217adf88, VALIDATOR-CHECK red) is docs/validation only; validate-pr green.
+Stored by the land step on the agent's behalf (`lane-land.md` step 2).
+Collab-Session: agent-vitana-lane-reviewer-202610222214-8173
+Collab-Review: pipeline-speed/preflight
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+Collab-Reviewed-Head: a14fcdf2c1d6d6397c6c556f81ba932f8c5fadb0
+### 2026-10-22T22:44Z · kiro-202610220829-5884 · executing → in-review
+merge: 62d5e2ecf55d2498cac59a88553fa4587f36ef34 · authority: §7b PM rule (owner instruction 2026-10-21). exafyltd/vitana-platform#4340 squash-merged 2026-10-22T22:29:46Z, last of the three (one merge at a time). Review round 1 (wf_27b4cb00217adf88): `changes`, one blocking finding (VALIDATOR-CHECK red: PR body had no VALIDATION_PROFILE / markers, evidence pack missing) — fixed by `a14fcdf2c` (acceptance.md + outputs/) and the PR body markers. Round 2 accept: agent:vitana-lane-reviewer (claude-opus-5.5) on `a14fcdf2c1d6d6397c6c556f81ba932f8c5fadb0` (run wf_5d72b688787bced8), entry-only commit `b24c45114`, then `gh pr update-branch` (main's commits only, `cf9694a5c`). All 10 checks green incl. validate-pr, no `--admin`. Next: verified.
+### 2026-10-22T23:18Z · kiro-202610220829-5884 · in-review → verified
+Acceptance met on vitana-platform `main` (contains merge `62d5e2ecf55d2498cac59a88553fa4587f36ef34` (#4340)): 13, 13, 0. Nothing deploys, so no Gate 2. authority: §7b PM rule (owner instruction 2026-10-21). Next: done.
+### 2026-10-22T23:35Z · kiro-202610220829-5884 · verified → done
+Lane closed under §7b (owner instruction 2026-10-21: "yes, execute your recommendation", "now you can run fully end to end without stopping"); merge `62d5e2ecf55d2498cac59a88553fa4587f36ef34` (#4340). Claim released.

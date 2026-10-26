@@ -1,0 +1,88 @@
+TAP version 13
+# Subtest: clean lane range → every check passes, exit 0
+ok 1 - clean lane range → every check passes, exit 0
+  ---
+  duration_ms: 632.746879
+  type: 'test'
+  ...
+# Subtest: three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+ok 2 - three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+  ---
+  duration_ms: 665.908213
+  type: 'test'
+  ...
+# Subtest: spec slug listed by no program.md → reported
+ok 3 - spec slug listed by no program.md → reported
+  ---
+  duration_ms: 670.208777
+  type: 'test'
+  ...
+# Subtest: invalid scope.json → reported
+ok 4 - invalid scope.json → reported
+  ---
+  duration_ms: 636.677577
+  type: 'test'
+  ...
+# Subtest: parity: preflight reports every error queue.mjs validate prints for the same range
+ok 5 - parity: preflight reports every error queue.mjs validate prints for the same range
+  ---
+  duration_ms: 788.404729
+  type: 'test'
+  ...
+# Subtest: scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+ok 6 - scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+  ---
+  duration_ms: 616.324476
+  type: 'test'
+  ...
+# Subtest: plan-PR lane lookup without gh → reported as not checked, never a silent pass
+ok 7 - plan-PR lane lookup without gh → reported as not checked, never a silent pass
+  ---
+  duration_ms: 723.214357
+  type: 'test'
+  ...
+# Subtest: no --title → the PR-GATE part is reported as not checked
+ok 8 - no --title → the PR-GATE part is reported as not checked
+  ---
+  duration_ms: 646.650448
+  type: 'test'
+  ...
+# Subtest: preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+ok 9 - preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+  ---
+  duration_ms: 685.295584
+  type: 'test'
+  ...
+# Subtest: lane-code.md names preflight.mjs and runs it before every push
+ok 10 - lane-code.md names preflight.mjs and runs it before every push
+  ---
+  duration_ms: 0.850056
+  type: 'test'
+  ...
+# Subtest: planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+ok 11 - planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+  ---
+  duration_ms: 0.310573
+  type: 'test'
+  ...
+# Subtest: driver.md runs preflight before every push of the loop
+ok 12 - driver.md runs preflight before every push of the loop
+  ---
+  duration_ms: 0.209045
+  type: 'test'
+  ...
+# Subtest: the runbook text check catches a push point without preflight
+ok 13 - the runbook text check catches a push point without preflight
+  ---
+  duration_ms: 0.162423
+  type: 'test'
+  ...
+1..13
+# tests 13
+# suites 0
+# pass 13
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 6153.655303

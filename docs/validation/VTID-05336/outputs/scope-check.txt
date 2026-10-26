@@ -1,0 +1,4 @@
+✅ **lane scope** — lane pipeline-speed/preflight: every change is inside its paths
+
+⚠️ d923c95b: kiro-202610220829-5884 names no seat; lane pipeline-speed/preflight belongs to seat exafy
+⚠️ f447cbf2: kiro-202610220829-5884 names no seat; lane pipeline-speed/preflight belongs to seat exafy

@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "Birisi \"{title}\" ile ilgilendi.",
   "notif.chat_mention.title": "{sender} seni \"{group}\" grubunda andı",
   "notif.calendar_invite.body": "{name} seni bir etkinliğe davet etti",
+  "notif.chat_shared_content.body": "{name} seninle bir şey paylaştı",
   "notif.chat_burst.body": "{count} yeni mesaj · {preview}",
   "notif.new_member_greeting_burst.title": "Topluluğa hoş geldin 👋",
   "notif.new_member_greeting_burst.body": "{count} kişi sana merhaba dedi 👋",

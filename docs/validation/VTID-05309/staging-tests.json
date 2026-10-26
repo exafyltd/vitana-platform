@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05309",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "unsigned GET /chat/search is refused (route mounted)", "target": "gateway", "method": "GET", "path": "/api/v1/chat/search?q=abc", "rejected_probe": true, "expect_status": 401, "reason": "rejected probe, read-only" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05309-chat-message-search.test.ts", "cwd": "services/gateway", "reason": "authorization and filters need seeded conversations; proven in CI" }
+  ]
+}

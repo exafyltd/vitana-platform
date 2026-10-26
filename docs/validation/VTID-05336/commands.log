@@ -1,0 +1,67 @@
+# VTID-05336 (pipeline-speed/preflight) - commands and results
+# Windows 11, PowerShell 5.1, node v24.11.1; lane worktree, branch kiro/pipeline-speed/preflight
+# Code commit f447cbf281d4df10dabc969808b57055a8f4d95d (this log follows in the next commit, docs only).
+
+## 1. Red on base - node --test scripts/collab/preflight.test.mjs (test file only: preflight.mjs absent, runbooks unchanged)
+# red on base: node --test scripts/collab/preflight.test.mjs
+# base origin/main 1d5cfda68dae80e69e5291d7e54d39c1fa0daca5 (preflight.mjs absent, runbooks unchanged; only the new test file added)
+# exit 1
+Γä╣ tests 13
+Γä╣ pass 2
+Γä╣ fail 11
+FAIL as expected: 11 of 13 fail (module missing, runbook text absent). The 2 that pass on base are the self-test of
+the runbook text checker and "writes nothing" (a missing module writes nothing either). Full output: red-on-base.txt.
+
+## 2. Green - node --test scripts/collab/preflight.test.mjs
+exit 0
+Γä╣ tests 13
+Γä╣ pass 13
+Γä╣ fail 0
+PASS 13/13
+
+## 3. node --test scripts/collab/*.test.mjs (Collab handoff job parity)
+exit 0
+Γä╣ tests 114
+Γä╣ pass 114
+Γä╣ fail 0
+PASS 114/114
+
+## 4. node --test scripts/ci/kiro-steering/guard.test.cjs ; node scripts/ci/kiro-steering/guard.cjs .
+exit 0
+Γä╣ tests 34
+Γä╣ pass 34
+Γä╣ fail 0
+kiro-steering: OK
+PASS 34/34 + guard OK
+
+## 5. Preflight on the lane's own head (f447cbf2)
+## node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/pipeline-speed/preflight --title "VTID-05336 (pipeline-speed/preflight): every CI governance check, locally, in one pass"
+exit 0
+preflight vitana-platform c:\Users\dstev\vitana-platform-1\.worktrees\pipeline-speed-preflight
+  base 1478926bbee844953505f2bab89002ea5defc935  head f447cbf281d4df10dabc969808b57055a8f4d95d  branch kiro/pipeline-speed/preflight
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
+
+PASS 8/8 checks: Collab tests, queue.mjs validate (head copy), Lane scope (base copy of queue.mjs), gate.mjs
+scope / sparring / weakening / red-green, Kiro steering.
+
+## 6. Changed files (git diff --stat origin/main...HEAD) - queue.mjs, gate.mjs, lib.mjs, PR-GATE.yml untouched
+ .kiro/pipeline/driver.md                      |  12 +-
+ .kiro/pipeline/lane-code.md                   |  20 +-
+ .kiro/pipeline/planning.md                    |  12 +-
+ .kiro/specs/pipeline-speed/lanes/preflight.md |  15 +-
+ docs/validation/VTID-05336/plan-sparring.md   |  10 +
+ docs/validation/VTID-05336/red-on-base.txt    | 465 ++++++++++++++++++++++++++
+ docs/validation/VTID-05336/scope.json         |  16 +
+ scripts/collab/preflight.mjs                  | 242 ++++++++++++++
+ scripts/collab/preflight.test.mjs             | 262 +++++++++++++++
+ 9 files changed, 1036 insertions(+), 18 deletions(-)

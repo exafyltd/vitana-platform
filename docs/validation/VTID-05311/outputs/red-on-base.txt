@@ -1,0 +1,5 @@
+$ npx jest test/vtid-05311-chat-shared-content.test.ts   # on origin/main c8400aad4 (src changes removed)
+    Cannot find module '../src/services/chat-shared-content' from 'test/vtid-05311-chat-shared-content.test.ts'
+Test Suites: 1 failed, 1 total
+Tests:       0 total
+Head: 13 passed.

@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "有人对“{title}”感兴趣。",
   "notif.chat_mention.title": "{sender} 在“{group}”中提到了你",
   "notif.calendar_invite.body": "{name} 邀请你参加一个活动",
+  "notif.chat_shared_content.body": "{name} 与你分享了内容",
   "notif.chat_burst.body": "{count} 条新消息 · {preview}",
   "notif.new_member_greeting_burst.title": "欢迎加入社区 👋",
   "notif.new_member_greeting_burst.body": "{count} 人向你问好 👋",

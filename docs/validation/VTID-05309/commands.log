@@ -1,0 +1,16 @@
+# VTID-05309 (messenger-ux-v2/api-message-search) — session kiro-exafyltd-202610211130-c65e
+$ (read-only SQL) select count(*), pg_total_relation_size … from chat_messages   # 53,278 rows, 62 MB total, 27 MB heap, ~9.9 MB content (avg 241 chars)
+$ (read-only) list_extensions   # pg_trgm 1.6 already installed (schema public); no GIN index on chat_messages
+$ (read-only SQL) attachment kinds   # 24 image attachments, 10 voice; keys filename/name/mime/type/path/url/size/duration
+$ npx jest test/vtid-05309-chat-message-search.test.ts   # base: cannot load (outputs/red-on-base.txt); head: 15 passed
+$ npx tsc --noEmit -p .   # clean (TS2742 from the sandbox's symlinked node_modules ignored)
+Build mode: index built inside the migration transaction (SHARE lock, inserts wait for one scan of ~10 MB of text — seconds). The migration is NOT applied (owner / RUN-MIGRATION); without it the search works as a scan.
+Deviations: built on main while api-viewing-presence (#4264) waits for its migration — the two lanes only share one mount line in chat.ts; file names are matched on the first attachment only (PostgREST JSON path), every attachment kind is checked for the type filter.
+
+## Review fixes (/projects/sandbox/reviews/pr4297.md)
+$ npx jest test/vtid-05309-chat-message-search.test.ts   # 21 passed (deleted-group and strict-cursor tests fail without the fixes)
+Fixed: cursor timestamp must be strict ISO (raw microsecond string kept) and is quoted in the filter; the text search is its own query (`content ILIKE`, servable by the trigram index) and file names a second query over attachment/voice rows, merged newest-first; a DM needs a receiver (deleted groups' rows are never "dm:null"); both `filename` and `name` are matched; limiter `validate: { xForwardedForHeader: false }`; paging contract documented in the route header (short/empty pages with a cursor).
+Tests added: tenant row check with the tenant filter bypassed, page 2/3 continuity without overlap, full scan window → short page with cursor, type voice/link, `name` match, 429 after 30 searches.
+$ (read-only) EXPLAIN of the text query (no trigram index yet)   # Index Scan using idx_chat_messages_user_received (tenant_id) + Filter content ~~* — one tenant holds 52,983 of 53,278 rows, so that index is not selective; the trigram index is what can serve `content ILIKE` there. A staging EXPLAIN with the index can only be shown after RUN-MIGRATION (hypopg is not installed).
+Known: PostgREST reads `*` in q as a wildcard; the literal re-check drops the extra rows. The rate limit is per gateway task (in-memory store).
+Migration apply target: RUN-MIGRATION applies to Aurora; the counts above come from the Supabase project inmkhvwdcuyhnxkgfvsb — confirm pg_trgm there at approval.

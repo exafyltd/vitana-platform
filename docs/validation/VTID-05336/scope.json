@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05336",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/preflight.mjs",
+    "scripts/collab/preflight.test.mjs",
+    ".kiro/pipeline/lane-code.md",
+    ".kiro/pipeline/planning.md",
+    ".kiro/pipeline/driver.md",
+    ".kiro/specs/pipeline-speed/lanes/preflight.md",
+    "docs/validation/VTID-05336/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05336/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -2949,6 +2949,10 @@ SQLSTATE 23505) returns `200 { duplicate: true }` with the stored row and sends 
 { message_id }` (an id, never content); every read endpoint returns `reply_to_message_id` only when that target is in
 the same conversation (a forged value from a direct insert reads as null).
 
+Message search (VTID-05309): `idx_chat_messages_content_trgm` is a `pg_trgm` GIN index on `chat_messages.content`
+for `GET /api/v1/chat/search` (ILIKE, q ≥ 3 chars, scoped to the caller's tenant, DMs and groups). Migration:
+`supabase/migrations/20261022090000_vtid_05309_chat_message_search.sql`.
+
 ---
 
 ## Commerce Mesh — Connector Factory tables (VTID-03535, 2026-08-08)
