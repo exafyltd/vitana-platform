@@ -1,9 +1,10 @@
 ---
 lane: web-steering
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610261510-099d
 branch: kiro/kiro-web-steering/web-steering
+pr: https://github.com/exafyltd/vitana-platform/pull/4379
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -48,3 +49,6 @@ marker anywhere in a file (stricter line match suggested); the docs label unknow
 "assumed". Stored by the plan driver on the agent's behalf (`lane-land.md` step 2); run as a separate read-only agent
 session from the agent definition, because Kiro Web exposes no workspace custom agent.
 Next: the land step merges under §7b.
+
+### 2026-10-26T15:55Z · kiro-exafyltd-202610261510-099d · executing → in-review
+PR exafyltd/vitana-platform#4379 was opened at 2026-10-26T15:44:05Z on head `9c4778eb9b0c5efe4c3af8ceb599f86b01359581`.
