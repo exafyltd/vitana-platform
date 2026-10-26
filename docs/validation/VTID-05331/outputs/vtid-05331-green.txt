@@ -1,0 +1,58 @@
+TAP version 13
+# Subtest: VTID-05331 1: builder A releases, B of the same seat takes over and logs it, claimed_by B → pass
+ok 1 - VTID-05331 1: builder A releases, B of the same seat takes over and logs it, claimed_by B → pass
+  ---
+  duration_ms: 138.50803
+  type: 'test'
+  ...
+# Subtest: VTID-05331 2: interleaved builders A, B, A → fail (overlap)
+ok 2 - VTID-05331 2: interleaved builders A, B, A → fail (overlap)
+  ---
+  duration_ms: 124.101351
+  type: 'test'
+  ...
+# Subtest: VTID-05331 3: a session of another seat continues the lane → fail (seat), and scope-check still refuses it
+ok 3 - VTID-05331 3: a session of another seat continues the lane → fail (seat), and scope-check still refuses it
+  ---
+  duration_ms: 129.53949
+  type: 'test'
+  ...
+# Subtest: VTID-05331 4: the reviewer seat, a reviewer agent, or a session that reviewed the lane may not continue the build
+ok 4 - VTID-05331 4: the reviewer seat, a reviewer agent, or a session that reviewed the lane may not continue the build
+  ---
+  duration_ms: 352.11987
+  type: 'test'
+  ...
+# Subtest: VTID-05331 5: sequential same-seat builders do not widen the lane paths (scope-check still fails)
+ok 5 - VTID-05331 5: sequential same-seat builders do not widen the lane paths (scope-check still fails)
+  ---
+  duration_ms: 126.866156
+  type: 'test'
+  ...
+# Subtest: VTID-05331 6: a single-builder lane passes unchanged, and its claimed_by is still checked
+ok 6 - VTID-05331 6: a single-builder lane passes unchanged, and its claimed_by is still checked
+  ---
+  duration_ms: 212.189412
+  type: 'test'
+  ...
+# Subtest: VTID-05331 7: a takeover not named in the lane log → fail
+ok 7 - VTID-05331 7: a takeover not named in the lane log → fail
+  ---
+  duration_ms: 110.696676
+  type: 'test'
+  ...
+# Subtest: VTID-05331 8: claimed_by still names the earlier builder after a takeover → fail
+ok 8 - VTID-05331 8: claimed_by still names the earlier builder after a takeover → fail
+  ---
+  duration_ms: 110.366446
+  type: 'test'
+  ...
+1..8
+# tests 8
+# suites 0
+# pass 8
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 1394.332097

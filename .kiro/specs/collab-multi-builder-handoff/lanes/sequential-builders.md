@@ -1,6 +1,6 @@
 ---
 lane: sequential-builders
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -10,8 +10,10 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-22T09:01Z
+updated: 2026-10-26T10:16Z
 vtid: VTID-05331
+claimed_by: kiro-exafyltd-202610261013-e940
+branch: kiro/collab-multi-builder-handoff/sequential-builders
 ---
 # Lane: sequential-builders (repo vitana-platform)
 Tasks T1–T3 in `tasks.md`. `executor: claude` because `queue.mjs` is a protected gate file; built by the exceptions
@@ -23,3 +25,12 @@ Lane created with the plan.
 
 ### 2026-10-22T09:01Z · ci-plan-spar · ready (VTID allocated)
 VTID-05331 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-26T10:16Z · kiro-exafyltd-202610261013-e940 · ready → executing
+Owner instruction 2026-10-26: start VTID-05331, tests first, minimum `queue.mjs` change, no special case for #4198, merge
+only after the reviewer accept and the protected-file review on the same head. Eight tests written first; 7 of 8 red on
+`main` (`outputs/red-on-main.txt`). `validateRange`: `ci-plan-spar` excluded from builder sessions; for a work lane with
+2+ builder sessions and a declared `seat` (base revision): (a) every session of that seat, (b) no reviewer as builder,
+(c) contiguous runs in `git rev-list --topo-order --reverse --no-merges`, (d) every session named in `## Log`,
+(e) `claimed_by` = last builder. Single-session lanes, `_plan` lanes and seat-less lanes unchanged. Collab suite:
+154 tests, 0 failures (main 146, 0 failures).

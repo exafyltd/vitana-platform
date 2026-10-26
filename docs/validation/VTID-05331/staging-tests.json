@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05331",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "node --test scripts/collab/queue.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/plan-driver.test.mjs scripts/collab/automations.test.mjs",
+      "cwd": ".",
+      "reason": "CI checker script only (scripts/collab/queue.mjs, run by PR-GATE Collab handoff and Lane scope); nothing on staging changes. These suites pin the sequential-builder rule (VTID-05331 cases 1-8) and every existing collab rule."
+    }
+  ]
+}

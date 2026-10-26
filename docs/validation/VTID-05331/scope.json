@@ -1,0 +1,3 @@
+{ "vtid": "VTID-05331", "lane": "collab-multi-builder-handoff/sequential-builders",
+  "files": ["scripts/collab/queue.mjs", "scripts/collab/queue.test.mjs", "docs/validation/VTID-05331/**"],
+  "protected_gate_files": ["scripts/collab/queue.mjs"], "runtime_or_service_code": false, "migrations": [] }
