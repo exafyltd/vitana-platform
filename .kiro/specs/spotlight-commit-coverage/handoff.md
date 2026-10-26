@@ -3,11 +3,11 @@ slug: spotlight-commit-coverage
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: claude
+next_actor: owner
 state: parked
 spar_refs:
   - exafyltd/vitana-v1: fb9b6d843602f504a9ebfd794d4156ccfcda431f
-updated: 2026-10-26T09:55Z
+updated: 2026-10-26T10:20Z
 parked_from: drafted
 ---
 # Handoff — spotlight-commit-coverage
@@ -43,3 +43,17 @@ Next: owner decision on #4351.
 
 ### 2026-10-26T09:55Z · ci-plan-spar · drafted → parked
 Not converged after 2 sparring sessions (evidence_floor_not_met). Parked with the open findings in sparring/.
+
+### 2026-10-26T10:20Z · kiro-exafyltd-202610220833-d231 · parked (stop: PM agent push loop drains the GitHub API quota)
+Session 2 (6a54aedf) also had 0 successful partner reads. Root cause, read-only:
+- The PM agent pushes a `pm: <slug>/<lane> update` commit to about 20 `pm-agent/<slug>` branches every ~4 min. Each one
+  re-appends the same `reassign review →exafyltd (stale_review, Claude unavailable)` line: `matches-list-clearance.md`
+  on `pm-agent/matches-scroll-end` is now 1,764 lines. The loop is not idempotent, because no reviewer agent ever
+  clears `stale_review`.
+- Each push starts ~8 `pull_request` workflows: about 1,300 runs/hour in vitana-platform, all as `exafyltd` (the
+  account rate-limited in CI, user id 171726573).
+- PLAN-SPAR's `read_file`/`list_dir` use the GitHub core contents API, which fails, while `search` (a separate
+  quota) works. This matches an exhausted core quota for the token's account.
+Needs the owner: pause the PM loop (`PM_AGENT_ENABLED` / PM mode on the gateway, a live config change that Kiro
+does not make), then re-spar this plan from session 1. The lane's coverage file is ready locally (dry run: 0 missing,
+10 covered).
