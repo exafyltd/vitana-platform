@@ -1,6 +1,6 @@
 ---
 lane: sequential-builders
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -10,7 +10,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-26T10:34Z
+updated: 2026-10-26T10:44Z
 vtid: VTID-05331
 claimed_by: kiro-exafyltd-202610261013-e940
 branch: kiro/collab-multi-builder-handoff/sequential-builders
@@ -36,8 +36,10 @@ only after the reviewer accept and the protected-file review on the same head. E
 (e) `claimed_by` = last builder. Single-session lanes, `_plan` lanes and seat-less lanes unchanged. Collab suite:
 154 tests, 0 failures (main 146, 0 failures).
 
-### 2026-10-26T10:34Z · kiro-exafyltd-202610261013-e940 · executing → in-review
+### 2026-10-26T10:34Z · kiro-exafyltd-202610261013-e940 · ready for review (PR #4377)
 PR #4377. All 11 checks green on `3c7f9ba8a5` (incl. Collab handoff, Lane scope, validate-pr, CI scripts). Next: reviewer
 seat `jtadic` reviews the current head. `queue.mjs` is a protected gate file, so the merge also needs the protected-file
 review on the same head (a Claude review, or the owner's explicit instruction naming #4377). The builder does not
 review or merge its own lane.
+State stays `executing` on this branch: `validate` judges the net `main` → head edge, and `ready → in-review` is not a
+legal single edge. The hand-off to review is this log entry and the PR.
