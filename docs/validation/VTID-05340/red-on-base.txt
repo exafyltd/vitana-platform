@@ -1,0 +1,6 @@
+# red on origin/main 21ed4ece83273dba825b8df4c6c9bcf082d0e6e6: the module does not exist there (test file present, module stashed aside)
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/vitana-platform/.agents/wt/session-kit/scripts/collab/kiro-web-session.mjs' imported from /projects/sandbox/vitana-platform/.agents/wt/session-kit/scripts/collab/kiro-web-session.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+# tests 1
+# pass 0
