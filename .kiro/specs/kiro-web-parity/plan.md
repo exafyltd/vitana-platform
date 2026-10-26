@@ -68,14 +68,18 @@ Subcommands:
       review step can run it);
    c. starts, detached, logging to `~/.cache/vitana-kiro-web/setup.log`: `npm ci` in `services/gateway` (and in
       vitana-v1 when present) when `node_modules` is missing or `package-lock.json` changed since the last stamp; the
-      code-intelligence venv `~/.cache/vitana-codeintel/venv` (`uv venv` + `uv pip install repowise graphifyy[bedrock]`,
-      pip fallback), then `scripts/codeintel/session-setup.sh --foreground <repo>` per repo with the venv on `PATH`
+      code-intelligence venv `~/.cache/vitana-codeintel/venv` (`uv venv` + `uv pip install repowise 'graphifyy[bedrock]'`
+      — the PyPI distribution is `graphifyy`, its command `graphify`, as `scripts/codeintel/session-setup.sh:95` installs
+      it; pip fallback), then `scripts/codeintel/session-setup.sh --foreground <repo>` per repo with the venv on `PATH`
       (the script is reused unchanged); `--wait` runs the same in the foreground;
-   d. prints the `status` report.
+   d. with `DEV_MEMORY_PACK_TOKEN` set, prints the developer morning pack (`.claude/hooks/session-start-dev-memory-pack.sh`,
+      reused; read-only GET, ≤ 15 s); without it says so and points to git as the task state (queue, plan files);
+      `--no-install` skips it (no network);
+   e. prints the `status` report.
 2. `status [--json] [--check]` — readiness of: workspace steering (`kiro-web-steering.mjs --check` exit 0, §2.8), generated hooks, reviewer agent copy, gateway/v1 `node_modules`, RepoWise/Graphify state
    (`~/.cache/vitana-codeintel/<repo>.json`), `gh api user`, GraphQL (reported unsupported, not a failure), presence
-   (never the value) of `DEV_MEMORY_PACK_TOKEN` / `GATEWAY_SERVICE_TOKEN`. With a token present it prints the morning
-   pack (`.claude/hooks/session-start-dev-memory-pack.sh`, reused). `--check` exits 1 when a required item is missing.
+   (never the value) of `DEV_MEMORY_PACK_TOKEN` / `GATEWAY_SERVICE_TOKEN`. `status` makes no gateway call.
+   `--check` exits 1 when a required item is missing.
 3. `mark-dirty` (PostToolUse) — reads the hook stdin; when `tool_input.path` is under `<repo>/services/gateway/src/`,
    touches `~/.cache/vitana-kiro-web/dirty/<repo>-gateway`. Always exit 0, prints nothing (output is not surfaced).
 4. `guard` (PreToolUse on `execute_bash`) — reads the hook stdin, parses `tool_input.command` and `tool_input.cwd`:
@@ -88,8 +92,11 @@ Subcommands:
      when one exists; failure → exit 2 with preflight's failure block on stderr. A pass is cached per
      `(repo, head sha)` so a retried push does not re-run it. When the pushed sha is not the checked-out `HEAD`, the
      guard blocks and says so (`preflight.mjs:117`). A lane push before its PR exists carries the title as
-     `PR_TITLE='…' git push …`; without a PR and without `PR_TITLE` the guard blocks and asks for it (preflight
-     fails without `--title`). The failure shown is preflight's FAIL lines without the queue table.
+     `PR_TITLE` **in the same bash command**: the POSIX prefix `PR_TITLE='…' git push …` (single or double quotes) on
+     the push itself, or `export PR_TITLE='…' &&` earlier in that command; a prefix on another segment does not count,
+     and a title set in an earlier tool call is not visible (the hook process does not share the shell's
+     environment). Without a PR and without `PR_TITLE` the guard blocks and names the form (preflight fails without
+     `--title`). This is how the first push of a lane works: the PR can only be opened after that push. The failure shown is preflight's FAIL lines without the queue table.
    - pushes of `collab-claim/**`, `collab-driver/**`, ref deletions, and every other command → exit 0 at once.
    - an internal error (bad stdin, missing script) → exit 0 with a stderr note; the guard never blocks on its own bug.
      It adds checks only; it never skips or loosens one, and CI stays the gate.
@@ -111,12 +118,14 @@ Written first, recorded red on `origin/main` (the module does not exist there). 
 2. Reviewer agent copy is byte-identical; re-running `setup` is a no-op (same bytes).
 3. `mark-dirty`: gateway `src` path → marker; other path → none; malformed stdin → exit 0.
 4. `guard` command parsing: every push form above yields `{repo, branch, sha}`; claim/driver refs and deletions are
-   ignored; non-git commands pass.
+   ignored; non-git commands pass; `PR_TITLE` from a single- or double-quoted prefix and from an earlier
+   `export PR_TITLE=` segment, not from a prefix on another segment; no PR and no title → exit 2 naming the form.
 5. `guard` decisions with an injected runner: failing preflight → exit 2 with its output on stderr; passing → exit 0
    and cached (second call does not run it); dirty + tsc errors on commit → exit 2; dirty + clean → marker cleared;
    pushed sha ≠ HEAD → exit 2; internal error → exit 0.
 6. `wait` with an injected `gh`: all success → 0; one failure → 1 and the failed log lines; pending past timeout → 3.
-7. `status --check --json` on a fixture: missing hooks → exit 1 naming them.
+7. `status --check --json` on a fixture: missing hooks → exit 1 naming them, never printing a token value;
+   `setup --no-install` with `DEV_MEMORY_PACK_TOKEN` set makes no morning-pack call (no network in tests).
 
 ## 5. Validation on a representative task
 The lane itself is the representative task (a governance-path lane through the full pipeline). Its evidence
