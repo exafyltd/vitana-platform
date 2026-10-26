@@ -14,7 +14,8 @@ paths:
   - scripts/collab/kiro-web-session.test.mjs
   - docs/kiro-web-parity/**
   - docs/validation/VTID-*/**
-updated: 2026-10-26T15:50Z
+updated: 2026-10-26T16:14Z
+vtid: VTID-05340
 ---
 # Lane: session-kit (repo vitana-platform)
 Tasks K1-K5 in `tasks.md`. `executor: kiro` with the reviewer agent: `scripts/collab/**` is a governance path and the
@@ -23,3 +24,6 @@ two new files are not protected gate files. The VTID is allocated by PLAN-SPAR o
 ## Log
 ### 2026-10-26T15:50Z · kiro-exafy-202610261526-5cd7 · ready
 Lane created with the plan.
+
+### 2026-10-26T16:14Z · ci-plan-spar · ready (VTID allocated)
+VTID-05340 allocated after policy approval (converged-auto-v1).

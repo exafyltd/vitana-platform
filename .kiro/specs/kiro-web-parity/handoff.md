@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-26T15:50Z
+state: approved
+updated: 2026-10-26T16:14Z
+sparring_record: .kiro/specs/kiro-web-parity/sparring/verdict.md
+vtids: [VTID-05340]
 ---
 # Handoff — kiro-web-parity
 
@@ -20,3 +22,6 @@ Owner task 2026-10-26 (Kiro Web): Claude Code parity in speed, quality and auton
 our control, prepare the PR under the standing authorization. Premises from probes in this session against
 `origin/main` `55cc5bbadc`. Sibling plan `kiro-web-steering` (#4378) owns steering; no shared file except the program
 entry. No VTID, no code.
+
+### 2026-10-26T16:14Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
