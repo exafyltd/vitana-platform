@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: executing
-updated: 2026-10-26T15:55Z
+state: in-review
+updated: 2026-10-26T15:59Z
 sparring_record: .kiro/specs/kiro-web-steering/sparring/verdict.md
 vtids: [VTID-05339]
 ---
@@ -31,3 +31,6 @@ unchanged. Next: merge this `plan(` PR under §7b, then build `web-steering`.
 
 ### 2026-10-26T15:55Z · kiro-exafyltd-202610261510-099d · approved → executing
 Lane `web-steering` (VTID-05339) built: PR #4379.
+
+### 2026-10-26T15:59Z · kiro-exafyltd-202610261510-099d · executing → in-review
+Lane `web-steering` went to review. The reviewer agent accepted it on `9c4778eb`.
