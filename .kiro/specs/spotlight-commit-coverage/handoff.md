@@ -34,3 +34,8 @@ and watches STAGING-VERIFY.
   6/6, PR-GATE and Lane scope are green. It is unmerged. `PLAN-SPAR.yml` is a protected gate file (§3a), so it needs
   the owner's instruction or a legacy Claude review.
 Next: owner decision on #4351.
+
+### 2026-10-26T10:10Z · kiro-exafyltd-202610220833-d231 · drafted (re-plan after infra escalation)
+#4351 is merged (`55cc5bbad`, owner instruction 2026-10-26), and PLAN-SPAR runs again. Session 78d00a62 escalated on
+`evidence_floor_not_met`: a read-only query shows 16/16 partner reads `ok:false`, the gateway read outage. Waited
+20 min, then re-planned: premise 6 records this and lists the files to read. This uses the last allowed session.

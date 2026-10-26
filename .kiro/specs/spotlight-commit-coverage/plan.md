@@ -43,6 +43,15 @@ question to approve `commit-coverage.json` entries for these 10 merges plus the 
    - batches 3, 4 and 5: no test, only `scripts/ci/pr-gate/baseline/design.json` / `eslint.json` ratchet updates.
      Their guard is the design contract (`package.json` `test:design-contract`).
 
+6. PLAN-SPAR itself was down 2026-10-22 → 2026-10-26 (`PLAN-SPAR.yml:122` used `secrets.` in a step `if:`). It was
+   repaired by #4351, merged as `exafyltd/vitana-platform` `55cc5bbadc1925eaf57aa3e6600bbcf3766062ab` on the owner's
+   instruction of 2026-10-26. Session 1 of this plan (78d00a62) then escalated because every partner `read_file` /
+   `list_dir` failed (16/16, `ok:false`; `search` worked). That is the intermittent gateway read outage also seen on
+   2026-10-22, not a finding on the plan. Files to read for the premises: `exafyltd/vitana-platform:scripts/ci/staging-verify/lib.cjs`,
+   `exafyltd/vitana-platform:scripts/ci/staging-verify/run.mjs`, `exafyltd/vitana-platform:.github/workflows/STAGING-VERIFY.yml`,
+   `exafyltd/vitana-platform:docs/validation/commit-coverage.json` (schema precedent), and
+   `exafyltd/vitana-v1:docs/validation/VTID-05285/staging-tests.json` … `VTID-05294/staging-tests.json`.
+
 ## Change (one lane `coverage-manifests`, repo vitana-v1, files only under `docs/validation/`)
 - New `docs/validation/commit-coverage.json` (same schema as the platform file): 10 entries, each with the full sha
   from premise 4, its lane VTID, a reason ("merge commit of desktop-spotlight-finish/<lane>; its branch commits carry
