@@ -84,6 +84,10 @@ entries, 8 sampled specs.
   screenshots after the interaction or the reason, phone code path named, de + ar/RTL, keyboard/labels/contrast,
   edge states; staging proof asserts the change; Commerce: the UX acceptance section). Template only: it has no
   executable behaviour, so there is no red-on-base test; the reviewer checks the diff against Acceptance.
+All three lane files declare `executor: kiro` and `reviewer_seat: agent:vitana-lane-reviewer`, which
+`scripts/collab/queue.mjs:701` requires for a kiro lane on governance paths (`.github/**`, `scripts/collab/**`,
+`queue.mjs:85`); none of the files is a protected gate file. The `pipeline-quality` lane also corrects the
+`reviewer_seat` sentence of `planning.md` §3 (`:35`), which calls the field legacy without naming that requirement.
 No dependency between the lanes; they run in parallel. Deploys nothing: no staging deploy workflow watches these paths
 (`AWS-STAGE-DEPLOY-GATEWAY.yml:37-39` watches `services/gateway/**`), so no STAGING-VERIFY and no Gate 2; done when
 the three lanes are merged green with closing records.

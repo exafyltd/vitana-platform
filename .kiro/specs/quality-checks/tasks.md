@@ -13,7 +13,8 @@ the lane has a test). Squash merge. Acceptance below is what the reviewer agent 
 - [ ] T2 Add `.kiro/pipeline/quality-checks.md` with the five parts of plan §3, each change-type item traced to a
       plan §2 evidence item (PR, commit or run).
 - [ ] T3 One sentence each in `planning.md` §3, `lane-code.md` steps 7–9, `lane-review.md` ("What the review step's
-      prompt gives the agent"), `lane-land.md` step 3d (squash); `## Verification` in `.github/pull_request_template.md`.
+      prompt gives the agent"), `lane-land.md` step 3d (squash), and the `reviewer_seat` sentence of `planning.md` §3 names the governance-path
+      requirement (`queue.mjs:701`); `## Verification` in `.github/pull_request_template.md`.
 - [ ] T4 Local checks: the new test, `node --test scripts/collab/*.test.mjs`, `node --test
       scripts/ci/kiro-steering/guard.test.cjs`, `node scripts/ci/kiro-steering/guard.cjs .`, preflight; all in
       `commands.log`.
