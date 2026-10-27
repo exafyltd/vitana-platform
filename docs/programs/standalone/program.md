@@ -23,14 +23,12 @@ specs:
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
   - vitana-platform:matches-scroll-end
+  - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:pipeline-speed
-  - vitana-platform:kiro-web-steering
-  - vitana-platform:kiro-web-parity
-  - vitana-platform:session-title-stable
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -59,10 +57,8 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
+- `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
 - `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
 - `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
-- `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
-- `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
-- `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
