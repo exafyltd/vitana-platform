@@ -88,8 +88,8 @@ from the user's side; "n/a: <reason>" is a valid answer, an empty field is not.
   repos [VTID-04849 → 04858 → 04930: one dead secret removed one task definition at a time].
 - **Build:** parse every changed workflow; no `secrets.` in a step or job `if:` (map it to `env` first) [#4266 →
   #4351, `PLAN-SPAR.yml` invalid for four days]; register a new workflow wherever the repo catalogs them
-  (`services/gateway/specs/loop-catalog-v1.json`) [CI-HEALTH orphan, #4374]; no change to `AWS-PROD-*` without an
-  owner command.
+  (`services/gateway/specs/loop-catalog-v1.json`) [`CI-HEALTH.yml` merged unregistered; its entry is added by #4374];
+  no change to `AWS-PROD-*` without an owner command.
 - **Staging proof:** a run of the changed workflow on the PR or by dispatch on staging, linked; for a task-definition
   change, the deployed revision's value.
 - **Reviewer:** the sweep covers every sibling file; the workflow run is linked.
@@ -97,15 +97,16 @@ from the user's side; "n/a: <reason>" is a valid answer, an empty field is not.
 ## Tooling/docs
 (collab scripts, pipeline files, rules, templates)
 - **Build:** tests assert behaviour or structure, not sentences copied from another file [a VTID-04868 test pinned a
-  CLAUDE.md line that VTID-05280 removed, #4374].
+  CLAUDE.md line that VTID-05280 (#4239) removed; fixed in #4374].
 - **Staging proof:** usually n/a (deploys nothing): the change is proven by its tests and one real run of the script.
 - **Reviewer:** no rule weakened; links resolve.
 
 ## Test quality (every change type)
-- A new or changed staging spec compiles and is listed before push (`npx playwright test --list <spec>`; for TS,
-  `npx tsc --noEmit -p <config>` when the repo has one) [#1431 duplicate `const`; `vtid-05085` SyntaxError].
+- A new or changed staging spec compiles and is listed before push (`npx playwright test --list <spec>`; for TS, `npx
+  tsc --noEmit -p <config>` when the repo has one) [#1431 duplicate `const`; STAGING-VERIFY run 38753829317:
+  `vtid-05085-enrichment-cards.staging.spec.ts` SyntaxError].
 - Wait on a real readiness signal of the changed element, never on `#root *` `.first()` [#1440]; never `force: true`
-  on an `aria-disabled` control [#1272].
+  on an `aria-disabled` control [#1259–#1265 → #1272].
 - No pin of a volatile value (cache-buster token, a rule sentence, a file location) unless that value is the change.
   A move or rename greps every test and every `docs/validation/*/staging-tests.json` for the old name and updates
   them in the same PR [#4182 → #4223/#4225 → #4258 → #4374].
