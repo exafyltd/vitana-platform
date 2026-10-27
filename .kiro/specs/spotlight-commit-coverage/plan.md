@@ -40,8 +40,11 @@ question to approve `commit-coverage.json` entries for these 10 merges plus the 
      `src/lib/vitana-index-next-steps.test.ts`;
    - remaining-screens: `src/components/tickets/remaining-screens.spotlight.test.tsx`, `src/design/screen-manifest.test.ts`;
    - sizes: `src/design/eslint-design-rules.test.ts`, `src/design/screen-manifest.test.ts`;
-   - batches 3, 4 and 5: no test, only `scripts/ci/pr-gate/baseline/design.json` / `eslint.json` ratchet updates.
-     Their guard is the design contract (`package.json` `test:design-contract`).
+   - batches 3, 4 and 5: no new test file. They do touch the service: 82/86, 96/100 and 85/89 changed files are
+     under `src/` (component colour-token migrations, e.g. `src/components/community/DensityControl.tsx`,
+     `src/components/business/AnalyticsSubTabs.tsx`, `src/components/AutopilotPopup.tsx`), plus the
+     `scripts/ci/pr-gate/baseline/{design,eslint}.json` ratchet. So `touchesService` is true and they are in
+     `missing` (run 39952660840 lists all three). Their existing suites are the lanes' Playwright staging specs.
 
 6. PLAN-SPAR itself was down 2026-10-22 → 2026-10-26 (`PLAN-SPAR.yml:122` used `secrets.` in a step `if:`). It was
    repaired by #4351, merged as `exafyltd/vitana-platform` `55cc5bbadc1925eaf57aa3e6600bbcf3766062ab` on the owner's
