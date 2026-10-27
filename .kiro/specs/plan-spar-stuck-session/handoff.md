@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: claude
 next_actor: kiro
-state: drafted
-updated: 2026-10-27T13:00Z
+state: approved
+updated: 2026-10-27T13:15Z
+sparring_record: .kiro/specs/plan-spar-stuck-session/sparring/verdict.md
+vtids: [VTID-05350]
 ---
 # Handoff — plan-spar-stuck-session
 
@@ -17,3 +19,6 @@ round 1, one client re-post). Plan: `plan.md`; tested patch: `proposed.patch`; i
 ### 2026-10-27T13:00Z · kiro-exafy-202610271051-d636 · drafted
 Owner task 2026-10-27: investigate the stuck sparring session of `kiro-web-reliability` and prepare a fix routed
 through the protected-gate review. No VTID, no code on main.
+
+### 2026-10-27T13:15Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
