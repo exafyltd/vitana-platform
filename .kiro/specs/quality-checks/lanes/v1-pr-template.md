@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-v1]
 paths:
   - .github/PULL_REQUEST_TEMPLATE.md
   - docs/validation/VTID-*/**
-updated: 2026-10-27T12:50Z
+updated: 2026-10-27T12:54Z
+vtid: VTID-05348
 ---
 # Lane: v1-pr-template (repo vitana-v1)
 Repo: **exafyltd/vitana-v1** (paths are relative to that repo). Tasks T1–T2 in `tasks.md` (lane `v1-pr-template`).
@@ -22,3 +23,6 @@ Repo: **exafyltd/vitana-v1** (paths are relative to that repo). Tasks T1–T2 in
 ## Log
 ### 2026-10-27T12:50Z · kiro-jtadic-202610271220-68a5 · ready
 Lane created with the plan.
+
+### 2026-10-27T12:54Z · ci-plan-spar · ready (VTID allocated)
+VTID-05348 allocated after policy approval (converged-auto-v1).
