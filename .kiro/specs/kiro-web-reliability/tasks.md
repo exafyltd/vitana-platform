@@ -17,7 +17,9 @@ are built in parallel by separate builder sessions (plan §3.2.4) and share no f
 - The check runs the base revision's VALIDATOR-CHECK step scripts (nothing re-implemented), skips when no changed file
   is in the workflow's paths, excludes only `Build Gate` (reported), rewrites `/tmp/`, fails loudly on an unsupported
   expression or a parse error, and fails without `--body-file` when it applies.
+- A platform-side "Not run by preflight" entry names the Build Gate whenever the check applies.
 - Every plan §3.1.4 case is a test, red on base, green on head. No existing preflight test is weakened.
+- Evidence only under this lane's own `docs/validation/<VTID>/`.
 
 <!-- lane: session-reliability -->
 ## Lane `session-reliability` — bootstrap, git hooks, sequencing, parallel builders, refresh (plan §3.2)
@@ -36,3 +38,4 @@ are built in parallel by separate builder sessions (plan §3.2.4) and share no f
 - `driver.md` keeps every §7/§7a/§7b/§8a rule: one merge at a time, caps, hot files, reviewer independence; builders
   never merge, review or edit `handoff.md`. No owner-question phrases or machine paths (steering guard).
 - Every plan §3.2.7 case is a test, red on base, green on head.
+- Evidence only under this lane's own `docs/validation/<VTID>/`.

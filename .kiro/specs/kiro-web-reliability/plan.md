@@ -67,7 +67,10 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    (read from the file, not hard-coded); otherwise `skip` "not in VALIDATOR-CHECK's paths".
 2. It runs the workflow's own step scripts, read from the **base** revision of `.github/workflows/VALIDATOR-CHECK.yml`
    (as Lane scope uses the base `queue.mjs`): every step of job `validate-pr` that has a `run:` block, in order, except
-   `Build Gate` (reported under `:203` "Not run by preflight": the gateway build; the commit typecheck and CI cover it).
+   `Build Gate` (`:274-290`): a new platform-side `not-covered` entry "Not run by preflight: VALIDATOR-CHECK Build Gate
+   (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check `:282-289`)" is added whenever the
+   check applies (the existing `:202-203` entry is v1-only). A `command_hub_frontend` PR can therefore pass preflight
+   and still fail that CI step; the README says so.
    Each runs in `bash -e` with cwd = `--repo`, env = the step's `env:` with `${{ github.base_ref }}` → the `--base`
    ref's branch name (`main` default), `${{ github.event.pull_request.title }}` → `--title`,
    `${{ github.event.pull_request.body }}` → the body file's text, `${{ steps.<id>.outputs.<K> }}` → values earlier
@@ -76,7 +79,7 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    is the failure. A step whose script uses another `${{ … }}` expression → the check fails "unsupported expression"
    (never a silent pass).
 3. No `--body-file` while the check applies → fail "no --body-file: VALIDATOR-CHECK reads the declarations from the PR
-   body". Minimal YAML reading without dependencies: job → `steps:` list items → `name`, `id`, `env` map, `run: |`
+   body; on a first push pass PR_BODY_FILE=<file> (see docs/kiro-web-parity/README.md)". Minimal YAML reading without dependencies: job → `steps:` list items → `name`, `id`, `env` map, `run: |`
    block scalar by indentation; a parse failure fails the check.
 4. Tests (red on base: the option and check do not exist): body missing a declaration → fail naming it (the real
    `--pr-body-check` message); evidence dir without `outputs/` → fail `missing …/outputs/`; both fixed → pass; a change
@@ -85,8 +88,10 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 
 ### 3.2 Lane `session-reliability` — `scripts/collab/kiro-web-session.mjs`, `scripts/collab/kiro-web-session.test.mjs`, `AGENTS.md`, `.kiro/pipeline/driver.md`, `docs/kiro-web-parity/**`, `docs/validation/VTID-*/**`
 1. **One-command bootstrap.** `setup` first runs `kiro-web-steering.mjs` (rules), then today's steps, **all in the
-   foreground** (§2.14): rules, hooks and dependencies (~30 s cold) by default; `setup --codeintel` adds the venv and
-   index build (up to ~8 min cold, §2.15; resumable). No detached child is started. Output survives a closed pipe (no
+   foreground** (§2.14): rules, hooks, dependencies and code intelligence by default (~8 min cold, §2.15; a second run
+   takes seconds); `--no-codeintel` skips only the venv and index build. `status` reports `ready` only after the steps
+   that ran finished (each writes its own done stamp; a stamp older than the step's start is ignored). No detached
+   child is started. Output survives a closed pipe (no
    `EPIPE` crash); `AGENTS.md`
    (auto-injected, §2.9) is changed to: first action of every Kiro Web session, from the workspace root,
    `node vitana-platform/scripts/collab/kiro-web-session.mjs setup`, then state the first `status` line and the session
@@ -95,8 +100,18 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    carrying a marker line; an unmarked existing file is never overwritten (status reports it). They run
    `kiro-web-session.mjs git-pre-commit` / `git-pre-push <remote> <url>`:
    - `git-pre-commit`: staged files under `services/gateway/src` (`git diff --cached --name-only`) → incremental
-     `tsc --noEmit` in that worktree's `services/gateway`; errors → exit 1 with the first 10 `error TS` lines. It judges
-     the content being committed, so an edit that lands after the agent's tool call started is still checked.
+     `tsc --noEmit --incremental --tsBuildInfoFile ~/.cache/vitana-kiro-web/tsc/<checkout>.tsbuildinfo` (scoped per
+     checkout, as today) in that worktree's `services/gateway`; errors → exit 1 with the first 10 `error TS` lines. It
+     runs at commit time, after `git add`, so an edit that lands after the agent's tool call started is still checked.
+     tsc reads the working tree, not the index: an unstaged type error under `services/gateway/src` also blocks
+     (conservative, never looser); the message then names the unstaged gateway files. Exporting the index to a temp
+     tree would need a second `node_modules` and is not done.
+   - **First push (no PR yet).** The agent writes the PR body (with the five declarations of
+     `.github/pull_request_template.md:39-43`) to a file and pushes with `PR_TITLE='…' PR_BODY_FILE=<file> git push …`;
+     both reach `git-pre-push` as environment variables of the `git push` process. `kiro-web-session.mjs pr-body
+     --vtid <V> --scope <globs> --acceptance <path> --payload <text>` prints a body with the declarations filled, from
+     the template. Without a PR and without `PR_BODY_FILE`, when VALIDATOR-CHECK applies, the push is blocked naming
+     this form.
    - `git-pre-push`: for each stdin line whose remote ref is `refs/heads/<b>` with `b` matching `LANE_BRANCH` and a
      non-zero local sha: the existing push check on that sha (HEAD must equal it; this is the authoritative push check, §2.13), title from `PR_TITLE` (env) or the
      open PR, body from `PR_BODY_FILE` (env) or the open PR's body; `--body-file` is passed when preflight supports it
@@ -104,7 +119,8 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    - The PreToolUse commit typecheck and the `mark-dirty` PostToolUse hook are removed (the pre-commit hook replaces
      them; `setup` deletes the stale marked hook file). The PreToolUse push check stays (a visible block before the
      command runs) but **no longer blocks `git commit … && git push …`**: when a commit precedes the push in the same
-     command it defers to `pre-push`, which checks the real commit.
+     command, the PreToolUse guard does **not** call the push check for that push at all (no preflight, no PR/title
+     lookup, no pass-cache write) and `pre-push` checks the real commit.
 3. **Sequencing rule** in `driver.md` (new short section): a dependent action goes in the **same** bash command as the
    one it depends on, chained with `&&` (commit `&&` push; `worktree add &&` work in it); independent actions are
    separate parallel tool calls; a tool call never shares a batch with the call whose result it needs; after a push,
@@ -123,12 +139,19 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    sandbox current when `main` moves; whether Kiro Web fires `UserPromptSubmit` for the main session is untested and is
    reported as such.
 6. Hook description fixed (§2.1). `PR_BODY_FILE` is parsed like `PR_TITLE` (prefix or earlier `export`).
-7. Tests (red on base): git hooks installed with marker, unmarked hook untouched; `git-pre-commit` with staged gateway
+7. Tests (red on base): PreToolUse guard does not invoke the push check for a push after a commit in one command;
+   first push with `PR_BODY_FILE` (env) reaches preflight as `--body-file`, without it (VALIDATOR applies) blocked;
+   `pr-body` output passes `validator-path-guard.cjs --pr-body-check`; an unstaged gateway type error blocks naming
+   the file; `status` not ready while a step's stamp is missing; git hooks installed with marker, unmarked hook untouched; `git-pre-commit` with staged gateway
    file + tsc error → exit 1, clean → 0, no gateway file → no tsc; `git-pre-push` stdin parsing, non-lane refs ignored,
    deletion (zero sha) ignored, failing preflight → exit 1, a push whose command text the PreToolUse parser cannot read (heredoc with an apostrophe) is still checked by `pre-push`, `--body-file` passed only when supported; PreToolUse guard
    allows `commit && push`; `refresh` regenerates stale steering and is silent when ready; `setup` runs the steering
    generator; hook description; a real-git race test: a background writer modifies a gateway file after the PreToolUse
    check and before `git add`, and the pre-commit hook still blocks.
+
+Each lane writes only its own `docs/validation/<its VTID>/` folder; the shared glob `docs/validation/VTID-*/**` in
+both lane files is the allowlist form every parallel plan uses (e.g. `pipeline-speed`, three parallel lanes with that
+glob), and the reviewer agent checks the folder is the lane's own. No file is edited by both lanes.
 
 ### 3.3 Interface between the lanes
 `preflight.mjs --body-file <path>`: lane `session-reliability` passes it only when the preflight source on disk
