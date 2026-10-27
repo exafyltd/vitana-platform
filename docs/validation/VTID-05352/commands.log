@@ -8,6 +8,10 @@ $ node --test scripts/ci/workflow-concurrency/concurrency.test.mjs   (head)
 # pass 5
 # fail 0
 $ UNIT.yml script-test set (head)
+# tests 413
+# pass 412
+# fail 0
+# skipped 1
 $ ruby -ryaml (head)
 .github/workflows/UNIT.yml: concurrency={"group" => "unit-${{ github.event.pull_request.number }}", "cancel-in-progress" => true} triggers=["pull_request"]
 .github/workflows/PHASE-2B-DOC-GATE.yml: concurrency={"group" => "phase-2b-doc-gate-${{ github.event.pull_request.number }}", "cancel-in-progress" => true} triggers=["pull_request"]
