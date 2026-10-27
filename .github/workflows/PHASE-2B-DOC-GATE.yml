@@ -2,6 +2,10 @@ name: Phase 2B Documentation Gate
 on:
   pull_request:
     branches: [ main, trunk, develop, release/** ]
+# VTID-05352 (plan pm-ci-load): a newer push of the same PR cancels the superseded run (PR-GATE.yml pattern).
+concurrency:
+  group: phase-2b-doc-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
 jobs:
   check-phase-2b-docs:
     runs-on: ubuntu-latest

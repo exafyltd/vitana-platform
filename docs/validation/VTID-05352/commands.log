@@ -1,0 +1,13 @@
+# VTID-05352 commands (kiro-exafyltd-202610271503-9458, 2026-10-27T16:27:18Z), base origin/main 584c420e60
+$ node --test scripts/ci/workflow-concurrency/concurrency.test.mjs   (base workflows)
+# tests 5
+# pass 3
+# fail 2
+$ node --test scripts/ci/workflow-concurrency/concurrency.test.mjs   (head)
+# tests 5
+# pass 5
+# fail 0
+$ UNIT.yml script-test set (head)
+$ ruby -ryaml (head)
+.github/workflows/UNIT.yml: concurrency={"group" => "unit-${{ github.event.pull_request.number }}", "cancel-in-progress" => true} triggers=["pull_request"]
+.github/workflows/PHASE-2B-DOC-GATE.yml: concurrency={"group" => "phase-2b-doc-gate-${{ github.event.pull_request.number }}", "cancel-in-progress" => true} triggers=["pull_request"]
