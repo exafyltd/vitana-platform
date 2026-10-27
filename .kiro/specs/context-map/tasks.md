@@ -19,5 +19,6 @@ hand. Lane branch `kiro/context-map/<lane-id>`, PR title `VTID-xxxxx (context-ma
 - Every answer is a `file:line` or path into the source of truth; the map links, never restates rule text.
 - `check`: context-map dead links and unknown commands are errors; atlas/rule/index findings are warnings; `vitana-v1/`
   links without that checkout are info.
-- All 13 plan §5 cases are tests: red on base, green on head, also in a shallow clone.
+- Every plan §5 case is a test: red on base, green on head, also in a shallow clone. Command tests use fixture
+  repos; only the context-map link test reads this repo's files.
 - The benchmark is reproducible from the committed script, and the numbers in the PR come from its output.

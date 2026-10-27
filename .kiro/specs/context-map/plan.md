@@ -44,7 +44,9 @@ preflight; this plan touches none of them.
    - `.claude/CLAUDE.md:9` in both repos (inlined into every Kiro Web session as steering): "Last indexed 2026-09-19
      (commit 076aea1 / aa26481)", 779 / 438 commits behind HEAD, and "Trust the index" instructions for MCP tools
      Kiro Web does not have.
-   - `.claude/rules/backend.md:769`, `:1302` name files that exist in neither checkout.
+   - `.claude/rules/backend.md:1302` names `services/gateway/src/services/cognee-extractor-client.ts`, which exists in
+     neither checkout. (`:769` `session/live-session-controller.ts` is a short form of a live file,
+     `services/gateway/src/orb/live/session/live-session-controller.ts`: not stale, sparring R1-F1.)
    - `docs/CODEINTEL-SESSION-SETUP.md:3`, `docs/AGENT-REGISTRY.md:94` and `.kiro/pipeline/planning.md:23` still cite
      the "Mandatory Codebase Intelligence Workflow", removed by VTID-05280.
    - `second-brain/` (332 files): copies of docs in `raw/` and a wiki last edited 2026-10-03; a second source of truth
@@ -70,6 +72,13 @@ preflight; this plan touches none of them.
      the local RepoWise/Graphify state versus HEAD; and `docs/CONTEXT-MAP.md`'s own links and command names. Only the
      context map's own problems are errors (exit 1). Everything else is a warning, and `--strict` fails on warnings too.
      Without a vitana-v1 checkout (CI), links written `vitana-v1/<path>` are info.
+     **Path resolution** (R1-F1): a backticked token with a `/` and a file extension is a candidate path. Placeholders
+     (`<…>`, `$…`, `~`) and generated output (`graphify-out/`, `node_modules/`, `dist/`, `.agents/`) are skipped. The
+     token is resolved, in order, (a) as `vitana-platform/<p>` or `vitana-v1/<p>` when it carries that prefix,
+     (b) against each repo root and its usual bases (`services/gateway`, `services/gateway/src`, `src`), with `*`/`**`
+     globbing, (c) as a suffix of any tracked file in either repo (`git ls-files`, so `session/live-session-controller.ts`
+     resolves to `services/gateway/src/orb/live/session/live-session-controller.ts`). Only a token that matches none of
+     these is reported dead.
    - `--json` everywhere; `--v1 <dir>` / `VITANA_V1_DIR`; sibling `../vitana-v1` by default.
 2. **`docs/CONTEXT-MAP.md`** (about 45 lines): question → first command → source of truth → what detects drift; when
    RepoWise/Graphify help (the measurements in §2.4); what is *not* a source of truth (`second-brain/`, the REPOWISE
@@ -94,9 +103,13 @@ merges `origin/main` first.
 
 ## 5. Tests and commands
 - Red on base: `node --test scripts/dev/context.test.mjs` on `origin/main` fails (`context.mjs` missing).
-- Green on head: 13 tests (mount/handler/atlas parsing, glob, dead refs, specifier resolution, live route/domain/why/
-  vtid, `check` errors vs info vs warnings, CLI exit codes, v1 discovery), also in a `--depth 1` clone without
-  vitana-v1 (as in CI).
+- Green on head: tests for mount/handler/atlas parsing, glob, dead refs incl. the three resolution steps (a short-form
+  path to a live file is not dead, a full path to a deleted file is), specifier resolution, `route`/`domain`/`why`/`vtid`
+  on a **fixture git repo built in a temp dir** (not on this repo's own files, R1-F2), `check` errors vs info vs
+  warnings, CLI exit codes, v1 discovery; also in a `--depth 1` clone without vitana-v1 (as in CI).
+- The one test that reads this repo's real files is "`docs/CONTEXT-MAP.md` has no dead link and names only real
+  commands" (R1-F2). It fails only on a PR that removes or renames a file the map links to, which is the PR that must
+  update the link. This is the same contract as the atlas drift test (`vtid-04560…:523`).
 - `node scripts/dev/context.mjs check` exits 0 on the lane head with vitana-v1 present.
 - Preflight on the lane head; `UNIT` and PR-GATE green.
 
@@ -112,8 +125,9 @@ before the tool existed.
 ## 7. Risks
 - Regex parsing of `index.ts` / `App.tsx` misses an unusual mount or route form → the command says "no route" and
   names the grep fallback; unit tests pin every form found on `main` today.
-- Live-repo tests could fail when someone renames `routes/vtid.ts` or `VTID-05300`'s spec. These are stable,
-  canonical files, and the failure names the cause.
+- Blast radius in `UNIT` (no path filter, R1-F2): command tests use fixture repos, so renaming `routes/vtid.ts` or a
+  spec breaks nothing. Only the context-map link test reads real files. It fails on the PR that breaks a link, and its
+  message names the link and the line.
 - `check` warnings are noisy if treated as gates; only the context map's own links are errors.
 
 ## 8. Unchanged
