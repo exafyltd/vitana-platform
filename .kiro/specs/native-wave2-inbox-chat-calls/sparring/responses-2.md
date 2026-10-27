@@ -20,3 +20,4 @@
   }
 ]
 ```
+<!-- re-trigger after PLAN-SPAR repair 55cc5bbadc; 2026-10-27T22:56:28Z -->
