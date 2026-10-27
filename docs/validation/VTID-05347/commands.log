@@ -1,0 +1,13 @@
+# VTID-05347 commands (base fef112e8c7)
+$ node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs scripts/ci/staging-verify/confirm-live.test.mjs scripts/ci/staging-verify/record-oasis.test.cjs
+# tests 88
+# pass 88
+# fail 0
+exit 0
+
+$ node --test scripts/ci/vtid-auto-close.test.cjs
+# tests 8
+# pass 8
+# fail 0
+exit 0
+
