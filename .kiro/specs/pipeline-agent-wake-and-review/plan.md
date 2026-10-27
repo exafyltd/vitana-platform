@@ -63,7 +63,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
 4. `.kiro/automations/wake.md`: an automation-started driver (driver.md "Automation-started driver") for that one
    plan: resume, answer an open round, run reviews, re-run a PLAN-SPAR run that failed for infra once (§7a allowlist),
    never merge, stop when nothing is left. It reuses driver.md; it does not change it.
-5. `.github/workflows/DRIVER-WAKE.yml`: triggers `workflow_run: [PLAN-SPAR] completed` and `push: kiro/**`;
+5. `.github/workflows/DRIVER-WAKE.yml`: triggers `workflow_run: [PLAN-SPAR] completed` and `push` with
+   `branches: ['kiro/**']` **and** `paths: ['.kiro/specs/*/lanes/*.md']` (a review entry always appends to a lane file,
+   so pushes that touch no lane file never start a run; R2-F2);
    `permissions: contents: write` (marker ref only); `concurrency: driver-wake-<slug>`; installs Kiro CLI with the
    documented installer only on a `wake` decision, version pinned and checksum-verified where the installer offers
    it (recorded in `commands.log`). Never runs on `pull_request` from a fork; never reads PR text into a prompt.
@@ -92,6 +94,13 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    the chain model rejected with a blocking finding. `reviewer-qualify.mjs check <model>` prints the verdict. Adding a
    model to the list is a separate one-line protected change whose PR carries the passing record; candidates in
    order: OpenAI GPT-5.6 Terra, GLM-5 (the exact Kiro model ids are read from `/model` and recorded then).
+3a. **Lane scope accepts the independent reviewer's entry (R2-F1).** `queue.mjs` `REVIEWER_AGENTS`
+   gains `agent:vitana-lane-reviewer-independent`, and `scopeCheck`'s reviewer rule (`queue.mjs:709-713`) accepts a
+   review entry whose session is `agent-vitana-lane-reviewer-independent-…` on a lane whose `reviewer_seat` is
+   `agent:vitana-lane-reviewer` (the independent agent only ever stands in for the chain reviewer); a lane whose
+   `reviewer_seat` names the independent agent itself is refused by `validateLane`. Tests: independent session on a
+   chain-reviewer lane → no Lane-scope error; on a `reviewer_seat: claude` lane → error; a lane file setting
+   `reviewer_seat: agent:vitana-lane-reviewer-independent` → validate error.
 4. **Protected list.** Adds `.kiro/agents/vitana-lane-reviewer-independent.md`, `.github/workflows/PLAN-PR-MERGE.yml`
    and `scripts/collab/plan-merge.mjs` to `protected-gate-files.json`, `PROTECTED_GATE_BUILTIN` (`queue.mjs:92-96`)
    and `PROTECTED_GATE_GLOBS` (`governance.ts:44`), in one commit so the three copies never differ.
