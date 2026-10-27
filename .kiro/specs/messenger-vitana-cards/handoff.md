@@ -3,11 +3,12 @@ slug: messenger-vitana-cards
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: kiro
-state: approved
+next_actor: claude
+state: parked
 sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
 owner_approval: .kiro/specs/messenger-vitana-cards/sparring/owner-approval.md
-updated: 2026-10-22T21:05Z
+updated: 2026-10-27T22:49Z
+parked_from: approved
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -129,3 +130,6 @@ member sends (engine stays disabled-on-staging / off in prod — separate
 go-live).
 Next: push the approval; verify CI allocates the three lane VTIDs; then the
 signals lane can start.
+
+### 2026-10-27T22:49Z · ci-plan-spar · approved → parked
+Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
