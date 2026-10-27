@@ -1,6 +1,6 @@
 ---
 lane: v1-rules
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -16,7 +16,7 @@ paths:
   - scripts/ci/kiro-steering/guard.cjs
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T12:16Z
+updated: 2026-10-27T12:20Z
 vtid: VTID-05344
 ---
 # Lane: v1-rules (repo exafyltd/vitana-v1)
@@ -81,3 +81,6 @@ exafyltd/vitana-v1#1500 was opened 2026-10-27. The reviewer agent accepted it on
 
 ### 2026-10-27T12:16Z · kiro-exafyltd-202610261510-099d · in-review → verified
 merge: 57aece53fa11bac3c8e1fe7a78f028b288a7f9f3 (exafyltd/vitana-v1#1500) · authority: §7b PM rule. Accept on the current head; the latest attempt of every check green (pr-gate re-run once per head for an ECR infra failure); up to date; no protected gate file; no `--admin`. The v1 push deploy's `cutover_gate` froze production (`aws_prod` skipped). Nothing in the lane's paths deploys, so there is no STAGING-VERIFY.
+
+### 2026-10-27T12:20Z · kiro-exafyltd-202610261510-099d · verified → done
+Lane closed under §7b. The claim is released after this record.
