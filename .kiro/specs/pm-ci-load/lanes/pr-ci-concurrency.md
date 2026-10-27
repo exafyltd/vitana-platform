@@ -1,9 +1,10 @@
 ---
 lane: pr-ci-concurrency
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pm-ci-load/pr-ci-concurrency
+pr: https://github.com/exafyltd/vitana-platform/pull/4417
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -16,7 +17,7 @@ paths:
   - .github/workflows/PHASE-2B-DOC-GATE.yml
   - scripts/ci/workflow-concurrency/**
   - docs/validation/VTID-*/**
-updated: 2026-10-27T16:36Z
+updated: 2026-10-27T16:42Z
 vtid: VTID-05353
 ---
 # Lane: pr-ci-concurrency (repo vitana-platform)
@@ -60,3 +61,6 @@ Findings: non-blocking — CI on 979da0f2 not re-read by the reviewer (GraphQL/g
 Findings: non-blocking — commit subjects 1bdab773 and 8d8b86bf still say VTID-05352; squash-merged, so only the VTID-05353 title reached main
 Previous blocking finding (wrong VTID) closed; acceptance holds (PR-number concurrency block only, no trigger/job/step/path change, red 2/5 → green 5/5, paths in lane, no protected gate file).
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
+
+### 2026-10-27T16:42Z · kiro-exafyltd-202610271503-9458 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4417 reviewed (accept above on `979da0f2`). Closing record 1/3 (§7b).
