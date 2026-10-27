@@ -14,4 +14,4 @@ $ node --test scripts/collab/*.test.mjs   (head)
 # skipped 1
 $ mutation checks (each safeguard disabled alone → queue.test.mjs fails)
 commit backing → fail 2; merge sha → fail 1; append-only → fail 1; parked_from tracking → fail 2; time order → fail 1; PR reference → fail 1
-$ replay (task C4): see replay-owner-autonomy.txt — origin/main refuses, head accepts, head refuses without the Collab-Review commit
+$ replay (task C4): see outputs/replay-owner-autonomy.txt — origin/main refuses, head accepts, head refuses without the Collab-Review commit
