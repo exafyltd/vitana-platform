@@ -53,24 +53,30 @@ entries, 8 sampled specs.
 ## 3. Change — three lanes, no shared file
 - **Lane `pipeline-quality`** (vitana-platform). New `.kiro/pipeline/quality-checks.md`: (1) what "verified" means
   (the user-visible outcome observed on the deployed staging build, or proven by a behaviour test and stated in the PR
-  as *not verified on staging: <reason>*); (2) the Acceptance template every lane in `tasks.md` uses (Outcome in the
-  user's words, States, Surfaces, Locales, Accessibility, Contract, Staging proof; "n/a" allowed with a reason);
-  (3) one section per change type — UI, Backend, Database, Integration, Infrastructure/CI, Tooling/docs — each with
-  what the plan must state, the build checks, the staging proof and what the reviewer checks, each item traced to the
-  §2 evidence; (4) test-quality rules for all types (a new staging spec compiles and is listed before push; no volatile
-  pins, and a move/rename greps every test and `staging-tests.json` for the old location; real readiness waits; UTF-8
-  without BOM); (5) merges are squash so the subject keeps the VTID. Wire it in with one sentence each:
-  `planning.md` §3 (tasks.md Acceptance follows the template), `lane-code.md` steps 7–9 (apply the rows for the lane's
-  change types, staging proof asserts the change, PR body says verified or not and why), `lane-review.md` (the review
-  step's prompt passes the rows for the lane's change types as checklist item 10, which the agent definition already
-  supports), `lane-land.md` step 3d (squash). The platform PR template gets a `## Verification` section (change types,
-  what was observed where, screenshots for UI or the reason) without any VALIDATOR-CHECK marker word. A
-  `node:test` file `scripts/collab/quality-checks.test.mjs` (run by PR-GATE's Collab tests job,
-  `.github/workflows/PR-GATE.yml:140`) checks structure and links, not sentences.
-- **Lane `staging-manifest-bom`** (vitana-platform). `scripts/ci/staging-verify/lib.cjs` gets
-  `parseJsonText(text)` that removes one leading U+FEFF before `JSON.parse`; `run.mjs` `loadManifest` uses it.
-  Tests in `scripts/ci/staging-verify/lib.test.cjs` (run by `STAGING-TESTS-REQUIRED.yml:33`): a BOM manifest parses to
-  the same object as the BOM-free one; invalid JSON still fails; a BOM in the middle is not removed. Manifest
+  as *not verified on staging: <reason>*); (2) the Acceptance template every lane in `tasks.md` uses: a first line
+  `Change types: <list>` (from UI, Backend, Database, Integration, Infrastructure/CI, Tooling/docs), then Outcome in
+  the user's words, States, Surfaces, Locales, Accessibility, Contract, Staging proof ("n/a" allowed with a reason);
+  (3) one section per change type, each with what the plan must state, the build checks, the staging proof and what
+  the reviewer checks, each item traced to the §2 evidence; (4) test-quality rules for all types (a new staging spec
+  compiles and is listed before push; no volatile pins, and a move/rename greps every test and `staging-tests.json`
+  for the old location; real readiness waits; UTF-8 without BOM); (5) merges are squash so the subject keeps the
+  VTID. Wire it in with one sentence each: `planning.md` §3 (tasks.md Acceptance follows the template and starts with
+  the `Change types:` line); `lane-code.md` steps 7–9 (apply the sections of the lane's change types, staging proof
+  asserts the change, PR body says verified or not and why); `lane-review.md` (the review step reads the
+  `Change types:` line of the lane's Acceptance group in `tasks.md`, which its prompt already names, and passes the
+  "Reviewer" lines of those sections as checklist item 10, which the agent definition already supports,
+  `.kiro/agents/vitana-lane-reviewer.md:101`; a missing `Change types:` line is itself a finding); `lane-land.md`
+  step 3d (squash). The existing platform PR template `.github/pull_request_template.md` (VTID-05305, lower-case
+  name, on `origin/main`) gets a `## Verification` section (change types, what was observed where, screenshots for
+  UI or the reason) without any VALIDATOR-CHECK marker word. A `node:test` file
+  `scripts/collab/quality-checks.test.mjs` (run by PR-GATE's Collab tests job, `.github/workflows/PR-GATE.yml:140`)
+  checks structure and links, not sentences.
+- **Lane `staging-manifest-bom`** (vitana-platform). `scripts/ci/staging-verify/lib.cjs` gets `parseJsonText(text)`
+  that removes one leading U+FEFF before `JSON.parse`; both raw parses of repo JSON in `run.mjs` use it:
+  `loadManifest` (`:203-210`, now exported) and the `docs/validation/commit-coverage.json` read (`:377-379`). Tests in
+  `scripts/ci/staging-verify/lib.test.cjs` (run by `STAGING-TESTS-REQUIRED.yml:33`): a BOM manifest read from disk
+  through `loadManifest` equals the BOM-free one; a BOM `commit-coverage.json` gives the same `parseCommitCoverage`
+  result; invalid JSON still fails; a BOM that is not leading is not removed. Manifest
   validation (`validateManifest`) is unchanged, so no check gets weaker.
 - **Lane `v1-pr-template`** (vitana-v1). `.github/PULL_REQUEST_TEMPLATE.md`: replace the dead Cloud Run preview line
   with the per-PR preview (`PREVIEW-DEPLOY-FRONTEND.yml`) and staging (`preview-aws.vitanaland.com`, read-only); add a

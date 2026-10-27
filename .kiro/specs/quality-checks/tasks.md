@@ -19,10 +19,12 @@ the lane has a test). Squash merge. Acceptance below is what the reviewer agent 
       `commands.log`.
 
 **Acceptance**
+- Change types: Tooling/docs
 - Outcome: a planner, builder and reviewer reading the pipeline files find one place that says, per change type, what
   to state, check and prove, and what "verified" means.
 - `quality-checks.md` has sections UI, Backend, Database, Integration, Infrastructure/CI, Tooling/docs; the Acceptance
-  template has Outcome, States, Surfaces, Locales, Accessibility, Contract, Staging proof.
+  template starts with `Change types:` and has Outcome, States, Surfaces, Locales, Accessibility, Contract, Staging
+  proof; `lane-review.md` tells the review step to read `Change types:` from `tasks.md`.
 - No rule weakened: every existing step of `planning.md`, `lane-code.md`, `lane-review.md`, `lane-land.md` still
   holds; additions only (plus "squash" replacing "the method recent merged PRs use").
 - The PR template's comment carries no VALIDATOR-CHECK marker word (`VALIDATION_PROFILE:` etc. appear only on their
@@ -34,13 +36,16 @@ the lane has a test). Squash merge. Acceptance below is what the reviewer agent 
 <!-- lane: staging-manifest-bom -->
 ## Lane `staging-manifest-bom` — vitana-platform
 - [ ] T1 Tests in `scripts/ci/staging-verify/lib.test.cjs` (plan §3/§4); red on `origin/main` recorded.
-- [ ] T2 `parseJsonText` in `lib.cjs` (exported); `run.mjs` `loadManifest` uses it.
+- [ ] T2 `parseJsonText` in `lib.cjs` (exported); `run.mjs` `loadManifest` (exported) and the `commit-coverage.json`
+      read use it.
 - [ ] T3 Local checks: `node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs
       scripts/ci/staging-verify/confirm-live.test.mjs`, preflight; all in `commands.log`.
 
 **Acceptance**
-- Outcome: a `staging-tests.json` written with a UTF-8 BOM is read as the same manifest as without it, by `check-pr`
+- Change types: Infrastructure/CI
+- Outcome: a `staging-tests.json` or `commit-coverage.json` written with a UTF-8 BOM is read as the same manifest as without it, by `check-pr`
   and by STAGING-VERIFY.
+- States/Contract: n/a beyond the edge states below (no route, UI or schema).
 - Edge states: invalid JSON still yields `__parseError`; only one leading U+FEFF is removed; empty input still fails.
 - `validateManifest`, `planRange`, `decideOutcome` unchanged; no test changed or weakened.
 - Only the lane's `paths` change. Deploys nothing.
@@ -51,6 +56,7 @@ the lane has a test). Squash merge. Acceptance below is what the reviewer agent 
 - [ ] T2 Preflight on the head; record in `commands.log`.
 
 **Acceptance**
+- Change types: Tooling/docs
 - Outcome: a vitana-v1 PR opened from the template asks for the checks of its change type and no longer points at the
   dead Cloud Run preview.
 - Every existing checklist item kept (only the preview line replaced).
