@@ -47,6 +47,10 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 10. `SessionStart` (command and agent) and `UserPromptSubmit` hooks did not fire for a sub-agent session (probe today).
 11. Sub-agents run concurrently (62 s overlap) and inherit the workspace hooks.
 12. Race (VTID-05340 P23): a `str_replace` and a `git commit` in one parallel batch committed a seeded type error.
+13. The PreToolUse guard parses the bash text (`kiro-web-session.mjs` `segments`/`parseCommand`). This session's first
+    plan push (`425a2a68a7`) ran in one command with heredocs whose bodies hold apostrophes; the parser lost the quote
+    state, saw no `git push`, and no preflight ran (no pass-cache entry). A check bound to git itself (§3.2.2) does not
+    depend on parsing the agent's command; the PreToolUse check stays best-effort.
 
 ## 3. Lanes (parallel; no shared file; no `depends_on`; interface §3.3)
 ### 3.1 Lane `preflight-validator` — `scripts/collab/preflight.mjs`, `scripts/collab/preflight.test.mjs`, `docs/validation/VTID-*/**`
@@ -83,7 +87,7 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
      `tsc --noEmit` in that worktree's `services/gateway`; errors → exit 1 with the first 10 `error TS` lines. It judges
      the content being committed, so an edit that lands after the agent's tool call started is still checked.
    - `git-pre-push`: for each stdin line whose remote ref is `refs/heads/<b>` with `b` matching `LANE_BRANCH` and a
-     non-zero local sha: the existing push check on that sha (HEAD must equal it), title from `PR_TITLE` (env) or the
+     non-zero local sha: the existing push check on that sha (HEAD must equal it; this is the authoritative push check, §2.13), title from `PR_TITLE` (env) or the
      open PR, body from `PR_BODY_FILE` (env) or the open PR's body; `--body-file` is passed when preflight supports it
      (§3.3). Same pass cache as the PreToolUse guard.
    - The PreToolUse commit typecheck and the `mark-dirty` PostToolUse hook are removed (the pre-commit hook replaces
@@ -110,7 +114,7 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 6. Hook description fixed (§2.1). `PR_BODY_FILE` is parsed like `PR_TITLE` (prefix or earlier `export`).
 7. Tests (red on base): git hooks installed with marker, unmarked hook untouched; `git-pre-commit` with staged gateway
    file + tsc error → exit 1, clean → 0, no gateway file → no tsc; `git-pre-push` stdin parsing, non-lane refs ignored,
-   deletion (zero sha) ignored, failing preflight → exit 1, `--body-file` passed only when supported; PreToolUse guard
+   deletion (zero sha) ignored, failing preflight → exit 1, a push whose command text the PreToolUse parser cannot read (heredoc with an apostrophe) is still checked by `pre-push`, `--body-file` passed only when supported; PreToolUse guard
    allows `commit && push`; `refresh` regenerates stale steering and is silent when ready; `setup` runs the steering
    generator; hook description; a real-git race test: a background writer modifies a gateway file after the PreToolUse
    check and before `git add`, and the pre-commit hook still blocks.
