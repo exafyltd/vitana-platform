@@ -22,3 +22,13 @@ AC-6 (C4) — `plan.md`, `scope.json`, `staging-tests.json` in this directory.
 TEST: docs/validation/VTID-05268/staging-tests.json (STAGING-VERIFY: `GET /alive` after the staging deploy, read-only)
 OASIS_IMPACT: yes — `community_autopilot.scan.completed` gains a `per_tenant` array only when `MT_RESOLUTION_V2=true`; the six existing top-level fields keep their names and types (backward-compatible). Flag off ⇒ byte-identical payload. Still one event per call.
 OASIS_PROOF: no new event type. `/community-scan` still emits exactly one `community_autopilot.scan.completed` per call through the existing emitter in `autopilot-recommendations.ts`; the C1b suite asserts one emit per tick, the flag-off payload equal to today's six fields, and the flag-on payload with summed counts plus `per_tenant`. State transitions only, no polling events (§6). Verify post-merge on staging logs (read-only): `SELECT type, metadata FROM oasis_events WHERE type = 'community_autopilot.scan.completed' ORDER BY created_at DESC LIMIT 5;`
+
+## Red on base, green on head (2026-10-27)
+Command (services/gateway): `npx --no-install jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts test/routes/autopilot-recommendations.test.ts`
+
+| Run | Commit | vtid-05268-community-scan-tenant | routes/autopilot-recommendations | Output |
+|---|---|---|---|---|
+| base | origin/main `e9c2f66d` + this lane's test file | 9 failed, 3 passed (red) | 87 passed | `outputs/jest-base.txt` |
+| head | `c741be5d` (branch, origin/main merged) | 12 passed (green) | 87 passed | `outputs/jest-head.txt` |
+
+The 3 tests that pass on base are the flag-off / back-compat cases (no tenant ⇒ platform-wide; flag-off payload identical to today; single-member `user_id` run), which must hold on base by design. Every tenant-pass, aggregation and backfill-source test is red on base and green on head.
