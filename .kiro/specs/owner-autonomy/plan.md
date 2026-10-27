@@ -78,9 +78,13 @@ model-chain text it lacks (§2.4).
 model chain, "never wait"). This changes no stop rule.
 **D. `scripts/ci/kiro-steering/guard.cjs` + `guard.test.cjs` (both repos)**: a new check `checkOwnerAutonomy(root)`,
 called from `check()` when `.kiro/steering/vitana-pipeline.md` exists. It fails when
-`.kiro/steering/vitana-owner-autonomy.md` is missing, is not `inclusion: always`, or no longer names each stop
-anchor: `§7d`, `§7c`, `§3a`, `AGENTS.md`, `five-part`, `STAGING-VERIFY`, the "never end a reply" rule. It also fails
-when `vitana-pipeline.md` does not name `vitana-owner-autonomy.md`. So a later edit that drops a safeguard from the
+`.kiro/steering/vitana-owner-autonomy.md` is missing, or is not `inclusion: always`, or no longer names an anchor. There is
+**one anchor per stop row**, plus three anchors for the rules around the table:
+`§7d` (migration), `§7c` (production), `§3a` (protected gate files), `data-loss` (security / data loss),
+`3 fix-forward attempts`, `escalated sparring verdict`, `IF–THEN 31–32` (live-write verification), `AGENTS.md`
+(other repository), `Commerce UX contract`, `design.md` (design contract), `§4.1` (VTID allocator), `Gate 1`
+(Claude-local sparring); and `STAGING-VERIFY` (default end point), `five-part` (stop message),
+`Never end a reply with an offer`. It also fails when `vitana-pipeline.md` does not name `vitana-owner-autonomy.md`. So a later edit that drops a safeguard from the
 list, or drops the rule file, is a red check rather than a quiet change.
 **E. Platform `docs/kiro/kiro-web-bootstrap.md` and `docs/kiro/cloud-config/vitana-kiro-web-bootstrap.md`**: the
 Configuration Sync file carries a short form of the standing instruction and stop list, so it applies before the repos'
@@ -102,8 +106,7 @@ is B; each lane's evidence records the sha256.
 ## 4. Tests (written first, red on base)
 `guard.test.cjs` in each repo:
 1. A repo with `vitana-pipeline.md` and no rule file fails ("vitana-owner-autonomy.md missing").
-2. Each removed anchor (`§7d`, `§7c`, `§3a`, `AGENTS.md`, `five-part`, `STAGING-VERIFY`, never-end-a-reply) fails and
-   is named.
+2. Each removed anchor (all fifteen of §3 D) fails and is named.
 3. `inclusion: manual` fails.
 4. `vitana-pipeline.md` without the pointer fails.
 5. Fixture repos without `vitana-pipeline.md` stay green (existing tests unchanged).
@@ -119,6 +122,9 @@ repo (PR-GATE). Platform: also `node --test scripts/collab/*.test.mjs` (the gene
   the stop table without reading any file. Then it runs two tasks without asking: a read-only investigation (not the
   pipeline) and a routine step chain. Its replies are checked for approval questions or trailing offers.
 - Learnings: the account learning is replaced by the general instruction (owner's words plus the stop pointer).
+- Owner action, reported at the end: re-upload `docs/kiro/cloud-config/vitana-kiro-web-bootstrap.md` through
+  Configuration Sync (Agent Config → Cloud Config). The repo steering and the account learning work without it; the
+  upload covers a session that starts before the repos' steering is loaded.
 
 ## 6. Unchanged
 Every rule file except the two steering files and the v1 `collaboration.md` sync. Every stop condition. Protected
