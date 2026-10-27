@@ -1,6 +1,6 @@
 ---
 lane: context-cli
-state: in-review
+state: executing
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271221-c93f
 branch: kiro/context-map/context-cli
@@ -33,7 +33,3 @@ VTID-05349 allocated after policy approval (converged-auto-v1).
 ### 2026-10-27T13:44Z · kiro-jtadic-202610271221-c93f · ready → executing
 Claimed; branch `kiro/context-map/context-cli` from `origin/main` `51a8e57113`. Tests first: red on base recorded
 (`docs/validation/VTID-05349/red-on-base.txt`).
-
-### 2026-10-27T13:44Z · kiro-jtadic-202610271221-c93f · executing → in-review
-`scripts/dev/context.mjs`, `scripts/dev/context.test.mjs` (15 tests, also in a depth-1 clone without vitana-v1),
-`docs/CONTEXT-MAP.md`; evidence in `docs/validation/VTID-05349/`. Ready for the reviewer agent.
