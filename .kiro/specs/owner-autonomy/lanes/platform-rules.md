@@ -1,6 +1,6 @@
 ---
 lane: platform-rules
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610261510-099d
 branch: kiro/owner-autonomy/platform-rules
@@ -18,7 +18,7 @@ paths:
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/kiro/**
   - docs/validation/VTID-*/**
-updated: 2026-10-27T11:31Z
+updated: 2026-10-27T12:25Z
 vtid: VTID-05343
 ---
 # Lane: platform-rules (repo exafyltd/vitana-platform)
@@ -71,3 +71,6 @@ execution planes". Row 13 and the `target database` anchor go beyond plan §3 A/
 a whole-file failure. validate / validate-pr were still running at review time.
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the land step merges under §7b.
+
+### 2026-10-27T12:25Z · kiro-exafyltd-202610261510-099d · executing → in-review
+PR #4394 was opened 2026-10-27. Reviewer agent: changes on `8eb643af` (NEVER 34 row), then accept on `41e22dd6` (entries above).
