@@ -14,7 +14,8 @@ paths:
   - services/gateway/test/project-manager/github-app-token.test.ts
   - docs/project-manager/**
   - docs/validation/VTID-*/**
-updated: 2026-10-27T15:35Z
+updated: 2026-10-27T16:02Z
+vtid: VTID-05352
 ---
 # Lane: pm-app-token (repo vitana-platform)
 Tasks in `tasks.md` (`<!-- lane: pm-app-token -->`). Plan: `plan.md` §3.
@@ -22,3 +23,6 @@ Tasks in `tasks.md` (`<!-- lane: pm-app-token -->`). Plan: `plan.md` §3.
 ## Log
 ### 2026-10-27T15:35Z · kiro-exafyltd-202610271503-9458 · ready
 Lane created with the plan.
+
+### 2026-10-27T16:02Z · ci-plan-spar · ready (VTID allocated)
+VTID-05352 allocated after policy approval (converged-auto-v1).
