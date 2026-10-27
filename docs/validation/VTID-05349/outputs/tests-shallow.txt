@@ -1,0 +1,5 @@
+# depth-1 clone, no vitana-v1 (as in UNIT.yml)
+true
+# tests 15
+# pass 15
+# fail 0

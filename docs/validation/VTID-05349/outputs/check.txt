@@ -1,0 +1,25 @@
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:77  oasis: code pointer "services/governance-*.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:113  memory: code pointer "services/cognee-extractor-client.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:125  community: code pointer "services/connect-people-*.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:149  health: code pointer "services/vitana-index*.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:161  commerce: code pointer "services/commerce/" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:172  payments: code pointer "services/wallet*.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:172  payments: code pointer "services/stripe*.ts" matches nothing under services/gateway/src
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:196  backoffice: code pointer "services/erp-*.ts" matches nothing under services/gateway/src
+info  context-map docs/CONTEXT-MAP.md:11  dead link vitana-v1/src/App.tsx (vitana-v1 not checked out)
+info  context-map docs/CONTEXT-MAP.md:11  dead link vitana-v1/src/navigation/registry/screens.json (vitana-v1 not checked out)
+info  context-map docs/CONTEXT-MAP.md:11  dead link vitana-v1/src/design/screen-manifest.json (vitana-v1 not checked out)
+info  context-map docs/CONTEXT-MAP.md:11  dead link vitana-v1/apps/mobile/parity/ledger.json (vitana-v1 not checked out)
+info  context-map docs/CONTEXT-MAP.md:11  dead link vitana-v1/src/navigation/registry/registry.routes.test.ts (vitana-v1 not checked out)
+info  rules       vitana-platform/CLAUDE.md:193  path src/design/screen-manifest.json resolves in neither checkout
+info  rules       vitana-platform/AGENTS.md:21  path .kiro/steering/vitana-platform--vitana-load-project-rules.md resolves in neither checkout
+info  rules       vitana-platform/docs/CODEINTEL-SESSION-SETUP.md:79  path .repowise/config.yaml resolves in neither checkout
+info  rules       vitana-platform/docs/DEPLOYMENT-PIPELINE.md:97  path tests/e2e/staging/smoke.staging.spec.ts resolves in neither checkout
+info  rules       vitana-platform/docs/DEPLOYMENT-PIPELINE.md:153  path docs/validation/VTID-04616/staging-tests.json resolves in neither checkout
+info  rules       vitana-platform/.claude/rules/backend.md:1302  path services/gateway/src/services/cognee-extractor-client.ts resolves in neither checkout
+info  rules       vitana-platform/.claude/rules/collaboration.md:341  path src/App.tsx resolves in neither checkout
+info  rules       vitana-platform/.claude/rules/collaboration.md:342  path apps/mobile/parity/ledger.json resolves in neither checkout
+warn  index       vitana-platform/.claude/CLAUDE.md  RepoWise block says "Last indexed 2026-09-19 (commit 076aea1)": 782 commits behind HEAD; its file list and hotspots are a snapshot, not current
+info  index       vitana-platform  local index at 94440253ce, HEAD 51a8e57113 (6 commits behind): run `repowise update` / `graphify update .`
+check: 0 error(s), 9 warning(s), 14 info
+exit=0
