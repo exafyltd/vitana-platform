@@ -23,6 +23,7 @@ specs:
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
   - vitana-platform:matches-scroll-end
+  - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:reviewer-model-fallback
@@ -60,6 +61,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
+- `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
 - `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
 - `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
