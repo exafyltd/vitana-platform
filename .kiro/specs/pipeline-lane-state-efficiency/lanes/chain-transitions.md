@@ -71,3 +71,16 @@ the accept before the `executing → in-review` entry (#4397), and a stale accep
 round resets the window; a same-state round trip (`in-review` → … → `in-review`) is not routed to the chain, as today.
 Blocking finding 2 (protected gate file) is the merge routing of plan §5, unchanged. Real-data replay re-run: passes,
 and refuses without its Collab-Review commit.
+
+### 2026-10-27T16:19Z · agent-vitana-lane-reviewer-202610271619-2660 · review
+review: changes
+head: 8034e629194b67cbf30f59542e0117e4a265ec8d
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4416
+Findings: blocking — protected gate file scripts/collab/queue.mjs: needs owner or Claude review; agent acceptance alone never merges it (no builder fix needed; plan §5 routing)
+Findings: non-blocking — finding 1 of the cb0d8cd2 review closed: reviewBacking needs an authorized review-only commit, not from a builder session, with unchanged front matter, that appended the exact entry; four refusing tests
+Findings: non-blocking — residual: session ids are self-declared; a builder can make a review-only commit under a fresh agent-* session id (the driver writes 51fd146a the same way by design); same trust level as queue.mjs:590, real protection is the §7b merge rule
+Findings: non-blocking — review entries added in the range can be deleted or copied by a builder commit, so a superseded accept can be reused (queue.mjs:322); suggest refusing a head log missing any entry appended by a review-only commit and matching the backing by entry position
+Findings: non-blocking — check runs on 8034e629 not verified by this reviewer (gh pr checks unavailable); relying on the driver's report of 11 green
+Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
+Next: no builder change; the lane waits for a legacy Claude review on the current head or an owner instruction naming pipeline-lane-state-efficiency (plan §5)
