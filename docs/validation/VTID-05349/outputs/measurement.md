@@ -17,7 +17,7 @@ past plans (plan §2.2).
 | T5 why (rule + history) | 1 / 35 256 | 1 / 3 653 |
 | T6 prior work for a VTID | 5 / 865 (resume-vtid.sh fails: no token) | 1 / 1 191 |
 | **T1–T6** | **20 / 82 219** | **6 / 9 442 (−70 % calls, −89 % bytes)** |
-| T7 stale pointers | no command; found by two ad-hoc scripts in this investigation | 1 / 2 051 |
+| T7 stale pointers | no command; found by two ad-hoc scripts in this investigation | 1 / 2 299 |
 
 Every answer was found by both. Wall time is not the difference: every call takes ≤ 1.3 s either way. The savings are
 in agent turns (14 fewer tool calls on six questions) and in the context read (≈ 18 k fewer tokens at 4 bytes/token),

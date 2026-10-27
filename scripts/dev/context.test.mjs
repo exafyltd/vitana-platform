@@ -8,7 +8,7 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 import {
   parseMounts, parseHandlers, pathMatches, mostSpecific, parseAtlas, globExists, deadRefs, resolveSpec,
-  findRoots, route, check, domain, vtid, why, uses, main, COMMANDS,
+  findRoots, route, screen, check, domain, vtid, why, uses, main, COMMANDS,
 } from './context.mjs';
 
 const PLATFORM = path.resolve(path.dirname(fileURLToPath(import.meta.url)), '..', '..');
@@ -92,6 +92,10 @@ test('globExists handles plain paths, * in a segment, ** and trailing-slash dire
   assert.ok(globExists(d, 'orb/live/'));
   assert.ok(globExists(d, 'deep/**/c.md'));
   assert.ok(!globExists(d, 'orb/missing/'));
+  assert.ok(!globExists(d, 'services/dev-autopilot-a.ts/'), 'a trailing / needs a directory, not a file of that name');
+  assert.ok(!globExists(d, 'services/dev-*/'), 'a glob with a trailing / needs a directory');
+  assert.ok(globExists(d, '**/live/x.ts'), '** in the directory part globs');
+  assert.ok(globExists(path.join(d, 'orb'), '../deep/a/'), '../ climbs from the base');
 });
 
 test('deadRefs reports unresolved backticked repo paths and skips placeholders and generated output', () => {
@@ -168,7 +172,47 @@ test('vtid: commits, spec files with state, validation folder; PR search is inje
   assert.deepEqual(r.specs, ['vitana-platform/.kiro/specs/s/lanes/l.md (state: done)']);
   assert.deepEqual(r.validation, ['vitana-platform/docs/validation/VTID-09999/ [acceptance.md]']);
   assert.deepEqual(r.prs, ['closed https://x/pull/1 t']);
+  const failed = vtid(roots, 'VTID-09999', { prs: true, run: () => ({ status: 1, stdout: '', stderr: 'HTTP 401: Bad credentials\n' }) });
+  assert.deepEqual(failed.prs, ['gh search failed: HTTP 401: Bad credentials'], 'a failing gh prints one line, never throws');
+  assert.equal(vtid(roots, 'VTID-09999').prs, null, 'no --prs, no gh call');
   assert.match(vtid(roots, 'nope').error, /usage/);
+});
+
+test('screen (vitana-v1 fixture): App.tsx route → lazy page file, registry, manifest, parity, exclusion, redirect', () => {
+  const v1 = tmpTree({
+    'src/App.tsx': [
+      'const Messages = lazy(() => import("./pages/Messages"));',
+      'const NotFound = lazy(() => import("./pages/NotFound"));',
+      '          <Route path="/inbox" element={',
+      '            <AuthGuard>',
+      '              <Messages />',
+      '            </AuthGuard>',
+      '          } />',
+      '          <Route path="/messages/*" element={<Navigate to="/inbox" replace />} />',
+      '          <Route path="/admin/x" element={<NotFound />} />',
+      '          <Route path="*" element={<NotFound />} />',
+    ].join('\n'),
+    'src/pages/Messages.tsx': '', 'src/pages/NotFound.tsx': '',
+    'src/navigation/registry/screens.json': '{\n  "screens": [\n    {\n      "route": "/inbox"\n    }\n  ]\n}\n',
+    'src/navigation/registry/exclusions.json': '{"prefixes":[{"prefix":"/admin","reason":"Admin surface"}]}',
+    'src/design/screen-manifest.json': '{\n  "screens": [\n    {\n      "path": "/inbox"\n    }\n  ]\n}\n',
+    'apps/mobile/parity/ledger.json': '{\n  "rows": [\n    {\n      "web_path": "/inbox"\n    }\n  ]\n}\n',
+    'src/pages/Messages.test.tsx': "it('opens /inbox', () => {});\n",
+  });
+  spawnSync('git', ['-C', v1, 'init', '-q'], { env: GIT_ENV });
+  spawnSync('git', ['-C', v1, 'add', '-A'], { env: GIT_ENV });
+  spawnSync('git', ['-C', v1, 'commit', '-q', '-m', 'v1'], { env: GIT_ENV });
+  const roots = { platform: fixtureRepo().platform, v1 };
+  const r = screen(roots, '/inbox');
+  assert.deepEqual(r.routes, [{ at: 'src/App.tsx:3', path: '/inbox', redirect: null,
+    pages: [{ component: 'Messages', import: './pages/Messages', file: 'src/pages/Messages.tsx' }] }], 'the catch-all * is not shown');
+  assert.deepEqual(r.navRegistry, ['src/navigation/registry/screens.json:4']);
+  assert.deepEqual(r.manifest, ['src/design/screen-manifest.json:4']);
+  assert.deepEqual(r.parity, ['apps/mobile/parity/ledger.json:4']);
+  assert.deepEqual(r.tests, ['src/pages/Messages.test.tsx']);
+  assert.equal(screen(roots, '/messages/old').routes[0].redirect, '/inbox');
+  assert.deepEqual(screen(roots, '/admin/x').exclusions, ['prefix /admin: Admin surface']);
+  assert.match(screen({ platform: roots.platform, v1: null }, '/inbox').error, /vitana-v1 checkout not found/);
 });
 
 test('check: a short form of a live file is not dead; a full path to a deleted file is (rule files)', () => {
@@ -204,7 +248,7 @@ test('check: stale atlas pointers and route patterns are warnings with the atlas
     'services/gateway/src/services/ok.ts': '', 'services/gateway/src/orb/developer/domain-atlas.ts': atlas });
   const w = check({ platform: d, v1: null }).findings.filter((f) => f.area === 'atlas');
   assert.deepEqual(w.map((f) => f.msg), [
-    'pay: code pointer "services/stripe*.ts" matches nothing under services/gateway/src',
+    'pay: code pointer "services/stripe*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)',
     'pay: doc "docs/Missing.md" does not exist',
     'pay: route pattern /^nothing-claims-this$/ claims no route file',
   ]);
@@ -228,6 +272,14 @@ test('main: usage on a bad command, exit codes, JSON output, sibling vitana-v1 d
   const j = main(['route', '/api/v1/vtid/allocate', '--json', '--platform', fixtureRepo().platform]);
   assert.equal(j.code, 0);
   assert.equal(JSON.parse(j.text).matches[0].file, 'services/gateway/src/routes/vtid.ts');
+  // check exit codes through the CLI: 0 with warnings, 1 with --strict, 1 on a context-map error.
+  const warnOnly = fixtureRepo({ 'AGENTS.md': 'See `services/gateway/src/services/gone.ts`.\n' }).platform;
+  assert.equal(main(['check', '--platform', warnOnly]).code, 0);
+  assert.equal(main(['check', '--strict', '--platform', warnOnly]).code, 1);
+  const broken = fixtureRepo({ 'docs/CONTEXT-MAP.md': '`docs/Gone.md`\n' }).platform;
+  const b = main(['check', '--platform', broken]);
+  assert.equal(b.code, 1);
+  assert.match(b.text, /error context-map docs\/CONTEXT-MAP\.md:1  dead link docs\/Gone\.md/);
   assert.deepEqual(COMMANDS, ['route', 'screen', 'domain', 'vtid', 'why', 'uses', 'check']);
   const ws = tmpTree({ 'vitana-platform/x': '', 'vitana-v1/src/App.tsx': '' });
   assert.equal(findRoots({ platform: path.join(ws, 'vitana-platform'), env: {} }).v1, path.join(ws, 'vitana-v1'));

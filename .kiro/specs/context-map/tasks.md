@@ -7,10 +7,10 @@ hand. Lane branch `kiro/context-map/<lane-id>`, PR title `VTID-xxxxx (context-ma
 
 <!-- lane: context-cli -->
 ## Lane `context-cli` — `scripts/dev/context.mjs`, its tests, `docs/CONTEXT-MAP.md` (plan §3)
-- [x] C1 tests first in `scripts/dev/context.test.mjs` (plan §5), red on `origin/main` recorded.
-- [x] C2 `scripts/dev/context.mjs` with `route`, `screen`, `domain`, `uses`, `why`, `vtid`, `check` (plan §3.1).
-- [x] C3 `docs/CONTEXT-MAP.md` (plan §3.2), every link live (`check` exit 0).
-- [x] C4 Benchmark (plan §6) into `docs/validation/<VTID>/outputs/`; tests in a depth-1 clone without vitana-v1.
+- [ ] C1 tests first in `scripts/dev/context.test.mjs` (plan §5), red on `origin/main` recorded.
+- [ ] C2 `scripts/dev/context.mjs` with `route`, `screen`, `domain`, `uses`, `why`, `vtid`, `check` (plan §3.1).
+- [ ] C3 `docs/CONTEXT-MAP.md` (plan §3.2), every link live (`check` exit 0).
+- [ ] C4 Benchmark (plan §6) into `docs/validation/<VTID>/outputs/`; tests in a depth-1 clone without vitana-v1.
 
 **Acceptance**
 - Only `scripts/dev/context.mjs`, `scripts/dev/context.test.mjs`, `docs/CONTEXT-MAP.md`, `docs/validation/<VTID>/**`

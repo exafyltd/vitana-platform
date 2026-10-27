@@ -51,17 +51,24 @@ export function grep(root, pattern, pathspecs = [], { fixed = true, icase = fals
 
 /** Minimal glob for pointer checks: `*` inside one path segment, trailing `/` = directory, `**` = any depth. */
 export function globExists(root, pattern) {
-  const clean = pattern.replace(/\/$/, '');
-  if (!/[*]/.test(clean)) return existsSync(path.join(root, clean));
+  const wantDir = pattern.endsWith('/');
+  let base = root;
+  let clean = pattern.replace(/\/$/, '');
+  while (clean.startsWith('../')) { base = path.dirname(base); clean = clean.slice(3); }
+  if (!/[*]/.test(clean)) {
+    const p = path.join(base, clean);
+    try { return wantDir ? statSync(p).isDirectory() : existsSync(p); } catch { return false; }
+  }
   const parts = clean.split('/');
   const walk = (dir, i) => {
     if (i === parts.length) return true;
     const part = parts[i];
+    const last = i === parts.length - 1;
     if (part === '**') return walk(dir, i + 1) || listDir(dir).some((e) => e.dir && walk(path.join(dir, e.name), i));
     const re = new RegExp(`^${part.replace(/[.+?^${}()|[\]\\]/g, '\\$&').replace(/\*/g, '.*')}$`);
-    return listDir(dir).some((e) => re.test(e.name) && (i === parts.length - 1 || e.dir) && walk(path.join(dir, e.name), i + 1));
+    return listDir(dir).some((e) => re.test(e.name) && ((last && !wantDir) || e.dir) && walk(path.join(dir, e.name), i + 1));
   };
-  return walk(root, 0);
+  return walk(base, 0);
 }
 function listDir(dir) {
   try { return readdirSync(dir, { withFileTypes: true }).map((d) => ({ name: d.name, dir: d.isDirectory() })); } catch { return []; }
@@ -361,7 +368,7 @@ export function check(roots) {
   for (const d of atlas) {
     // Atlas pointers (plan §3.1, R2-F1): a trailing `/` is a directory, `*`/`**` a glob (zero matches = dead), `../` is
     // relative to the base it is tried against; bases in order services/gateway/src, services/gateway, repo root.
-    d.code.forEach((c) => { if (!codeBases.some((b) => globExists(path.resolve(b, path.dirname(c)), path.basename(c) + (c.endsWith('/') ? '/' : '')))) add('warn', 'atlas', `${ATLAS_FILE}:${d.at(c)}`, `${d.key}: code pointer "${c}" matches nothing under services/gateway/src`); });
+    d.code.forEach((c) => { if (!codeBases.some((b) => globExists(b, c))) add('warn', 'atlas', `${ATLAS_FILE}:${d.at(c)}`, `${d.key}: code pointer "${c}" matches nothing (tried services/gateway/src, services/gateway, repo root)`); });
     d.docs.forEach((doc) => { const p = doc.split(/\s+/)[0]; if (/\//.test(p) || /\.md$/.test(p)) { if (!globExists(roots.platform, p)) add('warn', 'atlas', `${ATLAS_FILE}:${d.at(doc)}`, `${d.key}: doc "${p}" does not exist`); } });
     d.routes.forEach((r) => { if (!files.some((f) => new RegExp(r).test(f))) add('warn', 'atlas', `${ATLAS_FILE}:${d.line}`, `${d.key}: route pattern /${r}/ claims no route file`); });
   }
@@ -385,7 +392,9 @@ export function check(roots) {
       ...listDir(path.join(root, '.claude/rules')).filter((e) => e.name.endsWith('.md')).map((e) => `.claude/rules/${e.name}`)];
     for (const f of ruleFiles) {
       const t = read(path.join(root, f));
-      if (t) deadRefs(t, resolve).forEach((d) => add(roots.v1 ? 'warn' : 'info', 'rules', `${name}/${f}:${d.line}`, `path ${d.ref} resolves in neither checkout`));
+      if (t) deadRefs(t, resolve).forEach((d) => add('warn', 'rules', `${name}/${f}:${d.line}`, roots.v1
+        ? `path ${d.ref} resolves in neither checkout`
+        : `path ${d.ref} does not resolve here (vitana-v1 not checked out; it may live there)`));
     }
     // 4. Index freshness.
     const head = git(root, ['rev-parse', 'HEAD']).out.trim();
@@ -393,7 +402,10 @@ export function check(roots) {
     const stamp = /Last indexed:\s*(\d{4}-\d{2}-\d{2})\s*\(commit\s*([0-9a-f]{7,40})\)/.exec(read(path.join(root, '.claude/CLAUDE.md')) || '');
     if (stamp) { const n = behind(stamp[2]); if (n === null || n > 100) add('warn', 'index', `${name}/.claude/CLAUDE.md`, `RepoWise block says "Last indexed ${stamp[1]} (commit ${stamp[2]})": ${n === null ? 'commit not in this clone' : `${n} commits behind HEAD`}; its file list and hotspots are a snapshot, not current`); }
     const stateDir = process.env.CODEINTEL_STATE_DIR || path.join(os.homedir(), '.cache/vitana-codeintel');
-    const st = [path.basename(root), name].map((n) => { try { return JSON.parse(readFileSync(path.join(stateDir, `${n}.json`), 'utf8')); } catch { return null; } }).find(Boolean);
+    // The state file is per checkout; a worktree of that checkout shares its index (same git common dir).
+    const common = path.resolve(root, git(root, ['rev-parse', '--git-common-dir']).out.trim() || '.git');
+    const st = [path.basename(root), name].map((n) => { try { return JSON.parse(readFileSync(path.join(stateDir, `${n}.json`), 'utf8')); } catch { return null; } })
+      .find((s) => s && (!s.repo || path.resolve(s.repo) === root || path.resolve(s.repo, '.git') === common));
     if (!st) add('info', 'index', name, 'local RepoWise/Graphify index never built in this session (scripts/codeintel/session-setup.sh)');
     else if (st.head && st.head !== head) add('info', 'index', name, `local index at ${st.head.slice(0, 10)}, HEAD ${head.slice(0, 10)} (${behind(st.head) ?? '?'} commits behind): run \`repowise update\` / \`graphify update .\``);
   }

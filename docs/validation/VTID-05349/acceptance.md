@@ -10,7 +10,11 @@ TEST: node --test scripts/dev/context.test.mjs  # "parseMounts …", "parseHandl
 
 AC-2: `domain`, `uses`, `why`, `vtid` answer with `file:line` from a fixture git repo. Rules rank before the changelog,
 each hit carries its heading, and `--prs` goes through an injected runner (no GitHub call in tests).
-TEST: node --test scripts/dev/context.test.mjs  # "domain, uses and why …", "vtid: commits, spec files with state …"
+TEST: node --test scripts/dev/context.test.mjs  # "domain, uses and why …", "vtid: commits, spec files with state …" (incl. a failing gh → one line)
+
+AC-2b: `screen` maps a vitana-v1 path to its lazy-imported page file. It shows the nav registry, manifest and parity
+lines, an exclusion prefix and a `<Navigate>` redirect, hides the catch-all `*`, and errors without a v1 checkout.
+TEST: node --test scripts/dev/context.test.mjs  # "screen (vitana-v1 fixture): …"
 
 AC-3: `check` path resolution: a short form of a live file is not dead, and a full path to a deleted file is. Atlas
 directory, glob and `../` pointers resolve against src → services/gateway → root, and each finding cites the
@@ -21,8 +25,12 @@ AC-4: `docs/CONTEXT-MAP.md` has no dead link and names only real commands. A dea
 error, and a `vitana-v1/` link without that checkout is info.
 TEST: node --test scripts/dev/context.test.mjs  # "check: docs/CONTEXT-MAP.md has no dead link …", "check: a dead context-map link is an error …"
 
+AC-4b: CLI exit codes. `check` exits 0 with warnings only, exits 1 with `--strict`, and exits 1 on a context-map
+error, printing that error's line. A bad command or a missing argument exits 2.
+TEST: node --test scripts/dev/context.test.mjs  # "main: usage on a bad command, exit codes, …"
+
 AC-5: Green in a depth-1 clone without vitana-v1, as `UNIT.yml` runs it.
-TEST: git clone --depth 1 … && node --test scripts/dev/context.test.mjs  # => tests 15, pass 15, fail 0 (outputs/tests-shallow.txt)
+TEST: git clone --depth 1 … && node --test scripts/dev/context.test.mjs  # => tests 16, pass 16, fail 0 (outputs/tests-shallow.txt)
 
 AC-6: On this repo with vitana-v1 present, `check` exits 0 with 0 errors and reports the stale pointers the plan
 lists (§2.5).
