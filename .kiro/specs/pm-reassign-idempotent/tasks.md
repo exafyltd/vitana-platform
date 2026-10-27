@@ -1,0 +1,14 @@
+# Tasks — pm-reassign-idempotent
+Authoritative plan: `plan.md`. VTID: allocated by PLAN-SPAR.
+
+<!-- lane: reassign-noop -->
+## reassign-noop
+- [ ] R1. Tests first (red on base): `test/project-manager/reassign-idempotent.test.ts` (two ticks → one write, then zero;
+  writer: same change twice → one `put`); wiring assertion `{name:"PM_AGENT_ENABLED", value:"false"}`.
+- [ ] R2. `writers.ts` `laneChangeIsNoop` + skip `put` on W1/W2; `act.ts` `unchanged` status; `decide.ts` guard.
+- [ ] R3. `AWS-STAGE-DEPLOY-GATEWAY.yml:1225` → `"false"`.
+- [ ] R4. `docs/validation/<VTID>/staging-tests.json` + `commands.log`.
+
+Acceptance: the jest suites in `plan.md` are green on head and the new tests red on base; only the lane paths change;
+the PM is not re-enabled.
+<!-- lane: reassign-noop -->
