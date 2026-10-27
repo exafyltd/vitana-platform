@@ -4,9 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
-updated: 2026-10-22T13:10Z
+owner_approval: .kiro/specs/messenger-vitana-cards/sparring/owner-approval.md
+updated: 2026-10-22T21:05Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -109,3 +110,22 @@ Session 2 round 2: 1 blocker + 1 major + 1 minor — all verified and ACCEPTED
   Meta env is unset.
 Plan §2 table now carries topic + repeatAfterDays + priority per card. Next:
 push to start session-2 round 3 (final round of this session).
+
+### 2026-10-22T21:05Z · kiro-exafyltd-202610220802-4a74 · drafted → approved (OWNER APPROVAL)
+Owner approved the plan as-is ("approve it", 2026-10-22) — Gate-1 approval and
+override of the stuck session-2 sparring state (CI could not emit a round-3
+verdict after a rebase interleaved CI's round-2 question with the planner's
+round-2 answer; three safe re-triggers did not queue a new run). The plan is
+converged in substance: 13 findings across 2 sessions, all verified and fixed.
+Approval recorded in sparring/owner-approval.md. State set to `approved`.
+
+Lanes ready (ordered): companion-enrichment-signals →
+companion-enrichment-moments → messenger-companion-verification.
+
+VTID allocation: Kiro does not hand-allocate (§7a). The owner-approved record is
+now in place; allocation proceeds via CI PLAN-SPAR on the approved record or the
+PM/exceptions path citing owner-approval.md. This approval does NOT enable live
+member sends (engine stays disabled-on-staging / off in prod — separate
+go-live).
+Next: push the approval; verify CI allocates the three lane VTIDs; then the
+signals lane can start.
