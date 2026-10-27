@@ -55,7 +55,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    three regex sources are equal (R1-F3). Anything else → `skip: not a plan event`.
 2. Decision: driver heartbeat younger than 45 min → `skip: driver alive` (it polls every 2-3 min). A wake marker
    `refs/heads/collab-wake/<slug>` younger than 20 min → `skip: woken recently`. More than 6 wakes in the last hour
-   repo-wide (markers) → `skip: wake budget`. Otherwise `wake`.
+   repo-wide (markers) → `skip: wake budget`. Otherwise `wake`. Each run first deletes `collab-wake/*` refs older than
+   2 h (they hold no work: tree = `main`'s), so at most the last 2 h of markers exist and the budget scan stays small
+   (s2 R1-F4).
 3. `wake`: write the marker (a commit whose tree is `origin/main^{tree}`, like the heartbeat; fast-forward only), then
    start one Kiro cloud session with a **fixed** prompt: *"Read `.kiro/automations/wake.md` in vitana-platform and
    follow it for plan `<slug>`."* (slug validated; no event text in the prompt). `KIRO_API_KEY` unset → no session,
@@ -79,8 +81,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    `AGENT_REVIEWER_VALUES`). A new `isIndependentReview(r: ReviewEntry): boolean` checks (a) `verdict: accept` and the
    model of the identity is in the list, and (b) `r.fallback_reason === 'chain_unavailable'`. Condition (c) is checked
    at the two call sites, which hold the lane and the PR: `reviewSatisfiesLane` (`governance.ts:159-169`) returns
-   `isIndependentReview(r) && !filesTouchGovernance(pr.files ?? lane.paths) && reviewOnCurrentHead(r, pr)` after the
-   chain branch; `governanceMergeAllowed` (`:179-201`) never unlocks a protected gate file or a governance lane with
+   `isIndependentReview(r) && !filesTouchGovernance(pr.files ?? lane.paths) && reviewOnCurrentHead(r, pr)` inserted
+   **immediately after the `isAgentReview` branch (`:162`) and before the `if (r.reviewer) return false` guard
+   (`:163`)**, which would otherwise discard every independent review (s2 R1-F3); `governanceMergeAllowed` (`:179-201`) never unlocks a protected gate file or a governance lane with
    it (its protected branch and its `laneTouchesGovernance` branch return `protected_gate_file` / `no_agent_accept`
    for an independent review). (b) comes from the driver: the review commit carries
    `Collab-Fallback-Reason: chain_unavailable` only after the three chain models returned `model_unavailable` on the
@@ -112,8 +115,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    `reviewer_seat` names the independent agent itself is refused by `validateLane`. Tests: independent session on a
    chain-reviewer lane → no Lane-scope error; on a `reviewer_seat: claude` lane → error; a lane file setting
    `reviewer_seat: agent:vitana-lane-reviewer-independent` → validate error.
-4. **Protected list.** Adds `.kiro/agents/vitana-lane-reviewer-independent.md`, `.github/workflows/PLAN-PR-MERGE.yml`
-   and `scripts/collab/plan-merge.mjs` to `protected-gate-files.json`, `PROTECTED_GATE_BUILTIN` (`queue.mjs:92-96`)
+4. **Protected list.** Adds `.kiro/agents/vitana-lane-reviewer-independent.md`, `.github/workflows/PLAN-PR-MERGE.yml`,
+   `scripts/collab/plan-merge.mjs` and `.github/workflows/DRIVER-WAKE.yml` (s2 R1-F1: it holds `KIRO_API_KEY` and writes
+   refs) to `protected-gate-files.json`, `PROTECTED_GATE_BUILTIN` (`queue.mjs:92-96`)
    and `PROTECTED_GATE_GLOBS` (`governance.ts:44`), in one commit so the three copies never differ.
 5. **Rules text.** collaboration.md §3 names the independent identity and its three conditions; §7b names
    `PLAN-PR-MERGE.yml` as an actor that applies the plan-PR clause of §7b and nothing else.
@@ -145,8 +149,11 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
 1. `scripts/collab/plan-merge.mjs` (`eligible(pr, files, head, checks)` pure): merge only when **all** hold — PR
    open, not draft, same-repo head, base `main`, title `plan(<slug>)`; every changed file is under
    `.kiro/specs/<slug>/` or is `docs/programs/*/program.md`; head `handoff.md` `state: approved` with `vtids`; the last
-   `sparring/state.json` session `verdict: converged`, `policy_approved_at` set and `final_plan_hash` equal to the
-   plan-block hash at the head (same hash function as PLAN-SPAR, imported read-only); every check run on the head
+   `sparring/state.json` session `verdict: converged` with `policy_approved_at` set; and the plan block of `plan.md`
+   (between `<!-- plan:begin -->` and `<!-- plan:end -->`) at the head is **byte-identical** to the plan block at the
+   newest commit whose `Collab-Session` is `ci-plan-spar` and that wrote `sparring/verdict.md` (read with `git show`),
+   so the approved text is exactly what merges. No plan hash is recomputed and nothing is imported from the
+   TypeScript gateway or from `plan-spar.mjs` (s2 R1-F2); every check run on the head
    completed `success|neutral|skipped` (none pending or failed); `mergeable_state: clean`. Else a one-line reason and
    no merge.
 2. `.github/workflows/PLAN-PR-MERGE.yml`: `workflow_run` of the workflows that run on plan PRs (PLAN-SPAR, PR-GATE,
@@ -164,7 +171,9 @@ pattern); sha256 recorded in both repos' evidence.
 ## 4. Parallel / sequencing
 Lanes 1 and 2b run in parallel (no shared file); lane 2 after lane 2b (reads `ReviewEntry.fallback_reason`). Lane 3 after lane 2 (`governance.ts`, protected list). Lane 2's
 `queue.mjs` edit lands after `pipeline-lane-state-efficiency/chain-transitions` merges or is merged up to date with it
-(one merge per repo; hot file). Lane 4 after lane 2.
+(one merge per repo; hot file). Lane 4 after lane 2. `DRIVER-WAKE.yml` is created by lane 1 (executor kiro) and becomes protected in lane 2's
+protected-list commit, so lane 2's protected-list commit lands after lane 1 has merged; if lane 1 is still open then,
+it needs a Claude or owner review like any protected file (s2 R1-F1).
 
 ## 5. Unchanged
 Sparring rules and the partner chain, PLAN-SPAR and `plan-spar.mjs` (owned by `plan-spar-stuck-session` / #4215),
@@ -185,6 +194,7 @@ independent-reviewer shadow pairs recorded.
 ## 8. Risks
 - Cost: each wake is one cloud session; bounded by the 20-min marker, 6 wakes/hour and the live-driver check.
 - Prompt injection through events: the prompt is a fixed string with a validated slug.
-- Auto-merge widening: the merge script and workflow become protected gate files (lane 2) before lane 3 exists.
+- Auto-merge widening: the merge script and workflow become protected gate files (lane 2) before lane 3 exists;
+  the wake workflow becomes protected right after lane 1 merges.
 - An independent model's lower quality: shadow qualification first, never for governance paths, empty by default.
 <!-- plan:end -->
