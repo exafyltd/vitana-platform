@@ -38,8 +38,9 @@ specific review, prepare the change and route it through that review."*
 
 ## 3. Change — one lane `stuck-recovery` (`executor: claude`; built by Claude, or by the exceptions seat `exafyltd`
 while Claude is unavailable, collaboration.md §7)
-1. **Bound each partner model call** (`partner.ts`): race `invoke(...)` against the remaining pass deadline; on timeout
-   the pass ends `deadline_exceeded` — the existing escalated round 1, `infra` + retryable (gateway
+1. **Bound every awaited call of a pass** (`partner.ts`): race both the model call `invoke(...)` (`:181`) and the
+   code-access tool call `input.executeTool(...)` (`:272`) against the remaining pass deadline; on timeout the pass ends
+   `deadline_exceeded` — the existing escalated round 1, `infra` + retryable (gateway
    `RETRYABLE_REASONS` `:46`, CI `INFRA_REASONS`/`RETRYABLE_REASONS` `:43-44`), so the existing retry path applies.
 2. **`STALE_AFTER_MS` 60 → 20 min** (`plan-sparring-service.ts:51`): above the 15-min standard pass deadline (now
    enforced per call), below the client's 25-min wait.
@@ -47,13 +48,23 @@ while Claude is unavailable, collaboration.md §7)
    body once; the row is then > 20 min old, so the gateway escalates it (`deadline_exceeded`) and opens a fresh session,
    which the client waits on. If the re-post returns the same session, fail with an explicit `stuck` error (no loop).
    The stuck session is never written to `state.json`, so it does not count against `MAX_SESSIONS` (`:36`).
+   **Not cancelled:** the losing promise (a hung Bedrock request or GitHub fetch) keeps running until the gateway's own
+   socket timeouts end it — `llm-router` / `providers/bedrock.ts:218-229` take no `AbortSignal` (only the DeepSeek tier
+   has one, `llm-router.ts:887`). Threading a signal through the router touches every LLM caller and is deferred to a
+   follow-up plan; it costs a connection, not correctness.
 4. Tests (red on base, green with `proposed.patch`): gateway `test/plan-sparring-stuck-session.test.ts` — a model call
-   that never resolves ends the pass `deadline_exceeded` at the deadline (base: hangs past the 15 s test timeout);
+   that never resolves, and a tool call that never resolves, each end the pass `deadline_exceeded` at the deadline
+   (base: hangs past the 15 s test timeout);
    `STALE_AFTER_MS` between 15 and 25 min; a 21-min 0-round row is dead, a 19-min one is not. CI
    `scripts/collab/plan-spar.test.mjs` — a stuck first session is re-posted once and the fresh session returned; a
    session still stuck after the re-post fails with `stuck` after exactly 2 posts. Existing suites stay green
    (`plan-sparring-stale-session.test.ts` boundary cases use the constant; `node --test scripts/collab/*.test.mjs`).
-5. Sequencing: if #4215 merges first, the lane rebases its `create` change onto #4215's return shape (merge, not
+5. **Merge routing (protected gate files).** `plan-spar.mjs` and `plan-sparring/**` are in
+   `scripts/collab/protected-gate-files.json`: after the reviewer agent's accept and green checks, the lane does **not**
+   merge on that accept; it waits for a legacy Claude review on the current head (`Collab-Reviewer` from a
+   `session_…` Claude Code session) or an owner instruction in a conversation that names `plan-spar-stuck-session`. Until
+   then the lane stays `verified` and `next_actor: owner`, recorded in `handoff.md`.
+6. Sequencing: if #4215 merges first, the lane rebases its `create` change onto #4215's return shape (merge, not
    rebase; one merge at a time, hot file).
 
 ## 4. Unchanged (the review is not weakened)
@@ -62,8 +73,9 @@ and re-plan semantics, policy approval `converged-auto-v1`, VTID allocation. A s
 so replacing it drops no finding; the fresh session runs a full pass.
 
 ## 5. Risks
-- A live but slow pass older than 20 min would be escalated by a concurrent re-post. With every call bounded by the
-  15-min deadline a live pass cannot run that long; its late write is refused (`round_conflict`), never merged.
+- A live but slow pass older than 20 min would be escalated by a concurrent re-post. With every model and tool call
+  bounded by the 15-min deadline (§3.1) a live pass ends by then (+ one `writeRound`); any late write is refused
+  (`round_conflict`), never merged.
 - Worst-case PLAN-SPAR job time 25 + 25 min, under the job's `timeout-minutes: 120`.
 - Deploys the gateway (staging) → STAGING-VERIFY and Gate 2 per the pipeline.
 <!-- plan:end -->

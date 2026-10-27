@@ -74,28 +74,49 @@ index 89a058b5d8..21366e4986 100644
 +  assert.equal(posts, 2);
 +});
 diff --git a/services/gateway/src/services/plan-sparring/partner.ts b/services/gateway/src/services/plan-sparring/partner.ts
-index 666f365284..0ed039a653 100644
+index 666f365284..04e43076a0 100644
 --- a/services/gateway/src/services/plan-sparring/partner.ts
 +++ b/services/gateway/src/services/plan-sparring/partner.ts
-@@ -177,7 +177,17 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+@@ -146,6 +146,17 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+   let tierIndex = 0;
+ 
+   const fail = (reason: EscalationReason, error: string): PartnerPassResult => ({ ok: false, reason, error, toolLog, modelLog });
++  // plan-spar-stuck-session: no awaited model call or tool call outlives the pass deadline (it was only checked
++  // between turns, so a call that never returned left the session without a round). The losing promise is not
++  // cancelled: llm-router / the Bedrock handler take no AbortSignal (follow-up, see the plan).
++  const TIMED_OUT = Symbol('timed-out');
++  const withinDeadline = async <T>(p: Promise<T>): Promise<T | typeof TIMED_OUT> => {
++    const remaining = Math.max(1, input.deadlineMs - (now() - startedAt));
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    try {
++      return await Promise.race([p, new Promise<typeof TIMED_OUT>((res) => { timer = setTimeout(() => res(TIMED_OUT), remaining); })]);
++    } finally { if (timer) clearTimeout(timer); }
++  };
+ 
+   const invoke = (p: string, tier: PartnerTier): Promise<LLMRouterResult> =>
+     input.callLlm(PARTNER_STAGE, p, {
+@@ -177,7 +188,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
      for (;;) {
        const tier = tiers[tierIndex];
        const t0 = now();
 -      r = await invoke(prompt, tier);
-+      // plan-spar-stuck-session: one model call never outlives the pass deadline (the deadline was only checked
-+      // between turns, so a call that never returned left the session without a round).
-+      const remaining = Math.max(1, input.deadlineMs - (now() - startedAt));
-+      let timer: ReturnType<typeof setTimeout> | undefined;
-+      const raced = await Promise.race([
-+        invoke(prompt, tier),
-+        new Promise<null>((res) => { timer = setTimeout(() => res(null), remaining); }),
-+      ]);
-+      if (timer) clearTimeout(timer);
-+      if (raced === null) return fail('deadline_exceeded', `partner model call exceeded the pass deadline (${input.deadlineMs}ms)`);
++      const raced = await withinDeadline(invoke(prompt, tier));
++      if (raced === TIMED_OUT) return fail('deadline_exceeded', `partner model call exceeded the pass deadline (${input.deadlineMs}ms)`);
 +      r = raced;
        modelLog.push({
          round: input.round,
          provider: r.provider,
+@@ -269,7 +282,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+         continue;
+       }
+       toolCallsUsed += 1;
+-      const exec = await input.executeTool(call.name, call.arguments ?? {});
++      const execOrTimeout = await withinDeadline(input.executeTool(call.name, call.arguments ?? {}));
++        if (execOrTimeout === TIMED_OUT) return fail('deadline_exceeded', `partner tool call ${call.name} exceeded the pass deadline (${input.deadlineMs}ms)`);
++        const exec = execOrTimeout;
+       toolLog.push(exec.log);
+       results.push({ id: call.id, name: call.name, result: exec.result, ...(exec.isError ? { isError: true } : {}) });
+     }
 diff --git a/services/gateway/src/services/plan-sparring/plan-sparring-service.ts b/services/gateway/src/services/plan-sparring/plan-sparring-service.ts
 index c367d2a8e2..d885f6e5c7 100644
 --- a/services/gateway/src/services/plan-sparring/plan-sparring-service.ts
@@ -118,10 +139,10 @@ index c367d2a8e2..d885f6e5c7 100644
   * VTID-05254: true when the session's round-1 partner pass died before writing anything — in_progress,
 diff --git a/services/gateway/test/plan-sparring-stuck-session.test.ts b/services/gateway/test/plan-sparring-stuck-session.test.ts
 new file mode 100644
-index 0000000000..55b914d386
+index 0000000000..159bc63bba
 --- /dev/null
 +++ b/services/gateway/test/plan-sparring-stuck-session.test.ts
-@@ -0,0 +1,37 @@
+@@ -0,0 +1,51 @@
 +/**
 + * plan-spar-stuck-session — an unresponsive partner never leaves a session without a round for longer than the
 + * CI client waits (scripts/collab/plan-spar.mjs WAIT_MS = 25 min):
@@ -145,6 +166,20 @@ index 0000000000..55b914d386
 +    if (!r.ok) expect(r.reason).toBe('deadline_exceeded');
 +    expect(Date.now() - t0).toBeLessThan(5_000);
 +    expect(callLlm).toHaveBeenCalledTimes(1);
++  });
++
++  it('(1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline', async () => {
++    const callLlm = jest.fn(async () => ({
++      ok: true, provider: 'bedrock', model: 'm', text: '', usage: { inputTokens: 1, outputTokens: 1 },
++      toolCalls: [{ id: 't1', name: 'read_file', arguments: { path: 'CLAUDE.md' } }],
++    }));
++    const executeTool = jest.fn(() => new Promise<never>(() => { /* GitHub never answers */ }));
++    const t0 = Date.now();
++    const r = await runPartnerPass({ round: 1, prompt: 'p', callLlm: callLlm as never, executeTool: executeTool as never, deadlineMs: 300 });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.reason).toBe('deadline_exceeded');
++    expect(Date.now() - t0).toBeLessThan(5_000);
++    expect(executeTool).toHaveBeenCalledTimes(1);
 +  });
 +
 +  it('(2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min)', () => {
