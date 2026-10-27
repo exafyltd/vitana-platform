@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-27T15:28Z
+state: approved
+updated: 2026-10-27T17:51Z
+sparring_record: .kiro/specs/pipeline-agent-wake-and-review/sparring/verdict.md
+vtids: [VTID-05354, VTID-05355, VTID-05356, VTID-05357, VTID-05358]
 ---
 # Handoff — pipeline-agent-wake-and-review
 
@@ -19,3 +21,6 @@ stay with plan `plan-spar-stuck-session`. Lanes `driver-wake`, `reviewer-fallbac
 
 ### 2026-10-27T15:28Z · kiro-exafyltd-202610271503-9458 · drafted
 Owner task 2026-10-27 (Kiro Web), P4 of the pipeline bottleneck analysis. Pushed as a `plan(` PR. No VTID, no code.
+
+### 2026-10-27T17:51Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.
