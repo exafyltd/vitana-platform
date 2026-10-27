@@ -1,0 +1,12 @@
+# Prototype worktree kiro/plan-spar-stuck-session/proto on origin/main 6e0dfca618 (not pushed)
+## red on base (tests only)
+node --test scripts/collab/plan-spar.test.mjs   -> tests 29, pass 27, fail 2 (the two new gateway-client stuck cases)
+npx jest test/plan-sparring-stuck-session.test.ts -> 3 failed: (1) "Exceeded timeout of 15000 ms" (the hang), (2) STALE_AFTER_MS 60 min not < 25 min, (3) 21-min row not dead
+## green with proposed.patch
+node --test scripts/collab/plan-spar.test.mjs   -> tests 29, pass 29, fail 0
+node --test scripts/collab/*.test.mjs           -> tests 179, fail 0
+npx jest test/plan-sparring-stuck-session.test.ts test/plan-sparring-stale-session.test.ts -> 21 passed, 21 total (incl. (1b) tool-call hang, added for round 1 R1-F1)
+npx jest -t "sparring"                          -> 286 passed, 1 failed: "CLAUDE.md carries rules 51-55 …", which fails identically on origin/main (plan #4348 fixes it)
+tsc --noEmit: no error in plan-sparring/** (other TS2742 errors came from the prototype's symlinked node_modules)
+## after round 2 (R2-F1, R2-F2 notes)
+node --test scripts/collab/plan-spar.test.mjs   -> tests 31, pass 31, fail 0 (adds the lost-response path test and the WAIT_MS > STALE_AFTER_MS invariant test)

@@ -32,6 +32,7 @@ specs:
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
   - vitana-platform:kiro-web-parity
+  - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:context-map
   - vitana-platform:quality-checks
@@ -71,6 +72,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
+- `vitana-platform:plan-spar-stuck-session` — a PLAN-SPAR session whose partner never answers recovers inside the same run
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
 - `vitana-platform:context-map` — one read-only command and one linked page to find routes, screens, areas, importers, rules and prior work; stale-link check
 - `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
