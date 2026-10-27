@@ -37,10 +37,10 @@ preflight; this plan touches none of them.
    handler"` (full-text only, semantic unavailable) did not return `routes/vtid.ts` (4.0 s); `graphify query
    … --budget 800` returned 18 of 624 unrelated nodes; `repowise decision list` shows auto-mined `proposed` fragments.
 5. **Stale or misleading context that sessions load.**
-   - `domain-atlas.ts` code pointers that match nothing: `:72` `services/governance-*.ts`, `:108`
-     `services/cognee-extractor-client.ts`, `:120` `services/connect-people-*.ts`, `:144` `services/vitana-index*.ts`,
-     `:156` `services/commerce/`, `:168` `services/wallet*.ts` and `services/stripe*.ts`, `:191` `services/erp-*.ts`.
-     The drift test checks only route claims.
+   - `domain-atlas.ts` code pointers that match nothing (lines of the `code:` arrays, R2-F3): `:77`
+     `services/governance-*.ts`, `:113` `services/cognee-extractor-client.ts`, `:125` `services/connect-people-*.ts`,
+     `:149` `services/vitana-index*.ts`, `:161` `services/commerce/`, `:172` `services/wallet*.ts` and
+     `services/stripe*.ts`, `:196` `services/erp-*.ts`. The drift test checks only route claims.
    - `.claude/CLAUDE.md:9` in both repos (inlined into every Kiro Web session as steering): "Last indexed 2026-09-19
      (commit 076aea1 / aa26481)", 779 / 438 commits behind HEAD, and "Trust the index" instructions for MCP tools
      Kiro Web does not have.
@@ -79,6 +79,13 @@ preflight; this plan touches none of them.
      globbing, (c) as a suffix of any tracked file in either repo (`git ls-files`, so `session/live-session-controller.ts`
      resolves to `services/gateway/src/orb/live/session/live-session-controller.ts`). Only a token that matches none of
      these is reported dead.
+     **Atlas pointers** (R2-F1) are not markdown tokens: every `code` string is a pointer whatever its shape. A
+     trailing `/` is a directory-existence check, `*`/`**` is a glob (zero matches = dead), and the string is resolved
+     against `services/gateway/src`, then `services/gateway`, then the repo root, first match wins. So `../erp-bridge/`
+     resolves to `services/erp-bridge/` (from `services/gateway`), and `.github/workflows/AWS-*.yml` resolves from the
+     root. A `docs` string is checked when its first word contains `/` or ends in `.md` (`CLAUDE.md §2c` → `CLAUDE.md`).
+     Each finding cites the line of the pointer string itself; a route pattern that claims nothing cites the domain's
+     `key:` line.
    - `--json` everywhere; `--v1 <dir>` / `VITANA_V1_DIR`; sibling `../vitana-v1` by default.
 2. **`docs/CONTEXT-MAP.md`** (about 45 lines): question → first command → source of truth → what detects drift; when
    RepoWise/Graphify help (the measurements in §2.4); what is *not* a source of truth (`second-brain/`, the REPOWISE
@@ -106,7 +113,12 @@ merges `origin/main` first.
 - Green on head: tests for mount/handler/atlas parsing, glob, dead refs incl. the three resolution steps (a short-form
   path to a live file is not dead, a full path to a deleted file is), specifier resolution, `route`/`domain`/`why`/`vtid`
   on a **fixture git repo built in a temp dir** (not on this repo's own files, R1-F2), `check` errors vs info vs
-  warnings, CLI exit codes, v1 discovery; also in a `--depth 1` clone without vitana-v1 (as in CI).
+  warnings, atlas pointer forms (directory, glob, `../`, a dead one of each) with the pointer line, CLI exit codes,
+  v1 discovery; also in a `--depth 1` clone without vitana-v1 (as in CI).
+- `vtid --prs` (R2-F2): the `gh api search/issues` call goes through an injectable runner (`vtid(roots, id, { prs,
+  run })`, default `spawnSync`). The test passes a stub and asserts the parsed PR lines. No test calls GitHub, so
+  `UNIT` needs no token. Without `--prs` (the default) nothing leaves the machine, and a failing `gh` prints one line
+  instead of throwing.
 - The one test that reads this repo's real files is "`docs/CONTEXT-MAP.md` has no dead link and names only real
   commands" (R1-F2). It fails only on a PR that removes or renames a file the map links to, which is the PR that must
   update the link. This is the same contract as the atlas drift test (`vtid-04560…:523`).
