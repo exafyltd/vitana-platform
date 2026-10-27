@@ -3,12 +3,11 @@ slug: messenger-vitana-cards
 author: kiro
 author_seat: exafyltd
 executor: kiro
-next_actor: claude
-state: parked
+next_actor: kiro
+state: approved
 sparring_record: .kiro/specs/messenger-vitana-cards/sparring/
 owner_approval: .kiro/specs/messenger-vitana-cards/sparring/owner-approval.md
-updated: 2026-10-27T22:49Z
-parked_from: approved
+updated: 2026-10-22T21:45Z
 ---
 
 Deeply-personalized, one-per-day Vitana recommendation cards in the direct
@@ -133,3 +132,26 @@ signals lane can start.
 
 ### 2026-10-27T22:49Z · ci-plan-spar · approved → parked
 Not converged after 2 sparring sessions (round_cap_reached). Parked with the open findings in sparring/.
+
+### 2026-10-22T21:40Z · kiro-exafyltd-202610220802-4a74 · approved (session-2 round 3 resolved)
+The approval push fired PLAN-SPAR against the correct head (899d1380e), which
+unstuck the state: session 2 advanced to round 3 and escalated at the 3-round
+cap. Round 3 confirmed R2-F2/R2-F3 properly fixed and raised one doc-only item
+(R3-F1: §3 prose didn't match the §2 priority table). Fixed §3 to the exact
+per-card values E1=39 … E11=29 (numerical card order); §2 and §3 now agree.
+s2-responses-3.md written. 14 findings total across both sessions, all resolved;
+the only remaining item was cosmetic.
+
+Plan stays `approved` under the owner override (sparring/owner-approval.md).
+Both CI sessions ended `escalated` (3-round cap), neither policy-approved, so CI
+will NOT auto-allocate — allocation proceeds on the owner-approved record via
+the PM/exceptions path. Next: push the §3 fix; then allocate the 3 lane VTIDs on
+the owner approval and start the companion-enrichment-signals lane.
+
+### 2026-10-22T21:45Z · kiro-exafyltd-202610220802-4a74 · parked → approved (owner override un-parks)
+CI PLAN-SPAR auto-parked the plan on the escalation (`state: parked`,
+`parked_from: approved`, `next_actor: claude`). The owner has approved the plan
+as-is (sparring/owner-approval.md), which resolves the escalation, and the only
+round-3 finding was a doc inconsistency (now fixed). Un-parked back to
+`approved`, `next_actor: kiro`. The owner override — not CI policy approval — is
+the authority to proceed; allocation of the lane VTIDs follows on that record.

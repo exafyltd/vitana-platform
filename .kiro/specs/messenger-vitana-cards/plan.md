@@ -221,10 +221,15 @@ Genuinely new (the real work):
    invite 15, tip 20, Index 50–70). It MUST NOT be used as
    `MomentCandidate.priority`. Each of the 11 moments assigns an explicit
    companion-scale priority in **the 21–39 range** (strictly above `featureTip`
-   20 — not a tie — and strictly below `diary_nudge`'s floor of 40), E1=39 →
-   E11=21 (catalog order preserved). The priority-pin test asserts **absolute**
-   values from this range, not relative ordering. (This matches §2; the earlier
-   "20–49" was the pre-R1-F4 band and is superseded — R2-F1.)
+   20 — not a tie — and strictly below `diary_nudge`'s floor of 40), in
+   **numerical card order: E1=39, E2=38, E3=37, E4=36, E5=35, E6=34, E7=33,
+   E8=32, E9=31, E10=30, E11=29** — exactly the §2 table (11 consecutive
+   integers). This is numerical card order, NOT the News-Feed catalog order
+   (`ENRICHMENT_PRIORITY` = E1,E2,E3,E6,E7,E8,E9,E4,E5,E10,E11); the companion
+   deliberately uses simple card order since it shows one card per day, so the
+   relative ranking among setup cards rarely matters. The priority-pin test
+   asserts these **absolute** values. (This matches §2; the earlier "20–49" was
+   the pre-R1-F4 band and is superseded — R2-F1/R3-F1.)
 
 4. **repeatAfterDays per moment (R2-F2, mandatory).** `repeatAfterDays` defaults
    to nothing meaningful; an incomplete card with no repeat window fires EVERY
