@@ -34,6 +34,7 @@ specs:
   - vitana-platform:kiro-web-parity
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
+  - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:pm-ci-load
   - vitana-platform:context-map
   - vitana-platform:quality-checks
@@ -72,6 +73,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
 - `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
 - `vitana-platform:plan-spar-stuck-session` — a PLAN-SPAR session whose partner never answers recovers inside the same run
