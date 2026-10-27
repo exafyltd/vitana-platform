@@ -16,7 +16,8 @@ paths:
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/kiro/**
   - docs/validation/VTID-*/**
-updated: 2026-10-27T11:00Z
+updated: 2026-10-27T11:25Z
+vtid: VTID-05343
 ---
 # Lane: platform-rules (repo exafyltd/vitana-platform)
 Tasks in `tasks.md` (`<!-- lane: platform-rules -->`). `executor: kiro` with the reviewer agent: `.kiro/steering/**` and
@@ -26,3 +27,6 @@ convergence.
 ## Log
 ### 2026-10-27T11:00Z · kiro-exafyltd-202610261510-099d · ready
 Lane created with the plan.
+
+### 2026-10-27T11:25Z · ci-plan-spar · ready (VTID allocated)
+VTID-05343 allocated after policy approval (converged-auto-v1).
