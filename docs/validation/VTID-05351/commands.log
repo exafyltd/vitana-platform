@@ -1,0 +1,17 @@
+# VTID-05351 commands (kiro-exafyltd-202610271503-9458, 2026-10-27T15:53:51Z), base origin/main 94b5cd2600
+$ node --test scripts/collab/queue.test.mjs   (with origin/main queue.mjs)
+# tests 58
+# pass 53
+# fail 5
+$ node --test scripts/collab/queue.test.mjs   (head)
+# tests 58
+# pass 58
+# fail 0
+$ node --test scripts/collab/*.test.mjs   (head)
+# tests 182
+# pass 181
+# fail 0
+# skipped 1
+$ mutation checks (each safeguard disabled alone → queue.test.mjs fails)
+commit backing → fail 2; merge sha → fail 1; append-only → fail 1; parked_from tracking → fail 2; time order → fail 1; PR reference → fail 1
+$ replay (task C4): see replay-owner-autonomy.txt — origin/main refuses, head accepts, head refuses without the Collab-Review commit
