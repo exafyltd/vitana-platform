@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-27T08:15Z
+state: approved
+updated: 2026-10-27T08:30Z
+sparring_record: .kiro/specs/session-title-stable/sparring/verdict.md
+vtids: [VTID-05341, VTID-05342]
 ---
 # Handoff — session-title-stable
 
@@ -17,3 +19,6 @@ request, never renamed, never carries a state such as "Blocked:". Plan: `plan.md
 
 ### 2026-10-27T08:15Z · kiro-exafyltd-202610270811-c79f · drafted
 Owner task 2026-10-27 (Kiro Web): stop renaming session titles. Pushed as a `plan(` PR. No VTID, no code.
+
+### 2026-10-27T08:30Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
