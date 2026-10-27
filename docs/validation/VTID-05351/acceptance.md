@@ -21,8 +21,10 @@ Collab-Reviewed-Head, no PR reference, in-review → executing without changes, 
 rewritten base log, more than 6 edges, last edge short of the head state, first edge not at the base state.
 TEST: node --test scripts/collab/queue.test.mjs (test "transitionChain: invalid chains each fail…")
 
-AC-4 Authorization still applies inside a chain (one session per lane, claimed_by), a forged accept is refused through
-`validateRange`, and a single legal edge needs no new evidence.
+AC-4 Authorization still applies inside a chain (one session per lane, claimed_by). A chain's accept/changes entry is
+backed only by a review-only commit (Collab-Review, no Collab-Lane) from an authorized reviewer that is not a builder
+of the range and that appended that exact entry: the builder's own trailers, an empty review commit, a Kiro-seat
+reviewer and a self-review by the building Claude session are each refused. A single legal edge needs no new evidence.
 TEST: node --test scripts/collab/queue.test.mjs (tests "validate: a closing-record PR may carry…", "validate: a chain
 whose accept entry has no Collab-Review commit fails…")
 

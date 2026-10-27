@@ -15,7 +15,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T16:03Z
+updated: 2026-10-27T16:10Z
 vtid: VTID-05351
 ---
 # Lane: chain-transitions (repo vitana-platform)
@@ -55,3 +55,19 @@ Findings: non-blocking — review window wider than plan §3.1 (accept before �
 Findings: non-blocking — same-state in-review round trip not routed through transitionChain (unchanged behaviour)
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the lane's seat fixes the blocking findings
+
+### 2026-10-27T16:10Z · kiro-exafyltd-202610271503-9458 · in-review → executing
+Fixing the review findings on `cb0d8cd2` (changes entry above). Fix-forward 2/3.
+
+### 2026-10-27T16:10Z · kiro-exafyltd-202610271503-9458 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4416. Blocking finding 1 fixed: a chain's review entry is backed
+only by a review-only commit (`Collab-Review`, no `Collab-Lane`) whose session passes the lane's `reviewer_seat` rule
+(none set: a reviewer agent or a Claude Code session), is not a builder session of the range, changes no front
+matter, and appended that exact entry (`reviewBacking`); review entries count only from `· review` headers
+(non-blocking 4). Four refusing tests added (builder's own trailers, empty review commit, Kiro-seat reviewer, self
+review); mutation checks red for each rule. Decisions (non-blocking 5, 6): the review window is "the latest review
+entry since the last `in-review → executing`", not "after the last `→ in-review`" — the real closing records store
+the accept before the `executing → in-review` entry (#4397), and a stale accept is still excluded because a changes
+round resets the window; a same-state round trip (`in-review` → … → `in-review`) is not routed to the chain, as today.
+Blocking finding 2 (protected gate file) is the merge routing of plan §5, unchanged. Real-data replay re-run: passes,
+and refuses without its Collab-Review commit.

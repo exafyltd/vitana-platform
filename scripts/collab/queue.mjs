@@ -286,6 +286,11 @@ function logEntries(log) {
   return out;
 }
 
+/** A review entry: a `· review…` header whose body carries `review: accept|changes` and a 40-hex `head:`. */
+function isReviewEntry(e) {
+  return /^review\b/.test(e.change) && REVIEW_RE.test(e.body) && REVIEW_HEAD_RE.test(e.body);
+}
+
 /** The `<a> → <b>` edge an entry header records, or null (reviews, updates, notes and unknown headers carry none). */
 function entryEdge(kind, entry) {
   const states = kind === 'plan' ? PLAN_STATES : LANE_STATES;
@@ -298,9 +303,10 @@ function entryEdge(kind, entry) {
  * Every edge must be its own newly appended log entry, connect base → head, be legal on its own (done terminal,
  * parked returns only to the parked_from tracked through the chain), be in time order, and carry its evidence:
  * lane `executing → in-review` a PR URL or `owner/repo#N`; `in-review → verified` / `in-review → executing` a `review: accept` /
- * `review: changes` entry (with `head:`) since the lane last entered `executing`, backed by its Collab-Review commit
- * when that entry is new in this range (`reviewCommits` = `{ verdict, reviewedHead }` of this lane's Collab-Review
- * commits in the range); `verified → done` a merge sha (`merge: <sha>` or ``Merge `<sha>` ``) in its own entry or in
+ * `review: changes` entry (a `· review…` header with `head:`) as the latest review since the last changes round, backed
+ * by its Collab-Review commit when that entry is new in this range (`reviewCommits` = `{ verdict, reviewedHead,
+ * appended }` of this lane's authorized review-only commits in the range, `appended` = the log text the commit added;
+ * see `reviewBacking`); `verified → done` a merge sha (`merge: <sha>` or ``Merge `<sha>` ``) in its own entry or in
  * the `in-review → verified` entry. A plan chain ending `done` needs every lane at the head `done` (`laneStates`).
  * Returns the list of errors ([] = valid). Fails closed: an unknown header carries no edge.
  */
@@ -342,7 +348,7 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
   const latestReview = (i) => {
     let s = 0;
     for (let k = i - 1; k >= 0; k--) { const g = entryEdge(kind, all[k]); if (g && g.a === 'in-review' && g.b === 'executing') { s = k + 1; break; } }
-    for (let k = i - 1; k >= s; k--) if (REVIEW_RE.test(all[k].body) && REVIEW_HEAD_RE.test(all[k].body)) return { e: all[k], i: k };
+    for (let k = i - 1; k >= s; k--) if (isReviewEntry(all[k])) return { e: all[k], i: k };
     return null;
   };
   const review = (i, verdict) => { const r = latestReview(i); return r && REVIEW_RE.exec(r.e.body)[1] === verdict ? r : null; };
@@ -355,7 +361,8 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
       if (!r) errors.push(`${edge} has no ${verdict} review entry (review: ${verdict}, head: <sha>) as the latest review since the last changes round`);
       else if (r.i >= prior.length) {
         const head = REVIEW_HEAD_RE.exec(r.e.body)[1];
-        if (!reviewCommits.some((c) => c.verdict === verdict && c.reviewedHead === head)) {
+        const header = `### ${r.e.time} · ${r.e.session} · ${r.e.change}`;
+        if (!reviewCommits.some((c) => c.verdict === verdict && c.reviewedHead === head && typeof c.appended === 'string' && c.appended.includes(header))) {
           errors.push(`${edge}: the ${verdict} review entry for head ${head.slice(0, 8)} was added without its Collab-Review commit (Collab-Verdict: ${verdict}, Collab-Reviewed-Head: ${head.slice(0, 8)}…)`);
         }
       }
@@ -367,6 +374,34 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
   }
   if (kind === 'plan' && after.state === 'done' && laneStates && laneStates.some((s) => s !== 'done')) errors.push('a plan chain may end "done" only when every lane is done');
   return errors;
+}
+
+/**
+ * VTID-05351 (review of #4416): the review-only commits of the range that may back a chain's review entry for lane
+ * `key` (file `p`). A commit counts only when it carries `Collab-Review: <key>` and **no** `Collab-Lane`, changes `p`
+ * without touching its front matter and only appends to its log, comes from an authorized reviewer (the lane's
+ * trusted `reviewer_seat` rule, as scopeCheck applies it; with none set, a reviewer agent or a Claude Code session),
+ * and its session wrote no `Collab-Lane` commit in the range (a builder never backs its own review). Returns
+ * `[{ verdict, reviewedHead, appended }]`, `appended` = the log text the commit added.
+ */
+function reviewBacking(repo, commits, key, p, trustedFm) {
+  const builders = new Set(commits.filter((k) => k.lane).map((k) => k.session));
+  const fm = trustedFm || {};
+  const out = [];
+  for (const k of commits) {
+    if (!(k.review || '').split(',').map((x) => x.trim()).includes(key) || k.lane) continue;
+    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged(repo, k.sha, p)) continue;
+    const authorized = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session)
+      : isReviewerAgent(fm.reviewer_seat) ? agentOf(k.session) === fm.reviewer_seat
+        : fm.reviewer_seat ? seatOf(k.session) === fm.reviewer_seat
+          : isReviewerAgent(agentOf(k.session)) || /^session_/.test(k.session);
+    if (!authorized) continue;
+    const a = logSection(showFile(repo, `${k.sha}^`, p));
+    const b = logSection(showFile(repo, k.sha, p));
+    if (!b.startsWith(a)) continue;
+    out.push({ verdict: k.verdict, reviewedHead: k.reviewedHead, appended: b.slice(a.length) });
+  }
+  return out;
 }
 
 // ── Git helpers ─────────────────────────────────────────────────────────
@@ -677,8 +712,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       : beforeText ? 2 : 0; // a rewritten log under a multi-state change is judged (and refused) by the chain
     if (single.length && loggedEdges >= 2) {
       const key = `${c.slug}/${c.lane}`;
-      const reviewCommits = commits.filter((k) => (k.review || '').split(',').map((s) => s.trim()).includes(key))
-        .map((k) => ({ verdict: k.verdict, reviewedHead: k.reviewedHead }));
+      const reviewCommits = reviewBacking(repo, commits, key, p, parseFrontMatter(showFile(repo, mergeBase, p)));
       const laneStates = c.kind === 'plan'
         ? specFilesAt(repo, head).filter((f) => classifyPath(f)?.slug === c.slug && classifyPath(f).kind === 'lane')
           .map((f) => parseFrontMatter(showFile(repo, head, f))?.state)
