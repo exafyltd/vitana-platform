@@ -1,6 +1,6 @@
 name: unit
 on: { pull_request: {} }
-# VTID-05352 (plan pm-ci-load): a newer push of the same PR cancels the superseded run (PR-GATE.yml pattern);
+# VTID-05353 (plan pm-ci-load): a newer push of the same PR cancels the superseded run (PR-GATE.yml pattern);
 # every PR head still runs this required check.
 concurrency:
   group: unit-${{ github.event.pull_request.number }}
