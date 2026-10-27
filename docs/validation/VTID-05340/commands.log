@@ -1,0 +1,22 @@
+# VTID-05340 (kiro-web-parity/session-kit) — commands and results, session kiro-exafy-202610261526-5cd7
+# base origin/main e6fd6dfc2b (plan merged); worktree .agents/wt/session-kit
+
+node --test scripts/collab/kiro-web-session.test.mjs      # on base, module absent        -> FAIL (ERR_MODULE_NOT_FOUND), red-on-base.txt
+node --test scripts/collab/kiro-web-session.test.mjs      # head                          -> tests 21, pass 21, fail 0 (2 s)
+node --test scripts/collab/*.test.mjs                     # head (PR-GATE.yml:140)        -> tests 173+, fail 0 (6 s)
+node scripts/collab/kiro-web-session.mjs setup --wait     # real workspace, cold          -> hooks written, reviewer copied, deps 5 s + 12 s, index 160 s; 178 s total
+node scripts/collab/kiro-web-session.mjs setup --wait     # from the worktree, 1st try    -> BUG: workspace resolved as .agents/wt; fixed (defaultWorkspace + worktree test)
+node scripts/collab/kiro-web-session.mjs setup --wait     # from the worktree, after fix  -> workspace /projects/sandbox; index update after main moved 547 s
+node scripts/collab/kiro-web-session.mjs status --check   # real workspace                -> exit 0, "ready" (steering --check ok, hooks, reviewer, deps, codeintel, github)
+guard demo: seeded TS2322 in services/gateway/src/routes/health.ts, git commit            -> BLOCKED with the tsc error; fixed -> commit passed
+guard demo: illegal lane state done->ready, git push nowhere-remote kiro/kiro-web-parity/demo -> BLOCKED before git ran, preflight FAIL lines shown
+guard live: push of kiro/kiro-web-parity/plan (re-plan)                                   -> BLOCKED (Collab handoff: ci-plan-spar as 2nd _plan session); narrow false-positive pass added + test
+guard live: later plan pushes                                                             -> passed (preflight 10-12 s each)
+kiro-web-session.mjs wait --sha <plan heads>                                              -> returned on completion, printed the failed run's --log-failed tail
+node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/kiro-web-parity/session-kit --title "VTID-05340 (kiro-web-parity/session-kit): …"  -> run by the guard on push (see PR checks)
+guard (sub-agent B, inherited hook): push of illegal lane transition                           -> BLOCKED (P21)
+guard (sub-agent A, edit+commit in one parallel batch)                                       -> NOT blocked: race found (P23); fixed with a diff-vs-HEAD trigger + test
+guard (sub-agent A2, sequential): seeded TS2322 commit                                       -> BLOCKED; fixed -> commit 068a742fdf passed (P24)
+guard (main, real lane): lane file executing->done committed, push                           -> BLOCKED (illegal transition); fixed to in-review -> push passed (P25)
+node --test scripts/collab/kiro-web-session.test.mjs                                         -> tests 23, pass 23, fail 0
+guard (main, real lane): lane ready->in-review in one PR -> BLOCKED; kept executing -> push passed (P26)
