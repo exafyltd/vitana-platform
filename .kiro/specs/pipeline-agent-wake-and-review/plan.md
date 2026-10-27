@@ -33,8 +33,8 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    wake to apply the §7a re-run.
 3. **Reviewer chain.** `REVIEWER_AGENT_MODELS` (`services/gateway/src/services/project-manager/governance.ts:35-39`)
    = three Claude models, mirrored in `scripts/ci/kiro-steering/guard.cjs:106` and the agent's `Model chain:` line
-   (`guard.cjs:119`). `isAgentReview` (`governance.ts:130-135`) accepts only `agent:vitana-lane-reviewer (<chain
-   model>)`. All three are served by one provider, so one outage stops every review; driver.md step 4 then parks the
+   (`guard.cjs:123`). `isAgentReview` (`governance.ts:129-135`) accepts the bare `agent:vitana-lane-reviewer` and
+   `agent:vitana-lane-reviewer (<chain model>)` (`AGENT_REVIEWER_VALUES`, `:129`). All three are served by one provider, so one outage stops every review; driver.md step 4 then parks the
    lane. In Kiro Web a sub-agent runs on the session model unless its agent file pins `model:`
    (kiro.dev/docs/custom-agents/configuration-reference); Kiro also serves non-Anthropic models (OpenAI GPT-5.6,
    GLM-5, MiniMax M2.5, …; kiro.dev/docs/models).
@@ -50,7 +50,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
 ### Lane 1 `driver-wake` (vitana-platform, executor kiro, reviewer agent)
 1. `scripts/collab/driver-wake.mjs` (`decide(event, now)` pure, plus a CLI). Events: PLAN-SPAR `workflow_run`
    completed (success **or** failure) on a `plan(<slug>)` PR; a push to a `kiro/<slug>/<lane>` branch whose new commit
-   carries `Collab-Verdict:`. Slug parsed with the queue's `SLUG_RE`; anything else → `skip: not a plan event`.
+   carries `Collab-Verdict:`. Slug checked with a local copy of `/^[a-z0-9][a-z0-9-]*$/` (the module-private
+   `SLUG_RE` of `queue.mjs:57`; `plan-driver.mjs:39` keeps its own copy too); a test reads both files and asserts the
+   three regex sources are equal (R1-F3). Anything else → `skip: not a plan event`.
 2. Decision: driver heartbeat younger than 45 min → `skip: driver alive` (it polls every 2-3 min). A wake marker
    `refs/heads/collab-wake/<slug>` younger than 20 min → `skip: woken recently`. More than 6 wakes in the last hour
    repo-wide (markers) → `skip: wake budget`. Otherwise `wake`.
@@ -74,8 +76,12 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    `agent:vitana-lane-reviewer-independent (<model>)`. `isAgentReview` accepts it only when (a) the model is in that
    list, (b) the review entry records that every chain model was tried on the same head and returned
    `model_unavailable` (log lines from the driver, `Collab-Fallback-Reason: chain_unavailable`), and (c) the lane
-   touches **no governance path** (`.github/**`, `.claude/**`, `.kiro/**`, `scripts/collab/**`, CLAUDE.md, areas.yaml)
-   — such lanes keep waiting for a chain model. A protected gate file still needs Claude or the owner, unchanged.
+   PR changes **no governance path** as already defined by `GOVERNANCE_PATHS` (`queue.mjs:85`, `governance.ts:64`:
+   `.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`, CLAUDE.md,
+   `docs/programs/areas.yaml`); `.kiro/specs/**` lane and handoff files are not governance paths (R1-F1). Such lanes
+   keep waiting for a chain model. A protected gate file still needs Claude or the owner, unchanged. Only the form
+   `agent:vitana-lane-reviewer-independent (<model>)` counts; the bare `agent:vitana-lane-reviewer-independent` never
+   does, so every independent accept names the model it ran on (R1-F2).
 2. **Agent file.** `.kiro/agents/vitana-lane-reviewer-independent.md`: byte-identical body to
    `vitana-lane-reviewer.md` except `name` and a pinned `model:`; `guard.cjs` pins that equality (tools, permissions,
    fail-loudly rules) and that the model is in `REVIEWER_AGENT_INDEPENDENT_MODELS` or the list is empty.
@@ -96,7 +102,9 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    blocker (unchanged); independent agent fails or returns `changes` → parked / back to `executing` as today. Every
    attempt is a log line; nothing waits on an unavailable model.
 7. Tests (red on base): governance test cases for (a)-(c) each failing alone, empty list → never accepted, identity
-   spoofing (`agent:vitana-lane-reviewer-independent-fake`), protected file → still needs Claude; guard cases for the
+   spoofing (`agent:vitana-lane-reviewer-independent-fake`), the bare independent identity → not accepted, the bare
+   `agent:vitana-lane-reviewer` still accepted (regression, R1-F2), a lane changing only `.kiro/specs/**` + product code
+   → eligible, a lane changing `.kiro/steering/**` → not eligible (R1-F1), protected file → still needs Claude; guard cases for the
    agent file; `reviewer-qualify` thresholds (9 pairs, 2 plans, 89 %, one false accept → not qualified).
 
 ### Lane 3 `plan-pr-merge` (vitana-platform, executor claude — protected after lane 2; `depends_on: [reviewer-fallback]`)
