@@ -20,3 +20,4 @@ guard (sub-agent A2, sequential): seeded TS2322 commit                          
 guard (main, real lane): lane file executing->done committed, push                           -> BLOCKED (illegal transition); fixed to in-review -> push passed (P25)
 node --test scripts/collab/kiro-web-session.test.mjs                                         -> tests 23, pass 23, fail 0
 guard (main, real lane): lane ready->in-review in one PR -> BLOCKED; kept executing -> push passed (P26)
+guard: widened to every kiro/** and claude/** branch (a v2 push on kiro/kiro-web-parity-v2 skipped preflight) -> test added; tests 24/24

@@ -20,7 +20,7 @@
  * and installs dependencies and code intelligence (a venv under ~/.cache, then the unchanged
  * scripts/codeintel/session-setup.sh). `mark-dirty` records a gateway `src` edit; `guard` runs the gateway typecheck at
  * the next `git commit` (the Claude Code PostToolUse rule, moved to the first point Kiro Web can block) and the
- * existing preflight before a push of a `kiro/<slug>/<lane>` branch. The guard only adds checks; it never skips or
+ * existing preflight before a push of a `kiro/**` or `claude/**` branch. The guard only adds checks; it never skips or
  * loosens one, blocks only on a real failure, and never blocks on its own internal error. CI stays the gate.
  *
  * Nothing is written inside a repository. Env overrides (tests): VITANA_KIRO_WEB_CACHE (default ~/.cache/vitana-kiro-web),
@@ -38,7 +38,8 @@ const SELF = fileURLToPath(import.meta.url);
 const PLATFORM_ROOT = process.env.VITANA_KIRO_WEB_PLATFORM || path.resolve(path.dirname(SELF), '..', '..');
 const CACHE_DIR = process.env.VITANA_KIRO_WEB_CACHE || path.join(os.homedir(), '.cache', 'vitana-kiro-web');
 const CODEINTEL_DIR = process.env.CODEINTEL_STATE_DIR || path.join(os.homedir(), '.cache', 'vitana-codeintel');
-const LANE_BRANCH = /^kiro\/[a-z0-9][a-z0-9-]*\/[A-Za-z0-9_][A-Za-z0-9_-]*$/;
+// Every agent branch (`kiro/**`, `claude/**`): lane and plan branches, and any other form a PR is opened from.
+const LANE_BRANCH = /^(kiro|claude)\/[A-Za-z0-9._-]+(\/[A-Za-z0-9._-]+)*$/;
 const FAILED = new Set(['failure', 'timed_out', 'cancelled', 'action_required', 'startup_failure']);
 const REPO_SLUGS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'];
 

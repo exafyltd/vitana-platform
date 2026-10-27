@@ -16,7 +16,7 @@ node vitana-platform/scripts/collab/kiro-web-session.mjs status  # what is ready
 | Claude Code has | Kiro Web, with the kit |
 |---|---|
 | `.claude/settings.json` PostToolUse: `tsc --noEmit` after each gateway edit, blocks | `vitana-web-dirty` (PostToolUse) records a `services/gateway/src` edit; `vitana-web-guard` (PreToolUse on `execute_bash`) runs an incremental `tsc --noEmit` at `git commit` when a gateway edit was recorded or `services/gateway/src` differs from `HEAD`, and blocks it with the first 10 errors |
-| — (preflight is a manual step in `driver.md:43`) | `vitana-web-guard` runs `scripts/collab/preflight.mjs` before every push of a `kiro/<slug>/<lane\|plan>` branch and blocks it with preflight's FAIL lines; a passed head is cached |
+| — (preflight is a manual step in `driver.md:43`) | `vitana-web-guard` runs `scripts/collab/preflight.mjs` before every push of a `kiro/**` or `claude/**` branch and blocks it with preflight's FAIL lines; a passed head is cached |
 | RepoWise MCP + Graphify from SessionStart hooks | venv `~/.cache/vitana-codeintel/venv` (`~/.local` is read-only here) + the unchanged `scripts/codeintel/session-setup.sh`; use the CLI: `repowise search/context/risk`, `graphify query/path/explain` |
 | gateway `node_modules` from SessionStart | `npm ci` in `services/gateway` and vitana-v1 when missing or the lockfile changed |
 | GitHub MCP / `gh pr checks --watch` | `kiro-web-session.mjs wait --repo <owner/repo> --sha <sha>`: polls check runs every 120 s (max 1800 s) and prints each failed run's `--log-failed` tail |

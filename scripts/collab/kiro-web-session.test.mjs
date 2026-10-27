@@ -454,3 +454,17 @@ test('the CLI writes every block to last-block.txt (the main session shows a blo
     assert.match(readFileSync(path.join(f.cache, 'last-block.txt'), 'utf8'), /separate commands/);
   } finally { f.done(); }
 });
+
+test('guard preflights every kiro/** and claude/** branch, not only kiro/<slug>/<lane>', () => {
+  const f = fixture();
+  try {
+    for (const b of ['kiro/s-v2', 'claude/s/l', 'kiro/a/b/c']) {
+      const run = fakeRun({ preflight: { status: 1, output: 'FAIL  Lane scope [required]' } });
+      const r = guard(hookInput(`git -C /w/vitana-platform push origin HEAD:refs/heads/${b}`), { run, cacheDir: f.cache, platformRoot: f.platform, exists: () => true });
+      assert.equal(r.code, 2, b);
+    }
+    const run = fakeRun();
+    assert.equal(guard(hookInput('git push origin feature/x'), { run, cacheDir: f.cache, platformRoot: f.platform, exists: () => true }).code, 0);
+    assert.equal(run.calls.filter((c) => c.cmd === process.execPath).length, 0);
+  } finally { f.done(); }
+});
