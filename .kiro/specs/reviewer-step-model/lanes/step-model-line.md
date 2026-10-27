@@ -17,7 +17,8 @@ paths:
   - scripts/ci/kiro-steering/guard.cjs
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/validation/VTID-*/**
-updated: 2026-10-23T06:20Z
+updated: 2026-10-27T23:14Z
+vtid: VTID-05359
 ---
 # step-model-line — every pinned review step opens with its own chain model
 Plan: `.kiro/specs/reviewer-step-model/plan.md` §3-§5, §7-§8 and the `step-model-line` section of `tasks.md` are
@@ -30,3 +31,6 @@ Shared files: none. `services/gateway/**` (incl. `governance.ts`) is out of scop
 ### 2026-10-23T06:20Z · kiro-202610230600-758b · created → ready
 Lane created with the plan (owner task 2026-10-22; §7b merges pre-authorized 2026-10-21: "now you can run fully end to
 end without stopping", "yes, execute your recommendation"). Next: PLAN-SPAR; once `vtid:` is set, seat exafy claims it.
+
+### 2026-10-27T23:14Z · ci-plan-spar · ready (VTID allocated)
+VTID-05359 allocated after policy approval (converged-auto-v1).

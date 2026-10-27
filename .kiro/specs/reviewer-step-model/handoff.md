@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-23T06:20Z
+state: approved
+updated: 2026-10-27T23:14Z
+sparring_record: .kiro/specs/reviewer-step-model/sparring/verdict.md
+vtids: [VTID-05359]
 ---
 # Handoff — reviewer-step-model (every pinned review step opens with its own chain model)
 Planner: Kiro seat `exafy`, session `kiro-202610230600-758b` (workflow run `wf_c8815f087aa0d547`). Plan: `plan.md`
@@ -24,3 +26,6 @@ all three models for #4337, #4339, #4340; the hand runs with a prompt starting `
 investigations (code, tests, rules): the prompts already name the model mid-paragraph, so the fix is a fixed first
 model line plus an agent self-check keyed on it, pinned by the steering guard. No VTID allocated, no code changed, no
 live system touched. Next: PLAN-SPAR round 1.
+
+### 2026-10-27T23:14Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
