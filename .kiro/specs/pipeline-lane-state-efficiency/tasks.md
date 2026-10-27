@@ -24,4 +24,6 @@ Branch `kiro/pipeline-lane-state-efficiency/chain-transitions` (exceptions seat 
 - Every valid and invalid case of plan §3.5 is a test, red on base, green on head; a single legal edge still passes
   with no new evidence demanded.
 - A chain fails closed: unknown header → no edge → the file fails as today.
+- Converging round 2 note (R2-F1, minor): the reviewer-append authorization that §3.3 relies on is
+  `queue.mjs:590` (`k.review === key && !frontMatterChanged(...)`), not `:597`.
 - Merge only with a legacy Claude review on the current head or an owner instruction naming this plan (§3a).
