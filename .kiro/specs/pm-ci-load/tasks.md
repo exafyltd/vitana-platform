@@ -24,6 +24,8 @@ hand. Branches `kiro/pm-ci-load/<lane-id>`; PR titles `VTID-xxxxx (pm-ci-load/<l
 
 **Acceptance**
 - Change types: Backend, Integration.
+- Converging round 2 note (R2-F1, minor): `token()` becomes `async token(repo): Promise<string>` and `gh()` awaits it;
+  confined to `github-rest.ts`, no caller signature changes.
 - With the three variables unset, every PM GitHub call uses exactly today's token (test).
 - The token request asks for exactly the §4 permissions on the two repos; no secret value is logged (test on the log
   line).
