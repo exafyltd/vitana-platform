@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-27T15:25Z
+state: approved
+updated: 2026-10-27T15:40Z
+sparring_record: .kiro/specs/pipeline-lane-state-efficiency/sparring/verdict.md
+vtids: [VTID-05351]
 ---
 # Handoff — pipeline-lane-state-efficiency
 
@@ -18,3 +20,6 @@ stay checked. One lane, `chain-transitions` (protected gate file `queue.mjs`). P
 ### 2026-10-27T15:25Z · kiro-exafyltd-202610271503-9458 · drafted
 Owner task 2026-10-27 (Kiro Web), P3 of the pipeline bottleneck analysis: allow valid chains of state transitions in
 one closing record. Pushed as a `plan(` PR. No VTID, no code.
+
+### 2026-10-27T15:40Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

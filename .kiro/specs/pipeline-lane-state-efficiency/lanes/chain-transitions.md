@@ -12,7 +12,8 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T15:25Z
+updated: 2026-10-27T15:40Z
+vtid: VTID-05351
 ---
 # Lane: chain-transitions (repo vitana-platform)
 Tasks in `tasks.md` (`<!-- lane: chain-transitions -->`). `executor: claude`: `scripts/collab/queue.mjs` is a protected
@@ -22,3 +23,6 @@ legacy Claude review on the current head or an owner instruction naming `pipelin
 ## Log
 ### 2026-10-27T15:25Z · kiro-exafyltd-202610271503-9458 · ready
 Lane created with the plan.
+
+### 2026-10-27T15:40Z · ci-plan-spar · ready (VTID allocated)
+VTID-05351 allocated after policy approval (converged-auto-v1).
