@@ -32,6 +32,7 @@ specs:
   - vitana-platform:owner-autonomy
   - vitana-platform:kiro-web-parity
   - vitana-platform:session-title-stable
+  - vitana-platform:quality-checks
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -68,3 +69,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
+- `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
