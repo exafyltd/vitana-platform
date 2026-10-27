@@ -40,3 +40,12 @@ Claimed (`queue.mjs claim quality-checks/pipeline-quality`). Test `scripts/colla
 first, red on `origin/main` fef112e8c7 (7/7 fail: file and links missing, `docs/validation/VTID-05346/red-on-base.txt`);
 then `.kiro/pipeline/quality-checks.md` added and wired into planning, lane-code, lane-review, lane-land and the PR
 template. Local checks green (`commands.log`).
+
+### 2026-10-27T13:17Z · agent-vitana-lane-reviewer-202610271317-3bab · review
+review: changes
+head: 21121452720013530b9d1503225bd91eb2552c08
+reviewer: agent:vitana-lane-reviewer (claude-opus-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4407
+Findings: [blocking] self-review: the caller's session kiro-jtadic-202610271220-68a5 is in the lane's executing log (claimed_by, 13:03Z ready → executing); the review must be requested by a session not in that log. [blocking] commands.log has no preflight entry (T4). [non-blocking] collab suite 184/183/0: one test unaccounted for; quality-checks.md references not in plan §2 (#1359 right-2→end-2, CI-HEALTH/#4374, vtid-05085, #1272, VTID-04868/05280); red-on-base.txt duplicated under outputs/; CI on head not readable from the reviewer session.
+Stored by the plan driver on the agent's behalf (`lane-land.md` step 2); run as a separate read-only agent session from the agent definition.
+Next: a session not in this lane's executing log (the Project Manager or another seat) requests the review on the current head.
