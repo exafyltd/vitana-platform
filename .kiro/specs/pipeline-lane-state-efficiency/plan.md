@@ -23,11 +23,16 @@ pipeline."* Measured cost today (pipeline analysis, 2026-10-27): owner-autonomy'
    trailers, one work lane per PR, one session per lane, `claimed_by` = the committing session, `pm-agent` overreach,
    review entries (`Collab-Review`) may only append with the front matter unchanged. This plan does not change it.
 4. Log entry format (collaboration.md §2, `:71`): `### <ISO time> · <session id> · <state change>`; review entries
-   (§3, `:89-108`) carry `review: accept|changes` and `head: <sha>`; closing records carry `merge: <sha>`
-   (e.g. `.kiro/specs/kiro-web-steering/lanes/web-steering.md:57`).
+   (§3, `:89-108`) carry `review: accept|changes` and `head: <sha>`. The merge sha is written in two forms today:
+   `merge: <sha>` in the `in-review → verified` entry (`.kiro/specs/kiro-web-steering/lanes/web-steering.md:56-57`) and
+   ``Merge `<sha>` `` in the `verified → done` entry (`:59-60`).
 5. `queue.mjs` is a protected gate file (`scripts/collab/protected-gate-files.json`); `queue.test.mjs` is not.
-6. Other open work on `queue.mjs`: none in an open lane PR (checked 2026-10-27T15:20Z: #4392, #4396, #4404, #4406,
-   #4409 do not list it). `plan-pr-automerge` of plan `pipeline-agent-wake-and-review` will add one line to
+6. Other work on `queue.mjs`: no open lane PR (checked 2026-10-27T15:20Z: #4392, #4396, #4404, #4406, #4409 do not
+   list it). Lane `ci-github-modernization/false-positives-collab` (VTID-05304, `ready`, executor claude) also lists
+   `queue.mjs` + `queue.test.mjs`: its T2 stops counting `ci-plan-spar` as a second session on a `_plan` lane (the
+   false positive that fails Collab handoff on every answered `plan(` PR, e.g. #4393, #4406). Whichever lane lands
+   second merges `origin/main` first and re-runs its tests (one merge per repo); the two changes touch different
+   functions (`validateRange` transition loop vs. the session-per-lane loop). `plan-pr-automerge` of plan `pipeline-agent-wake-and-review` will add one line to
    `PROTECTED_GATE_BUILTIN` later and is sequenced after this lane (hot file).
 
 ## 3. Change — one lane `chain-transitions` (vitana-platform, `executor: claude`)
@@ -41,13 +46,18 @@ pipeline."* Measured cost today (pipeline analysis, 2026-10-27): owner-autonomy'
    - **Endpoints.** The first edge starts at the base `state`, every next edge starts where the previous one ended,
      and the last one ends at the head `state`. Otherwise `chain does not connect <base> → <head>: <list>`.
    - **Every edge is legal.** Each edge is checked with the existing single-edge rule (`checkTransition` on
-     `{state:a}`/`{state:b}` plus the base `parked_from` for a `parked →` edge), so `done` stays terminal, `parked`
-     returns only to `parked_from`, and a new file still starts at `drafted`/`ready`.
+     `{state:a}`/`{state:b}`), so `done` stays terminal, `parked` returns only to `parked_from`, and a new file still
+     starts at `drafted`/`ready`. `parked_from` is tracked through the chain (R1-F1): it starts as the base front
+     matter's `parked_from`; an edge `X → parked` sets it to `X`; a following `parked → Y` edge is checked with
+     `{state:'parked', parked_from}`. If the head state is `parked`, the head `parked_from` must equal the tracked
+     value.
    - **Order.** Entry times are non-decreasing; at most 6 edges per PR.
    - **Evidence per edge (lanes).** `executing → in-review`: the entry body names the lane PR (a GitHub PR URL).
      `in-review → verified`: an entry `review: accept` with a 40-hex `head:` exists after the last `→ in-review` edge
      and before this edge, in the base log or the new entries; `in-review → executing` needs a `review: changes` entry
-     in the same window. `verified → done`: the entry body has `merge: <7-40 hex>`. Missing evidence →
+     in the same window. `verified → done`: a merge sha (7-40 hex) in the form `merge: <sha>` or ``Merge `<sha>` `` (case-insensitive)
+     appears in this entry or in the `in-review → verified` entry of the same window (R1-F2, both conventions of
+     §2.4). Missing evidence →
      `<a> → <b> has no <evidence> in its log window`.
    - **Evidence per edge (plans).** Every edge has its own entry; `→ done` for a plan additionally needs every lane
      file at the head in `done` (checked by the caller, which has the tree).
@@ -63,13 +73,14 @@ pipeline."* Measured cost today (pipeline analysis, 2026-10-27): owner-autonomy'
    only lets one PR carry several of today's single-edge commits.
 5. Tests (in `scripts/collab/queue.test.mjs`, written first and red on `origin/main`):
    - Valid: lane `executing → in-review → verified → done` in one PR with PR URL, accept review (with its
-     `Collab-Review` commit) and `merge:` sha; lane `in-review → executing → in-review` with a `review: changes`
-     entry; plan `executing → in-review → verified` with one entry per edge; a single edge still passes with no new
+     `Collab-Review` commit) and a merge sha (both conventions); lane `in-review → executing → in-review` with a
+     `review: changes` entry; lane `executing → parked → executing → in-review` (R1-F3); plan `executing → in-review → verified` with one entry per edge; a single edge still passes with no new
      evidence (regression).
-   - Invalid (one error each): a skipped state (`executing → verified` with only one entry); entries out of order;
+   - Invalid (one error each): `executing → parked → in-review` (parked returns to the wrong state, R1-F3); a head
+     `parked` whose `parked_from` differs from the tracked value; a skipped state (`executing → verified` with only one entry); entries out of order;
      an entry `ready → done`; a chain leaving `done`; `parked → executing` when `parked_from: in-review`; `in-review
      → verified` without an accept entry; an accept entry added without its `Collab-Review` commit; an accept whose
-     `head` differs from `Collab-Reviewed-Head`; `verified → done` without `merge:`; a base log entry edited or
+     `head` differs from `Collab-Reviewed-Head`; `verified → done` without a merge sha in either entry; a base log entry edited or
      removed; 7 edges; the chain's last edge not matching the head `state`; a commit from a second session (still
      `one session per lane`).
    - `node --test scripts/collab/*.test.mjs` green; preflight green.
