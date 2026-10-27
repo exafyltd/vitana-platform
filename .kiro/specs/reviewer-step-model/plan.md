@@ -70,7 +70,8 @@ Done = one lane merged to `main` with every required check green. Deploys nothin
   `review step <id> prompt must start with "Reviewer chain model for this step: <modelId>. "`. The label string is
   added to `REQUIRED_BODY` (agent) and a runbook check requires it in `.kiro/pipeline/lane-review.md` and
   `.kiro/pipeline/driver.md`. The check reads `s.modelId` (already constrained to `REVIEWER_MODELS`); no new model
-  literal anywhere.
+  literal anywhere. `driver.md` leaves `TEXT_ONLY_REFS` (`guard.cjs:113-114`): this plan makes it a required runbook
+  with required content, so a missing `driver.md` is now a `missing` error too (R1-F1).
 - **D4 — Kiro Web gets the same line.** `driver.md` step 4: each review session's prompt starts with the D1 line for
   the model that session runs on. Text only; same contract, one more consumer.
 - **D5 — the chain is not touched.** `governance.ts` and everything under `services/gateway/**` stay unchanged (single
@@ -103,7 +104,9 @@ In `scripts/ci/kiro-steering/guard.test.cjs`, using the existing `pipelineRepo()
 - **T-E every shipped step agrees:** walk the real workflow; every reviewer step's prompt starts with
   `REVIEW_MODEL_LABEL + modelId + '. '` (18 steps counted).
 - **T-F agent and runbooks keep the label:** removing the label from the agent body, from `lane-review.md` or from
-  `driver.md` → a `missing` error (agent via `REQUIRED_BODY`).
+  `driver.md` → a `missing` error (agent via `REQUIRED_BODY`). The fixture's `RUNBOOKS` list
+  (`guard.test.cjs:61`) gains `'driver.md'`, so `pipelineRepo()` writes it into the temp repo; without that the
+  driver.md case could never go red (R1-F1). A further case deletes `driver.md` from the fixture → `missing` error.
 Unchanged and must stay green: the chain mirror test (`:92-99`), the race tests (`:143-170`, `:250-258`),
 `scripts/collab/store-review.test.cjs` (a `model_unavailable` line still stores nothing).
 
