@@ -150,7 +150,7 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    open, not draft, same-repo head, base `main`, title `plan(<slug>)`; every changed file is under
    `.kiro/specs/<slug>/` or is `docs/programs/*/program.md`; head `handoff.md` `state: approved` with `vtids`; the last
    `sparring/state.json` session `verdict: converged` with `policy_approved_at` set; and the plan block of `plan.md`
-   (between `<!-- plan:begin -->` and `<!-- plan:end -->`) at the head is **byte-identical** to the plan block at the
+   (between the two plan marker comments) at the head is **byte-identical** to the plan block at the
    newest commit whose `Collab-Session` is `ci-plan-spar` and that wrote `sparring/verdict.md` (read with `git show`),
    so the approved text is exactly what merges. No plan hash is recomputed and nothing is imported from the
    TypeScript gateway or from `plan-spar.mjs` (s2 R1-F2); every check run on the head
