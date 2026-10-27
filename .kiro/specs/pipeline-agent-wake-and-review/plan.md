@@ -73,11 +73,18 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    (`a;rm -rf`, `../x`, uppercase) → skip, missing key → no-op exit 0, marker write is fast-forward only.
 
 ### Lane 2 `reviewer-fallback` (vitana-platform, executor claude — protected gate files)
-1. **An independent tier, empty until qualified.** `governance.ts` gains
-   `REVIEWER_AGENT_INDEPENDENT_MODELS: readonly string[] = Object.freeze([])` and the reviewer identity
-   `agent:vitana-lane-reviewer-independent (<model>)`. `isAgentReview` accepts it only when (a) the model is in that
-   list, (b) the review entry records that every chain model was tried on the same head and returned
-   `model_unavailable` (log lines from the driver, `Collab-Fallback-Reason: chain_unavailable`), and (c) the lane
+1. **An independent tier, empty until qualified — enforcement by function (R3-F2, option A).** `governance.ts` gains
+   `REVIEWER_AGENT_INDEPENDENT_MODELS: readonly string[] = Object.freeze([])` and the identity
+   `agent:vitana-lane-reviewer-independent (<model>)`. `isAgentReview` stays the **chain reviewer only** (unchanged,
+   `AGENT_REVIEWER_VALUES`). A new `isIndependentReview(r: ReviewEntry): boolean` checks (a) `verdict: accept` and the
+   model of the identity is in the list, and (b) `r.fallback_reason === 'chain_unavailable'`. Condition (c) is checked
+   at the two call sites, which hold the lane and the PR: `reviewSatisfiesLane` (`governance.ts:159-169`) returns
+   `isIndependentReview(r) && !filesTouchGovernance(pr.files ?? lane.paths) && reviewOnCurrentHead(r, pr)` after the
+   chain branch; `governanceMergeAllowed` (`:179-201`) never unlocks a protected gate file or a governance lane with
+   it (its protected branch and its `laneTouchesGovernance` branch return `protected_gate_file` / `no_agent_accept`
+   for an independent review). (b) comes from the driver: the review commit carries
+   `Collab-Fallback-Reason: chain_unavailable` only after the three chain models returned `model_unavailable` on the
+   same head (lane `review-fallback-trailer` parses it into `ReviewEntry.fallback_reason`). And (c) the lane
    PR changes **no governance path** as already defined by `GOVERNANCE_PATHS` (`queue.mjs:85`, `governance.ts:64`:
    `.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`, CLAUDE.md,
    `docs/programs/areas.yaml`); `.kiro/specs/**` lane and handoff files are not governance paths (R1-F1). Such lanes
@@ -85,8 +92,12 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    `agent:vitana-lane-reviewer-independent (<model>)` counts; the bare `agent:vitana-lane-reviewer-independent` never
    does, so every independent accept names the model it ran on (R1-F2).
 2. **Agent file.** `.kiro/agents/vitana-lane-reviewer-independent.md`: byte-identical body to
-   `vitana-lane-reviewer.md` except `name` and a pinned `model:`; `guard.cjs` pins that equality (tools, permissions,
-   fail-loudly rules) and that the model is in `REVIEWER_AGENT_INDEPENDENT_MODELS` or the list is empty.
+   `vitana-lane-reviewer.md` except `name` and a pinned `model:`. `scripts/ci/kiro-steering/guard.cjs` (in this lane's
+   `paths`, with `guard.test.cjs`; R3-F1) gets a block in `checkAgents` (`guard.cjs:145-175`) that, when the file
+   exists, requires `tools`, `excludedTools`, `permissions`, `includeMcpJson`, `includePowers` and the body equal to the
+   chain reviewer's, and its `model:` in a mirrored `REVIEWER_INDEPENDENT_MODELS` (pinned equal to `governance.ts` by
+   `guard.test.cjs`, like `REVIEWER_MODELS`); with the list empty the file may exist only without a `model:` pin.
+   `guard.cjs` is not edited by `pipeline-lane-state-efficiency`.
 3. **Qualification before enabling.** `scripts/collab/reviewer-qualify.mjs` records shadow reviews in
    `docs/reviewer-qualification/<model>.json` (schema `vitana.reviewer-qualification/v1`): for a lane head reviewed by
    a chain model, the independent agent reviews the same head read-only and its verdict is stored, never used. A model
@@ -110,11 +121,25 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    → independent agent if the list is non-empty and the lane is not governance, else the lane is parked with one
    blocker (unchanged); independent agent fails or returns `changes` → parked / back to `executing` as today. Every
    attempt is a log line; nothing waits on an unavailable model.
-7. Tests (red on base): governance test cases for (a)-(c) each failing alone, empty list → never accepted, identity
+7. Tests (red on base): `isAgentReview` unchanged for every existing identity; `isIndependentReview` false for a
+   model not in the list, for a missing or other `fallback_reason` (R3-F3), for `changes`; `reviewSatisfiesLane` false
+   for an independent accept on a governance lane and on a stale head; `governanceMergeAllowed` refuses it for a
+   protected file and a governance lane; governance test cases for (a)-(c) each failing alone, empty list → never accepted, identity
    spoofing (`agent:vitana-lane-reviewer-independent-fake`), the bare independent identity → not accepted, the bare
    `agent:vitana-lane-reviewer` still accepted (regression, R1-F2), a lane changing only `.kiro/specs/**` + product code
    → eligible, a lane changing `.kiro/steering/**` → not eligible (R1-F1), protected file → still needs Claude; guard cases for the
    agent file; `reviewer-qualify` thresholds (9 pairs, 2 plans, 89 %, one false accept → not qualified).
+
+### Lane 2b `review-fallback-trailer` (vitana-platform, executor kiro, reviewer agent; R3-F3)
+1. `services/gateway/src/services/project-manager/types.ts` `ReviewEntry` (`:57-73`) gains
+   `fallback_reason?: string | null`.
+2. `observe-live.ts` parses the `Collab-Fallback-Reason` trailer of a review commit into it, next to
+   `Collab-Reviewer` / `Collab-Reviewed-Head`; absent → `null`. Nothing reads the field yet (lane 2 does), so this lane
+   changes no decision.
+3. Tests (`test/project-manager/observe-live-fallback-reason.test.ts`, red on base): trailer present → field set;
+   absent → `null`; a value other than `chain_unavailable` is kept verbatim (lane 2 decides).
+4. Sequencing: lane 2 is built on top of this lane's merge (it reads the field); recorded here because the
+   `reviewer-fallback` lane file already exists on this plan PR (a `_plan` commit may not edit it).
 
 ### Lane 3 `plan-pr-merge` (vitana-platform, executor claude — protected after lane 2; `depends_on: [reviewer-fallback]`)
 1. `scripts/collab/plan-merge.mjs` (`eligible(pr, files, head, checks)` pure): merge only when **all** hold — PR
@@ -137,7 +162,7 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
 pattern); sha256 recorded in both repos' evidence.
 
 ## 4. Parallel / sequencing
-Lanes 1 and 2 run in parallel (no shared file). Lane 3 after lane 2 (`governance.ts`, protected list). Lane 2's
+Lanes 1 and 2b run in parallel (no shared file); lane 2 after lane 2b (reads `ReviewEntry.fallback_reason`). Lane 3 after lane 2 (`governance.ts`, protected list). Lane 2's
 `queue.mjs` edit lands after `pipeline-lane-state-efficiency/chain-transitions` merges or is merged up to date with it
 (one merge per repo; hot file). Lane 4 after lane 2.
 

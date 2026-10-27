@@ -41,6 +41,18 @@ never by hand. Branches `kiro/pipeline-agent-wake-and-review/<lane-id>`; PR titl
 - The three protected-list copies are equal (existing equality test extended).
 - Merge only with a legacy Claude review on the current head or an owner instruction naming this plan (§3a).
 
+<!-- lane: review-fallback-trailer -->
+## Lane `review-fallback-trailer` (vitana-platform; executor kiro; reviewer agent)
+- [ ] T1 `test/project-manager/observe-live-fallback-reason.test.ts` per plan §3 lane 2b item 3, red on `origin/main`.
+- [ ] T2 `ReviewEntry.fallback_reason` (`types.ts`) and the trailer parse in `observe-live.ts` (items 1-2).
+- [ ] T3 gateway `npx jest test/project-manager`, `tsc --noEmit`, preflight; staging-tests.json (read-only: gateway
+      alive, PM mode endpoint serves).
+
+**Acceptance**
+- Change types: Backend (PM observer).
+- No decision changes: no code reads the new field in this lane (diff).
+- Trailer present / absent / other value each tested.
+
 <!-- lane: plan-pr-merge -->
 ## Lane `plan-pr-merge` (vitana-platform; executor claude; protected after `reviewer-fallback`)
 - [ ] M1 `scripts/collab/plan-merge.test.mjs` per plan §3 lane 3 item 3, red on `origin/main`.
