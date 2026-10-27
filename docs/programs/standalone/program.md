@@ -30,6 +30,7 @@ specs:
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:kiro-web-parity
+  - vitana-platform:kiro-web-reliability
   - vitana-platform:session-title-stable
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
@@ -65,4 +66,5 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
+- `vitana-platform:kiro-web-reliability` — one-command Kiro Web bootstrap, race-free commit/push git hooks, VALIDATOR-CHECK in preflight, parallel lane builders
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
