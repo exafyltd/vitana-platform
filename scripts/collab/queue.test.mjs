@@ -1220,6 +1220,14 @@ test('transitionChain: valid lane chains (both merge-sha conventions, changes lo
   assert.deepEqual(chain('lane', base, full3, { reviewCommits: [backed(E.review('accept', HEAD_A), 'accept', HEAD_A)] }), []);
   // ...but not by a commit that carries the trailers without having appended that entry.
   hasErr(chain('lane', base, full3, { reviewCommits: [{ verdict: 'accept', reviewedHead: HEAD_A, appended: '' }] }), 'Collab-Review commit');
+  // A review entry appended by a review commit must survive exactly once: removed or copied → refused.
+  const accept = E.review('accept', HEAD_A, '2026-10-27T10:55Z');
+  const changes = E.review('changes', HEAD_B, '2026-10-27T11:05Z');
+  const reviewed = [backed(accept, 'accept', HEAD_A), backed(changes, 'changes', HEAD_B)];
+  const dropChanges = laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), accept, E.verified()]);
+  hasErr(chain('lane', base, dropChanges, { reviewCommits: reviewed }), 'appears 0×');
+  const copyAccept = laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), accept, changes, ['2026-10-27T11:06Z · kiro-x · in-review → executing', 'x'], E.inReview('2026-10-27T11:10Z'), accept, E.verified()]);
+  hasErr(chain('lane', base, copyAccept, { reviewCommits: reviewed }), 'appears 2×');
   // in-review → executing → in-review with a review: changes entry.
   const inRev = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z')]);
   const loop = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('changes', HEAD_A), ['2026-10-27T11:05Z · kiro-x · in-review → executing', 'Fixing findings.'], E.inReview('2026-10-27T11:15Z')]);

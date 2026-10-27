@@ -373,6 +373,18 @@ export function transitionChain(kind, beforeText, afterText, { reviewCommits = [
     }
   }
   if (kind === 'plan' && after.state === 'done' && laneStates && laneStates.some((s) => s !== 'done')) errors.push('a plan chain may end "done" only when every lane is done');
+  // Review entries written by a reviewer in this range survive to the head exactly once (review of #4416 on 8034e629):
+  // a builder commit can neither delete a later `changes` entry nor copy an earlier accept back into the log.
+  const reviewHeaders = new Map();
+  for (const c of reviewCommits) {
+    for (const h of logEntries(c.appended || '').filter(isReviewEntry).map((e) => `### ${e.time} · ${e.session} · ${e.change}`)) {
+      reviewHeaders.set(h, (reviewHeaders.get(h) || 0) + 1);
+    }
+  }
+  for (const [h, n] of reviewHeaders) {
+    const seen = added.filter((e) => `### ${e.time} · ${e.session} · ${e.change}` === h).length;
+    if (seen !== n) errors.push(`review entry "${h.slice(4)}" appears ${seen}× at the head but its review commit(s) appended it ${n}× (a builder may not remove or copy review entries)`);
+  }
   return errors;
 }
 

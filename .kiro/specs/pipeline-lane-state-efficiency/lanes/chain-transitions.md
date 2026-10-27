@@ -15,7 +15,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T16:10Z
+updated: 2026-10-27T16:19Z
 vtid: VTID-05351
 ---
 # Lane: chain-transitions (repo vitana-platform)
@@ -84,3 +84,12 @@ Findings: non-blocking — review entries added in the range can be deleted or c
 Findings: non-blocking — check runs on 8034e629 not verified by this reviewer (gh pr checks unavailable); relying on the driver's report of 11 green
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: no builder change; the lane waits for a legacy Claude review on the current head or an owner instruction naming pipeline-lane-state-efficiency (plan §5)
+
+### 2026-10-27T16:19Z · kiro-exafyltd-202610271503-9458 · note
+Second review (`changes` on `8034e629`): blocking only the protected-gate-file routing (plan §5); finding 1 confirmed
+closed. Non-blocking 4 addressed in the same lane: a review entry that a review-only commit appended must appear
+exactly once at the head, so a builder can neither delete a later `changes` entry nor copy an earlier accept back
+(two tests, mutation red). Non-blocking 3 (self-declared session ids) is the trust level of the existing
+review-entry rule (`queue.mjs:590`) and is out of this lane's scope; the merge rule (§7b, protected-file review) stays
+the protection. The lane stays `in-review` and waits for a legacy Claude review on the current head or an owner
+instruction naming `pipeline-lane-state-efficiency`.
