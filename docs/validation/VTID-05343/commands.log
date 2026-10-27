@@ -1,0 +1,20 @@
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 59
+# pass 59
+# fail 0
+# skipped 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+$ node --test scripts/collab/automations.test.mjs scripts/collab/kiro-web-session.test.mjs scripts/collab/kiro-web-steering.test.mjs scripts/collab/plan-driver.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/preflight.test.mjs scripts/collab/queue.test.mjs scripts/collab/run-gate.test.mjs scripts/collab/workflow-watchdog.test.mjs
+# tests 177
+# pass 176
+# fail 0
+# skipped 1
+exit=0
+
+5d7744b8472d9b7bb2f71819169486706f5f8a089fa5b79ddbe8cf36cbef5845  .kiro/steering/vitana-owner-autonomy.md
+5061e62d9385c7611b5f518488b44051d34f1054cd7e9e1211a57a2326442933  .kiro/steering/vitana-pipeline.md
