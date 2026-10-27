@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: fb9b6d843602f504a9ebfd794d4156ccfcda431f
-updated: 2026-10-27T11:20Z
+updated: 2026-10-27T11:56Z
+sparring_record: .kiro/specs/spotlight-commit-coverage/sparring/verdict.md
+vtids: [VTID-05345]
 ---
 # Handoff — spotlight-commit-coverage
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610220833-d231). Plan: `plan.md`. Lane: `lanes/coverage-manifests.md`
@@ -69,3 +71,6 @@ kept as evidence and no override. Owner instruction 2026-10-27: "ok, pause it".
 - #4376 stays open as the escalation record. Its chain (sessions 78d00a62 and 6a54aedf) is copied unchanged to
   `sparring-record-pr4376/`. No state file was edited and `MAX_SESSIONS` was not raised. The plan text is unchanged.
 - Pushed after the GitHub hourly quota window passed (≥ 1 h after the last loop push).
+
+### 2026-10-27T11:56Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
