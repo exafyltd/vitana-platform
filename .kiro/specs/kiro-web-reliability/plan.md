@@ -3,7 +3,7 @@ change_class: standard
 ---
 # plan(kiro-web-reliability): one-command Kiro Web bootstrap, race-free commit/push checks, VALIDATOR-CHECK in preflight, parallel lane builders
 Author: Kiro, seat `exafy`, session `kiro-exafy-202610271051-d636` (Kiro Web). Repo: `exafyltd/vitana-platform` only.
-Premises pinned to `origin/main` `6e0dfca618`. Session 1 (`087401c4-…`) produced no round 1 within 25 min twice (PLAN-SPAR run `40492189091`, attempts 1-2, infra); this text adds §2.14-15. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
+Premises pinned to `origin/main` `6e0dfca618`. Sparring: the first create (`087401c4-…`) never produced round 1 (run `40492189091`, infra, see plan `plan-spar-stuck-session`); session `52ba3de1-…` escalated at the round cap (round 3, two new findings, both accepted here); this text is the re-plan. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
 (VTID-05339, #4379). Detail: `tasks.md`; lane files `lanes/preflight-validator.md`, `lanes/session-reliability.md`.
 <!-- plan:begin -->
 ## 1. Goal
@@ -110,14 +110,21 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
      `tsc --noEmit --incremental --tsBuildInfoFile ~/.cache/vitana-kiro-web/tsc/<checkout>.tsbuildinfo` (scoped per
      checkout, as today) in that worktree's `services/gateway`; errors → exit 1 with the first 10 `error TS` lines. It
      runs at commit time, after `git add`, so an edit that lands after the agent's tool call started is still checked.
+     **Linked worktrees** (parallel builders, §3.2.4) have no `services/gateway/node_modules`: the hook then runs
+     `npm ci --no-audit --no-fund` in that worktree's `services/gateway` first (~5-15 s with the shared npm cache), then
+     tsc; an `npm ci` failure does not block (a note; CI typechecks). A symlink to the main checkout's `node_modules` is
+     not used: in this session's prototype it made tsc report false `TS2742` portability errors (paths outside the
+     worktree).
      tsc reads the working tree, not the index: an unstaged type error under `services/gateway/src` also blocks
      (conservative, never looser); the message then names the unstaged gateway files. Exporting the index to a temp
      tree would need a second `node_modules` and is not done.
    - **First push (no PR yet).** The agent writes the PR body (with the five declarations of
      `.github/pull_request_template.md:39-43`) to a file and pushes with `PR_TITLE='…' PR_BODY_FILE=<file> git push …`;
      both reach `git-pre-push` as environment variables of the `git push` process. `kiro-web-session.mjs pr-body
-     --vtid <V> --scope <globs> --acceptance <path> --payload <text>` prints a body with the declarations filled, from
-     the template. Without a PR and without `PR_BODY_FILE`, when VALIDATOR-CHECK applies, the push is blocked naming
+     --vtid <V> --scope <globs> --acceptance <path> --payload <text> [--profile gateway_backend|command_hub_frontend]
+     [--oasis no|yes]` prints a body with all five declarations filled, from the template (defaults `gateway_backend`
+     and `no`, the template's own values `.github/pull_request_template.md:39,43`; a `command_hub_frontend` PR passes
+     `--profile command_hub_frontend`, and `--oasis yes` needs `OASIS_PROOF:` in acceptance.md as CI requires). Without a PR and without `PR_BODY_FILE`, when VALIDATOR-CHECK applies, the push is blocked naming
      this form.
    - `git-pre-push`: for each stdin line whose remote ref is `refs/heads/<b>` with `b` matching `LANE_BRANCH` and a
      non-zero local sha: the existing push check on that sha (HEAD must equal it; this is the authoritative push check, §2.13), title from `PR_TITLE` (env) or the
@@ -148,7 +155,9 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 6. Hook description fixed (§2.1); the `hooks` status message is derived from `hookDefs()` (no hard-coded names). `PR_BODY_FILE` is parsed like `PR_TITLE` (prefix or earlier `export`).
 7. Tests (red on base): PreToolUse guard does not invoke the push check for a push after a commit in one command;
    first push with `PR_BODY_FILE` (env) reaches preflight as `--body-file`, without it (VALIDATOR applies) blocked;
-   `pr-body` output passes `validator-path-guard.cjs --pr-body-check`; an unstaged gateway type error blocks naming
+   `pr-body` output (defaults, and with `--profile command_hub_frontend --oasis yes`) passes
+   `validator-path-guard.cjs --pr-body-check`; `git-pre-commit` from a linked worktree without `node_modules` runs
+   `npm ci` there before tsc (and does not block when it fails); an unstaged gateway type error blocks naming
    the file; `status` not ready while a step's stamp is missing or older than `setup.start` (one stamp present, others
    absent → not ready, naming them); `git-hooks` required item fails for a missing / unmarked / non-executable hook;
    the `hooks` message lists exactly the generated hook names; git hooks installed with marker, unmarked hook untouched; `git-pre-commit` with staged gateway
