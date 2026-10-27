@@ -1,0 +1,23 @@
+# VTID-05346 commands (base fef112e8c7)
+$ node --test scripts/collab/quality-checks.test.mjs
+# tests 7
+# pass 7
+# fail 0
+exit 0
+
+$ node --test scripts/collab/automations.test.mjs scripts/collab/kiro-web-session.test.mjs scripts/collab/kiro-web-steering.test.mjs scripts/collab/plan-driver.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/preflight.test.mjs scripts/collab/quality-checks.test.mjs scripts/collab/queue.test.mjs scripts/collab/run-gate.test.mjs scripts/collab/workflow-watchdog.test.mjs
+# tests 184
+# pass 183
+# fail 0
+exit 0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 61
+# pass 61
+# fail 0
+exit 0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit 0
+
