@@ -32,6 +32,7 @@ specs:
   - vitana-platform:owner-autonomy
   - vitana-platform:kiro-web-parity
   - vitana-platform:session-title-stable
+  - vitana-platform:ci-push-to-result
   - vitana-platform:quality-checks
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
@@ -70,3 +71,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
 - `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
+- `vitana-platform:ci-push-to-result` — shorter CI push-to-result: vitana-v1 Vitest shards behind one `Vitest (jsdom)` check, cached install for the required `validate` check, one-pass PHASE-2B naming check (both repos)
