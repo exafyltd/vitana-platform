@@ -343,7 +343,7 @@ export function parseCommand(command, cwd) {
 }
 
 const ok = (stdout = '') => ({ code: 0, stdout, stderr: '' });
-const block = (stderr) => ({ code: 2, stdout: '', stderr });
+const block = (stderr) => ({ code: 2, stdout: '', stderr: `${stderr}\n(also in ~/.cache/vitana-kiro-web/last-block.txt)` });
 
 function toplevel(run, dir) {
   const r = run('git', ['-C', dir, 'rev-parse', '--show-toplevel']);
@@ -359,7 +359,12 @@ function checkCommit(a, { run, cacheDir, exists }) {
   const top = toplevel(run, a.dir);
   if (!top) return ok();
   const marker = dirtyFile(cacheDir, top);
-  if (!existsSync(marker)) return ok();
+  // Trigger: the PostToolUse marker OR any staged/unstaged change under services/gateway/src against HEAD. The diff
+  // covers edits the marker cannot see (bash/sed) and an edit issued in the same parallel batch as the commit, whose
+  // PostToolUse lands after this PreToolUse (observed in a sub-agent, docs/validation/VTID-05340/probes.md).
+  const d = run('git', ['-C', top, 'diff', '--name-only', 'HEAD', '--', 'services/gateway/src']);
+  const changed = d.status === 0 && String(d.output || '').trim() !== '';
+  if (!existsSync(marker) && !changed) return ok();
   const gw = path.join(top, 'services', 'gateway');
   if (!exists(path.join(gw, 'node_modules'))) {
     const n = run('npm', ['ci', '--no-audit', '--no-fund', '--loglevel=error'], { cwd: gw, timeoutMs: 300000 });
@@ -368,7 +373,7 @@ function checkCommit(a, { run, cacheDir, exists }) {
   mkdirSync(path.join(cacheDir, 'tsc'), { recursive: true });
   const t = run('npx', ['tsc', '--noEmit', '--incremental', '--tsBuildInfoFile', path.join(cacheDir, 'tsc', `${keyOf(top)}.tsbuildinfo`)],
     { cwd: gw, timeoutMs: 540000 });
-  if (t.status === 0) { unlinkSync(marker); return ok('kiro-web-session guard: gateway typecheck passed'); }
+  if (t.status === 0) { try { unlinkSync(marker); } catch { /* diff-triggered */ } return ok('kiro-web-session guard: gateway typecheck passed'); }
   const errs = String(t.output).split('\n').filter((l) => l.includes('error TS'));
   if (!errs.length) return ok(`kiro-web-session guard: tsc did not run cleanly (status ${t.status}), not blocking: ${lastLines(t.output, 3)}`);
   return block(`kiro-web-session guard: gateway typecheck failed after an edit under services/gateway/src — the deploy would fail. `
@@ -497,6 +502,11 @@ function main(argv) {
   const workspace = path.resolve(opt(argv, 'workspace', defaultWorkspace()));
   if (cmd === 'guard') {
     const r = guard(readStdin());
+    // The main Kiro Web session shows a blocked command as `{}` without the hook's stderr (sub-agents see it), so
+    // every block is also written to a file the agent reads: ~/.cache/vitana-kiro-web/last-block.txt.
+    if (r.code === 2) {
+      try { mkdirSync(CACHE_DIR, { recursive: true }); writeFileSync(path.join(CACHE_DIR, 'last-block.txt'), `${new Date().toISOString()}\n${r.stderr}\n`); } catch { /* best effort */ }
+    }
     if (r.stdout) process.stdout.write(`${r.stdout}\n`);
     if (r.stderr) process.stderr.write(`${r.stderr}\n`);
     return r.code;

@@ -2,135 +2,147 @@ TAP version 13
 # Subtest: setup writes exactly the two marked hook files, one entry each, with the right trigger/matcher/command
 ok 1 - setup writes exactly the two marked hook files, one entry each, with the right trigger/matcher/command
   ---
-  duration_ms: 2.665013
+  duration_ms: 3.049271
   type: 'test'
   ...
 # Subtest: setup removes a stale marked hook, never touches an unmarked file, and writes nothing inside a repository
 ok 2 - setup removes a stale marked hook, never touches an unmarked file, and writes nothing inside a repository
   ---
-  duration_ms: 1.255125
+  duration_ms: 1.356995
   type: 'test'
   ...
 # Subtest: reviewer agent copy is byte-identical and a second setup is a no-op
 ok 3 - reviewer agent copy is byte-identical and a second setup is a no-op
   ---
-  duration_ms: 0.924991
+  duration_ms: 1.034867
   type: 'test'
   ...
 # Subtest: mark-dirty marks a gateway src edit, ignores other paths and survives malformed stdin
 ok 4 - mark-dirty marks a gateway src edit, ignores other paths and survives malformed stdin
   ---
-  duration_ms: 66.943563
+  duration_ms: 73.927112
   type: 'test'
   ...
 # Subtest: parseCommand finds every push form with repo dir, branch and source
 ok 5 - parseCommand finds every push form with repo dir, branch and source
   ---
-  duration_ms: 1.012567
+  duration_ms: 1.28344
   type: 'test'
   ...
 # Subtest: guard passes non-git commands and claim/driver/other pushes without running anything
 ok 6 - guard passes non-git commands and claim/driver/other pushes without running anything
   ---
-  duration_ms: 1.118307
+  duration_ms: 1.268338
   type: 'test'
   ...
 # Subtest: guard blocks a lane push on a failing preflight with its output, passes and caches a green one
 ok 7 - guard blocks a lane push on a failing preflight with its output, passes and caches a green one
   ---
-  duration_ms: 1.594945
+  duration_ms: 1.664174
   type: 'test'
   ...
 # Subtest: guard asks for PR_TITLE when the branch has no open PR, and passes a given title to preflight
 ok 8 - guard asks for PR_TITLE when the branch has no open PR, and passes a given title to preflight
   ---
-  duration_ms: 0.837646
+  duration_ms: 0.90151
   type: 'test'
   ...
 # Subtest: guard blocks a push whose sha is not the checked-out HEAD, and a commit+push in one command
 ok 9 - guard blocks a push whose sha is not the checked-out HEAD, and a commit+push in one command
   ---
-  duration_ms: 0.713275
+  duration_ms: 0.85067
   type: 'test'
   ...
 # Subtest: guard typechecks the gateway on commit after a gateway edit: errors block, clean clears the marker
 ok 10 - guard typechecks the gateway on commit after a gateway edit: errors block, clean clears the marker
   ---
-  duration_ms: 1.197661
+  duration_ms: 1.313394
   type: 'test'
   ...
 # Subtest: guard installs missing gateway dependencies before the typecheck instead of failing
 ok 11 - guard installs missing gateway dependencies before the typecheck instead of failing
   ---
-  duration_ms: 0.752216
+  duration_ms: 0.759844
   type: 'test'
   ...
 # Subtest: guard never blocks on its own internal error
 ok 12 - guard never blocks on its own internal error
   ---
-  duration_ms: 73.116727
+  duration_ms: 67.712242
   type: 'test'
   ...
 # Subtest: wait returns 0 once every check run completed green, polling at the given interval
 ok 13 - wait returns 0 once every check run completed green, polling at the given interval
   ---
-  duration_ms: 0.523118
+  duration_ms: 0.629798
   type: 'test'
   ...
 # Subtest: wait returns 1 with the failed run name, link and log tail
 ok 14 - wait returns 1 with the failed run name, link and log tail
   ---
-  duration_ms: 0.252348
+  duration_ms: 0.262984
   type: 'test'
   ...
 # Subtest: wait returns 3 on timeout naming what is still pending (and waits while no run exists yet)
 ok 15 - wait returns 3 on timeout naming what is still pending (and waits while no run exists yet)
   ---
-  duration_ms: 0.132995
+  duration_ms: 0.149522
   type: 'test'
   ...
 # Subtest: status reports missing hooks as required failures; --check --json exits 1 naming them
 ok 16 - status reports missing hooks as required failures; --check --json exits 1 naming them
   ---
-  duration_ms: 759.138455
+  duration_ms: 878.570441
   type: 'test'
   ...
 # Subtest: the preflight failure shown to the agent drops the queue table and keeps every FAIL line
 ok 17 - the preflight failure shown to the agent drops the queue table and keeps every FAIL line
   ---
-  duration_ms: 0.550617
+  duration_ms: 0.444948
   type: 'test'
   ...
 # Subtest: only the ci-plan-spar _plan-session false positive passes; every other Collab handoff or FAIL line blocks
 ok 18 - only the ci-plan-spar _plan-session false positive passes; every other Collab handoff or FAIL line blocks
   ---
-  duration_ms: 1.060823
+  duration_ms: 0.998916
   type: 'test'
   ...
 # Subtest: setup --no-install never fetches the morning pack (no network), even with the token set
 ok 19 - setup --no-install never fetches the morning pack (no network), even with the token set
   ---
-  duration_ms: 812.315847
+  duration_ms: 739.204246
   type: 'test'
   ...
 # Subtest: from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
 ok 20 - from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
   ---
-  duration_ms: 26.879533
+  duration_ms: 26.940312
   type: 'test'
   ...
 # Subtest: status: workspace steering is the kiro-web-steering --check result when the generator exists
 ok 21 - status: workspace steering is the kiro-web-steering --check result when the generator exists
   ---
-  duration_ms: 0.916536
+  duration_ms: 0.920731
   type: 'test'
   ...
-1..21
-# tests 21
+# Subtest: guard typechecks on commit when gateway src differs from HEAD even without a marker (bash edit / parallel race)
+ok 22 - guard typechecks on commit when gateway src differs from HEAD even without a marker (bash edit / parallel race)
+  ---
+  duration_ms: 0.681224
+  type: 'test'
+  ...
+# Subtest: the CLI writes every block to last-block.txt (the main session shows a blocked command as {})
+ok 23 - the CLI writes every block to last-block.txt (the main session shows a blocked command as {})
+  ---
+  duration_ms: 68.853893
+  type: 'test'
+  ...
+1..23
+# tests 23
 # suites 0
-# pass 21
+# pass 23
 # fail 0
 # cancelled 0
 # skipped 0
 # todo 0
-# duration_ms 1844.098046
+# duration_ms 1968.840665

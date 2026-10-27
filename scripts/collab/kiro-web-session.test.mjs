@@ -34,7 +34,7 @@ const hookInput = (command, cwd = null) => JSON.stringify({ session_id: 's', hoo
 
 /** Fake process runner: answers git / gh / node / npx calls from a table, records every call. */
 function fakeRun({ top = '/w/vitana-platform', head = SHA, preflight = { status: 0, output: 'preflight: every check passed' },
-  tsc = { status: 0, output: '' }, title = 'VTID-12345 (s/l): x', nodeModules = true } = {}) {
+  tsc = { status: 0, output: '' }, title = 'VTID-12345 (s/l): x', nodeModules = true, gwDiff = '' } = {}) {
   const calls = [];
   const run = (cmd, args, opts = {}) => {
     calls.push({ cmd, args, cwd: opts.cwd });
@@ -46,6 +46,7 @@ function fakeRun({ top = '/w/vitana-platform', head = SHA, preflight = { status:
     }
     if (cmd === 'git' && a.includes('remote get-url origin')) return { status: 0, output: 'https://github.com/exafyltd/vitana-platform.git' };
     if (cmd === 'git' && a.includes('fetch')) return { status: 0, output: '' };
+    if (cmd === 'git' && a.includes('diff --name-only HEAD')) return { status: 0, output: gwDiff };
     if (cmd === 'gh') return { status: 0, output: title };
     if (cmd === process.execPath && a.includes('preflight.mjs')) return preflight;
     if (cmd === 'npx' && a.includes('tsc')) return tsc;
@@ -425,5 +426,31 @@ test('status: workspace steering is the kiro-web-steering --check result when th
     assert.ok(calls.some((a) => a[0] === gen && a.includes('--check') && a.includes(f.ws)));
     const good = statusReport({ workspace: f.ws, platformRoot: f.platform, cacheDir: f.cache, env: {}, run: run(0), repos: [] });
     assert.equal(good.items.find((i) => i.name === 'workspace-steering').ok, true);
+  } finally { f.done(); }
+});
+
+test('guard typechecks on commit when gateway src differs from HEAD even without a marker (bash edit / parallel race)', () => {
+  const f = fixture();
+  try {
+    const top = '/w/vitana-platform';
+    const bad = fakeRun({ gwDiff: 'services/gateway/src/routes/health.ts', tsc: { status: 2, output: "src/routes/health.ts(26,7): error TS2322: x" } });
+    const r = guard(hookInput('git commit -m x', top), { run: bad, cacheDir: f.cache, platformRoot: f.platform, exists: () => true });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /TS2322/);
+    assert.match(r.stderr, /last-block\.txt/);
+    const good = fakeRun({ gwDiff: 'services/gateway/src/routes/health.ts' });
+    assert.equal(guard(hookInput('git commit -m x', top), { run: good, cacheDir: f.cache, platformRoot: f.platform, exists: () => true }).code, 0);
+    assert.equal(good.calls.filter((c) => c.cmd === 'npx').length, 1);
+  } finally { f.done(); }
+});
+
+test('the CLI writes every block to last-block.txt (the main session shows a blocked command as {})', () => {
+  const f = fixture();
+  try {
+    const cli = spawnSync(process.execPath, [SCRIPT, 'guard'], { encoding: 'utf8',
+      input: hookInput('git commit -m x && git push origin kiro/s/l', f.ws),
+      env: { ...process.env, VITANA_KIRO_WEB_CACHE: f.cache, VITANA_KIRO_WEB_PLATFORM: f.platform } });
+    assert.equal(cli.status, 2);
+    assert.match(readFileSync(path.join(f.cache, 'last-block.txt'), 'utf8'), /separate commands/);
   } finally { f.done(); }
 });

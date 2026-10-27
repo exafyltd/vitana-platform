@@ -15,7 +15,7 @@ node vitana-platform/scripts/collab/kiro-web-session.mjs status  # what is ready
 
 | Claude Code has | Kiro Web, with the kit |
 |---|---|
-| `.claude/settings.json` PostToolUse: `tsc --noEmit` after each gateway edit, blocks | `vitana-web-dirty` (PostToolUse) records a `services/gateway/src` edit; `vitana-web-guard` (PreToolUse on `execute_bash`) runs an incremental `tsc --noEmit` at the next `git commit` and blocks it with the first 10 errors |
+| `.claude/settings.json` PostToolUse: `tsc --noEmit` after each gateway edit, blocks | `vitana-web-dirty` (PostToolUse) records a `services/gateway/src` edit; `vitana-web-guard` (PreToolUse on `execute_bash`) runs an incremental `tsc --noEmit` at `git commit` when a gateway edit was recorded or `services/gateway/src` differs from `HEAD`, and blocks it with the first 10 errors |
 | — (preflight is a manual step in `driver.md:43`) | `vitana-web-guard` runs `scripts/collab/preflight.mjs` before every push of a `kiro/<slug>/<lane\|plan>` branch and blocks it with preflight's FAIL lines; a passed head is cached |
 | RepoWise MCP + Graphify from SessionStart hooks | venv `~/.cache/vitana-codeintel/venv` (`~/.local` is read-only here) + the unchanged `scripts/codeintel/session-setup.sh`; use the CLI: `repowise search/context/risk`, `graphify query/path/explain` |
 | gateway `node_modules` from SessionStart | `npm ci` in `services/gateway` and vitana-v1 when missing or the lockfile changed |
@@ -34,8 +34,12 @@ push before its PR exists names the title: `PR_TITLE='VTID-xxxxx (<slug>/<lane>)
 - Command hooks run from `<workspace>/.kiro/hooks/*.json`, not from a repo's `.kiro/hooks/`; new files are picked up
   mid-session and also apply inside sub-agents.
 - Only the **first** hook entry of a file runs; the kit writes one hook per file.
-- `PreToolUse` exit 2 blocks the tool and its stderr reaches the agent. `PostToolUse` output never reaches the agent.
-  A `SessionStart` hook was not seen to fire.
+- `PreToolUse` exit 2 blocks the tool. A sub-agent sees the hook's stderr; the main session showed only `{}` on
+  2026-10-26 and the full stderr on 2026-10-27, so the guard also writes every block to `~/.cache/vitana-kiro-web/last-block.txt` — when a command returns `{}`, read
+  that file. `PostToolUse` output never reaches the agent. A `SessionStart` hook was not seen to fire.
+- New sub-agents inherit the workspace hooks without being told (both guards blocked inside fresh sub-agents).
+- An edit and a commit issued in one parallel batch race: the edit's PostToolUse can land after the commit's
+  PreToolUse, so the guard also typechecks whenever `services/gateway/src` differs from `HEAD`.
 - `<workspace>/.kiro/steering/*.md` (`inclusion: always`) loads on the next turn, also in sub-agents.
 - `~/.local` is read-only; `~/.cache`, `/tmp` and the workspace are writable. Nothing survives a new sandbox.
 - `<workspace>/.kiro/settings/mcp.json` cannot be written (platform permission rule): no MCP server registration.
@@ -46,6 +50,7 @@ push before its PR exists names the title: `PR_TITLE='VTID-xxxxx (<slug>/<lane>)
 
 - **No MCP** for RepoWise/Graphify (CLI only).
 - **Typecheck at commit, not after each edit** (PostToolUse output is not surfaced).
+- **Main-session block reasons were sometimes hidden** (`{}`); the reason is always in `last-block.txt`.
 - **No SessionStart trigger:** a fresh session runs the three commands above because its account learning or the
   workspace steering tells it to; a session that ignores both starts without hooks.
 - **Fresh sandbox = fresh install** (~3 min in the background).

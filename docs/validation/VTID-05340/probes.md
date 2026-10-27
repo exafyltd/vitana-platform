@@ -15,7 +15,7 @@ Each line: what was run, what came back. Probe hooks/files were removed afterwar
 | P9 | `tsc --noEmit` (gateway) full / `--incremental` warm | 78 s / 7 s, 0 errors |
 | P10 | `preflight.mjs` on `main` | all 8 checks pass, 12 s |
 | P11 | `<workspace>/.kiro/hooks/x.json` PostToolUse `execute_bash`, created mid-session | fired on the next commands (log lines 15:28:00Z ff.), also for a sub-agent's commands |
-| P12 | PreToolUse `execute_bash`, exit 2 on `BLOCKME` | tool not executed; stderr shown to the agent; stdin `{session_id, hook_event_name, cwd, tool_name, tool_input:{command, cwd, …}}` |
+| P12 | PreToolUse `execute_bash`, exit 2 on `BLOCKME` | tool not executed; stdin `{session_id, hook_event_name, cwd, tool_name, tool_input:{command, cwd, …}}`. on 2026-10-26 the main session showed blocked calls as `{}` without the hook's stderr; on 2026-10-27 (P25) it showed the full stderr; sub-agents always did |
 | P13 | PostToolUse on `fs_write`/`str_replace`, stdout + stderr, exit 0 and exit 2 | hook ran (log written); nothing shown to the agent |
 | P14 | one file with 3 hook entries / 2 files with 1 entry each | only the first entry ran / both ran |
 | P15 | SessionStart command hook + new sub-agent session | did not fire |
@@ -33,3 +33,18 @@ Each line: what was run, what came back. Probe hooks/files were removed afterwar
 - Real catch on this plan: the re-plan push of `kiro/kiro-web-parity/plan` was blocked once by Collab handoff
   (`ci-plan-spar` counted as a second `_plan` session); diagnosed as the known governance-artifact false positive (CI
   showed the same red on #4378), now passed narrowly by `onlyPlanSparSessionFalsePositive` with a test.
+
+## Sub-agent runs (2026-10-27, fresh `general-task-execution` sub-agents, not told about the hooks)
+`.agents/subagent-race.log`:
+```
+A start  08:48:37.725   B start 08:48:43.490   B end 08:49:45.969   A end 08:50:53.785   (A and B overlapped 62 s)
+A2 start / end: sequential rerun, see below
+```
+| # | Test | Result |
+|---|---|---|
+| P21 | B: illegal lane transition `done → ready`, `PR_TITLE=… git push nowhere kiro/kiro-web-parity/demo-b` | **blocked** by the inherited guard, preflight FAIL lines shown verbatim to the sub-agent (`"done" is terminal`, missing `Collab-Lane`) |
+| P22 | B: after `git reset --hard origin/main`, same push | still blocked, correctly: `Lane scope — not a lane PR` (a `kiro/<slug>/<x>` branch with no lane commits). The demo design could not pass; the pass-after-fix is shown on the real lane (P25) |
+| P23 | A: `str_replace` seeding TS2322 and `git commit` issued **in the same parallel batch** | not blocked: the edit's PostToolUse marker landed after the commit's PreToolUse. Marker was created and later cleared (dirty dir mtime 08:50:50), so both hooks did run in the sub-agent. Fixed: the guard now also triggers on `git diff --name-only HEAD -- services/gateway/src` (test added) |
+| P24 | A2 (sequential, after the fix): seeded TS2322, `git commit` | **blocked**: `src/routes/health.ts(26,7): error TS2322 …`, HEAD unchanged; fixed to `string`, commit `068a742fdf` passed |
+| P25 | main session, real lane: lane file `executing → done` (illegal) committed, push | blocked with the full preflight message (`illegal transition "ready" → "done"`, the base lane state on `main`); fixed to `executing → in-review`, push passed |
+- P26 (main, real lane): push with the lane file `ready → in-review` in one PR → blocked (illegal transition); state kept `executing` as the sibling lane did (#4379/#4381) → push passed.

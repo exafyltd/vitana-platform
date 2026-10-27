@@ -7,7 +7,7 @@ TEST: PR-GATE "Lane scope" on the PR head (queue.mjs scope-check), and `git diff
 
 AC-2: Every plan §4 case is a test that fails on `origin/main` and passes on the head.
 TEST: `node --test scripts/collab/kiro-web-session.test.mjs` — red on base (`red-on-base.txt`, ERR_MODULE_NOT_FOUND),
-21/21 on head (`outputs/kiro-web-session-test-green.txt`).
+23/23 on head (`outputs/kiro-web-session-test-green.txt`).
 
 AC-3: `setup` writes only under `<workspace>/.kiro/hooks/`, `<workspace>/.kiro/agents/` and `~/.cache/`, never inside a
 repository; removes only marked files; one hook entry per generated file; from a worktree the workspace is the main
