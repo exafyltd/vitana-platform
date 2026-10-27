@@ -27,7 +27,7 @@
       "name": "deployed svg-preview.js contains the SVG sanitizer/renderer",
       "target": "gateway",
       "method": "GET",
-      "path": "/command-hub/svg-preview.js",
+      "path": "/command-hub/svg-preview.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_body_contains": ["sanitizeSvgMarkup", "SvgPreview"],
       "reason": "read-only GET: proves the shipped svg-preview.js on staging contains the SVG inline-render code and the window.SvgPreview global the console calls; served by express.static at the stable path (query string is a browser cache key only)"
