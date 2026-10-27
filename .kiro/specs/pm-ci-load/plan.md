@@ -39,12 +39,15 @@ another session); this plan is the second, independent guard plus the identity s
 ## 3. Lanes
 ### Lane 1 `pr-ci-concurrency` (executor kiro, reviewer agent; governance paths, no protected gate file)
 1. Add to `UNIT.yml` and `PHASE-2B-DOC-GATE.yml`:
-   `concurrency: { group: <workflow>-${{ github.event.pull_request.number || github.ref }}, cancel-in-progress: true }`.
+   `concurrency: { group: <workflow>-${{ github.event.pull_request.number }}, cancel-in-progress: true }` — the
+   PR-GATE.yml pattern exactly (`PR-GATE.yml:22-24`), no `github.ref` fallback; both workflows run only on
+   `pull_request` (R1-F2).
    A superseded push's run is cancelled; the newest head of every PR still runs every job, so the required check that
    merges is always the one on the head (same pattern as `PR-GATE.yml`). No `paths:`/`paths-ignore:` filter and no
    branch condition, so no required check can stay pending and no PR skips a check.
 2. `scripts/ci/workflow-concurrency/concurrency.test.mjs` (run by `UNIT.yml`'s `find scripts … *.test.mjs`): both
-   files have the block; neither has a trigger-level path filter; the group key includes the PR number. Red on base.
+   files have the block; neither has a trigger-level path filter; the group key is `<name>-${{ github.event.pull_request.number }}`
+   with no fallback. Red on base.
 
 ### Lane 2 `pm-app-token` (executor kiro, reviewer agent; gateway code, deploys to staging)
 1. New `services/gateway/src/services/project-manager/github-app-token.ts`: when `PM_GITHUB_APP_ID`,
@@ -67,8 +70,10 @@ another session); this plan is the second, independent guard plus the identity s
    the PM paused); otherwise this lane's gateway deploy would re-enable the PM loop (§2.1 and #4396 item 4).
 
 ## 4. App permissions (least privilege, both repos)
-Repository: Contents read & write; Pull requests read & write; Checks read; Commit statuses read; Actions read
-(variables are under "Variables" read); Metadata read (mandatory). No Administration, no Workflows write, no
+Repository: Contents read & write; Pull requests read & write; Checks read (`commits/:sha/check-runs`); **Variables
+read** (`actions/variables/:name`, `observe-live.ts:705-714`; a separate App permission from Actions, R1-F1);
+Metadata read (mandatory). No Actions and no Commit-statuses permission: the PM calls no other `/actions/` endpoint
+and no statuses endpoint (§2.4). No Administration, no Workflows write, no
 Secrets, no Organization permissions, no webhook. Branch protection is not bypassed (the App is not in a bypass
 list). If the App ever needs to edit `.github/workflows/**` it must not — the PM never writes workflow files.
 
