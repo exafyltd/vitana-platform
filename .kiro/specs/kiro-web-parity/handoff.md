@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: approved
-updated: 2026-10-26T16:14Z
+state: executing
+updated: 2026-10-27T09:50Z
 sparring_record: .kiro/specs/kiro-web-parity/sparring/verdict.md
 vtids: [VTID-05340]
 ---
@@ -30,3 +30,10 @@ Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are ha
 Session 2 converged in round 2 (`abb7d483-…`, plan hash `14b373b9…`), policy `converged-auto-v1` at
 2026-10-26T16:11:27Z; CI allocated VTID-05340 to lane `session-kit`. Round 1 of session 1 escalated on the partner's
 evidence floor with no findings (`round-1.md`). Next: merge this `plan(` PR under §7b, then build `session-kit`.
+
+### 2026-10-27T09:50Z · kiro-exafy-202610261526-5cd7 · approved → executing (§7b closing record)
+Lane `session-kit` merged: #4389 `b405edba930e9a3fb99a7331444d90ad20387c75` (squash, authority §7b PM rule: accept by
+agent:vitana-lane-reviewer (claude-sonnet-5.5) on 1c5af2d7 plus a review-entry-only commit, 10/10 checks green, behind
+0). #4385 closed as superseded (lane-file conflict with the PM seat reassignment #4386). Deploys nothing: no
+STAGING-VERIFY, no Gate 2; the plan is done once the lane's state reaches `done` (PM lane-state commits, seat exafyltd).
+Timings: `docs/validation/VTID-05340/timings.json`.
