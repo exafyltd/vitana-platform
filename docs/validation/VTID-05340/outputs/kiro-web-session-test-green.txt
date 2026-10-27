@@ -1,0 +1,154 @@
+TAP version 13
+# Subtest: setup writes exactly the two marked hook files, one entry each, with the right trigger/matcher/command
+ok 1 - setup writes exactly the two marked hook files, one entry each, with the right trigger/matcher/command
+  ---
+  duration_ms: 2.979157
+  type: 'test'
+  ...
+# Subtest: setup removes a stale marked hook, never touches an unmarked file, and writes nothing inside a repository
+ok 2 - setup removes a stale marked hook, never touches an unmarked file, and writes nothing inside a repository
+  ---
+  duration_ms: 1.306437
+  type: 'test'
+  ...
+# Subtest: reviewer agent copy is byte-identical and a second setup is a no-op
+ok 3 - reviewer agent copy is byte-identical and a second setup is a no-op
+  ---
+  duration_ms: 1.067375
+  type: 'test'
+  ...
+# Subtest: mark-dirty marks a gateway src edit, ignores other paths and survives malformed stdin
+ok 4 - mark-dirty marks a gateway src edit, ignores other paths and survives malformed stdin
+  ---
+  duration_ms: 72.640354
+  type: 'test'
+  ...
+# Subtest: parseCommand finds every push form with repo dir, branch and source
+ok 5 - parseCommand finds every push form with repo dir, branch and source
+  ---
+  duration_ms: 1.137857
+  type: 'test'
+  ...
+# Subtest: guard passes non-git commands and claim/driver/other pushes without running anything
+ok 6 - guard passes non-git commands and claim/driver/other pushes without running anything
+  ---
+  duration_ms: 1.229618
+  type: 'test'
+  ...
+# Subtest: guard blocks a lane push on a failing preflight with its output, passes and caches a green one
+ok 7 - guard blocks a lane push on a failing preflight with its output, passes and caches a green one
+  ---
+  duration_ms: 1.673895
+  type: 'test'
+  ...
+# Subtest: guard asks for PR_TITLE when the branch has no open PR, and passes a given title to preflight
+ok 8 - guard asks for PR_TITLE when the branch has no open PR, and passes a given title to preflight
+  ---
+  duration_ms: 0.854512
+  type: 'test'
+  ...
+# Subtest: guard blocks a push whose sha is not the checked-out HEAD, and a commit+push in one command
+ok 9 - guard blocks a push whose sha is not the checked-out HEAD, and a commit+push in one command
+  ---
+  duration_ms: 0.784094
+  type: 'test'
+  ...
+# Subtest: guard typechecks the gateway on commit after a gateway edit: errors block, clean clears the marker
+ok 10 - guard typechecks the gateway on commit after a gateway edit: errors block, clean clears the marker
+  ---
+  duration_ms: 1.329564
+  type: 'test'
+  ...
+# Subtest: guard installs missing gateway dependencies before the typecheck instead of failing
+ok 11 - guard installs missing gateway dependencies before the typecheck instead of failing
+  ---
+  duration_ms: 0.770942
+  type: 'test'
+  ...
+# Subtest: guard never blocks on its own internal error
+ok 12 - guard never blocks on its own internal error
+  ---
+  duration_ms: 69.455089
+  type: 'test'
+  ...
+# Subtest: wait returns 0 once every check run completed green, polling at the given interval
+ok 13 - wait returns 0 once every check run completed green, polling at the given interval
+  ---
+  duration_ms: 0.50687
+  type: 'test'
+  ...
+# Subtest: wait returns 1 with the failed run name, link and log tail
+ok 14 - wait returns 1 with the failed run name, link and log tail
+  ---
+  duration_ms: 0.245914
+  type: 'test'
+  ...
+# Subtest: wait returns 3 on timeout naming what is still pending (and waits while no run exists yet)
+ok 15 - wait returns 3 on timeout naming what is still pending (and waits while no run exists yet)
+  ---
+  duration_ms: 0.136469
+  type: 'test'
+  ...
+# Subtest: status reports missing hooks as required failures; --check --json exits 1 naming them
+ok 16 - status reports missing hooks as required failures; --check --json exits 1 naming them
+  ---
+  duration_ms: 900.843613
+  type: 'test'
+  ...
+# Subtest: the preflight failure shown to the agent drops the queue table and keeps every FAIL line
+ok 17 - the preflight failure shown to the agent drops the queue table and keeps every FAIL line
+  ---
+  duration_ms: 0.442784
+  type: 'test'
+  ...
+# Subtest: only the ci-plan-spar _plan-session false positive passes; every other Collab handoff or FAIL line blocks
+ok 18 - only the ci-plan-spar _plan-session false positive passes; every other Collab handoff or FAIL line blocks
+  ---
+  duration_ms: 0.975878
+  type: 'test'
+  ...
+# Subtest: setup --no-install never fetches the morning pack (no network), even with the token set
+ok 19 - setup --no-install never fetches the morning pack (no network), even with the token set
+  ---
+  duration_ms: 756.731382
+  type: 'test'
+  ...
+# Subtest: from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
+ok 20 - from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
+  ---
+  duration_ms: 25.800935
+  type: 'test'
+  ...
+# Subtest: status: workspace steering is the kiro-web-steering --check result when the generator exists
+ok 21 - status: workspace steering is the kiro-web-steering --check result when the generator exists
+  ---
+  duration_ms: 0.967456
+  type: 'test'
+  ...
+# Subtest: guard typechecks on commit when gateway src differs from HEAD even without a marker (bash edit / parallel race)
+ok 22 - guard typechecks on commit when gateway src differs from HEAD even without a marker (bash edit / parallel race)
+  ---
+  duration_ms: 0.693517
+  type: 'test'
+  ...
+# Subtest: the CLI writes every block to last-block.txt (the main session shows a blocked command as {})
+ok 23 - the CLI writes every block to last-block.txt (the main session shows a blocked command as {})
+  ---
+  duration_ms: 66.714873
+  type: 'test'
+  ...
+# Subtest: guard preflights every kiro/** and claude/** branch, not only kiro/<slug>/<lane>
+ok 24 - guard preflights every kiro/** and claude/** branch, not only kiro/<slug>/<lane>
+  ---
+  duration_ms: 0.986775
+  type: 'test'
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 2007.514894

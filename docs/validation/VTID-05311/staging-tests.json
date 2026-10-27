@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05311",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "unsigned GET /chat/shared-preview is refused (route mounted)", "target": "gateway", "method": "GET", "path": "/api/v1/chat/shared-preview?kind=post&id=00000000-0000-4000-8000-000000000000", "rejected_probe": true, "expect_status": 401, "reason": "rejected probe, read-only" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05311-chat-shared-content.test.ts", "cwd": "services/gateway", "reason": "per-viewer RLS and sending need two users and writes; proven in CI" }
+  ]
+}
