@@ -47,7 +47,10 @@ question to approve `commit-coverage.json` entries for these 10 merges plus the 
    repaired by #4351, merged as `exafyltd/vitana-platform` `55cc5bbadc1925eaf57aa3e6600bbcf3766062ab` on the owner's
    instruction of 2026-10-26. Session 1 of this plan (78d00a62) then escalated because every partner `read_file` /
    `list_dir` failed (16/16, `ok:false`; `search` worked). That is the intermittent gateway read outage also seen on
-   2026-10-22, not a finding on the plan. Files to read for the premises: `exafyltd/vitana-platform:scripts/ci/staging-verify/lib.cjs`,
+   2026-10-22, not a finding on the plan.
+   Root cause found afterwards: the PM agent re-pushed ~20 `pm-agent/*` branches every ~4 min (~1,300 CI runs/h),
+   which used up the core API quota. The owner had it paused on 2026-10-27 (staging `vitana-gateway:965`,
+   `PM_AGENT_ENABLED=false`, 0 `pm-agent/*` runs since 11:02Z). The fix is the separate plan `pm-reassign-idempotent`. Files to read for the premises: `exafyltd/vitana-platform:scripts/ci/staging-verify/lib.cjs`,
    `exafyltd/vitana-platform:scripts/ci/staging-verify/run.mjs`, `exafyltd/vitana-platform:.github/workflows/STAGING-VERIFY.yml`,
    `exafyltd/vitana-platform:docs/validation/commit-coverage.json` (schema precedent), and
    `exafyltd/vitana-v1:docs/validation/VTID-05285/staging-tests.json` … `VTID-05294/staging-tests.json`.
