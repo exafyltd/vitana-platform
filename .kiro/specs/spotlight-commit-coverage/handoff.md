@@ -74,3 +74,9 @@ kept as evidence and no override. Owner instruction 2026-10-27: "ok, pause it".
 
 ### 2026-10-27T11:56Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-27T12:00Z · kiro-exafyltd-202610220833-d231 · approved (plan PR merge)
+Fresh session 1dfb8561 read the repository: the partner cited `lib.cjs:46,102,302`, and its finding R1-F1 was accepted
+(premise 5 corrected with the src/ file counts). It converged in round 2. Policy `converged-auto-v1` approved it and
+CI allocated VTID-05345 to `coverage-manifests`. #4395 merges under §7b with the owner's instruction of 2026-10-26.
+Next: this session builds the lane.
