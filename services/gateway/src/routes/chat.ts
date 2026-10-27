@@ -8,6 +8,7 @@
  *   GET    /conversations      — List recent conversations (latest message per peer)
  *   POST   /read               — Mark messages from a peer as read
  *   POST   /delivered          — Mark received DMs as delivered (VTID-05310)
+ *   POST   /viewing            — "viewing this conversation" heartbeat (VTID-05312, routes/chat-viewing.ts)
  *   GET    /unread-count       — Total unread message count
  *   GET    /search             — Message search in the caller's DMs and groups (VTID-05309, routes/chat-search.ts)
  *   GET    /shared-preview     — Card of a shared post/event/product/profile for the caller (VTID-05311)
@@ -36,6 +37,7 @@ import chatSearchRouter from './chat-search';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { getBearerToken } from '../lib/tenant-role-auth';
 import { SHARED_CONTENT_TYPE, SHARED_CAPTION_MAX, parseSharedRef, resolveSharedPreview, senderCanShare } from '../services/chat-shared-content';
+import chatViewingRouter from './chat-viewing';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
@@ -91,6 +93,8 @@ router.get('/shared-preview', requireAuth, requireTenant, async (req: Request, r
 
 // VTID-05309: GET /search — message search across the caller's DMs and groups (routes/chat-search.ts).
 router.use('/search', chatSearchRouter);
+// VTID-05312: viewing heartbeats (push suppression for the open conversation).
+router.use('/viewing', chatViewingRouter);
 
 // VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
 // (see below). Module-level because this route file is a singleton Express
