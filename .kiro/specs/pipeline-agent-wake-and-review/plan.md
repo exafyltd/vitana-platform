@@ -108,13 +108,17 @@ once (`docs/validation/VTID-05336/timings.json`, `VTID-05301/timings.json`).
    the chain model rejected with a blocking finding. `reviewer-qualify.mjs check <model>` prints the verdict. Adding a
    model to the list is a separate one-line protected change whose PR carries the passing record; candidates in
    order: OpenAI GPT-5.6 Terra, GLM-5 (the exact Kiro model ids are read from `/model` and recorded then).
-3a. **Lane scope accepts the independent reviewer's entry (R2-F1).** `queue.mjs` `REVIEWER_AGENTS`
-   gains `agent:vitana-lane-reviewer-independent`, and `scopeCheck`'s reviewer rule (`queue.mjs:709-713`) accepts a
-   review entry whose session is `agent-vitana-lane-reviewer-independent-…` on a lane whose `reviewer_seat` is
-   `agent:vitana-lane-reviewer` (the independent agent only ever stands in for the chain reviewer); a lane whose
-   `reviewer_seat` names the independent agent itself is refused by `validateLane`. Tests: independent session on a
-   chain-reviewer lane → no Lane-scope error; on a `reviewer_seat: claude` lane → error; a lane file setting
-   `reviewer_seat: agent:vitana-lane-reviewer-independent` → validate error.
+3a. **Lane scope accepts the independent reviewer's entry — targeted, `REVIEWER_AGENTS` unchanged (R2-F1, s2 R2-F1).**
+   `REVIEWER_AGENTS` / `isReviewerAgent` (`queue.mjs:74-75`) are **not** widened, so the governance-path exemptions
+   that key on them (`validateLane` `:234`, `scopeCheck` `:701`) never apply to the independent agent. Only the
+   reviewer rule of `scopeCheck` (`:709-713`) gets one exception: on a lane whose `reviewer_seat` is
+   `agent:vitana-lane-reviewer`, a review entry whose session satisfies
+   `agentOf(k.session) === 'agent:vitana-lane-reviewer-independent'` is accepted. `validateLane` needs no new code: a
+   lane file setting `reviewer_seat: agent:vitana-lane-reviewer-independent` is already refused at `:224-225` (not
+   `claude`, not a reviewer agent, not a seat). Tests: independent session on a chain-reviewer lane → no Lane-scope
+   error; on a `reviewer_seat: claude` lane → error; `reviewer_seat: agent:vitana-lane-reviewer-independent` → validate
+   error; `isReviewerAgent('agent:vitana-lane-reviewer-independent') === false` (pins that the exemptions are not
+   widened).
 4. **Protected list.** Adds `.kiro/agents/vitana-lane-reviewer-independent.md`, `.github/workflows/PLAN-PR-MERGE.yml`,
    `scripts/collab/plan-merge.mjs` and `.github/workflows/DRIVER-WAKE.yml` (s2 R1-F1: it holds `KIRO_API_KEY` and writes
    refs) to `protected-gate-files.json`, `PROTECTED_GATE_BUILTIN` (`queue.mjs:92-96`)
