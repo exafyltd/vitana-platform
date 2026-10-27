@@ -3,7 +3,8 @@ change_class: standard
 ---
 # plan(kiro-web-reliability): one-command Kiro Web bootstrap, race-free commit/push checks, VALIDATOR-CHECK in preflight, parallel lane builders
 Author: Kiro, seat `exafy`, session `kiro-exafy-202610271051-d636` (Kiro Web). Repo: `exafyltd/vitana-platform` only.
-Premises pinned to `origin/main` `6e0dfca618`. Sparring: the first create (`087401c4-…`) never produced round 1 (run `40492189091`, infra, see plan `plan-spar-stuck-session`); session `52ba3de1-…` escalated at the round cap (round 3, two new findings, both accepted here); this text is the re-plan. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
+Premises pinned to `origin/main` `6e0dfca618`. Sparring: the first create (`087401c4-…`) never produced round 1 (run `40492189091`, infra, see plan `plan-spar-stuck-session`); session `52ba3de1-…` escalated at the round cap (round 3, two new findings, both accepted here); this text is the re-plan. Its first create (`10cf5341-…`, run `40509170990`) again produced no round 1 within 25 min
+(infra, the same failure `plan-spar-stuck-session` VTID-05350 fixes); this line is the only change since. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
 (VTID-05339, #4379). Detail: `tasks.md`; lane files `lanes/preflight-validator.md`, `lanes/session-reliability.md`.
 <!-- plan:begin -->
 ## 1. Goal
