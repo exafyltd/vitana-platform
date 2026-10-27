@@ -1,9 +1,10 @@
 ---
 lane: chain-transitions
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pipeline-lane-state-efficiency/chain-transitions
+pr: https://github.com/exafyltd/vitana-platform/pull/4416
 depends_on: []
 executor: claude
 seat: exafyltd
@@ -14,7 +15,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T15:55Z
+updated: 2026-10-27T16:03Z
 vtid: VTID-05351
 ---
 # Lane: chain-transitions (repo vitana-platform)
@@ -35,3 +36,8 @@ Claimed (exceptions seat; Claude unavailable). Tests written first and red on `o
 Local: queue tests 58/58, Collab tests 181/181 (1 skipped), steering guard 61/61; six mutation checks each red; the
 real owner-autonomy/v1-rules closing sequence replayed as one range passes, and fails without its Collab-Review
 commit (`outputs/replay-owner-autonomy.txt`).
+
+### 2026-10-27T16:03Z · kiro-exafyltd-202610271503-9458 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4416. Fix-forward 1/3: the Evidence Pack Gate (VALIDATOR-CHECK)
+wanted `outputs/` and `AC-`/`TEST:` acceptance entries; moved the raw outputs and rewrote `acceptance.md`. All 11
+checks green on `3c12ffe6`. Next: the reviewer agent on the current head.
