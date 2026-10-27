@@ -325,8 +325,15 @@ test('runbooks: no slug-specific text, no machine paths, no owner questions outs
     assert.match(checkOwnerAutonomy(withRule(null)).join('\n'), /vitana-owner-autonomy\.md missing/);
   });
   const { OWNER_AUTONOMY_ANCHORS } = require('./guard.cjs');
-  test('owner-autonomy: one anchor per stop row (12) plus end point, stop message and no-trailing-question rule', () => {
-    assert.strictEqual(OWNER_AUTONOMY_ANCHORS.length, 15);
+  test('owner-autonomy: one anchor per stop row (13) plus end point, stop message and no-trailing-question rule', () => {
+    assert.strictEqual(OWNER_AUTONOMY_ANCHORS.length, 16);
+    const rows = REAL.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l));
+    assert.strictEqual(rows.length, 13);
+  });
+  test('owner-autonomy: deleting the migration row fails even though §7d appears elsewhere', () => {
+    const noRow = REAL.split('\n').filter((l) => !/^\|\s*1\s*\|/.test(l)).join('\n');
+    assert.ok(noRow.includes('§7d'));
+    assert.match(checkOwnerAutonomy(withRule(noRow)).join('\n'), /target database in a stop-table row/);
   });
   for (const [anchor] of OWNER_AUTONOMY_ANCHORS) {
     test(`owner-autonomy: dropping "${anchor}" fails`, () => {

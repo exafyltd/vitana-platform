@@ -51,3 +51,11 @@ no sentence that the prohibition STOPs (AI-27, IF–THEN 11, IF–THEN 6) still 
 failure; validate / validate-pr were still running.
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the lane's seat fixes the blocking finding.
+
+### 2026-10-27T11:37Z · kiro-exafyltd-202610261510-099d · changes addressed
+Blocking finding fixed: stop row 13 (turning on product autonomy, CLAUDE.md NEVER 34 / §5 Governance) with guard anchor
+`NEVER 34`. Non-blocking findings also fixed: the thirteen row anchors are checked inside their table row (migration
+anchor is now `target database`; a test deletes row 1 while `§7d` stays elsewhere and the guard fails);
+"anything touching production" restored in `vitana-pipeline.md`; row 2 sends a pre-staging production-database
+write to row 7; one sentence that every prohibition (AI-27, IF–THEN 11, IF–THEN 6, no test on production) still applies.
+Guard tests 61/61, guard OK.

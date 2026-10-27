@@ -4,11 +4,11 @@ Every AC below is checked by the reviewer agent against the PR diff. Each maps t
 Red-on-base output: `red-on-base.txt` (copy in `outputs/`). Command log with pass/fail counts: `commands.log`.
 
 AC-1 `.kiro/steering/vitana-owner-autonomy.md` is always-included. It carries the owner's 2026-10-27 instruction for
-every kind of work, with STAGING-VERIFY as the default end point for commit work, and one stop table whose twelve rows
+every kind of work, with STAGING-VERIFY as the default end point for commit work, and one stop table whose thirteen rows
 each cite the existing rule and say whether it can stop work before STAGING-VERIFY. No rule is loosened.
 TEST: node scripts/ci/kiro-steering/guard.cjs .
 
-AC-2 `checkOwnerAutonomy` fails on a missing file, a non-always inclusion, each of the fifteen dropped anchors, and a
+AC-2 `checkOwnerAutonomy` fails on a missing file, a non-always inclusion, each of the sixteen dropped anchors (thirteen checked inside their table row), and a
 `vitana-pipeline.md` without the pointer. Fixtures without `vitana-pipeline.md` stay green, and `check()` runs it.
 TEST: node --test scripts/ci/kiro-steering/guard.test.cjs
 

@@ -489,9 +489,10 @@ function validateWorkflow(wf, workspaceAgents) {
  * stop from its table is a red check, not a quiet change. Runs where the pipeline steering exists.
  */
 const OWNER_AUTONOMY = '.kiro/steering/vitana-owner-autonomy.md';
-// One anchor per stop row of the table, plus the end point, the stop message and the no-trailing-question rule.
-const OWNER_AUTONOMY_ANCHORS = Object.freeze([
-  ['§7d', 'stop: migration apply needs owner approval'],
+// One anchor per stop row of the table. Each must occur in a table row (a line starting with `| <n> |`), so deleting a
+// row cannot stay green because the same words appear elsewhere in the file.
+const OWNER_AUTONOMY_ROW_ANCHORS = Object.freeze([
+  ['target database', 'stop: migration apply needs owner approval of the file(s) and the target database (§7d)'],
   ['§7c', 'stop: production'],
   ['§3a', 'stop: protected gate files'],
   ['data-loss', 'stop: security or data-loss risk'],
@@ -503,10 +504,15 @@ const OWNER_AUTONOMY_ANCHORS = Object.freeze([
   ['design.md', 'stop: design-contract change'],
   ['§4.1', 'stop: VTID allocator down'],
   ['Gate 1', 'stop: Gate 1 for Claude-local sparring'],
+  ['NEVER 34', 'stop: turning on product autonomy'],
+]);
+// The end point, the stop message and the no-trailing-question rule, anywhere in the file.
+const OWNER_AUTONOMY_TEXT_ANCHORS = Object.freeze([
   ['STAGING-VERIFY', 'the default end point'],
   ['five-part', 'the stop message'],
   ['Never end a reply with an offer', 'the no-trailing-question rule'],
 ]);
+const OWNER_AUTONOMY_ANCHORS = Object.freeze([...OWNER_AUTONOMY_ROW_ANCHORS, ...OWNER_AUTONOMY_TEXT_ANCHORS]);
 
 function checkOwnerAutonomy(root) {
   const errors = [];
@@ -516,7 +522,11 @@ function checkOwnerAutonomy(root) {
   if (!fs.existsSync(file)) return [`${OWNER_AUTONOMY} missing (the standing owner instruction and its stop table)`];
   const text = fs.readFileSync(file, 'utf8');
   if (parseFrontMatter(frontMatter(text)).inclusion !== 'always') errors.push(`${OWNER_AUTONOMY}: inclusion must be always`);
-  for (const [anchor, what] of OWNER_AUTONOMY_ANCHORS) {
+  const rows = text.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l)).join('\n');
+  for (const [anchor, what] of OWNER_AUTONOMY_ROW_ANCHORS) {
+    if (!rows.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} in a stop-table row (${what})`);
+  }
+  for (const [anchor, what] of OWNER_AUTONOMY_TEXT_ANCHORS) {
     if (!text.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} (${what})`);
   }
   if (!fs.readFileSync(pipeline, 'utf8').includes('vitana-owner-autonomy.md')) {

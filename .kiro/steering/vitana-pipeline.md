@@ -13,7 +13,8 @@ check) also runs to its finished answer without approval questions: `vitana-owne
   with an offer of a routine next step. The owner stops are Gate 2 and the stop table in `vitana-owner-autonomy.md`.
   Before STAGING-VERIFY these can apply: a migration that staging needs applied (owner approval of the file(s) and
   the target database, `collaboration.md` §7d), a change to a protected gate file (§3a), an escalated sparring
-  verdict, and the stop cases of §7 (security or data-loss risk, a failure surviving 3 fix-forward attempts).
+  verdict, and the stop cases of §7 (security or data-loss risk, a failure surviving 3 fix-forward attempts, anything
+  touching production).
 - VTIDs come only from CI PLAN-SPAR; never hand-allocate.
 - Production after Gate 2: the owner's PUBLISH in the Command Hub, **or Kiro publishes when the owner explicitly
   commands it in this conversation** — either a full publish (the same promotion as the Command Hub button, pinned to

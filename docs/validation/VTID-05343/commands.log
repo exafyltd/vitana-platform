@@ -18,3 +18,22 @@ exit=0
 
 5d7744b8472d9b7bb2f71819169486706f5f8a089fa5b79ddbe8cf36cbef5845  .kiro/steering/vitana-owner-autonomy.md
 5061e62d9385c7611b5f518488b44051d34f1054cd7e9e1211a57a2326442933  .kiro/steering/vitana-pipeline.md
+
+## round 2 (review changes on 8eb643af: NEVER 34 row, row-scoped anchors, production wording)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 61
+# pass 61
+# fail 0
+# skipped 0
+exit=0
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+$ node --test scripts/collab/kiro-web-steering.test.mjs
+# tests 7
+# pass 7
+# fail 0
+# skipped 0
+exit=0
+55aa6e3d6ab718a2628705e939bacd947c577d58dbabac67208f52f25dccec5d  .kiro/steering/vitana-owner-autonomy.md
+faf56b37de09495704e66adfdeadf76a8de584143b365cf0738357be7a28eb07  .kiro/steering/vitana-pipeline.md

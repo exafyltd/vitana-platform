@@ -38,7 +38,7 @@ below applies.
 | # | Stop | Rule | Can it stop work before STAGING-VERIFY? |
 |---|---|---|---|
 | 1 | Applying a database migration. The owner must approve the migration file(s) and the target database before `RUN-MIGRATION.yml` or a vitana-v1 `apply-*.yml` runs, because staging shares the production database. Writing the migration file in a PR needs no approval. | `collaboration.md` §7d | Yes, when staging needs the migration applied first |
-| 2 | Production: PUBLISH, any `AWS-PROD-*` or production deploy workflow, a production write | `collaboration.md` §7c, §7d "Never"; CLAUDE.md IF–THEN 22–26 | No. Production comes after STAGING-VERIFY (Gate 2) |
+| 2 | Production: PUBLISH, any `AWS-PROD-*` or production deploy workflow | `collaboration.md` §7c, §7d "Never"; CLAUDE.md IF–THEN 22–26 | No. Production comes after STAGING-VERIFY (Gate 2). A write to the production database before then is a live write (row 7) |
 | 3 | Merging a change to a protected gate file (`scripts/collab/protected-gate-files.json`, e.g. `CLAUDE.md`). It needs a Claude review on the current head or an owner instruction that names the plan. | `collaboration.md` §3a, §7b | Yes, for changes to those files only |
 | 4 | Security or data-loss risk | CLAUDE.md Autonomy Contract (c); `collaboration.md` §7 | Yes |
 | 5 | The same failure surviving 3 fix-forward attempts (park the lane or plan) | CLAUDE.md Autonomy Contract (d); `collaboration.md` §7, §7a | Yes |
@@ -49,18 +49,23 @@ below applies.
 | 10 | A change to the Spotlight design contract itself (an archetype, card size, token or rule) | vitana-v1 `.claude/rules/design.md` | Yes, design-contract changes only |
 | 11 | The VTID allocator is disabled or failing | CLAUDE.md §4.1 step 5, IF–THEN 1 | Yes, rare |
 | 12 | Gate 1, for a plan Claude Code sparred with its own local partner. A CI-sparred plan that converged is approved by policy and never goes to the owner. | CLAUDE.md Autonomy Contract; `collaboration.md` §7 | Claude Code local sparring only |
+| 13 | Turning on product autonomy: autonomous execution (`EXECUTION_DISARMED`, `AUTOPILOT_LOOP_ENABLED`, `metadata.autonomous_execution`) or a loop's autonomy level | platform CLAUDE.md NEVER 34; §5 Governance | Yes, changes to those settings only |
 
 How to read the broad sentences, without weakening them:
 - vitana-v1 CLAUDE.md, *"When in any doubt, stop and ask first. Writing to a shared/live system … requires explicit
   approval"*: this applies to writes to shared or live systems (stop 7), which is the topic of the paragraph it is in.
   It is not a general rule to ask about other steps.
 - platform CLAUDE.md NEVER 34, *"Never enable autonomy without explicit approval"*: this covers the product's
-  autonomy settings (autonomous execution, Autopilot, loop autonomy levels). It does not cover an agent finishing the
-  task it was given. The owner's instruction above is that approval for agent work.
+  autonomy settings (stop 13). It does not cover an agent finishing the task it was given. The owner's instruction
+  above is that approval for agent work, and it is not approval for stop 13.
 - `docs/DEPLOYMENT-PIPELINE.md`, *"PR reviewed + approved"*: the reviewer agent's accept under §7 / §7b. Not a
   human PR approval.
 - CLAUDE.md IF–THEN 9, *"prefer stricter rule"*: keep every stop above. It does not turn a routine step into a
   question, because every rule set says not to ask about routine steps.
+
+The table lists the reasons to **ask**. Every prohibition in the rule files still applies as written, and none of
+them is a question: for example CLAUDE.md AI-27 (no Google routing), IF–THEN 11 (wrong AWS account or region), IF–THEN 6
+(governance failed), the absolute rule against testing on production, and never skipping or loosening a test.
 
 ## When a stop applies
 Send one message: what you want to do; why it is needed; the evidence; the exact rule (file and section) that requires
