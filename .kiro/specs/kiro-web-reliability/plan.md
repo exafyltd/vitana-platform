@@ -3,7 +3,7 @@ change_class: standard
 ---
 # plan(kiro-web-reliability): one-command Kiro Web bootstrap, race-free commit/push checks, VALIDATOR-CHECK in preflight, parallel lane builders
 Author: Kiro, seat `exafy`, session `kiro-exafy-202610271051-d636` (Kiro Web). Repo: `exafyltd/vitana-platform` only.
-Premises pinned to `origin/main` `6e0dfca618`. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
+Premises pinned to `origin/main` `6e0dfca618`. Session 1 (`087401c4-…`) produced no round 1 within 25 min twice (PLAN-SPAR run `40492189091`, attempts 1-2, infra); this text adds §2.14-15. Follows `kiro-web-parity` (VTID-05340, #4389) and `kiro-web-steering`
 (VTID-05339, #4379). Detail: `tasks.md`; lane files `lanes/preflight-validator.md`, `lanes/session-reliability.md`.
 <!-- plan:begin -->
 ## 1. Goal
@@ -51,6 +51,14 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
     plan push (`425a2a68a7`) ran in one command with heredocs whose bodies hold apostrophes; the parser lost the quote
     state, saw no `git push`, and no preflight ran (no pass-cache entry). A check bound to git itself (§3.2.2) does not
     depend on parsing the agent's command; the PreToolUse check stays best-effort.
+14. Processes started inside a tool call do not outlive it: a `setsid nohup` loop and a Node `spawn({detached:true})`
+    loop both stopped before their first 10 s tick once the call returned, and a `run_in_background` call's loop wrote
+    nothing within 70 s (probes today). `setup` without `--wait` starts its installs detached
+    (`kiro-web-session.mjs` `main`, `spawn(… {detached: true})`), so those installs do not complete in Kiro Web.
+15. A cold bootstrap in the foreground works from zero: fresh `--depth 50` clones of both repos in an empty
+    workspace, an empty `HOME`, then `kiro-web-steering.mjs` + `kiro-web-session.mjs setup --wait`: 482 s
+    (deps 9 s + 14 s, venv 2 s, indexes 453 s), `status --check` exit 0. `setup … | head -2` crashes with `EPIPE`
+    (`kiro-web-session.mjs:548`).
 
 ## 3. Lanes (parallel; no shared file; no `depends_on`; interface §3.3)
 ### 3.1 Lane `preflight-validator` — `scripts/collab/preflight.mjs`, `scripts/collab/preflight.test.mjs`, `docs/validation/VTID-*/**`
@@ -76,7 +84,10 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
    `steps.meta.outputs` substitution; unsupported expression → fail; `Build Gate` reported not run.
 
 ### 3.2 Lane `session-reliability` — `scripts/collab/kiro-web-session.mjs`, `scripts/collab/kiro-web-session.test.mjs`, `AGENTS.md`, `.kiro/pipeline/driver.md`, `docs/kiro-web-parity/**`, `docs/validation/VTID-*/**`
-1. **One-command bootstrap.** `setup` first runs `kiro-web-steering.mjs` (rules), then today's steps; `AGENTS.md`
+1. **One-command bootstrap.** `setup` first runs `kiro-web-steering.mjs` (rules), then today's steps, **all in the
+   foreground** (§2.14): rules, hooks and dependencies (~30 s cold) by default; `setup --codeintel` adds the venv and
+   index build (up to ~8 min cold, §2.15; resumable). No detached child is started. Output survives a closed pipe (no
+   `EPIPE` crash); `AGENTS.md`
    (auto-injected, §2.9) is changed to: first action of every Kiro Web session, from the workspace root,
    `node vitana-platform/scripts/collab/kiro-web-session.mjs setup`, then state the first `status` line and the session
    id in the first reply. Kept: the Codex rule (byte-identical) and the steering-generator fallback sentence.
@@ -124,8 +135,7 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 contains `'body-file'`, so either lane can merge first.
 
 ## 4. Validation (owner items)
-- (1) A simulated fresh sandbox: both repos cloned into an empty temp workspace with an empty `HOME`, then the single
-  `setup`; `status --check` exit 0, timings recorded. What is automatic vs instruction-driven is documented (§2.9-10).
+- (1) A simulated fresh sandbox (§2.15 method) with the new single `setup` (+ `--codeintel`); `status --check` exit 0, timings recorded. What is automatic vs instruction-driven is documented (§2.9-10).
 - (2) Preflight run on a branch with a body missing declarations and an evidence dir without `outputs/` → both caught
   before push; fixed → pass.
 - (3) The P23 race reproduced: (a) deterministic, a writer that edits after the PreToolUse check; (b) real parallel

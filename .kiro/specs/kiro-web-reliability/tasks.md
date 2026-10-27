@@ -22,7 +22,7 @@ are built in parallel by separate builder sessions (plan §3.2.4) and share no f
 <!-- lane: session-reliability -->
 ## Lane `session-reliability` — bootstrap, git hooks, sequencing, parallel builders, refresh (plan §3.2)
 - [ ] S1 tests first in `scripts/collab/kiro-web-session.test.mjs` (plan §3.2.7), red on `origin/main` recorded.
-- [ ] S2 `scripts/collab/kiro-web-session.mjs` per plan §3.2.1-2, 5-6.
+- [ ] S2 `scripts/collab/kiro-web-session.mjs` per plan §3.2.1-2, 5-6 (foreground installs, `--codeintel`, EPIPE-safe).
 - [ ] S3 `AGENTS.md` (plan §3.2.1; the Codex rule byte-identical), `.kiro/pipeline/driver.md` (plan §3.2.3-4),
       `docs/kiro-web-parity/README.md`.
 - [ ] S4 Live evidence: simulated fresh sandbox; race reproduction blocked by `pre-commit`; `commit && push` checked by
