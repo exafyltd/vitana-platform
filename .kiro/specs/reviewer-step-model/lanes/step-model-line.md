@@ -1,10 +1,11 @@
 ---
 lane: step-model-line
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
 seat: exafy
+claimed_by: kiro-exafy-202610272309-57d7
 branch: kiro/reviewer-step-model/step-model-line
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -17,7 +18,7 @@ paths:
   - scripts/ci/kiro-steering/guard.cjs
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T23:14Z
+updated: 2026-10-28T08:36Z
 vtid: VTID-05359
 ---
 # step-model-line — every pinned review step opens with its own chain model
@@ -34,3 +35,5 @@ end without stopping", "yes, execute your recommendation"). Next: PLAN-SPAR; onc
 
 ### 2026-10-27T23:14Z · ci-plan-spar · ready (VTID allocated)
 VTID-05359 allocated after policy approval (converged-auto-v1).
+### 2026-10-28T08:36Z · kiro-exafy-202610272309-57d7 · ready → executing
+Claimed by seat exafy (built by Kiro under claude-unavailable mode, CLAUDE_AVAILABLE=false). Branch `kiro/reviewer-step-model/step-model-line`. Changed: the 18 reviewer step prompts in the workflow now start with `Reviewer chain model for this step: <modelId>. ` (prefix only); the agent self-check and `lane-review.md` rule 3 key on that line; `driver.md` step 4 opens Kiro Web review sessions with it; `guard.cjs` enforces it (`REVIEW_MODEL_LABEL`, driver.md now a required runbook) with tests T-A…T-F. Protected gate file `.kiro/agents/vitana-lane-reviewer.md`: merges under the owner instruction of plan §8. Evidence: `docs/validation/VTID-05359/`.
