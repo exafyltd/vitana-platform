@@ -128,3 +128,5 @@ in parallel.
   `react-native-view-shot`); a one-line dependency choice, not a scope change.
 - macOS minutes / G3 for iOS-on-device screenshots (program STATUS row 8b) — not needed for the JS build.
 <!-- plan:end -->
+
+<!-- re-trigger after PLAN-SPAR repair; 2026-10-28T09:53:47.0048272+01:00 -->
