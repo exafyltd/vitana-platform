@@ -1,7 +1,7 @@
 ---
 lane: provisioning-ui
 state: in-review
-next_actor: claude
+next_actor: kiro
 vtid: VTID-05221
 seat: hotmail
 area: frontend
@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/multi-tenant/provisioning-ui
 pr: https://github.com/exafyltd/vitana-v1/pull/1438
-updated: 2026-10-18T22:22Z
+updated: 2026-10-28T13:27Z
 ---
 # Exafy-admin "New community" panel — VTID-05221 (repo vitana-v1)
 
@@ -64,3 +64,5 @@ postgres:16 pull limit (	oomanyrequests, also on #1446), and Vitest (jsdom) fail
 ConversationView.deeplink-scroll.vtid-05201.test.tsx (@/lib/i18n-toast mock lacks getI18nLocale), which is red on v1
 main 704b5def too (UNIT-TESTS 39111020642). Next actor claude: re-run pr-gate once the ECR limit clears, fix or
 quarantine the main-red VTID-05201 test, review against tasks.md P1â€“P9, merge.
+### 2026-10-28T13:27Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
