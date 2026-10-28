@@ -35,8 +35,10 @@ specs:
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:pipeline-lane-state-efficiency
+  - vitana-platform:pm-ci-load
   - vitana-platform:context-map
   - vitana-platform:quality-checks
+  - vitana-platform:reviewer-step-model
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -73,8 +75,10 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
 - `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
+- `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
 - `vitana-platform:plan-spar-stuck-session` — a PLAN-SPAR session whose partner never answers recovers inside the same run
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
 - `vitana-platform:context-map` — one read-only command and one linked page to find routes, screens, areas, importers, rules and prior work; stale-link check
 - `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
+- `vitana-platform:reviewer-step-model` — every pinned review step's prompt opens with its own chain model, so the reviewer agent's self-check stops returning `model_unavailable`
