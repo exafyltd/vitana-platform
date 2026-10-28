@@ -3,11 +3,13 @@ slug: native-wave2-memory-diary
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-21T19:13Z
+updated: 2026-10-28T11:13Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-memory-diary/sparring/verdict.md
+vtids: [VTID-05376, VTID-05377]
 ---
 # Handoff — Native Wave 2: Memory / Diary screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -37,3 +39,6 @@ Next: PLAN-SPAR spars the `plan(native-wave2-memory-diary)` PR; this session ans
 `sparring/responses-<n>.md`. On convergence CI writes the VTIDs into the lanes; then seat `exafyltd` claims
 `memory` and `diary` in parallel (no deps between them). Reviewer agent `vitana-lane-reviewer` accepts each lane.
 Device-runtime parity (task 8 in each lane) waits on the owner's G1 isolated test environment.
+
+### 2026-10-28T11:13Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.

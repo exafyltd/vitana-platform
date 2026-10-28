@@ -23,7 +23,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/diaryNative.json
   - docs/validation/**
-updated: 2026-10-21T19:13Z
+updated: 2026-10-28T11:13Z
+vtid: VTID-05376
 ---
 # Daily Diary port — the 3 `memory-diary` ledger rows under `/daily-diary*`
 Plan: `.kiro/specs/native-wave2-memory-diary/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -84,3 +85,6 @@ three flip together. No deps — runs in parallel with `memory`. Next: PLAN-SPAR
 `plan(native-wave2-memory-diary)` PR; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-memory-diary/diary --session <id>`). No VTID allocated, no product code changed, no
 live system touched.
+
+### 2026-10-28T11:13Z · ci-plan-spar · ready (VTID allocated)
+VTID-05376 allocated after policy approval (converged-auto-v1).

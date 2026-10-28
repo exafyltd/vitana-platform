@@ -21,7 +21,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/memoryNative.json
   - docs/validation/**
-updated: 2026-10-21T19:13Z
+updated: 2026-10-28T11:13Z
+vtid: VTID-05377
 ---
 # Memory port — the 4 `memory-diary` ledger rows under `/memory*`
 Plan: `.kiro/specs/native-wave2-memory-diary/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -73,3 +74,6 @@ vitana-v1 origin/main parity ledger and `src/App.tsx` so no file belongs to two 
 with `diary`. Next: PLAN-SPAR spars the `plan(native-wave2-memory-diary)` PR; once a VTID is written here, seat
 `exafyltd` claims the lane (`queue.mjs claim native-wave2-memory-diary/memory --session <id>`). No VTID allocated,
 no product code changed, no live system touched.
+
+### 2026-10-28T11:13Z · ci-plan-spar · ready (VTID allocated)
+VTID-05377 allocated after policy approval (converged-auto-v1).
