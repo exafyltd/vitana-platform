@@ -3,12 +3,13 @@ slug: native-wave2-role-modes
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-28T00:00Z
+updated: 2026-10-28T13:40Z
 sparring_record: .kiro/specs/native-wave2-role-modes/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: main
+vtids: [VTID-05398, VTID-05399, VTID-05400, VTID-05401]
 ---
 # Handoff — Native Wave 2: Role-mode screen ports (patient / professional / staff / business)
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -51,3 +52,6 @@ Next: PLAN-SPAR spars the `plan(native-wave2-role-modes)` PR; this session answe
 `sparring/responses-<n>.md`. On convergence CI writes the VTIDs into the lanes; then seat `exafyltd` claims lanes
 (all four independent — no `depends_on` — so all run in parallel). Reviewer seat `hotmail` reviews each lane.
 Device-runtime parity (the last task in each lane) waits on the owner's G1 isolated test environment.
+
+### 2026-10-28T13:40Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 4 lane(s) got a VTID and are handed to Kiro.

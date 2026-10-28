@@ -22,7 +22,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/patientNative.json
   - docs/validation/**
-updated: 2026-10-28T00:00Z
+updated: 2026-10-28T13:40Z
+vtid: VTID-05399
 ---
 # Patient-mode port — the 8 `/patient/*` ledger rows
 Plan: `.kiro/specs/native-wave2-role-modes/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -63,3 +64,6 @@ Lane re-drafted with the plan (`state: drafted` in `handoff.md`) after the earli
 paths were computed from the origin/main parity ledger so no file belongs to two lanes; no `depends_on` — runs in
 parallel with the other three lanes. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd`
 claims the lane (`queue.mjs claim native-wave2-role-modes/patient --session <id>`).
+
+### 2026-10-28T13:40Z · ci-plan-spar · ready (VTID allocated)
+VTID-05399 allocated after policy approval (converged-auto-v1).

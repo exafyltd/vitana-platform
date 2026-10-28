@@ -23,7 +23,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/businessNative.json
   - docs/validation/**
-updated: 2026-10-28T00:00Z
+updated: 2026-10-28T13:40Z
+vtid: VTID-05398
 ---
 # Business / commerce-mode port — the 11 commerce ledger rows; owns the one new class-A core extraction
 Plan: `.kiro/specs/native-wave2-role-modes/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -76,3 +77,6 @@ the one `source: exclusion` row this lane flips) and the paths were computed fro
 file belongs to two lanes; no `depends_on` — runs in parallel with the other three lanes. The one new class-A core
 extraction (`role-switch-destination.ts`) is owned here. Next: PLAN-SPAR spars the plan; once a VTID is written here,
 seat `exafyltd` claims the lane (`queue.mjs claim native-wave2-role-modes/business --session <id>`).
+
+### 2026-10-28T13:40Z · ci-plan-spar · ready (VTID allocated)
+VTID-05398 allocated after policy approval (converged-auto-v1).
