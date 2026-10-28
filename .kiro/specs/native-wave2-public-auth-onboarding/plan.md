@@ -150,3 +150,5 @@ waits for `auth-portals` (the sign-in → onboarding redirect seam and shared au
 - Whether any legal-copy / invite-code helper needs a `@vitana/core` re-export (Decision 3 default: none; the lane adds
   it in-PR with `core-closure --write` if it turns out to).
 <!-- plan:end -->
+
+<!-- cross-repo plan; vitana-v1 read via spar_refs. fresh session after PLAN-SPAR repair; 2026-10-28T09:49:01.5534928+01:00 -->
