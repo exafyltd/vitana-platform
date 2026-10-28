@@ -1,0 +1,8 @@
+﻿# repo root
+# node -e "JSON.parse(require('fs').readFileSync('docs/validation/VTID-05265/staging-tests.json','utf8'))"
+parse ok
+# exit 0
+
+# lib.validateManifest(m, { vtid: 'VTID-05265', service: 'gateway' })  (scripts/ci/staging-verify/lib.cjs:187)
+{"ok":true,"errors":[]}
+# exit 0

@@ -1,0 +1,257 @@
+# node --test --test-reporter=tap scripts/collab/automations.test.mjs on origin/main 422a7b045 with only the new test file added
+TAP version 13
+# Subtest: every seat automation exists and every automation file is referenced by a seat
+ok 1 - every seat automation exists and every automation file is referenced by a seat
+  ---
+  duration_ms: 5.8536
+  type: 'test'
+  ...
+# Subtest: exceptions_seat names a kiro-web seat and only its file has the Exceptions section
+not ok 2 - exceptions_seat names a kiro-web seat and only its file has the Exceptions section
+  ---
+  duration_ms: 4.2901
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:71:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    docs/programs/areas.yaml must set top-level exceptions_seat: exafyltd
+    + actual - expected
+    
+    + undefined
+    - 'exafyltd'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'exafyltd'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:74:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3)
+  ...
+# Subtest: one item per run, and the item order line
+not ok 3 - one item per run, and the item order line
+  ---
+  duration_ms: 6.4092
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:83:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    exafy.md: exactly one "Order:" line
+    
+    0 !== 1
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 1
+  actual: 0
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:89:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: gh run rerun appears only beside the allowlist; merge/deploy/dispatch/migration words only in never sentences
+not ok 4 - gh run rerun appears only beside the allowlist; merge/deploy/dispatch/migration words only in never sentences
+  ---
+  duration_ms: 5.1539
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:98:1'
+  failureType: 'testCodeFailure'
+  error: 'exafyltd.md: allowlist names PLAN-SPAR.yml by path'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:114:43)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: no automation hands work to next_actor: claude (only the legacy executor: claude sentence names it)
+not ok 5 - no automation hands work to next_actor: claude (only the legacy executor: claude sentence names it)
+  ---
+  duration_ms: 1.6119
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:120:1'
+  failureType: 'testCodeFailure'
+  error: 'exafy.md: "step 9 with `next_actor: claude` and the reason." hands work to Claude'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:123:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: shared sections are identical across the three files after seat normalisation
+not ok 6 - shared sections are identical across the three files after seat normalisation
+  ---
+  duration_ms: 6.6365
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:128:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    exafyltd.md: steps 0-3 differ from exafy.md
+    + actual - expected
+    ... Skipped lines
+    
+      '## Every run, in this order\n' +
+        '\n' +
+        '0. **Find the two checkouts.** Kiro Web clones each selected repository into its own directory; do not assume the\n' +
+        '   names. Locate them with `git -C <dir> remote get-url origin` (`ΓÇª/exafyltd/vitana-platform` and `ΓÇª/exafyltd/vitana-v1`)\n' +
+        '   and use those paths wherever this file writes `vitana-platform` or `vitana-v1`.\n' +
+    ...
+        '   lane, or write to Supabase/AWS or any live system ΓÇö even if a credential would allow it. Never test against production.\n' +
+    -   "   A database change is a migration file in the lane's PR, never an applied migration.\n" +
+        '2. **Session id:** `node scripts/collab/queue.mjs session-id --agent kiro --seat <seat>` ΓåÆ `kiro-<seat>-YYYYMMDDHHMM-xxxx`.\n' +
+        '   Use it in every claim, commit trailer, lane log entry and PR body of this run.\n' +
+        '3. **Read the queue** (both repos are checked out side by side):\n' +
+        '   `node vitana-platform/scripts/collab/queue.mjs --repo vitana-platform --repo vitana-v1 --json`'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: |-
+    ## Every run, in this order
+    
+    0. **Find the two checkouts.** Kiro Web clones each selected repository into its own directory; do not assume the
+       names. Locate them with `git -C <dir> remote get-url origin` (`ΓÇª/exafyltd/vitana-platform` and `ΓÇª/exafyltd/vitana-v1`)
+       and use those paths wherever this file writes `vitana-platform` or `vitana-v1`.
+    1. **Load the project rules** ΓÇö `.kiro/steering/vitana-load-project-rules.md`, then everything it lists
+       (`.kiro/steering/vitana-kiro-notes.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/collaboration.md`). They are
+       binding (┬º7a): you never allocate VTIDs, merge or approve a PR on GitHub, dispatch a workflow, deploy, review your own
+       lane, or write to Supabase/AWS or any live system ΓÇö even if a credential would allow it. Never test against production.
+       A database change is a migration file in the lane's PR, never an applied migration.
+    2. **Session id:** `node scripts/collab/queue.mjs session-id --agent kiro --seat <seat>` ΓåÆ `kiro-<seat>-YYYYMMDDHHMM-xxxx`.
+       Use it in every claim, commit trailer, lane log entry and PR body of this run.
+    3. **Read the queue** (both repos are checked out side by side):
+       `node vitana-platform/scripts/collab/queue.mjs --repo vitana-platform --repo vitana-v1 --json`
+  actual: |-
+    ## Every run, in this order
+    
+    0. **Find the two checkouts.** Kiro Web clones each selected repository into its own directory; do not assume the
+       names. Locate them with `git -C <dir> remote get-url origin` (`ΓÇª/exafyltd/vitana-platform` and `ΓÇª/exafyltd/vitana-v1`)
+       and use those paths wherever this file writes `vitana-platform` or `vitana-v1`.
+    1. **Load the project rules** ΓÇö `.kiro/steering/vitana-load-project-rules.md`, then everything it lists
+       (`.kiro/steering/vitana-kiro-notes.md`, `CLAUDE.md`, `.claude/CLAUDE.md`, `.claude/rules/collaboration.md`). They are
+       binding (┬º7a): you never allocate VTIDs, merge or approve a PR on GitHub, dispatch a workflow, deploy, review your own
+       lane, or write to Supabase/AWS or any live system ΓÇö even if a credential would allow it. Never test against production.
+    2. **Session id:** `node scripts/collab/queue.mjs session-id --agent kiro --seat <seat>` ΓåÆ `kiro-<seat>-YYYYMMDDHHMM-xxxx`.
+       Use it in every claim, commit trailer, lane log entry and PR body of this run.
+    3. **Read the queue** (both repos are checked out side by side):
+       `node vitana-platform/scripts/collab/queue.mjs --repo vitana-platform --repo vitana-v1 --json`
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:138:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: owner setup cron: 5 fields, hourly every day
+not ok 7 - owner setup cron: 5 fields, hourly every day
+  ---
+  duration_ms: 2.0172
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:146:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    exafy.md: cron must be 0 * * * *
+    + actual - expected
+    
+    + '0 7-19 * * 1-5'
+    - '0 * * * *'
+         ^
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '0 * * * *'
+  actual: '0 7-19 * * 1-5'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:152:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: routine-prompt.md carries the retired header
+not ok 8 - routine-prompt.md carries the retired header
+  ---
+  duration_ms: 1.9246
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:156:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Retired as primary 2026-10-20 \(kiro-autonomy-fallback\): runs only while Claude is available; the jobs moved to `\.kiro\/automations\/exafyltd\.md` E1ΓÇôE6/. Input:
+    
+    'This file is the prompt of the cloud Routine that wakes Claude Code for the Claude Code Γåö Kiro protocol'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: 'This file is the prompt of the cloud Routine that wakes Claude Code for the Claude Code Γåö Kiro protocol'
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:159:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+# Subtest: driver.md exists, names the heartbeat command and contract, and needs no subagents
+not ok 9 - driver.md exists, names the heartbeat command and contract, and needs no subagents
+  ---
+  duration_ms: 0.5685
+  type: 'test'
+  location: 'C:\\Users\\dstev\\vitana-platform-1\\.worktrees\\kaf-exceptions-seat\\scripts\\collab\\automations.test.mjs:162:1'
+  failureType: 'testCodeFailure'
+  error: '.kiro/pipeline/driver.md missing'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/kaf-exceptions-seat/scripts/collab/automations.test.mjs:164:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1106:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+    Test.postRun (node:internal/test_runner/test:1235:19)
+    Test.run (node:internal/test_runner/test:1163:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:788:7)
+  ...
+1..9
+# tests 9
+# suites 0
+# pass 1
+# fail 8
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 202.8976
