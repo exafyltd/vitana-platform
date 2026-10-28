@@ -9,6 +9,7 @@ import { join } from 'path';
 import {
   PROTECTED_GATE_GLOBS,
   REVIEWER_AGENT,
+  REVIEWER_AGENT_MODELS,
   governanceMergeAllowed,
   isAgentReview,
   reviewOnCurrentHead,
@@ -209,6 +210,39 @@ describe('M2-M5 reviews that do not count', () => {
     const l = lane({ reviews: [r] });
     expect(isAgentReview(r)).toBe(false);
     expect(reviewSatisfiesLane(l, r)).toBe(false);
+    expect(mergeDecision(l, [l])).toBeNull();
+  });
+
+  it('the reviewer model chain is sonnet-5.5 → opus-5.5 → sonnet-4.5 (Claude only)', () => {
+    expect(REVIEWER_AGENT_MODELS).toEqual(['claude-sonnet-5.5', 'claude-opus-5.5', 'claude-sonnet-4.5']);
+    expect(REVIEWER_AGENT_MODELS.every((m) => m.startsWith('claude-'))).toBe(true);
+  });
+
+  it.each([[REVIEWER_AGENT], ...REVIEWER_AGENT_MODELS.map((m) => [`${REVIEWER_AGENT} (${m})`])])(
+    'fallback: reviewer %p on the current head → merge on a governance lane',
+    (reviewer) => {
+      const r = agentAccept({ reviewer });
+      const l = lane({ reviews: [r] });
+      expect(isAgentReview(r)).toBe(true);
+      expect(reviewSatisfiesLane(l, r)).toBe(true);
+      expect(mergeDecision(l, [l])).not.toBeNull();
+    },
+  );
+
+  it.each([
+    ['agent:vitana-lane-reviewer (claude-opus-4.8)'],
+    ['agent:vitana-lane-reviewer (claude-sonnet-5)'],
+    ['agent:vitana-lane-reviewer (claude-opus-5)'],
+    ['agent:vitana-lane-reviewer (claude-haiku-4.5)'],
+    ['agent:vitana-lane-reviewer (auto)'],
+    ['agent:vitana-lane-reviewer (unstated)'],
+    ['agent:vitana-lane-reviewer (gemini-2.5-pro)'],
+    ['agent:vitana-lane-reviewer (claude-opus-5.5'],
+    ['agent:vitana-lane-reviewer (claude-opus-5.5) x'],
+  ])('fallback: reviewer %p (model outside the chain) → no merge', (reviewer) => {
+    const r = agentAccept({ reviewer });
+    const l = lane({ reviews: [r] });
+    expect(isAgentReview(r)).toBe(false);
     expect(mergeDecision(l, [l])).toBeNull();
   });
 

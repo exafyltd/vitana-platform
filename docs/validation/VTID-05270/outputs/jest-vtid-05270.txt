@@ -1,0 +1,258 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    {"event":"job_tenant_loop_degraded","vtid":"VTID-05270","reason":"tenants_read_failed","error":"boom"}
+
+      62 |
+      63 | function log(event: string, fields: Record<string, unknown>): void {
+    > 64 |   console.warn(JSON.stringify({ event, vtid: 'VTID-05270', ...fields }));
+         |           ^
+      65 | }
+      66 |
+      67 | /**
+
+      at log (src/services/jobs/job-tenant-loop.ts:64:11)
+      at loadActiveTenantContexts (src/services/jobs/job-tenant-loop.ts:89:7)
+      at Object.activeTenantIds (src/services/jobs/job-tenant-loop.ts:125:11)
+      at Object.<anonymous> (test/vtid-05270-job-tenant-loop.test.ts:184:12)
+
+  console.warn
+    {"event":"actor_tenant_unresolved","vtid":"VTID-05270","reason":"none","user_id":"u1"}
+
+      62 |
+      63 | function log(event: string, fields: Record<string, unknown>): void {
+    > 64 |   console.warn(JSON.stringify({ event, vtid: 'VTID-05270', ...fields }));
+         |           ^
+      65 | }
+      66 |
+      67 | /**
+
+      at log (src/services/jobs/job-tenant-loop.ts:64:11)
+      at Object.resolveActorTenant (src/services/jobs/job-tenant-loop.ts:180:3)
+      at Object.<anonymous> (test/vtid-05270-job-tenant-loop.test.ts:233:12)
+
+  console.warn
+    {"event":"actor_tenant_unresolved","vtid":"VTID-05270","reason":"unavailable","user_id":"u1"}
+
+      62 |
+      63 | function log(event: string, fields: Record<string, unknown>): void {
+    > 64 |   console.warn(JSON.stringify({ event, vtid: 'VTID-05270', ...fields }));
+         |           ^
+      65 | }
+      66 |
+      67 | /**
+
+      at log (src/services/jobs/job-tenant-loop.ts:64:11)
+      at Object.resolveActorTenant (src/services/jobs/job-tenant-loop.ts:180:3)
+      at Object.<anonymous> (test/vtid-05270-job-tenant-loop.test.ts:235:12)
+
+  console.warn
+    {"event":"actor_tenant_unresolved","vtid":"VTID-05270","reason":"no_user_id"}
+
+      62 |
+      63 | function log(event: string, fields: Record<string, unknown>): void {
+    > 64 |   console.warn(JSON.stringify({ event, vtid: 'VTID-05270', ...fields }));
+         |           ^
+      65 | }
+      66 |
+      67 | /**
+
+      at log (src/services/jobs/job-tenant-loop.ts:64:11)
+      at Object.resolveActorTenant (src/services/jobs/job-tenant-loop.ts:175:5)
+      at Object.<anonymous> (test/vtid-05270-job-tenant-loop.test.ts:236:23)
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/diary-reminder status=401 reason="missing internal token" ip=::ffff:127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] daily_diary_reminder → 1 users
+
+      at src/routes/scheduled-notifications.ts:777:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/diary-reminder status=401 reason="missing internal token" ip=::ffff:127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] daily_diary_reminder → 1 users
+
+      at src/routes/scheduled-notifications.ts:777:11
+
+  console.log
+    [Scheduled] daily_diary_reminder → 1 users
+
+      at src/routes/scheduled-notifications.ts:777:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/morning-briefing status=401 reason="missing internal token" ip=::ffff:127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] morning_briefing_ready → 1 users (personalized)
+
+      at src/routes/scheduled-notifications.ts:548:11
+
+  console.warn
+    [VTID-04677] scheduled-notifications call would be rejected (mode=log): POST /api/v1/scheduled-notifications/morning-briefing status=401 reason="missing internal token" ip=::ffff:127.0.0.1 ua=""
+
+      102 |   }
+      103 |   // Never log the header value — only that it was missing or wrong.
+    > 104 |   console.warn(
+          |           ^
+      105 |     `[VTID-04677] scheduled-notifications call would be rejected (mode=log): ${req.method} ${req.originalUrl || req.url} ` +
+      106 |       `status=${result.status} reason="${result.error}" ip=${req.ip ?? '-'} ua="${String(req.get('user-agent') ?? '').slice(0, 80)}"`,
+      107 |   );
+
+      at requireScheduledNotificationsAuth (src/middleware/scheduled-notifications-auth.ts:104:11)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at router.handle (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:175:3)
+      at router (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:328:13)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:286:9
+      at router.process_params (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:346:12)
+      at next (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/express/lib/router/index.js:280:10)
+      at ../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:238:16)
+      at done (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (../../../mt-jobs-jobs-tenant-loop/services/gateway/node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Scheduled] morning_briefing_ready → 0 users (personalized), 1 skipped as already briefed today
+
+      at src/routes/scheduled-notifications.ts:548:11
+
+PASS test/vtid-05270-job-tenant-loop.test.ts (5.059 s)
+  isJobsTenantLoopEnabled
+    √ MT_RESOLUTION_V2=undefined flags={"mt":{"jobs_tenant_loop":true}} ⇒ false (16 ms)
+    √ MT_RESOLUTION_V2=false flags={"mt":{"jobs_tenant_loop":true}} ⇒ false (1 ms)
+    √ MT_RESOLUTION_V2=true flags=undefined ⇒ false (1 ms)
+    √ MT_RESOLUTION_V2=true flags={} ⇒ false
+    √ MT_RESOLUTION_V2=true flags={"mt":{}} ⇒ false (1 ms)
+    √ MT_RESOLUTION_V2=true flags={"mt":{"jobs_tenant_loop":false}} ⇒ false
+    √ MT_RESOLUTION_V2=true flags={"mt":{"jobs_tenant_loop":true}} ⇒ true
+  activeTenantIds
+    √ master off ⇒ [DEFAULT_TENANT_ID] with no DB read (6 ms)
+    √ master on ⇒ flagged active non-platform tenants ∪ DEFAULT, one query each (54 ms)
+    √ DEFAULT_TENANT_ID stays in the list when its own flag is off or it is not in the active list (2 ms)
+    √ a failed tenant read degrades to [DEFAULT_TENANT_ID] (46 ms)
+    √ forEachActiveTenant gives each tenant its own context + timezone (1 ms)
+  tenantTimezone
+    √ uses the tenant setting, falls back to Europe/Berlin without a row or with a bad zone (2 ms)
+  resolveJobTenants
+    √ identity tenant beats body tenant; either ⇒ exactly one, on both flag states (3 ms)
+    √ no tenant ⇒ DEFAULT off, active tenants on, [] off without a default (5 ms)
+  resolveActorTenant / jwtSubject
+    √ known tenant wins; else the primary tenant; unresolvable ⇒ null, never DEFAULT (31 ms)
+    √ jwtSubject decodes sub, null on garbage (3 ms)
+  heartbeat loop
+    √ registration gate: today without the master; also opens on MT_RESOLUTION_V2 without DEFAULT_TENANT_ID (2 ms)
+    √ master off ⇒ one DEFAULT_TENANT_ID cycle per tick, no DB read (2 ms)
+    √ master on, no DEFAULT_TENANT_ID ⇒ loops the active flagged tenants (1 ms)
+    √ a tenant flag flipped off between two ticks stops that tenant on the next tick (no restart) (2 ms)
+    √ empty tenant list ⇒ no-op (1 ms)
+  runHeartbeatCycle per-tenant clock
+    √ two tenants both run a due heartbeat automation in one tick, then each waits its own interval (37 ms)
+  /automations/cron/:id
+    √ master off, no tenant ⇒ one DEFAULT_TENANT_ID pass, response unchanged (233 ms)
+    √ master on, two active tenants, no tenant ⇒ one executeAutomation per tenant (100 ms)
+    √ master on, explicit body tenant ⇒ exactly one pass for it (83 ms)
+    √ no tenant anywhere ⇒ 400 as today (93 ms)
+  /scheduled-notifications routes
+    √ diary-reminder: master off ⇒ one DEFAULT_TENANT_ID pass, response unchanged (63 ms)
+    √ diary-reminder: master on, no tenant ⇒ two passes, one per tenant (33 ms)
+    √ nested /morning-briefing with a tenant (AP-0501) runs once for that tenant, flag on (25 ms)
+    √ a user with a scheduler-written morning_briefing_ready row in that tenant within 20 h is skipped (28 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       31 passed, 31 total
+Snapshots:   0 total
+Time:        6.121 s, estimated 26 s
+Ran all test suites matching /test\\vtid-05270-job-tenant-loop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
