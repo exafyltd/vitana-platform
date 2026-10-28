@@ -1,0 +1,7 @@
+# red on base: origin/main 050b3d2060 + the new test only (land-guard.mjs does not exist)
+$ node --test scripts/collab/land-guard.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module 'scripts/collab/land-guard.mjs' imported from scripts/collab/land-guard.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+# tests 1
+# pass 0
