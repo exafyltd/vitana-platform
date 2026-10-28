@@ -22,6 +22,7 @@ specs:
   - vitana-platform:messenger-ux-v2
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
+  - vitana-platform:outbox-test-dates
   - vitana-platform:pm-reassign-idempotent
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
@@ -42,6 +43,7 @@ specs:
   - vitana-platform:context-map
   - vitana-platform:quality-checks
   - vitana-platform:reviewer-step-model
+  - vitana-platform:collab-handoff-check-fix
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -69,6 +71,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
+- `vitana-platform:outbox-test-dates` — VTID-05320 send-status test fixtures relative to now (vitana-v1)
 - `vitana-platform:pm-reassign-idempotent` — the PM's stale-review reassignment writes nothing when nothing changed
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
