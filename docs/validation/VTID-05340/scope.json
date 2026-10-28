@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05340",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/kiro-web-session.mjs",
+    "scripts/collab/kiro-web-session.test.mjs",
+    "docs/kiro-web-parity/**",
+    ".kiro/specs/kiro-web-parity/lanes/session-kit.md",
+    "docs/validation/VTID-05340/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05340/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

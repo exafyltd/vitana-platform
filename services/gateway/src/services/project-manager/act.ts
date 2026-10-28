@@ -17,17 +17,23 @@
  *               question, with the evidence AND every commit between production
  *               and the verified commit. Posting the message ONLY — never a
  *               deploy dispatch.
+ * VTID-05274 (plan kiro-autonomy-fallback §4.5, §5 C3/C4) adds:
+ *   - VERIFY (W1):        lane `in-review → verified` on the lane PR branch;
+ *   - UPDATE_BRANCH:      `PUT /pulls/{n}/update-branch` with the expected head;
+ *   - MERGE_PLAN / MERGE_BOOKKEEPING: through the same safe-merge function;
+ *   - LEDGER:             the lane VTID's row → in_progress / approved.
  *
  * HARD CONSTRAINTS IN CODE (plan §6.3 "Never"). The act layer must NEVER:
  *   - deploy, dispatch a workflow, allocate a VTID, or edit application code;
- *   - merge a PR that touches a governance path unless the lane's reviewer is
- *     `claude` (the final guard, checked here even though P3's decide already
- *     excludes it — defence in depth).
+ *   - merge a PR that the governance guard (governance.ts) refuses: a protected
+ *     gate file without a legacy `claude` review, or a governance path without
+ *     the reviewer agent's accept on the current head (defence in depth — P3's
+ *     decide already excludes it).
  *
  * A Postgres `pm_lease` is taken per tick (lease.ts) so several ECS tasks never
- * act twice. The `pm_lease` table comes from P1's migration, which is NOT merged
- * yet; so when the table is absent the lease acquirer reports `table_absent` and
- * this tick safely NO-OPS — it never crashes, and never acts without a lease.
+ * act twice. When the lease is not taken (table absent, held by another task,
+ * any error) the tick safely NO-OPS — it never crashes, and never acts without
+ * a lease.
  *
  * This layer is deterministic and side-effects only through its injected seams,
  * which is what makes the integration tests (fake GitHub + in-memory DB) able to
@@ -37,22 +43,29 @@
 import { SafeMergeRequest } from '../../types/cicd';
 import type { SafeMergeOutcome } from '../../routes/cicd';
 import { pmMode } from './config';
-import { LeaseManager, defaultLeaseManager } from './lease';
+import { LeaseManager, defaultLeaseManager, recordLease } from './lease';
+import { latestReview, repoFromPrUrl } from './decide';
+import { governanceMergeAllowed as governanceCheck } from './governance';
 import {
   ActResult,
   Gate2Decision,
   Gate2Evidence,
   GATE2_QUESTION,
-  GOVERNANCE_PATHS,
-  GOVERNANCE_REVIEWER,
+  LedgerDecision,
+  MergeBookkeepingDecision,
   MergeDecision,
+  MergePlanDecision,
   ObservedLane,
   ObservedState,
   ParkDecision,
-  PM_SESSION,
   PmDecision,
   ReassignDecision,
+  ReviewEntry,
+  UpdateBranchDecision,
+  VerifyDecision,
 } from './types';
+
+export { laneTouchesGovernance } from './governance';
 
 /** The repo the PM merges in (both Vitana repos go through safe-merge's own allow-list). */
 export type PmRepo = string;
@@ -66,7 +79,7 @@ export interface SafeMergeFn {
   (input: SafeMergeRequest): Promise<SafeMergeOutcome>;
 }
 
-/** A lane-file state change the PM commits (reassign / park / done). */
+/** A lane-file state change the PM commits (reassign / park / done / verified). */
 export interface LaneFileChange {
   slug: string;
   lane: string;
@@ -80,6 +93,14 @@ export interface LaneFileChange {
   release_claim?: boolean;
   /** A one-line log entry describing why. */
   log: string;
+  /** VTID-05274: the lane's repository (default the platform repo). */
+  repo?: string;
+  /**
+   * VTID-05274 (plan §4.5): `pr_branch` = W1 on the lane PR branch before merge
+   * (needs `pr_url`); default = W2 on the bookkeeping PR `pm-agent/<slug>`.
+   */
+  target?: 'pr_branch' | 'bookkeeping';
+  pr_url?: string;
 }
 
 /**
@@ -113,6 +134,16 @@ export interface Gate2EvidenceResolver {
   resolve(decision: Gate2Decision, state: ObservedState): Promise<Gate2Evidence>;
 }
 
+/** VTID-05274: brings a PR up to date with its base (`PUT /pulls/{n}/update-branch`, expected head). */
+export interface UpdateBranchFn {
+  (repo: string, prNumber: number, expectedHeadSha: string): Promise<{ ok: boolean; status: number; detail?: string }>;
+}
+
+/** VTID-05274: the governed ledger write (status / spec_status of one VTID row). */
+export interface LedgerWriter {
+  patch(vtid: string, set: LedgerDecision['set']): Promise<{ ok: boolean; detail?: string }>;
+}
+
 export interface ActDeps {
   safeMerge: SafeMergeFn;
   laneWriter: LaneFileWriter;
@@ -123,6 +154,10 @@ export interface ActDeps {
   repo?: PmRepo;
   /** Lease holder id for this task/tick (ECS task arn or similar). */
   holder?: string;
+  /** VTID-05274: update-branch seam (absent → `update_refused`). */
+  updateBranch?: UpdateBranchFn;
+  /** VTID-05274: ledger writer (absent → `ledger_failed`). */
+  ledgerWriter?: LedgerWriter;
 }
 
 /** The result of acting on a whole tick's decisions. */
@@ -138,83 +173,61 @@ export interface ActTickResult {
 const DEFAULT_REPO: PmRepo = 'exafyltd/vitana-platform';
 
 /**
- * Does a single lane path glob fall under a governance path? A lane path is
- * governance when, after stripping a leading `./` and any trailing `*` glob:
- *   - it equals a governance path, or
- *   - it starts with a governance prefix (the lane is inside it), or
- *   - a governance prefix starts with the lane path AND the lane path is a
- *     directory prefix (the lane is a parent dir that contains the gov path).
+ * The governance final guard as a boolean (kept for callers of the P4 API).
+ * With no review given it applies the legacy rule (reviewer_seat `claude`).
  */
-function pathIsGovernance(p: string): boolean {
-  const norm = p.replace(/^\.?\//, '').replace(/\*+$/g, '');
-  return GOVERNANCE_PATHS.some((g) => {
-    if (norm === g) return true;
-    if (norm.startsWith(g)) return true;
-    // lane path is a parent directory that contains a governance path
-    if (norm.endsWith('/') && g.startsWith(norm)) return true;
-    return false;
-  });
-}
-
-/** True when any of the lane's declared paths is a governance path. */
-export function laneTouchesGovernance(lane: ObservedLane): boolean {
-  return lane.paths.some(pathIsGovernance);
-}
-
-/**
- * The governance-path final guard (plan §6.3 "Never: merge a PR that touches a
- * governance path unless its reviewer is `claude`"). Returns true when the merge
- * is allowed to proceed. Checked here as defence in depth even though P3's lane
- * schema already requires `executor: claude` for governance-path lanes.
- */
-export function governanceMergeAllowed(lane: ObservedLane): boolean {
-  if (!laneTouchesGovernance(lane)) return true;
-  return lane.reviewer_seat === GOVERNANCE_REVIEWER;
+export function governanceMergeAllowed(lane: ObservedLane, review: ReviewEntry | null = null): boolean {
+  return governanceCheck(lane, lane.pr, review).ok;
 }
 
 function findLane(state: ObservedState, slug: string, lane: string): ObservedLane | undefined {
   return state.lanes.find((l) => l.slug === slug && l.lane === lane);
 }
 
+type Bound = Required<Pick<ActDeps, 'safeMerge' | 'laneWriter' | 'gate2Poster' | 'gate2Evidence'>> &
+  Pick<ActDeps, 'updateBranch' | 'ledgerWriter'> & { repo: PmRepo };
+
 /**
  * Act on ONE decision. Pure control flow over the injected seams. Returns the
  * typed `ActResult`. Never deploys, never dispatches a workflow, never allocates
  * a VTID — those capabilities are not injected and not reachable from here.
  */
-async function actOne(
-  decision: PmDecision,
-  state: ObservedState,
-  deps: Required<Pick<ActDeps, 'safeMerge' | 'laneWriter' | 'gate2Poster' | 'gate2Evidence'>> & {
-    repo: PmRepo;
-  },
-): Promise<ActResult> {
+async function actOne(decision: PmDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
   switch (decision.kind) {
     case 'merge':
       return actMerge(decision, state, deps);
     case 'reassign':
-      return actReassign(decision, deps);
+      return actReassign(decision, state, deps);
     case 'park':
-      return actPark(decision, deps);
+      return actPark(decision, state, deps);
     case 'gate2':
       return actGate2(decision, state, deps);
+    case 'verify':
+      return actVerify(decision, state, deps);
+    case 'update_branch':
+      return actUpdateBranch(decision, deps);
+    case 'merge_plan':
+    case 'merge_bookkeeping':
+      return actMergeSpecPr(decision, deps);
+    case 'ledger':
+      return actLedger(decision, deps);
   }
 }
 
-async function actMerge(
-  decision: MergeDecision,
-  state: ObservedState,
-  deps: { safeMerge: SafeMergeFn; laneWriter: LaneFileWriter; repo: PmRepo },
-): Promise<ActResult> {
+async function actMerge(decision: MergeDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
   const lane = findLane(state, decision.slug, decision.lane);
 
-  // Final governance guard: a governance-path PR may only be merged when the
-  // lane's reviewer is `claude`. Never merge otherwise.
-  if (lane && !governanceMergeAllowed(lane)) {
-    return {
-      decision,
-      status: 'governance_blocked',
-      detail: `governance-path lane reviewer is ${lane.reviewer_seat}, not ${GOVERNANCE_REVIEWER}`,
-    };
+  // Final governance guard (governance.ts): protected gate files need a legacy
+  // claude review; governance paths need the agent accept on the current head.
+  if (lane) {
+    const g = governanceCheck(lane, lane.pr, latestReview(lane));
+    if (!g.ok) {
+      return {
+        decision,
+        status: 'governance_blocked',
+        detail: `${g.reason}: lane reviewer_seat ${lane.reviewer_seat}`,
+      };
+    }
   }
 
   // The PR number must be parseable from the decision's PR url (…/pull/<n>).
@@ -222,10 +235,11 @@ async function actMerge(
   if (prNumber == null) {
     return { decision, status: 'merge_refused', detail: 'could not parse PR number from url' };
   }
+  const repo = repoFromPrUrl(decision.pr_url) ?? deps.repo;
 
   const outcome = await deps.safeMerge({
     vtid: decision.vtid,
-    repo: deps.repo,
+    repo,
     pr_number: prNumber,
     require_checks: true,
     merge_strategy: 'squash',
@@ -236,6 +250,7 @@ async function actMerge(
     await deps.laneWriter.write({
       slug: decision.slug,
       lane: decision.lane,
+      repo: lane?.repo ?? repo,
       state: 'done',
       next_actor: '',
       log: `merged ${decision.pr_url} @ ${decision.head_sha}; lane done`,
@@ -249,6 +264,7 @@ async function actMerge(
     await deps.laneWriter.write({
       slug: decision.slug,
       lane: decision.lane,
+      repo: lane?.repo ?? repo,
       state: 'done',
       next_actor: '',
       log: `safe-merge reported already-merged (${outcome.body.reason}); lane done`,
@@ -260,42 +276,37 @@ async function actMerge(
   return { decision, status: 'merge_refused', detail: outcome.body.reason };
 }
 
-async function actReassign(
-  decision: ReassignDecision,
-  deps: { laneWriter: LaneFileWriter },
-): Promise<ActResult> {
+async function actReassign(decision: ReassignDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
   const isLane = decision.target === 'lane';
   await deps.laneWriter.write({
     slug: decision.slug,
     lane: decision.lane,
+    repo: findLane(state, decision.slug, decision.lane)?.repo,
     // A reassigned lane moves its seat (lane) or its review (next_actor only).
     seat: isLane && decision.to_actor !== 'claude' ? decision.to_actor : undefined,
     next_actor: decision.to_actor,
-    log: `reassign ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason})`,
+    log: `reassign ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason}${decision.fallback ? ', Claude unavailable' : ''})`,
   });
   return { decision, status: 'reassigned', detail: `${decision.target}→${decision.to_actor}` };
 }
 
-async function actPark(
-  decision: ParkDecision,
-  deps: { laneWriter: LaneFileWriter },
-): Promise<ActResult> {
+async function actPark(decision: ParkDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
+  const to = decision.to_actor ?? 'claude';
   await deps.laneWriter.write({
     slug: decision.slug,
     lane: decision.lane,
+    repo: findLane(state, decision.slug, decision.lane)?.repo,
     state: 'parked',
-    next_actor: 'claude',
+    next_actor: to,
+    // VTID-05274: parked with the exceptions seat → that seat builds it next.
+    seat: to !== 'claude' ? to : undefined,
     release_claim: decision.release_claim,
-    log: `park (${decision.reason})${decision.release_claim ? '; claim released' : ''}`,
+    log: `park (${decision.reason})${decision.release_claim ? '; claim released' : ''}${decision.fallback ? `; Claude unavailable → ${to}` : ''}`,
   });
   return { decision, status: 'parked', detail: decision.reason };
 }
 
-async function actGate2(
-  decision: Gate2Decision,
-  state: ObservedState,
-  deps: { gate2Poster: Gate2Poster; gate2Evidence: Gate2EvidenceResolver },
-): Promise<ActResult> {
+async function actGate2(decision: Gate2Decision, state: ObservedState, deps: Bound): Promise<ActResult> {
   const evidence = await deps.gate2Evidence.resolve(decision, state);
   await deps.gate2Poster.post({
     slug: decision.slug,
@@ -310,6 +321,53 @@ async function actGate2(
   };
 }
 
+async function actVerify(decision: VerifyDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
+  await deps.laneWriter.write({
+    slug: decision.slug,
+    lane: decision.lane,
+    repo: findLane(state, decision.slug, decision.lane)?.repo ?? repoFromPrUrl(decision.pr_url) ?? undefined,
+    state: 'verified',
+    target: 'pr_branch',
+    pr_url: decision.pr_url,
+    log: `reviewer agent accept on ${decision.head_sha}; verified (${decision.pr_url})`,
+  });
+  return { decision, status: 'verified_written', detail: decision.head_sha };
+}
+
+async function actUpdateBranch(decision: UpdateBranchDecision, deps: Bound): Promise<ActResult> {
+  const n = prNumberFromUrl(decision.pr_url);
+  if (n == null) return { decision, status: 'update_refused', detail: 'could not parse PR number from url' };
+  if (!deps.updateBranch) return { decision, status: 'update_refused', detail: 'no update-branch seam' };
+  const repo = repoFromPrUrl(decision.pr_url) ?? deps.repo;
+  const r = await deps.updateBranch(repo, n, decision.head_sha);
+  return r.ok
+    ? { decision, status: 'branch_updated', detail: `${decision.behind_by} behind` }
+    : { decision, status: 'update_refused', detail: r.detail ?? `status ${r.status}` };
+}
+
+async function actMergeSpecPr(decision: MergePlanDecision | MergeBookkeepingDecision, deps: Bound): Promise<ActResult> {
+  const n = prNumberFromUrl(decision.pr_url);
+  if (n == null) return { decision, status: 'merge_refused', detail: 'could not parse PR number from url' };
+  const outcome = await deps.safeMerge({
+    vtid: decision.vtid,
+    repo: repoFromPrUrl(decision.pr_url) ?? deps.repo,
+    pr_number: n,
+    require_checks: true,
+    merge_strategy: 'squash',
+  });
+  if (outcome.result === 'merged') return { decision, status: 'plan_merged', detail: decision.head_sha };
+  if (outcome.result === 'already_merged') return { decision, status: 'already_merged', detail: outcome.body.reason };
+  return { decision, status: 'merge_refused', detail: outcome.body.reason };
+}
+
+async function actLedger(decision: LedgerDecision, deps: Bound): Promise<ActResult> {
+  if (!deps.ledgerWriter) return { decision, status: 'ledger_failed', detail: 'no ledger writer' };
+  const r = await deps.ledgerWriter.patch(decision.vtid, decision.set);
+  return r.ok
+    ? { decision, status: 'ledger_updated', detail: `${decision.vtid} in_progress` }
+    : { decision, status: 'ledger_failed', detail: r.detail };
+}
+
 /** Parse the PR number from a GitHub PR url like …/pull/123. */
 export function prNumberFromUrl(url: string): number | null {
   const m = url.match(/\/pull\/(\d+)/);
@@ -321,9 +379,9 @@ export function prNumberFromUrl(url: string): number | null {
 /**
  * Act on a whole tick's decisions, in `live` only. Takes the per-tick lease
  * first; if the lease is not held (another task has it, or the pm_lease table is
- * absent because P1 is not merged) the tick NO-OPS. In `off`/`dry_run` it also
- * no-ops. Returns a typed per-decision result list for the status snapshot and
- * the tests.
+ * absent) the tick NO-OPS. In `off`/`dry_run` it also no-ops. Returns a typed
+ * per-decision result list for the status snapshot and the tests. One failing
+ * decision does not stop the others (`act_error`).
  */
 export async function actOnDecisions(
   decisions: PmDecision[],
@@ -337,25 +395,32 @@ export async function actOnDecisions(
     return { mode, acted: false, skipped_reason: 'not_live', results: [] };
   }
 
-  // Take the per-tick lease. Absent table (P1 not merged) or held-by-other → no-op.
+  // Take the per-tick lease. Absent table, held-by-other or any error → no-op.
   const lease = deps.lease ?? defaultLeaseManager();
   const holder = deps.holder ?? `pm-${process.pid}`;
   const outcome = await lease.acquire(holder);
+  recordLease(outcome);
   if (!outcome.acquired) {
     return { mode, acted: false, skipped_reason: 'no_lease', results: [] };
   }
 
-  const bound = {
+  const bound: Bound = {
     safeMerge: deps.safeMerge,
     laneWriter: deps.laneWriter,
     gate2Poster: deps.gate2Poster,
     gate2Evidence: deps.gate2Evidence,
+    updateBranch: deps.updateBranch,
+    ledgerWriter: deps.ledgerWriter,
     repo: deps.repo ?? DEFAULT_REPO,
   };
 
   const results: ActResult[] = [];
   for (const decision of decisions) {
-    results.push(await actOne(decision, state, bound));
+    try {
+      results.push(await actOne(decision, state, bound));
+    } catch (err) {
+      results.push({ decision, status: 'act_error', detail: (err instanceof Error ? err.message : String(err)).slice(0, 200) });
+    }
   }
 
   return { mode, acted: true, results };

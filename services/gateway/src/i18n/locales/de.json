@@ -132,6 +132,7 @@
   "notif.listing_interest.body": "Jemand hat Interesse an „{title}\" gezeigt.",
   "notif.chat_mention.title": "{sender} hat dich in „{group}“ erwähnt",
   "notif.calendar_invite.body": "{name} hat dich zu einem Termin eingeladen",
+  "notif.chat_shared_content.body": "{name} hat etwas mit dir geteilt",
   "notif.chat_burst.body": "{count} neue Nachrichten · {preview}",
   "notif.new_member_greeting_burst.title": "Willkommen in der Community 👋",
   "notif.new_member_greeting_burst.body": "{count} Leute haben dir Hallo gesagt 👋",

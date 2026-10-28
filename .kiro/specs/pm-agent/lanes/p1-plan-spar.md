@@ -1,6 +1,6 @@
 ---
 lane: p1-plan-spar
-state: executing
+state: parked
 next_actor: claude
 vtid: VTID-05214
 executor: claude
@@ -15,9 +15,9 @@ paths:
   - services/gateway/src/routes/plans-spar.ts
   - services/gateway/test/**
   - DATABASE_SCHEMA.md
-claimed_by: session_01J2m8CtCfCH4VEGqmp6HrDh
 branch: ccr-ca63b286-optl8c
-updated: 2026-10-15T19:30Z
+updated: 2026-10-20T21:30Z
+parked_from: executing
 ---
 # P1 — PLAN-SPAR.yml + policy approval of converged plans (VTID-05214)
 
@@ -33,3 +33,43 @@ Migration (policy approval, 4 touch points, pm_digests, pm_lease) + Postgres har
 scripts/collab/plan-spar.mjs + PLAN-SPAR.yml (pull_request_target, base code only, PLAN_SPAR_ENABLED off by default);
 validator allowance for ci-plan-spar commits. Paths extended to the harness, SQL tests and scripts/collab (the client
 and the validator live there).
+### 2026-10-20T20:43Z · pm-agent · executing → parked
+park (stale_claim); claim released
+### 2026-10-20T20:44Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:46Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:48Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:50Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:52Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:54Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:56Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T20:58Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:00Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:02Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:04Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:06Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:08Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:10Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:12Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:14Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:16Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:18Z · pm-agent · update
+park (stale_claim); claim released
+### 2026-10-20T21:30Z · pm-agent · update
+park (stale_claim); claim released
