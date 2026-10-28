@@ -22,7 +22,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
-import { jevGateMode, recordJevShadowDecision } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision } from '../jev-shadow';
 
 export const FIX_VERIFICATION_GATE = 'fix_verification';
 const SYSTEM_CALLER = { actor_id: 'dev-autopilot-watcher', system: true } as const;
@@ -67,9 +67,18 @@ export async function runFixVerificationCheck(a: {
   const env = a.env ?? process.env;
   const mode = jevGateMode(FIX_VERIFICATION_GATE, env);
   if (mode === 'off') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: FIX_VERIFICATION_GATE, decision: 'fix_verification', mode, reason, subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: `verification_${a.verdict.state}` },
+      a.sb,
+    );
   try {
     const ctx = await a.load();
-    if (!ctx || !(ctx.title || ctx.summary)) return null;
+    if (!ctx || !(ctx.title || ctx.summary)) {
+      await skip('no_fix_context');
+      return null;
+    }
     const finding = [ctx.title, ctx.summary].filter(Boolean).join('\n').slice(0, 3000);
     const r = await decide(
       'fix_verification',
@@ -109,6 +118,7 @@ export async function runFixVerificationCheck(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${FIX_VERIFICATION_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }

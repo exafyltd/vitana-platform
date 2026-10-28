@@ -28,7 +28,7 @@ import { getSupabase } from '../../../lib/supabase';
 import type { CommandRow } from '../../backoffice/command-store';
 import { decide, DecideOptions } from '../jev-decision-service';
 import * as repo from '../jev-repository';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 
 export const APPROVAL_RISK_GATE = 'approval_risk';
 /** "High risk, check carefully" in approval_risk's four levels. */
@@ -84,9 +84,18 @@ export async function runApprovalRiskCheck(
   const env = opts.env ?? process.env;
   const mode = jevGateMode(APPROVAL_RISK_GATE, env);
   if (mode === 'off' || row.status !== 'awaiting_approval') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: APPROVAL_RISK_GATE, decision: 'approval_risk', mode, reason, subject_type: 'backoffice_approval', subject_ref: approvalId, system_action: 'queued_for_approval', tenant_id: row.tenant_id },
+      opts.sb,
+    );
   try {
     const input = approvalRiskInput(row);
-    if (!input) return null;
+    if (!input) {
+      await skip('payroll_excluded');
+      return null;
+    }
     const caller = { actor_id: SYSTEM_ACTOR, system: true, system_plane: 'internal' as const, tenant_id: row.tenant_id };
     const r = await decide('approval_risk', { ...input }, caller, { ...(opts.decideOptions || {}), source: `gate:${APPROVAL_RISK_GATE}`, env });
     return await recordJevShadowDecision(
@@ -110,6 +119,7 @@ export async function runApprovalRiskCheck(
     );
   } catch (err: any) {
     console.warn(`[jev] ${APPROVAL_RISK_GATE} failed for command ${row.id}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }

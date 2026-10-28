@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04918",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "shared assistant tool dispatcher is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/orb/tool", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04918-calendar-assistant-parity.test.ts test/vtid-04602-04604-go-live.test.ts test/orb-tools/calendar-management-tools.test.ts test/vtid-04560-role-separation-regression.test.ts", "cwd": "services/gateway",
+      "reason": "every tool in this change writes on a member's behalf — a calendar entry, a feed post that fans out to the whole tenant, or a chat message to a real person; staging shares the production Supabase project, so none of it is exercised there. These suites prove it with the real handlers over a fake database: nothing is created, posted or sent until the member confirmed, nothing for a time that has passed, share and invite reuse the Phase 2/3 services, the live session additionally requires that the member has spoken, text chat and the LiveKit agent reach the same handlers, and the role registry lists the real calendar tools." }
+  ]
+}

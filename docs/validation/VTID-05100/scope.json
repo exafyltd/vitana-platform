@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05100",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/companion/**",
+    "services/gateway/src/routes/companion.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/routes/chat.ts",
+    "services/gateway/src/services/notification-service.ts",
+    "services/gateway/src/services/notification-controls/notification-catalog.ts",
+    "services/gateway/src/i18n/catalog.ts",
+    "services/gateway/src/i18n/locales/*.json",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/package.json",
+    "services/gateway/test/vtid-05100-*.test.ts",
+    "docs/validation/VTID-05100/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05099/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

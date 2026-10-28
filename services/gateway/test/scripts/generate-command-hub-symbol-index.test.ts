@@ -34,6 +34,12 @@ function makeFixture(appJsSrc: string): string {
   mkdirSync(join(gatewayRoot, 'specs'), { recursive: true });
   writeFileSync(join(gatewayRoot, 'scripts/generate-command-hub-symbol-index.mjs'), readFileSync(SCRIPT, 'utf8'));
   writeFileSync(join(gatewayRoot, 'src/frontend/command-hub/app.js'), appJsSrc);
+  // VTID-05072: the generator now reads modules.json (single source of truth
+  // for the file list). Provide a minimal manifest listing only app.js.
+  writeFileSync(
+    join(gatewayRoot, 'src/frontend/command-hub/modules.json'),
+    JSON.stringify({ bundle: [{ file: 'app.js', kind: 'app' }], indexed_only: [] }),
+  );
   return join(gatewayRoot, 'scripts/generate-command-hub-symbol-index.mjs');
 }
 

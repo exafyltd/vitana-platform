@@ -1,0 +1,72 @@
+{
+  "vtid": "VTID-05133",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the Community resource metadata names Supabase Auth and only email/profile",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp/community",
+      "expect_status": 200,
+      "expect_body_contains": "\"resource_name\":\"Maxina Community\"",
+      "reason": "read-only discovery document"
+    },
+    {
+      "kind": "http",
+      "name": "the Community ChatGPT resource metadata points at this gateway",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp/community/chatgpt",
+      "expect_status": 200,
+      "expect_body_contains": "/mcp/community/chatgpt",
+      "reason": "read-only; staging reports its own host, so only the path is checked"
+    },
+    {
+      "kind": "http",
+      "name": "the shared authorization-server document still advertises only email and profile",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-authorization-server",
+      "expect_status": 200,
+      "expect_body_contains": "\"scopes_supported\":[\"email\",\"profile\"]",
+      "reason": "read-only; unchanged content, now also served for the Community ChatGPT path"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned call to /mcp/community is refused with the sign-in challenge",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp/community",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned call to /mcp/community/chatgpt is refused with the sign-in challenge",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp/community/chatgpt",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written"
+    },
+    {
+      "kind": "http",
+      "name": "an unsigned call to Commerce /mcp is still refused",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "rejected probe, nothing is written; Commerce unchanged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/community-mcp.test.ts test/vtid-05133-community-mcp-tools.test.ts test/vtid-04990-chatgpt-oauth.test.ts test/vtid-04968-delegation-guard.test.ts test/commerce-mcp.test.ts test/commerce-mcp-cors.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the Community connector, its privacy rules and grant checks, and the unchanged Commerce behaviour"
+    }
+  ]
+}

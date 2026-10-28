@@ -4,9 +4,14 @@
  *
  * - De-duplicated per source (user_id, source, external_id): a second sync
  *   updates names/emails/phones instead of adding copies.
- * - Contacts who are already Vitanaland members (matched by e-mail) get
- *   contact_user_id + is_on_platform, excluding test/service accounts
- *   (CLAUDE.md rule 45 — the same allowlists as every member-facing list).
+ * - Contacts who are already Vitanaland members get contact_user_id +
+ *   is_on_platform, excluding test/service accounts (CLAUDE.md rule 45 — the
+ *   same allowlists as every member-facing list). Matched by e-mail, and
+ *   (VTID-05057) by phone: every number is normalised to E.164 and matches a
+ *   member only whose phone is verified (profiles.phone_verified) and who
+ *   lets people find them by number (profiles.discoverable_by_phone).
+ *   Until the VTID-05057 migration is applied those columns do not exist;
+ *   phone matching then finds no one and the import still succeeds.
  * - Imported contacts stay the member's even if they later turn the app off;
  *   removing them is an explicit choice (removeImportedContacts).
  * - VTID-04439: `contacts` also has two older unique indexes, one phone and
@@ -16,6 +21,7 @@
  *   the same person, so it is skipped rather than failing the whole batch.
  */
 
+import { parsePhoneNumberFromString, isSupportedCountry, type CountryCode } from 'libphonenumber-js';
 import { db, enc } from './db';
 
 export type ContactSource = 'google' | 'icloud' | 'microsoft' | 'android';
@@ -29,6 +35,8 @@ export interface ImportContact {
 
 export interface ImportResult {
   received: number;
+  /** Contacts dropped because the import was over MAX_CONTACTS_PER_IMPORT. */
+  truncated?: number;
   imported: number;
   on_platform: number;
   /** Already in the member's contacts under another row (same phone or member). */
@@ -37,6 +45,28 @@ export interface ImportResult {
 
 export const MAX_CONTACTS_PER_IMPORT = 5000;
 const BATCH = 500;
+const DEFAULT_REGION: CountryCode = 'DE';
+
+/** An ISO 3166 region hint ("de", "DE", "de-AT" → AT) or the default (DE). */
+export function phoneRegion(hint?: unknown): CountryCode {
+  const raw = String(hint ?? '').trim();
+  const code = (raw.includes('-') || raw.includes('_') ? raw.split(/[-_]/).pop() : raw)?.toUpperCase() ?? '';
+  return code.length === 2 && isSupportedCountry(code) ? (code as CountryCode) : DEFAULT_REGION;
+}
+
+/**
+ * VTID-05057: one phone number in E.164 ("+491701234567"), or null when it is
+ * not a valid number. National numbers ("0170 …") are read in `region`.
+ */
+export function toE164(phone: string, region: CountryCode = DEFAULT_REGION): string | null {
+  const n = parsePhoneNumberFromString(String(phone ?? '').trim(), region);
+  return n && n.isValid() ? n.number : null;
+}
+
+/** Every valid number of a contact, in E.164, without duplicates. */
+export function phonesE164(phones: string[], region: CountryCode = DEFAULT_REGION): string[] {
+  return Array.from(new Set(phones.map((p) => toE164(p, region)).filter((p): p is string => !!p)));
+}
 
 /** Clean one contact; null when there is nothing to keep. */
 export function normalizeContact(c: Partial<ImportContact>): ImportContact | null {
@@ -65,14 +95,17 @@ export function deviceContactId(c: { name?: string; emails?: string[]; phones?: 
   return `dev_${h.toString(16)}_${key.length}`;
 }
 
-async function platformMatches(emails: string[]): Promise<Map<string, string>> {
-  const out = new Map<string, string>();
-  if (emails.length === 0) return out;
+async function excludedAccounts(): Promise<Set<string>> {
   const { createClient } = await import('@supabase/supabase-js');
   const { fetchExcludedTestServiceAccountIds } = await import('../../lib/excluded-test-service-accounts');
-  const excluded = await fetchExcludedTestServiceAccountIds(
+  return fetchExcludedTestServiceAccountIds(
     createClient(process.env.SUPABASE_URL as string, process.env.SUPABASE_SERVICE_ROLE as string) as any,
   );
+}
+
+async function platformMatches(emails: string[], excluded: Set<string>): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (emails.length === 0) return out;
   for (let i = 0; i < emails.length; i += 100) {
     const chunk = emails.slice(i, i + 100);
     const list = chunk.map((e) => `"${e.replace(/"/g, '')}"`).join(',');
@@ -84,11 +117,58 @@ async function platformMatches(emails: string[]): Promise<Map<string, string>> {
   return out;
 }
 
+/**
+ * VTID-05057: members by E.164 number — only verified numbers of members who
+ * allow being found by number. Before the migration adds these columns the
+ * query fails; that is "no phone matches", never a failed import.
+ */
+async function phoneMatches(phones: string[], excluded: Set<string>): Promise<Map<string, string>> {
+  const out = new Map<string, string>();
+  if (phones.length === 0) return out;
+  try {
+    for (let i = 0; i < phones.length; i += 100) {
+      const list = phones.slice(i, i + 100).map((p) => `"${p.replace(/"/g, '')}"`).join(',');
+      const rows = (await db(
+        `profiles?select=user_id,phone_e164&phone_e164=in.(${enc(list)})&phone_verified=is.true&discoverable_by_phone=is.true`,
+      )) as Array<{ user_id: string; phone_e164: string }>;
+      for (const r of rows ?? []) {
+        if (r.phone_e164 && r.user_id && !excluded.has(r.user_id)) out.set(r.phone_e164, r.user_id);
+      }
+    }
+  } catch (err: any) {
+    console.warn(`[contacts-import] phone matching unavailable: ${err?.message}`);
+    return new Map();
+  }
+  return out;
+}
+
+let e164ColumnCache: { at: number; ok: boolean } | null = null;
+/** Whether contacts.contact_phone_e164 exists yet (the migration may lag the code). */
+async function hasE164Column(): Promise<boolean> {
+  if (e164ColumnCache && Date.now() - e164ColumnCache.at < 10 * 60_000) return e164ColumnCache.ok;
+  let ok = false;
+  try {
+    await db('contacts?select=contact_phone_e164&limit=0');
+    ok = true;
+  } catch {
+    ok = false;
+  }
+  e164ColumnCache = { at: Date.now(), ok };
+  return ok;
+}
+
+/** Test hook: forget the column probe. */
+export function resetE164ColumnCache(): void {
+  e164ColumnCache = null;
+}
+
 export async function importContacts(
   userId: string,
   source: ContactSource,
   raw: Array<Partial<ImportContact>>,
+  opts: { region?: CountryCode; method?: string } = {},
 ): Promise<ImportResult> {
+  const region = opts.region ?? DEFAULT_REGION;
   const clean: ImportContact[] = [];
   const seen = new Set<string>();
   for (const c of raw.slice(0, MAX_CONTACTS_PER_IMPORT)) {
@@ -97,10 +177,17 @@ export async function importContacts(
     seen.add(n.external_id);
     clean.push(n);
   }
-  const matches = await platformMatches(Array.from(new Set(clean.flatMap((c) => c.emails))));
+  const excluded = await excludedAccounts();
+  const e164 = new Map(clean.map((c) => [c.external_id, phonesE164(c.phones, region)]));
+  const [matches, byPhone] = await Promise.all([
+    platformMatches(Array.from(new Set(clean.flatMap((c) => c.emails))), excluded),
+    phoneMatches(Array.from(new Set(Array.from(e164.values()).flat())), excluded),
+  ]);
   const now = new Date().toISOString();
   const rows = clean.map((c) => {
-    const member = c.emails.map((e) => matches.get(e)).find((id) => id && id !== userId) ?? null;
+    const numbers = e164.get(c.external_id) ?? [];
+    const member =
+      [...c.emails.map((e) => matches.get(e)), ...numbers.map((p) => byPhone.get(p))].find((id) => id && id !== userId) ?? null;
     return {
       user_id: userId,
       source,
@@ -110,11 +197,23 @@ export async function importContacts(
       contact_phone: c.phones[0] ?? null,
       contact_user_id: member,
       is_on_platform: !!member,
-      metadata: { import_source: source, consent_given: true, emails: c.emails, phones: c.phones, imported_at: now },
+      contact_phone_e164: numbers as string[] | undefined,
+      metadata: {
+        import_source: source,
+        consent_given: true,
+        emails: c.emails,
+        phones: c.phones,
+        phones_e164: numbers,
+        ...(opts.method ? { import_method: opts.method } : {}),
+        imported_at: now,
+      },
       updated_at: now,
     };
   });
   const { keep, skipped } = resolveCollisions(rows, await existingContactKeys(userId));
+  // The column arrives with the VTID-05057 migration; until then the numbers
+  // live in metadata.phones_e164 only, so the upsert never names a missing column.
+  if (!(await hasE164Column())) for (const r of keep) delete r.contact_phone_e164;
   for (let i = 0; i < keep.length; i += BATCH) {
     await db('contacts?on_conflict=user_id,source,external_id', {
       method: 'POST',
@@ -124,6 +223,7 @@ export async function importContacts(
   }
   return {
     received: raw.length,
+    ...(raw.length > MAX_CONTACTS_PER_IMPORT ? { truncated: raw.length - MAX_CONTACTS_PER_IMPORT } : {}),
     imported: keep.length,
     on_platform: keep.filter((r) => r.is_on_platform).length,
     already_present: skipped,

@@ -135,8 +135,29 @@ function delay<T>(value: T, ms: number): Promise<T> {
 // resolveEffectiveRole
 // =============================================================================
 
+/**
+ * VTID-05147: resolveEffectiveRole now intersects the picked role with the
+ * permitted set (user_permitted_roles ∪ active memberships ∪ community), read
+ * through getSupabase(). A service client whose grants are `roles`.
+ */
+function mockPermittedRoles(roles: string[]) {
+  const q = (rows: any[]) => {
+    const c: any = {};
+    c.select = jest.fn(() => c);
+    c.eq = jest.fn(() => c);
+    c.then = (resolve: any, reject: any) => Promise.resolve({ data: rows, error: null }).then(resolve, reject);
+    return c;
+  };
+  mockGetSupabase.mockReturnValue({
+    from: jest.fn((table: string) => q(table === 'user_permitted_roles' ? roles.map((role) => ({ role })) : [])),
+  });
+}
+
 describe('resolveEffectiveRole', () => {
+  // VTID-05147 (contract changed on purpose): a preference only wins when it
+  // is a permitted role; these callers hold the grant.
   it('returns the role_preference value when set, even if it differs from active_role', async () => {
+    mockPermittedRoles(['admin']);
     routeFetch([
       { match: 'role_preferences', json: [{ role: 'admin' }] },
       { match: 'user_tenants', json: [{ active_role: 'community' }] },
@@ -146,6 +167,7 @@ describe('resolveEffectiveRole', () => {
   });
 
   it('returns the role_preference value when it matches active_role (no divergence log path)', async () => {
+    mockPermittedRoles(['developer']);
     routeFetch([
       { match: 'role_preferences', json: [{ role: 'developer' }] },
       { match: 'user_tenants', json: [{ active_role: 'developer' }] },
@@ -155,12 +177,22 @@ describe('resolveEffectiveRole', () => {
   });
 
   it('falls back to user_tenants.active_role when role_preferences has no row', async () => {
+    mockPermittedRoles(['professional']);
     routeFetch([
       { match: 'role_preferences', json: [] },
       { match: 'user_tenants', json: [{ active_role: 'professional' }] },
     ]);
     const role = await resolveEffectiveRole('user-3', 'tenant-1');
     expect(role).toBe('professional');
+  });
+
+  it('VTID-05147: a preference outside the permitted set resolves to community', async () => {
+    mockPermittedRoles([]);
+    routeFetch([
+      { match: 'role_preferences', json: [{ role: 'admin' }] },
+      { match: 'user_tenants', json: [{ active_role: 'community' }] },
+    ]);
+    await expect(resolveEffectiveRole('user-8', 'tenant-1')).resolves.toBe('community');
   });
 
   it('returns null when neither source has a role', async () => {

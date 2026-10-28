@@ -17,6 +17,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import type { NextFunction, Request, Response } from 'express';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 // ---------------------------------------------------------------------------
 // (1) service: the event sink around the tool loop
@@ -275,7 +276,12 @@ describe('VTID-04028 POST /api/v1/operator/chat/stream', () => {
 // (3) client: app.js streams, renders live, falls back
 // ---------------------------------------------------------------------------
 
-const APP_JS = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/app.js'), 'utf8');
+// VTID-05073: the streamed-turn client functions this suite pins
+// (sendChatMessage, streamOperatorTurn, applyOperatorTurnFrame,
+// parseSseFrames, renderOperatorLiveTranscript, ...) moved into
+// operator-console.js. Read the whole Command Hub bundle so both the moved
+// functions and the ones still in app.js resolve. Assertions unchanged.
+const APP_JS = readCommandHubBundle();
 const INDEX_HTML = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/index.html'), 'utf8');
 const CSS = fs.readFileSync(path.join(__dirname, '../src/frontend/command-hub/styles.css'), 'utf8');
 
@@ -306,7 +312,8 @@ describe('VTID-04028 Command Hub client', () => {
     expect(apply).toContain("frame.event === 'tool.result'");
     expect(apply).toContain('state.chatLiveTranscript[d.index]');
     expect(APP_JS).toContain('chatLiveTranscript: [],');
-    expect(APP_JS).toContain('if (state.chatSending) {\n        messages.appendChild(renderOperatorLiveTranscript());');
+    // VTID-05064: only in the thread the running turn belongs to.
+    expect(APP_JS).toContain('if (state.chatSending && state.operatorActiveThreadId === state.chatTurnThreadId) {\n        messages.appendChild(renderOperatorLiveTranscript());');
     expect(fnBody('renderOperatorLiveTranscript')).toContain("chat-tool-activity-line--' + (entry.status || 'running')");
   });
 

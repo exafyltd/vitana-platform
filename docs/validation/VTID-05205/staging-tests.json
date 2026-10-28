@@ -1,0 +1,39 @@
+{
+ "vtid": "VTID-05205",
+ "service": "gateway",
+ "tests": [
+  {
+   "kind": "http",
+   "name": "gateway alive after the change",
+   "path": "/alive",
+   "expect_status": 200
+  },
+  {
+   "kind": "http",
+   "name": "team welcome DMs stay disabled on staging (read-only GET, no member or account data)",
+   "path": "/api/v1/welcome-team/status",
+   "expect_status": 200,
+   "expect_json": {
+    "ok": true,
+    "mode": "disabled-on-staging",
+    "reason": "staging_shares_production_database",
+    "env": "staging"
+   }
+  },
+  {
+   "kind": "http",
+   "name": "the welcome-team tick refuses a call without the internal token (rejected probe, nothing runs)",
+   "method": "POST",
+   "path": "/api/v1/scheduled-notifications/welcome-team-tick",
+   "rejected_probe": true,
+   "expect_status": 401
+  },
+  {
+   "kind": "existing",
+   "name": "welcome-team simulation, catalog coverage and EventBridge job list (CI, in-memory database)",
+   "ref": "npx jest test/vtid-05205-welcome-team.test.ts test/i18n/catalog-coverage.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts",
+   "cwd": "services/gateway",
+   "reason": "Every write path (claims, the DM, the push) writes to the shared production database, so it cannot run on staging (CLAUDE.md rules 31-32, 48); the staging gateway refuses the tick outright (409). The suite proves the behaviour over an in-memory database with a fake clock: Mariia/Jovana/Alex once each on three different days, send-once across retries, no retroactive sends, strict exclusion, closed pilot, shadow writes nothing, locale gate. The SQL of the claim RPCs is proven on PGlite: docs/validation/VTID-05205/outputs/pglite-welcome-team-check.txt."
+  }
+ ]
+}

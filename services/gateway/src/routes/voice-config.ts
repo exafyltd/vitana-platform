@@ -5,6 +5,7 @@
  *   PUT  /api/v1/voice/config              partial-merge update; emits voice.config.updated
  *   GET  /api/v1/voice/tts-voices          enumerate voices for {provider, language}
  *   POST /api/v1/voice/preview             synthesize a phrase via the active TTS provider
+ *   GET  /api/v1/voice/preview/google-voices?lang=ru|sr  female Google voices (VTID-05026)
  *
  * V2V (vertex / livekit) flips continue to live in orb-livekit.ts because of
  * the 60-min cooldown semantics. The Providers & Voice operator screen calls
@@ -12,9 +13,12 @@
  */
 
 import { Router, Request, Response } from 'express';
-import textToSpeech, { protos } from '@google-cloud/text-to-speech';
 // VTID-03495: Polly preview support (explicit `provider: 'polly'` only).
-import { synthesizePolly, POLLY_UNSUPPORTED_LANGS } from '../services/tts/polly';
+import { synthesizePolly, resolvePollyVoice, normalizeLang, POLLY_UNSUPPORTED_LANGS } from '../services/tts/polly';
+// VTID-05026: Google preview for the Audiobook narration languages (ru, sr) only.
+import { synthesizeGoogleNarrationMp3, listGoogleVoices } from '../services/tts/google-narration';
+import { AUDIOBOOK_GOOGLE_VOICES, AUDIOBOOK_POLLY_VOICES } from '../services/guided-journey/audiobook-voices';
+import type { Engine, VoiceId } from '@aws-sdk/client-polly';
 // VTID-03970: Fish Audio preview support (explicit `provider: 'fish'` only).
 import { synthesizeFish, isFishConfigured } from '../services/tts/fish';
 import { emitOasisEvent } from '../services/oasis-event-service';
@@ -181,13 +185,11 @@ router.get('/voice/tts-voices', async (req: Request, res: Response) => {
 // ---------------------------------------------------------------------------
 // POST /api/v1/voice/preview — synthesize phrase via current TTS provider
 // ---------------------------------------------------------------------------
-let _ttsClient: InstanceType<typeof textToSpeech.TextToSpeechClient> | null = null;
-function getTtsClient(): InstanceType<typeof textToSpeech.TextToSpeechClient> {
-  if (!_ttsClient) {
-    _ttsClient = new textToSpeech.TextToSpeechClient();
-  }
-  return _ttsClient;
-}
+// VTID-05026 — Google is used for the Audiobook narration of exactly two
+// languages (ru, sr), each behind its own switch; previews follow the same
+// boundary. Language → BCP-47 code for the voice list and synthesis.
+const GOOGLE_PREVIEW_LANGS: Readonly<Record<string, string>> = { ru: 'ru-RU', sr: 'sr-RS' };
+const GOOGLE_VOICE_NAME_RE = /^[a-z]{2,3}-[A-Z]{2}-[A-Za-z0-9-]+$/;
 
 router.post(
   '/voice/preview',
@@ -202,6 +204,8 @@ router.post(
       voice?: string;
       speaking_rate?: number;
       provider?: string;
+      /** VTID-05026: Polly engine override, with `voice`, for auditioning. */
+      engine?: string;
     };
     const text = (body.text || '').slice(0, 500);
     if (!text) {
@@ -224,11 +228,28 @@ router.post(
     // Auditioning both sides is how the migration gets validated before flipping.
     if (provider === 'polly') {
       const pollyRate = clampRate(body.speaking_rate);
+      // VTID-05026: `voice` + `engine` audition a specific Polly voice (e.g. a
+      // generative Audiobook voice) in the language's own language code. An
+      // invalid pair is rejected by Polly and answers 422 below.
+      let voiceOverride: { voiceId: VoiceId; engine: Engine; languageCode: string } | undefined;
+      if (body.voice || body.engine) {
+        const lang = normalizeLang(body.language || 'en');
+        const base = AUDIOBOOK_POLLY_VOICES[lang] ?? resolvePollyVoice(lang);
+        if (!base || !body.voice || !body.engine) {
+          return res.status(400).json({
+            ok: false,
+            error: 'polly preview override needs voice and engine, for a language Polly speaks',
+            vtid: VTID,
+          });
+        }
+        voiceOverride = { voiceId: body.voice as VoiceId, engine: body.engine as Engine, languageCode: base.languageCode };
+      }
       const result = await synthesizePolly({
         text,
         lang: body.language || 'en',
         format: 'mp3',
         speakingRate: pollyRate,
+        ...(voiceOverride ? { voiceOverride } : {}),
       });
       if (!result) {
         return res.status(422).json({
@@ -280,44 +301,67 @@ router.post(
       return res.send(Buffer.from(result.audioB64, 'base64'));
     }
 
-    const language = body.language || 'en';
-    const voiceList = GOOGLE_TTS_VOICES_BY_LANGUAGE[language] || GOOGLE_TTS_VOICES_BY_LANGUAGE.en;
-    const requestedVoice = body.voice ? voiceList.find((v) => v.name === body.voice) : null;
-    const voice = requestedVoice || voiceList[0];
-
-    const speakingRate = clampRate(body.speaking_rate);
-
-    const useGemini = voice.tier === 'gemini';
-    const voiceParams: protos.google.cloud.texttospeech.v1.IVoiceSelectionParams = {
-      languageCode: voice.languageCode,
-      name: voice.name,
-    };
-    if (useGemini) {
-      // @ts-ignore - modelName is supported but types may be outdated
-      voiceParams.modelName = 'gemini-2.5-flash-tts';
-    }
-
-    try {
-      const client = getTtsClient();
-      const [response] = await client.synthesizeSpeech({
-        input: { text },
-        voice: voiceParams,
-        audioConfig: {
-          audioEncoding: 'MP3' as never,
-          speakingRate,
-          pitch: 0,
-        },
+    // VTID-05026: `google_tts` previews the Audiobook narration voices of ru
+    // and sr only, through the task-role auth client (the library's own ADC
+    // lookup cannot work on ECS). No other language reaches Google.
+    const lang = normalizeLang(body.language || '');
+    const languageCode = GOOGLE_PREVIEW_LANGS[lang];
+    if (!languageCode) {
+      return res.status(400).json({
+        ok: false,
+        error: 'google_tts preview is limited to the Audiobook narration languages ru and sr',
+        vtid: VTID,
       });
-      if (!response.audioContent) {
-        return res.status(500).json({ ok: false, error: 'no audio content', vtid: VTID });
-      }
-      res.setHeader('Content-Type', 'audio/mpeg');
-      res.send(response.audioContent);
-    } catch (e) {
-      res.status(500).json({ ok: false, error: (e as Error).message, vtid: VTID });
     }
+    const pinned = AUDIOBOOK_GOOGLE_VOICES[lang as 'ru' | 'sr'];
+    const name = body.voice || pinned?.name || '';
+    if (!GOOGLE_VOICE_NAME_RE.test(name) || !name.startsWith(`${languageCode}-`)) {
+      return res.status(400).json({ ok: false, error: `voice must be a ${languageCode} Google voice name`, vtid: VTID });
+    }
+    const started = Date.now();
+    const out = await synthesizeGoogleNarrationMp3(text, { name, languageCode, modelName: null });
+    if (!out) {
+      return res.status(422).json({ ok: false, error: 'google_tts synthesis failed', vtid: VTID });
+    }
+    res.setHeader('Content-Type', 'audio/mpeg');
+    res.setHeader('X-Vitana-Tts-Voice', name);
+    res.setHeader('X-Vitana-Tts-Render-Ms', String(Date.now() - started));
+    return res.send(out.mp3);
   },
 );
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/voice/preview/google-voices?lang=ru|sr — VTID-05026
+// Read-only: the female Google voices for an Audiobook narration language,
+// for the owner's audition. Refuses every other language.
+// ---------------------------------------------------------------------------
+router.get('/voice/preview/google-voices', requireAuthWithTenant, async (req: AuthenticatedRequest, res: Response) => {
+    if (!req.identity?.exafy_admin) {
+      return res.status(403).json({ ok: false, error: 'exafy_admin role required', vtid: VTID });
+    }
+    const lang = normalizeLang(String(req.query.lang || ''));
+    const languageCode = GOOGLE_PREVIEW_LANGS[lang];
+    if (!languageCode) {
+      return res.status(400).json({ ok: false, error: 'lang must be ru or sr', vtid: VTID });
+    }
+    try {
+      const voices = (await listGoogleVoices(languageCode)).filter((v) => v.ssmlGender === 'FEMALE');
+      return res.json({
+        ok: true,
+        lang,
+        language_code: languageCode,
+        pinned: AUDIOBOOK_GOOGLE_VOICES[lang as 'ru' | 'sr']?.name ?? null,
+        voices: voices.map((v) => ({
+          name: v.name,
+          ssml_gender: v.ssmlGender,
+          natural_sample_rate_hertz: v.naturalSampleRateHertz,
+        })),
+        vtid: VTID,
+      });
+    } catch (e) {
+      return res.status(502).json({ ok: false, error: (e as Error).message, vtid: VTID });
+    }
+});
 
 function clampRate(n: unknown): number {
   const v = typeof n === 'number' ? n : parseFloat(String(n ?? 1.0));

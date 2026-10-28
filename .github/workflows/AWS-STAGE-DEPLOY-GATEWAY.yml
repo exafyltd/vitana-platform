@@ -55,6 +55,16 @@ on:
         description: 'Public gateway URL for post-deploy verification'
         required: false
         default: 'https://preview-aws-gateway.vitanaland.com'
+      # VTID-05023 part 9: staging's own switch (never touches prod).
+      data_backend:
+        description: 'keep (default; every push) = leave SUPABASE_URL as is; aurora = vitana/supabase/staging/url-aurora-proxy + SUPABASE_PUBLIC_URL; supabase = original staging ref'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
       # BOOTSTRAP-NOVA-SONIC-VOICE: per-dispatch canary overrides. Empty =
       # fall back to the AWS_STAGE_NOVA_SONIC_* repository variables, so the
       # push-triggered deploys keep reading the durable vars config.
@@ -321,6 +331,29 @@ jobs:
             jq -c --arg a "$ARN" '.sec += [{name:"DAILY_API_KEY", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
           fi
           jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05009: the developer morning pack (VTID-04408). The SessionStart hook
+      # sends X-Dev-Memory-Token; the gateway compares it with
+      # DEV_MEMORY_PACK_TOKEN. Daily-key pattern: wired only when
+      # vitana/gateway/staging/dev-memory-pack-token exists; absent => not wired,
+      # the deploy never fails and the hook gets 401 (route closed, as today).
+      - name: Resolve dev-memory pack token
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/dev-memory-pack-token"
+          ERR="$RUNNER_TEMP/devmem-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - DEV_MEMORY_PACK_TOKEN not wired (VTID-05009)"
+            else
+              echo "::warning::$NAME lookup failed - DEV_MEMORY_PACK_TOKEN not wired: $(head -c 300 "$ERR")"
+            fi
+          else
+            echo "  resolved $NAME -> DEV_MEMORY_PACK_TOKEN"
+            jq -c --arg a "$ARN" '.sec += [{name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp" && mv "$F.tmp" "$F"
+          fi
+          jq -c '{env, sec: [.sec[].name]}' "$F"
       # VTID-04999: the Operator's Kiro engine on the private kiro-runner. Jev
       # pattern: wired only when the runner token secret exists (the owner runs
       # scripts/aws/setup-kiro-runner-staging.sh provision --apply); then
@@ -341,10 +374,63 @@ jobs:
             else
               echo "::warning::$NAME lookup failed - Kiro engine stays off: $(head -c 300 "$ERR")"
             fi
-            jq -c '.env += [{name:"KIRO_ENGINE_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+            jq -c '.env += [{name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"}]' "$F" > "$F.tmp"
           else
-            echo "  resolved $NAME -> KIRO_RUNNER_TOKEN, KIRO_RUNNER_URL, KIRO_ENGINE_ENABLED=true"
-            jq -c --arg a "$ARN" '.env += [{name:"KIRO_ENGINE_ENABLED", value:"true"}, {name:"KIRO_RUNNER_URL", value:"http://kiro-runner.vitana.internal:8080"}] | .sec += [{name:"KIRO_RUNNER_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp"
+            echo "  resolved $NAME -> KIRO_RUNNER_TOKEN, KIRO_RUNNER_URL, KIRO_ENGINE_ENABLED=true, KIRO_MCP_ENABLED=true (VTID-05005), KIRO_MCP_WRITE_ENABLED=true (VTID-05006)"
+            jq -c --arg a "$ARN" '.env += [{name:"KIRO_ENGINE_ENABLED", value:"true"}, {name:"KIRO_MCP_ENABLED", value:"true"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"true"}, {name:"KIRO_RUNNER_URL", value:"http://kiro-runner.vitana.internal:8080"}] | .sec += [{name:"KIRO_RUNNER_TOKEN", valueFrom:$a}]' "$F" > "$F.tmp"
+          fi
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05026: Audiobook narration in Russian and Serbian by Google voices
+      # (plan: docs/validation/VTID-04893/plan-sparring.md, Phase 1). Two
+      # independent exact-'true' switches and the approximate per-task daily
+      # character cap (unset/0 = Google narration off). STAGING ONLY here;
+      # production gets them through env_overrides at PUBLISH. Rides on
+      # connected-apps.json (VTID-03788 size guard), merged by name in the roll
+      # step. Rollback: either switch to 'false' (ru back to Polly Tatyana, sr 422).
+      - name: Audiobook Google narration flags
+        run: |
+          set -euo pipefail
+          F="$RUNNER_TEMP/connected-apps.json"
+          jq -c '.env += [{name:"AUDIOBOOK_GOOGLE_RU_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_SR_ENABLED", value:"true"}, {name:"AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK", value:"1040000"}]' "$F" > "$F.tmp"
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05133: Maxina Community MCP ("Connect your AI") — a member's ChatGPT or
+      # Claude reads their Maxina community through /mcp/community (Claude) and
+      # /mcp/community/chatgpt (ChatGPT). Two exact-'true' switches, STAGING ONLY;
+      # production stays off until the owner turns it on after Gate 2. Rides on
+      # connected-apps.json (VTID-03788 size guard), merged by name in the roll
+      # step. Rollback: either switch to 'false' (404, nothing else changes).
+      - name: Community MCP flags
+        run: |
+          set -euo pipefail
+          F="$RUNNER_TEMP/connected-apps.json"
+          jq -c '.env += [{name:"COMMUNITY_MCP_ENABLED", value:"true"}, {name:"COMMUNITY_MCP_CHATGPT", value:"true"}]' "$F" > "$F.tmp"
+          mv "$F.tmp" "$F"
+          jq -c '{env, sec: [.sec[].name]}' "$F"
+      # VTID-05127: phone verification by SMS code (VTID-05095). Kiro pattern:
+      # the secret's presence is the switch. The owner creates it with
+      # scripts/aws/setup-phone-verify-sms.sh --env staging --apply; then
+      # PHONE_VERIFY_HMAC_SECRET is wired and PHONE_VERIFY_ENABLED=true. Absent
+      # => PHONE_VERIFY_ENABLED=false and the deploy never fails. Production is
+      # wired separately (repository variables, scripts/ci/phone-verify-wiring.sh).
+      - name: Resolve phone verification config
+        run: |
+          set -euo pipefail
+          NAME="vitana/gateway/staging/phone-verify-hmac"
+          ERR="$RUNNER_TEMP/phone-verify-describe.err"
+          ARN=$(aws secretsmanager describe-secret --secret-id "$NAME" --query ARN --output text 2>"$ERR" || true)
+          F="$RUNNER_TEMP/connected-apps.json"
+          if [ -z "$ARN" ] || [ "$ARN" = "None" ]; then
+            if grep -q ResourceNotFoundException "$ERR"; then
+              echo "  $NAME not found - PHONE_VERIFY_ENABLED=false (VTID-05127; expected until provisioned)"
+            else
+              echo "::warning::$NAME lookup failed - PHONE_VERIFY_ENABLED=false: $(head -c 300 "$ERR")"
+            fi
+            jq -c '.env += [{name:"PHONE_VERIFY_ENABLED", value:"false"}]' "$F" > "$F.tmp"
+          else
+            echo "  resolved $NAME -> PHONE_VERIFY_HMAC_SECRET, PHONE_VERIFY_ENABLED=true"
+            jq -c --arg a "$ARN" '.env += [{name:"PHONE_VERIFY_ENABLED", value:"true"}] | .sec += [{name:"PHONE_VERIFY_HMAC_SECRET", valueFrom:$a}]' "$F" > "$F.tmp"
           fi
           mv "$F.tmp" "$F"
           jq -c '{env, sec: [.sec[].name]}' "$F"
@@ -364,8 +450,12 @@ jobs:
       # same ERP-bridge-style pattern as SEC_SQL_RO above. Absent => untouched
       # (OPERATOR_MACHINE_AUTH_ENABLED stays whatever it already was on the
       # task def, never forced off); present => enabled + wired as a secret.
-      - name: Register task-definition revision + roll the service
-        id: roll
+      # VTID-05023 part 9: this step builds the task definition; the next step
+      # (id: roll) applies data_backend and registers + rolls. Push deploys have
+      # no inputs -> keep, so a dispatched aurora/supabase switch is carried
+      # forward by every later push (the live task def is the base).
+      - name: Register task-definition revision + roll the service (1/2 — build the task definition)
+        id: taskdef
         env:
           # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
           # environment-scoped repository VARIABLES when set (not secrets —
@@ -402,6 +492,10 @@ jobs:
           # repo secret the workflow uses; plain env var on the task def, the
           # MARKETPLACE_SYNC_SECRET precedent on the prod workflow.
           DEV_AUTOPILOT_SCAN_TOKEN_VALUE: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+          # VTID-05282: the repo variable CLAUDE_AVAILABLE into the staging task
+          # definition (empty -> 'true'), so the Project Manager can fall back to
+          # process.env when its token cannot read the variable. Staging only.
+          CLAUDE_AVAILABLE_VALUE: ${{ vars.CLAUDE_AVAILABLE || 'true' }}
         # NOTE (VTID-03788): the comments below were relocated OUT of the run:
         # script below. That block's run: value had grown to 25,111 characters
         # (only ~7,400 of it is actual bash -- the rest was accumulated comments),
@@ -1061,6 +1155,7 @@ jobs:
                  --arg SCAN_TOKEN "$DEV_AUTOPILOT_SCAN_TOKEN_VALUE" \
                  --arg GCP_CRED_CONFIG "$GCP_CRED_CONFIG" \
                  --slurpfile CA "$RUNNER_TEMP/connected-apps.json" \
+                 --arg CLAUDE_AVAILABLE "$CLAUDE_AVAILABLE_VALUE" \
                  --arg TASK_ROLE "$TASK_ROLE_ARN" '
                 .containerDefinitions[0].image = $IMG
                 | .containerDefinitions[0].environment |=
@@ -1070,10 +1165,8 @@ jobs:
                                               "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
                                               "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
                                               "FEATURE_LATENCY_TELEMETRY_ENV",
-                                              "FEATURE_ORB_FAST_START_ENV",
-                                              "FEATURE_ORB_BRAIN_CACHE_ENV",
-                                              "FEATURE_ORB_NOVA_PREWARM_ENV",
-                                              "FEATURE_ORB_WS_TRANSPORT_ENV",
+                                              "FEATURE_ORB_FAST_START_ENV","FEATURE_ORB_BRAIN_CACHE_ENV","FEATURE_ORB_NOVA_PREWARM_ENV",
+                                              "FEATURE_ORB_WS_TRANSPORT_ENV","ORB_SSE_CROSS_TASK_FORWARD_ENABLED",
                                               "ORB_FULL_DUPLEX_ENABLED","ORB_DEVON_PRECONNECT_ENABLED","ORB_CASCADE_STREAMING_ENABLED","ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED","ORB_TOOL_ACK_INTENT_ENABLED",
                                               "ORB_VERTEX_SHARED_HANDLERS","ORB_TOOL_SELECTION_ENABLED","BRAIN_PERSONAL_WEIGHTS","BRAIN_SCORED_OPENING",
                                               "ORB_DAY_CLOSE_RUNG_ENABLED","ORB_LOG_NOVA_INSTRUCTION_DEBUG",
@@ -1101,7 +1194,8 @@ jobs:
                     "DEV_AUTOPILOT_EXECUTOR","DEV_AUTOPILOT_PR_APPROVAL_REQUIRED",
                                               "CODEINTEL_PLATFORM_REPO_DIR","CODEINTEL_V1_REPO_DIR",
                                               "NAV_CONTINUATION_BIND","VITANA_ENV","GATEWAY_URL",
-                                              "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID") | not) ]
+                                              "AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID",
+                                              "PM_AGENT_ENABLED","PM_MODE","CLAUDE_AVAILABLE") | not) ]
                       + [ {name:"GIT_COMMIT_SHA", value:$SHA},
                           {name:"COMMIT_SHA", value:$SHA},
                           {name:"BUILD_INFO_MARKER", value:$SHORT},
@@ -1116,7 +1210,7 @@ jobs:
                           {name:"FEATURE_ORB_FAST_START_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_BRAIN_CACHE_ENV", value:"staging+prod"},
                           {name:"FEATURE_ORB_NOVA_PREWARM_ENV", value:"staging-only"},
-                          {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"},
+                          {name:"FEATURE_ORB_WS_TRANSPORT_ENV", value:"staging-only"}, {name:"ORB_SSE_CROSS_TASK_FORWARD_ENABLED", value:"true"},
                           {name:"ORB_FULL_DUPLEX_ENABLED", value:"true"}, {name:"ORB_DEVON_PRECONNECT_ENABLED", value:"true"}, {name:"ORB_CASCADE_STREAMING_ENABLED", value:"true"}, {name:"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED", value:"true"}, {name:"ORB_TOOL_ACK_INTENT_ENABLED", value:"true"},
                           {name:"ORB_VERTEX_SHARED_HANDLERS", value:"true"},
                           {name:"ORB_TOOL_SELECTION_ENABLED", value:"true"}, {name:"BRAIN_PERSONAL_WEIGHTS", value:"true"}, {name:"BRAIN_SCORED_OPENING", value:"true"},
@@ -1128,6 +1222,8 @@ jobs:
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
+                          {name:"PM_AGENT_ENABLED", value:"true"},
+                          {name:"PM_MODE", value:"live"}, {name:"CLAUDE_AVAILABLE", value:$CLAUDE_AVAILABLE},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},
                           {name:"TTS_POLLY_STRICT", value:"true"},
@@ -1228,6 +1324,24 @@ jobs:
                 | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
                 | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
                       .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+          printf '%s' "$NEW_DEF" > "$RUNNER_TEMP/new-task-def.json"
+      # VTID-05023 part 9: register + roll split out of the step above (which is
+      # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
+      # keep (every push) passes the task definition through byte for byte.
+      - name: Register task-definition revision + roll the service
+        id: roll
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_STAGING_ARN }}
+        run: |
+          set -e
+          NEW_DEF="$(cat "$RUNNER_TEMP/new-task-def.json")"
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ -f "$DB_SCRIPT" ]; then
+            NEW_DEF=$(printf '%s' "$NEW_DEF" | python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service gateway-staging --resolve --summary "$GITHUB_STEP_SUMMARY")
+          elif [ "$DATA_BACKEND" != keep ]; then
+            echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this commit predates"; exit 1
+          fi
           NEW_ARN=$(aws ecs register-task-definition --cli-input-json "$NEW_DEF" \
             --query 'taskDefinition.taskDefinitionArn' --output text)
           echo "Registered $NEW_ARN"
@@ -1323,7 +1437,9 @@ jobs:
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SHA: ${{ steps.commit.outputs.sha }}
           SHORT: ${{ steps.commit.outputs.short }}
@@ -1361,6 +1477,7 @@ jobs:
         run: |
           {
             echo "## AWS staging gateway deploy"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }}"
             echo "- Image: \`${{ steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.commit.outputs.sha }}\`"
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"

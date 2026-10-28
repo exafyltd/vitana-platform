@@ -28,11 +28,13 @@ import {
   parseReminderPref,
 } from '../services/guided-journey/guided-journey-state';
 import { recordSessionListen } from '../services/guided-journey/journey-index-award';
+import { syncAudiobookCalendarEntry } from '../services/guided-journey/audiobook-calendar';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import type { JourneyMode } from '../types/guided-journey';
 import { getOrbTopicSeed } from '../services/guided-journey/checklist-service';
 import { synthesizeAudiobookTopicMp3 } from '../services/guided-journey/audiobook-episode-audio';
 import { GATEWAY_LOCALES, type GatewayLocale } from '../i18n/catalog';
+import { writeTimelineRow } from '../services/timeline-projector';
 
 const router = Router();
 
@@ -199,6 +201,17 @@ router.post('/session-listened', requireAuth, async (req: AuthenticatedRequest, 
             reason: 'guided_session_listen',
           },
         });
+        // VTID-05168: the +2 is its own labelled contribution on the timeline
+        // (catalog journey.session.listened, cross-pillar). It is added on read,
+        // never written to vitana_index_scores, so it is never folded into a
+        // recorded movement it did not cause.
+        void writeTimelineRow({
+          user_id: userId,
+          activity_type: 'journey.session.listened',
+          activity_data: { topic: topicId },
+          dedupe_key: `journey-listen:${topicId}:${new Date().toISOString().slice(0, 10)}`,
+          source: 'projector:guided_journey',
+        }).catch(() => undefined);
       }
     } catch (err: any) {
       console.warn(`[BOOTSTRAP-GUIDED-JOURNEY-POPUP] index award skipped (non-fatal): ${err?.message}`);
@@ -239,6 +252,9 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
   }
   try {
     const state = await setAudiobookReminder(client, userId, pref);
+    // VTID-04917: the reminder shows in the member's calendar (one daily
+    // entry, no calendar push of its own). Never fails the reminder.
+    const calendar = await syncAudiobookCalendarEntry(userId, pref);
     // A member opting in to / out of a daily push is a real state transition.
     void emitOasisEvent({
       vtid: 'VTID-04763',
@@ -250,7 +266,7 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
       message: pref
         ? `Audiobook daily reminder set for ${pref.time} (${pref.tz})`
         : 'Audiobook daily reminder switched off',
-      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null },
+      payload: { user_id: userId, time: pref?.time ?? null, tz: pref?.tz ?? null, calendar },
     });
     return res.json({ ok: true, state, vtid: 'VTID-04763' });
   } catch (err: any) {
@@ -260,11 +276,13 @@ router.post('/audiobook/reminder', requireAuth, async (req: AuthenticatedRequest
 });
 
 // VTID-04761 — Audiobook listening mode. The narration of ONE published topic
-// as MP3, read by Polly in the Vitana voice, for the My Journey player (plain
+// as MP3, read in the Vitana voice (Audiobook voice table, VTID-05026), for the My Journey player (plain
 // <audio>, no live voice session, no microphone).
 // GET /api/v1/journey/audiobook/topics/:topicId/audio?lang=de
-//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no Polly
-//   voice for the language, e.g. sr — the player offers Vitana live instead)
+//   200 audio/mpeg | 404 topic_not_live | 422 narration_unavailable (no voice
+//   may read the language — sr with its Google switch off — or the Google
+//   render failed or hit the daily cap, VTID-05026; the player offers Vitana
+//   live instead, never another voice)
 //   | 422 narration_not_translated (VTID-04873: this topic has no narration in
 //   the requested language yet — never read the German text in another
 //   language's voice).
@@ -317,6 +335,9 @@ router.get('/audiobook/topics/:topicId/audio', requireAuth, async (req: Authenti
     // member's own browser keep it, never a shared cache.
     res.setHeader('Cache-Control', 'private, max-age=86400');
     res.setHeader('X-Audiobook-Cache', audio.cached ? 'hit' : 'miss');
+    // VTID-05026: who read the episode (`google` for ru/sr when their switch
+    // is on, `polly` otherwise), so staging verification can prove it.
+    res.setHeader('X-Audiobook-Voice-Provider', audio.provider);
     // VTID-04873: the language the narrated text is written in. Always equal
     // to `lang` here; exposed so staging verification can prove it.
     res.setHeader('X-Audiobook-Narration-Locale', seed.narrationLocale);

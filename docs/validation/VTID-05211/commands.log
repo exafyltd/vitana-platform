@@ -1,0 +1,21 @@
+# VTID-05211 (profile-vitana-cards/gateway-profile-list) — commands run, Kiro session kiro-202610151240-0371, 2026-10-15
+# Worktree: exafyltd/vitana-platform, branch kiro/profile-vitana-cards/gateway-profile-list, head 13ddd0cf5 (the code commit).
+# Nothing was run against staging or production; no live system was written to.
+# The real output of every command below is in outputs/local-checks.txt.
+
+# --- read-only facts checked before writing ---
+grep -rn "eligibleEnrichmentCards\|SCREEN_ENRICHMENT_CARDS" services/gateway/src services/gateway/test   # only the route uses the rule
+grep -n "isProviderConfigured" services/gateway/src/services/social-connect-service.ts                 # existing VTID-04402 helper: client id AND secret
+grep -n "profile" docs/validation/VTID-05143/pglite-unified-card-system-check.mjs                       # pins no screen list (B3: no change)
+
+# --- tests (services/gateway) ---
+npm ci
+npx jest test/routes/enrichment-cards.test.ts test/services/enrichment     # 4 suites, 139 tests passed
+npx tsc --noEmit -p tsconfig.json                                          # exit 0
+
+# --- PR-GATE checks (repo root), PR_TITLE set to the PR title ---
+node scripts/ci/pr-gate/gate.mjs scope      --base <merge-base> --head 13ddd0cf5    # 9 files, all in scope
+node scripts/ci/pr-gate/gate.mjs sparring   --base <merge-base> --head 13ddd0cf5    # record present and approved
+node scripts/ci/pr-gate/gate.mjs weakening  --base <merge-base> --head 13ddd0cf5    # 1 test file, none weakened
+node scripts/ci/pr-gate/gate.mjs red-green  --base <merge-base> --head 13ddd0cf5    # run at implementation time: 12 tests fail on base, suite passes on head (not re-captured)
+node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD      # collab handoff: 1 lane file, valid

@@ -1,0 +1,10 @@
+# VTID-05025 — commands run locally (services/gateway unless noted)
+npx tsc --noEmit -p .                                            # exit 0, no output
+npx jest test/vtid-05025-commerce-health-boundary.test.ts        # 39/39 passed  -> outputs/boundary-suite.txt
+git stash push -- src && npx jest test/vtid-05025-commerce-health-boundary.test.ts && git stash pop
+                                                                 # mutation check: against the pre-change source 5 tests fail
+                                                                 # (opt-in default, cache isolation, invalidation, device-derived
+                                                                 #  condition, context-pack-builder scan) -> outputs/mutation-check.txt
+npx jest <6 suites for the touched modules>                      # 183/183 passed -> outputs/regression-suites.txt
+npx jest $(grep -rlE "context-pack-builder|inferPrimaryCondition|wearable-analyzer|recommendation-generator" test)
+                                                                 # 24 suites, 368/368 passed

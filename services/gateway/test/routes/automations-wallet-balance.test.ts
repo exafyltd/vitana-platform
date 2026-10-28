@@ -24,6 +24,18 @@ jest.mock('../../src/routes/automations-repository', () => ({
   fetchWalletBalance: (...args: unknown[]) => mockFetchWalletBalance(...args),
 }));
 
+// VTID-05048: the member routes now carry requireAuth; stand it in with a
+// fake that verifies the bearer and attaches the identity, as the real one does.
+jest.mock('../../src/middleware/auth-supabase-jwt', () => ({
+  requireAuth: (req: any, res: any, next: any) => {
+    if (req.get('Authorization') !== 'Bearer member') {
+      return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+    }
+    req.identity = { user_id: 'u1', tenant_id: 't1' };
+    return next();
+  },
+}));
+
 import express from 'express';
 import request from 'supertest';
 import automationsRouter from '../../src/routes/automations';
@@ -31,10 +43,6 @@ import automationsRouter from '../../src/routes/automations';
 function buildApp() {
   const app = express();
   app.use(express.json());
-  app.use((req: any, _res, next) => {
-    req.identity = { user_id: 'u1', tenant_id: 't1' };
-    next();
-  });
   app.use('/api/v1/automations', automationsRouter);
   return app;
 }
@@ -57,7 +65,7 @@ describe('GET /wallet/balance', () => {
       error: { message: 'relation "wallet_balances" does not exist' },
     });
 
-    const res = await request(buildApp()).get('/api/v1/automations/wallet/balance');
+    const res = await request(buildApp()).get('/api/v1/automations/wallet/balance').set('Authorization', 'Bearer member');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -77,7 +85,7 @@ describe('GET /wallet/balance', () => {
       error: null,
     });
 
-    const res = await request(buildApp()).get('/api/v1/automations/wallet/balance');
+    const res = await request(buildApp()).get('/api/v1/automations/wallet/balance').set('Authorization', 'Bearer member');
 
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -88,5 +96,13 @@ describe('GET /wallet/balance', () => {
       updated_at: '2026-08-29T00:00:00Z',
     });
     expect(errorSpy).not.toHaveBeenCalled();
+  });
+});
+
+describe('GET /wallet/balance auth (VTID-05048)', () => {
+  it('401 for an anonymous caller — requireAuth runs before any lookup', async () => {
+    const res = await request(buildApp()).get('/api/v1/automations/wallet/balance');
+    expect(res.status).toBe(401);
+    expect(mockFetchWalletBalance).not.toHaveBeenCalled();
   });
 });

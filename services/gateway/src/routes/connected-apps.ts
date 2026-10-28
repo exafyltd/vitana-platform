@@ -6,7 +6,9 @@
  *   POST /api/v1/connected-apps/:id/connect            turn on (may return auth_url)
  *   POST /api/v1/connected-apps/:id/disconnect         turn off
  *   POST /api/v1/connected-apps/:id/sync               sync now
- *   POST /api/v1/connected-apps/android-contacts/import  contacts picked on the phone
+ *   POST /api/v1/connected-apps/android-contacts/import  contacts from the phone
+ *        (picker, .vcf file or native bridge; optional `method`, `region`)
+ *   DELETE /api/v1/connected-apps/android-contacts      remove them again (VTID-05057)
  *
  * Every route needs a verified member (requireAuth); the member only ever
  * acts on their own apps.
@@ -20,6 +22,7 @@ import {
   disconnectApp,
   importDeviceContacts,
   listApps,
+  removeDeviceContacts,
   syncApp,
 } from '../services/connected-apps/hub';
 
@@ -54,11 +57,26 @@ router.post('/android-contacts/import', async (req: AuthenticatedRequest, res: R
   const m = member(req);
   if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   try {
-    const r = await importDeviceContacts(m.userId, (req.body?.contacts ?? []) as any[]);
+    const r = await importDeviceContacts(m.userId, (req.body?.contacts ?? []) as any[], {
+      region: req.body?.region,
+      method: req.body?.method,
+    });
     if (!r.ok) return res.status(r.status ?? 400).json(r);
     return res.json(r);
   } catch (err: any) {
     console.error(`${LOG} android import failed: ${err?.message}`);
+    return res.status(500).json({ ok: false, error: 'internal_error' });
+  }
+});
+
+router.delete('/android-contacts', async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: the hub records this transition (connected_app.contacts_removed in services/connected-apps/hub.ts).
+  const m = member(req);
+  if (!m) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  try {
+    return res.json(await removeDeviceContacts(m.userId));
+  } catch (err: any) {
+    console.error(`${LOG} android remove failed: ${err?.message}`);
     return res.status(500).json({ ok: false, error: 'internal_error' });
   }
 });

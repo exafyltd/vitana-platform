@@ -6,12 +6,14 @@
  * implements its own inline `getUserContext(req)`:
  *   1. No Bearer token -> { ok:false, error:'UNAUTHENTICATED' }
  *   2. createUserSupabaseClient(token).rpc('me_context') succeeds with a row
- *      -> tenant_id = data.tenant_id || x-tenant-id header || Maxina default;
- *         user_id = data.user_id || data.id
+ *      -> user_id = data.user_id || data.id; tenant_id = data.tenant_id
  *   3. rpc('me_context') errors -> falls back to supabase.auth.getUser():
  *      - getUser also fails/no user -> { ok:false, error:'Failed to get user context' }
- *      - getUser succeeds -> tenant_id = x-tenant-id header || Maxina default;
- *        user_id = authData.user.id
+ *      - getUser succeeds -> user_id = authData.user.id
+ *   VTID-05048: when me_context carries no tenant, the tenant is the verified
+ *   identity's, else the user's primary user_tenants row; none -> 400
+ *   TENANT_REQUIRED. The x-tenant-id header and the '1111…' default are gone
+ *   (any caller could set the header; the default is not a real tenant).
  *   4. Any thrown exception -> caught, { ok:false, error:'Failed to get user context' }
  *
  * All five business-logic endpoints call getUserContext first and 401 with
@@ -25,7 +27,7 @@
 import request from 'supertest';
 import express from 'express';
 
-const MAXINA_DEFAULT_TENANT = '11111111-1111-1111-1111-111111111111';
+const OLD_HARDCODED_DEFAULT = '11111111-1111-1111-1111-111111111111';
 
 // ---------------------------------------------------------------------------
 // Mocks
@@ -60,6 +62,15 @@ jest.mock('../../src/services/autopilot-prompts-service', () => ({
   generatePrompts: (...args: any[]) => mockGeneratePrompts(...args),
   getTodayPrompts: (...args: any[]) => mockGetTodayPrompts(...args),
   executePromptAction: (...args: any[]) => mockExecutePromptAction(...args),
+}));
+
+// VTID-05048: primary user_tenants fallback (service client + repo lookup).
+const mockFetchPrimaryTenant = jest.fn();
+jest.mock('../../src/lib/supabase', () => ({
+  getSupabase: () => ({}),
+}));
+jest.mock('../../src/middleware/auth-supabase-jwt-repository', () => ({
+  fetchPrimaryTenantForUser: (...args: any[]) => mockFetchPrimaryTenant(...args),
 }));
 
 import router from '../../src/routes/autopilot-prompts';
@@ -136,9 +147,10 @@ describe('auth gate (getUserContext) — GET /prefs as the representative endpoi
     expect(mockGetPromptPrefs).toHaveBeenCalledWith('tenant-from-rpc', 'user-rpc');
   });
 
-  it('falls back to auth.getUser() when me_context RPC errors, using the x-tenant-id header', async () => {
+  it('falls back to auth.getUser() when me_context RPC errors and IGNORES the x-tenant-id header (primary tenant row wins)', async () => {
     mockMeContextError();
     mockAuthGetUserOk('user-from-auth');
+    mockFetchPrimaryTenant.mockResolvedValue({ data: { tenant_id: 'tenant-primary' }, error: null });
     mockGetPromptPrefs.mockResolvedValue({ ok: true, prefs: {} });
 
     await request(app)
@@ -146,17 +158,42 @@ describe('auth gate (getUserContext) — GET /prefs as the representative endpoi
       .set(AUTH_HEADER)
       .set('x-tenant-id', 'tenant-from-header');
 
-    expect(mockGetPromptPrefs).toHaveBeenCalledWith('tenant-from-header', 'user-from-auth');
+    expect(mockFetchPrimaryTenant).toHaveBeenCalledWith(expect.anything(), 'user-from-auth', expect.anything());
+    expect(mockGetPromptPrefs).toHaveBeenCalledWith('tenant-primary', 'user-from-auth');
   });
 
-  it('falls back to the Maxina default tenant when me_context errors and no x-tenant-id header is sent', async () => {
-    mockMeContextError();
-    mockAuthGetUserOk('user-from-auth');
+  it('me_context without a tenant resolves the primary user_tenants row, not the header', async () => {
+    mockRpc.mockResolvedValue({ data: { user_id: 'user-rpc' }, error: null });
+    mockFetchPrimaryTenant.mockResolvedValue({ data: { tenant_id: 'tenant-primary' }, error: null });
     mockGetPromptPrefs.mockResolvedValue({ ok: true, prefs: {} });
 
-    await request(app).get('/prefs').set(AUTH_HEADER);
+    await request(app).get('/prefs').set(AUTH_HEADER).set('x-tenant-id', 'tenant-from-header');
 
-    expect(mockGetPromptPrefs).toHaveBeenCalledWith(MAXINA_DEFAULT_TENANT, 'user-from-auth');
+    expect(mockGetPromptPrefs).toHaveBeenCalledWith('tenant-primary', 'user-rpc');
+  });
+
+  it('400 TENANT_REQUIRED when no tenant can be resolved — never the x-tenant-id header, never the old hardcoded default', async () => {
+    mockMeContextError();
+    mockAuthGetUserOk('user-from-auth');
+    mockFetchPrimaryTenant.mockResolvedValue({ data: null, error: { message: 'no rows' } });
+
+    const res = await request(app).get('/prefs').set(AUTH_HEADER).set('x-tenant-id', 'tenant-from-header');
+
+    expect(res.status).toBe(400);
+    expect(res.body).toEqual({ ok: false, error: 'TENANT_REQUIRED' });
+    expect(mockGetPromptPrefs).not.toHaveBeenCalled();
+    expect(mockGetPromptPrefs).not.toHaveBeenCalledWith(OLD_HARDCODED_DEFAULT, expect.anything());
+  });
+
+  it('400 TENANT_REQUIRED when the primary-tenant lookup throws', async () => {
+    mockMeContextError();
+    mockAuthGetUserOk('user-from-auth');
+    mockFetchPrimaryTenant.mockRejectedValue(new Error('aborted'));
+
+    const res = await request(app).get('/prefs').set(AUTH_HEADER);
+
+    expect(res.status).toBe(400);
+    expect(res.body.error).toBe('TENANT_REQUIRED');
   });
 
   it('401s with "Failed to get user context" when both me_context and auth.getUser fail', async () => {

@@ -12,6 +12,9 @@ export type SparringVerdict = 'in_progress' | 'converged' | 'escalated' | 'pendi
 export type FindingSeverity = 'blocker' | 'major' | 'minor';
 export type Disposition = 'accepted' | 'rejected' | 'deferred';
 export type AckStatus = 'acknowledged' | 'disputed';
+/** VTID-05214: policies that approve a session without the owner. A changed rule gets a new id. */
+export const APPROVAL_POLICIES = ['converged-auto-v1'] as const;
+export type ApprovalPolicy = (typeof APPROVAL_POLICIES)[number];
 
 export type EscalationReason =
   | 'model_unavailable'
@@ -89,6 +92,14 @@ export interface ModelLogEntry {
   output_tokens: number;
   ok: boolean;
   error?: string;
+  /**
+   * VTID (sparring-model-fallback): true when this entry is the one-shot
+   * Sonnet 4.6 throttle fallback (the primary Opus 4.6 call was throttled).
+   * Makes every fallback visible in the stored model_log — never silent.
+   */
+  fallback?: boolean;
+  /** Which fallback tier answered: 'bedrock_fallback' (Sonnet 4.6) or 'deepseek' (last resort). */
+  fallback_tier?: 'bedrock_fallback' | 'deepseek';
 }
 
 /** One element of `rounds` (append-only). */
@@ -125,6 +136,11 @@ export interface SparringSession {
   human_approved_by: string | null;
   human_approved_at: string | null;
   approval_evidence: Record<string, unknown> | null;
+  /** VTID-05214: the approval policy the session asked for at creation (`converged-auto-v1`), else null. */
+  approval_policy?: ApprovalPolicy | null;
+  /** VTID-05214: set by the service when a session with `approval_policy` converged. The gate accepts it like an owner approval. */
+  policy_approved_at?: string | null;
+  policy_approval_rule?: ApprovalPolicy | null;
   vtid: string | null;
   created_at?: string;
   updated_at?: string;

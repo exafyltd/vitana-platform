@@ -8,9 +8,11 @@
  *   - no workouts in last 7d              -> post-workout-recovery /
  *                                            energy bundled nudge (deferred)
  *
- * Emits signals; convert to `source_type='marketplace'` downstream (reuses
- * the marketplace analyzer pipeline — condition_product_mappings drive the
- * actual product picks).
+ * Emits health-domain wellness signals (recommendation-generator.ts
+ * convertWearableSignal: domain 'health', source_type 'wearable').
+ * VTID-05025 (Health Hub D12): these signals must never become marketplace
+ * picks or rank products — device-derived health data does not personalise
+ * commerce. test/vtid-05025-commerce-health-boundary.test.ts pins this.
  */
 
 import { createHash } from 'crypto';

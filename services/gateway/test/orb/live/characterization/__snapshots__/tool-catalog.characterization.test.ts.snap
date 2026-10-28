@@ -448,9 +448,9 @@ meetups/live rooms).",
         },
       },
       {
-        "description": "Recommend the perfect product for the user. Fuses their weakest
-Vitana Index pillar + active Life Compass goal + a free-form ask
-and any explicit filters (price cap, ingredients to exclude). Returns
+        "description": "Recommend the perfect product for the user. Fuses their active Life
+Compass goal + a free-form ask + a pillar only when the user names
+one, and any explicit filters (price cap, ingredients to exclude). Returns
 top-3 with a rationale. Use for: "find me a product for poor sleep on
 travel days", "what supplement should I take for my hydration?", etc.
 
@@ -476,7 +476,7 @@ matches use find_community_member.",
               "type": "number",
             },
             "pillar": {
-              "description": "OPTIONAL — nutrition / hydration / exercise / sleep / mental. Defaults to the user's weakest pillar.",
+              "description": "OPTIONAL — only when the member names a pillar: nutrition / hydration / exercise / sleep / mental.",
               "type": "string",
             },
           },
@@ -3160,6 +3160,118 @@ If there are conflicts, name the overlapping events and suggest checking another
         },
       },
       {
+        "description": "Share one of the member's own upcoming calendar entries to their community feed, as a post with a card: an event, a live room, or any private, business, medical or reminder entry.
+WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I'm going", "teil Marias Geburtstag im Feed".
+Never a cancelled, finished or recurring entry. The member must ask for it.
+For an own entry the card shows card_title (default: the entry title — offer a friendlier one when the title is private, e.g. a reminder) and the place only with include_location=true.
+A health appointment (result sensitive=true) needs sensitive_ack=true on the confirmed call, after you said plainly what is shared.
+Compose a short, friendly post text in the member's language (du-form in German) or use their words.
+Two steps: call without confirmed to get the preview; read the event and the post text back and ask;
+call again with the same entry_id, text, card_title, include_location, is_public and the preview's card_token and confirmed=true only after the member says yes (is_public is required on that call; an own entry needs card_token).
+Never claim it was posted unless the result says STATUS: shared.",
+        "name": "share_calendar_entry_to_feed",
+        "parameters": {
+          "properties": {
+            "card_title": {
+              "description": "For an own entry: the title others see on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed the read-back.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "include_location": {
+              "description": "For an own entry: true shows the entry's place on the card. Default false.",
+              "type": "boolean",
+            },
+            "is_public": {
+              "description": "false keeps the post visible to the member only, true shows it to the community. Required with confirmed=true — send what the member approved.",
+              "type": "boolean",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
+            },
+            "text": {
+              "description": "The post text, in the member's language (max 2000 characters). May be empty.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite another community member to an entry in the member's calendar: sends an invite card into their direct chat, which they answer with yes / maybe / no.
+WHEN TO CALL: "invite Maria to my run on Saturday", "Lad Jonas zum Meetup ein".
+Works for any of the member's own upcoming entries (event, live room, private, business, medical, reminder) — not a series, nothing finished or cancelled.
+For an own entry the card shows card_title (default: the entry title) and the place only with include_location=true. A health appointment needs sensitive_ack=true, as for sharing.
+First resolve the person with resolve_recipient and pass their user id as recipient_user_id.
+Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;
+call again with the same arguments plus the preview's card_token and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.",
+        "name": "invite_to_calendar_entry",
+        "parameters": {
+          "properties": {
+            "card_title": {
+              "description": "For an own entry: the title on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "include_location": {
+              "description": "For an own entry: true shows the entry's place on the card. Default false.",
+              "type": "boolean",
+            },
+            "recipient_user_id": {
+              "description": "The invited person's user id (UUID) from resolve_recipient.",
+              "type": "string",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "recipient_user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Push an existing reminder out by N minutes (default 10, max 1440).
 CALL WHEN the user says 'snooze it', 'remind me again in 15 minutes',
 'verschieb die Erinnerung', 'erinnere mich später nochmal'.
@@ -4382,7 +4494,7 @@ Match melden". Stay neutral and factual — never promise an outcome.",
       {
         "description": "Flagship people-match: find the PERFECT person for the user — workout
 partner, accountability buddy, mentor, learning partner — personalized
-with their Life Compass goal and weakest Vitana pillar. Searches the
+with their own Life Compass goal. Searches the
 live community asks and, per the confirm flow, also posts the request
 so the user becomes discoverable.
 CALL WHEN the user says: "find me a workout partner", "who would be my
@@ -4395,7 +4507,7 @@ confirmed=true).",
         "parameters": {
           "properties": {
             "ask": {
-              "description": "What kind of person the user wants, verbatim. May be omitted — then the weakest pillar suggests one.",
+              "description": "What kind of person the user wants, verbatim. May be omitted — the tool then asks the member.",
               "type": "string",
             },
             "confirmed": {
@@ -5538,6 +5650,14 @@ If several events or member matches are found, ask which one.",
         "name": "send_calendar_invite_in_chat",
         "parameters": {
           "properties": {
+            "card_title": {
+              "description": "For an own entry: the title on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
             "confirmed": {
               "description": "Pass true ONLY after the user explicitly confirmed sending.",
               "type": "boolean",
@@ -5550,6 +5670,10 @@ If several events or member matches are found, ask which one.",
               "description": "Exact calendar_events UUID when already known.",
               "type": "string",
             },
+            "include_location": {
+              "description": "For an own entry: true shows the place on the card. Default false.",
+              "type": "boolean",
+            },
             "member": {
               "description": "Spoken name or Vitana ID of the recipient.",
               "type": "string",
@@ -5557,6 +5681,10 @@ If several events or member matches are found, ask which one.",
             "member_user_id": {
               "description": "UUID of the recipient if already resolved.",
               "type": "string",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
             },
           },
           "required": [],
@@ -6293,6 +6421,33 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
           "properties": {
             "device_name": {
               "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.",
+        "name": "get_my_timeline",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Optional life area, e.g. community, diary, journey, events.",
+              "type": "string",
+            },
+            "pillar": {
+              "description": "Optional: nutrition, hydration, exercise, sleep or mental.",
+              "type": "string",
+            },
+            "range": {
+              "description": "today, week (default) or month.",
               "type": "string",
             },
           },
@@ -13447,9 +13602,9 @@ meetups/live rooms).",
         },
       },
       {
-        "description": "Recommend the perfect product for the user. Fuses their weakest
-Vitana Index pillar + active Life Compass goal + a free-form ask
-and any explicit filters (price cap, ingredients to exclude). Returns
+        "description": "Recommend the perfect product for the user. Fuses their active Life
+Compass goal + a free-form ask + a pillar only when the user names
+one, and any explicit filters (price cap, ingredients to exclude). Returns
 top-3 with a rationale. Use for: "find me a product for poor sleep on
 travel days", "what supplement should I take for my hydration?", etc.
 
@@ -13475,7 +13630,7 @@ matches use find_community_member.",
               "type": "number",
             },
             "pillar": {
-              "description": "OPTIONAL — nutrition / hydration / exercise / sleep / mental. Defaults to the user's weakest pillar.",
+              "description": "OPTIONAL — only when the member names a pillar: nutrition / hydration / exercise / sleep / mental.",
               "type": "string",
             },
           },
@@ -16159,6 +16314,118 @@ If there are conflicts, name the overlapping events and suggest checking another
         },
       },
       {
+        "description": "Share one of the member's own upcoming calendar entries to their community feed, as a post with a card: an event, a live room, or any private, business, medical or reminder entry.
+WHEN TO CALL: "post my yoga meetup to the feed", "tell everyone I'm going", "teil Marias Geburtstag im Feed".
+Never a cancelled, finished or recurring entry. The member must ask for it.
+For an own entry the card shows card_title (default: the entry title — offer a friendlier one when the title is private, e.g. a reminder) and the place only with include_location=true.
+A health appointment (result sensitive=true) needs sensitive_ack=true on the confirmed call, after you said plainly what is shared.
+Compose a short, friendly post text in the member's language (du-form in German) or use their words.
+Two steps: call without confirmed to get the preview; read the event and the post text back and ask;
+call again with the same entry_id, text, card_title, include_location, is_public and the preview's card_token and confirmed=true only after the member says yes (is_public is required on that call; an own entry needs card_token).
+Never claim it was posted unless the result says STATUS: shared.",
+        "name": "share_calendar_entry_to_feed",
+        "parameters": {
+          "properties": {
+            "card_title": {
+              "description": "For an own entry: the title others see on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed the read-back.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "include_location": {
+              "description": "For an own entry: true shows the entry's place on the card. Default false.",
+              "type": "boolean",
+            },
+            "is_public": {
+              "description": "false keeps the post visible to the member only, true shows it to the community. Required with confirmed=true — send what the member approved.",
+              "type": "boolean",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
+            },
+            "text": {
+              "description": "The post text, in the member's language (max 2000 characters). May be empty.",
+              "type": "string",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Invite another community member to an entry in the member's calendar: sends an invite card into their direct chat, which they answer with yes / maybe / no.
+WHEN TO CALL: "invite Maria to my run on Saturday", "Lad Jonas zum Meetup ein".
+Works for any of the member's own upcoming entries (event, live room, private, business, medical, reminder) — not a series, nothing finished or cancelled.
+For an own entry the card shows card_title (default: the entry title) and the place only with include_location=true. A health appointment needs sensitive_ack=true, as for sharing.
+First resolve the person with resolve_recipient and pass their user id as recipient_user_id.
+Two steps: call without confirmed to get the preview; tell the member which entry goes to whom and ask;
+call again with the same arguments plus the preview's card_token and confirmed=true only after they say yes. Never claim it was sent unless the result says STATUS: sent.",
+        "name": "invite_to_calendar_entry",
+        "parameters": {
+          "properties": {
+            "card_title": {
+              "description": "For an own entry: the title on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
+            "confirmed": {
+              "description": "true ONLY after the member explicitly confirmed.",
+              "type": "boolean",
+            },
+            "entry_id": {
+              "description": "The calendar entry id (UUID), if known.",
+              "type": "string",
+            },
+            "include_location": {
+              "description": "For an own entry: true shows the entry's place on the card. Default false.",
+              "type": "boolean",
+            },
+            "recipient_user_id": {
+              "description": "The invited person's user id (UUID) from resolve_recipient.",
+              "type": "string",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
+            },
+            "timezone": {
+              "description": "IANA timezone for times, e.g. "Europe/Berlin".",
+              "type": "string",
+            },
+            "title_query": {
+              "description": "Fuzzy title to find the member's entry when entry_id is unknown.",
+              "type": "string",
+            },
+          },
+          "required": [
+            "recipient_user_id",
+          ],
+          "type": "object",
+        },
+      },
+      {
         "description": "Push an existing reminder out by N minutes (default 10, max 1440).
 CALL WHEN the user says 'snooze it', 'remind me again in 15 minutes',
 'verschieb die Erinnerung', 'erinnere mich später nochmal'.
@@ -17381,7 +17648,7 @@ Match melden". Stay neutral and factual — never promise an outcome.",
       {
         "description": "Flagship people-match: find the PERFECT person for the user — workout
 partner, accountability buddy, mentor, learning partner — personalized
-with their Life Compass goal and weakest Vitana pillar. Searches the
+with their own Life Compass goal. Searches the
 live community asks and, per the confirm flow, also posts the request
 so the user becomes discoverable.
 CALL WHEN the user says: "find me a workout partner", "who would be my
@@ -17394,7 +17661,7 @@ confirmed=true).",
         "parameters": {
           "properties": {
             "ask": {
-              "description": "What kind of person the user wants, verbatim. May be omitted — then the weakest pillar suggests one.",
+              "description": "What kind of person the user wants, verbatim. May be omitted — the tool then asks the member.",
               "type": "string",
             },
             "confirmed": {
@@ -18537,6 +18804,14 @@ If several events or member matches are found, ask which one.",
         "name": "send_calendar_invite_in_chat",
         "parameters": {
           "properties": {
+            "card_title": {
+              "description": "For an own entry: the title on the card (max 120). Omit to use the entry title.",
+              "type": "string",
+            },
+            "card_token": {
+              "description": "With confirmed=true for an own entry: the card_token from the preview the member approved.",
+              "type": "string",
+            },
             "confirmed": {
               "description": "Pass true ONLY after the user explicitly confirmed sending.",
               "type": "boolean",
@@ -18549,6 +18824,10 @@ If several events or member matches are found, ask which one.",
               "description": "Exact calendar_events UUID when already known.",
               "type": "string",
             },
+            "include_location": {
+              "description": "For an own entry: true shows the place on the card. Default false.",
+              "type": "boolean",
+            },
             "member": {
               "description": "Spoken name or Vitana ID of the recipient.",
               "type": "string",
@@ -18556,6 +18835,10 @@ If several events or member matches are found, ask which one.",
             "member_user_id": {
               "description": "UUID of the recipient if already resolved.",
               "type": "string",
+            },
+            "sensitive_ack": {
+              "description": "true ONLY when the preview said sensitive=true and the member confirmed after you said it is a health appointment.",
+              "type": "boolean",
             },
           },
           "required": [],
@@ -19292,6 +19575,33 @@ CALL WHEN the user says: "connect my Oura ring", "pair my device",
           "properties": {
             "device_name": {
               "description": "Optional device name, e.g. "Oura Ring".",
+              "type": "string",
+            },
+          },
+          "required": [],
+          "type": "object",
+        },
+      },
+      {
+        "description": "Read the member's own Life Timeline: what they logged and did, how their Vitana Index
+changed each day and which pillar moved it (nutrition, hydration, exercise, sleep, mental).
+CALL WHEN the member asks what they did or how their week went: "what did I do this week?",
+"how did my sleep go lately?", "why did my Index go up yesterday?", "was habe ich diese Woche gemacht?".
+Answer in your own words from the returned facts; "measured" influence is a real Index change,
+"counted" means it counted toward that pillar without a measured change.",
+        "name": "get_my_timeline",
+        "parameters": {
+          "properties": {
+            "category": {
+              "description": "Optional life area, e.g. community, diary, journey, events.",
+              "type": "string",
+            },
+            "pillar": {
+              "description": "Optional: nutrition, hydration, exercise, sleep or mental.",
+              "type": "string",
+            },
+            "range": {
+              "description": "today, week (default) or month.",
               "type": "string",
             },
           },

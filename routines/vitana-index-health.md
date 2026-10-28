@@ -1,6 +1,8 @@
 # Routine: vitana-index-health
 
 **Schedule:** `30 7 * * *` (daily 07:30 UTC)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103), once per UTC day at the time above — not as a claude.ai session. The steps below are the spec the runner implements: it calls the audit function behind each `$GATEWAY_URL/...` endpoint directly, records the run in `routine_runs` (`trigger = gateway-runner`), and on a breach emits the event with `source: routine.<name>`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'vitana-index-health'`
 **OASIS VTID for emitted events:** `VTID-02006`
 
@@ -13,10 +15,6 @@ Reads pre-aggregated active-vs-fresh-Index metrics from the gateway audit endpoi
 | 🟢 `success` | Index coverage ≥90% of active users, low nullity, Phase E config present. |
 | 🟡 `partial` | Computation degraded → OASIS event emitted. |
 | 🔴 `failure` | Routine itself errored. |
-
-## Required environment
-
-- `GATEWAY_URL`, `ROUTINE_INGEST_TOKEN`
 
 ## Steps
 

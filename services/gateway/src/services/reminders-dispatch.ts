@@ -22,7 +22,7 @@
  * also pop the full-screen interrupt on the web.
  */
 
-import { sendPushToUser, sendAppilixPush, isSignedOutOnAllKnownDevices } from './notification-service';
+import { dispatchPush } from './push-routing';
 import { decidePushDelivery } from './notification-controls/notification-controls-service';
 
 /** VTID-04674: the notification type the admin switches reminders with. */
@@ -313,8 +313,6 @@ export async function scheduleReminderFcmPush(
       return;
     }
 
-    const fcmSent = await sendPushToUser(row.user_id, row.tenant_id, payload, supa);
-
     // Avoid double-notifying. Mirrors notifyUser()'s FCM/Appilix coexistence
     // rule: if the user has an Appilix-wrapped native token (device_label
     // 'Appilix %'), FCM-direct already delivered to the installed app, so
@@ -326,18 +324,30 @@ export async function scheduleReminderFcmPush(
     // VTID-03481: only count devices this user still OWNS, and skip Appilix
     // altogether once they are signed out on every known device — otherwise a
     // reminder for the account that left a shared phone still buzzes it.
-    let appilixSent = false;
-    const appilixSuppressed = await isSignedOutOnAllKnownDevices(row.user_id, supa);
-    const { count: nativeMobileCount } = await repo.countAppilixNativeDeviceTokens(supa, {
+    //
+    // VTID-05177: routed through dispatchPush() with this site's own policy
+    // (FCM first, then Appilix unless an 'Appilix %' token exists). With the
+    // native switches unset the calls are exactly the ones made before. No
+    // server badge on this cron path.
+    const dispatched = await dispatchPush({
       userId: row.user_id,
       tenantId: row.tenant_id,
+      payload,
+      supabase: supa,
+      policy: {
+        kind: 'fcm_then_appilix_unless_tagged',
+        countAppilixTaggedTokens: async () => {
+          const { count } = await repo.countAppilixNativeDeviceTokens(supa, {
+            userId: row.user_id,
+            tenantId: row.tenant_id,
+          });
+          return count;
+        },
+      },
     });
-    if (!nativeMobileCount && !appilixSuppressed) {
-      appilixSent = await sendAppilixPush(row.user_id, payload);
-    }
-    if (fcmSent === 0 && !appilixSent && !appilixSuppressed) {
-      appilixSent = await sendAppilixPush(row.user_id, payload);
-    }
+    const fcmSent = dispatched.sent;
+    const appilixSent = dispatched.appilixSent;
+    const nativeMobileCount = dispatched.appilixTaggedCount;
     console.log(`[reminders-tick] FCM push for ${row.id}: fcm=${fcmSent} appilix=${appilixSent} nativeTokens=${nativeMobileCount || 0}`);
 
     // Mark delivery_via=fcm if we sent at least one push and the row is still

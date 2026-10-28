@@ -288,3 +288,28 @@ describe('operator route wiring (source check)', () => {
     }
   });
 });
+
+describe('VTID-05064: a turn that ends early is not reported as ok', () => {
+  const endingWith = (stopReason: string): Script => (msg, send) => {
+    if (msg.method === 'session/prompt') {
+      send({ jsonrpc: '2.0', method: 'session/update', params: { sessionId: 'S1', update: { sessionUpdate: 'agent_message_chunk', content: { type: 'text', text: 'Let me look at' } } } });
+      send({ jsonrpc: '2.0', id: msg.id, result: { stopReason } });
+    } else happy(msg, send);
+  };
+  it.each([['refusal', 'refused'], ['max_tokens', 'incomplete'], ['end_turn', 'ok']])('stopReason %s → kiro_status %s, reply kept', async (stop, status) => {
+    setKiroBackend({ spawn: () => fakeChild(endingWith(stop)), workspace: () => '/w' });
+    const r = await runKiroTurn({ threadId: `t-${stop}`, userId: 'u1', message: 'go' }, ENV);
+    expect(r.meta).toMatchObject({ kiro_status: status, stop_reason: stop });
+    expect(r.reply).toBe('Let me look at');
+  });
+
+  it('reports the runner workspace state on the reply', async () => {
+    const child = fakeChild(happy);
+    (child as any).runner = { workspace: 'fresh', dirty: null };
+    setKiroBackend({ spawn: () => child, workspace: () => '/w' });
+    const p = runKiroTurn({ threadId: 't-ws', userId: 'u1', message: 'go', loadHistory: async () => [{ role: 'assistant', content: 'edited', workspaceDirty: ['vitana-platform'] }] }, ENV);
+    (child as any).runner.dirty = ['vitana-v1'];
+    const r = await p;
+    expect(r.meta).toMatchObject({ kiro_workspace: 'lost', kiro_workspace_dirty: ['vitana-v1'] });
+  });
+});

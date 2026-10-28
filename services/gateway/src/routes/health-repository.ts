@@ -26,6 +26,10 @@ export async function rpcHealthIngestLabReport(sb: SupabaseClient, payload: { p_
   return sb.rpc('health_ingest_lab_report', payload);
 }
 
+/**
+ * VTID-05156: no caller. POST /wearables/ingest is retired (410) and the RPC
+ * is revoked from `authenticated` — it is service_role only now.
+ */
 export async function rpcHealthIngestWearableSamples(sb: SupabaseClient, payload: { p_provider: unknown; p_samples: unknown }) {
   return sb.rpc('health_ingest_wearable_samples', payload);
 }
@@ -48,9 +52,6 @@ export async function fetchVitanaIndexScoreForDate(sb: SupabaseClient, date: str
   return sb.from('vitana_index_scores').select('*').eq('date', date).single();
 }
 
-export async function upsertVitanaIndexScore(sb: SupabaseClient, row: Record<string, unknown>) {
-  return sb.from('vitana_index_scores').upsert(row, { onConflict: 'tenant_id,user_id,date' });
-}
 
 export async function fetchVitanaIndexScoreExistsForUser(sb: SupabaseClient, userId: string) {
   return sb.from('vitana_index_scores').select('id').eq('user_id', userId).limit(1).maybeSingle();

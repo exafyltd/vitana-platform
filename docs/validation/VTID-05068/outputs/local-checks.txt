@@ -1,0 +1,25 @@
+# services/kiro-runner
+npx tsc --noEmit -p .                                   # clean
+npx vitest run (run 1)                                  # 44 passed (36 existing + 8 VTID-05068)
+npx vitest run (run 2)                                  # 44 passed
+npx vitest run (run 3)                                  # 44 passed
+# services/gateway
+npx tsc --noEmit -p .                                   # clean (worktree: --preserveSymlinks)
+npx jest test/vtid-05068-kiro-run-reattach.test.ts      # 15 passed
+npx jest test/vtid-04465-...regression.test.ts -t "VTID-0506[58]"   # 20 passed (16 VTID-05065 + 4 VTID-05068)
+npm run test:operator                                   # 61 passed
+npm run test:support                                    # 87 passed (4 suites)
+npm run test:roles                                      # 105 passed
+Kiro suites (04975 04984 04999 05003 05005 05006 05014 05018 05065 operator-kiro-runs 05068)   # 11 suites, 199 passed
+npx jest (full)                                         # 1616 suites passed, 6 failed, 1 skipped; 26066 tests passed, 2 failed
+  - test/vtid-05060-resume-and-model-pick.test.ts: source pin on the runKiroTurn call text in routes/operator.ts -> call reordered so the pinned text is unchanged; now PASS
+  - test/vtid.test.ts, test/scripts/generate-command-hub-symbol-index.test.ts, test/orb-live-session-bootstrap-timeout.test.ts,
+    test/vtid-04264-kill-switch-button.test.ts, test/routes/conversation-hub.test.ts: none touch changed code; all PASS when re-run
+    (79 tests passed together with the two above) — load/timing failures of the full parallel run
+# mutation checks (each restored)
+remote-backend.ts `let flowing = false` -> true         # real-socket reattach test FAILS (killed)
+kiro-runs.ts drain does not detach                       # 3 of 4 VTID-05068 regression scenarios FAIL (killed)
+kiro-runs.ts isReattachCandidate bypassed                # crash/window scenario FAILS (killed)
+# repo root
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend   # APPROVED (15 in remit; runner, migration, DATABASE_SCHEMA.md not judged)
+validateManifest(docs/validation/VTID-05068/staging-tests.json)           # { ok: true, errors: [] }

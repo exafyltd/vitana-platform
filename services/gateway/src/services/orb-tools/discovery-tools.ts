@@ -27,10 +27,13 @@
  *   - dispute_match        → intent_disputes via raiseDispute()
  *                            (services/intent-dispute-service.ts, VTID-01976).
  *   - find_perfect_match   → runFindMatch() (services/intent-find-match.ts,
- *                            BOOTSTRAP-FIND-MATCH-VOICE) fused with the Life
- *                            Compass goal + weakest Vitana Index pillar, the
- *                            same fusion inputs find_perfect_product /
- *                            find_perfect_practitioner use (VTID-02830).
+ *                            BOOTSTRAP-FIND-MATCH-VOICE) personalised with the
+ *                            member's own Life Compass goal only.
+ *                            VTID-05156: no Vitana Index read. The matched
+ *                            path posts the ask to the community intent board
+ *                            without a confirm step, so a health-derived
+ *                            (weakest-pillar) ask must never be built here —
+ *                            Health Hub plan §2 purpose boundary.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
@@ -94,18 +97,19 @@ function snippet(text: string | null | undefined, max = 90): string {
 }
 
 /**
- * Life-Compass goal + weakest Vitana Index pillar — the same fusion inputs
- * find_perfect_product / find_perfect_practitioner use. Uses the corrected
- * life_compass schema (primary_goal / category / is_active, per VTID-03022).
- * Best-effort: both lookups fail soft.
+ * The member's own active Life Compass goal — corrected life_compass schema
+ * (primary_goal / category / is_active, per VTID-03022). Best-effort: the
+ * lookup fails soft.
+ *
+ * VTID-05156: goal only. The Vitana Index is deliberately NOT read here (it
+ * used to be, as "weakest pillar") — see the header comment.
  */
-async function getCompassAndWeakestPillar(
+async function getCompassGoal(
   sb: SupabaseClient,
   userId: string,
-): Promise<{ compass_goal: string | null; compass_category: string | null; weakest_pillar: string | null }> {
+): Promise<{ compass_goal: string | null; compass_category: string | null }> {
   let goal: string | null = null;
   let category: string | null = null;
-  let weakest: string | null = null;
   try {
     const { data } = await repo.fetchLifeCompassGoal(sb, userId);
     const row = data as { primary_goal: string | null; category: string | null } | null;
@@ -114,18 +118,7 @@ async function getCompassAndWeakestPillar(
   } catch {
     /* best-effort */
   }
-  try {
-    const { data } = await repo.fetchLatestVitanaIndexScore(sb, userId);
-    const pillars = (data as { pillars: Record<string, number> | null } | null)?.pillars;
-    if (pillars && typeof pillars === 'object') {
-      const pairs = Object.entries(pillars).filter(([, v]) => typeof v === 'number');
-      pairs.sort((a, b) => a[1] - b[1]);
-      weakest = pairs[0]?.[0] ?? null;
-    }
-  } catch {
-    /* best-effort */
-  }
-  return { compass_goal: goal, compass_category: category, weakest_pillar: weakest };
+  return { compass_goal: goal, compass_category: category };
 }
 
 // ---------------------------------------------------------------------------
@@ -1020,15 +1013,6 @@ export async function tool_dispute_match(
 // find_perfect_match — flagship people-match search (VTID-02780)
 // ---------------------------------------------------------------------------
 
-/** Weakest pillar → a sensible default people-ask when the user is vague. */
-const PILLAR_DEFAULT_ASK: Record<string, string> = {
-  exercise: 'a workout partner to train with regularly',
-  sleep: 'an accountability partner for a better evening and sleep routine',
-  nutrition: 'a healthy-cooking and nutrition buddy',
-  hydration: 'an accountability buddy for daily healthy habits',
-  mental: 'a mindfulness or meditation partner',
-};
-
 export async function tool_find_perfect_match(
   args: OrbToolArgs,
   id: OrbToolIdentity,
@@ -1036,25 +1020,21 @@ export async function tool_find_perfect_match(
 ): Promise<OrbToolResult> {
   const gate = authGate('find_perfect_match', id);
   if (gate) return gate;
-  let ask = String(args.ask ?? args.utterance ?? args.query ?? '').trim();
+  const ask = String(args.ask ?? args.utterance ?? args.query ?? '').trim();
+
+  // VTID-05156: with no ask from the member, always ask them — never build
+  // one from health data (the matched path posts it without confirmation).
+  if (!ask) {
+    return {
+      ok: true,
+      result: { stage: 'needs_ask' },
+      text: 'Ask the user in one warm sentence what kind of person they are looking for — a workout partner, an accountability buddy, a mentor, someone to learn with — then call find_perfect_match again with their answer as ask.',
+    };
+  }
 
   try {
-    // Fusion inputs — same pair find_perfect_product/practitioner use.
-    const ctx = await getCompassAndWeakestPillar(sb, id.user_id);
-
-    let derivedFromPillar = false;
-    if (!ask) {
-      if (ctx.weakest_pillar && PILLAR_DEFAULT_ASK[ctx.weakest_pillar]) {
-        ask = PILLAR_DEFAULT_ASK[ctx.weakest_pillar];
-        derivedFromPillar = true;
-      } else {
-        return {
-          ok: true,
-          result: { stage: 'needs_ask' },
-          text: 'Ask the user in one warm sentence what kind of person they are looking for — a workout partner, an accountability buddy, a mentor, someone to learn with — then call find_perfect_match again with their answer as ask.',
-        };
-      }
-    }
+    // Personalisation input — the member's own Life Compass goal only.
+    const ctx = await getCompassGoal(sb, id.user_id);
 
     // REUSE the find_match engine (BOOTSTRAP-FIND-MATCH-VOICE): classify +
     // extract + search the live intent catalog, recommend existing people,
@@ -1071,13 +1051,9 @@ export async function tool_find_perfect_match(
     );
     if (!r.ok) return { ok: false, error: r.error ?? 'find_perfect_match failed' };
 
-    const personalBits: string[] = [];
-    if (ctx.compass_goal) personalBits.push(`the user's Life Compass goal "${ctx.compass_goal}"`);
-    if (ctx.weakest_pillar) personalBits.push(`their ${ctx.weakest_pillar} pillar (currently their weakest)`);
-    const prefix =
-      personalBits.length > 0
-        ? `PERSONALIZATION — this people-search is aligned with ${personalBits.join(' and ')}${derivedFromPillar ? `; the ask "${ask}" was suggested from that pillar` : ''}. Mention this in one natural sentence. `
-        : '';
+    const prefix = ctx.compass_goal
+      ? `PERSONALIZATION — this people-search is aligned with the user's Life Compass goal "${ctx.compass_goal}". Mention this in one natural sentence. `
+      : '';
 
     return {
       ok: true,
@@ -1085,10 +1061,10 @@ export async function tool_find_perfect_match(
         ...r.data,
         stage: r.stage,
         ask,
-        ask_derived_from_pillar: derivedFromPillar,
+        // Kept for result-shape compatibility; always false since VTID-05156.
+        ask_derived_from_pillar: false,
         compass_goal: ctx.compass_goal,
         compass_category: ctx.compass_category,
-        weakest_pillar: ctx.weakest_pillar,
       },
       text: prefix + r.text,
     };
@@ -1306,7 +1282,7 @@ export const DISCOVERY_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
     description: [
       'Flagship people-match: find the PERFECT person for the user — workout',
       'partner, accountability buddy, mentor, learning partner — personalized',
-      'with their Life Compass goal and weakest Vitana pillar. Searches the',
+      'with their own Life Compass goal. Searches the',
       'live community asks and, per the confirm flow, also posts the request',
       'so the user becomes discoverable.',
       'CALL WHEN the user says: "find me a workout partner", "who would be my',
@@ -1319,7 +1295,7 @@ export const DISCOVERY_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
     parameters: {
       type: 'object',
       properties: {
-        ask: { type: 'string', description: 'What kind of person the user wants, verbatim. May be omitted — then the weakest pillar suggests one.' },
+        ask: { type: 'string', description: 'What kind of person the user wants, verbatim. May be omitted — the tool then asks the member.' },
         kind_hint: { type: 'string', description: 'OPTIONAL intent kind hint, e.g. activity_seek or social_seek.' },
         confirmed: { type: 'boolean', description: 'Pass true ONLY after the user confirmed posting the request (second call).' },
       },

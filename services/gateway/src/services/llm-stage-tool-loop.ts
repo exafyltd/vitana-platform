@@ -73,6 +73,9 @@ export type StageLlmCall = (
     allowFallback: boolean;
     providerOverride?: LLMProvider;
     modelOverride?: string;
+    /** VTID-05077: see LLMRouterOpts.fallbackOverride / deepseekThinking. */
+    fallbackOverride?: { provider: LLMProvider; model: string };
+    deepseekThinking?: 'enabled' | 'disabled';
   },
 ) => Promise<LLMRouterResult>;
 
@@ -91,6 +94,9 @@ export interface StageToolLoopOptions {
   allowFallback?: boolean;
   providerOverride?: LLMProvider;
   modelOverride?: string;
+  /** VTID-05077: passed to every turn's router call. */
+  fallbackOverride?: { provider: LLMProvider; model: string };
+  deepseekThinking?: 'enabled' | 'disabled';
   historyCharBudget?: number;
   continuePrompt?: string;
   finalPrompt?: string;
@@ -191,6 +197,8 @@ export async function runStageToolLoop(o: StageToolLoopOptions): Promise<StageTo
       allowFallback: o.allowFallback ?? true,
       ...(o.providerOverride ? { providerOverride: o.providerOverride } : {}),
       ...(o.modelOverride ? { modelOverride: o.modelOverride } : {}),
+      ...(o.fallbackOverride ? { fallbackOverride: o.fallbackOverride } : {}),
+      ...(o.deepseekThinking ? { deepseekThinking: o.deepseekThinking } : {}),
     });
     const ms = now() - t0;
     if (r.usage) { usage.inputTokens += r.usage.inputTokens ?? 0; usage.outputTokens += r.usage.outputTokens ?? 0; }

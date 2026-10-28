@@ -1,0 +1,2 @@
+# VTID-04998 — design document only; no commands that touch a database, a service or production were run.
+$ wc -w docs/design/VTID-04998-calendar-invites.md

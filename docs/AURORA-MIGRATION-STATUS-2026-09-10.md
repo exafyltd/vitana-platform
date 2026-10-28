@@ -3607,3 +3607,253 @@ classifier, same as every prior attempt in this document). This is
 prep work for whoever executes the real Step 4-8 sequence next, not an
 attempt to execute it. Nothing destructive was attempted; nothing was
 written to production Supabase outside the governed VTID ledger.
+
+## Addendum, 2026-09-22 (VTID-04270) — scheduled resume, state re-verified unchanged; a third structural blocker found and left alone
+
+Routine fired to continue the migration. Re-established state from primary
+sources per the routine's own instructions rather than trusting cached
+summaries, then found one new (git-tooling, not AWS) blocker while
+attempting routine branch hygiene.
+
+1. **Live DMS task inventory unchanged since VTID-04242.** Same 6 tasks,
+   same statuses — `vitana-fullload-rehearsal-v2` `stopped`/594-594-0,
+   `vitana-supabase-to-aurora-v3` `failed` on the same WAL protocol error.
+   No `vitana-fullload-final-catchup` task exists yet — the script VTID-04242
+   drafted has not been applied by anyone with real AWS access outside this
+   session's classifier restriction.
+2. **Both AWS blockers from the prior round (2026-09-22 CloudShell-script
+   response) are unchanged, reconfirmed live, not merely assumed carried
+   forward:** `ec2:DescribeVpcEndpoints` still `UnauthorizedOperation`
+   (this session's identity), `iam:GetRole` on `vitana-ecs-task-role` still
+   an explicit permissions-boundary deny. No `ssmmessages`/`ec2messages`
+   interface endpoints visible from this identity — the delivered CloudShell
+   script (VPC endpoints + IAM grant for ECS Exec) has evidently not been
+   run yet by a human. DMS `reload-target` dispatch remains blocked by this
+   session's own client-side safety classifier, unrelated to AWS IAM.
+3. **No open PR for VTID-04101** in either repo — unchanged since VTID-04242.
+   PR #1117 remains merged, untouched, no revert attempted (out of scope for
+   a "continue the migration" routine; no fresh instruction to revert it).
+4. **A real, previously-undocumented gap closed with existing evidence:**
+   `vitana-v1`'s cutover branch carried exactly one commit
+   (`d7a386d22`, "read Supabase URL/key from env at build time") not present
+   on `origin/main`, and was 9 commits behind. Diffed the commit's one
+   touched file (`src/integrations/supabase/client.ts`) against `main`'s
+   copy: byte-identical — the content is already merged to `main` via PR
+   #1117 (VTID-04101, `316535437`). Per this repo's own CLAUDE.md rule for a
+   branch whose PR already merged ("restart your designated branch from the
+   latest default branch... force-with-lease push is fine when the branch
+   contains only already-merged history"), attempted
+   `git checkout -B claude/aws-supabase-aurora-cutover-oxdie9 origin/main &&
+   git push --force-with-lease`.
+5. **New, third structural blocker found doing this — not AWS, not the DMS
+   classifier: the session's own auto-mode safety classifier refuses ANY
+   git branch-pointer reset (`checkout -B`, by extension `reset --hard`,
+   a force-push) tagged `[Git Destructive]`, regardless of whether the
+   content being "destroyed" is provably redundant with what is already
+   safely merged elsewhere.** Confirmed the refused command never executed
+   at all (local checkout unchanged, still at `d7a386d22`, `git status`
+   clean against `origin/claude/aws-supabase-aurora-cutover-oxdie9`) — no
+   partial state, nothing to clean up. Did not attempt to route around the
+   classifier via a different tool (e.g. scripting the same git calls
+   through another mechanism), per the block's own stated intent. The
+   `vitana-v1` branch is left exactly as it was: one commit ahead
+   (redundant, harmless — its content already lives on `main`), 9 commits
+   behind. This is a leave-alone, not a blocker on the actual migration —
+   nothing about Aurora cutover readiness depends on this branch's git
+   history being tidy, and the branch's actual code changes (none beyond
+   what's on `main`) are not at risk.
+
+**Net: no code changed, no AWS state changed, no git state changed.** All
+three standing blockers (DMS dispatch via this session's classifier, VPC
+network access via AWS IAM, and now branch-reset via the git-tooling
+classifier) require a human with either real AWS CloudShell access or an
+unrestricted git client — none of which this session has. The CloudShell
+remediation script for blocker 2 was already handed to a human in this same
+conversation; it has evidently not been run yet, since the IAM/VPC denials
+above are byte-for-byte identical to before it was written.
+
+## Addendum, 2026-09-24 (VTID-04451) — this session's own AWS credentials went from restricted to fully invalid
+
+Scheduled routine fired to continue the migration. Re-verification attempt
+hit a new, qualitatively different failure from every prior row in this
+document: the read-only AWS checks that have worked (with permission
+denials, not credential failures) on every check-in since 2026-09-22 now
+fail before reaching any authorization decision at all.
+
+```
+$ aws sts get-caller-identity
+An error occurred (InvalidClientTokenId) when calling the
+GetCallerIdentity operation: The security token included in the
+request is invalid.
+
+$ aws dms describe-replication-tasks --region eu-central-1
+An error occurred (UnrecognizedClientException): The security token
+included in the request is invalid.
+
+$ aws ec2 describe-vpc-endpoints --region eu-central-1
+An error occurred (AuthFailure): AWS was not able to validate the
+provided access credentials
+
+$ aws iam get-role --role-name vitana-ecs-task-role
+An error occurred (InvalidClientTokenId): The security token included
+in the request is invalid.
+```
+
+**This is a different failure class than every prior AWS blocker in this
+document.** Every earlier row (2026-09-21 through 2026-09-22) got a real
+`AccessDenied`/`UnauthorizedOperation` naming the identity
+(`arn:aws:iam::472838866351:user/claude-code-aws-agent`) and citing either
+a missing identity-based policy or an explicit permissions-boundary deny —
+i.e. AWS accepted the credentials and then evaluated (and refused) the
+specific action. `InvalidClientTokenId`/`UnrecognizedClientException` mean
+AWS rejected the credentials themselves before any authorization check ran
+— `GetCallerIdentity`, the one call with no permissions of its own to
+check, fails the same way. Retried once after a few seconds; identical
+result, so this is not a transient blip.
+
+**Not investigated further, and deliberately not worked around:** whether
+this is a rotated/expired key, a revoked session, or an environment
+issue is unknown from inside this session — there is no way to
+distinguish those from here, and guessing at a fix (e.g. re-reading env
+vars, assuming a refresh mechanism exists) risks exactly the kind of
+unverified-context action this repo's own governance rules forbid. This
+is a **new, fourth item** for whoever has real access to check, on top of
+the three still-standing blockers above (DMS dispatch classifier, VPC/IAM
+permissions boundary, git branch-reset classifier) — all of which remain
+unverifiable from this session until AWS access is restored one way or
+the other.
+
+**No code, AWS, or git state changed by this addendum.** The scheduled PR
+check-in on #3563 (separate from this routine) is unaffected — it only
+needs GitHub access, which is unrelated to AWS credentials and still
+working.
+
+## Addendum, 2026-09-24 later (VTID-04462) — credentials restored, but EC2 API now returns a new, different failure account-wide
+
+~8 hours after VTID-04451 above, a scheduled check-in found
+`aws sts get-caller-identity` succeeding again, same identity
+(`arn:aws:iam::472838866351:user/claude-code-aws-agent`) — the
+`InvalidClientTokenId` failure is over. Re-ran the full verification sweep
+immediately given the state change, rather than assuming everything else
+is back to the pre-2026-09-24 baseline.
+
+**DMS is back to normal** — `describe-replication-tasks` returns the same
+6 tasks, same statuses, unchanged from every prior row in this document.
+
+**IAM is unchanged** — `iam:GetRole` on `vitana-ecs-task-role` still fails
+with the identical explicit permissions-boundary deny
+(`claude-code-aws-agent-boundary`) seen on every check since 2026-09-21.
+
+**EC2 is NOT back to normal — it now fails differently, and more broadly,
+than before the credential outage.** Every EC2 call, including ones that
+were never blocked before, now returns `OptInRequired`:
+
+```
+$ aws ec2 describe-vpc-endpoints --region eu-central-1
+OptInRequired: You are not subscribed to this service.
+
+$ aws ec2 describe-regions --region eu-central-1
+OptInRequired: You are not subscribed to this service.
+
+$ aws ec2 describe-security-groups --region eu-central-1 --max-items 1
+OptInRequired: You are not subscribed to this service.
+```
+
+**This is a materially different symptom from the `UnauthorizedOperation`
+seen on `describe-vpc-endpoints` every prior check-in (2026-09-21 through
+2026-09-23).** `UnauthorizedOperation` is IAM saying "this identity may
+not call this action." `OptInRequired` is EC2 saying the ACCOUNT itself
+has not activated the service — and it now fires on `describe-regions`,
+a call with essentially no permission requirements on any normal AWS
+account, which had never failed this way before. Retried three separate
+EC2 calls; all three failed identically, so this isn't one flaky call.
+
+**Not investigated further, and deliberately not guessed at:** whether
+this reflects an account-level EC2 opt-out, a billing/support event tied
+to whatever caused the credential outage in VTID-04451, or something else
+entirely is unknown from inside this session — there is no AWS Support
+or Billing console access here to check, and this is exactly the kind of
+unverified-context guess this repo's own governance rules warn against.
+**Net effect on the migration is unchanged either way**: VPC
+PrivateLink/ECS-Exec access was already blocked (by the IAM permissions
+boundary) before this, so this new EC2-wide symptom does not remove or
+add a blocker to Step 7 — it's flagged here purely so whoever is
+troubleshooting AWS access knows the account's EC2 API behavior changed,
+not just this session's IAM permissions.
+
+DMS reload dispatch remains blocked by this session's own safety
+classifier, independent of any of the above (that block happens before
+the call would reach AWS at all). No code, AWS, or git state changed by
+this addendum beyond the read-only checks above.
+
+## Addendum, 2026-09-28 (VTID-04693) — the platform owner ran the CloudShell
+remediation themselves; the VPC/IAM half of the Step 7 blocker is now
+confirmed cleared, verified via the owner's own command output, not this
+session's
+
+Every prior AWS-side blocker addendum in this doc (2026-09-21 onward)
+recorded the same structural limit: this session's own IAM identity
+(`claude-code-aws-agent`) carries an explicit permissions-boundary deny on
+EC2/IAM reads, so neither the VPC PrivateLink interface endpoints
+(`ssmmessages`, `ec2messages`) needed for ECS Exec, nor an inline IAM
+policy granting the `vitana-ecs-task-role` the matching
+`ssmmessages:Create*`/`Open*Channel` actions, could be created OR verified
+from inside this session — regardless of what a differently-privileged
+identity could do. Given the platform owner asked in plain terms for the
+concrete status and what was needed from them, this session composed a
+two-part CloudShell script (creating both interface endpoints in
+`vpc-05958f035e596fe64` across subnets `subnet-0ff45a2051c5e5482`/
+`subnet-0c786864a28a5a821` with security group `sg-0fbcf7b59b1f0d685`, then
+attaching an `ECSExecSSMMessages` inline policy to `vitana-ecs-task-role`)
+and handed it to the owner to run under their own, more privileged
+identity.
+
+**Result, confirmed across two rounds of owner-run verification:**
+
+1. **VPC endpoints — succeeded on the first run.** The owner's own
+   `aws ec2 describe-vpc-endpoints` output showed both `ssmmessages` and
+   `ec2messages` interface endpoints in state `available`.
+2. **IAM policy — failed silently on the first run, caught by asking for
+   granular verification rather than accepting "done" at face value.**
+   The owner's `aws iam get-role-policy --role-name vitana-ecs-task-role
+   --policy-name ECSExecSSMMessages` returned `NoSuchEntity` — the
+   attachment had not taken effect. Handed back an isolated, idempotent
+   re-run of just the `put-role-policy` step plus two diagnostic
+   list-policy commands. The owner's second-round output shows
+   `put-role-policy` succeeding silently (AWS CLI's standard
+   no-output-on-success convention for this call) and
+   `aws iam list-role-policies --role-name vitana-ecs-task-role` now
+   listing `ECSExecSSMMessages` among the role's 7 inline policies
+   (alongside `BedrockInvoke`, `vitana-autopilot-runtask`,
+   `vitana-ecs-task-runtime`,
+   `vitana-operator-agent-readonly-and-cancel-VTID-04037`,
+   `VitanaCascadedVoicePipeline`, `VitanaCascadedVoiceRuntime`) —
+   `list-attached-role-policies` confirms `AttachedPolicies: []`, i.e. this
+   role is governed entirely by inline policies, and the new one is now
+   among them.
+
+**What this does and does not establish.** Both pieces of evidence come
+from the owner's own AWS CLI output, pasted verbatim — this session's own
+identity remains structurally unable to verify either fact directly (the
+same permissions-boundary deny recorded in every addendum since
+2026-09-21 is unrelated to what was just granted to `vitana-ecs-task-role`
+and does not change as a result of it). This closes the network/IAM
+PREREQUISITE for ECS Exec into a task running that role — it does **not**
+yet confirm ECS Exec actually works end-to-end (a service also needs
+`enableExecuteCommand: true` set at the service/task level, which this
+addendum has not checked), and it does **not** touch Step 7's actual open
+question (whether a Claude Code session, or anyone, can reach the Aurora
+Postgres port from inside such a task once exec'd in — the same VPC-route
+gap this doc's 2026-09-21 addendum already flagged for the reconciliation
+script). Handed the owner a follow-up `aws ecs execute-command` smoke-test
+command against `vitana-postgrest-aurora-proxy` to close that remaining
+gap; awaiting the result.
+
+Two of the three still-standing session-side classifier/boundary blockers
+recorded in this document (the DMS reload-dispatch safety-classifier
+block, and the git branch-reset classifier block on `vitana-v1`) are
+unaffected by this addendum — this only addresses the VPC/IAM permissions
+boundary that blocked *this session* from creating/verifying the ECS Exec
+prerequisites itself; it does not touch the client-side Claude Code
+auto-mode classifier that separately blocks dispatching the actual DMS
+reload/cutover commands regardless of AWS-side permissions.

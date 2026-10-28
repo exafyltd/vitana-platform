@@ -2,7 +2,8 @@
  * VTID-03885 — DoctorBox connector (sandbox/mock) tests.
  *
  * Locks the contract:
- *   - HMAC signature verification: valid/invalid/dev-mode (no secret set).
+ *   - HMAC signature verification: valid/invalid; an unset secret REJECTS
+ *     (VTID-05031, Health Hub D2: the former dev-mode pass is gone).
  *   - missing external_order_ref / unregistered partner -> invalid.
  *   - order not found -> quarantineUnmatchedResult (never guesses a user).
  *   - test.status_changed: raw label mapped to the canonical vocabulary,
@@ -60,7 +61,9 @@ const doctorBoxConnector = require('../../src/connectors/health/doctorbox').defa
 
 const ORIGINAL_ENV = process.env.DOCTORBOX_WEBHOOK_SECRET;
 
-function makeReq(body: Record<string, unknown>, secret?: string): WebhookRequest {
+const TEST_SECRET = 'test-secret';
+
+function makeReq(body: Record<string, unknown>, secret: string | null = TEST_SECRET): WebhookRequest {
   const raw = JSON.stringify(body);
   const headers: Record<string, string> = {};
   if (secret) {
@@ -72,7 +75,7 @@ function makeReq(body: Record<string, unknown>, secret?: string): WebhookRequest
 beforeEach(() => {
   jest.clearAllMocks();
   tableHandlers = {};
-  delete process.env.DOCTORBOX_WEBHOOK_SECRET;
+  process.env.DOCTORBOX_WEBHOOK_SECRET = TEST_SECRET;
 });
 
 afterAll(() => {
@@ -80,13 +83,15 @@ afterAll(() => {
 });
 
 describe('doctorbox connector — signature verification', () => {
-  it('accepts any request in dev mode (secret unset)', async () => {
+  it('rejects every request when the secret is unset (fail closed, VTID-05031)', async () => {
+    delete process.env.DOCTORBOX_WEBHOOK_SECRET;
     tableHandlers.partner_registry = () => ({ data: { id: 'partner-1' } });
     tableHandlers.partner_health_test_orders = () => ({ data: null });
     quarantineUnmatchedResultMock.mockResolvedValue({ ok: true, inbox_id: 'inbox-1' });
 
     const res = await doctorBoxConnector.handleWebhook(makeReq({ event: 'test.status_changed', external_order_ref: 'DB-1', status: 'shipped' }));
-    expect(res.valid).toBe(true);
+    expect(res).toEqual({ valid: false, events: [], error: 'secret_not_configured' });
+    expect(quarantineUnmatchedResultMock).not.toHaveBeenCalled();
   });
 
   it('rejects an invalid signature when a secret is configured', async () => {

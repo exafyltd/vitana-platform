@@ -36,11 +36,15 @@ import {
   summarizeTurnCost,
 } from '../src/services/operator-turn-cost';
 import { processWithGemini, type OperatorTurnEvent } from '../src/services/gemini-operator';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 const routerMock = callViaRouter as jest.Mock;
 
 const FE = path.resolve(__dirname, '../src/frontend/command-hub');
-const APP_JS = fs.readFileSync(path.join(FE, 'app.js'), 'utf8');
+// VTID-05073: the turn-cost helpers, renderOperatorChat and
+// renderOperatorLiveTranscript moved into operator-console.js. Read the whole
+// Command Hub bundle so the sliced bodies still resolve. Assertions unchanged.
+const APP_JS = readCommandHubBundle();
 const CSS = fs.readFileSync(path.join(FE, 'styles.css'), 'utf8');
 const INDEX_HTML = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
 

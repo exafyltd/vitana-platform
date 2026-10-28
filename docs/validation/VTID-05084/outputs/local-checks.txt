@@ -1,0 +1,6 @@
+Test Suites: 2 skipped, 1642 passed, 1642 of 1644 total
+Tests:       26 skipped, 6 todo, 26412 passed, 26444 total
+loop-catalog.test.ts 22 pass; routes/autonomy-loops.test.ts 5 pass; command-hub/vtid-05084-loops-screen.test.ts 13 pass
+related suites (command-hub, navigation, nav-golden, nav-redirect, role separation, screen inventory, regen catalog, autonomy pulse/trace): 64 suites, 1162 pass, 1 skipped
+regen-screens-catalog --check: in sync (315 entries); command-hub symbol index --check: in sync (1119 functions)
+npm run build: ok; command-hub-golden-fingerprint: PASSED; dist smoke: 14 loops, 100 cases, 0 orphan sensors

@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05153",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "Loops catalog API still refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/autonomy/loops", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "Partner review detail (now carrying catalog_check) still refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/admin/partner-review/00000000-0000-0000-0000-000000000000", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "Command Hub serves the VTID-05153 loops-catalog.js marker", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": ["loops-catalog.js?v=20261121-vtid-05153"] },
+    { "kind": "http", "target": "gateway", "name": "served loops-catalog.js shows the L9 metrics on the card", "path": "/command-hub/loops-catalog.js?v=20261121-vtid-05153", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function l9MetricsText(x)", "if (loop.id === 'L9') return l9MetricsText(x);"] },
+    { "kind": "existing", "ref": "npx jest test/vtid-05153-catalog-check-validators.test.ts test/vtid-05153-catalog-check-run.test.ts test/vtid-05153-catalog-check-source-guard.test.ts test/vtid-05153-ssrf-guarded-head.test.ts test/vtid-05153-commerce-catalog-check-surfaces.test.ts test/vtid-05153-loops-l9-metrics.test.ts test/routine-runner test/loop-catalog.test.ts", "cwd": "services/gateway", "reason": "supplier-catalog-check writes (the guarded PATCH of products.attributes.catalog_check and normalized fields), its rules, strikes, candidate selection, the media probe, the no-insert / no-is_active / no-LLM source guard, the reserved-key strip, the checklist code, MCP next_action and metrics_latest.L9. The runner never starts on staging (shared database), so its writes are proven here, not there" }
+  ]
+}

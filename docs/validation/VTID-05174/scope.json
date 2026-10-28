@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05174",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/health-erasure-internal.ts",
+    "services/gateway/src/routes/health-erasure-internal-repository.ts",
+    "services/gateway/src/routes/connector-webhooks.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/orb/developer/domain-atlas.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/health-erasure-internal.test.ts",
+    "services/gateway/test/connector-webhooks-log-user-id.test.ts",
+    "docs/programs/health-hub/STATUS.md",
+    "docs/validation/VTID-05174/**"
+  ]
+}

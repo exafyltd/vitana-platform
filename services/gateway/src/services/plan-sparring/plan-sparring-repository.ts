@@ -22,6 +22,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type {
+  ApprovalPolicy,
   ChangeClass,
   ModelLogEntry,
   SparringRound,
@@ -36,7 +37,7 @@ export interface DbResult<T> {
 }
 
 const SESSION_COLUMNS =
-  'id, plan_id, plan_hash, final_plan_hash, producer, change_class, trust_tier, base_ref, rounds, verdict, escalation_reasons, model_log, human_approved_by, human_approved_at, approval_evidence, vtid, created_at, updated_at';
+  'id, plan_id, plan_hash, final_plan_hash, producer, change_class, trust_tier, base_ref, rounds, verdict, escalation_reasons, model_log, human_approved_by, human_approved_at, approval_evidence, approval_policy, policy_approved_at, policy_approval_rule, vtid, created_at, updated_at';
 
 /**
  * Create a gateway-tier session. `rounds` is deliberately NOT in the payload:
@@ -54,6 +55,7 @@ export async function insertSession(
     change_class: ChangeClass;
     trust_tier: TrustTier;
     base_ref: string;
+    approval_policy?: ApprovalPolicy;
   },
 ): Promise<DbResult<SparringSession>> {
   const r = await sb
@@ -155,6 +157,52 @@ export async function recordApproval(
   return { data: (r.data as Array<{ id: string }> | null) ?? null, error: r.error ?? null };
 }
 
+/**
+ * VTID-05214: record the policy approval of a converged session. Guarded on `policy_approved_at IS NULL`,
+ * `human_approved_by IS NULL`, `verdict = 'converged'` and the session's own `approval_policy`; the table CHECK
+ * refuses it on anything else as well.
+ */
+export async function recordPolicyApproval(
+  sb: SupabaseClient,
+  sessionId: string,
+  approval: { rule: ApprovalPolicy; at: string },
+): Promise<DbResult<Array<{ id: string }>>> {
+  const r = await sb
+    .from('plan_sparring_sessions')
+    .update({ policy_approved_at: approval.at, policy_approval_rule: approval.rule, updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('verdict', 'converged')
+    .eq('approval_policy', approval.rule)
+    .is('policy_approved_at', null)
+    .is('human_approved_by', null)
+    .select('id');
+  return { data: (r.data as Array<{ id: string }> | null) ?? null, error: r.error ?? null };
+}
+
+/**
+ * VTID-05254: mark a dead round-1 session (its partner pass died before writing anything) as
+ * `escalated` + `deadline_exceeded`, so the create path can re-run the plan on a fresh session.
+ * Guarded on `verdict = 'in_progress'`, `updated_at < cutoffIso` and no human/policy approval: of two
+ * racing creates only one escalates, and a pass that wrote in the meantime is never overwritten.
+ * Writes only columns service_role may UPDATE; `final_plan_hash` stays null, so the row is never approvable.
+ */
+export async function escalateDeadRoundOne(
+  sb: SupabaseClient,
+  sessionId: string,
+  cutoffIso: string,
+): Promise<DbResult<Array<{ id: string }>>> {
+  const r = await sb
+    .from('plan_sparring_sessions')
+    .update({ verdict: 'escalated', escalation_reasons: ['deadline_exceeded'], updated_at: new Date().toISOString() })
+    .eq('id', sessionId)
+    .eq('verdict', 'in_progress')
+    .lt('updated_at', cutoffIso)
+    .is('human_approved_by', null)
+    .is('policy_approved_at', null)
+    .select('id');
+  return { data: (r.data as Array<{ id: string }> | null) ?? null, error: r.error ?? null };
+}
+
 // ---------------------------------------------------------------------------
 // Reconciler reads (all read-only)
 // ---------------------------------------------------------------------------
@@ -220,4 +268,17 @@ export async function fetchTriggerStatus(
 ): Promise<DbResult<{ present: boolean; tgenabled: string | null } | Array<{ present: boolean; tgenabled: string | null }>>> {
   const r = await sb.rpc('plan_sparring_trigger_status');
   return { data: r.data ?? null, error: r.error ?? null };
+}
+
+/** VTID-05214 reconciler: sessions carrying a policy approval although they are not converged (CHECK tampered). */
+export async function fetchPolicyApprovedNonConverged(
+  sb: SupabaseClient,
+): Promise<DbResult<Array<{ id: string; verdict: string; policy_approval_rule: string | null }>>> {
+  const r = await sb
+    .from('plan_sparring_sessions')
+    .select('id, verdict, policy_approval_rule')
+    .not('policy_approved_at', 'is', null)
+    .neq('verdict', 'converged')
+    .limit(50);
+  return { data: (r.data as Array<{ id: string; verdict: string; policy_approval_rule: string | null }> | null) ?? null, error: r.error ?? null };
 }

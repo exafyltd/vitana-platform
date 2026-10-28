@@ -1,0 +1,404 @@
+/*
+ * Operator Console — live pipeline tree (VTID-05069). Styles for pipeline-tree.js.
+ * Colours come from the Command Hub tokens in styles.css :root; the run-card
+ * tokens below fall back to the same values when styles.css is not loaded.
+ */
+.pt-runs {
+  --pt-bg: #111c31;
+  --pt-border: var(--color-border, #334155);
+  --pt-text: var(--color-text-primary, #f8fafc);
+  --pt-muted: var(--color-text-secondary, #94a3b8);
+  --pt-link: #93c5fd;
+  --pt-ok: var(--color-task-completed, #10b981);
+  --pt-run: var(--color-operator, #f59e0b);
+  --pt-fail: #ef4444;
+  --pt-wait: #a855f7;
+  --pt-chip: #0b1222;
+  display: flex;
+  flex-direction: column;
+  gap: 0.75rem;
+  margin: 0.5rem 0 0.25rem;
+  color: var(--pt-text);
+  font-size: 14px;
+  line-height: 1.45;
+  min-width: 0;
+}
+
+.pt-runs[hidden] {
+  display: none;
+}
+
+.pt-run {
+  border: 1px solid var(--pt-border);
+  border-radius: 10px;
+  background: var(--pt-bg);
+  overflow: hidden;
+  min-width: 0;
+}
+
+.pt-run-h {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--pt-border);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pt-run--collapsed .pt-run-h {
+  border-bottom-color: transparent;
+}
+
+.pt-ttl {
+  font-weight: 650;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.pt-sum {
+  color: var(--pt-muted);
+  font-size: 12.5px;
+}
+
+.pt-sp {
+  flex: 1;
+}
+
+.pt-btn {
+  border: 1px solid var(--pt-border);
+  background: transparent;
+  color: var(--pt-text);
+  border-radius: 6px;
+  padding: 4px 9px;
+  font-size: 12px;
+  line-height: 1.4;
+  cursor: pointer;
+  min-height: 28px;
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}
+
+.pt-btn:hover {
+  border-color: var(--pt-muted);
+}
+
+.pt-btn:focus-visible,
+.pt-link:focus-visible,
+.pt-car:focus-visible {
+  outline: 2px solid var(--color-accent, #3b82f6);
+  outline-offset: 2px;
+}
+
+.pt-btn--danger {
+  border-color: #7f1d1d;
+  color: #fca5a5;
+}
+
+.pt-btn--primary {
+  background: var(--color-accent, #3b82f6);
+  border-color: var(--color-accent, #3b82f6);
+  color: #fff;
+}
+
+.pt-btn--link:hover {
+  color: #fff;
+}
+
+.pt-tree {
+  padding: 8px 14px 12px;
+  min-width: 0;
+}
+
+.pt-row {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 12px;
+  padding: 5px 0;
+  min-height: 30px;
+}
+
+.pt-node {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.pt-nm {
+  white-space: nowrap;
+}
+
+.pt-det {
+  color: var(--pt-muted);
+  font-size: 12.5px;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  min-width: 0;
+}
+
+.pt-meta {
+  color: var(--pt-muted);
+  font-size: 12px;
+  white-space: nowrap;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+}
+
+.pt-link {
+  color: var(--pt-link);
+  text-decoration: none;
+}
+
+.pt-link:hover {
+  text-decoration: underline;
+}
+
+.pt-lvl0 { padding-inline-start: 0; }
+.pt-lvl1 { padding-inline-start: 18px; }
+.pt-lvl2 { padding-inline-start: 40px; }
+.pt-lvl3 { padding-inline-start: 62px; }
+
+.pt-car {
+  color: var(--pt-muted);
+  width: 14px;
+  min-width: 14px;
+  display: inline-flex;
+  justify-content: center;
+  font-size: 11px;
+  background: none;
+  border: 0;
+  padding: 0;
+  cursor: pointer;
+}
+
+.pt-car--none {
+  cursor: default;
+}
+
+.pt-ic {
+  width: 16px;
+  height: 16px;
+  border-radius: 50%;
+  flex-shrink: 0;
+  display: inline-grid;
+  place-items: center;
+  font-size: 10px;
+  font-weight: 700;
+  box-sizing: border-box;
+}
+
+.pt-ic--pending { border: 1.5px solid #64748b; }
+.pt-ic--passed { background: var(--pt-ok); color: #022c22; }
+.pt-ic--failed { background: var(--pt-fail); color: #fff; }
+.pt-ic--waiting { background: var(--pt-wait); color: #fff; }
+.pt-ic--skipped { border: 1.5px dashed #475569; }
+.pt-ic--unknown { border: 1.5px solid #64748b; color: var(--pt-muted); }
+.pt-ic--running {
+  border: 2px solid rgba(245, 158, 11, 0.25);
+  border-top-color: var(--pt-run);
+  animation: pt-spin 1s linear infinite;
+}
+
+@keyframes pt-spin {
+  to { transform: rotate(360deg); }
+}
+
+.pt-chip {
+  font-size: 11px;
+  padding: 1px 7px;
+  border-radius: 999px;
+  background: var(--pt-chip);
+  border: 1px solid var(--pt-border);
+  color: var(--pt-muted);
+  white-space: nowrap;
+}
+
+.pt-chip--parallel { color: var(--pt-link); }
+.pt-chip--loop { color: #fcd34d; }
+.pt-chip--gate { color: #d8b4fe; border-color: #6b21a8; }
+
+.pt-live,
+.pt-err {
+  margin: 4px 0 6px;
+  padding: 7px 10px;
+  font-size: 12.5px;
+  border-radius: 0 6px 6px 0;
+  overflow-wrap: anywhere;
+}
+
+.pt-live {
+  border-inline-start: 2px solid var(--pt-run);
+  background: rgba(245, 158, 11, 0.06);
+  color: #e2e8f0;
+}
+
+.pt-live-l {
+  color: var(--pt-muted);
+}
+
+.pt-err {
+  border-inline-start: 2px solid var(--pt-fail);
+  background: rgba(239, 68, 68, 0.07);
+}
+
+/* the live and error lines sit under the node text, not under its caret */
+.pt-live.pt-lvl0, .pt-err.pt-lvl0 { margin-inline-start: 22px; }
+.pt-live.pt-lvl1, .pt-err.pt-lvl1 { margin-inline-start: 40px; }
+.pt-live.pt-lvl2, .pt-err.pt-lvl2 { margin-inline-start: 62px; }
+.pt-live.pt-lvl3, .pt-err.pt-lvl3 { margin-inline-start: 62px; padding-inline-start: 10px; }
+.pt-live.pt-lvl3, .pt-err.pt-lvl3, .pt-live.pt-lvl2, .pt-err.pt-lvl2,
+.pt-live.pt-lvl1, .pt-err.pt-lvl1, .pt-live.pt-lvl0, .pt-err.pt-lvl0 { padding-inline-start: 10px; }
+
+.pt-gate {
+  margin: 8px 0 4px 18px;
+  padding: 10px 12px;
+  border: 1px solid #6b21a8;
+  background: rgba(168, 85, 247, 0.08);
+  border-radius: 8px;
+  display: flex;
+  gap: 10px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.pt-gate-q {
+  font-weight: 600;
+  flex: 1;
+  min-width: 220px;
+}
+
+.pt-commits {
+  list-style: none;
+  margin: 4px 0 0;
+  padding: 0;
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  max-height: 260px;
+  overflow-y: auto;
+}
+
+.pt-commit {
+  display: flex;
+  gap: 8px;
+  align-items: baseline;
+  font-size: 12.5px;
+  color: var(--pt-muted);
+  min-width: 0;
+}
+
+.pt-commit--mine {
+  color: var(--pt-text);
+  font-weight: 600;
+}
+
+.pt-sha {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  color: var(--pt-link);
+  flex-shrink: 0;
+}
+
+.pt-commit-msg {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+
+.pt-commit-tag {
+  font-size: 11px;
+  padding: 0 6px;
+  border-radius: 999px;
+  border: 1px solid var(--pt-border);
+  flex-shrink: 0;
+}
+
+.pt-commit--mine .pt-commit-tag {
+  border-color: #6b21a8;
+  color: #d8b4fe;
+}
+
+.pt-foot {
+  display: flex;
+  gap: 16px;
+  color: var(--pt-muted);
+  font-size: 12px;
+  padding: 9px 14px;
+  border-top: 1px solid var(--pt-border);
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.pt-warn {
+  color: #fcd34d;
+  overflow-wrap: anywhere;
+  min-width: 0;
+}
+
+.pt-note {
+  color: var(--pt-text);
+}
+
+/* thread list: one status dot per thread */
+.pt-thread-dot {
+  display: inline-block;
+  width: 0.55rem;
+  height: 0.55rem;
+  border-radius: 50%;
+  margin-inline-start: 0.4rem;
+  vertical-align: middle;
+  box-sizing: border-box;
+}
+
+.pt-thread-dot[hidden] {
+  display: none;
+}
+
+.pt-thread-dot--running {
+  border: 2px solid rgba(245, 158, 11, 0.25);
+  border-top-color: var(--color-operator, #f59e0b);
+  animation: pt-spin 1s linear infinite;
+}
+
+.pt-thread-dot--failed { background: #ef4444; }
+.pt-thread-dot--waiting { background: #a855f7; }
+.pt-thread-dot--done { background: var(--color-task-completed, #10b981); }
+
+@media (prefers-reduced-motion: reduce) {
+  .pt-ic--running,
+  .pt-thread-dot--running {
+    animation: none;
+    border-color: var(--color-operator, #f59e0b);
+  }
+}
+
+@media (max-width: 700px) {
+  .pt-row {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 2px;
+  }
+  .pt-meta {
+    padding-inline-start: 26px;
+    flex-wrap: wrap;
+    white-space: normal;
+  }
+  .pt-lvl1 { padding-inline-start: 8px; }
+  .pt-lvl2 { padding-inline-start: 20px; }
+  .pt-lvl3 { padding-inline-start: 32px; }
+  .pt-live.pt-lvl0, .pt-err.pt-lvl0,
+  .pt-live.pt-lvl1, .pt-err.pt-lvl1,
+  .pt-live.pt-lvl2, .pt-err.pt-lvl2,
+  .pt-live.pt-lvl3, .pt-err.pt-lvl3 { margin-inline-start: 32px; }
+  .pt-gate { margin-inline-start: 0; }
+  .pt-gate-q { min-width: 0; flex-basis: 100%; }
+  .pt-run-h .pt-sp { display: none; }
+  .pt-run-h .pt-ttl { flex: 1 1 0; }
+  .pt-run-h .pt-sum { flex-basis: 100%; }
+  .pt-run-h .pt-meta { padding-inline-start: 0; }
+  .pt-run-time { flex-basis: 100%; }
+}

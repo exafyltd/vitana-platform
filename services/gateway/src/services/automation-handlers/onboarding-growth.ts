@@ -16,7 +16,6 @@ import { creditWalletSucceeded, welcomeBonusEventId } from '../wallet/vtna-rewar
 import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
-const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
 
 // ── AP-1301: ORB-Guided Conversational Onboarding ────────────
 // Triggered by: user.signup.completed

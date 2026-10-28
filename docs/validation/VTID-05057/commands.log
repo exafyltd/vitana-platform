@@ -1,0 +1,8 @@
+cd services/gateway && npm install libphonenumber-js@1.11.18 --save   # pinned exact
+npx tsc --noEmit -p .                                                   # clean
+npx jest test/vtid-05057-contacts-phone-matching.test.ts test/routes/connected-apps.test.ts   # pass
+npx jest $(grep -rlE "connected-apps|contacts-import|impact-allow-no-oasis" test)            # 13 suites / 203 tests pass → outputs/jest.txt
+# local throwaway Postgres 16 (never a shared DB):
+psql -v ON_ERROR_STOP=1 -h /var/tmp/pg05057 -p 55432 -U postgres -f docs/validation/VTID-05057/migration-test.sql   # all assertions pass → outputs/migration-test.txt
+psql -v ON_ERROR_STOP=1 -h /var/tmp/pg05057 -p 55432 -U postgres -f docs/validation/VTID-05057/rollback.down.sql    # applies cleanly
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening

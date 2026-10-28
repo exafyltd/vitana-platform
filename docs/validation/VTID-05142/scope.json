@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05142",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/test/vtid-04940-commerce-mcp-supplier-data.test.ts",
+    "services/gateway/test/vtid-04969-commerce-mcp-openai-metadata.test.ts",
+    "docs/validation/VTID-05142/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

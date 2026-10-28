@@ -77,11 +77,13 @@ describe('aggregatePulse', () => {
     );
     expect(items[0].source).toBe('self_healing');
     expect(items[0].severity).toBe('critical');            // timeout → critical
-    expect(items[0].actions[0]).toBe('apply_heal');        // confidence >= 0.8
+    // VTID-05098: Pulse links to the self-healing tab (the one place to act);
+    // it no longer offers apply/discard, which sent {vtid} and always 400'd.
+    expect(items[0].actions).toEqual(['investigate']);
     expect(items[0].metadata.confidence).toBe(0.9);
   });
 
-  it('low-confidence self_healing rows put investigate before apply_heal', () => {
+  it('low-confidence self_healing rows also only offer investigate (VTID-05098)', () => {
     const items = aggregatePulse(
       [],
       [{
@@ -95,7 +97,7 @@ describe('aggregatePulse', () => {
       }],
       [],
     );
-    expect(items[0].actions[0]).toBe('investigate');
+    expect(items[0].actions).toEqual(['investigate']);
   });
 
   it('normalizes active executions and only offers cancel during cooldown', () => {
@@ -270,11 +272,11 @@ describe('aggregatePulse', () => {
       expect(items[0].title).not.toContain('regressed');
     });
 
-    it('offers rerun_contract + open_contract + investigate actions', () => {
+    it('offers only investigate (Open) — the contract is re-run in its own tab (VTID-05098)', () => {
       const items = aggregatePulse([], [], [], [failingContract]);
-      expect(items[0].actions).toContain('rerun_contract');
-      expect(items[0].actions).toContain('open_contract');
-      expect(items[0].actions).toContain('investigate');
+      expect(items[0].actions).toEqual(['investigate']);
+      expect(items[0].actions).not.toContain('rerun_contract' as never);
+      expect(items[0].actions).not.toContain('open_contract' as never);
     });
 
     it('source_url deep-links to the test-contracts panel filtered by capability', () => {

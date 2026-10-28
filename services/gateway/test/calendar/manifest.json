@@ -1,11 +1,12 @@
 {
-  "_comment": "VTID-04458 \u2014 every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
+  "_comment": "VTID-04458 — every calendar source file and the tests that protect it. calendar-coverage.guard.test.ts fails when a calendar file is added without an entry here, or when a listed test no longer exists or no longer imports the file. `via` names the module whose tests drive a thin data-access seam.",
   "sources": {
     "src/types/calendar.ts": {
       "tests": [
         "test/calendar/calendar-logic.golden.test.ts",
         "test/services/calendar-role-context.test.ts",
-        "test/vtid-04331-calendar-data-model.test.ts"
+        "test/vtid-04331-calendar-data-model.test.ts",
+        "test/vtid-04997-test-results-in-calendar-migration.test.ts"
       ]
     },
     "src/routes/calendar.ts": {
@@ -27,7 +28,8 @@
         "test/calendar/calendar-routes.contract.test.ts",
         "test/vtid-04331-calendar-data-model.test.ts",
         "test/vtid-04374-calendar-maintenance.test.ts",
-        "test/vtid-04995-calendar-conflicts.test.ts"
+        "test/vtid-04995-calendar-conflicts.test.ts",
+        "test/vtid-04996-calendar-find-a-time.test.ts"
       ]
     },
     "src/services/calendar-recurrence.ts": {
@@ -137,7 +139,29 @@
     },
     "src/services/calendar-share.ts": {
       "tests": [
-        "test/vtid-04916-calendar-share.test.ts"
+        "test/vtid-04916-calendar-share.test.ts",
+        "test/vtid-05126-calendar-share-any-entry.test.ts"
+      ]
+    },
+    "src/services/orb-tools/calendar-social-tools.ts": {
+      "tests": [
+        "test/vtid-04918-calendar-assistant-parity.test.ts"
+      ]
+    },
+    "src/services/calendar-invite.ts": {
+      "tests": [
+        "test/vtid-04917-calendar-invite-audiobook.test.ts",
+        "test/vtid-04917-invite-routes.test.ts"
+      ]
+    },
+    "src/services/calendar-invite-guard.ts": {
+      "tests": [
+        "test/vtid-05104-calendar-invite-guard.test.ts"
+      ]
+    },
+    "src/services/guided-journey/audiobook-calendar.ts": {
+      "tests": [
+        "test/vtid-04917-calendar-invite-audiobook.test.ts"
       ]
     }
   }

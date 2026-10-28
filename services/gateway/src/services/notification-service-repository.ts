@@ -25,10 +25,18 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 
-export async function fetchLiveDeviceTokensForUser(sb: SupabaseClient, userId: string, tenantId: string) {
+export async function fetchLiveDeviceTokensForUser(
+  sb: SupabaseClient,
+  userId: string,
+  tenantId: string,
+  opts?: { withDeviceType?: boolean },
+) {
+  // VTID-05177: `device_type` is selected only for the native routing passes
+  // (NATIVE_PUSH_DIRECT_ENABLED). With the switch off the query is exactly
+  // today's — pinned by test/services/native-push-golden.vtid-05177.test.ts.
   return sb
     .from('user_device_tokens')
-    .select('fcm_token, device_label')
+    .select(opts?.withDeviceType ? 'fcm_token, device_label, device_type' : 'fcm_token, device_label')
     .eq('user_id', userId)
     .eq('tenant_id', tenantId)
     .is('revoked_at', null);
@@ -44,6 +52,19 @@ export async function fetchDeviceTokenRevocationStates(sb: SupabaseClient, userI
 
 export async function fetchAllDeviceTokensForUser(sb: SupabaseClient, userId: string) {
   return sb.from('user_device_tokens').select('fcm_token, device_label, revoked_at').eq('user_id', userId);
+}
+
+/**
+ * VTID-05177: the user's live device rows with their type, across tenants —
+ * read only by the same-phone duplicate guard (hasOnlyNativeAppDevices), which
+ * runs only when both native switches are on.
+ */
+export async function fetchLiveDeviceTypesForUser(sb: SupabaseClient, userId: string) {
+  return sb
+    .from('user_device_tokens')
+    .select('device_type, device_label')
+    .eq('user_id', userId)
+    .is('revoked_at', null);
 }
 
 export async function fetchLiveDeviceTokensHeldByOthers(sb: SupabaseClient, fcmTokens: string[], excludeUserId: string) {
@@ -78,3 +99,17 @@ export async function insertUserNotification(sb: SupabaseClient, row: Record<str
 export async function setNotificationPushOutcome(sb: SupabaseClient, notificationId: string, outcome: string) {
   return sb.from('user_notifications').update({ push_outcome: outcome }).eq('id', notificationId);
 }
+
+// VTID-05312: dedup of chat notification rows — every UNPUSHED row of this
+// recipient for this chat message is marked handled (push_sent_at now,
+// outcome suppressed_duplicate). Called before notifyUser writes its own row.
+export async function markUnpushedChatDuplicatesHandled(sb: SupabaseClient, userId: string, messageId: string) {
+  return sb
+    .from('user_notifications')
+    .update({ push_sent_at: new Date().toISOString(), push_outcome: 'suppressed_duplicate' })
+    .eq('user_id', userId)
+    .in('type', ['new_chat_message', 'chat_mention'])
+    .eq('data->>message_id', messageId)
+    .is('push_sent_at', null);
+}
+

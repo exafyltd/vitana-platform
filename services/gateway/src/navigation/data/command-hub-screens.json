@@ -707,20 +707,20 @@
    }
   },
   {
-   "id": "DEVHUB.AUTONOMY.AUTOPILOT_ADMIN",
-   "route": "/command-hub/autonomy/autopilot-admin/",
+   "id": "DEVHUB.AUTONOMY.LOOPS",
+   "route": "/command-hub/autonomy/loops/",
    "category": "developer",
    "access": "member",
    "surface": "command-hub",
    "i18n": {
     "en": {
-     "title": "Autonomy Autopilot Admin",
-     "shows": "Placeholder: 'Coming soon' badge with a planned-scope list for admin-facing Autopilot recommendations.",
+     "title": "Autonomy Loops",
+     "shows": "Loop engineering: the 14 self-healing and self-improving loops, their shared engine, the sensors each loop owns, and the simplification backlog of duplicate checks.",
      "phrasings": [
-      "open Autonomy Autopilot Admin",
-      "show me Autonomy Autopilot Admin",
-      "go to the Autopilot Admin tab in Autonomy",
-      "open Autopilot Admin in Autonomy"
+      "open Autonomy Loops",
+      "show me the loops",
+      "go to the Loops tab in Autonomy",
+      "open loop engineering"
      ]
     }
    }
@@ -1664,26 +1664,6 @@
    }
   },
   {
-   "id": "DEVHUB.INFRA.HEALTH",
-   "route": "/command-hub/infrastructure/health/",
-   "category": "developer",
-   "access": "member",
-   "surface": "command-hub",
-   "i18n": {
-    "en": {
-     "title": "Infrastructure Health",
-     "shows": "Infrastructure health monitoring.",
-     "phrasings": [
-      "open Infrastructure Health",
-      "show me Infrastructure Health",
-      "go to the Health tab in Infrastructure",
-      "open Health in Infrastructure"
-     ],
-     "hint": "When asking about infra health, system health, or health checks."
-    }
-   }
-  },
-  {
    "id": "DEVHUB.INFRA.DEPLOYMENTS",
    "route": "/command-hub/infrastructure/deployments/",
    "category": "developer",
@@ -1971,7 +1951,10 @@
      ],
      "hint": "When asking about health checks, uptime, endpoint health, or service availability."
     }
-   }
+   },
+   "aliases": [
+    "DEVHUB.INFRA.HEALTH"
+   ]
   },
   {
    "id": "DEVHUB.DIAGNOSTICS.LATENCY",

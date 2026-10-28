@@ -17,7 +17,11 @@
  */
 
 import { Router, Request, Response } from 'express';
+import rateLimit, { ipKeyGenerator } from 'express-rate-limit';
 import { createUserSupabaseClient } from '../lib/supabase-user';
+import { getSupabase } from '../lib/supabase';
+import { AuthenticatedRequest, optionalAuth } from '../middleware/auth-supabase-jwt';
+import { fetchPrimaryTenantForUser } from '../middleware/auth-supabase-jwt-repository';
 import * as repo from './autopilot-prompts-repository';
 import { withDependencyHealth } from '../services/dependency-probe';
 import {
@@ -37,6 +41,42 @@ const router = Router();
 const VTID = 'VTID-01089';
 
 // =============================================================================
+// VTID-05121: per-user rate limits on the three write routes
+// =============================================================================
+
+/**
+ * VTID-05121: rate-limit key, a local copy of liveRateLimitKey (routes/live.ts,
+ * VTID-04904) — not imported, so this router does not pull in live.ts's
+ * module-level side effects. Key = the user id optionalAuth VERIFIED from the
+ * JWT, else the first X-Forwarded-For hop, else req.ip. A token that does not
+ * verify never sets req.identity, so it shares the IP bucket.
+ * optionalAuth must run before the limiter on every route that uses it.
+ */
+function promptsRateLimitKey(req: Request): string {
+  const userId = (req as AuthenticatedRequest).identity?.user_id;
+  if (userId) return `user:${userId}`;
+  const xff = req.headers['x-forwarded-for'];
+  const first = (Array.isArray(xff) ? xff[0] : xff || '').split(',')[0].trim();
+  if (first) return `ip:${ipKeyGenerator(first)}`;
+  return `ip:${ipKeyGenerator(req.ip || 'unknown')}`;
+}
+
+// The key generator reads X-Forwarded-For itself; the library's own
+// "X-Forwarded-For without trust proxy" warning does not apply.
+const limiterBase = {
+  keyGenerator: promptsRateLimitKey,
+  validate: { xForwardedForHeader: false } as const,
+  message: { ok: false, error: 'RATE_LIMIT_EXCEEDED' },
+  standardHeaders: true,
+  legacyHeaders: false,
+};
+// The service's daily cap (max_prompts_per_day) is the durable bound; these
+// are a per-task backstop, since a member can raise their own cap via POST /prefs.
+const prefsWriteLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 30 });
+const generateLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 10 });
+const actionLimiter = rateLimit({ ...limiterBase, windowMs: 15 * 60 * 1000, max: 60 });
+
+// =============================================================================
 // VTID-01089: Helper Functions
 // =============================================================================
 
@@ -51,12 +91,43 @@ function getBearerToken(req: Request): string | null {
   return authHeader.slice(7);
 }
 
+const TENANT_LOOKUP_TIMEOUT_MS = 2500;
+
+/**
+ * VTID-05048: the caller's tenant when me_context does not carry one — the
+ * verified identity's tenant, else the user's primary user_tenants row (the
+ * same lookup requireTenant does). Never a header, never a default tenant.
+ */
+async function resolveFallbackTenant(req: Request, userId: string): Promise<string | null> {
+  const identTenant = (req as AuthenticatedRequest).identity?.tenant_id;
+  if (identTenant) return identTenant;
+  const admin = getSupabase();
+  if (!admin) return null;
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), TENANT_LOOKUP_TIMEOUT_MS);
+  try {
+    const { data } = await fetchPrimaryTenantForUser(admin, userId, controller.signal);
+    return (data as { tenant_id?: string } | null)?.tenant_id ?? null;
+  } catch (err: any) {
+    console.warn(`[${VTID}] primary tenant lookup failed for ${userId}: ${err?.message}`);
+    return null;
+  } finally {
+    clearTimeout(timer);
+  }
+}
+
 /**
  * Get user context (tenant_id, user_id) from authenticated request.
  * Uses the me context RPC to get the current user's identity.
+ *
+ * VTID-05048: the tenant used to fall back to a caller-supplied x-tenant-id
+ * header and then to a hardcoded '1111…' id that is not a real tenant. Both
+ * are gone: me_context → verified identity → primary user_tenants row, else
+ * 400 TENANT_REQUIRED.
  */
 async function getUserContext(req: Request): Promise<{
   ok: boolean;
+  status?: number;
   tenant_id?: string;
   user_id?: string;
   error?: string;
@@ -66,14 +137,14 @@ async function getUserContext(req: Request): Promise<{
     return { ok: false, error: 'UNAUTHENTICATED' };
   }
 
-  // Check for tenant_id in headers (for multi-tenant support)
-  const headerTenantId = req.headers['x-tenant-id'] as string | undefined;
-
   try {
     const supabase = createUserSupabaseClient(token);
 
     // Call me_context RPC to get user identity
     const { data, error } = await repo.fetchMeContext(supabase);
+
+    let userId: string | undefined;
+    let tenantId: string | null = null;
 
     if (error) {
       console.warn(`[${VTID}] me_context RPC error:`, error.message);
@@ -83,24 +154,25 @@ async function getUserContext(req: Request): Promise<{
       if (authError || !authData?.user) {
         return { ok: false, error: 'Failed to get user context' };
       }
-
-      // Use header tenant_id or default
-      const tenantId = headerTenantId || '11111111-1111-1111-1111-111111111111'; // Default: Maxina
-
-      return {
-        ok: true,
-        tenant_id: tenantId,
-        user_id: authData.user.id,
-      };
+      userId = authData.user.id;
+    } else {
+      userId = data?.user_id || data?.id;
+      tenantId = data?.tenant_id || null;
     }
 
-    // Use tenant_id from context or header
-    const tenantId = data?.tenant_id || headerTenantId || '11111111-1111-1111-1111-111111111111';
+    if (!userId) {
+      return { ok: false, error: 'UNAUTHENTICATED' };
+    }
+
+    if (!tenantId) tenantId = await resolveFallbackTenant(req, userId);
+    if (!tenantId) {
+      return { ok: false, status: 400, error: 'TENANT_REQUIRED' };
+    }
 
     return {
       ok: true,
       tenant_id: tenantId,
-      user_id: data?.user_id || data?.id,
+      user_id: userId,
     };
   } catch (err: any) {
     console.error(`[${VTID}] getUserContext error:`, err.message);
@@ -135,7 +207,7 @@ router.get('/prefs', async (req: Request, res: Response) => {
 
   const context = await getUserContext(req);
   if (!context.ok || !context.tenant_id || !context.user_id) {
-    return res.status(401).json({
+    return res.status(context.status || 401).json({
       ok: false,
       error: context.error || 'UNAUTHENTICATED',
     });
@@ -172,12 +244,12 @@ router.get('/prefs', async (req: Request, res: Response) => {
  *   "prefs": { ... }
  * }
  */
-router.post('/prefs', async (req: Request, res: Response) => {
+router.post('/prefs', optionalAuth, prefsWriteLimiter, async (req: Request, res: Response) => {
   console.log(`[${VTID}] POST /prefs`);
 
   const context = await getUserContext(req);
   if (!context.ok || !context.tenant_id || !context.user_id) {
-    return res.status(401).json({
+    return res.status(context.status || 401).json({
       ok: false,
       error: context.error || 'UNAUTHENTICATED',
     });
@@ -236,7 +308,7 @@ router.get('/prompts/today', async (req: Request, res: Response) => {
 
   const context = await getUserContext(req);
   if (!context.ok || !context.tenant_id || !context.user_id) {
-    return res.status(401).json({
+    return res.status(context.status || 401).json({
       ok: false,
       error: context.error || 'UNAUTHENTICATED',
     });
@@ -274,12 +346,12 @@ router.get('/prompts/today', async (req: Request, res: Response) => {
  *   "rate_limit_info": { ... }
  * }
  */
-router.post('/prompts/generate', async (req: Request, res: Response) => {
+router.post('/prompts/generate', optionalAuth, generateLimiter, async (req: Request, res: Response) => {
   console.log(`[${VTID}] POST /prompts/generate`);
 
   const context = await getUserContext(req);
   if (!context.ok || !context.tenant_id || !context.user_id) {
-    return res.status(401).json({
+    return res.status(context.status || 401).json({
       ok: false,
       error: context.error || 'UNAUTHENTICATED',
     });
@@ -341,13 +413,13 @@ router.post('/prompts/generate', async (req: Request, res: Response) => {
  * - "not_now": state → dismissed
  * - "options": returns top 5 candidates of same type (no state change)
  */
-router.post('/prompts/:id/action', async (req: Request, res: Response) => {
+router.post('/prompts/:id/action', optionalAuth, actionLimiter, async (req: Request, res: Response) => {
   const promptId = req.params.id;
   console.log(`[${VTID}] POST /prompts/${promptId}/action`);
 
   const context = await getUserContext(req);
   if (!context.ok || !context.tenant_id || !context.user_id) {
-    return res.status(401).json({
+    return res.status(context.status || 401).json({
       ok: false,
       error: context.error || 'UNAUTHENTICATED',
     });

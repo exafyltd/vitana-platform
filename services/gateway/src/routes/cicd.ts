@@ -39,6 +39,7 @@ import { Router, Request, Response } from 'express';
 import {
   CreatePrRequestSchema,
   SafeMergeRequestSchema,
+  SafeMergeRequest,
   DeployServiceRequestSchema,
   ALLOWED_DEPLOY_SERVICES,
   CreatePrResponse,
@@ -66,6 +67,8 @@ import {
 import { readFileSync, existsSync } from 'fs';
 import { join } from 'path';
 import githubService from '../services/github-service';
+import { requireServiceOrAdmin } from '../middleware/require-service-or-admin';
+import { repoGitHubToken } from '../services/vitana-repos';
 import cicdEvents from '../services/oasis-event-service';
 import cicdLockManager from '../services/cicd-lock-manager';
 import { ZodError } from 'zod';
@@ -74,6 +77,17 @@ import { validateForMerge, hasValidatorPass } from '../services/autopilot-valida
 
 const router = Router();
 const DEFAULT_REPO = 'exafyltd/vitana-platform';
+// VTID-05014: /create-pr and /safe-merge (the paths the Operator's and Kiro's
+// dev_create_pr / dev_merge_pr use) accept both Vitana repos. Every other route
+// here (governed /cicd/merge, /autonomous-pr-merge, the approvals queue) stays
+// platform-only on purpose.
+const PR_WRITE_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'];
+/** Token args for a repo: none for the platform (default token, call unchanged), the vitana-v1 token otherwise. */
+function repoTokenArgs(repo: string): [] | [string] {
+  if (repo === DEFAULT_REPO) return [];
+  const t = repoGitHubToken(repo as 'exafyltd/vitana-v1');
+  return t ? [t] : [];
+}
 
 // ==================== VTID-01032: Service Path Mapping ====================
 
@@ -216,14 +230,20 @@ function handleZodError(error: ZodError, res: Response) {
 
 // ==================== POST /create-pr ====================
 // Mounted at /api/v1/github -> final path: /api/v1/github/create-pr
-router.post('/create-pr', async (req: Request, res: Response) => {
+// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may open a PR.
+router.post('/create-pr', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CreatePrRequestSchema.safeParse(req.body);
     if (!validation.success) {
       return handleZodError(validation.error, res);
     }
 
-    const { vtid, title, body, head, base } = validation.data;
+    const { vtid, title, body, head, base, repo } = validation.data;
+
+    if (!PR_WRITE_REPOS.includes(repo)) {
+      await cicdEvents.createPrFailed(vtid, `Repo not allowed: ${repo}`);
+      return res.status(403).json({ ok: false, error: `Only ${PR_WRITE_REPOS.join(', ')} are allowed`, vtid } as CreatePrResponse);
+    }
 
     // Validation: base must be main
     if (base !== 'main') {
@@ -249,7 +269,7 @@ router.post('/create-pr', async (req: Request, res: Response) => {
     await cicdEvents.createPrRequested(vtid, head, base);
 
     // Create the PR
-    const pr = await githubService.createPullRequest(DEFAULT_REPO, title, body, head, base);
+    const pr = await githubService.createPullRequest(repo, title, body, head, base, ...repoTokenArgs(repo));
 
     // Emit success event
     await cicdEvents.createPrSucceeded(vtid, pr.number, pr.html_url);
@@ -277,27 +297,58 @@ router.post('/create-pr', async (req: Request, res: Response) => {
   }
 });
 
-// ==================== POST /safe-merge ====================
-// Mounted at /api/v1/github -> final path: /api/v1/github/safe-merge
-router.post('/safe-merge', async (req: Request, res: Response) => {
+// ==================== Safe-merge: in-process function (VTID-05217 / P4) ====================
+// The POST /safe-merge route body refactored into a callable function so the
+// Project Manager act layer can run the SAME gate in-process (plan §6.3) with
+// NO behaviour change to the HTTP route. The route below is now a thin adapter:
+// it builds the typed outcome and replays the identical status + JSON payload.
+//
+// `result` classifies the outcome for in-process callers:
+//   - 'merged'         : the PR was merged by this call.
+//   - 'already_merged' : the PR was not open (plan Risks / cicd.ts:344 pr_not_open) —
+//                        a no-op success for in-process callers, NOT a failure.
+//                        The HTTP route still returns the identical 400 pr_not_open
+//                        body, so route behaviour is unchanged.
+//   - 'refused'        : any other gate failure (unauthorized repo, pr_not_found,
+//                        invalid base, checks failed, governance blocked, error).
+
+export type SafeMergeResult = 'merged' | 'already_merged' | 'refused';
+
+export interface SafeMergeOutcome {
+  result: SafeMergeResult;
+  /** HTTP status the route replays. */
+  status: number;
+  /** The exact JSON body the route replays. */
+  body: SafeMergeResponse;
+}
+
+/**
+ * Run the safe-merge gate for a PR, in-process. Behaviour-preserving extraction
+ * of the POST /safe-merge route body. Emits the same OASIS events, returns the
+ * same payloads. `require_checks`/`merge_strategy` default to the schema defaults
+ * (true / 'squash') so an in-process caller can omit them.
+ */
+export async function safeMerge(input: SafeMergeRequest): Promise<SafeMergeOutcome> {
+  const { vtid, repo, pr_number } = input;
+  const require_checks = input.require_checks ?? true;
+  const merge_strategy = input.merge_strategy ?? 'squash';
+
   try {
-    const validation = SafeMergeRequestSchema.safeParse(req.body);
-    if (!validation.success) {
-      return handleZodError(validation.error, res);
-    }
-
-    const { vtid, repo, pr_number, require_checks, merge_strategy } = validation.data;
-
-    // Validate repo is the allowed one
-    if (repo !== DEFAULT_REPO) {
+    // Validate repo is an allowed one (VTID-05014: both Vitana repos)
+    if (!PR_WRITE_REPOS.includes(repo)) {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'unauthorized_repo', { repo });
-      return res.status(403).json({
-        ok: false,
-        reason: 'unauthorized_repo',
-        vtid,
-        details: { message: `Only ${DEFAULT_REPO} is allowed` },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 403,
+        body: {
+          ok: false,
+          reason: 'unauthorized_repo',
+          vtid,
+          details: { message: `Only ${PR_WRITE_REPOS.join(', ')} are allowed` },
+        } as SafeMergeResponse,
+      };
     }
+    const tokenArgs = repoTokenArgs(repo);
 
     // Emit requested event
     await cicdEvents.safeMergeRequested(vtid, repo, pr_number);
@@ -305,40 +356,54 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
     // Get PR status
     let prStatus;
     try {
-      prStatus = await githubService.getPrStatus(repo, pr_number);
+      prStatus = await githubService.getPrStatus(repo, pr_number, ...tokenArgs);
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'pr_not_found', { error: errorMessage });
-      return res.status(404).json({
-        ok: false,
-        reason: 'pr_not_found',
-        vtid,
-        details: { error: errorMessage },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 404,
+        body: {
+          ok: false,
+          reason: 'pr_not_found',
+          vtid,
+          details: { error: errorMessage },
+        } as SafeMergeResponse,
+      };
     }
 
     const { pr, checks, allPassed } = prStatus;
 
-    // Validate PR is open
+    // Validate PR is open. A non-open PR is treated as ALREADY MERGED: a no-op
+    // success for in-process callers (plan Risks: safe-merge returns pr_not_open
+    // at cicd.ts:344 if a lease was lost mid-merge). The HTTP body is unchanged.
     if (pr.state !== 'open') {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'pr_not_open', { state: pr.state });
-      return res.status(400).json({
-        ok: false,
-        reason: 'pr_not_open',
-        vtid,
-        details: { pr_state: pr.state },
-      } as SafeMergeResponse);
+      return {
+        result: 'already_merged',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'pr_not_open',
+          vtid,
+          details: { pr_state: pr.state },
+        } as SafeMergeResponse,
+      };
     }
 
     // Validate base is main
     if (pr.base.ref !== 'main') {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'invalid_base', { base: pr.base.ref });
-      return res.status(400).json({
-        ok: false,
-        reason: 'invalid_base',
-        vtid,
-        details: { base: pr.base.ref, message: 'PRs must target main branch' },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'invalid_base',
+          vtid,
+          details: { base: pr.base.ref, message: 'PRs must target main branch' },
+        } as SafeMergeResponse,
+      };
     }
 
     // Check CI status if required
@@ -347,21 +412,25 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'checks_failed', {
         checks: failedChecks,
       });
-      return res.status(400).json({
-        ok: false,
-        reason: 'checks_failed',
-        vtid,
-        details: {
-          pr_state: pr.state,
-          base: pr.base.ref,
-          head: pr.head.ref,
-          checks: failedChecks,
-        },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'checks_failed',
+          vtid,
+          details: {
+            pr_state: pr.state,
+            base: pr.base.ref,
+            head: pr.head.ref,
+            checks: failedChecks,
+          },
+        } as SafeMergeResponse,
+      };
     }
 
     // Run governance evaluation
-    const governance = await githubService.evaluateGovernance(repo, pr_number, vtid);
+    const governance = await githubService.evaluateGovernance(repo, pr_number, vtid, ...tokenArgs);
     await cicdEvents.safeMergeEvaluated(
       vtid,
       pr_number,
@@ -375,21 +444,25 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'governance_blocked', {
         blocked_reasons: governance.blocked_reasons,
       });
-      return res.status(403).json({
-        ok: false,
-        reason: 'governance_blocked',
-        vtid,
-        details: {
-          pr_state: pr.state,
-          base: pr.base.ref,
-          head: pr.head.ref,
-          checks,
-          files_touched: governance.files_touched,
-          services_impacted: governance.services_impacted,
-          governance_decision: governance.decision,
-          blocked_reasons: governance.blocked_reasons,
-        },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 403,
+        body: {
+          ok: false,
+          reason: 'governance_blocked',
+          vtid,
+          details: {
+            pr_state: pr.state,
+            base: pr.base.ref,
+            head: pr.head.ref,
+            checks,
+            files_touched: governance.files_touched,
+            services_impacted: governance.services_impacted,
+            governance_decision: governance.decision,
+            blocked_reasons: governance.blocked_reasons,
+          },
+        } as SafeMergeResponse,
+      };
     }
 
     // All checks passed and governance approved - proceed with merge
@@ -399,7 +472,8 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
       repo,
       pr_number,
       `${pr.title} (#${pr_number})`,
-      merge_strategy
+      merge_strategy,
+      ...tokenArgs
     );
 
     await cicdEvents.safeMergeExecuted(vtid, pr_number, mergeResult.sha);
@@ -409,29 +483,63 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
     // Detect service for auto-deploy hint
     const primaryService = githubService.detectServiceFromFiles(governance.files_touched);
 
-    return res.status(200).json({
-      ok: true,
-      merged: true,
-      branch: 'main',
-      repo,
-      vtid,
-      details: {
-        pr_state: 'merged',
-        base: pr.base.ref,
-        head: pr.head.ref,
-        checks,
-        files_touched: governance.files_touched,
-        services_impacted: governance.services_impacted,
-        governance_decision: 'approved',
-      },
-      next: primaryService
-        ? {
-            can_auto_deploy: true,
-            service: primaryService,
-            environment: 'dev',
-          }
-        : undefined,
-    } as SafeMergeResponse);
+    return {
+      result: 'merged',
+      status: 200,
+      body: {
+        ok: true,
+        merged: true,
+        branch: 'main',
+        repo,
+        vtid,
+        details: {
+          pr_state: 'merged',
+          base: pr.base.ref,
+          head: pr.head.ref,
+          checks,
+          files_touched: governance.files_touched,
+          services_impacted: governance.services_impacted,
+          governance_decision: 'approved',
+        },
+        next: primaryService
+          ? {
+              can_auto_deploy: true,
+              service: primaryService,
+              environment: 'dev',
+            }
+          : undefined,
+      } as SafeMergeResponse,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[CICD] Safe merge failed for ${vtid} PR #${pr_number}: ${errorMessage}`);
+    await cicdEvents.safeMergeBlocked(vtid, pr_number, 'internal_error', { error: errorMessage });
+    return {
+      result: 'refused',
+      status: 500,
+      body: {
+        ok: false,
+        reason: 'internal_error',
+        vtid,
+        details: { error: errorMessage },
+      } as SafeMergeResponse,
+    };
+  }
+}
+
+// ==================== POST /safe-merge ====================
+// Mounted at /api/v1/github -> final path: /api/v1/github/safe-merge
+// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may merge.
+// Thin adapter over safeMerge() (VTID-05217 / P4) — same validation, events, payloads.
+router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  try {
+    const validation = SafeMergeRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return handleZodError(validation.error, res);
+    }
+
+    const outcome = await safeMerge(validation.data);
+    return res.status(outcome.status).json(outcome.body);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const vtid = req.body?.vtid || 'UNKNOWN';
@@ -451,7 +559,8 @@ router.post('/safe-merge', async (req: Request, res: Response) => {
 
 // ==================== POST /service ====================
 // Mounted at /api/v1/deploy -> final path: /api/v1/deploy/service
-router.post('/service', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/service', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = DeployServiceRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -635,7 +744,8 @@ router.get('/health', (_req: Request, res: Response) => {
  * 4. Merge execution via GitHub API
  * 5. OASIS event emission
  */
-router.post('/merge', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CicdMergeRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -809,7 +919,8 @@ router.post('/merge', async (req: Request, res: Response) => {
  * 4. Workflow trigger via GitHub API
  * 5. OASIS event emission
  */
-router.post('/deploy', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/deploy', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const validation = CicdDeployRequestSchema.safeParse(req.body);
     if (!validation.success) {
@@ -892,7 +1003,8 @@ router.post('/deploy', async (req: Request, res: Response) => {
  * This endpoint fetches open PRs from GitHub that match claude/* branch pattern.
  * Each PR becomes an approval item that can be merged/deployed from Command Hub.
  */
-router.get('/approvals', async (_req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.get('/approvals', requireServiceOrAdmin, async (_req: Request, res: Response) => {
   try {
     const approvals: ApprovalItem[] = [];
 
@@ -1023,7 +1135,8 @@ router.get('/approvals', async (_req: Request, res: Response) => {
  * - For 'deploy': Triggers deploy workflow
  * - For 'merge+deploy': Merges PR then triggers deploy
  */
-router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/approvals/:id/approve', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
     const prMatch = id.match(/^pr-(\d+)$/);
@@ -1150,7 +1263,8 @@ router.post('/approvals/:id/approve', async (req: Request, res: Response) => {
  * NO fallback extraction from PR branch/title/body.
  * If body.vtid is missing or invalid, use UNKNOWN.
  */
-router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/approvals/:id/deny', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { id } = req.params;
 
@@ -1224,7 +1338,8 @@ router.post('/approvals/:id/deny', async (req: Request, res: Response) => {
  * - If payload has 'pr_number' (no 'head_branch'): VTID-01168 approval path
  * - If payload has 'head_branch': Legacy Claude Worker path
  */
-router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/autonomous-pr-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
   const requestId = randomUUID();
 
   // ==================== VTID-01168: Approval Auto-Deploy Path ====================
@@ -1975,7 +2090,8 @@ router.post('/autonomous-pr-merge', async (req: Request, res: Response) => {
  * - Current locks held
  * - Concurrency configuration
  */
-router.get('/lock-status', (_req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.get('/lock-status', requireServiceOrAdmin, (_req: Request, res: Response) => {
   try {
     const status = cicdLockManager.getLockStatus();
     return res.status(200).json({
@@ -1999,7 +2115,8 @@ router.get('/lock-status', (_req: Request, res: Response) => {
  *
  * Body: { vtid: string, reason?: string }
  */
-router.post('/lock-release', async (req: Request, res: Response) => {
+// VTID-05047: service token or exafy_admin only.
+router.post('/lock-release', requireServiceOrAdmin, async (req: Request, res: Response) => {
   try {
     const { vtid, reason } = req.body;
 

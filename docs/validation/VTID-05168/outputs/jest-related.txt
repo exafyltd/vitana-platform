@@ -1,0 +1,7 @@
+npx jest <214 suites matching health|index|calendar|diary|integration|wearable|memory|voice-tools|orb-tools|pillar|guided|timeline|05089|04542|characterization>
+Test Suites: 1 skipped, 214 passed, 214 of 215 total
+Tests:       18 skipped, 4290 passed, 4308 total
+npx jest <guided suites>  Tests: 209 passed, 209 total
+npx jest test/routes/health.test.ts  Tests: 39 passed
+npx jest test/vtid-05089-wearable-features-bridge.test.ts test/services/voice-tools/health-log.test.ts  Tests: 73 passed
+npx jest test/vtid-05041-definer-lockdown.test.ts  Tests: 8 passed

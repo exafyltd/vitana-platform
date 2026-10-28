@@ -7,7 +7,7 @@
 # No `curl | bash`. Bumping is a deliberate edit of both ARGs below.
 # The gnu build needs glibc >= 2.34; bookworm ships 2.36.
 
-FROM node:20-bookworm-slim AS builder
+FROM public.ecr.aws/docker/library/node:20-bookworm-slim AS builder
 WORKDIR /app
 COPY package.json package-lock.json ./
 RUN npm ci --no-audit --no-fund
@@ -15,7 +15,7 @@ COPY tsconfig.json ./
 COPY src/ ./src/
 RUN npm run build && npm prune --omit=dev
 
-FROM node:20-bookworm-slim AS kiro
+FROM public.ecr.aws/docker/library/node:20-bookworm-slim AS kiro
 ARG KIRO_CLI_VERSION=2.28.0
 ARG KIRO_CLI_SHA256=f48ef68df4cc7e83c942ce17e15d2a2c4316d08c6eba8829c4a7b277eba7be5b
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates curl xz-utils \
@@ -26,7 +26,7 @@ RUN curl -fsSL -o /tmp/kirocli.tar.xz \
  && mkdir -p /opt/kiro && tar -xJf /tmp/kirocli.tar.xz -C /opt/kiro && rm /tmp/kirocli.tar.xz \
  && grep -q "^BUILD_VERSION=${KIRO_CLI_VERSION}$" /opt/kiro/kirocli/BUILD-INFO
 
-FROM node:20-bookworm-slim AS runtime
+FROM public.ecr.aws/docker/library/node:20-bookworm-slim AS runtime
 ARG KIRO_CLI_VERSION=2.28.0
 RUN apt-get update && apt-get install -y --no-install-recommends ca-certificates git \
  && rm -rf /var/lib/apt/lists/*

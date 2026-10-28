@@ -35,8 +35,28 @@ export function upsertOAuthConnection(sb: SupabaseClient, row: Record<string, un
   return sb.from('user_connections').upsert(row, { onConflict: 'tenant_id,user_id,connector_id,provider_user_id' });
 }
 
+/** VTID-05030: what disconnect needs to revoke at the vendor (sealed tokens + vendor ids). */
+export async function fetchConnectionsForDisconnect(sb: SupabaseClient, userId: string, connectorId: string) {
+  return sb
+    .from('user_connections')
+    .select('id, access_token, refresh_token, provider_user_id, provider_username')
+    .eq('user_id', userId)
+    .eq('connector_id', connectorId);
+}
+
+/** VTID-05030: disconnect also wipes the stored tokens. */
 export async function disconnectUserConnection(sb: SupabaseClient, userId: string, connectorId: string) {
-  return sb.from('user_connections').update({ is_active: false, disconnected_at: new Date().toISOString() }).eq('user_id', userId).eq('connector_id', connectorId);
+  return sb
+    .from('user_connections')
+    .update({
+      is_active: false,
+      disconnected_at: new Date().toISOString(),
+      access_token: null,
+      refresh_token: null,
+      token_expires_at: null,
+    })
+    .eq('user_id', userId)
+    .eq('connector_id', connectorId);
 }
 
 export async function fetchUserWearableConnectionsFull(sb: SupabaseClient, userId: string) {

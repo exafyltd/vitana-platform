@@ -114,19 +114,125 @@ export async function recordJevShadowDecision(row: Record<string, unknown>, sbOv
   }
 }
 
-/** Writes the real outcome back; `agreed` = Jev's verdict matched what turned out right. */
+export interface JevGateSkip {
+  gate: string;
+  decision: string;
+  /** The gate's current mode. Callers only skip after their own `off` check, so never 'off'. */
+  mode: Exclude<JevGateMode, 'off'>;
+  /** Short machine reason, e.g. 'no_ci_evidence', 'error'. */
+  reason: string;
+  subject_type: string;
+  subject_ref: string;
+  system_action: string;
+  plane?: string;
+  tenant_id?: string | null;
+}
+
+/**
+ * VTID-05012: a gate that is on but ends without asking Jev writes a $0 'skipped' row, so a skip
+ * is visible instead of looking like a gate that never ran. One row per (gate, subject_ref,
+ * reason): a repeat hits the partial unique index and is treated as already recorded.
+ * Never throws; returns the new row id, or null (no client, duplicate, insert error).
+ */
+export async function recordJevGateSkip(s: JevGateSkip, sbOverride?: SupabaseClient | null): Promise<string | null> {
+  if (!s.subject_ref) return null;
+  const sb = sbOverride === undefined ? getSupabase() : sbOverride;
+  if (!sb) {
+    console.error(`[jev] skip row NOT recorded (no Supabase client) gate=${s.gate}`);
+    return null;
+  }
+  try {
+    const { data, error } = await repo.insertShadowDecision(sb, {
+      gate: s.gate,
+      decision: s.decision,
+      mode: s.mode,
+      plane: s.plane ?? 'internal',
+      tenant_id: s.tenant_id ?? null,
+      subject_type: s.subject_type,
+      subject_ref: s.subject_ref.slice(0, 500),
+      jev_outcome: 'skipped',
+      skip_reason: s.reason.slice(0, 100),
+      jev_verdict: null,
+      jev_confidence: null,
+      system_action: s.system_action,
+      cost_usd: 0,
+    });
+    if (error) {
+      if ((error as { code?: string }).code === '23505') return null; // already recorded
+      console.error(`[jev] skip row NOT recorded gate=${s.gate}: ${error.message}`);
+      return null;
+    }
+    return (data as { id: string } | null)?.id ?? null;
+  } catch (err: any) {
+    console.error(`[jev] skip row NOT recorded gate=${s.gate}: ${err?.message || err}`);
+    return null;
+  }
+}
+
+/**
+ * Writes the real outcome back; `agreed` = Jev's verdict matched what turned out right.
+ * VTID-05012: `leanAgreed` is the same comparison for an abstained row's below-threshold answer;
+ * omitted, the column is left untouched.
+ */
 export async function recordJevShadowOutcome(
   id: string,
   outcome: string,
   agreed: boolean | null,
   sbOverride?: SupabaseClient | null,
+  leanAgreed?: boolean | null,
 ): Promise<boolean> {
   const sb = sbOverride === undefined ? getSupabase() : sbOverride;
   if (!sb) return false;
-  const { error } = await repo.updateShadowOutcome(sb, id, { outcome, agreed, outcome_at: new Date().toISOString() });
+  const patch: Record<string, unknown> = { outcome, agreed, outcome_at: new Date().toISOString() };
+  if (leanAgreed !== undefined) patch.lean_agreed = leanAgreed;
+  const { error } = await repo.updateShadowOutcome(sb, id, patch);
   if (error) {
     console.error(`[jev] shadow outcome NOT recorded id=${id}: ${error.message}`);
     return false;
   }
   return true;
+}
+
+export const JEV_SILENT_AFTER_MS = 48 * 60 * 60 * 1000;
+/** The stats window `jevGateHealth` needs: anything shorter would hide a row that is not yet 48 h old. */
+export const JEV_HEALTH_MIN_DAYS = 2;
+
+/**
+ * JEV_*_MODE switches that are not shadow gates: they never write jev_shadow_decisions rows
+ * (member quota counters, the in-process community rate bucket), so gate health must not list them.
+ */
+export const JEV_NON_GATE_MODE_VARS: ReadonlySet<string> = new Set(['JEV_MEMBER_QUOTA_MODE', 'JEV_COMMUNITY_RATE_MODE']);
+
+export interface JevGateHealth {
+  gate: string;
+  env: string;
+  mode: Exclude<JevGateMode, 'off'>;
+  last_row_at: string | null;
+  silent: boolean;
+}
+
+/**
+ * VTID-05012: every gate that is on (per its JEV_*_MODE env var) with the time of its newest row in
+ * the stats window; `silent` when it has written no row of any kind (skipped included) in 48 h.
+ * The stats must cover at least JEV_HEALTH_MIN_DAYS. Pure: the caller passes the stats rows, the env
+ * and the clock.
+ */
+export function jevGateHealth(
+  stats: Array<{ gate: string; last_row_at?: string | null }> | null | undefined,
+  env: NodeJS.ProcessEnv = process.env,
+  nowMs: number = Date.now(),
+): JevGateHealth[] {
+  const last = new Map((stats || []).map((s) => [s.gate, s.last_row_at ?? null]));
+  const out: JevGateHealth[] = [];
+  for (const name of Object.keys(env).sort()) {
+    const m = /^JEV_([A-Z0-9_]+)_MODE$/.exec(name);
+    if (!m || JEV_NON_GATE_MODE_VARS.has(name)) continue;
+    const gate = m[1].toLowerCase();
+    const mode = jevGateMode(gate, env);
+    if (mode === 'off') continue;
+    const lastRowAt = last.get(gate) ?? null;
+    const ts = lastRowAt ? Date.parse(lastRowAt) : NaN;
+    out.push({ gate, env: name, mode, last_row_at: lastRowAt, silent: !Number.isFinite(ts) || nowMs - ts > JEV_SILENT_AFTER_MS });
+  }
+  return out;
 }

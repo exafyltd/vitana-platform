@@ -24,7 +24,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
 import * as repo from '../jev-repository';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 
 export const CHANGE_RISK_GATE = 'change_risk';
 /** "High" in change_risk's four levels. */
@@ -101,6 +101,11 @@ export async function runChangeRiskCheck(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${CHANGE_RISK_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    // VTID-05012: the error is recorded as a skip, not only a console line.
+    await recordJevGateSkip(
+      { gate: CHANGE_RISK_GATE, decision: 'change_risk', mode, reason: 'error', subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: 'pushed' },
+      a.sb,
+    );
     return null;
   }
 }

@@ -2182,9 +2182,7 @@ body {
 }
 
 .chat-engine-option:focus-visible,
-.chat-engine-end-btn:focus-visible,
-.kiro-approval-btn:focus-visible,
-.kiro-stop-btn:focus-visible {
+.chat-engine-end-btn:focus-visible {
   outline: 2px solid #2a7bff;
   outline-offset: 1px;
 }
@@ -2325,6 +2323,22 @@ body {
   margin: 0 0 0.85rem;
 }
 
+.kiro-fallback-btn {
+  margin-inline-start: 0.5rem;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid #4a63d8;
+  border-radius: 999px;
+  background: transparent;
+  color: #b9c6ff;
+  font-size: 0.72rem;
+  cursor: pointer;
+}
+
+.kiro-fallback-btn:hover {
+  background: rgba(74, 99, 216, 0.15);
+  color: #fff;
+}
+
 .kiro-key-form,
 .kiro-key-actions {
   display: flex;
@@ -2380,6 +2394,27 @@ body {
   color: #e3a39c;
 }
 
+/* VTID-05004: accepted key confirmation + the quiet way to manage it */
+.kiro-key-ok,
+.kiro-panel-rows dd.kiro-key-ok {
+  color: #9fd49f;
+  font-weight: 600;
+}
+
+.kiro-key-manage {
+  background: none;
+  border: none;
+  padding: 0;
+  color: var(--text-muted, #8b93a7);
+  font-size: 12px;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.kiro-key-manage:hover {
+  color: var(--text-primary, #e6e9ef);
+}
+
 .kiro-key-note {
   margin-top: 0.4rem;
   color: #9aa0a6;
@@ -2387,89 +2422,79 @@ body {
   line-height: 1.35;
 }
 
-.kiro-approval {
-  display: flex;
-  flex-wrap: wrap;
-  align-items: center;
-  justify-content: space-between;
-  gap: 0.5rem 0.75rem;
-  margin: 0.35rem 0;
-  padding: 0.55rem 0.7rem;
-  border: 1px solid #6b4fc8;
-  border-radius: 8px;
-  background: rgba(107, 79, 200, 0.12);
-  font-style: normal;
-}
+/* VTID-05067: the Kiro approval cards, live reply and Stop moved to kiro-console.css (the Kiro console module). */
 
-.kiro-approval--allowed { border-color: #3f6b3f; background: rgba(127, 181, 127, 0.08); }
-.kiro-approval--denied,
-.kiro-approval--expired,
-.kiro-approval--error { border-color: #6b3f3f; background: rgba(217, 119, 111, 0.08); }
-
-.kiro-approval-text {
-  flex: 1 1 14rem;
-  min-width: 0;
-  color: #e6e1ff;
-  font-size: 0.82rem;
-  overflow-wrap: anywhere;
-}
-
-.kiro-approval-actions {
-  display: flex;
-  gap: 0.4rem;
-}
-
-.kiro-approval-btn {
-  min-width: 64px;
-  min-height: 32px;
-  padding: 0.25rem 0.7rem;
-  border: 1px solid #4a5260;
-  border-radius: 6px;
-  background: transparent;
-  color: #e0e0e0;
-  font-size: 0.8rem;
-  cursor: pointer;
-}
-
-.kiro-approval-btn--allow {
-  border-color: #2a7bff;
-  background: #2a7bff;
-  color: #fff;
-}
-
-.kiro-approval-result {
-  color: #9aa0a6;
-  font-size: 0.78rem;
-}
-
-.kiro-live-text {
-  margin: 0.35rem 0;
-  padding: 0.6rem 0.9rem;
-  border-radius: 10px;
-  background: #23272e;
-  color: #e0e0e0;
-  font-size: 0.9rem;
-  font-style: normal;
-  line-height: 1.3rem;
-  white-space: pre-wrap;
-  overflow-wrap: anywhere;
-}
-
-.kiro-stop-btn {
+/* VTID-05064: the console's one running turn is in another thread */
+.chat-turn-elsewhere {
   align-self: flex-start;
+  max-width: 100%;
   min-height: 28px;
-  margin-top: 0.3rem;
-  padding: 0.2rem 0.75rem;
-  border: 1px solid #6b3f3f;
-  border-radius: 6px;
-  background: transparent;
-  color: #e3a39c;
+  margin: 0.3rem 0;
+  padding: 0.25rem 0.75rem;
+  border: 1px solid var(--color-border);
+  border-radius: 999px;
+  background: var(--color-sidebar-bg);
+  color: var(--color-text-secondary);
   font-size: 0.75rem;
+  text-align: start;
+  overflow-wrap: anywhere;
   cursor: pointer;
 }
 
-.kiro-stop-btn:hover {
-  background: rgba(217, 119, 111, 0.12);
+.chat-turn-elsewhere:hover,
+.chat-turn-elsewhere:focus-visible {
+  border-color: var(--color-accent);
+  color: var(--color-text-primary);
+}
+
+/* VTID-05064: sidebar marker on the thread whose turn is running */
+.chat-thread-running {
+  display: inline-block;
+  width: 0.6rem;
+  height: 0.6rem;
+  margin-inline-start: 0.4rem;
+  vertical-align: middle;
+  border: 2px solid var(--color-border);
+  border-top-color: var(--color-accent);
+  border-radius: 50%;
+  animation: chat-thread-running-spin 0.9s linear infinite;
+}
+
+@keyframes chat-thread-running-spin {
+  to { transform: rotate(360deg); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .chat-thread-running {
+    animation: none;
+    border-color: var(--color-accent);
+  }
+}
+
+/* VTID-05064: Kiro refused or did not finish the turn */
+.kiro-stopped-early {
+  align-self: flex-start;
+  max-width: 80%;
+  margin: 0.15rem 0 0.2rem;
+  padding-inline-start: 0.5rem;
+  border-inline-start: 2px solid var(--color-operator);
+  color: var(--color-operator);
+  font-size: 0.72rem;
+  overflow-wrap: anywhere;
+}
+
+/* VTID-05064: earlier uncommitted Kiro edits were lost */
+.kiro-workspace-lost {
+  align-self: flex-start;
+  max-width: 80%;
+  margin: 0.3rem 0 0.15rem;
+  padding: 0.3rem 0.6rem;
+  border: 1px solid var(--color-operator);
+  border-radius: 6px;
+  background: rgba(245, 158, 11, 0.08);
+  color: var(--color-text-primary);
+  font-size: 0.75rem;
+  overflow-wrap: anywhere;
 }
 
 @media (max-width: 640px) {
@@ -15317,13 +15342,7 @@ border-bottom: 1px solid var(--color-border, #333);
 }
 
 /* ── Attention / info panels ── */
-.infra-panel {
-  background: var(--color-sidebar-bg, #1a1b2e);
-  border: 1px solid rgba(255, 255, 255, 0.08);
-  border-radius: 10px;
-  padding: 20px;
-  margin-bottom: 20px;
-}
+
 .infra-panel h3 {
   font-size: 0.9rem;
   font-weight: 700;
@@ -15358,10 +15377,7 @@ border-bottom: 1px solid var(--color-border, #333);
   color: var(--color-text-primary, #e2e8f0);
 }
 
-.infra-panel--warning {
-  border-color: rgba(245, 158, 11, 0.25);
-  background: rgba(245, 158, 11, 0.04);
-}
+
 
 /* ── Data table (deployments, logs, history) ── */
 .infra-table-wrap {
@@ -17403,6 +17419,32 @@ border-bottom: 1px solid var(--color-border, #333);
   display: flex;
   gap: 8px;
 }
+/* VTID-05146 (C2): frozen_scope editor */
+.dev-autopilot-config-field--wide {
+  flex-basis: 100%;
+}
+.dev-autopilot-config-textarea {
+  font-family: monospace;
+  resize: vertical;
+}
+/* VTID-05146 (C1): a held_overlap execution's blocking PRs */
+.dev-autopilot-hold-info {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 6px;
+  font-size: 0.76rem;
+  color: #fdba74;
+}
+.dev-autopilot-hold-pr {
+  color: #60a5fa;
+  font-family: monospace;
+  text-decoration: none;
+}
+.dev-autopilot-hold-frozen,
+.dev-autopilot-hold-since {
+  color: #a3a3a3;
+}
 
 /* --- Autopilot supervisor layer (VTID-04282) --- */
 .ap-sup-strip {
@@ -18208,4 +18250,123 @@ button.fb-chip:focus-visible,
 .ops-timeline-title { color: #e5e7eb; overflow-wrap: anywhere; }
 @media (max-width: 480px) {
     .ops-timeline-item { grid-template-columns: 1fr; gap: 0.1rem; }
+}
+
+/* VTID-05082 / DEV-COMHU-0205: inline SVG preview in the Operator transcript.
+   All sizing/colour is expressed through these classes — never a scripted
+   inline style attribute — so the CSP Governance Gate stays clean. */
+.chat-svg-preview {
+    display: flex;
+    flex-direction: column;
+    gap: 0.4rem;
+    margin: 0.25rem 0 0.4rem;
+    align-self: flex-start;
+    max-width: 80%;
+}
+
+.chat-svg-preview-surface {
+    background: #ffffff;
+    background-image:
+        linear-gradient(45deg, #e9edf2 25%, transparent 25%),
+        linear-gradient(-45deg, #e9edf2 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e9edf2 75%),
+        linear-gradient(-45deg, transparent 75%, #e9edf2 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    border: 1px solid var(--color-border);
+    border-radius: 10px;
+    padding: 0.5rem;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    overflow: hidden;
+}
+
+.chat-svg-preview-img {
+    display: block;
+    max-width: 100%;
+    max-height: 420px;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+}
+
+.chat-svg-preview-actions {
+    display: flex;
+    align-items: center;
+    gap: 0.5rem;
+}
+
+.chat-svg-expand-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    padding: 0.3rem 0.45rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    line-height: 1;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.chat-svg-expand-btn:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-text-secondary);
+}
+
+.chat-svg-download-btn {
+    background: transparent;
+    border: 1px solid var(--color-border);
+    border-radius: 6px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    font-size: 0.72rem;
+    padding: 0.3rem 0.6rem;
+    transition: color 0.2s, border-color 0.2s;
+}
+
+.chat-svg-download-btn:hover {
+    color: var(--color-text-primary);
+    border-color: var(--color-text-secondary);
+}
+
+/* Lightbox: reuses .overlay-backdrop; the panel is a transparent frame that
+   scales the expanded SVG image to the viewport. */
+.chat-svg-lightbox-panel {
+    background: transparent;
+    border: none;
+    box-shadow: none;
+    max-width: 92vw;
+    max-height: 92vh;
+    align-items: center;
+    justify-content: center;
+    padding: 0;
+    position: relative;
+}
+
+.chat-svg-lightbox-panel .overlay-close {
+    position: absolute;
+    top: -2.25rem;
+    right: 0;
+    color: #e5e7eb;
+}
+
+.chat-svg-lightbox-img {
+    display: block;
+    max-width: 92vw;
+    max-height: 88vh;
+    width: auto;
+    height: auto;
+    object-fit: contain;
+    background: #ffffff;
+    border-radius: 10px;
+    padding: 0.5rem;
+}
+
+@media (max-width: 480px) {
+    .chat-svg-preview { max-width: 100%; }
+    .chat-svg-preview-img { max-height: 320px; }
+    .chat-svg-lightbox-img { max-width: 96vw; max-height: 82vh; }
 }

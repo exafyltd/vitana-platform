@@ -205,7 +205,8 @@ describe('trigger routes and pins', () => {
     expect(stage).toContain('{name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"}');
     expect(stage).toContain('{name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"}');
     expect(stage).toContain('{name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"}');
-    expect(stage).toMatch(/"AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID"\) \| not/);
+    // The three names sit in the strip list before the re-add (VTID-05220 appended PM_* after them).
+    expect(stage).toMatch(/"AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID"[,\s"A-Z_]*\) \| not/);
     expect(prod).not.toContain('AUTOMATIONS_DELIVERY_MODE');
     expect(prod).not.toContain('AUTOPILOT_HEARTBEAT_ENABLED');
   });
@@ -213,7 +214,7 @@ describe('trigger routes and pins', () => {
   it('EventBridge automation jobs carry the internal token and default to staging', () => {
     const sh = fs.readFileSync(path.join(ROOT, 'scripts/aws/setup-eventbridge-cron-migration.sh'), 'utf8');
     const apJobs = sh.split('\n').filter((l) => l.includes('/api/v1/automations/cron/AP-'));
-    expect(apJobs.length).toBe(21); // +1: VTID-04391 AP-0914, +1: VTID-04444 AP-0915
+    expect(apJobs.length).toBe(22); // +1: VTID-04391 AP-0914, +1: VTID-04444 AP-0915, +1: VTID-05171 AP-0916
     for (const l of apJobs) expect(l).toContain('\\"auth\\":\\"gateway_internal\\",\\"gateway_url\\":\\"$AUTOMATIONS_GATEWAY_URL\\"');
     expect(sh).toContain('AUTOMATIONS_GATEWAY_URL="${AUTOMATIONS_GATEWAY_URL:-https://preview-aws-gateway.vitanaland.com}"');
   });

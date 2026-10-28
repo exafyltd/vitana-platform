@@ -6,11 +6,17 @@
  * golden markers. This prevents accidental replacement with older or
  * unrelated bundles during backend deployments.
  *
- * Required markers in dist/frontend/command-hub/app.js:
+ * Required markers in the built Command Hub bundle:
  * 1. VTID-0529-B or GOLDEN-COMMAND-HUB-V4 comment
  * 2. .task-board / .task-column / .task-card class names
  * 3. ORB mount point (orb-idle class)
  * 4. Header toolbar container (.header-toolbar)
+ *
+ * VTID-05072 (Phase 0): the markers are now searched across the concatenation
+ * of every manifest bundle file in dist/ (modules.json "bundle"), not only
+ * app.js, so a marker that moves out of app.js in a later phase still counts.
+ * Behaviour is otherwise unchanged: every marker that passes today still
+ * passes (app.js is in the bundle).
  */
 
 const fs = require('fs');
@@ -60,22 +66,36 @@ function main() {
   const repoRoot = process.env.GITHUB_WORKSPACE ||
                    process.cwd().replace(/\/services\/gateway$/, '');
 
-  const bundlePath = path.join(repoRoot, 'services/gateway/dist/frontend/command-hub/app.js');
+  const distDir = path.join(repoRoot, 'services/gateway/dist/frontend/command-hub');
+  const manifestPath = path.join(repoRoot, 'services/gateway/src/frontend/command-hub/modules.json');
 
-  console.log(`Checking: ${bundlePath}`);
-  console.log('');
-
-  // Check if bundle exists
-  if (!fs.existsSync(bundlePath)) {
-    console.error('ERROR: Command Hub bundle not found!');
-    console.error(`Expected at: ${bundlePath}`);
-    console.error('');
-    console.error('Make sure to run `npm run build` in services/gateway before this check.');
+  // VTID-05072: the bundle file list comes from the manifest (single source
+  // of truth), so markers are searched across every bundle file in dist/.
+  if (!fs.existsSync(manifestPath)) {
+    console.error('ERROR: Command Hub manifest not found!');
+    console.error(`Expected at: ${manifestPath}`);
     process.exit(1);
   }
+  const manifest = JSON.parse(fs.readFileSync(manifestPath, 'utf-8'));
+  const bundleFiles = manifest.bundle.map((entry) => entry.file);
 
-  // Read bundle content
-  const bundleContent = fs.readFileSync(bundlePath, 'utf-8');
+  console.log(`Checking ${bundleFiles.length} bundle file(s) in: ${distDir}`);
+  console.log('');
+
+  let bundleContent = '';
+  for (const file of bundleFiles) {
+    const filePath = path.join(distDir, file);
+    if (!fs.existsSync(filePath)) {
+      console.error('ERROR: Command Hub bundle file not found!');
+      console.error(`Expected at: ${filePath}`);
+      console.error('');
+      console.error('Make sure to run `npm run build` in services/gateway before this check.');
+      process.exit(1);
+    }
+    bundleContent += fs.readFileSync(filePath, 'utf-8') + '\n';
+    console.log(`  + ${file}`);
+  }
+  console.log('');
   console.log(`Bundle size: ${(bundleContent.length / 1024).toFixed(1)} KB`);
   console.log('');
 

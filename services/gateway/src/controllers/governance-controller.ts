@@ -4,6 +4,8 @@ import { RuleMatcher, EvaluationEngine, EnforcementExecutor, ViolationGenerator,
 import { RuleDTO, EvaluationDTO, ViolationDTO, ProposalDTO, FeedEntry, EvaluationSummary, ProposalTimelineEvent } from '../types/governance';
 import { getGovernanceHistory, GovernanceHistoryEvent, GOVERNANCE_EVENT_TYPES } from '../services/oasis-event-service';
 import * as repo from './governance-controller-repository';
+import { AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import { extractBearer, matchesServiceToken } from '../middleware/require-service-or-admin';
 
 // Removed unsafe module-load createClient - now using getSupabase() in methods
 
@@ -28,8 +30,17 @@ interface GovernanceEvaluationResult {
 }
 
 export class GovernanceController {
-    private getTenantId(req: Request): string {
-        // Enforce tenantId from header or query, default to 'SYSTEM' for governance
+    /**
+     * VTID-05048: a caller may only name a tenant (x-tenant-id / ?tenantId)
+     * when it is an exafy_admin or presents GATEWAY_SERVICE_TOKEN. Everyone
+     * else — anonymous callers included — gets the 'SYSTEM' tenant; the
+     * header used to be trusted from anyone.
+     */
+    getTenantId(req: Request): string {
+        const bearer = extractBearer(req);
+        const trusted = (req as AuthenticatedRequest).identity?.exafy_admin === true
+            || (bearer !== null && matchesServiceToken(bearer));
+        if (!trusted) return 'SYSTEM';
         const tenantId = (req.headers['x-tenant-id'] as string) || (req.query.tenantId as string) || 'SYSTEM';
         return tenantId;
     }

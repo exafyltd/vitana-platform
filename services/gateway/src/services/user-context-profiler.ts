@@ -29,6 +29,7 @@ import { fetchPreferenceFacts } from './preference-facts';
 import { getAwarenessConfig } from './awareness-registry';
 import { getJourneyEngagementBonus } from './guided-journey/journey-index-award';
 import * as repo from './user-context-profiler-repository';
+import { fetchLearningPrefs } from './timeline/learning-prefs';
 // VTID-04438 (WS-4.1): pure render helpers for the structured profile.
 import {
   profileSectionsFilled as profileSectionsFilledFn,
@@ -196,8 +197,49 @@ interface PreferenceRow {
   source?: string;
 }
 
+export interface IndexMovementRow {
+  at: string;
+  trigger: string;
+  delta_total: number | null;
+  delta_pillars: Record<string, number> | null;
+}
+
+/**
+ * VTID-05171: the latest movement that changed something (its biggest pillar
+ * change, with the trigger as the reason) and the week's movers. Daily
+ * recomputes count as a trigger like any other.
+ */
+export function summarizeIndexMovements(rows: IndexMovementRow[]): {
+  last_movement?: { pillar: string; delta: number; reason?: string };
+  week_movers?: { by_pillar: Record<string, number>; by_trigger: Record<string, number>; movements: number };
+} {
+  if (!rows.length) return {};
+  const by_pillar: Record<string, number> = {};
+  const by_trigger: Record<string, number> = {};
+  let movements = 0;
+  let last_movement: { pillar: string; delta: number; reason?: string } | undefined;
+  for (const r of rows) {
+    const deltas = Object.entries(r.delta_pillars || {}).map(([p, d]) => [p, Number(d) || 0] as [string, number]).filter(([, d]) => d !== 0);
+    if (deltas.length === 0 && !Number(r.delta_total)) continue;
+    movements += 1;
+    by_trigger[r.trigger] = (by_trigger[r.trigger] || 0) + 1;
+    for (const [p, d] of deltas) by_pillar[p] = (by_pillar[p] || 0) + d;
+    if (!last_movement && deltas.length) {
+      const [p, d] = deltas.sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))[0];
+      last_movement = { pillar: p, delta: d, reason: r.trigger };
+    }
+  }
+  if (movements === 0) return {};
+  return { last_movement, week_movers: { by_pillar, by_trigger, movements } };
+}
+
 async function fetchActivityLog(client: SupabaseClient, userId: string, sinceIso: string): Promise<ActivityRow[]> {
-  const { data, error } = await repo.fetchActivityLogRows(client, userId, sinceIso);
+  // VTID-05171: categories the member switched off never reach the brain.
+  let off: string[] = [];
+  try {
+    off = [...(await fetchLearningPrefs(client, userId)).off];
+  } catch { /* best-effort — all on */ }
+  const { data, error } = await repo.fetchActivityLogRows(client, userId, sinceIso, off);
   if (error) return [];
   return (data || []) as ActivityRow[];
 }
@@ -311,6 +353,9 @@ export interface VitanaIndexSnapshot {
   model_version?: string;                            // e.g. 'v3-5pillar'
   confidence?: number;                               // 0-1, from the RPC
   last_movement?: { pillar: string; delta: number; reason?: string };
+  // VTID-05171: what moved the Index in the last 7 days, from the recorded
+  // movements (VTID-05168) — per pillar (summed) and per trigger (counted).
+  week_movers?: { by_pillar: Record<string, number>; by_trigger: Record<string, number>; movements: number };
   // G3: Life Compass active goal attached to the health snapshot so the
   // ORB [HEALTH] block can emit an `Active goal:` line. Null when the user
   // has not set a goal yet.
@@ -472,15 +517,26 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
   const tier = tierForScore(total);
 
   let last_movement: VitanaIndexSnapshot['last_movement'] | undefined;
+  let week_movers: VitanaIndexSnapshot['week_movers'] | undefined;
   try {
-    const { data: evt } = await repo.fetchLatestIndexRecomputedEvent(client, userId);
-    if (evt) {
-      const p = (evt.payload as any) || {};
-      const delta = Number(p.total_delta ?? p.delta ?? 0);
-      const reason = p.reason ?? p.source ?? p.action_title;
-      if (delta !== 0) last_movement = { pillar: p.pillar ?? 'unknown', delta, reason };
-    }
-  } catch { /* best-effort */ }
+    const { data: mv } = await repo.fetchIndexMovementsSince(client, userId, new Date(Date.now() - 7 * 86_400_000).toISOString());
+    const summary = summarizeIndexMovements((mv || []) as IndexMovementRow[]);
+    last_movement = summary.last_movement;
+    week_movers = summary.week_movers;
+  } catch { /* best-effort — table may not exist before VTID-05168 */ }
+  if (!last_movement) {
+    // No recorded movement this week (or before VTID-05168): the last
+    // index.recomputed event, as before.
+    try {
+      const { data: evt } = await repo.fetchLatestIndexRecomputedEvent(client, userId);
+      if (evt) {
+        const p = (evt.payload as any) || {};
+        const delta = Number(p.total_delta ?? p.delta ?? 0);
+        const reason = p.reason ?? p.source ?? p.action_title;
+        if (delta !== 0) last_movement = { pillar: p.pillar ?? 'unknown', delta, reason };
+      }
+    } catch { /* best-effort */ }
+  }
 
   // Day-90 projection — mirrors the frontend trajectory card (linear from
   // 7-day trend). Anchored at the user's first-ever Index row rather than
@@ -527,6 +583,7 @@ async function fetchVitanaIndex(client: SupabaseClient, userId: string): Promise
       model_version: latest.model_version ?? undefined,
       confidence: typeof latest.confidence === 'number' ? latest.confidence : undefined,
       last_movement,
+      week_movers,
       // G3: attach Life Compass goal to the snapshot. Best-effort — null when
       // not set. Fetched after the Index read so the profiler doesn't fan out
       // an extra call for users whose Index isn't computed yet.
@@ -825,6 +882,20 @@ function buildHealthSection(activities: ActivityRow[], vitanaResult: VitanaIndex
       // can say "at this pace you land around X by Day 90 — <tier>".
       if (typeof vitana.projected_day_90 === 'number' && vitana.projected_day_90_tier) {
         lines.push(`- Day-90 projection (linear from 7-day trend): ~${vitana.projected_day_90} (${vitana.projected_day_90_tier} tier). Mirror the trajectory card on /autopilot — use phrase "at this pace you land around X by Day 90".`);
+      }
+
+      if (vitana.week_movers && vitana.week_movers.movements > 0) {
+        const wm = vitana.week_movers;
+        const pillarsTxt = Object.entries(wm.by_pillar)
+          .filter(([, d]) => d !== 0)
+          .sort((a, b) => Math.abs(b[1]) - Math.abs(a[1]))
+          .map(([p, d]) => `${formatPillarName(p)} ${d > 0 ? '+' : ''}${d}`)
+          .join(', ');
+        const triggersTxt = Object.entries(wm.by_trigger)
+          .sort((a, b) => b[1] - a[1])
+          .map(([t, n]) => `${t.replace(/_/g, ' ')} x${n}`)
+          .join(', ');
+        if (pillarsTxt) lines.push(`- What moved the Index this week: ${pillarsTxt} (from: ${triggersTxt}).`);
       }
 
       if (vitana.last_movement) {

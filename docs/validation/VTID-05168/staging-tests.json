@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05168",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "build-info answers JSON (the runner confirms the verified commit from it)", "path": "/api/v1/admin/build-info", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05168-index-movements.test.ts test/routes/health.test.ts test/vtid-05089-wearable-features-bridge.test.ts test/services/voice-tools/health-log.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Every changed path (voice/manual pillar logs, diary, wearable bridge, calendar completion, baseline survey) writes health data and recomputes the Index in the shared production database, which a read-only staging suite must not do. These suites pin the recording RPC with trigger and source, the fallback while the migration is not applied, the pillar moments linked to the movement, and the single-writer guard. The migration is proven by SQL-INDEX-MOVEMENTS.yml (incl. a two-connection concurrency check) and is applied only via RUN-MIGRATION.yml after Gate 2."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05167-timeline-catalog.test.ts test/vtid-05041-definer-lockdown.test.ts test/save-diary-entry-shared.test.ts test/services/memory/diary.test.ts test/calendar/calendar-routes.contract.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Neighbouring contracts: the catalog moments the logs write, the definer-grant guard for the five new/replaced SECURITY DEFINER functions, the diary recompute paths and the calendar completion route."
+    }
+  ]
+}

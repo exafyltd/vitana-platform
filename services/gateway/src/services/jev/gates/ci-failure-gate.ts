@@ -25,7 +25,7 @@
 import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
-import { jevGateMode, recordJevShadowDecision } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision } from '../jev-shadow';
 
 export const CI_FAILURE_GATE = 'ci_failure_routing';
 const SYSTEM_CALLER = { actor_id: 'dev-autopilot-watcher', system: true } as const;
@@ -69,9 +69,18 @@ export async function runCiFailureRouting(a: {
   const env = a.env ?? process.env;
   const mode = jevGateMode(CI_FAILURE_GATE, env);
   if (mode === 'off') return null;
+  // VTID-05012: a gate that is on but does not ask Jev records why.
+  const skip = (reason: string) =>
+    recordJevGateSkip(
+      { gate: CI_FAILURE_GATE, decision: 'ci_failure_bucket', mode, reason, subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: 'self_heal_fix_mode' },
+      a.sb,
+    );
   try {
     const usable = a.evidence.filter((e) => !e.unavailable && e.excerpt && e.excerpt.trim()).slice(0, 3);
-    if (usable.length === 0) return null;
+    if (usable.length === 0) {
+      await skip('no_ci_evidence');
+      return null;
+    }
 
     const checks: Array<{ check: string; jev: string | null; rule: CiBucket | null; confidence: number | null; reason?: string }> = [];
     let cost = 0;
@@ -115,6 +124,7 @@ export async function runCiFailureRouting(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${CI_FAILURE_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    await skip('error');
     return null;
   }
 }

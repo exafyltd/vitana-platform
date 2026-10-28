@@ -1,0 +1,29 @@
+# VTID-05158 — commands run in the worktree (branch claude/health-data-integration-plan-dbxyld-a1, base origin/main c33857170)
+# No command touched Supabase, Aurora or any shared database. SQL ran only on a throwaway local PostgreSQL 16.
+
+# throwaway cluster (unix socket only, removed after the session)
+sudo -u postgres initdb -D /tmp/pg05158-a1/data -U postgres -A trust
+sudo -u postgres pg_ctl -D /tmp/pg05158-a1/data -o "-p 55158 -k /tmp/pg05158-a1 -c listen_addresses=''" -w start
+export PGHOST=/tmp/pg05158-a1 PGPORT=55158 PGUSER=postgres
+
+# SQL tests (the same runners the CI workflows call)
+scripts/ci/sql-tests/run-health-store-test.sh          # -> outputs/sql-health-store.txt
+scripts/ci/sql-tests/run-erase-user-data-test.sh       # both variants -> outputs/sql-erase-user-data.txt
+# red before the fix: the no-auth.users variant without 20261014100000_* -> outputs/sql-erase-no-auth-users-red-before-fix.txt
+# mutation checks (migration edited temporarily, restored): partition REVOKE removed -> "FAIL: member reads a partition around
+#   the parent policy"; RLS suppressed_at filter removed -> "FAIL: suppressed rows visible to the member"; daily day start in
+#   UTC instead of the member tz -> "FAIL: DST daily attribution"
+
+# CI guards and the capacity model
+node --test scripts/ci/check-migration-drift.test.cjs scripts/health/capacity-model.test.mjs   # -> outputs/node-tests.txt
+node --test $(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)   # UNIT.yml -> outputs/unit-all-script-tests.txt
+node scripts/health/capacity-model.mjs                 # -> outputs/capacity-model.md (= the block in P1A-CAPACITY-AND-PLACEMENT.md)
+(cd services/gateway && npx jest <every suite that scans supabase/migrations> test/scripts/check-migration-drift.test.ts)   # -> outputs/jest-migration-scanning-suites.txt
+node -e "lintMigration(...)"  (scripts/ci/pr-gate/lib.mjs) on both migrations   # [] []
+
+# plan hash of the record
+python3: sha256(text strictly between the plan markers of plan-sparring.md) = 485a7b176bb705c026bbc2fda15c705401296354bed30a2db4dd5611f5eccc51
+
+# PR checks
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "<title>"
+git branch -f main origin/main; node scripts/ci/validate-pr-locally.cjs --title "<title>" --body-file <draft>

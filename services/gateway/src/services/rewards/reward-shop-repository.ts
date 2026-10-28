@@ -59,6 +59,17 @@ export function upsertShippingFee(sb: SupabaseClient, fee: { country: string; cu
   return sb.from('reward_shipping_fees').upsert({ ...fee, updated_at: new Date().toISOString() }, { onConflict: 'country,currency' });
 }
 
+/** VTID-05035 — admin: every fee row, so the admin sees what is configured. */
+export function fetchAllShippingFees(sb: SupabaseClient) {
+  return sb.from('reward_shipping_fees').select('country, currency, fee_cents, updated_at')
+    .order('country', { ascending: true }).order('currency', { ascending: true });
+}
+
+/** VTID-05035 — admin: remove one fee row (country × currency). */
+export function deleteShippingFee(sb: SupabaseClient, country: string, currency: string) {
+  return sb.from('reward_shipping_fees').delete().eq('country', country).eq('currency', currency);
+}
+
 export function rpcRedeem(sb: SupabaseClient, params: {
   p_tenant_id: string;
   p_user_id: string;

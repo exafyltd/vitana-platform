@@ -27,21 +27,22 @@ name: Alert — OASIS Ledger Integrity
 # fires only on the fingerprint of a false verdict: claimed by a worker-runner,
 # terminalized failed, but not autonomous-plane work.
 #
-# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
-# The Supabase project has a network allow-list and GitHub runner IPs are not
-# on it, so every psql-based check in this repo is structurally unable to
-# connect (VTID-03485/03486/03492). Backed by
-# supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql.
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green).
+#
+# Route: /api/v1/ops/health/vtid-ledger (ci_ledger_integrity_check, 7-day
+# lookback — backed by
+# supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql).
 
 on:
   schedule:
     - cron: '40 7 * * *'   # 09:40 CET daily, staggered off the other two alerts
   workflow_dispatch:
-    inputs:
-      lookback_days:
-        description: 'Days of ledger history to assert over'
-        required: false
-        default: '7'
 
 permissions:
   contents: read
@@ -52,54 +53,38 @@ jobs:
     steps:
       - name: Assert the ledger records no false failures
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
-          LOOKBACK_DAYS: ${{ github.event.inputs.lookback_days || '7' }}
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/vtid-ledger
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
-            exit 1
-          fi
-
-          HTTP=$(curl -sS -o findings.json -w '%{http_code}' \
-            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_ledger_integrity_check" \
-            -H "apikey: $SUPABASE_SERVICE_ROLE" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
-            -H 'Content-Type: application/json' \
-            -d "{\"p_lookback_days\": ${LOOKBACK_DAYS}}")
-
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
           if [ "$HTTP" != "200" ]; then
-            echo "::error::ci_ledger_integrity_check RPC returned HTTP $HTTP. If 404, the function is missing — apply supabase/migrations/20260806160000_vtid_03516_ledger_integrity_check.sql."
-            head -c 500 findings.json || true
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
             exit 1
           fi
-
-          COUNT=$(jq 'length' findings.json)
-          echo "Lookback: ${LOOKBACK_DAYS}d — false-failure findings: $COUNT"
-
-          if [ "$COUNT" = "0" ]; then
-            echo "OK — no VTID was terminalized 'failed' by the autonomous plane without owning it."
-            exit 0
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
+            exit 1
           fi
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::OASIS ledger integrity check is not healthy (VTIDs terminalized failed by the autonomous plane without owning the work — check isAutonomousExecutionTask() in services/gateway/src/routes/worker-orchestrator.ts): status=$STATUS reason=$REASON (see the JSON above)."
+            exit 1
+          fi
+          echo "OK: status=$STATUS"
 
-          echo "---"
-          jq -r '.[] | "  \(.vtid)  source=\(.ledger_source)  \(.seconds_to_terminal)s to terminal  anthropic_key_failure=\(.anthropic_key_failure)  \(.title)"' findings.json
-
-          {
-            echo "### OASIS ledger integrity: $COUNT false failure(s)"
-            echo
-            echo "These VTIDs were claimed by a worker-runner and terminalized"
-            echo "\`failed\`, but are not autonomous-plane work. The ledger is"
-            echo "recording failures for work that may well have shipped."
-            echo
-            echo '| VTID | source | secs to terminal | ANTHROPIC_API_KEY failure |'
-            echo '|---|---|---|---|'
-            jq -r '.[] | "| \(.vtid) | \(.ledger_source) | \(.seconds_to_terminal) | \(.anthropic_key_failure) |"' findings.json
-            echo
-            echo "Check \`isAutonomousExecutionTask()\` in"
-            echo "\`services/gateway/src/routes/worker-orchestrator.ts\` is deployed and holding."
-          } >> "$GITHUB_STEP_SUMMARY"
-
-          echo "::error::$COUNT VTID(s) terminalized 'failed' by the autonomous plane without owning the work. OASIS is recording false failures."
-          exit 1
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-oasis-ledger-integrity" "alert-workflow://ALERT-OASIS-LEDGER-INTEGRITY" "OASIS ledger records false failures from the autonomous plane"

@@ -26,6 +26,7 @@ import {
 import { createClient } from '@supabase/supabase-js';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './users-vitana-id-repository';
+import { ensureProvisioned } from '../services/auth-bridge/auth-bridge';
 
 const router = Router();
 
@@ -63,6 +64,9 @@ router.get('/me/vitana-id/suggestion', requireAuth, async (req: Request, res: Re
 
   const supabase = getSupabase();
 
+  // VTID-05023 part 4: the onboarding card reads the profile the sign-up
+  // provisioning creates; make sure it exists on Aurora.
+  await ensureProvisioned(identity.user_id);
   const { data: profileRow } = await repo.fetchProfileForSuggestion(supabase, identity.user_id);
 
   if (profileRow && (profileRow as any).vitana_id_locked) {
@@ -127,6 +131,9 @@ router.post('/me/vitana-id/confirm', requireAuth, async (req: Request, res: Resp
 
   const body = req.body ?? {};
   const supabase = getSupabase();
+
+  // VTID-05023 part 4: provision on Aurora before confirming the Vitana ID.
+  await ensureProvisioned(identity.user_id);
 
   // Read current row + lock state + seq.
   const { data: current, error: currentErr } = await repo.fetchProfileForConfirm(supabase, identity.user_id);

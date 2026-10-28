@@ -27,6 +27,20 @@ name: Alert — ORB Context Bootstrap Latency
 # spare, and the max-latency check catches the tail that actually breaks a
 # session even when the median still looks fine.
 
+#
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green). The transport notes above describe the old inline
+# query and are kept as history.
+#
+# Route: /api/v1/ops/health/orb-bootstrap-latency (orb.live.context.bootstrap over 90
+# min: p50 above 6000 ms or more than one build above 12000 ms is degraded; an
+# idle window answers ok with idle=true, as this workflow always did).
+
 on:
   schedule:
     - cron: '35 * * * *'   # hourly, staggered off the daily health alerts
@@ -35,83 +49,44 @@ on:
 permissions:
   contents: read
 
-env:
-  # p50 over the window above which the ORB is considered degraded (ms).
-  P50_THRESHOLD_MS: '6000'
-  # Any single bootstrap above this is past the widget's 8s start budget (ms).
-  MAX_THRESHOLD_MS: '12000'
-  # Lookback window.
-  WINDOW_MINUTES: '90'
-
 jobs:
   latency:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch recent ORB context-bootstrap latencies
+      - name: Check ORB context-bootstrap latency
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/orb-bootstrap-latency
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
-            exit 1
-          fi
-          SINCE=$(date -u -d "-${WINDOW_MINUTES} minutes" +%Y-%m-%dT%H:%M:%SZ)
-          echo "Window start (UTC): $SINCE"
-          HTTP=$(curl -sS -o events.json -w '%{http_code}' -G \
-            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
-            --data-urlencode 'select=created_at,metadata' \
-            --data-urlencode 'topic=eq.orb.live.context.bootstrap' \
-            --data-urlencode "created_at=gte.$SINCE" \
-            --data-urlencode 'order=created_at.desc' \
-            --data-urlencode 'limit=1000' \
-            -H "apikey: $SUPABASE_SERVICE_ROLE" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
           if [ "$HTTP" != "200" ]; then
-            echo "::error::oasis_events query returned HTTP $HTTP"
-            head -c 500 events.json || true
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
             exit 1
           fi
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
+            exit 1
+          fi
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::ORB context bootstrap is degraded (p50 over 6 s or more than one build over 12 s in 90 min — check FEATURE_ORB_BRAIN_CACHE_ENV and the single-flight JOIN logs, VTID-03504): status=$STATUS reason=$REASON (see the JSON above)."
+            exit 1
+          fi
+          echo "OK: status=$STATUS"
 
-      - name: Evaluate
-        run: |
-          set -euo pipefail
-          node -e '
-            const fs = require("fs");
-            const rows = JSON.parse(fs.readFileSync("events.json", "utf8"));
-            const lat = rows
-              .map((r) => Number(r?.metadata?.latency_ms))
-              .filter((n) => Number.isFinite(n))
-              .sort((a, b) => a - b);
-
-            // No traffic is not health, but it is also not a failure — the ORB
-            // is simply idle (this is common at night). Say so and pass, rather
-            // than alarming on an empty window every off-hours run.
-            if (lat.length === 0) {
-              console.log(`No orb.live.context.bootstrap events in the last ${process.env.WINDOW_MINUTES}m — ORB idle, nothing to assess.`);
-              process.exit(0);
-            }
-
-            const pct = (p) => lat[Math.min(lat.length - 1, Math.floor(lat.length * p))];
-            const p50 = pct(0.5), p95 = pct(0.95), max = lat[lat.length - 1];
-            const p50Limit = Number(process.env.P50_THRESHOLD_MS);
-            const maxLimit = Number(process.env.MAX_THRESHOLD_MS);
-            const overMax = lat.filter((n) => n > maxLimit).length;
-
-            console.log(`n=${lat.length}  p50=${p50}ms  p95=${p95}ms  max=${max}ms  over-${maxLimit}ms=${overMax}`);
-
-            const problems = [];
-            if (p50 > p50Limit) problems.push(`p50 ${p50}ms exceeds ${p50Limit}ms`);
-            // A single slow build can be an unlucky cold start. A repeated one
-            // is the stampede signature — that is what VTID-03504 fixed, so
-            // require more than one before calling it.
-            if (overMax > 1) problems.push(`${overMax} builds exceeded ${maxLimit}ms (widget start budget is 8000ms)`);
-
-            if (problems.length) {
-              console.log("::error::ORB context bootstrap is degraded — " + problems.join("; "));
-              console.log("Check: is FEATURE_ORB_BRAIN_CACHE_ENV still staging+prod on the gateway task def (GET /api/v1/admin/feature-flags), and are single-flight JOINs appearing in the logs ([ORB-BRAIN-CACHE] JOIN / [VTID-03504] Bootstrap JOIN)? See VTID-03504.");
-              process.exit(1);
-            }
-            console.log("ORB context bootstrap latency healthy.");
-          '
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-orb-bootstrap-latency" "alert-workflow://ALERT-ORB-BOOTSTRAP-LATENCY" "ORB context bootstrap latency over budget"

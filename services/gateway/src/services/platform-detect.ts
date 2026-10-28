@@ -136,6 +136,56 @@ export async function ssrfGuardedFetch(startUrl: string): Promise<{ headers: Hea
   return guardedFetch(startUrl);
 }
 
+/**
+ * VTID-05153 — SSRF-guarded HEAD probe (the supplier catalogue check's media
+ * probe, services/catalog-check). Same guard as ssrfGuardedFetch: protocol
+ * pinned to http/https and every hop's host checked by assertPublicHost before
+ * the request, redirects followed manually (at most PROBE_MAX_REDIRECTS, each
+ * re-checked). It never reads a body and sends no credentials. A 405 or 501 to
+ * HEAD is retried once as a GET with `Range: bytes=0-0`, whose body is
+ * cancelled unread. One deadline (PROBE_TIMEOUT_MS) covers every hop.
+ * Same accepted residual as the module header: the DNS check is not
+ * rebinding-proof.
+ */
+export const PROBE_MAX_REDIRECTS = 3;
+export const PROBE_TIMEOUT_MS = 5000;
+
+export async function ssrfGuardedHead(
+  startUrl: string,
+  fetchFn: typeof fetch = fetch,
+): Promise<{ status: number; contentType: string | null; finalUrl: string }> {
+  let current = new URL(startUrl);
+  let method: 'HEAD' | 'GET' = 'HEAD';
+  const signal = AbortSignal.timeout(PROBE_TIMEOUT_MS);
+  for (let redirects = 0; ; ) {
+    if (current.protocol !== 'http:' && current.protocol !== 'https:') {
+      throw new Error('unsupported_protocol');
+    }
+    await assertPublicHost(current.hostname);
+    const headers: Record<string, string> = {
+      'User-Agent': 'VitanalandCatalogCheck/1.0 (+https://vitanaland.com/commerce; image probe)',
+      Accept: 'image/*,*/*;q=0.5',
+    };
+    if (method === 'GET') headers.Range = 'bytes=0-0';
+    const res = await fetchFn(current.toString(), { method, redirect: 'manual', signal, headers });
+    // Never read a body: a GET's is cancelled unread.
+    await res.body?.cancel().catch(() => {});
+    if (res.status >= 300 && res.status < 400) {
+      const loc = res.headers.get('location');
+      if (!loc) throw new Error('redirect_without_location');
+      if (redirects >= PROBE_MAX_REDIRECTS) throw new Error('too_many_redirects');
+      redirects += 1;
+      current = new URL(loc, current);
+      continue;
+    }
+    if (method === 'HEAD' && (res.status === 405 || res.status === 501)) {
+      method = 'GET';
+      continue;
+    }
+    return { status: res.status, contentType: res.headers.get('content-type'), finalUrl: current.toString() };
+  }
+}
+
 async function guardedFetch(startUrl: string): Promise<{ headers: Headers; body: string }> {
   let current = new URL(startUrl);
   for (let hop = 0; hop <= MAX_HOPS; hop++) {

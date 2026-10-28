@@ -11,6 +11,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { gatewayApiCall, clampLimit } from './developer-tools';
 import { adminGate } from './admin-users-rbac-tools';
+import { gatewayServiceAuthHeader } from '../../middleware/require-service-or-admin';
 
 type Handler = (
   args: OrbToolArgs,
@@ -18,8 +19,26 @@ type Handler = (
   sb: SupabaseClient,
 ) => Promise<OrbToolResult>;
 
-function adminHeaders(id: OrbToolIdentity): Record<string, string> {
-  return { 'x-user-id': id.user_id, 'x-user-role': 'admin' };
+/**
+ * VTID-05048: POST /governance/controls/:key is requireServiceOrAdmin. The
+ * tool used to send spoofable x-user-id / x-user-role:'admin' headers, which
+ * the route trusted. It now authenticates with the gateway service token and
+ * names the member it acts for in x-orb-caller-user-id — an audit label only
+ * (recorded as service:internal/orb:<user_id>), never used for authorization.
+ * The member must be an exafy_admin, the same bar the route sets for a direct
+ * caller, so a tenant admin cannot reach a platform kill switch through voice.
+ */
+export function controlWriteHeaders(id: OrbToolIdentity): Record<string, string> {
+  return { ...gatewayServiceAuthHeader(), 'x-orb-caller-user-id': id.user_id };
+}
+
+export function controlWriteGate(id: OrbToolIdentity): OrbToolResult | null {
+  const denied = adminGate(id);
+  if (denied) return denied;
+  if (String(id.role ?? '').toLowerCase() !== 'exafy_admin') {
+    return { ok: false, error: 'Changing a governance control requires an exafy_admin session (platform-level).' };
+  }
+  return null;
 }
 
 // ---------------------------------------------------------------------------
@@ -29,7 +48,7 @@ function adminHeaders(id: OrbToolIdentity): Record<string, string> {
 export const admin_governance_status: Handler = async (_args, id) => {
   const denied = adminGate(id);
   if (denied) return denied;
-  const { ok, status, body } = await gatewayApiCall('/api/v1/governance/controls', { headers: adminHeaders(id) });
+  const { ok, status, body } = await gatewayApiCall('/api/v1/governance/controls');
   if (!ok || body.ok !== true) return { ok: false, error: `admin_governance_status failed (${status}): ${String(body.error ?? 'unknown')}` };
   const controls = (Array.isArray(body.data) ? body.data : []) as Array<{ key: string; enabled: boolean }>;
   const disabled = controls.filter((c) => !c.enabled);
@@ -156,7 +175,7 @@ export const admin_get_control_key: Handler = async (args, id) => {
   if (denied) return denied;
   const key = String(args.key ?? '').trim();
   if (!key) return { ok: false, error: 'admin_get_control_key requires a control key.' };
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`, { headers: adminHeaders(id) });
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`);
   if (!ok) {
     return status === 404
       ? { ok: true, result: { found: false }, text: `No control key "${key}" found.` }
@@ -171,7 +190,7 @@ export const admin_get_control_key: Handler = async (args, id) => {
 // ---------------------------------------------------------------------------
 
 export const admin_set_control_key: Handler = async (args, id) => {
-  const denied = adminGate(id);
+  const denied = controlWriteGate(id);
   if (denied) return denied;
   const key = String(args.key ?? '').trim();
   const enabled = Boolean(args.enabled);
@@ -186,7 +205,7 @@ export const admin_set_control_key: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`, {
     method: 'POST',
-    headers: adminHeaders(id),
+    headers: controlWriteHeaders(id),
     body: { enabled, reason, duration_minutes: typeof args.duration_minutes === 'number' ? args.duration_minutes : undefined },
   });
   if (!ok) return { ok: true, result: { updated: false, status, detail: body }, text: `Could not update control "${key}": ${String(body.error ?? `gateway returned ${status}`)}.` };

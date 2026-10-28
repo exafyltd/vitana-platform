@@ -250,6 +250,32 @@ export interface SpendSummary {
   runs_today: number;
 }
 
+/**
+ * VTID-05077 (A2): how many plan versions of the last 24 h the planner's
+ * fallback wrote instead of its primary. Rows from before the planner_* columns
+ * existed (NULL provider) are not counted. Pure; exported for tests.
+ */
+export interface PlannerFallbackSummary {
+  plans_24h: number;
+  fallback_24h: number;
+  fallback_rate_24h: number | null;
+}
+
+export function summarizePlannerFallback(
+  rows: Array<{ planner_provider?: string | null }>,
+  primaryProvider: string,
+): PlannerFallbackSummary {
+  let plans = 0;
+  let fallback = 0;
+  for (const row of rows) {
+    const p = row && typeof row.planner_provider === 'string' ? row.planner_provider : '';
+    if (!p) continue;
+    plans += 1;
+    if (p !== primaryProvider) fallback += 1;
+  }
+  return { plans_24h: plans, fallback_24h: fallback, fallback_rate_24h: plans ? Math.round((fallback / plans) * 1000) / 1000 : null };
+}
+
 export function summarizeSpendToday(
   outcomeRows: Array<{ metadata: unknown }>,
   now: Date = new Date(),

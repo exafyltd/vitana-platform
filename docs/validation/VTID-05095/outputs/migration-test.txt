@@ -1,0 +1,4 @@
+--------------------------------------------
+ ALL VTID-05095 MIGRATION ASSERTIONS PASSED
+(1 row)
+

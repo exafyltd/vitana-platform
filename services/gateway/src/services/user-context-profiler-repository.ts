@@ -19,6 +19,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { isMissingSchema } from './timeline/timeline-repository';
 
 const INDEX_SELECT_COLUMNS =
   'date, score_total, score_nutrition, score_hydration, score_exercise, score_sleep, score_mental, model_version, feature_inputs, confidence';
@@ -27,7 +28,28 @@ export async function readProfilerVersion(sb: SupabaseClient, userId: string) {
   return sb.from('user_profiler_version').select('version').eq('user_id', userId).maybeSingle();
 }
 
-export async function fetchActivityLogRows(sb: SupabaseClient, userId: string, sinceIso: string) {
+/**
+ * VTID-05171 (Life Timeline P5): only what the member sees and lets Vitana
+ * learn from — tier spotlight/moment/digest, not hidden_from_ai, not in a
+ * category the member switched off — filtered in the query itself, so the
+ * 400-row window is no longer filled with screen views and ORB telemetry.
+ * Before the VTID-05167 migration (no tier column) it falls back to the
+ * unfiltered query and the profiler's own prefix filters, as before.
+ */
+export const PROFILER_VISIBLE_TIERS = ['spotlight', 'moment', 'digest'] as const;
+
+export async function fetchActivityLogRows(sb: SupabaseClient, userId: string, sinceIso: string, offCategories: string[] = []) {
+  let filtered = sb
+    .from('user_activity_log')
+    .select('activity_type, activity_data, created_at')
+    .eq('user_id', userId)
+    .gte('created_at', sinceIso)
+    .in('tier', [...PROFILER_VISIBLE_TIERS])
+    .eq('hidden_from_ai', false);
+  const off = offCategories.filter((c) => /^[a-z_]+$/.test(c));
+  if (off.length) filtered = filtered.not('category', 'in', `(${off.join(',')})`);
+  const res = await filtered.order('created_at', { ascending: false }).limit(400);
+  if (!res.error || !isMissingSchema(res.error)) return res;
   return sb
     .from('user_activity_log')
     .select('activity_type, activity_data, created_at')
@@ -35,6 +57,17 @@ export async function fetchActivityLogRows(sb: SupabaseClient, userId: string, s
     .gte('created_at', sinceIso)
     .order('created_at', { ascending: false })
     .limit(400);
+}
+
+/** VTID-05171: the Index movements of the last days (VTID-05168 table), newest first. */
+export async function fetchIndexMovementsSince(sb: SupabaseClient, userId: string, sinceIso: string) {
+  return sb
+    .from('vitana_index_movements')
+    .select('at, trigger, delta_total, delta_pillars')
+    .eq('user_id', userId)
+    .gte('at', sinceIso)
+    .order('at', { ascending: false })
+    .limit(200);
 }
 
 export async function fetchRoutineRows(sb: SupabaseClient, userId: string) {

@@ -19,7 +19,13 @@ export type KiroTurnEvent =
   | { type: 'kiro.tool_call'; tool_call_id: string; title: string; kind: string; status: string }
   | { type: 'kiro.tool_update'; tool_call_id: string; status: string; title?: string }
   | { type: 'kiro.permission_request'; request_id: string; tool_call_id: string | null; title: string; kind: string; expires_at: string }
-  | { type: 'kiro.turn_end'; stop_reason: string };
+  // VTID-05065: how an approval card was answered (by the user, or denied at the timeout).
+  | { type: 'kiro.permission_answer'; request_id: string; allow: boolean; by: 'user' | 'timeout' }
+  | { type: 'kiro.turn_end'; stop_reason: string }
+  // VTID-05067: the user attached images; `sent` = as ACP image blocks, `unsupported` = this
+  // kiro-cli does not accept image input (one text line said so instead), `unreadable` = some
+  // could not be read from storage. Never silently dropped.
+  | { type: 'kiro.images'; count: number; delivery: 'sent' | 'unsupported' | 'unreadable'; sent: number };
 
 export type KiroTurnEventSink = (event: KiroTurnEvent) => void;
 

@@ -15,7 +15,9 @@
  *      page of rows is never skipped; if the page cap is hit, the cursor only
  *      advances to the last row actually read, and a failed read leaves the
  *      cursor where it was so the next run re-reads the window;
- *   3. plan_sparring_config changed (or vanished) since the last run.
+ *   3. plan_sparring_config changed (or vanished) since the last run;
+ *   4. (VTID-05214) a session carries a policy approval although it is not converged — impossible while the table's
+ *      CHECK stands, so a hit means the constraint was tampered with.
  * Every detection emits OASIS vtid.plan_sparring.tamper_detected (break-glass
  * rows emit vtid.plan_sparring.break_glass). Nothing is written to the
  * sparring tables or the ledger.
@@ -46,7 +48,7 @@ export interface ReconcilerDeps {
 }
 
 export interface Detection {
-  check: 'trigger_disabled' | 'trigger_missing' | 'trigger_status_unreadable' | 'ledger_rows_without_sparring' | 'ledger_read_failed' | 'config_changed' | 'config_missing' | 'config_read_failed' | 'break_glass';
+  check: 'trigger_disabled' | 'trigger_missing' | 'trigger_status_unreadable' | 'ledger_rows_without_sparring' | 'ledger_read_failed' | 'config_changed' | 'config_missing' | 'config_read_failed' | 'break_glass' | 'policy_approval_on_non_converged' | 'policy_approval_read_failed';
   detail: Record<string, unknown>;
 }
 
@@ -143,6 +145,13 @@ export async function runPlanSparringReconcile(deps: ReconcilerDeps, state: Reco
       detections.push({ check: 'config_changed', detail: { before: JSON.parse(state.lastConfigSnapshot), after: cfg.data } });
     }
     state.lastConfigSnapshot = snapshot;
+  }
+
+  // 4. Policy approval on a session that is not converged (VTID-05214).
+  const pol = await repo.fetchPolicyApprovedNonConverged(deps.sb);
+  if (pol.error) detections.push({ check: 'policy_approval_read_failed', detail: { error: pol.error.message } });
+  else if ((pol.data ?? []).length > 0) {
+    detections.push({ check: 'policy_approval_on_non_converged', detail: { sessions: (pol.data ?? []).map((s) => ({ id: s.id, verdict: s.verdict })) } });
   }
 
   // Advance only as far as the ledger was actually read (now, unless the

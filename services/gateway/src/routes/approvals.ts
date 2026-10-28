@@ -13,6 +13,7 @@
  * - POST /api/v1/approvals/:approval_id/reject → records rejection, returns { ok }
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { Router, Request, Response } from 'express';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { createHash } from 'crypto';
@@ -587,8 +588,10 @@ router.post('/feed/approve', async (req: Request, res: Response) => {
 
     const mergeResponse = await fetch(`${gatewayUrl}/api/v1/github/autonomous-pr-merge`, {
       method: 'POST',
+      // VTID-05047: autonomous-pr-merge requires the gateway service token.
       headers: {
         'Content-Type': 'application/json',
+        ...gatewayServiceAuthHeader(),
       },
       body: JSON.stringify(mergePayload),
     });
@@ -724,8 +727,10 @@ router.post('/:approval_id/approve', async (req: Request, res: Response) => {
 
     const mergeResponse = await fetch(`${gatewayUrl}/api/v1/github/autonomous-pr-merge`, {
       method: 'POST',
+      // VTID-05047: autonomous-pr-merge requires the gateway service token.
       headers: {
         'Content-Type': 'application/json',
+        ...gatewayServiceAuthHeader(),
       },
       body: JSON.stringify(mergePayload),
     });

@@ -154,7 +154,10 @@ describe('gateway writers go through the contract', () => {
 
   it('voice-created entries use the shared role -> view mapping', () => {
     const live = src('src/routes/orb-live.ts');
-    expect(live).toContain('role_context: toWritableRoleContext(role)');
+    // VTID-04918: voice-created entries are written by the shared handler.
+    const shared = src('src/services/orb-tools/calendar-social-tools.ts');
+    expect(shared).toContain('const roleContext = toWritableRoleContext(id.role);');
+    expect(shared).toContain('role_context: roleContext,');
     expect(live).not.toContain("role === 'developer' ? 'developer' : role === 'admin' ? 'admin' : 'community'");
   });
 });

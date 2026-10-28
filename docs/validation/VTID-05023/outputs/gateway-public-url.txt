@@ -1,0 +1,6 @@
+$ npx jest test/lib/supabase-public-url.test.ts test/vtid-05023-supabase-public-url-cutover.test.ts test/vtid-05023-public-url-guard.test.ts
+PASS test/lib/supabase-public-url.test.ts
+PASS test/vtid-05023-supabase-public-url-cutover.test.ts
+PASS test/vtid-05023-public-url-guard.test.ts
+Test Suites: 3 passed, 3 total
+Tests:       22 passed, 22 total

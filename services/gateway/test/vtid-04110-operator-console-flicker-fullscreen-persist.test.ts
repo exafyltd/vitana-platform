@@ -37,9 +37,14 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
 const FE = path.resolve(__dirname, '../src/frontend/command-hub');
-const APP_JS = fs.readFileSync(path.join(FE, 'app.js'), 'utf8');
+// VTID-05073: applyOperatorTurnFrame, updateOperatorLiveTranscriptDom and
+// renderOperatorOverlay (the fullscreen toggle lives inside it) moved into
+// operator-console.js. Read the whole Command Hub bundle so both the moved
+// functions and the state init still in app.js resolve. Assertions unchanged.
+const APP_JS = readCommandHubBundle();
 const INDEX_HTML = fs.readFileSync(path.join(FE, 'index.html'), 'utf8');
 const GUARD_JS = fs.readFileSync(
   path.resolve(__dirname, '../../../scripts/ci/command-hub-ownership-guard.js'),

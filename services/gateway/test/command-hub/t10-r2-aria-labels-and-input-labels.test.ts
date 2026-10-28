@@ -17,6 +17,7 @@
 
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readCommandHubBundle } from './bundle';
 
 const APP_JS_PATH = join(__dirname, '../../src/frontend/command-hub/app.js');
 
@@ -44,7 +45,8 @@ describe('T10 region 2: every icon-only close control has an aria-label', () => 
   });
 
   it('the attachment-remove chip glyph carries an aria-label naming the attachment', () => {
-    expect(appJs).toContain(
+    // VTID-05073: the Operator composer attachment chip moved to operator-console.js.
+    expect(readCommandHubBundle()).toContain(
       "chip.innerHTML = `${att.name} <span class=\"attachment-remove\" data-index=\"${index}\" aria-label=\"Remove attachment ${att.name}\">&times;</span>`;",
     );
   });

@@ -41,7 +41,7 @@ export { FAKE_SUPABASE_URL };
 export type { Row };
 
 /** The in-flight statuses the real partial unique index covers (migration 20260509000000). */
-export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'ci', 'merging', 'deploying', 'verifying'] as const;
+export const INFLIGHT_UNIQUE_STATUSES = ['cooling', 'running', 'held_overlap', 'ci', 'merging', 'deploying', 'verifying'] as const;
 
 // ---------------------------------------------------------------------------
 // PostgREST parsing
@@ -114,6 +114,9 @@ export class OperatorPlatform extends FakePlatform {
   private vtidSeq = 4700;
   private inflight = 0;
   private callCount = 0;
+
+  /** VTID-05014: the second repo Kiro writes to. */
+  readonly githubV1 = new FakeGitHub({ 'src/pages/Home.tsx': 'export default 1;\n' }, 'exafyltd/vitana-v1');
 
   constructor(readonly github: FakeGitHub = new FakeGitHub()) {
     super({});
@@ -199,8 +202,13 @@ export class OperatorPlatform extends FakePlatform {
       if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/rest/v1/')) {
         return this.rest(url, method, init);
       }
+      // VTID-05067: Supabase Storage (the operator-media bucket), in memory.
+      if (url.origin === new URL(FAKE_SUPABASE_URL).origin && url.pathname.startsWith('/storage/v1/')) {
+        return this.storage(url, method, init);
+      }
       if (url.hostname === 'api.github.com') {
-        return this.github.handle(method, url, init.body ? JSON.parse(String(init.body)) : undefined);
+        const gh = url.pathname.startsWith(`/repos/${this.githubV1.repo}/`) ? this.githubV1 : this.github;
+        return gh.handle(method, url, init.body ? JSON.parse(String(init.body)) : undefined, this.headerMap(init).authorization || '');
       }
       this.externalCalls.push({ method, url: `${url.origin}${url.pathname}` });
       return new Response('network disabled in the operator pipeline suite', { status: 503 });
@@ -208,6 +216,33 @@ export class OperatorPlatform extends FakePlatform {
       this.inflight -= 1;
     }
   };
+
+  /** VTID-05067: Storage objects by "<bucket>/<path>". */
+  readonly storageObjects = new Map<string, { contentType: string; bytes: Buffer }>();
+
+  private storage(url: URL, method: string, init: any): Response {
+    const p = decodeURIComponent(url.pathname);
+    if (p.startsWith('/storage/v1/object/sign/') && method === 'POST') {
+      const key = p.slice('/storage/v1/object/sign/'.length);
+      if (!this.storageObjects.has(key)) return this.json(400, { error: 'not_found' });
+      return this.json(200, { signedURL: `/object/sign/${key}?token=fake` });
+    }
+    if (p.startsWith('/storage/v1/object/')) {
+      const key = p.slice('/storage/v1/object/'.length);
+      if (method === 'POST') {
+        const body = init.body;
+        const bytes = Buffer.isBuffer(body) ? body : body instanceof Uint8Array ? Buffer.from(body) : Buffer.from(String(body ?? ''));
+        this.storageObjects.set(key, { contentType: this.headerMap(init)['content-type'] || '', bytes });
+        return this.json(200, { Key: key });
+      }
+      if (method === 'GET') {
+        const o = this.storageObjects.get(key);
+        return o ? new Response(o.bytes, { status: 200, headers: { 'Content-Type': o.contentType } }) : this.json(400, { error: 'not_found' });
+      }
+    }
+    this.unsupported.push(`storage: ${method} ${p}`);
+    return this.json(405, { message: 'storage call not supported by the fake' });
+  }
 
   private headerMap(init: any): Record<string, string> {
     const out: Record<string, string> = {};
@@ -463,7 +498,11 @@ export interface FakeCheckRun {
  * so a scenario can assert "exactly one PR" or "nothing was pushed".
  */
 export class FakeGitHub {
-  readonly repo = 'exafyltd/vitana-platform';
+  /** VTID-05014: the git-data API (blobs → tree → commit → ref) that Kiro's push uses. */
+  private readonly blobs = new Map<string, string>();
+  private readonly trees = new Map<string, Record<string, string>>();
+  /** The Authorization header of every call (VTID-05014: which token reached which repo). */
+  readonly auths: string[] = [];
   readonly commits = new Map<string, Record<string, string>>();
   readonly branches = new Map<string, string>();
   readonly prs = new Map<number, FakePr>();
@@ -472,12 +511,14 @@ export class FakeGitHub {
   readonly pushes: Array<{ branch: string; sha: string; force: boolean; files: string[] }> = [];
   readonly calls: Array<{ method: string; path: string }> = [];
   readonly deletedBranches: string[] = [];
+  /** VTID-05146: comments left on PRs (e.g. the overlap-hold timeout). */
+  readonly comments: Array<{ pr: number; body: string }> = [];
   /** VTID-04612: main moved ahead of every open PR by `behindBy` commits touching `files`. Null = up to date. */
   mainAhead: { behindBy: number; files: string[] } | null = null;
   private nextPr = 3600;
   private nextCheck = 900;
 
-  constructor(mainFiles: Record<string, string> = {}) {
+  constructor(mainFiles: Record<string, string> = {}, readonly repo: string = 'exafyltd/vitana-platform') {
     const sha = this.commit(mainFiles);
     this.branches.set('main', sha);
   }
@@ -546,14 +587,24 @@ export class FakeGitHub {
     return new Response(JSON.stringify(body), { status, headers: { 'Content-Type': 'application/json' } });
   }
 
-  handle(method: string, url: URL, body: any): Response {
+  handle(method: string, url: URL, body: any, auth = ''): Response {
     const path = url.pathname;
     this.calls.push({ method, path });
+    this.auths.push(auth);
     const prefix = `/repos/${this.repo}`;
     if (!path.startsWith(prefix)) return this.res(404, { message: `fake-github: unknown repo in ${path}` });
     const rest = path.slice(prefix.length);
     let m: RegExpExecArray | null;
 
+    // VTID-05146: the open-PR overlap check lists every open PR (one page here).
+    if (method === 'GET' && rest === '/pulls') {
+      const open = [...this.prs.values()].filter((p) => p.state === 'open');
+      return this.res(200, open.map((p) => ({ number: p.number, title: p.title, draft: false, head: { ref: p.head.ref, sha: p.head.sha } })));
+    }
+    if ((m = /^\/issues\/(\d+)\/comments$/.exec(rest)) && method === 'POST') {
+      this.comments.push({ pr: Number(m[1]), body: String(body?.body || '') });
+      return this.res(201, { id: this.comments.length });
+    }
     if (method === 'POST' && rest === '/pulls') {
       if (!this.branches.has(body.head)) return this.res(422, { message: `fake-github: head ${body.head} was never pushed` });
       if (this.prForBranch(body.head)?.state === 'open') return this.res(422, { message: 'A pull request already exists for this branch' });
@@ -614,6 +665,43 @@ export class FakeGitHub {
     if ((m = /^\/actions\/jobs\/(\d+)\/logs$/.exec(rest)) && method === 'GET') {
       const log = this.jobLogs.get(Number(m[1]));
       return log ? this.res(200, log) : this.res(404, { message: 'Not Found' });
+    }
+    if ((m = /^\/git\/ref\/heads\/(.+)$/.exec(rest)) && method === 'GET') {
+      const sha = this.branches.get(m[1]);
+      return sha ? this.res(200, { object: { sha } }) : this.res(404, { message: 'Not Found' });
+    }
+    if ((m = /^\/git\/commits\/([0-9a-f]+)$/.exec(rest)) && method === 'GET') {
+      if (!this.commits.has(m[1])) return this.res(404, { message: 'Not Found' });
+      this.trees.set(`tree-${m[1]}`, { ...this.commits.get(m[1])! });
+      return this.res(200, { sha: m[1], tree: { sha: `tree-${m[1]}` } });
+    }
+    if (rest === '/git/blobs' && method === 'POST') {
+      const sha = createHash('sha1').update(String(body.content)).digest('hex');
+      this.blobs.set(sha, Buffer.from(String(body.content), 'base64').toString('utf8'));
+      return this.res(201, { sha });
+    }
+    if (rest === '/git/trees' && method === 'POST') {
+      const files = { ...(this.trees.get(body.base_tree) || {}) };
+      for (const e of body.tree as Array<{ path: string; sha: string }>) files[e.path] = this.blobs.get(e.sha) ?? '';
+      const sha = `tree-${randomUUID()}`;
+      this.trees.set(sha, files);
+      return this.res(201, { sha });
+    }
+    if (rest === '/git/commits' && method === 'POST') {
+      return this.res(201, { sha: this.commit({ ...(this.trees.get(body.tree) || {}) }) });
+    }
+    if (rest === '/git/refs' && method === 'POST') {
+      const branch = String(body.ref).replace(/^refs\/heads\//, '');
+      if (this.branches.has(branch)) return this.res(422, { message: 'Reference already exists' });
+      this.branches.set(branch, body.sha);
+      this.pushes.push({ branch, sha: body.sha, force: false, files: Object.keys(this.commits.get(body.sha) || {}).sort() });
+      return this.res(201, { ref: body.ref, object: { sha: body.sha } });
+    }
+    if ((m = /^\/git\/refs\/heads\/(.+)$/.exec(rest)) && method === 'PATCH') {
+      if (!this.branches.has(m[1])) return this.res(422, { message: 'Reference does not exist' });
+      this.branches.set(m[1], body.sha);
+      this.pushes.push({ branch: m[1], sha: body.sha, force: !!body.force, files: [] });
+      return this.res(200, { object: { sha: body.sha } });
     }
     if ((m = /^\/git\/refs\/heads\/(.+)$/.exec(rest)) && method === 'DELETE') {
       const branch = decodeURIComponent(m[1]);

@@ -12,10 +12,11 @@ const ROOT = join(__dirname, '../../..');
 const SQL = readFileSync(join(ROOT, 'supabase/migrations/20261009090000_vtid_04994_subscription_dates_in_calendar.sql'), 'utf8');
 
 describe('VTID-04994: subscription dates in the calendar', () => {
-  it("the source-type CHECK lists 'subscription' and the gateway list has it", () => {
+  it("the source-type CHECK in this migration lists 'subscription' and the gateway list has it", () => {
     expect(CALENDAR_SOURCE_TYPES).toContain('subscription');
     const check = SQL.slice(SQL.indexOf('ADD CONSTRAINT valid_source_type'), SQL.indexOf('-- 2. One helper'));
-    for (const t of CALENDAR_SOURCE_TYPES) expect(check).toContain(`'${t}'`);
+    expect(check).toContain("'subscription'");
+    // That every type in the gateway list is in the NEWEST recreate is pinned by vtid-04331-calendar-data-model.test.ts.
   });
 
   it('declares insert, update and delete triggers on user_subscriptions', () => {

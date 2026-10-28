@@ -10,14 +10,21 @@
  *   PUT  /api/v1/admin/rewards/items             exafy_admin: create/update one item (by slug)
  *   PUT  /api/v1/admin/rewards/shipping-fees     exafy_admin: one fee row
  *
+ * VTID-05035 — admin screen support:
+ *   POST   /api/v1/admin/rewards/items/image                       exafy_admin: one item photo -> public URL
+ *   GET    /api/v1/admin/rewards/shipping-fees                     exafy_admin: every fee row
+ *   DELETE /api/v1/admin/rewards/shipping-fees/:country/:currency  exafy_admin: remove one fee row
+ *
  * Prices are never taken from the client. The Stripe webhook branch lives in
  * routes/billing.ts (vitana_kind 'reward_shipping').
  */
+import { randomUUID } from 'crypto';
 import { Router, Response } from 'express';
 import { getSupabase } from '../lib/supabase';
 import { requireAuth, requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import * as repo from '../services/rewards/reward-shop-repository';
 import { getShop, redeem, setOrderStatus, isShopCurrency } from '../services/rewards/reward-shop';
+import { storageUpload, storagePublicUrl } from '../services/storage/storage-provider';
 
 const router = Router();
 const FRONTEND_URL = process.env.FRONTEND_URL || 'https://community-app.vitanaland.com';
@@ -26,6 +33,28 @@ const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
 const DATE = /^\d{4}-\d{2}-\d{2}$/;
 const ADDRESS_FIELDS = ['name', 'line1', 'line2', 'postal_code', 'city', 'region'] as const;
 const ADMIN_STATUSES = new Set(['fulfilling', 'shipped', 'delivered']);
+
+// VTID-05035 — item photos. The app shrinks a photo before sending it, so the
+// decoded image is capped at 1.4 MB: its base64 JSON body then stays under the
+// gateway's 2 MB express.json limit. The bucket enforces the same cap and types.
+export const REWARD_SHOP_IMAGE_BUCKET = 'reward-shop-images';
+export const MAX_ITEM_IMAGE_BYTES = 1_468_006;
+const IMAGE_EXT: Record<string, string> = { 'image/jpeg': 'jpg', 'image/png': 'png', 'image/webp': 'webp' };
+// Buffer.from(str, 'base64') never throws on malformed input (see storage-bridge.ts),
+// so the charset is checked before decoding.
+const BASE64_RE = /^[A-Za-z0-9+/]*={0,2}$/;
+
+/** The image type the bytes really are, by magic number; null for anything else. */
+export function detectImageType(bytes: Buffer): 'image/jpeg' | 'image/png' | 'image/webp' | null {
+  if (bytes.length >= 3 && bytes[0] === 0xff && bytes[1] === 0xd8 && bytes[2] === 0xff) return 'image/jpeg';
+  if (bytes.length >= 8 && bytes.subarray(0, 8).equals(Buffer.from([0x89, 0x50, 0x4e, 0x47, 0x0d, 0x0a, 0x1a, 0x0a]))) {
+    return 'image/png';
+  }
+  if (bytes.length >= 12 && bytes.toString('latin1', 0, 4) === 'RIFF' && bytes.toString('latin1', 8, 12) === 'WEBP') {
+    return 'image/webp';
+  }
+  return null;
+}
 
 function cleanAddress(raw: unknown): Record<string, string> | null {
   if (!raw || typeof raw !== 'object') return null;
@@ -164,6 +193,68 @@ router.put('/admin/rewards/shipping-fees', requireAuth, requireExafyAdmin, async
   const sb = getSupabase();
   if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED' });
   const { error } = await repo.upsertShippingFee(sb, { country: b.country, currency: b.currency, fee_cents: b.fee_cents });
+  if (error) return res.status(400).json({ ok: false, error: 'FEE_REJECTED', message: error.message });
+  return res.json({ ok: true });
+});
+
+router.post('/admin/rewards/items/image', requireAuth, requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: stores one catalogue photo and returns its URL; no item changes until the admin saves it via PUT /admin/rewards/items.
+  const b = (req.body ?? {}) as Record<string, unknown>;
+  const declared = typeof b.content_type === 'string' ? b.content_type.trim().toLowerCase() : '';
+  const raw = typeof b.data_base64 === 'string' ? b.data_base64.replace(/\s/g, '') : '';
+  if (!declared || !raw) return res.status(400).json({ ok: false, error: 'ARGS_REQUIRED' });
+  // Reject an oversize body before decoding it (4 base64 chars carry 3 bytes).
+  if (Math.floor((raw.length * 3) / 4) - 2 > MAX_ITEM_IMAGE_BYTES) {
+    return res.status(413).json({ ok: false, error: 'IMAGE_TOO_LARGE', max_bytes: MAX_ITEM_IMAGE_BYTES });
+  }
+  if (!IMAGE_EXT[declared] || !BASE64_RE.test(raw)) {
+    return res.status(400).json({ ok: false, error: 'IMAGE_TYPE_NOT_ALLOWED' });
+  }
+  const bytes = Buffer.from(raw, 'base64');
+  if (bytes.length === 0) return res.status(400).json({ ok: false, error: 'ARGS_REQUIRED' });
+  if (bytes.length > MAX_ITEM_IMAGE_BYTES) {
+    return res.status(413).json({ ok: false, error: 'IMAGE_TOO_LARGE', max_bytes: MAX_ITEM_IMAGE_BYTES });
+  }
+  const detected = detectImageType(bytes);
+  if (!detected || detected !== declared) {
+    return res.status(400).json({ ok: false, error: 'IMAGE_TYPE_NOT_ALLOWED' });
+  }
+  const path = `items/${randomUUID()}.${IMAGE_EXT[detected]}`;
+  try {
+    const { error } = await storageUpload(REWARD_SHOP_IMAGE_BUCKET, path, bytes, {
+      contentType: detected,
+      upsert: false,
+      cacheControl: '31536000', // the path is a fresh uuid per upload, never overwritten
+    });
+    if (error) {
+      console.error(`[rewards-shop] item image upload failed: ${error.message}`);
+      return res.status(500).json({ ok: false, error: 'IMAGE_UPLOAD_FAILED' });
+    }
+    const url = storagePublicUrl(REWARD_SHOP_IMAGE_BUCKET, path);
+    return res.json({ ok: true, url, path });
+  } catch (err) {
+    console.error(`[rewards-shop] item image upload failed: ${err instanceof Error ? err.message : String(err)}`);
+    return res.status(500).json({ ok: false, error: 'IMAGE_UPLOAD_FAILED' });
+  }
+});
+
+router.get('/admin/rewards/shipping-fees', requireAuth, requireExafyAdmin, async (_req: AuthenticatedRequest, res: Response) => {
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED' });
+  const { data, error } = await repo.fetchAllShippingFees(sb);
+  if (error) return res.status(500).json({ ok: false, error: 'FEES_READ_FAILED' });
+  return res.json({ ok: true, fees: data ?? [] });
+});
+
+router.delete('/admin/rewards/shipping-fees/:country/:currency', requireAuth, requireExafyAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: shipping fee configuration by an admin, same category as PUT /admin/rewards/shipping-fees.
+  const { country, currency } = req.params;
+  if (!/^[A-Z]{2}$/.test(country) || !isShopCurrency(currency)) {
+    return res.status(400).json({ ok: false, error: 'ARGS_REQUIRED' });
+  }
+  const sb = getSupabase();
+  if (!sb) return res.status(503).json({ ok: false, error: 'SUPABASE_NOT_CONFIGURED' });
+  const { error } = await repo.deleteShippingFee(sb, country, currency);
   if (error) return res.status(400).json({ ok: false, error: 'FEE_REJECTED', message: error.message });
   return res.json({ ok: true });
 });

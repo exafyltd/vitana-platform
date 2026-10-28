@@ -57,13 +57,29 @@ function isAncestor(repoRoot, a, b) {
 // endpoint that redirects to production must never turn a staging test into
 // a production request (rule 48). A write probe is never redirected at all —
 // its 3xx is returned as the answer and fails the expected 401/403.
+// VTID-05129: a GET/HEAD whose connection drops (fetch THROWS a retriable
+// network error) gets up to two more tries. An HTTP status is an answer and
+// is never retried; neither is a write probe or a TLS/DNS error.
+async function fetchWithRetry(url, init, method) {
+  const retriable = ['GET', 'HEAD'].includes(method);
+  for (let attempt = 0; ; attempt++) {
+    try {
+      return await fetch(url, { ...init, signal: AbortSignal.timeout(20_000) });
+    } catch (e) {
+      if (!retriable || attempt >= 2 || !lib.isRetriableFetchError(e)) throw e;
+      log(`retrying ${method} ${url} after ${lib.describeFetchError(e)}`);
+      await sleep(1_000 * (attempt + 1));
+    }
+  }
+}
+
 async function httpGet(url, init = {}, { allowProduction = false } = {}) {
   const method = String(init.method || 'GET').toUpperCase();
   let current = url;
   let res;
   for (let hop = 0; ; hop++) {
     if (!allowProduction) lib.assertStagingTarget(current);
-    res = await fetch(current, { ...init, redirect: 'manual', signal: AbortSignal.timeout(20_000) });
+    res = await fetchWithRetry(current, { ...init, redirect: 'manual' }, method);
     const location = res.headers.get('location');
     if (res.status < 300 || res.status >= 400 || !location || !['GET', 'HEAD'].includes(method)) break;
     if (hop >= 5) throw new Error(`too many redirects from ${url}`);
@@ -104,45 +120,83 @@ async function productionStamp(service) {
   }
 }
 
+// VTID-05144: the `target` checkout is cloned once at job start, so a commit
+// merged mid-run is not in it and `rev-parse` of the new stamp fails. Fetch
+// main once from `origin` (the repo of the service under test; actions/checkout
+// persisted its read credentials) and retry. A failed fetch leaves the stamp
+// unresolved: the state stays `mismatch` (fail closed).
+function resolveStamp(repoRoot, stamp, state) {
+  const parse = () => git(repoRoot, ['rev-parse', '--verify', '--quiet', `${stamp}^{commit}`], { allowFail: true });
+  let full = parse();
+  if (!full && !state.fetched) {
+    state.fetched = true;
+    const ok = git(repoRoot, ['fetch', '--quiet', 'origin', '+refs/heads/main:refs/remotes/origin/main'], { allowFail: true }) !== null;
+    log(ok ? `fetched origin main to resolve staging stamp ${stamp}` : `could not fetch origin main to resolve staging stamp ${stamp}`);
+    if (ok) full = parse();
+  }
+  return full || null;
+}
+
 // Staging must serve <sha> on several consecutive samples (an ECS rollout
 // serves old and new side by side for a minute or two). Returns
-// { state: 'match' | 'superseded' | 'mismatch', stamp }.
-async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5 } = {}) {
+// { state: 'match' | 'superseded' | 'mismatch', stamp, full? } — `full` is the
+// resolved commit staging moved to (superseded only). A non-descendant (e.g. a
+// VTID-04709 pinned rollback) stays `mismatch`. `stamp`/`retryMs` are
+// injectable for the local git-fixture test (confirm-live.test.mjs).
+export async function confirmLive(service, sha, repoRoot, { attempts = 8, samples = 5, stamp = stagingStamp, retryMs = 15_000 } = {}) {
   let last = null;
+  let lastStamps = [];
+  const fetchState = { fetched: false };
   for (let a = 1; a <= attempts; a++) {
     const stamps = [];
+    lastStamps = stamps;
     for (let s = 0; s < samples; s++) {
       try {
-        stamps.push(await stagingStamp(service));
+        stamps.push(await stamp(service));
       } catch (e) {
         stamps.push(null);
       }
     }
     last = stamps.find(Boolean) || null;
-    if (stamps.every((st) => lib.commitMatches(service, st, sha))) return { state: 'match', stamp: last };
-    const other = stamps.find((st) => st && !lib.commitMatches(service, st, sha));
+    // VTID-05129: a null sample is unknown, not a mismatch.
+    const verdict = lib.evaluateStampSamples(service, stamps, sha);
+    if (verdict.state === 'match') return { state: 'match', stamp: last, stamps };
+    const other = verdict.other;
     if (other) {
-      const full = git(repoRoot, ['rev-parse', '--verify', `${other}^{commit}`], { allowFail: true });
-      if (full && full !== sha && isAncestor(repoRoot, sha, full)) return { state: 'superseded', stamp: other };
+      const full = resolveStamp(repoRoot, other, fetchState);
+      if (full && full !== sha && isAncestor(repoRoot, sha, full)) return { state: 'superseded', stamp: other, full };
     }
-    log(`attempt ${a}/${attempts}: staging stamps ${JSON.stringify(stamps)} — want ${sha.slice(0, 12)}; retry in 15s`);
-    if (a < attempts) await sleep(15_000);
+    log(`attempt ${a}/${attempts}: staging stamps ${JSON.stringify(stamps)} — want ${sha.slice(0, 12)}; retry in ${retryMs / 1000}s`);
+    if (a < attempts) await sleep(retryMs);
   }
-  return { state: 'mismatch', stamp: last };
+  return { state: 'mismatch', stamp: last, stamps: lastStamps };
 }
 
-// ── Range ────────────────────────────────────────────────────────────────
-function commitsBetween(repoRoot, fromSha, toSha) {
-  const range = fromSha ? `${fromSha}..${toSha}` : `${toSha}~1..${toSha}`;
-  const out = git(repoRoot, ['log', '--reverse', '--format=%H%x1f%cI%x1f%an%x1f%s', range], { allowFail: true }) || '';
-  return out
-    .split('\n')
-    .filter(Boolean)
-    .map((line) => {
-      const [sha, date, author, subject] = line.split('\x1f');
-      const files = (git(repoRoot, ['show', '--name-only', '--format=', sha], { allowFail: true }) || '').split('\n').filter(Boolean);
-      return { sha, date, author, subject, files };
-    });
+// VTID-05144: the service's staging deploy workflow runs created since
+// runStart - 6 h, for T_cut. gateway: exafyltd/vitana-platform with
+// GITHUB_TOKEN (actions: read); community-app: exafyltd/vitana-v1 with
+// VITANA_V1_READ_TOKEN. Any failure returns null → T_cut = runStart (nothing
+// attributed). A read-only GitHub API call; never touches staging or production.
+function listStageDeployRuns(service, runStart) {
+  const cfg = lib.SERVICES[service];
+  const token = service === 'community-app' ? process.env.VITANA_V1_READ_TOKEN : process.env.GITHUB_TOKEN;
+  if (!token) {
+    log(`no token to list ${cfg.stageDeployWorkflow} runs — attribution cutoff = run start`);
+    return null;
+  }
+  const since = new Date(runStart - lib.DEPLOY_LOOKBACK_MS).toISOString();
+  try {
+    const out = execFileSync('gh', [
+      'api', '-X', 'GET', `repos/${cfg.repo}/actions/workflows/${cfg.stageDeployWorkflow}/runs`,
+      '-f', `created=>=${since}`, '-F', 'per_page=100',
+      '--jq', '[.workflow_runs[] | {created_at, updated_at, status, conclusion}]',
+    ], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GH_TOKEN: token } });
+    const runs = JSON.parse(out);
+    return Array.isArray(runs) ? runs : null;
+  } catch (e) {
+    log(`could not list ${cfg.stageDeployWorkflow} runs: ${String(e.message || e).split('\n')[0]} — attribution cutoff = run start`);
+    return null;
+  }
 }
 
 function loadManifest(repoRoot, vtid) {
@@ -163,16 +217,10 @@ function inside(root, p) {
 
 async function runHttp(service, t) {
   const base = lib.assertStagingTarget(lib.STAGING_TARGETS[t.target || lib.SERVICES[service].target]);
-  const method = String(t.method || 'GET').toUpperCase();
-  const init = { method, headers: { accept: 'application/json, text/html;q=0.9' } };
-  if (t.rejected_probe) {
-    // Deliberately invalid credentials: the probe must be rejected by the
-    // auth gate before any handler runs. evaluateHttp flags a 2xx loudly.
-    init.headers.authorization = 'Bearer staging-verify.invalid.probe';
-    init.headers['content-type'] = 'application/json';
-    init.body = '{}';
-  }
-  const res = await httpGet(`${base}${t.path}`, init);
+  // A rejected probe carries deliberately invalid credentials and must be
+  // refused by the auth gate before any handler runs; evaluateHttp flags a
+  // 2xx loudly. httpRequestInit adds a body only for write methods.
+  const res = await httpGet(`${base}${t.path}`, lib.httpRequestInit(t));
   return lib.evaluateHttp(t, res);
 }
 
@@ -244,17 +292,11 @@ export default defineConfig({
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
-  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [summarizeFailure(output)] };
+  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
 }
 
 // The few lines that say what broke, not the whole reporter output (which is
 // already in the job log above).
-function summarizeFailure(output) {
-  const lines = output.split('\n').map((l) => l.replace(/[║╔╗╚╝═]/g, '').trim()).filter(Boolean);
-  const key = lines.filter((l) => /(✘|Error:|expect\(|Expected|Received|FAIL|failed)/.test(l));
-  return (key.length ? key : lines.slice(-6)).slice(0, 8).join(' | ').slice(0, 1500);
-}
-
 function runExisting(repoRoot, t) {
   const cwdAbs = inside(repoRoot, t.cwd || '.');
   if (!cwdAbs) return { ok: false, problems: ['cwd outside repo'] };
@@ -265,11 +307,12 @@ function runExisting(repoRoot, t) {
     cwd: cwdAbs,
     encoding: 'utf8',
     timeout: 20 * 60_000,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test' },
+    // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) },
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
-  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [summarizeFailure(output)] };
+  return r.status === 0 ? { ok: true, problems: [] } : { ok: false, problems: [lib.summarizeFailure(output)] };
 }
 
 async function runSuite(service, repoRoot, outDir, suite, tests) {
@@ -277,15 +320,18 @@ async function runSuite(service, repoRoot, outDir, suite, tests) {
   for (const [i, t] of tests.entries()) {
     const name = t.name || `${t.kind} ${t.path || t.spec || t.ref || i}`;
     const started = Date.now();
+    const startedAt = new Date(started).toISOString();
     let r;
     try {
       if (t.kind === 'http') r = await runHttp(service, t);
       else if (t.kind === 'playwright') r = runPlaywright(service, repoRoot, t, outDir);
       else r = runExisting(repoRoot, t);
     } catch (e) {
-      r = { ok: false, problems: [e.message] };
+      r = { ok: false, problems: [lib.describeFetchError(e)] };
     }
-    const row = { suite, name, kind: t.kind, ok: r.ok, problems: r.problems, ms: Date.now() - started };
+    const ended = Date.now();
+    // VTID-05144: wall-clock bounds per result, for attribution after a mid-run redeploy.
+    const row = { suite, name, kind: t.kind, ok: r.ok, problems: r.problems, ms: ended - started, started_at: startedAt, ended_at: new Date(ended).toISOString() };
     log(`${row.ok ? 'PASS' : 'FAIL'} ${suite} › ${name}${row.ok ? '' : ` — ${row.problems.join('; ')}`}`);
     results.push(row);
   }
@@ -303,7 +349,10 @@ async function verify(args) {
   if (!/^[0-9a-f]{40}$/.test(sha || '')) throw new Error('--sha must be a full commit sha');
   Object.values(lib.STAGING_TARGETS).forEach(lib.assertStagingTarget);
 
-  log(`service=${service} sha=${sha}`);
+  const chain = Number.parseInt(args.chain || '0', 10) || 0;
+  log(`service=${service} sha=${sha} chain=${chain}`);
+  // VTID-05144: recorded immediately before the pre-run check; T_cut is never earlier.
+  const runStart = Date.now();
   const before = await confirmLive(service, sha, repoRoot);
 
   const prodStamp = await productionStamp(service);
@@ -321,20 +370,30 @@ async function verify(args) {
     prodIsAncestor: Boolean(distinct && isAncestor(repoRoot, prodSha, sha)),
     shaIsAncestorOfProd: Boolean(distinct && isAncestor(repoRoot, sha, prodSha)),
   });
-  const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : commitsBetween(repoRoot, baseline.rangeFrom, sha);
+  const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : lib.commitsBetween((a) => git(repoRoot, a, { allowFail: true }), baseline.rangeFrom, sha);
   const manifests = {};
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
-  const plan = lib.planRange({ service, commits, manifests });
+  // VTID-05236: owner-approved coverage for commits that landed without a VTID.
+  const coveragePath = join(repoRoot, 'docs', 'validation', 'commit-coverage.json');
+  let coverageJson = null;
+  try { coverageJson = existsSync(coveragePath) ? JSON.parse(readFileSync(coveragePath, 'utf8')) : null; } catch (e) { log(`commit-coverage.json unreadable: ${e.message} — ignored`); }
+  const { coverage, errors: coverageErrors } = lib.parseCommitCoverage(coverageJson);
+  for (const e of coverageErrors) log(e);
+  for (const v of Object.values(coverage)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
+  const plan = lib.planRange({ service, commits, manifests, coverage });
   const shipping = commits.filter((c) => lib.touchesService(c.files, service));
-  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length}`);
+  log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length} lockfileOnly=${plan.lockfileOnly.length}`);
 
   let results = [];
   let superseded = before.state === 'superseded';
+  let supersededBy = superseded ? before.full : null;
+  let attributionCutoff = null;
+  // Static rows describe the run, not a request: always attributed (VTID-05144).
   if (baseline.problem) {
-    results.push({ suite: 'deploy', name: baseline.check, kind: 'http', ok: false, problems: [baseline.problem], ms: 0 });
+    results.push({ suite: 'deploy', name: baseline.check, kind: 'http', ok: false, problems: [baseline.problem], ms: 0, static: true });
   }
   if (before.state === 'mismatch') {
-    results.push({ suite: 'deploy', name: 'staging serves the deployed commit', kind: 'http', ok: false, problems: [`staging reports ${before.stamp || 'nothing'}, not ${sha}`], ms: 0 });
+    results.push({ suite: 'deploy', name: 'staging serves the deployed commit', kind: 'http', ok: false, problems: [`staging reports ${before.stamp || 'nothing'}, not ${sha}`], ms: 0, static: true });
   } else if (!superseded) {
     const smoke = JSON.parse(readFileSync(join(HERE, 'smoke', `${service}.json`), 'utf8'));
     const v = lib.validateManifest(smoke, { service });
@@ -348,13 +407,24 @@ async function verify(args) {
       if (existsSync(dir)) for (const v of readdirSync(dir)) if (/^VTID-\d{4,5}$/.test(v)) all[v] = loadManifest(repoRoot, v);
       const full = lib.planFullRun({ service, manifests: all, alreadyRun: plan.suites.map((x) => x.vtid) });
       log(`full run: ${full.suites.length} more suite(s), ${full.invalid.length} invalid`);
-      for (const iv of full.invalid) results.push({ suite: iv.vtid, name: 'manifest valid', kind: 'manifest', ok: false, problems: iv.errors, ms: 0 });
+      for (const iv of full.invalid) results.push({ suite: iv.vtid, name: 'manifest valid', kind: 'manifest', ok: false, problems: iv.errors, ms: 0, static: true });
       for (const s of full.suites) results.push(...(await runSuite(service, repoRoot, outDir, s.vtid, s.tests)));
     }
-    const after = await confirmLive(service, sha, repoRoot, { attempts: 1, samples: 5 });
+    // VTID-05129: three attempts, and the problem lists every sample (null =
+    // unreadable) so a dropped request can't pass for a different commit.
+    const after = await confirmLive(service, sha, repoRoot, { attempts: 3, samples: 5 });
     if (after.state !== 'match') {
       superseded = after.state === 'superseded';
-      if (!superseded) results.push({ suite: 'deploy', name: 'staging still serves the commit after the run', kind: 'http', ok: false, problems: [`staging now reports ${after.stamp || 'nothing'}`], ms: 0 });
+      if (!superseded) results.push({ suite: 'deploy', name: 'staging still serves the commit after the run', kind: 'http', ok: false, problems: [`staging stamps ${JSON.stringify(after.stamps || [])} — want ${sha.slice(0, 12)}`], ms: 0 });
+      else {
+        // VTID-05144: staging moved to a descendant mid-run. Attribute each
+        // result by the earliest instant a newer image could have served.
+        supersededBy = after.full;
+        const tCut = lib.deployCutoff(listStageDeployRuns(service, runStart), runStart);
+        attributionCutoff = new Date(tCut).toISOString();
+        results = lib.attributeResults(results, tCut);
+        log(`superseded by ${supersededBy}; attribution cutoff ${attributionCutoff}: ${results.filter((r) => r.attributed).length}/${results.length} results attributed`);
+      }
     }
   }
 
@@ -363,7 +433,7 @@ async function verify(args) {
   const runUrl = serverUrl && process.env.GITHUB_RUN_ID
     ? `${serverUrl}/${process.env.GITHUB_REPOSITORY}/actions/runs/${process.env.GITHUB_RUN_ID}`
     : null;
-  const message = lib.buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl });
+  const message = lib.buildReadyMessage({ service, sha, outcome, results, plan, shipping, prodStamp, runUrl, supersededBy, attributionCutoff });
   const headSubject = git(repoRoot, ['log', '-1', '--format=%s', sha], { allowFail: true }) || '';
   const record = {
     service,
@@ -375,16 +445,21 @@ async function verify(args) {
     production_stamp: prodStamp,
     run_url: runUrl,
     full: args.full === 'true',
+    superseded_by: supersededBy || null,
+    attribution_cutoff: attributionCutoff,
+    // VTID-05272: per-lane attribution for the PM / plan driver; the outcome above is unchanged.
+    per_vtid: lib.summarizeByVtid(results, [...shipping.flatMap((c) => lib.extractVtids(c.subject)), ...plan.suites.map((s) => s.vtid)]),
+    chain,
     results,
-    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length },
-    shipping: shipping.map(({ sha: s, subject, author, date }) => ({ sha: s, subject, author, date })),
+    plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },
+    shipping: shipping.map(({ sha: s, subject, author, date, branchCommits }) => ({ sha: s, subject, author, date, branch_commits: branchCommits || 0 })),
     message,
   };
   writeFileSync(join(outDir, 'results.json'), JSON.stringify(record, null, 2));
   writeFileSync(join(outDir, 'message.md'), message + '\n');
-  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${outcome}\n`);
+  if (process.env.GITHUB_OUTPUT) appendFileSync(process.env.GITHUB_OUTPUT, `outcome=${outcome}\nsuperseded_by=${superseded ? supersededBy || '' : ''}\n`);
   if (process.env.GITHUB_STEP_SUMMARY) {
-    const table = ['', '| Suite | Test | Result | ms |', '|---|---|---|---|', ...results.map((r) => `| ${r.suite} | ${r.name} | ${r.ok ? 'PASS' : 'FAIL: ' + r.problems.join('; ').replace(/\|/g, '/')} | ${r.ms} |`)];
+    const table = ['', '| Suite | Test | Result | ms |', '|---|---|---|---|', ...results.map((r) => `| ${r.suite} | ${r.name} | ${r.ok ? 'PASS' : 'FAIL: ' + r.problems.join('; ').replace(/\|/g, '/')}${r.attributed === false ? ' (not attributed)' : ''} | ${r.ms} |`)];
     appendFileSync(process.env.GITHUB_STEP_SUMMARY, `## STAGING-VERIFY — ${service}\n\n${message}\n${table.join('\n')}\n`);
   }
   console.log('\n' + message);
@@ -429,8 +504,12 @@ function checkPr(args) {
   log(`✓ change suite present and valid for ${vtids.join(', ')}`);
 }
 
-const args = parseArgs(process.argv.slice(2));
-if (args.cmd === 'verify') {
+// VTID-05144: importable (confirm-live.test.mjs) without running a command.
+const isMain = Boolean(process.argv[1]) && resolve(process.argv[1]) === fileURLToPath(import.meta.url);
+const args = isMain ? parseArgs(process.argv.slice(2)) : { cmd: null };
+if (!isMain) {
+  // imported as a module — no command runs
+} else if (args.cmd === 'verify') {
   verify(args).catch((e) => {
     console.error(`::error::STAGING-VERIFY crashed: ${e.stack || e.message}`);
     process.exit(1);

@@ -8,6 +8,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import type { CicdEventType } from '../../types/cicd';
 
 export const RUN_PLANES = ['dev_autopilot', 'community_autopilot', 'self_healing', 'orb', 'operator', 'backoffice'] as const;
 export const RUN_STATUSES = [
@@ -115,4 +116,60 @@ export async function listAgentCards(sb: SupabaseClient): Promise<{ agents: any[
   const { data, error } = await sb.from('agents_registry').select(AGENT_CARD_COLUMNS).order('agent_id');
   if (error) return { agents: [], error: error.message };
   return { agents: (data as any[]) || [], error: null };
+}
+
+// ── VTID-05141 (P4): agents_registry.enabled kill switch ────────────────────
+//
+// `agents_registry.enabled` (migration 20260923120000) was never enforced.
+// Every code path that inserts a native `agent_runs` row calls this first
+// (a source-guard test fails on a new writer that does not). Fail-open on
+// purpose for anything but an explicit `enabled = false`: an agent with no
+// registry row, or a registry read that fails, is allowed — nothing that
+// works today stops working because of this check, and a flaky read never
+// becomes an outage. Only an operator flipping the switch refuses a run.
+
+export const AGENT_RUN_REFUSED_EVENT = 'agent.run.refused_disabled';
+export const AGENT_DISABLED_ERROR = 'agent_disabled';
+
+export type AgentEnabledDecision =
+  | { allowed: true; reason: 'enabled' | 'unknown_agent' | 'lookup_failed' }
+  | { allowed: false; reason: 'agent_disabled'; error: string };
+
+export async function assertAgentEnabled(
+  sb: SupabaseClient,
+  agentId: string,
+  context: Record<string, unknown> = {},
+): Promise<AgentEnabledDecision> {
+  let enabled: unknown;
+  try {
+    const { data, error } = await sb.from('agents_registry').select('agent_id, enabled').eq('agent_id', agentId).maybeSingle();
+    if (error) {
+      console.warn(`[run-ledger] agents_registry lookup for ${agentId} failed (${error.message}); allowing the run`);
+      return { allowed: true, reason: 'lookup_failed' };
+    }
+    if (!data) return { allowed: true, reason: 'unknown_agent' };
+    enabled = (data as { enabled?: unknown }).enabled;
+  } catch (err) {
+    console.warn(`[run-ledger] agents_registry lookup for ${agentId} failed (${err instanceof Error ? err.message : String(err)}); allowing the run`);
+    return { allowed: true, reason: 'lookup_failed' };
+  }
+  if (enabled !== false) return { allowed: true, reason: 'enabled' };
+
+  const message = `Run refused: agent ${agentId} is disabled in agents_registry`;
+  try {
+    const { emitOasisEvent } = await import('../oasis-event-service');
+    await emitOasisEvent({
+      vtid: 'VTID-05141',
+      type: AGENT_RUN_REFUSED_EVENT as CicdEventType,
+      source: 'gateway.run-ledger',
+      status: 'warning',
+      message,
+      actor_role: 'system',
+      surface: 'system',
+      payload: { agent_id: agentId, ...context },
+    });
+  } catch (err) {
+    console.warn(`[run-ledger] ${AGENT_RUN_REFUSED_EVENT} emit failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+  return { allowed: false, reason: 'agent_disabled', error: message };
 }

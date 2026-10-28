@@ -14,7 +14,7 @@ function makeSupabaseStub(response: { data?: any; error?: any; count?: number | 
     calls.push({ method, args });
     return chain;
   };
-  for (const m of ['select', 'eq', 'neq', 'gt', 'lt', 'in', 'order', 'limit', 'filter', 'update', 'insert', 'delete']) {
+  for (const m of ['select', 'eq', 'neq', 'gt', 'lt', 'in', 'is', 'order', 'limit', 'filter', 'update', 'insert', 'delete']) {
     chain[m] = record(m);
   }
   chain.single = jest.fn(() => Promise.resolve(resolved));
@@ -135,6 +135,19 @@ describe('chat-groups-repository', () => {
       await repo.markChatGroupRead(sb as any, 'g1', 'u1');
       expect(sb.calls).toContainEqual({ method: 'eq', args: ['group_id', 'g1'] });
       expect(sb.calls).toContainEqual({ method: 'eq', args: ['user_id', 'u1'] });
+    });
+  });
+
+  describe('markGroupChatNotificationsRead (VTID-05137)', () => {
+    it("clears only this member's unread chat notifications for this group", async () => {
+      const sb = makeSupabaseStub();
+      await repo.markGroupChatNotificationsRead(sb as any, 'g1', 'u1');
+      expect(sb.from).toHaveBeenCalledWith('user_notifications');
+      expect(sb.calls).toContainEqual({ method: 'update', args: [{ read_at: expect.any(String) }] });
+      expect(sb.calls).toContainEqual({ method: 'eq', args: ['user_id', 'u1'] });
+      expect(sb.calls).toContainEqual({ method: 'in', args: ['type', ['new_chat_message', 'chat_mention']] });
+      expect(sb.calls).toContainEqual({ method: 'is', args: ['read_at', null] });
+      expect(sb.calls).toContainEqual({ method: 'filter', args: ['data->>group_id', 'eq', 'g1'] });
     });
   });
 

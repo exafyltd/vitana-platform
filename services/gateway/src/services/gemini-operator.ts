@@ -28,7 +28,7 @@ import { randomUUID } from 'crypto';
 import { createClient } from '@supabase/supabase-js';
 // VTID-03579: operator LLM calls go through the router (Bedrock primary,
 // DeepSeek fallback) — never a provider named in this file.
-import { callViaRouter, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
+import { callViaRouter, type LLMRouterImage, type LLMRouterMessage, type LLMRouterTool, type LLMUsage } from './llm-router';
 // VTID-04031: token usage + estimated cost per model call, folded into the reply meta.
 import { turnUsageFields, summarizeTurnCost, type ModelTurnCost } from './operator-turn-cost';
 // VTID-03892: the Operator's own engineering memory (VTID-03889) — separate
@@ -55,6 +55,8 @@ import { devWorkerModel } from './dev-pipeline-models';
 import { executeKnowledgeSearch, KNOWLEDGE_SEARCH_TOOL_DEFINITION } from './knowledge-hub';
 // VTID-03835: Operator Console codebase read access (search + file read)
 import { searchCode, getFileContents } from './github-service';
+import { VITANA_REPOS, repoGitHubToken, isVitanaRepo } from './vitana-repos';
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { getOperatorBootstrapPack } from './operator-bootstrap-pack';
 import { filterVitanaLogs, LOGS_DEFAULT_MINUTES, LOGS_MAX_MINUTES, LOGS_DEFAULT_LIMIT, LOGS_MAX_LIMIT } from './aws-cloudwatch-logs-readonly';
 import { buildRecallQuery } from './operator-threads';
@@ -91,6 +93,8 @@ import { getThreadAuth, isExecuteTaskAuthorized, describeExecuteTaskRefusal } fr
 import { executeReviewExecution, executeApproveExecution, executeRejectExecution } from './operator-approval-tools';
 import { executeActivateRecommendation } from './operator-recommendation-tools';
 import { executeCancelExecution } from './operator-cancel-tool';
+import { CALENDAR_MGMT_TOOL_DECLARATIONS } from './orb-tools/calendar-management-tools';
+import { calendarTextToolDeclarations, textCalendarConfirmation } from './orb-tools/calendar-social-tools';
 
 // Environment config
 const SUPABASE_URL = process.env.SUPABASE_URL;
@@ -105,6 +109,11 @@ export function setThreadIdentity(threadId: string, identity: { tenant_id: strin
   threadIdentityMap.set(threadId, identity);
   // Auto-cleanup after 30 minutes
   setTimeout(() => threadIdentityMap.delete(threadId), 30 * 60 * 1000);
+}
+
+/** VTID-05005: forget a thread's identity now (the Kiro tool adapter registers one per call). */
+export function clearThreadIdentity(threadId: string): void {
+  threadIdentityMap.delete(threadId);
 }
 const GOOGLE_GEMINI_API_KEY = process.env.GOOGLE_GEMINI_API_KEY;
 
@@ -724,6 +733,12 @@ KNOWN BLIND SPOT: GitHub's code search index excludes any file over 384KB. servi
       description: 'The map of Vitanaland: with no domain, one line per part of the system; with a domain or topic (voice, autopilot, agents, oasis, deploy, llm, memory, community, support, health, commerce, payments, admin, backoffice, infra), its code locations, tables, flags and docs. Read-only. Developer/admin role only.',
       parameters: { type: 'object', properties: { domain: { type: 'string', description: 'A domain key or a topic.' } }, required: [] }
     },
+    // VTID-05060: pick up an existing VTID in a fresh thread.
+    {
+      name: 'dev_resume_vtid',
+      description: 'Where one VTID stands, to continue it in this thread: its ledger row, its pull requests in both repos (state, branch, merge commit, PR body), its evidence (acceptance.md, the approved plan), handoff notes, and whether its merge commit is on staging and production. Use when the developer says "resume VTID-…" or "continue VTID-…". Continue that VTID; never allocate a new one for it. Read-only. Developer/admin role only.',
+      parameters: { type: 'object', properties: { vtid: { type: 'string', description: 'The VTID, e.g. "VTID-05047".' } }, required: ['vtid'] }
+    },
     {
       name: 'dev_deep_dive',
       description: 'Run a deep investigation (up to about two and a half minutes) when a question needs evidence from several places: code and its callers, git history, OASIS events, logs, database rows, live staging/production endpoints (GET only) or a screen\'s implementation. Returns findings with their sources. Read-only. Requires a signed-in developer.',
@@ -1117,11 +1132,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_create_pr',
-      description: 'Create a GitHub pull request for a VTID branch.',
+      description: 'Create a GitHub pull request for a VTID branch, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID this PR is for.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo to open the PR on. Defaults to exafyltd/vitana-platform.' },
           head_branch: { type: 'string', description: 'Branch to merge from.' },
           base_branch: { type: 'string', description: 'Branch to merge into. Defaults to main.' },
           title: { type: 'string', description: 'PR title.' },
@@ -1132,11 +1148,12 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
     },
     {
       name: 'dev_merge_pr',
-      description: 'Safe merge a PR with CI gate. Only merges if checks pass.',
+      description: 'Safe merge a PR with CI gate, on exafyltd/vitana-platform (default) or exafyltd/vitana-v1. Only merges if checks pass.',
       parameters: {
         type: 'object',
         properties: {
           vtid: { type: 'string', description: 'The VTID for this merge.' },
+          repo: { type: 'string', enum: ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'], description: 'Repo the PR is on. Defaults to exafyltd/vitana-platform.' },
           pr_number: { type: 'integer', description: 'PR number to merge.' },
           merge_method: { type: 'string', enum: ['squash', 'merge', 'rebase'], description: 'Merge method. Defaults to squash.' }
         },
@@ -1177,7 +1194,10 @@ NEVER claim a message was sent unless a call with confirmed=true returned ok. If
       name: 'dev_lock_status',
       description: 'Check deploy concurrency lock status.',
       parameters: { type: 'object', properties: {}, required: [] }
-    }
+    },
+    // VTID-04918: the member's calendar from text chat — create, move, cancel,
+    // share to the feed, invite someone. Same shared handlers and guard as voice.
+    ...calendarTextToolDeclarations(CALENDAR_MGMT_TOOL_DECLARATIONS),
   ]
 };
 
@@ -2789,9 +2809,11 @@ const OPERATOR_DEFAULT_REPO = 'exafyltd/vitana-platform';
 // FRONTEND_DEPLOY_TOKEN takes effect without a restart — same convention
 // as BEDROCK_ROLE_ARN (CLAUDE.md §2b) — rather than being frozen at
 // module-load time.
-const OPERATOR_ALLOWED_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana-v1'] as const;
+// VTID-05014: the allowlist and the token now live in github-service
+// (VITANA_REPOS / repoGitHubToken) — one copy shared with the write paths.
+const OPERATOR_ALLOWED_REPOS = VITANA_REPOS;
 function operatorRepoToken(repo: string): string | undefined {
-  return repo === OPERATOR_DEFAULT_REPO ? undefined : process.env.FRONTEND_DEPLOY_TOKEN;
+  try { return isVitanaRepo(repo) ? repoGitHubToken(repo) : undefined; } catch { return undefined; }
 }
 
 function resolveOperatorRepo(requested: string | undefined): { repo: string; token?: string } | { error: string } {
@@ -3891,6 +3913,18 @@ export async function executeTool(
         );
         break;
 
+      // VTID-05060: the resume pack (read-only; the instructions block is left out, the
+      // Operator already carries the governance rules).
+      case 'dev_resume_vtid': {
+        const { buildResumePack } = await import('./dev-memory/resume-pack');
+        const vtid = String((args as { vtid?: unknown }).vtid ?? '').trim().toUpperCase();
+        const r = await buildResumePack(vtid);
+        result = r.ok
+          ? { ok: true, data: { vtid, resume: r.pack.text, unavailable: r.pack.unavailable } }
+          : { ok: false, error: r.error === 'invalid_vtid' ? 'vtid must look like VTID-12345' : r.error === 'not_found' ? `${vtid} is not in the VTID ledger` : 'the resume pack is unavailable right now' };
+        break;
+      }
+
       // VTID-04564: the developer knowledge + deep dive, shared with voice.
       case 'dev_system_status':
       case 'dev_domain_atlas':
@@ -4039,6 +4073,44 @@ export async function executeTool(
         break;
       }
 
+      // VTID-04918: calendar write tools from text chat, through the shared registry.
+      case 'create_calendar_event':
+      case 'reschedule_event':
+      case 'cancel_event':
+      case 'share_calendar_entry_to_feed':
+      case 'invite_to_calendar_entry': {
+        const calIdentity = threadIdentityMap.get(threadId);
+        if (!calIdentity?.user_id) {
+          result = { ok: false, error: 'User context not available for the calendar' };
+          break;
+        }
+        const calArgs = { ...(args as Record<string, unknown>) };
+        if (calIdentity.user_timezone && !calArgs.timezone) calArgs.timezone = calIdentity.user_timezone;
+        const notYet = textCalendarConfirmation(toolName, calArgs);
+        if (notYet) {
+          result = { ok: true, data: { stage: 'awaiting_confirmation', message: notYet } };
+          break;
+        }
+        const { dispatchOrbTool } = await import('./orb-tools-shared');
+        const sb = createClient(SUPABASE_URL!, SUPABASE_SERVICE_ROLE!);
+        const r = await dispatchOrbTool(
+          toolName,
+          calArgs,
+          {
+            user_id: calIdentity.user_id,
+            tenant_id: calIdentity.tenant_id ?? null,
+            role: calIdentity.role ?? 'community',
+            vitana_id: calIdentity.vitana_id ?? null,
+            session_id: threadId,
+          },
+          sb,
+        );
+        result = r.ok
+          ? { ok: true, data: { ...((r as { result?: Record<string, unknown> }).result ?? {}), message: (r as { text?: string }).text } }
+          : { ok: false, error: (r as { error: string }).error };
+        break;
+      }
+
       // ===== VTID-DEV-ASSIST: Developer Assistant Tool Cases =====
       case 'dev_list_tasks':
         result = await executeDevListTasks(args as { limit?: number; status?: string; layer?: string }, threadId);
@@ -4089,11 +4161,11 @@ export async function executeTool(
         break;
 
       case 'dev_create_pr':
-        result = await executeDevCreatePr(args as { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
+        result = await executeDevCreatePr(args as { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string }, threadId);
         break;
 
       case 'dev_merge_pr':
-        result = await executeDevMergePr(args as { vtid: string; pr_number: number; merge_method?: string }, threadId);
+        result = await executeDevMergePr(args as { vtid: string; repo?: string; pr_number: number; merge_method?: string }, threadId);
         break;
 
       case 'dev_deploy_service':
@@ -4417,6 +4489,8 @@ async function callVertexWithTools(
   // tools returned and can call more.
   toolTranscript: LLMRouterMessage[] = [],
   service = 'gemini-operator',
+  // VTID-05067: images the user pasted into the Operator Console (first plan call only).
+  images?: LLMRouterImage[],
 ): Promise<{
   reply: string;
   toolCalls?: GeminiToolCall[];
@@ -4494,6 +4568,7 @@ async function callVertexWithTools(
     // text). Matches the router-wide default instead of a narrower one.
     maxTokens: 8000,
     tools: routerTools,
+    ...(images && images.length > 0 ? { images } : {}),
     history: [
       ...conversationHistory.map((m) => ({ role: m.role, content: m.content }) as LLMRouterMessage),
       ...toolTranscript,
@@ -4732,8 +4807,11 @@ export async function processWithGemini(input: {
   // VTID-04028: live turn events (model turns, tool calls/results) for the
   // streaming route. Optional; a missing sink means no emission at all.
   onEvent?: OperatorTurnEventSink;
+  // VTID-05067: images pasted into the Operator Console, sent with the first (plan) model call
+  // as image blocks (Bedrock/Anthropic adapters, VTID-03496).
+  images?: LLMRouterImage[];
 }): Promise<GeminiOperatorResponse> {
-  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary, onEvent } = input;
+  const { text, threadId, attachments = [], context = {}, conversationHistory = [], conversationId, systemInstruction, userRole, threadSummary, onEvent, images } = input;
 
   // BOOTSTRAP-MEMORY-ORCHESTRATOR-MANDATORY: soft bypass detection at the
   // shared executor. Emits memory.orchestrator.bypass_detected (never throws
@@ -4784,7 +4862,7 @@ export async function processWithGemini(input: {
       // VTID-01106: Pass custom system instruction if provided (for ORB memory context)
       // VTID-DEV-ASSIST: Pass userRole to filter tool definitions by authorization
       const planStartedAt = Date.now();
-      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock);
+      const vertexResponse = await callVertexWithTools(text, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, [], 'gemini-operator', images);
       emitTurnEvent(onEvent, {
         type: 'model.turn',
         stage: 'plan',
@@ -4858,7 +4936,7 @@ export async function processWithGemini(input: {
           const nextStartedAt = Date.now();
           let next: Awaited<ReturnType<typeof callVertexWithTools>>;
           try {
-            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue');
+            next = await callVertexWithTools(OPERATOR_CONTINUE_PROMPT, threadId, conversationHistory, systemInstruction, undefined, userRole, memoryContextBlock, transcript, 'gemini-operator-continue', images);
           } catch (contErr: any) {
             console.warn(`[VTID-04628] operator continuation round ${rounds + 1} failed, answering from the tool results: ${contErr?.message}`);
             break;
@@ -5525,11 +5603,9 @@ async function executeDevApproveSpec(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/specs/${args.vtid}/approve`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05048: the approve route is requireServiceOrAdmin — send the
+      // gateway service token, not the Supabase service key.
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({ approved_by: 'developer_assistant' }),
     });
 
@@ -5727,23 +5803,21 @@ async function executeDevQueryOasisEvents(
  * Create a GitHub PR
  */
 async function executeDevCreatePr(
-  args: { vtid: string; head_branch: string; base_branch?: string; title?: string; body?: string },
+  args: { vtid: string; repo?: string; head_branch: string; base_branch?: string; title?: string; body?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/create-pr`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
-        head_branch: args.head_branch,
-        base_branch: args.base_branch || 'main',
+        repo: args.repo || 'exafyltd/vitana-platform',
+        // VTID-05006: the route's schema (CreatePrRequestSchema) reads head/base.
+        head: args.head_branch,
+        base: args.base_branch || 'main',
         title: args.title || `${args.vtid}: ${args.head_branch}`,
         body: args.body || `PR created via Vitana Developer Assistant for ${args.vtid}`,
       }),
@@ -5772,23 +5846,21 @@ async function executeDevCreatePr(
  * Safe merge a PR
  */
 async function executeDevMergePr(
-  args: { vtid: string; pr_number: number; merge_method?: string },
+  args: { vtid: string; repo?: string; pr_number: number; merge_method?: string },
   threadId: string
 ): Promise<ToolExecutionResult> {
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/github/safe-merge`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05019: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         vtid: args.vtid,
-        repo: 'exafyltd/vitana-platform',
+        repo: args.repo || 'exafyltd/vitana-platform',
         pr_number: args.pr_number,
-        merge_method: args.merge_method || 'squash',
+        // VTID-05006: the route's schema (SafeMergeRequestSchema) reads merge_strategy.
+        merge_strategy: args.merge_method || 'squash',
       }),
     });
 
@@ -5822,11 +5894,8 @@ async function executeDevDeployService(
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/deploy/service`, {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05047: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { 'Content-Type': 'application/json', ...gatewayServiceAuthHeader() },
       body: JSON.stringify({
         service: args.service,
         vtid: args.vtid || 'VTID-DEV-ASSIST',
@@ -5922,10 +5991,8 @@ async function executeDevLockStatus(threadId: string): Promise<ToolExecutionResu
   try {
     const gatewayPort = process.env.PORT || '8080';
     const resp = await fetch(`http://localhost:${gatewayPort}/api/v1/cicd/lock-status`, {
-      headers: {
-        apikey: SUPABASE_SERVICE_ROLE!,
-        Authorization: `Bearer ${SUPABASE_SERVICE_ROLE}`,
-      },
+      // VTID-05047: the route requires the gateway service token (or an exafy_admin JWT).
+      headers: { ...gatewayServiceAuthHeader() },
     });
 
     const result = await resp.json() as any;

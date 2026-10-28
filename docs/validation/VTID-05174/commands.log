@@ -1,0 +1,16 @@
+# VTID-05174 — commands run in the worktree /home/user/wt-pd5r (branch claude/health-data-integration-plan-dbxyld-pd5r,
+# based on origin/main 1e508fb3c). No command touched Supabase, Aurora, staging or production; every database call in
+# the tests is mocked.
+
+ln -s /home/user/vitana-platform/services/gateway/node_modules services/gateway/node_modules   # local only, not committed
+cd services/gateway
+npx jest test/health-erasure-internal.test.ts test/connector-webhooks-log-user-id.test.ts \
+  test/vtid-05054-lab-notice-and-webhook-purge.test.ts test/admin-partner-health.test.ts test/partner-health-member.test.ts \
+  test/partner-health/link-confirmation.test.ts test/vtid-05030-connection-tokens.test.ts \
+  test/vtid-05025-commerce-health-boundary.test.ts test/vtid-04560-role-separation-regression.test.ts   # -> outputs/jest.txt
+npm run test:roles                                   # 105 passed
+npx tsc --noEmit -p .                                # -> outputs/tsc.txt (known local module gaps only)
+cd ../..
+git branch -f main origin/main
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "<title>"
+node scripts/ci/validate-pr-locally.cjs --title "<title>" --body-file pr-05174.md

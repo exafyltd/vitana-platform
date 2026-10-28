@@ -99,6 +99,8 @@ export type GatewayI18nKey =
   | 'notif.calendar_reminder.now'
   | 'notif.calendar_reminder.tomorrow'
   | 'notif.fallback_app_name'
+  // VTID-05095: the SMS that carries a member's phone verification code
+  | 'sms.phone_verification.code'
   // VTID-04463: partner organization invite email
   | 'email.partner_invite.subject'
   | 'email.partner_invite.greeting'
@@ -110,11 +112,22 @@ export type GatewayI18nKey =
   | 'email.partner_invite.role.org_admin'
   | 'email.partner_invite.role.staff'
   | 'email.partner_invite.role.professional'
+  // VTID-05029: digest email for important notifications a push never reached
+  | 'email.push_fallback.subject'
+  | 'email.push_fallback.greeting'
+  | 'email.push_fallback.intro'
+  | 'email.push_fallback.more'
+  | 'email.push_fallback.cta'
+  | 'email.push_fallback.why'
+  | 'email.push_fallback.settings'
   // VTID-03885: Partner Health Test Integration
   | 'notif.partner_test_status_changed.title'
   | 'notif.partner_test_status_changed.body'
   | 'notif.partner_test_result_ready.title'
   | 'notif.partner_test_result_ready.body'
+  // VTID-05055: member confirms a partner link staff proposed
+  | 'notif.partner_link_request.title'
+  | 'notif.partner_link_request.body'
   // Live room goes live → notify everyone who tapped "Notify me" on the scheduled session.
   | 'notif.live_going_live.title'
   | 'notif.live_going_live.body'
@@ -246,13 +259,38 @@ export type GatewayI18nKey =
   // VTID-04926: push to a member @mentioned in a group chat message (the body
   // is the message itself).
   | 'notif.chat_mention.title'
+  // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
+  | 'notif.calendar_invite.body'
+  // VTID-05311: push for a shared post / event / product / profile — never the item's content.
+  | 'notif.chat_shared_content.body'
+  // VTID-05137: body of the one push a burst of chat messages gets
+  // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
+  | 'notif.chat_burst.body'
+  // VTID-05208: the push a newcomer gets when several members greeted them by
+  // private DM within 24 h ("{count} people said hello 👋") — see
+  // new-member-greeting-push.ts
+  | 'notif.new_member_greeting_burst.title'
+  | 'notif.new_member_greeting_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
   // push notification has a fixed contract and must stay translated and
   // reviewable, same as every other entry in this file.
   | 'notif.day_close.title'
-  | 'notif.day_close.body';
+  | 'notif.day_close.body'
+  // VTID-05100: push for a Vitana Companion Message. The DM itself is composed
+  // by the model (rule 41); the lock-screen title/body are fixed catalog text.
+  | 'notif.vitana_companion_message.title'
+  | 'notif.vitana_companion_message.body'
+  // VTID-05205: the three team welcome DMs for new members (written messages
+  // from Mariia, Jovana and Alex Blue — catalog rule, not rule 41). {name} =
+  // the newcomer's first name; *_noname when the profile has none.
+  | 'welcome_team.mariia.body'
+  | 'welcome_team.mariia.body_noname'
+  | 'welcome_team.jovana.body'
+  | 'welcome_team.jovana.body_noname'
+  | 'welcome_team.alex.body'
+  | 'welcome_team.alex.body_noname';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

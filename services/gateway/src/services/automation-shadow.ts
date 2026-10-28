@@ -59,6 +59,9 @@ export const SHADOW_UNSAFE_HANDLERS: ReadonlySet<string> = new Set([
   'runDailyLearningEpisodes',
   // VTID-04444: memory/diary-theme-rollup (LLM call on the memory stage)
   'runDiaryThemeRollup',
+  // VTID-05171: timeline habit rollup ("Vitana noticed" goes through the
+  // timeline projector's own HTTP client)
+  'runTimelineHabitRollup',
   // onboarding-growth: recommendation-engine, social-connect-service
   // (posts to members' own social accounts), milestone-service
   'runOrbGuidedOnboarding',

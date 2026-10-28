@@ -734,27 +734,31 @@ describe('dispute_match', () => {
 // ---------------------------------------------------------------------------
 
 describe('find_perfect_match', () => {
+  // VTID-05156: the Vitana Index is no longer read. A vitana_index_scores
+  // queue is still provided so a regression that re-adds the read would be
+  // fed data (and caught by the table-list assertions below).
   const compassQueues = () => ({
     life_compass: [{ data: { primary_goal: 'Run a marathon at 60', category: 'longevity' }, error: null }],
     vitana_index_scores: [{ data: { pillars: { exercise: 40, sleep: 85, nutrition: 70 } }, error: null }],
   });
 
-  it('fuses the ask with Life Compass goal + weakest pillar and reuses the find-match engine', async () => {
+  it('personalises with the Life Compass goal only and reuses the find-match engine', async () => {
     (runFindMatch as jest.Mock).mockResolvedValue({
       ok: true,
       stage: 'matched',
       text: 'MATCHES FOUND — recommend Kemal for tennis.',
       data: { matches: [{ match_id: 'm-1', score: 0.91 }] },
     });
-    const { sb } = makeSb(compassQueues());
+    const { sb, from } = makeSb(compassQueues());
     const res = await tool_find_perfect_match({ ask: 'a workout partner for mornings' }, IDENT, sb);
     expect(res.ok).toBe(true);
     if (res.ok) {
       expect(res.text).toContain('Run a marathon at 60');
-      expect(res.text).toContain('exercise');
+      expect(res.text).not.toMatch(/pillar/i);
       expect(res.text).toContain('MATCHES FOUND');
-      const r = res.result as { weakest_pillar: string; compass_goal: string; stage: string };
-      expect(r.weakest_pillar).toBe('exercise');
+      const r = res.result as Record<string, unknown>;
+      expect(r).not.toHaveProperty('weakest_pillar');
+      expect(r.ask_derived_from_pillar).toBe(false);
       expect(r.compass_goal).toBe('Run a marathon at 60');
       expect(r.stage).toBe('matched');
     }
@@ -762,28 +766,27 @@ describe('find_perfect_match', () => {
       expect.objectContaining({ utterance: 'a workout partner for mornings' }),
       expect.objectContaining({ user_id: 'u-1', tenant_id: 't-1' }),
     );
+    // VTID-05156: the only table read is life_compass — never the Index.
+    const tables = from.mock.calls.map((c) => c[0]);
+    expect(tables).toEqual(['life_compass']);
+    expect(tables).not.toContain('vitana_index_scores');
   });
 
-  it('derives a default ask from the weakest pillar when the user is vague', async () => {
-    (runFindMatch as jest.Mock).mockResolvedValue({
-      ok: true,
-      stage: 'awaiting_confirmation',
-      text: 'Read back the summary and confirm.',
-      data: {},
-    });
-    const { sb } = makeSb(compassQueues());
+  it('asks the member when there is no ask, even with Index data present (VTID-05156)', async () => {
+    const { sb, from } = makeSb(compassQueues());
     const res = await tool_find_perfect_match({}, IDENT, sb);
     expect(res.ok).toBe(true);
-    expect((runFindMatch as jest.Mock).mock.calls[0][0].utterance).toContain('workout partner');
     if (res.ok) {
-      expect((res.result as { ask_derived_from_pillar: boolean }).ask_derived_from_pillar).toBe(true);
+      expect((res.result as { stage: string }).stage).toBe('needs_ask');
+      expect(res.text).toContain('what kind of person');
     }
+    expect(runFindMatch).not.toHaveBeenCalled();
+    expect(from.mock.calls.map((c) => c[0])).not.toContain('vitana_index_scores');
   });
 
-  it('asks what the user wants when there is no ask and no pillar data', async () => {
+  it('asks what the user wants when there is no ask and no compass data', async () => {
     const { sb } = makeSb({
       life_compass: [{ data: null, error: null }],
-      vitana_index_scores: [{ data: null, error: null }],
     });
     const res = await tool_find_perfect_match({}, IDENT, sb);
     expect(res.ok).toBe(true);
@@ -792,6 +795,25 @@ describe('find_perfect_match', () => {
       expect(res.text).toContain('what kind of person');
     }
     expect(runFindMatch).not.toHaveBeenCalled();
+  });
+
+  it('no Life Compass goal → no personalisation prefix', async () => {
+    (runFindMatch as jest.Mock).mockResolvedValue({ ok: true, stage: 'matched', text: 'MATCHES FOUND.', data: {} });
+    const { sb } = makeSb({ life_compass: [{ data: null, error: null }] });
+    const res = await tool_find_perfect_match({ ask: 'a mentor' }, IDENT, sb);
+    expect(res.ok).toBe(true);
+    if (res.ok) {
+      expect(res.text).toBe('MATCHES FOUND.');
+      expect((res.result as { compass_goal: unknown }).compass_goal).toBeNull();
+    }
+  });
+
+  it('the declaration no longer promises Index personalisation', () => {
+    const decl = DISCOVERY_TOOL_DECLARATIONS.find((d) => d.name === 'find_perfect_match')!;
+    const json = JSON.stringify(decl);
+    expect(json).not.toMatch(/pillar/i);
+    expect(json).not.toMatch(/Vitana Index/i);
+    expect(json).toContain('Life Compass goal');
   });
 
   it('propagates engine failures as ok:false', async () => {

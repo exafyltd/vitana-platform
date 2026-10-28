@@ -62,6 +62,8 @@ export function findingFiles(f: PlannableFinding): string[] {
 export interface PlannabilityCheck {
   shadow_id: string | null;
   plannable: boolean | null;
+  /** VTID-05012: Jev's below-threshold answer when it abstained (null otherwise). */
+  lean?: boolean | null;
 }
 
 /** Ask Jev and write the shadow row. Returns null when off; never throws. */
@@ -92,6 +94,7 @@ export async function runPlannabilityCheck(a: {
       { ...(a.decideOptions || {}), source: `gate:${PLANNABILITY_GATE}`, env },
     );
     const plannable = r.ok && r.outcome === 'decided' ? r.verdict.value === true : null;
+    const lean = r.ok && r.outcome === 'abstained' ? r.verdict.value === true : null;
     const id = await recordJevShadowDecision(
       {
         gate: PLANNABILITY_GATE,
@@ -103,7 +106,7 @@ export async function runPlannabilityCheck(a: {
         subject_ref: f.id,
         jev_outcome: r.outcome,
         jev_verdict: r.ok
-          ? { plannable, probability: r.answers.plannable?.probability ?? null, blocker: r.answers.blocker?.value ?? null, files: findingFiles(f).length }
+          ? { plannable, ...(lean !== null ? { lean } : {}), probability: r.answers.plannable?.probability ?? null, blocker: r.answers.blocker?.value ?? null, files: findingFiles(f).length }
           : { reason: r.reason },
         jev_confidence: r.ok ? r.verdict.confidence : null,
         system_action: 'planner_ran',
@@ -111,7 +114,7 @@ export async function runPlannabilityCheck(a: {
       },
       a.sb,
     );
-    return { shadow_id: id, plannable };
+    return { shadow_id: id, plannable, ...(lean !== null ? { lean } : {}) };
   } catch (err: any) {
     console.warn(`[jev] ${PLANNABILITY_GATE} check failed for ${a.finding?.id}: ${err?.message || err}`);
     return null;
@@ -140,7 +143,10 @@ export async function recordPlannabilityOutcome(
       outcome = 'plan_failed';
     }
     const agreed = planned === null || c.plannable === null ? null : c.plannable === planned;
-    await recordJevShadowOutcome(c.shadow_id, outcome, agreed, sb);
+    // VTID-05012: an abstained row is scored on its lean; `agreed` stays decided-only.
+    const lean = c.lean ?? null;
+    const leanAgreed = lean === null ? undefined : planned === null ? null : lean === planned;
+    await recordJevShadowOutcome(c.shadow_id, outcome, agreed, sb, leanAgreed);
   } catch (err: any) {
     console.warn(`[jev] ${PLANNABILITY_GATE} outcome not recorded: ${err?.message || err}`);
   }

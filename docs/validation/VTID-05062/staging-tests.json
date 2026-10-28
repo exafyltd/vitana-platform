@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05062",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "daily screen-load report is served in the health shape (public, read-only)", "method": "GET", "path": "/api/v1/frontend/screen-load/daily-report", "expect_status": 200, "expect_content_type": "application/json", "expect_body_contains": "\"status\"" },
+    { "kind": "http", "target": "gateway", "name": "daily report run refuses a caller without the service token", "method": "POST", "path": "/api/v1/frontend/screen-load/daily-report/run", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/vtid-05062-rum-nav-beacon.test.ts test/vtid-05062-screen-load-daily-report.test.ts test/vtid-05062-daily-report-route.test.ts test/routes/screen-load-health.test.ts", "cwd": "services/gateway", "reason": "nav beacon schema and topic, metric beacon unchanged, daily report aggregation and build check, run endpoint auth and per-day idempotency (writes are proven here, never on staging)" }
+  ]
+}

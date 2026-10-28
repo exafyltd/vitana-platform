@@ -1,0 +1,5 @@
+bash -n: ok (both)
+shellcheck test script: clean
+            ^--^ SC2209 (warning): Use var=$(command) to assign output (or quote to assign string).
+  https://www.shellcheck.net/wiki/SC2209 -- Use var=$(command) to assign outp...
+(SC2209 on the pre-existing '--file) MODE=file' line also reported on origin/main; no finding in new code)

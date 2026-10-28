@@ -1,0 +1,3 @@
+# VTID-05079 commands
+git checkout -B claude/quirky-archimedes-s2t1f5 origin/main
+# local logic check: cors.ts transpiled with typescript, stubbed cors package, 12 request cases matched the plan

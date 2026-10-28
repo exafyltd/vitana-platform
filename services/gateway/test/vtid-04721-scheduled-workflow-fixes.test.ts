@@ -14,9 +14,11 @@ const wf = (name: string) =>
 
 describe('VTID-04721 scheduled workflow fixes', () => {
   it('push alert only judges the 48h window the dispatcher acts on', () => {
+    // VTID-05141: the workflow calls /api/v1/ops/health/push-dispatch, which owns the 48 h window.
     const s = wf('ALERT-PUSH-DISPATCH-HEALTH.yml');
-    expect(s).toMatch(/CUTOFF=\$\(date -u -d '48 hours ago'/);
-    expect(s).toContain('"created_at=gte.$CUTOFF"');
+    expect(s).toContain('/api/v1/ops/health/push-dispatch');
+    const route = require('fs').readFileSync(require('path').resolve(__dirname, '../src/routes/ops-health-checks.ts'), 'utf8');
+    expect(route).toContain('48 * 60 * 60 * 1000');
   });
 
   it('push alert hint no longer points at GCP', () => {

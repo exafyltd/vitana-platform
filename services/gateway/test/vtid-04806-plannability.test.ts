@@ -122,7 +122,8 @@ describe('VTID-04806 wiring and pins', () => {
     expect(start).toBeGreaterThan(-1);
     expect(start).toBeLessThan(src.indexOf('const initialSession = await runPlanningSession('));
     expect(src).not.toContain('await plannability');
-    expect((src.match(/void recordPlannabilityOutcome\(plannability, /g) || []).length).toBe(3);
+    // VTID-05078 adds a fourth exit (plan path validation failed), which also records its outcome.
+    expect((src.match(/void recordPlannabilityOutcome\(plannability, /g) || []).length).toBe(4);
   });
   test('both gateways pin shadow, never enforce', () => {
     for (const f of ['AWS-STAGE-DEPLOY-GATEWAY.yml', 'AWS-PROD-DEPLOY-GATEWAY.yml']) {

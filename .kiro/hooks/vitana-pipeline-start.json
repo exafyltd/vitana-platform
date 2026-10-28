@@ -1,0 +1,14 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "vitana-pipeline-start",
+      "description": "VTID-05275: every Kiro IDE session starts on the Vitana pipeline.",
+      "trigger": "SessionStart",
+      "action": {
+        "type": "agent",
+        "prompt": "Load .kiro/steering/vitana-pipeline.md; run the queue (node scripts/collab/queue.mjs --repo <vitana-platform> --repo <vitana-v1>); resume any plan driver whose heartbeat (refs/heads/collab-driver/<slug>) is older than 45 minutes. Every owner task that results in a commit runs the pipeline end to end (.kiro/workflows/vitana-pipeline.workflow.json); the only owner stop is Gate 2 (plus an escalated sparring verdict)."
+      }
+    }
+  ]
+}

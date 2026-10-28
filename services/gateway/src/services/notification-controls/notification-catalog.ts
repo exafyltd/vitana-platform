@@ -56,6 +56,8 @@ const ROWS: Row[] = [
   // ── ORB (Vitana's own messages) ───────────────────────────────────────────
   ['orb_proactive_message', 'member', 'orb', 'automation', 'unverified', 'Message from Vitana', 'Nachricht von Vitana', 'Vitana reaches out on her own, sent by an automation.', 'Vitana meldet sich von sich aus, ausgelöst durch eine Automation.'],
   ['orb_suggestion', 'member', 'orb', 'automation', 'unverified', 'Suggestion from Vitana', 'Vorschlag von Vitana', 'A suggestion from Vitana, sent by an automation.', 'Ein Vorschlag von Vitana, ausgelöst durch eine Automation.'],
+  // VTID-05100: Vitana Companion Messages (at most one a day; title/body from the tt() catalog, the DM is composed in the member's language).
+  ['vitana_companion_message', 'member', 'orb', 'scheduled', 'ready', 'Daily message from Vitana', 'Tägliche Nachricht von Vitana', 'Vitana writes you at most one personal message a day in your chat with her.', 'Vitana schreibt dir höchstens eine persönliche Nachricht am Tag in deinen Chat mit ihr.'],
   ['conversation_followup_reminder', 'member', 'orb', 'automation', 'unverified', 'Follow up a conversation', 'Gespräch fortsetzen', 'A reminder to continue a conversation.', 'Eine Erinnerung, ein Gespräch fortzusetzen.'],
   ['reminder_due', 'member', 'orb', 'member_activity', 'ready', 'Reminder the member set', 'Selbst gesetzte Erinnerung', 'A reminder the member asked Vitana to set.', 'Eine Erinnerung, die das Mitglied bei Vitana eingestellt hat.'],
 
@@ -149,6 +151,8 @@ const ROWS: Row[] = [
   ['longevity_signal_alert', 'member', 'health', 'system', 'unverified', 'Longevity signal', 'Langlebigkeits-Signal', 'An important longevity signal.', 'Ein wichtiges Langlebigkeits-Signal.'],
   ['lab_report_processed', 'member', 'health', 'member_activity', 'unverified', 'Lab report processed', 'Laborbericht verarbeitet', 'An uploaded lab report was processed.', 'Ein hochgeladener Laborbericht wurde verarbeitet.'],
   ['health_test_result_ready', 'member', 'health', 'system', 'unverified', 'Test result ready', 'Testergebnis bereit', 'A partner lab test result is ready.', 'Ein Testergebnis eines Partnerlabors ist bereit.'],
+  // VTID-05055: the member confirms (or declines) a partner test result staff proposed as theirs.
+  ['partner_link_request', 'member', 'health', 'system', 'ready', 'Is this your test?', 'Ist das dein Test?', 'A partner lab result may belong to the member; they confirm or decline it in the app.', 'Ein Ergebnis eines Partnerlabors könnte zum Mitglied gehören; es bestätigt oder lehnt es in der App ab.'],
   ['partner_test_status_changed', 'member', 'health', 'system', 'unverified', 'Test status update', 'Test-Status', 'The status of a partner lab test changed.', 'Der Status eines Partnerlabor-Tests hat sich geändert.'],
   ['wearable_data_synced', 'member', 'health', 'system', 'unverified', 'Wearable synced (silent)', 'Wearable synchronisiert (still)', 'Silent: wearable data synced.', 'Still: Wearable-Daten synchronisiert.'],
   ['predictive_signal_detected', 'member', 'health', 'system', 'unverified', 'Health signal', 'Gesundheitssignal', 'A predictive health signal was detected.', 'Ein vorausschauendes Gesundheitssignal wurde erkannt.'],

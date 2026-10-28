@@ -1,0 +1,52 @@
+# VTID-05145 A1 — which Kiro account (seat) owns which area of the code.
+#
+# Owner decision 2026-10-14: each Kiro Web account specialises in one area. Whoever creates a Kiro lane (the session
+# holding the plan's `_plan` claim) sets `seat:` and `area:` in the lane file from this map: the most specific area
+# whose paths cover the lane's work wins; `frontend` is the catch-all and loses to every specific area. A lane without
+# `seat:` can be taken by any Kiro session (Kiro IDE, the server runner) as before.
+#
+# Each seat's Kiro Web automation only takes lanes with its own seat (.kiro/automations/<seat>.md).
+# Seats are 1-12 lowercase letters; session ids are kiro-<seat>-YYYYMMDDHHMM-xxxx.
+
+# VTID-05271 (kiro-autonomy-fallback): the seat that does the jobs the Claude Routine did (items E1-E6 of its automation).
+exceptions_seat: exafyltd
+
+seats:
+  jtadic:   { account: j.tadic@exafy.io,        surface: kiro-web, automation: .kiro/automations/jtadic.md }
+  exafyltd: { account: exafyltd@gmail.com,      surface: kiro-web, automation: .kiro/automations/exafyltd.md }
+  hotmail:  { account: dstevanovic@hotmail.com, surface: kiro-ide }   # also the key on the server-side Kiro runner
+  exafy:    { account: d.stevanovic@exafy.io,   surface: kiro-web, automation: .kiro/automations/exafy.md }
+
+areas:
+  backoffice:
+    seat: jtadic
+    priority: 10
+    paths:
+      vitana-v1: [ "src/pages/backoffice/**", "src/components/backoffice/**" ]
+      vitana-platform:
+        - "services/gateway/src/routes/backoffice-*.ts"
+        - "services/gateway/src/services/backoffice/**"
+        - "services/gateway/src/services/backoffice-*.ts"
+  messenger:
+    seat: exafyltd
+    priority: 10
+    paths:
+      vitana-v1: [ "src/pages/messages/**", "src/components/messages/**", "src/components/NewConversationPopup.tsx" ]
+      vitana-platform:
+        - "services/gateway/src/routes/chat*.ts"
+        - "services/gateway/src/services/chat/**"
+        - "services/gateway/src/services/chat-*.ts"
+  platform:
+    seat: exafy
+    priority: 10
+    paths:
+      vitana-platform:
+        - "services/gateway/src/routes/**"
+        - "services/gateway/src/services/**"
+        - "supabase/migrations/**"
+        - "scripts/**"
+  frontend:
+    seat: exafyltd
+    priority: 1          # catch-all: only when no specific area matches
+    paths:
+      vitana-v1: [ "src/**" ]

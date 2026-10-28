@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05158",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261014100000_vtid_05158_erase_user_data_aurora_safe.sql",
+    "supabase/migrations/20261014100100_vtid_05158_health_store.sql",
+    "scripts/ci/sql-tests/vtid-05158-health-store.test.sql",
+    "scripts/ci/sql-tests/vtid-05158-erase-user-data-no-auth-users.test.sql",
+    "scripts/ci/sql-tests/vtid-04765-erase-user-data.test.sql",
+    "scripts/ci/sql-tests/run-health-store-test.sh",
+    "scripts/ci/sql-tests/run-erase-user-data-test.sh",
+    ".github/workflows/SQL-HEALTH-STORE.yml",
+    ".github/workflows/SQL-ERASE-USER-DATA.yml",
+    "scripts/ci/check-migration-drift.cjs",
+    "scripts/ci/check-migration-drift.test.cjs",
+    "scripts/ci/migration-drift-baseline.json",
+    "scripts/health/capacity-model.mjs",
+    "scripts/health/capacity-model.test.mjs",
+    "docs/programs/health-hub/P1A-CAPACITY-AND-PLACEMENT.md",
+    "docs/programs/health-hub/STATUS.md",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05158/**"
+  ]
+}

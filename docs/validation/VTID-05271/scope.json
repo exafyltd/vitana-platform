@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05271",
+  "kind": "infra",
+  "paths": [
+    ".kiro/automations/exafy.md",
+    ".kiro/automations/exafyltd.md",
+    ".kiro/automations/jtadic.md",
+    "scripts/collab/routine-prompt.md",
+    "scripts/collab/automations.test.mjs",
+    "docs/programs/areas.yaml",
+    ".kiro/pipeline/driver.md",
+    ".kiro/specs/kiro-autonomy-fallback/lanes/exceptions-seat.md",
+    "docs/validation/VTID-05271/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

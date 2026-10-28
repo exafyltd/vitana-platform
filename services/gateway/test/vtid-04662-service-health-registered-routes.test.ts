@@ -46,10 +46,10 @@ describe('VTID-04662: existing health routes are registered', () => {
     expect(src).toMatch(new RegExp(`\\.get\\(\\s*${path.replace(/[/.*+?^${}()|[\]\\]/g, '\\$&')}`));
   });
 
-  it('the panel now carries 117 checks and no duplicate URL or name', () => {
-    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(117);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(117);
-    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(117);
+  it('the panel now carries 120 checks and no duplicate URL or name', () => {
+    expect(SERVICE_HEALTH_REGISTRY).toHaveLength(120);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.url)).size).toBe(120);
+    expect(new Set(SERVICE_HEALTH_REGISTRY.map((e) => e.name)).size).toBe(120);
   });
 
   it('the Memory Broker dashboard feed is not polled as a health check (15 table counts per call)', () => {

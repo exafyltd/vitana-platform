@@ -160,6 +160,11 @@ VTID_ALLOCATOR_ENABLED=true|false
 ### Optional
 ```bash
 NODE_ENV=production|development|test
+# VTID-05023 R1(b): public Supabase base for every URL the gateway hands outward
+# (storage public/signed URLs, GET /auth/config, Command Hub CSP). Defaults to
+# SUPABASE_URL. Must be set to https://<project>.supabase.co once SUPABASE_URL
+# is repointed to the internal PostgREST-Aurora proxy (src/lib/supabase-public-url.ts).
+SUPABASE_PUBLIC_URL=https://xxx.supabase.co
 # Command Hub PUBLISH-button frontend promotion (exafyltd/vitana-v1). Without it,
 # gateway still publishes; response reports frontend_promote.ok=false.
 FRONTEND_DEPLOY_TOKEN=<PAT with actions:write on exafyltd/vitana-v1>
@@ -206,6 +211,12 @@ VERTEX_SERBIAN_BRIDGE_ENABLED=true
 # Off by default; `false` reverts ru to the Transcribe->Bedrock->Polly
 # cascade byte-for-byte, independently of sr.
 VERTEX_RUSSIAN_BRIDGE_ENABLED=true
+# Audiobook narration by Google TTS for ru / sr (VTID-05026, backend.md
+# §2e-audiobook-google). Two separate exact-'true' switches; the cap is
+# characters per task per UTC day (approximate; unset/0 = Google off).
+AUDIOBOOK_GOOGLE_RU_ENABLED=true
+AUDIOBOOK_GOOGLE_SR_ENABLED=true
+AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK=1040000
 GOOGLE_CLOUD_PROJECT=<new-project-id>
 VERTEX_AI_LOCATION=us-central1
 GCP_SERVICE_ACCOUNT_JSON=xxx
@@ -255,6 +266,23 @@ LEDGER_WRITE_AUTH_MODE=log
 # Same three modes; default 'log'. Staging pins 'log'; enforce is a separate,
 # owner-approved change. GET /health stays open and reports the mode.
 SCHEDULED_NOTIFICATIONS_AUTH_MODE=log
+# Member phone verification by SMS code (VTID-05095). Exact 'true' enables;
+# unset = every /api/v1/me/phone write answers 503 PHONE_VERIFY_DISABLED.
+# Enabled with a missing / < 32-byte secret = 503 PHONE_VERIFY_MISCONFIGURED.
+# SMS go through AWS End User Messaging SMS (sms-voice:SendTextMessage on the
+# task role; account out of the SMS sandbox; spend limit set) — owner setup
+# before switching on. VTID-05127: scripts/aws/setup-phone-verify-sms.sh does
+# the setup; the deploys wire it (staging: secret
+# vitana/gateway/staging/phone-verify-hmac present = on; production: repository
+# variables PHONE_VERIFY_HMAC_SECRET_PROD_ARN + PHONE_VERIFY_PROD_ENABLED=true,
+# scripts/ci/phone-verify-wiring.sh). Runbook: docs/validation/VTID-05127/SWITCH-ON.md.
+PHONE_VERIFY_ENABLED=true
+PHONE_VERIFY_HMAC_SECRET=xxx
+PHONE_VERIFY_COUNTRIES=DE,AT,CH
+PHONE_VERIFY_DAILY_CAP=200
+PHONE_VERIFY_SENDER_ID=Vitana
+PHONE_VERIFY_ORIGINATION=
+PHONE_VERIFY_CONFIGURATION_SET=
 ```
 
 `GOOGLE_CLOUD_PROJECT`, `GCP_PROJECT`, `VERTEX_LOCATION`, `VERTEX_MODEL`,

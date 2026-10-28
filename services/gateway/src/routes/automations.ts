@@ -41,6 +41,7 @@ import {
 } from '../services/automation-executor';
 import { randomUUID } from 'crypto';
 import * as repo from './automations-repository';
+import { withJobTenants } from '../services/jobs/job-tenant-loop';
 
 const router = Router();
 const VTID = 'VTID-01250';
@@ -63,9 +64,18 @@ export async function requireInternalOrAdmin(req: Request, res: Response, next: 
   });
 }
 
-// ── Helper: get tenant_id ───────────────────────────────────
-function getTenantId(req: Request): string | null {
+// ── Helper: get tenant_id (VTID-05048: split by caller kind) ─
+// Trigger/admin routes (requireInternalOrAdmin) may name the tenant to act on:
+// the scheduler sends it in the body, an exafy_admin picks it.
+function getAdminTargetTenantId(req: Request): string | null {
   return (req as any).identity?.tenant_id || req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// Member routes (wallet / sharing / referrals) act on the caller's own data in
+// the caller's own tenant — only the verified identity counts, never a body
+// tenant_id or DEFAULT_TENANT_ID.
+function getMemberTenantId(req: Request): string | null {
+  return (req as AuthenticatedRequest).identity?.tenant_id || null;
 }
 
 function getUserId(req: Request): string | null {
@@ -113,7 +123,7 @@ router.get('/registry/:id', (req: Request, res: Response) => {
 
 router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
-  const tenantId = getTenantId(req);
+  const tenantId = getAdminTargetTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const result = await executeAutomation(
@@ -129,7 +139,7 @@ router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Re
 
 router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
-  const tenantId = getTenantId(req);
+  const tenantId = getAdminTargetTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const result = await runHeartbeatCycle(tenantId);
@@ -140,7 +150,7 @@ router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Resp
 
 router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Response) => {
   // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
-  const tenantId = getTenantId(req);
+  const tenantId = getAdminTargetTenantId(req);
   const { event_topic, event_payload } = req.body || {};
   if (!tenantId || !event_topic) {
     return res.status(400).json({ ok: false, error: 'tenant_id and event_topic required' });
@@ -150,14 +160,20 @@ router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Respo
   return res.json({ ok: true, ...result });
 });
 
-router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+// VTID-05270 (mt-jobs): an explicit tenant (identity, then body) runs once; a
+// tenant-less EventBridge call fans out over the active tenants when
+// MT_RESOLUTION_V2=true (one executeAutomation per tenant, so a nested call
+// such as AP-0501 → /morning-briefing carries its tenant and never re-fans
+// out). Master off ⇒ today's getAdminTargetTenantId pass.
+const cronJob = withJobTenants(async (req: Request, res: Response, tenantId: string | null) => {
   // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const result = await executeAutomation(req.params.id, tenantId, 'cron', 'cloud-scheduler');
   return res.status(result.ok ? 200 : 500).json(result);
-});
+}, getAdminTargetTenantId, { getClient: getServiceClient as any });
+
+router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => cronJob(req, res));
 
 // =============================================================================
 // Run history
@@ -165,7 +181,7 @@ router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Respo
 
 // VTID-04510: run history carries member ids and counts — admin or scheduler only.
 router.get('/runs', requireInternalOrAdmin, async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+  const tenantId = getAdminTargetTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const automationId = req.query.automation_id as string | undefined;
@@ -176,7 +192,7 @@ router.get('/runs', requireInternalOrAdmin, async (req: Request, res: Response) 
 });
 
 router.get('/runs/active', requireInternalOrAdmin, async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+  const tenantId = getAdminTargetTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const runs = await getActiveRuns(tenantId);
@@ -186,10 +202,13 @@ router.get('/runs/active', requireInternalOrAdmin, async (req: Request, res: Res
 // =============================================================================
 // Wallet endpoints
 // =============================================================================
+// VTID-05048: member routes carry explicit requireAuth. They already answered
+// 401 to anonymous callers (nothing populated req.identity on this router), but
+// now by design; the tenant comes from getMemberTenantId only.
 
-router.get('/wallet/balance', async (req: Request, res: Response) => {
+router.get('/wallet/balance', requireAuth, async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = getMemberTenantId(req);
   if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
 
   const supa = await getServiceClient();
@@ -218,9 +237,9 @@ router.get('/wallet/balance', async (req: Request, res: Response) => {
   });
 });
 
-router.get('/wallet/transactions', async (req: Request, res: Response) => {
+router.get('/wallet/transactions', requireAuth, async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = getMemberTenantId(req);
   if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
 
   const supa = await getServiceClient();
@@ -236,9 +255,9 @@ router.get('/wallet/transactions', async (req: Request, res: Response) => {
 // Sharing endpoints
 // =============================================================================
 
-router.post('/sharing/generate-link', async (req: Request, res: Response) => {
+router.post('/sharing/generate-link', requireAuth, async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = getMemberTenantId(req);
   if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
 
   const { target_type, target_id, utm_campaign } = req.body || {};
@@ -277,9 +296,9 @@ router.post('/sharing/generate-link', async (req: Request, res: Response) => {
   });
 });
 
-router.get('/sharing/links', async (req: Request, res: Response) => {
+router.get('/sharing/links', requireAuth, async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = getMemberTenantId(req);
   if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
 
   const supa = await getServiceClient();
@@ -290,9 +309,9 @@ router.get('/sharing/links', async (req: Request, res: Response) => {
   return res.json({ ok: true, links: data || [] });
 });
 
-router.get('/referrals', async (req: Request, res: Response) => {
+router.get('/referrals', requireAuth, async (req: Request, res: Response) => {
   const userId = getUserId(req);
-  const tenantId = getTenantId(req);
+  const tenantId = getMemberTenantId(req);
   if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
 
   const supa = await getServiceClient();

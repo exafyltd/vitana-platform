@@ -1,0 +1,30 @@
+# VTID-05082 — local verification commands (run in the worktree)
+
+# Rebase onto current origin/main (5e72f8e3f)
+git -C <repo> fetch origin
+git -C <worktree> rebase origin/main            # fast-forward, no conflicts
+
+# Install deps + build (POSIX npm scripts run via Git Bash on Windows)
+cd services/gateway
+npm ci
+npm run build                                   # tsc + copy-frontend + copy-data
+
+# Syntax gates
+node --check services/gateway/src/frontend/command-hub/app.js     # exit 0
+node --check services/gateway/dist/frontend/command-hub/app.js    # exit 0
+
+# Golden fingerprint (reads the built dist bundle)
+node scripts/ci/command-hub-golden-fingerprint.js                 # Fingerprint check PASSED, exit 0
+
+# CSP Governance Gate over the src+dist frontend diff
+git diff --cached -- services/gateway/src/frontend/ services/gateway/dist/frontend/ > /tmp/csp_diff.txt
+node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff.txt
+# -> "No CSP pattern hits in added lines." exit 0
+
+# dist cache-bust token present on both assets
+#   Select-String dist/frontend/command-hub/index.html -Pattern 20261121-vtid-05082  -> 2 matches
+
+# Unit + sanitizer tests (includes the mandatory hostile-SVG test)
+npx jest test/command-hub/vtid-05082-svg-render.test.ts           # 12 passed
+npx jest test/scripts/command-hub-ownership-guard.test.ts \
+         test/command-hub/vtid-05072-bundle-manifest.test.ts      # 28 passed

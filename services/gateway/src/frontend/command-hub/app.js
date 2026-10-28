@@ -624,57 +624,7 @@ function getOperatorChatHistory() {
     return [];
 }
 
-/**
- * VTID-01027: Clear operator chat session (both history and conversation_id).
- * Called when user wants to start a fresh conversation.
- */
-function clearOperatorChatSession() {
-    try {
-        localStorage.removeItem('operator_console_conversation_id');
-        localStorage.removeItem('operator_console_history');
-        console.log('[VTID-01027] Chat session cleared');
-    } catch (e) {
-        console.warn('[VTID-01027] Error clearing chat session:', e);
-    }
-}
 
-/**
- * VTID-01027: Build context array for API request.
- * Takes the last N messages (up to 20) or caps by character count (12k).
- * @param {Array} history - Full chat history
- * @returns {Array} - Context array for API { role, content }
- */
-function buildOperatorChatContext(history) {
-    if (!history || history.length === 0) {
-        return [];
-    }
-
-    var MAX_MESSAGES = 20;
-    var MAX_CHARS = 12000;
-
-    // Start from newest messages
-    var context = [];
-    var totalChars = 0;
-
-    // Iterate from end (newest) to beginning (oldest)
-    for (var i = history.length - 1; i >= 0 && context.length < MAX_MESSAGES; i--) {
-        var msg = history[i];
-        var content = msg.content || '';
-
-        // Check if adding this message would exceed character limit
-        if (totalChars + content.length > MAX_CHARS) {
-            break;
-        }
-
-        context.unshift({
-            role: msg.role,
-            content: content
-        });
-        totalChars += content.length;
-    }
-
-    return context;
-}
 
 // --- VTID-03822: Multi-thread conversation support ---
 //
@@ -792,37 +742,7 @@ function touchActiveOperatorThread() {
     saveOperatorThreadsIndex(state.operatorThreads);
 }
 
-/**
- * Create a new, empty conversation thread and make it active. This is the
- * "New conversation" action clearOperatorChatSession() (VTID-01027) was
- * written for but never wired to any UI element — it now runs as part of
- * this flow (clearing the legacy single-thread keys is harmless hygiene
- * once every session is thread-aware).
- */
-function startNewOperatorThread() {
-    var now = Date.now();
-    var thread = {
-        id: generateOperatorThreadId(),
-        title: 'New conversation',
-        conversationId: generateOperatorThreadId(),
-        createdAt: now,
-        updatedAt: now
-    };
-    state.operatorThreads.unshift(thread);
-    saveOperatorThreadsIndex(state.operatorThreads);
 
-    clearOperatorChatSession();
-    // VTID-04033: a new thread drops the executions the old one was following.
-    closeAllOperatorExecutionFollows();
-
-    state.operatorActiveThreadId = thread.id;
-    state.operatorConversationId = thread.conversationId;
-    state.operatorChatHistory = [];
-    state.chatMessages = [];
-    saveOperatorThreadHistory(thread.id, []);
-    notifyOrbOperatorThread();
-    renderApp();
-}
 
 /**
  * VTID-04309: Command Hub voice turns are recorded server-side into the
@@ -836,58 +756,146 @@ function notifyOrbOperatorThread() {
 }
 
 /**
- * VTID-04309: pull voice turns recorded server-side for the active thread
- * into the console transcript (and its saved history), newest after the
- * last one already merged. Called after each voice turn, when a voice
- * session ends, and when a thread is opened. Never throws.
+ * VTID-05064: the key a local transcript entry and a server message are
+ * matched on when the local entry carries no server id yet: role + the
+ * first 500 characters of the whitespace-normalised content. Never a
+ * timestamp — local ts is the browser's Date.now(), and the server may clip
+ * long content (operator-threads.ts clipMessage, 6,000 chars).
  */
-var _operatorVoiceSyncInFlight = false;
+var OPERATOR_MESSAGE_MATCH_CHARS = 500;
+function normalizeOperatorMessageText(content) {
+    return String(content || '').replace(/\s+/g, ' ').trim();
+}
+function operatorMessageMatchKey(role, content) {
+    return role + ':' + normalizeOperatorMessageText(content).slice(0, OPERATOR_MESSAGE_MATCH_CHARS);
+}
+
+/**
+ * VTID-05064: pure merge of a thread's server transcript into its local
+ * history. Server user/assistant rows already present locally — by stored
+ * server id, else by operatorMessageMatchKey() — are not added again; a local
+ * entry matched by content gets the server id stored on it, so the next sync
+ * matches it by id. Each local entry matches at most one server row. A local
+ * reply may also carry lines the console appended after the server's text
+ * (the "Task created" confirmation), so a local entry whose normalised
+ * content STARTS WITH the server's first 500 characters matches too. Missing
+ * rows are appended in server order. Mutates and returns `history`.
+ */
+function mergeServerOperatorMessages(history, serverMessages) {
+    var local = history || [];
+    var knownIds = {};
+    local.forEach(function (h) { if (h && h.serverMessageId) knownIds[h.serverMessageId] = true; });
+    var pool = local.filter(function (h) {
+        return h && !h.serverMessageId && !h.isError && (h.role === 'user' || h.role === 'assistant');
+    });
+    var added = [];
+    var matched = 0;
+    (serverMessages || []).forEach(function (m) {
+        if (!m || !m.id || knownIds[m.id]) return;
+        if ((m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
+        var key = operatorMessageMatchKey(m.role, m.content);
+        var head = normalizeOperatorMessageText(m.content).slice(0, OPERATOR_MESSAGE_MATCH_CHARS);
+        var idx = -1;
+        for (var i = 0; i < pool.length; i++) {
+            if (operatorMessageMatchKey(pool[i].role, pool[i].content) === key) { idx = i; break; }
+        }
+        if (idx === -1 && head) {
+            for (var j = 0; j < pool.length; j++) {
+                if (pool[j].role === m.role && normalizeOperatorMessageText(pool[j].content).indexOf(head) === 0) { idx = j; break; }
+            }
+        }
+        knownIds[m.id] = true;
+        if (idx !== -1) {
+            pool[idx].serverMessageId = m.id;
+            pool[idx].serverCreatedAt = m.created_at;
+            pool.splice(idx, 1);
+            matched++;
+            return;
+        }
+        var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
+        var entry = {
+            role: m.role,
+            content: m.content,
+            ts: Date.parse(m.created_at) || Date.now(),
+            channel: channel,
+            serverMessageId: m.id,
+            serverCreatedAt: m.created_at,
+            kiroMeta: kiroReplyMeta(m.meta)
+        };
+        local.push(entry);
+        added.push(entry);
+    });
+    return { history: local, added: added, matched: matched };
+}
+
+/**
+ * VTID-04309 / VTID-05064: pull the active thread's server transcript into
+ * the console (and its saved history). Since VTID-05064 this merges EVERY
+ * user/assistant row the server has and the browser does not — typed turns
+ * from another device or tab, voice turns (channel voice / voice_delegate,
+ * VTID-04310) — matched per mergeServerOperatorMessages(). The name is kept
+ * for its existing callers. The first sync of a thread in this page load
+ * reads the whole transcript (paged — the route returns at most 200 rows
+ * oldest-first); later ones read only rows newer than the newest server row
+ * already merged. Called after each voice turn, when a voice session ends,
+ * on every thread open and once after page load. Skipped while this
+ * thread's own turn is in flight (its reply is appended by sendChatMessage).
+ * Never throws.
+ */
+var OPERATOR_THREAD_MESSAGES_PAGE = 200;
+var _operatorThreadSyncInFlight = {};
+var _operatorThreadFullySynced = {};
 async function syncOperatorVoiceTurns() {
     var threadId = state.operatorActiveThreadId;
-    if (!threadId || _operatorVoiceSyncInFlight || !state.authToken) return;
-    _operatorVoiceSyncInFlight = true;
+    if (!threadId || _operatorThreadSyncInFlight[threadId] || !state.authToken) return;
+    if (state.chatSending && state.chatTurnThreadId === threadId) return;
+    _operatorThreadSyncInFlight[threadId] = true;
     try {
-        var history = state.operatorChatHistory || [];
-        var seen = {};
-        var lastVoiceIso = null;
-        history.forEach(function (h) {
-            if (h.serverMessageId) seen[h.serverMessageId] = true;
-            if (h.serverCreatedAt && (!lastVoiceIso || h.serverCreatedAt > lastVoiceIso)) lastVoiceIso = h.serverCreatedAt;
-        });
-        var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
-            + (lastVoiceIso ? '?since=' + encodeURIComponent(lastVoiceIso) : '');
-        var res = await fetch(url, { headers: buildContextHeaders({}) });
-        if (!res.ok) return;
-        var body = await res.json();
-        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
-        var added = 0;
-        (body.messages || []).forEach(function (m) {
-            // voice = spoken turns; voice_delegate = the Operator turn the
-            // voice assistant handed a request to (VTID-04310).
-            var channel = m && m.meta ? m.meta.channel : null;
-            if (!m || seen[m.id] || (channel !== 'voice' && channel !== 'voice_delegate')) return;
-            if (m.role !== 'user' && m.role !== 'assistant') return;
-            var ts = Date.parse(m.created_at) || Date.now();
-            history.push({ role: m.role, content: m.content, ts: ts, channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
-            state.chatMessages.push({
-                type: m.role === 'user' ? 'user' : 'system',
-                content: m.content,
-                timestamp: new Date(ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-                ts: ts,
-                channel: channel
+        var since = null;
+        if (_operatorThreadFullySynced[threadId]) {
+            (state.operatorChatHistory || []).forEach(function (h) {
+                if (h && h.serverCreatedAt && (!since || h.serverCreatedAt > since)) since = h.serverCreatedAt;
             });
-            added++;
+        }
+        var serverMessages = [];
+        for (var page = 0; page < 10; page++) {
+            var url = '/api/v1/operator/threads/' + encodeURIComponent(threadId) + '/messages'
+                + (since ? '?since=' + encodeURIComponent(since) : '');
+            var res = await fetch(url, { headers: buildContextHeaders({}) });
+            if (!res.ok) return;
+            var body = await res.json();
+            var batch = Array.isArray(body.messages) ? body.messages : [];
+            serverMessages = serverMessages.concat(batch);
+            if (batch.length < OPERATOR_THREAD_MESSAGES_PAGE || !batch[batch.length - 1].created_at) break;
+            since = batch[batch.length - 1].created_at;
+        }
+        if (threadId !== state.operatorActiveThreadId) return; // user switched meanwhile
+        if (state.chatSending && state.chatTurnThreadId === threadId) return; // a turn started meanwhile
+        _operatorThreadFullySynced[threadId] = true;
+        var history = state.operatorChatHistory || [];
+        var merged = mergeServerOperatorMessages(history, serverMessages);
+        merged.added.forEach(function (h) {
+            state.chatMessages.push({
+                type: h.role === 'user' ? 'user' : 'system',
+                content: h.content,
+                timestamp: new Date(h.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
+                ts: h.ts,
+                channel: h.channel,
+                meta: h.kiroMeta
+            });
         });
-        if (added > 0) {
+        if (merged.added.length > 0 || merged.matched > 0) {
             state.operatorChatHistory = history;
             saveOperatorThreadHistory(threadId, history);
+        }
+        if (merged.added.length > 0) {
             touchActiveOperatorThread();
             renderApp();
         }
     } catch (e) {
-        console.warn('[VTID-04309] voice turn sync failed:', e);
+        console.warn('[VTID-05064] thread transcript sync failed:', e);
     } finally {
-        _operatorVoiceSyncInFlight = false;
+        _operatorThreadSyncInFlight[threadId] = false;
     }
 }
 
@@ -907,13 +915,6 @@ function loadDismissedOperatorThreadIds() {
     } catch (e) { return []; }
 }
 
-function dismissOperatorThreadId(threadId) {
-    try {
-        var ids = loadDismissedOperatorThreadIds().filter(function (id) { return id !== threadId; });
-        ids.unshift(threadId);
-        localStorage.setItem(OPERATOR_THREADS_DISMISSED_KEY, JSON.stringify(ids.slice(0, 500)));
-    } catch (e) { /* no-op */ }
-}
 
 /**
  * Pure merge: returns the new index and how
@@ -995,7 +996,7 @@ async function loadOperatorThreadFromServer(threadId) {
         (body.messages || []).forEach(function (m) {
             if (!m || (m.role !== 'user' && m.role !== 'assistant') || !m.content) return;
             var channel = m.meta && m.meta.channel ? m.meta.channel : undefined;
-            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at });
+            history.push({ role: m.role, content: m.content, ts: Date.parse(m.created_at) || Date.now(), channel: channel, serverMessageId: m.id, serverCreatedAt: m.created_at, kiroMeta: kiroReplyMeta(m.meta) });
         });
         if (history.length === 0) return;
         state.operatorChatHistory = history;
@@ -1006,7 +1007,8 @@ async function loadOperatorThreadFromServer(threadId) {
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 ts: msg.ts,
-                channel: msg.channel
+                channel: msg.channel,
+                meta: msg.kiroMeta
             };
         });
         renderApp();
@@ -1037,13 +1039,17 @@ function switchOperatorThread(threadId) {
             timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
             ts: msg.ts,
             followExecIds: msg.followExecIds,
-            channel: msg.channel
+            channel: msg.channel,
+            meta: msg.kiroMeta,
+            isError: msg.isError, // VTID-05064: a failed turn's error line is persisted too
+            media: msg.media // VTID-05067: image media ids (thumbnails re-signed per view)
         };
     });
     reattachFollowedExecutions(state.chatMessages);
     notifyOrbOperatorThread();
     renderApp();
     // VTID-04437: an empty local history means the thread lives server-side.
+    // VTID-05064: otherwise merge every server turn this browser has not seen.
     if (history.length === 0) loadOperatorThreadFromServer(thread.id);
     else syncOperatorVoiceTurns();
 }
@@ -1093,362 +1099,17 @@ var _renameBlurSuppressed = false;
 var _renamePreserveFocusPending = false;
 var _renameAutoFocusClaimedForThreadId = null;
 
-function startRenamingOperatorThread(threadId, currentTitle) {
-    state.operatorRenamingThreadId = threadId;
-    state.operatorRenameDraftValue = currentTitle || '';
-    renderApp();
-}
 
-function cancelRenamingOperatorThread() {
-    state.operatorRenamingThreadId = null;
-    state.operatorRenameDraftValue = '';
-    renderApp();
-}
 
-/** Commit the in-progress rename (if any). A blank/whitespace-only draft is
- * discarded rather than saved, so a thread can never end up with an empty
- * title. Guarded to be a safe no-op if called twice (Enter, then a
- * trailing blur on the same input). */
-function commitRenamingOperatorThread() {
-    if (state.operatorRenamingThreadId === null) return;
-    var threadId = state.operatorRenamingThreadId;
-    var newTitle = (state.operatorRenameDraftValue || '').trim();
-    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
-    state.operatorRenamingThreadId = null;
-    state.operatorRenameDraftValue = '';
-    if (thread && newTitle) {
-        thread.title = newTitle;
-        saveOperatorThreadsIndex(state.operatorThreads);
-    }
-    renderApp();
-}
 
-/**
- * VTID-03960: delete a thread and its saved history permanently. Mirrors
- * this file's existing confirm() convention for destructive actions (see
- * e.g. the task-drop/rollback confirms elsewhere in this file) rather than
- * building a new custom modal for one action.
- */
-function deleteOperatorThread(threadId) {
-    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
-    if (!thread) return;
-    if (!confirm('Delete "' + (thread.title || 'New conversation') + '"? This cannot be undone.')) return;
 
-    state.operatorThreads = state.operatorThreads.filter(function (t) { return t.id !== threadId; });
-    saveOperatorThreadsIndex(state.operatorThreads);
-    try { localStorage.removeItem(operatorThreadHistoryKey(threadId)); } catch (e) { /* no-op */ }
-    // VTID-04437: the server keeps its copy; never re-add it from the list.
-    dismissOperatorThreadId(threadId);
 
-    if (state.operatorActiveThreadId === threadId) {
-        var next = state.operatorThreads
-            .filter(function (t) { return !t.archived; })
-            .slice()
-            .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
-        if (next) {
-            switchOperatorThread(next.id);
-        } else {
-            startNewOperatorThread();
-        }
-    } else {
-        renderApp();
-    }
-}
 
-/**
- * VTID-03960: archive/unarchive a thread. Archiving hides it from the
- * default sidebar list without deleting its history — it stays reachable
- * via the "N archived" toggle at the bottom of the sidebar, so archiving
- * can never silently orphan a conversation the way a one-way hide would.
- */
-function archiveOperatorThread(threadId) {
-    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
-    if (!thread) return;
-    thread.archived = true;
-    saveOperatorThreadsIndex(state.operatorThreads);
 
-    if (state.operatorActiveThreadId === threadId) {
-        var next = state.operatorThreads
-            .filter(function (t) { return !t.archived; })
-            .slice()
-            .sort(function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); })[0];
-        if (next) {
-            switchOperatorThread(next.id);
-        } else {
-            startNewOperatorThread();
-        }
-    } else {
-        renderApp();
-    }
-}
 
-function unarchiveOperatorThread(threadId) {
-    var thread = state.operatorThreads.find(function (t) { return t.id === threadId; });
-    if (!thread) return;
-    thread.archived = false;
-    saveOperatorThreadsIndex(state.operatorThreads);
-    renderApp();
-}
 
-/**
- * VTID-03960: "Share" copies a link that reopens this exact thread. Operator
- * threads are localStorage-only (never synced across devices/users — see
- * VTID-03822), so this genuinely only works when opened in the SAME browser
- * it was copied from; it is not a cross-user share. initOperatorChatSession()
- * and the DOMContentLoaded boot sequence both honor the ?operator_thread=
- * param this produces.
- */
-function shareOperatorThread(thread) {
-    var url = window.location.origin + window.location.pathname + '?operator_thread=' + encodeURIComponent(thread.id);
-    if (!navigator.clipboard || !navigator.clipboard.writeText) {
-        showToast('Clipboard not available', 'error');
-        return;
-    }
-    navigator.clipboard.writeText(url).then(function () {
-        showToast('Link copied — reopens this conversation in this browser', 'success');
-    }).catch(function () {
-        showToast('Could not copy link', 'error');
-    });
-}
 
-/**
- * VTID-03960: the "..." button + its dropdown for a sessions-sidebar row,
- * matching the Claude Code sidebar's own per-session menu. Click-outside-
- * to-close follows this file's existing version-dropdown pattern (see
- * renderHeader()'s isVersionDropdownOpen handling) — the listener is
- * registered via setTimeout(0) so it starts listening only AFTER the click
- * that opened the menu has finished propagating.
- */
-function renderThreadMenuButton(thread) {
-    const wrap = document.createElement('div');
-    wrap.className = 'chat-session-row-menu-wrap';
 
-    const btn = document.createElement('button');
-    btn.type = 'button';
-    btn.className = 'chat-session-row-menu-btn';
-    btn.title = 'More options';
-    btn.setAttribute('aria-label', 'More options for ' + (thread.title || 'New conversation'));
-    btn.textContent = '⋯'; // midline horizontal ellipsis
-    btn.onclick = (e) => {
-        e.stopPropagation();
-        state.operatorThreadMenuOpenId = state.operatorThreadMenuOpenId === thread.id ? null : thread.id;
-        renderApp();
-    };
-    wrap.appendChild(btn);
-
-    if (state.operatorThreadMenuOpenId === thread.id) {
-        wrap.appendChild(renderThreadMenu(thread));
-    }
-
-    return wrap;
-}
-
-function renderThreadMenu(thread) {
-    const menu = document.createElement('div');
-    menu.className = 'chat-session-row-menu';
-    menu.onclick = (e) => e.stopPropagation();
-
-    var items = [
-        { label: 'Rename', onSelect: function () { startRenamingOperatorThread(thread.id, thread.title || 'New conversation'); } },
-        { label: 'Share', onSelect: function () { shareOperatorThread(thread); } },
-        thread.archived
-            ? { label: 'Unarchive', onSelect: function () { unarchiveOperatorThread(thread.id); } }
-            : { label: 'Archive', onSelect: function () { archiveOperatorThread(thread.id); } },
-        { label: 'Delete', danger: true, onSelect: function () { deleteOperatorThread(thread.id); } }
-    ];
-
-    items.forEach(function (item) {
-        const btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'chat-session-row-menu-item' + (item.danger ? ' chat-session-row-menu-item--danger' : '');
-        btn.textContent = item.label;
-        btn.onclick = (e) => {
-            e.stopPropagation();
-            state.operatorThreadMenuOpenId = null;
-            item.onSelect();
-        };
-        menu.appendChild(btn);
-    });
-
-    setTimeout(() => {
-        const closeMenu = (e) => {
-            const openMenu = document.querySelector('.chat-session-row-menu');
-            if (openMenu && !openMenu.contains(e.target)) {
-                state.operatorThreadMenuOpenId = null;
-                document.removeEventListener('click', closeMenu);
-                renderApp();
-            }
-        };
-        document.addEventListener('click', closeMenu);
-    }, 0);
-
-    return menu;
-}
-
-/**
- * VTID-03949: renders a thread's title as either plain (double-click to
- * edit) or, while state.operatorRenamingThreadId matches, an inline text
- * input. Shared by the sidebar row and the chat title bar so both places
- * behave identically, per the platform owner's explicit ask.
- */
-function renderEditableThreadTitle(thread, className) {
-    if (state.operatorRenamingThreadId === thread.id) {
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = className + ' chat-session-title-input';
-        input.value = state.operatorRenameDraftValue;
-        input.oninput = (e) => {
-            state.operatorRenameDraftValue = e.target.value;
-        };
-        input.onkeydown = (e) => {
-            if (e.key === 'Enter') {
-                e.preventDefault();
-                commitRenamingOperatorThread();
-            } else if (e.key === 'Escape') {
-                e.preventDefault();
-                cancelRenamingOperatorThread();
-            }
-        };
-        input.onblur = () => {
-            // VTID-03953: a blur fired while _renameBlurSuppressed is true is
-            // the involuntary one caused by _renderAppCore() destroying this
-            // (focused) element mid-edit, not the user leaving the field —
-            // _renderAppCore() restores focus itself, so committing here
-            // would incorrectly close the edit the user never asked to end.
-            if (_renameBlurSuppressed) return;
-            commitRenamingOperatorThread();
-        };
-        // Don't let a click inside the input bubble up to a sidebar row's
-        // own onclick (which would switch threads mid-edit).
-        input.onclick = (e) => e.stopPropagation();
-        // VTID-03953: only auto-select-all on a fresh double-click open. A
-        // rebuild that's restoring an already-focused input (background
-        // poller mid-edit) sets _renamePreserveFocusPending and handles its
-        // own precise focus/selection restore in _renderAppCore() instead.
-        //
-        // VTID-03966: AND only the first instance rendered THIS PASS for
-        // this thread id claims the focus — this thread can render twice
-        // in the same pass (sidebar row + title bar, when renaming the
-        // active thread). Letting both schedule their own focus() makes
-        // the second steal it from the first, firing a genuine blur that
-        // commits/closes the rename before the user can type anything.
-        if (!_renamePreserveFocusPending && _renameAutoFocusClaimedForThreadId !== thread.id) {
-            _renameAutoFocusClaimedForThreadId = thread.id;
-            // Deferred so the element is actually in the DOM before focusing.
-            setTimeout(() => { input.focus(); input.select(); }, 0);
-        }
-        return input;
-    }
-
-    const span = document.createElement('div');
-    span.className = className;
-    span.textContent = thread.title || 'New conversation';
-    span.title = 'Double-click to rename';
-    span.ondblclick = (e) => {
-        e.stopPropagation();
-        startRenamingOperatorThread(thread.id, thread.title || 'New conversation');
-    };
-    return span;
-}
-
-/**
- * VTID-03949: Claude-Code-style sessions sidebar, replacing the old
- * <select> thread dropdown — every past conversation is listed at once
- * (most-recently-updated first) instead of hidden behind a menu that
- * covered the transcript while open. Click a row to switch to it,
- * double-click its title to rename it in place.
- */
-function renderOperatorThreadRow(thread) {
-    const row = document.createElement('div');
-    row.className = 'chat-session-row'
-        + (thread.id === state.operatorActiveThreadId ? ' chat-session-row--active' : '')
-        + (thread.archived ? ' chat-session-row--archived' : '');
-    row.onclick = () => switchOperatorThread(thread.id);
-
-    const info = document.createElement('div');
-    info.className = 'chat-session-row-info';
-    info.appendChild(renderEditableThreadTitle(thread, 'chat-session-row-title'));
-
-    const meta = document.createElement('div');
-    meta.className = 'chat-session-row-meta';
-    meta.textContent = formatRelativeTime(thread.updatedAt);
-    if (operatorThreadEngine(thread) === 'kiro') {
-        const tag = document.createElement('span');
-        tag.className = 'chat-engine-tag';
-        tag.textContent = 'Kiro';
-        meta.appendChild(tag);
-    }
-    info.appendChild(meta);
-
-    row.appendChild(info);
-    row.appendChild(renderThreadMenuButton(thread));
-
-    return row;
-}
-
-function renderOperatorSessionsSidebar() {
-    const sidebar = document.createElement('div');
-    sidebar.className = 'chat-sessions-sidebar' + (state.operatorSessionsSidebarCollapsed ? ' chat-sessions-sidebar--collapsed' : '');
-
-    const sidebarHeader = document.createElement('div');
-    sidebarHeader.className = 'chat-sessions-sidebar-header';
-    const newBtn = document.createElement('button');
-    newBtn.type = 'button';
-    newBtn.className = 'chat-sessions-new-btn';
-    newBtn.textContent = '+ New chat';
-    newBtn.onclick = () => startNewOperatorThread();
-    sidebarHeader.appendChild(newBtn);
-    sidebar.appendChild(sidebarHeader);
-
-    const list = document.createElement('div');
-    list.className = 'chat-sessions-list';
-    list.dataset.scrollRetain = 'true';
-    list.dataset.scrollKey = 'operator-sessions-sidebar';
-
-    const allThreads = state.operatorThreads || [];
-    // VTID-03960: archived threads stay off the default list (never deleted,
-    // never silently orphaned) — reachable via the toggle below.
-    const activeThreads = allThreads.filter(function (t) { return !t.archived; });
-    const archivedThreads = allThreads.filter(function (t) { return t.archived; });
-    const sortByRecent = function (a, b) { return (b.updatedAt || 0) - (a.updatedAt || 0); };
-
-    if (activeThreads.length === 0) {
-        // VTID-04142: an explicit, plain empty state ("No conversations yet")
-        // so a brand-new operator with no threads yet reads a message instead
-        // of an apparently-blank session list. Also the archived-only case:
-        // activeThreads is the count that matters here, and archived rows are
-        // added below the empty state, so the list is never blank.
-        const empty = document.createElement('div');
-        empty.className = 'chat-sessions-empty';
-        empty.textContent = 'No conversations yet';
-        list.appendChild(empty);
-    } else {
-        activeThreads.slice().sort(sortByRecent).forEach(function (thread) {
-            list.appendChild(renderOperatorThreadRow(thread));
-        });
-    }
-
-    if (archivedThreads.length > 0) {
-        const toggle = document.createElement('button');
-        toggle.type = 'button';
-        toggle.className = 'chat-sessions-archived-toggle';
-        toggle.textContent = (state.operatorShowArchivedThreads ? 'Hide' : 'Show') + ' ' + archivedThreads.length + ' archived';
-        toggle.onclick = () => {
-            state.operatorShowArchivedThreads = !state.operatorShowArchivedThreads;
-            renderApp();
-        };
-        list.appendChild(toggle);
-
-        if (state.operatorShowArchivedThreads) {
-            archivedThreads.slice().sort(sortByRecent).forEach(function (thread) {
-                list.appendChild(renderOperatorThreadRow(thread));
-            });
-        }
-    }
-
-    sidebar.appendChild(list);
-    return sidebar;
-}
 
 /**
  * VTID-01027 / VTID-03822: Initialize operator chat session.
@@ -1501,7 +1162,11 @@ function initOperatorChatSession() {
                 content: msg.content,
                 timestamp: new Date(msg.ts).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
                 ts: msg.ts,
-                followExecIds: msg.followExecIds
+                followExecIds: msg.followExecIds,
+                channel: msg.channel,
+                meta: msg.kiroMeta, // VTID-05064: Kiro badge / stopped-early marker survive a reload
+                isError: msg.isError,
+                media: msg.media // VTID-05067: image media ids (thumbnails re-signed per view)
             };
         });
         // VTID-04104: a page reload landing on a thread with a still-running
@@ -1510,6 +1175,8 @@ function initOperatorChatSession() {
         reattachFollowedExecutions(state.chatMessages);
         console.log('[VTID-03822] Restored', history.length, 'messages from thread', active.id);
     }
+    // VTID-05064: once after page load, merge the server turns this browser has not seen.
+    syncOperatorVoiceTurns();
 }
 
 /**
@@ -2256,6 +1923,8 @@ function doLogout() {
     localStorage.removeItem('vitana.userEmail');
     // VTID-04999: no Kiro key draft or key status outlives the signed-in user.
     resetKiroKeyState();
+    // VTID-05067: no Kiro run stream, queue or pasted image outlives the signed-in user.
+    if (window.KiroConsole) window.KiroConsole.reset();
 
     // Destroy VitanaOrb widget on logout
     if (window.VitanaOrb) window.VitanaOrb.destroy();
@@ -3660,7 +3329,7 @@ const NAVIGATION_CONFIG = [
         "tabs": [
             { "key": "autopilot-community", "path": "/command-hub/autonomy/autopilot-community/" },
             { "key": "autopilot-developer", "path": "/command-hub/autonomy/autopilot-developer/" },
-            { "key": "autopilot-admin", "path": "/command-hub/autonomy/autopilot-admin/" },
+            { "key": "loops", "path": "/command-hub/autonomy/loops/" },
             { "key": "self-healing", "path": "/command-hub/autonomy/self-healing/" },
             { "key": "autonomy-pulse", "path": "/command-hub/autonomy/autonomy-pulse/" },
             { "key": "autonomy-trace", "path": "/command-hub/autonomy/autonomy-trace/" }
@@ -3756,7 +3425,6 @@ const NAVIGATION_CONFIG = [
         "basePath": "/command-hub/infrastructure/",
         "tabs": [
             { "key": "services", "path": "/command-hub/infrastructure/services/" },
-            { "key": "health", "path": "/command-hub/infrastructure/health/" },
             { "key": "deployments", "path": "/command-hub/infrastructure/deployments/" },
             { "key": "logs", "path": "/command-hub/infrastructure/logs/" },
             { "key": "config", "path": "/command-hub/infrastructure/config/" }
@@ -3996,6 +3664,7 @@ const state = {
     chatInputValue: '',
     chatAttachments: [], // Array of { oasis_ref, kind, name }
     chatSending: false,
+    chatTurnThreadId: null, // VTID-05064: the thread the in-flight turn was sent in (one running turn per console); null when idle
     chatLiveTranscript: [], // VTID-04028: tool.call/tool.result frames of the turn in flight
     chatLiveModelTurns: [], // VTID-04028: model.turn frames of the turn in flight
     operatorExecFollow: {}, // VTID-04033: { [execution_id]: { es, steps, terminal, streamError, error, tool } } — executions the console follows after queueing them
@@ -4009,7 +3678,6 @@ const state = {
     operatorThreads: [], // Array of { id, title, conversationId, createdAt, updatedAt, engine? } — engine 'kiro' (VTID-04975), absent = Operator
     kiroStatus: null, // VTID-04975: GET /api/v1/operator/kiro/status once per page load; null = not known yet
     kiroModels: {}, // VTID-04984: { [threadId]: { loaded, models: [{id,name,description}], current } } — Kiro's own model list per session
-    chatLiveKiro: { text: '', tools: [], permissions: [] }, // VTID-04975: a Kiro turn's streamed text, tool lines and approval cards
     operatorActiveThreadId: null,
     // VTID-03949: sessions sidebar + double-click-to-rename state
     operatorSessionsSidebarCollapsed: false,
@@ -5704,50 +5372,6 @@ async function approveFeedItem(prNumber, branch, vtid) {
     }
 }
 
-/**
- * VTID-0600: Generate human-readable summary from deployment data
- * Extracts meaning from VTID, service, and status
- */
-function generateDeploySummary(deploy) {
-    var service = deploy.service || 'unknown service';
-    var vtid = deploy.vtid || '';
-    var status = deploy.status || 'unknown';
-
-    // Try to extract meaning from VTID pattern
-    var meaning = '';
-
-    if (vtid.includes('-0600')) {
-        meaning = 'Operational visibility foundation';
-    } else if (vtid.includes('-0500') || vtid.includes('-05')) {
-        meaning = 'Core infrastructure update';
-    } else if (vtid.includes('-0400') || vtid.includes('-04')) {
-        meaning = 'Governance system change';
-    } else if (vtid.includes('-0300') || vtid.includes('-03')) {
-        meaning = 'Agent pipeline update';
-    } else if (vtid.includes('-0200') || vtid.includes('-02')) {
-        meaning = 'API/Integration change';
-    } else if (vtid.includes('-0100') || vtid.includes('-01')) {
-        meaning = 'Foundation layer update';
-    }
-
-    // Generate summary based on available data
-    if (status === 'success') {
-        if (meaning) {
-            return 'Deployed ' + meaning + ' to ' + service;
-        }
-        return 'Successful deployment to ' + service;
-    } else if (status === 'failure') {
-        if (meaning) {
-            return 'Failed: ' + meaning + ' for ' + service;
-        }
-        return 'Deployment failed for ' + service;
-    } else {
-        if (meaning) {
-            return meaning + ' (' + service + ')';
-        }
-        return 'Update to ' + service;
-    }
-}
 
 // --- Version History Data Model (VTID-0517 + VTID-0524) ---
 
@@ -8385,8 +8009,16 @@ function renderModuleContent(moduleKey, tab) {
     } else if (moduleKey === 'autonomy' && tab === 'autopilot-developer') {
         // Moved from command-hub/dev-autopilot
         container.appendChild(renderDevAutopilotView());
-    } else if (moduleKey === 'autonomy' && tab === 'autopilot-admin') {
-        container.appendChild(renderAutopilotAdminView());
+    } else if (moduleKey === 'autonomy' && tab === 'loops') {
+        // VTID-05084: Loop Engineering catalog — loops-catalog.js (loaded before app.js)
+        if (window.LoopsCatalog) {
+            container.appendChild(window.LoopsCatalog.render({ headers: buildContextHeaders }));
+        } else {
+            var loopsMissing = document.createElement('div');
+            loopsMissing.className = 'loops-view loops-error';
+            loopsMissing.textContent = 'The Loops module did not load. Reload the page.';
+            container.appendChild(loopsMissing);
+        }
     } else if (moduleKey === 'autonomy' && tab === 'self-healing') {
         // Moved from infrastructure/self-healing
         container.appendChild(renderSelfHealingView());
@@ -8601,8 +8233,6 @@ function renderModuleContent(moduleKey, tab) {
     // ──── Infrastructure Module ────
     } else if (moduleKey === 'infrastructure' && tab === 'services') {
         container.appendChild(renderInfraServicesView());
-    } else if (moduleKey === 'infrastructure' && tab === 'health') {
-        container.appendChild(renderInfraHealthView());
     } else if (moduleKey === 'infrastructure' && tab === 'deployments') {
         container.appendChild(renderInfraDeploymentsView());
     } else if (moduleKey === 'infrastructure' && tab === 'logs') {
@@ -10204,16 +9834,11 @@ function renderTaskDrawer() {
                 approveBtn.disabled = true;
                 approveBtn.textContent = 'Approving...';
                 try {
-                    // VTID-01229: Use state.meContext instead of deprecated MeState.me
-                    var userId = state.meContext?.user_id || state.meContext?.email || 'unknown';
-                    var userRole = state.meContext?.active_role || 'operator';
+                    // VTID-05122: the approver is resolved server-side from the Bearer JWT
+                    // (VTID-05048); no identity headers are sent.
                     var response = await fetch('/api/v1/specs/' + vtid + '/approve', {
                         method: 'POST',
-                        headers: buildContextHeaders({
-                            'Content-Type': 'application/json',
-                            'x-user-id': userId,
-                            'x-user-role': userRole
-                        })
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' })
                     });
                     if (!response.ok) throw new Error('HTTP ' + response.status);
                     var result = await response.json();
@@ -12465,6 +12090,10 @@ const AUTONOMY_REDIRECTS = {
     '/command-hub/autonomy-pulse/':               { section: 'autonomy', tab: 'autonomy-pulse' },
     '/command-hub/autonomy-trace/':               { section: 'autonomy', tab: 'autonomy-trace' },
     '/command-hub/dev-autopilot/':                { section: 'autonomy', tab: 'autopilot-developer' },
+    // VTID-05084: the "Autopilot — Admin (Coming soon)" placeholder became the Loops screen
+    '/command-hub/autonomy/autopilot-admin/':     { section: 'autonomy', tab: 'loops' },
+    // VTID-05098: Infrastructure → Health probed the same 5 endpoints as Diagnostics → Health Checks
+    '/command-hub/infrastructure/health/':        { section: 'diagnostics', tab: 'health-checks' },
     // Assistant section moves (Round 2) — kept for legacy bookmarks. DEV-COMHU:
     // Awareness moved from Voice into Conversation (design + monitoring), so these
     // now resolve onward to the Conversation / Awareness tab.
@@ -23278,226 +22907,10 @@ var ICON_SIDEBAR_SVG = '<svg width="16" height="16" viewBox="0 0 24 24" fill="no
 
 var operatorSpeechRecognition = null;
 
-function operatorDictationSupported() {
-    return !!(window.SpeechRecognition || window.webkitSpeechRecognition);
-}
 
-function stopOperatorDictation() {
-    if (operatorSpeechRecognition) {
-        try { operatorSpeechRecognition.stop(); } catch (e) { /* already stopped/errored */ }
-    }
-    operatorSpeechRecognition = null;
-    state.chatDictationActive = false;
-}
 
-// Starts a live SpeechRecognition session that streams transcribed text
-// directly into state.chatInputValue (and the live textarea, so the user
-// sees words appear as they speak) without going through renderApp() — a
-// full re-render per partial result would be the exact kind of disruption
-// VTID-03906 fixed elsewhere in this same popup.
-function startOperatorDictation(textarea, micBtn) {
-    var SpeechRecognitionCtor = window.SpeechRecognition || window.webkitSpeechRecognition;
-    if (!SpeechRecognitionCtor || state.chatDictationActive) return;
 
-    var recognition = new SpeechRecognitionCtor();
-    recognition.lang = (navigator.language || 'en-US');
-    recognition.continuous = true;
-    recognition.interimResults = true;
 
-    var baseValue = state.chatInputValue || '';
-    var baseNeedsSpace = baseValue.length > 0 && !/\s$/.test(baseValue);
-
-    recognition.onresult = function (event) {
-        var finalTranscript = '';
-        var interimTranscript = '';
-        for (var i = event.resultIndex; i < event.results.length; i++) {
-            var transcript = event.results[i][0].transcript;
-            if (event.results[i].isFinal) {
-                finalTranscript += transcript;
-            } else {
-                interimTranscript += transcript;
-            }
-        }
-        if (finalTranscript) {
-            baseValue = baseValue + (baseNeedsSpace ? ' ' : '') + finalTranscript.trim() + ' ';
-            baseNeedsSpace = false;
-        }
-        var combined = baseValue + interimTranscript;
-        state.chatInputValue = combined;
-        if (textarea) textarea.value = combined;
-    };
-
-    recognition.onerror = function (event) {
-        console.warn('[VTID-03907] Speech recognition error:', event.error);
-        stopOperatorDictation();
-        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
-        // VTID-03918: surface WHY dictation stopped instead of leaving the
-        // user with a silently-dead mic — 'not-allowed'/'service-not-allowed'
-        // (mic permission denied/blocked) and 'audio-capture' (no mic device)
-        // fire asynchronously here with no other visible signal at all.
-        showToast(operatorDictationErrorMessage(event.error), 'error');
-    };
-
-    recognition.onend = function () {
-        operatorSpeechRecognition = null;
-        state.chatDictationActive = false;
-        if (micBtn) micBtn.classList.remove('chat-mic-btn--active');
-    };
-
-    // VTID-03918: recognition.start() can throw synchronously (e.g. a
-    // leftover/stale recognition session in InvalidStateError). Previously
-    // this call was unguarded AFTER the active class/state were already
-    // set, so a thrown start() left the mic button permanently red with no
-    // active recognition behind it — exactly "turns red, never listens,
-    // only a second manual press clears it." Set active state only once
-    // start() has actually succeeded, and clean up + inform the user if it
-    // hasn't.
-    try {
-        recognition.start();
-    } catch (e) {
-        console.warn('[VTID-03907] Speech recognition failed to start:', e);
-        showToast('Could not start voice dictation. Please try again.', 'error');
-        return;
-    }
-
-    operatorSpeechRecognition = recognition;
-    state.chatDictationActive = true;
-    if (micBtn) micBtn.classList.add('chat-mic-btn--active');
-}
-
-// VTID-03918: human-readable reason for a SpeechRecognition error code, so
-// a failed dictation attempt is explained instead of silently going dark.
-function operatorDictationErrorMessage(errorCode) {
-    switch (errorCode) {
-        case 'not-allowed':
-        case 'service-not-allowed':
-            return 'Voice dictation needs microphone permission. Check your browser\'s site settings and try again.';
-        case 'audio-capture':
-            return 'No microphone was found. Check your device and try again.';
-        case 'network':
-            return 'Voice dictation lost its network connection. Please try again.';
-        case 'no-speech':
-            return 'No speech detected. Voice dictation stopped.';
-        default:
-            return 'Voice dictation stopped (' + (errorCode || 'unknown error') + ').';
-    }
-}
-
-function renderOperatorOverlay() {
-    const backdrop = document.createElement('div');
-    backdrop.className = 'overlay-backdrop';
-    backdrop.onclick = (e) => {
-        if (e.target === backdrop) {
-            state.isOperatorOpen = false;
-            // VTID-01209: Stop active executions polling when closing
-            stopActiveExecutionsPolling();
-            // VTID-03907: Stop any in-progress voice dictation when closing
-            if (state.chatDictationActive) stopOperatorDictation();
-            renderApp();
-        }
-    };
-
-    const panel = document.createElement('div');
-    panel.className = 'overlay-panel operator-overlay' + (state.isOperatorFullscreen ? ' operator-overlay--fullscreen' : '');
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'overlay-header';
-
-    const titleBlock = document.createElement('div');
-    const title = document.createElement('div');
-    title.className = 'overlay-title';
-    title.textContent = 'Operator Console';
-    titleBlock.appendChild(title);
-
-    const subtitle = document.createElement('div');
-    subtitle.className = 'overlay-subtitle';
-    subtitle.textContent = 'Live events & chat';
-    titleBlock.appendChild(subtitle);
-
-    header.appendChild(titleBlock);
-
-    // VTID-03905: header action buttons (fullscreen / restore), between the
-    // title block and the close button. Close button behavior is unchanged.
-    const headerActions = document.createElement('div');
-    headerActions.className = 'overlay-header-actions';
-
-    const fullscreenBtn = document.createElement('button');
-    fullscreenBtn.className = 'overlay-fullscreen-toggle';
-    fullscreenBtn.title = state.isOperatorFullscreen ? 'Restore' : 'Fullscreen';
-    fullscreenBtn.setAttribute('aria-label', state.isOperatorFullscreen ? 'Restore popup size' : 'Enter fullscreen');
-    fullscreenBtn.innerHTML = state.isOperatorFullscreen ? ICON_RESTORE_SVG : ICON_EXPAND_SVG;
-    fullscreenBtn.onclick = () => {
-        state.isOperatorFullscreen = !state.isOperatorFullscreen;
-        // VTID-04110: remember the choice so it survives a page reload.
-        try { localStorage.setItem('vitana.operatorFullscreen', String(state.isOperatorFullscreen)); } catch (e) { /* ignore */ }
-        renderApp();
-    };
-    headerActions.appendChild(fullscreenBtn);
-
-    const closeBtn = document.createElement('button');
-    closeBtn.className = 'overlay-close';
-    closeBtn.innerHTML = '&times;';
-    closeBtn.setAttribute('aria-label', 'Close Operator Console');
-    closeBtn.onclick = () => {
-        state.isOperatorOpen = false;
-        // VTID-01209: Stop active executions polling when closing
-        stopActiveExecutionsPolling();
-        // VTID-03907: Stop any in-progress voice dictation when closing
-        if (state.chatDictationActive) stopOperatorDictation();
-        renderApp();
-    };
-    headerActions.appendChild(closeBtn);
-
-    header.appendChild(headerActions);
-
-    panel.appendChild(header);
-
-    // Tabs
-    const tabs = document.createElement('div');
-    tabs.className = 'operator-tabs';
-
-    const tabConfigs = [
-        { key: 'chat', label: 'Chat' },
-        { key: 'ticker', label: 'Live Ticker' },
-        { key: 'history', label: 'History' }
-    ];
-
-    tabConfigs.forEach(t => {
-        const tab = document.createElement('button');
-        tab.className = `operator-tab ${state.operatorActiveTab === t.key ? 'active' : ''}`;
-        tab.textContent = t.label;
-        tab.onclick = () => {
-            state.operatorActiveTab = t.key;
-            renderApp();
-        };
-        tabs.appendChild(tab);
-    });
-
-    panel.appendChild(tabs);
-
-    // Tab Content
-    const tabContent = document.createElement('div');
-    tabContent.className = 'operator-tab-content';
-
-    if (state.operatorActiveTab === 'chat') {
-        // VTID-03949: sessions sidebar + chat column, side by side.
-        const chatLayout = document.createElement('div');
-        chatLayout.className = 'operator-chat-layout';
-        chatLayout.appendChild(renderOperatorSessionsSidebar());
-        chatLayout.appendChild(renderOperatorChat());
-        tabContent.appendChild(chatLayout);
-    } else if (state.operatorActiveTab === 'ticker') {
-        tabContent.appendChild(renderOperatorTicker());
-    } else if (state.operatorActiveTab === 'history') {
-        tabContent.appendChild(renderOperatorHistory());
-    }
-
-    panel.appendChild(tabContent);
-    backdrop.appendChild(panel);
-
-    return backdrop;
-}
 
 // VTID-03822: tool-name -> human label for the chat tool-activity line.
 // Unlisted tools fall back to a generic "Ran <name>" — this is a display
@@ -23511,567 +22924,17 @@ var TOOL_ACTIVITY_LABELS = {
     update_task: 'Updated a task'
 };
 
-function describeToolActivity(tr) {
-    if (!tr || !tr.name) return 'Ran a tool';
-    var label = TOOL_ACTIVITY_LABELS[tr.name] || ('Ran ' + tr.name);
-    if (tr.response && typeof tr.response === 'object' && tr.response.vtid) {
-        label += ' (' + tr.response.vtid + ')';
-    }
-    // VTID-04028: the streamed turn measured each tool; keep it on the line.
-    if (typeof tr.duration_ms === 'number') {
-        label += ' · ' + formatToolDuration(tr.duration_ms);
-    }
-    return label;
-}
 
-function renderOperatorChat() {
-    const container = document.createElement('div');
-    container.className = 'chat-container';
 
-    // VTID-03949: session title bar — a sidebar show/hide toggle, the
-    // active thread's own (double-click-to-rename) title, and "+ New".
-    // Replaces the VTID-03822 <select> dropdown, which covered the
-    // transcript while open and only ever showed one session at a time;
-    // the full session list now lives in the persistent sidebar rendered
-    // alongside this container by renderOperatorOverlay() (see
-    // renderOperatorSessionsSidebar()). Purely client-side (localStorage),
-    // per VTID-03822's own spec: there is no backend conversation table to
-    // build against, so "resuming a thread" means restoring its saved
-    // history into state.chatMessages, not a server-side fetch.
-    const titleBar = document.createElement('div');
-    titleBar.className = 'chat-session-title-bar';
 
-    const sidebarToggleBtn = document.createElement('button');
-    sidebarToggleBtn.type = 'button';
-    sidebarToggleBtn.className = 'chat-sessions-toggle-btn';
-    sidebarToggleBtn.title = state.operatorSessionsSidebarCollapsed ? 'Show sessions' : 'Hide sessions';
-    sidebarToggleBtn.setAttribute('aria-label', sidebarToggleBtn.title);
-    sidebarToggleBtn.innerHTML = ICON_SIDEBAR_SVG;
-    sidebarToggleBtn.onclick = () => {
-        state.operatorSessionsSidebarCollapsed = !state.operatorSessionsSidebarCollapsed;
-        renderApp();
-    };
-    titleBar.appendChild(sidebarToggleBtn);
 
-    const activeThread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
-    if (activeThread) {
-        titleBar.appendChild(renderEditableThreadTitle(activeThread, 'chat-session-title-bar-text'));
-    } else {
-        const fallbackTitle = document.createElement('div');
-        fallbackTitle.className = 'chat-session-title-bar-text';
-        fallbackTitle.textContent = 'New conversation';
-        titleBar.appendChild(fallbackTitle);
-    }
 
-    // VTID-04975: Operator | Kiro on an empty thread, a fixed Kiro badge after.
-    fetchKiroStatus();
-    const engineControl = renderOperatorEngineSwitch();
-    if (engineControl) titleBar.appendChild(engineControl);
 
-    const newThreadBtn = document.createElement('button');
-    newThreadBtn.type = 'button';
-    newThreadBtn.className = 'chat-new-thread-btn';
-    newThreadBtn.textContent = '+ New';
-    newThreadBtn.title = 'Start a new conversation';
-    newThreadBtn.onclick = function () {
-        startNewOperatorThread();
-    };
-    titleBar.appendChild(newThreadBtn);
 
-    container.appendChild(titleBar);
 
-    // Messages area
-    const messages = document.createElement('div');
-    messages.className = 'chat-messages';
 
-    // VTID-04106: keep state.chatStickToBottom in sync with the user's own
-    // manual scroll actions — same 80px threshold as the VTID-0539 anchor's
-    // wasNearBottom check, so a user who scrolls up to read older history
-    // stays pinned there across background re-renders, and scrolling back
-    // down re-arms auto-scroll without needing to send a message first.
-    messages.addEventListener('scroll', function () {
-        var distanceFromBottom = messages.scrollHeight - messages.scrollTop - messages.clientHeight;
-        state.chatStickToBottom = distanceFromBottom <= 80;
-    });
 
-    if (state.chatMessages.length === 0 && activeOperatorEngine() === 'kiro') {
-        messages.appendChild(renderKiroThreadPanel());
-    } else if (state.chatMessages.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'chat-empty-state';
-        empty.textContent = 'No messages yet. Start a conversation with the Operator.';
-        messages.appendChild(empty);
-    } else {
-        // VTID-0526: Updated message rendering with new bubble styles
-        state.chatMessages.forEach(msg => {
-            // Determine message type: sent (user) or reply (system)
-            const isSent = msg.type === 'user' || msg.type === 'sent';
-            const isError = msg.isError || msg.error;
 
-            // Create bubble element with appropriate classes
-            const bubble = document.createElement('div');
-            let bubbleClasses = 'message-bubble';
-            if (isSent) {
-                bubbleClasses += ' message-sent';
-            } else {
-                bubbleClasses += ' message-reply';
-            }
-            if (isError) {
-                bubbleClasses += ' message-error';
-            }
-            bubble.className = bubbleClasses;
-            // VTID-04309: turns spoken with the voice assistant are marked.
-            if (msg.channel === 'voice' || msg.channel === 'voice_delegate') {
-                bubble.classList.add('message-voice');
-                const voiceTag = document.createElement('div');
-                voiceTag.className = 'message-voice-tag';
-                voiceTag.textContent = msg.channel === 'voice_delegate'
-                    ? (isSent ? 'Handed to Operator (voice)' : 'Operator')
-                    : (isSent ? 'You (voice)' : 'Vitana (voice)');
-                bubble.appendChild(voiceTag);
-            }
-            // VTID-03822: render markdown (bold/links/lists/headings) instead of
-            // plain text — replies routinely come back with markdown, which
-            // rendered as a wall of literal asterisks/backticks before this.
-            bubble.appendChild(renderManualMarkdown(msg.content || msg.text || ''));
-            messages.appendChild(bubble);
-
-            // VTID-03822: surface which tools ran on this turn (already present
-            // on the message object since sendChatMessage's response handling —
-            // toolResults/meta were pushed onto chatMessages but never read by
-            // this renderer).
-            if (msg.toolResults && msg.toolResults.length > 0) {
-                const toolActivity = document.createElement('div');
-                toolActivity.className = 'chat-tool-activity';
-                msg.toolResults.forEach(tr => {
-                    const line = document.createElement('div');
-                    line.className = 'chat-tool-activity-line';
-                    line.textContent = describeToolActivity(tr);
-                    toolActivity.appendChild(line);
-                });
-                messages.appendChild(toolActivity);
-            }
-
-            // VTID-04033: the execution(s) this turn queued, followed live.
-            if (Array.isArray(msg.followExecIds) && msg.followExecIds.length > 0) {
-                msg.followExecIds.forEach(function (execId) {
-                    messages.appendChild(renderOperatorExecutionFollow(execId));
-                });
-            }
-
-            // Show attachments if any
-            if (msg.attachments && msg.attachments.length > 0) {
-                const attachmentsEl = document.createElement('div');
-                attachmentsEl.className = 'chat-message-attachments';
-                msg.attachments.forEach(att => {
-                    const chip = document.createElement('span');
-                    chip.className = `attachment-chip attachment-${att.kind}`;
-                    chip.textContent = att.name || att.oasis_ref;
-                    attachmentsEl.appendChild(chip);
-                });
-                messages.appendChild(attachmentsEl);
-            }
-
-            // VTID-03947: message-meta row — a copy-to-clipboard icon plus a
-            // relative timestamp ("3h ago"), Claude Code style, replacing
-            // the old plain always-absolute timestamp div.
-            const meta = document.createElement('div');
-            // Align with the message bubble via a CSS class rather than an
-            // inline style assignment, same convention as .message-sent/
-            // .message-reply above.
-            meta.className = 'message-meta' + (isSent ? ' message-meta--sent' : '');
-
-            const copyBtn = document.createElement('button');
-            copyBtn.type = 'button';
-            copyBtn.className = 'message-copy-btn';
-            copyBtn.title = 'Copy message';
-            copyBtn.setAttribute('aria-label', 'Copy message');
-            copyBtn.innerHTML = ICON_COPY_SVG;
-            copyBtn.onclick = () => {
-                var textToCopy = msg.content || msg.text || '';
-                if (!textToCopy) return;
-                var showCopied = function () {
-                    copyBtn.innerHTML = ICON_CHECK_SVG;
-                    copyBtn.classList.add('message-copy-btn--copied');
-                    setTimeout(function () {
-                        copyBtn.innerHTML = ICON_COPY_SVG;
-                        copyBtn.classList.remove('message-copy-btn--copied');
-                    }, 1500);
-                };
-                try {
-                    var result = navigator.clipboard.writeText(textToCopy);
-                    if (result && typeof result.then === 'function') {
-                        result.then(showCopied).catch(function () { /* ignore */ });
-                    } else {
-                        showCopied();
-                    }
-                } catch (e) { /* clipboard API unavailable — no-op */ }
-            };
-            meta.appendChild(copyBtn);
-
-            const time = document.createElement('span');
-            time.className = 'timestamp';
-            time.textContent = formatRelativeTime(msg.ts) || msg.timestamp || '';
-            // Exact absolute time still available on hover.
-            time.title = msg.timestamp || '';
-            meta.appendChild(time);
-
-            // VTID-04031: cost / model badge — provider, model, turn duration,
-            // tokens and the estimated cost the gateway computed for this turn.
-            if (!isSent && msg.meta && msg.meta.provider) {
-                var badgeText = formatTurnCostBadge(msg.meta);
-                if (badgeText) {
-                    var badge = document.createElement('span');
-                    badge.className = 'message-cost-badge';
-                    badge.textContent = badgeText;
-                    badge.title = describeTurnCost(msg.meta);
-                    meta.appendChild(badge);
-                }
-            }
-            // VTID-04984: which Kiro model answered.
-            if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {
-                var kiroBadge = document.createElement('span');
-                kiroBadge.className = 'message-cost-badge';
-                kiroBadge.textContent = 'Kiro \u00b7 ' + kiroModelName(msg.meta.kiro_model);
-                meta.appendChild(kiroBadge);
-            }
-
-            messages.appendChild(meta);
-        });
-    }
-
-    // VTID-04028: while a streamed turn runs, show its tool-call transcript
-    // live under the transcript (replaces the bare "Sending..." wait).
-    if (state.chatSending) {
-        messages.appendChild(renderOperatorLiveTranscript());
-    }
-
-    container.appendChild(messages);
-
-    // Attachments preview
-    if (state.chatAttachments.length > 0) {
-        const attachmentsPreview = document.createElement('div');
-        attachmentsPreview.className = 'chat-attachments-preview';
-
-        state.chatAttachments.forEach((att, index) => {
-            const chip = document.createElement('span');
-            chip.className = `attachment-chip attachment-${att.kind}`;
-            chip.innerHTML = `${att.name} <span class="attachment-remove" data-index="${index}" aria-label="Remove attachment ${att.name}">&times;</span>`;
-            chip.querySelector('.attachment-remove').onclick = () => {
-                state.chatAttachments.splice(index, 1);
-                renderApp();
-            };
-            attachmentsPreview.appendChild(chip);
-        });
-
-        container.appendChild(attachmentsPreview);
-    }
-
-    // Input area
-    const inputContainer = document.createElement('div');
-    inputContainer.className = 'chat-input-container';
-
-    // Attachment button with dropdown
-    const attachBtn = document.createElement('div');
-    attachBtn.className = 'chat-attach-btn';
-    attachBtn.innerHTML = '&#128206;'; // Paperclip emoji
-    attachBtn.title = 'Add attachment';
-
-    // Attachment menu (hidden by default)
-    const attachMenu = document.createElement('div');
-    attachMenu.className = 'chat-attach-menu';
-    attachMenu.innerHTML = `
-        <div class="attach-option" data-kind="image">Image</div>
-        <div class="attach-option" data-kind="video">Video</div>
-        <div class="attach-option" data-kind="file">File</div>
-    `;
-    // Menu hidden by default via CSS .chat-attach-menu { display: none; }
-
-    attachBtn.onclick = (e) => {
-        e.stopPropagation();
-        attachMenu.classList.toggle('menu-open');
-    };
-
-    // Handle attach menu clicks
-    attachMenu.querySelectorAll('.attach-option').forEach(opt => {
-        opt.onclick = (e) => {
-            e.stopPropagation();
-            const kind = opt.dataset.kind;
-            attachMenu.classList.remove('menu-open');
-
-            // Create file input
-            const fileInput = document.createElement('input');
-            fileInput.type = 'file';
-            if (kind === 'image') fileInput.accept = 'image/*';
-            else if (kind === 'video') fileInput.accept = 'video/*';
-
-            fileInput.onchange = (e) => {
-                const file = e.target.files[0];
-                if (file) {
-                    uploadOperatorFile(file, kind);
-                }
-            };
-            fileInput.click();
-        };
-    });
-
-    attachBtn.appendChild(attachMenu);
-    inputContainer.appendChild(attachBtn);
-
-    // Close menu on outside click
-    document.addEventListener('click', () => {
-        attachMenu.classList.remove('menu-open');
-    });
-
-    // Textarea for message
-    const textarea = document.createElement('textarea');
-    textarea.className = 'chat-textarea';
-    textarea.placeholder = 'Type a message...';
-    textarea.value = state.chatInputValue;
-    textarea.rows = 2;
-    // VTID-0526-D: Track typing state to prevent scroll/render interruptions
-    textarea.oninput = (e) => {
-        state.chatInputValue = e.target.value;
-        state.chatIsTyping = true;
-    };
-    textarea.onkeydown = (e) => {
-        state.chatIsTyping = true;
-        if (e.key === 'Enter' && e.ctrlKey && state.chatInputValue.trim()) {
-            e.preventDefault();
-            sendChatMessage();
-        }
-    };
-    textarea.onblur = () => {
-        // Only reset typing flag when user leaves the input
-        state.chatIsTyping = false;
-    };
-    inputContainer.appendChild(textarea);
-
-    // VTID-03907: Voice dictation mic button (Web Speech API)
-    const micBtn = document.createElement('button');
-    micBtn.type = 'button';
-    var dictationSupported = operatorDictationSupported();
-    micBtn.className = 'chat-mic-btn' + (state.chatDictationActive ? ' chat-mic-btn--active' : '');
-    micBtn.disabled = !dictationSupported;
-    micBtn.title = !dictationSupported
-        ? 'Voice dictation is not supported in this browser'
-        : (state.chatDictationActive ? 'Stop voice dictation' : 'Start voice dictation');
-    micBtn.setAttribute('aria-label', micBtn.title);
-    micBtn.innerHTML = ICON_MIC_SVG;
-    micBtn.onclick = () => {
-        if (!dictationSupported) return;
-        if (state.chatDictationActive) {
-            stopOperatorDictation();
-            micBtn.classList.remove('chat-mic-btn--active');
-            micBtn.title = 'Start voice dictation';
-        } else {
-            startOperatorDictation(textarea, micBtn);
-            micBtn.title = 'Stop voice dictation';
-        }
-    };
-    inputContainer.appendChild(micBtn);
-
-    // Send button
-    const sendBtn = document.createElement('button');
-    sendBtn.className = 'chat-send-btn';
-    sendBtn.textContent = state.chatSending ? 'Sending...' : 'Send';
-    sendBtn.disabled = state.chatSending;
-    sendBtn.onclick = () => {
-        if (state.chatInputValue.trim() && !state.chatSending) {
-            sendChatMessage();
-        }
-    };
-    inputContainer.appendChild(sendBtn);
-
-    container.appendChild(inputContainer);
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// VTID-04028: stream one operator turn as Server-Sent Events
-// ---------------------------------------------------------------------------
-// POST /api/v1/operator/chat/stream answers the SAME turn as /chat, but as
-// SSE frames (turn.started, model.turn, tool.call, tool.result, reply|error,
-// done). EventSource cannot POST a body, so the fetch() response body is
-// read as a stream and parsed frame by frame here. Every tool.call /
-// tool.result frame updates state.chatLiveTranscript and re-renders, so the
-// console shows what the operator is doing while the turn runs. Resolves
-// with the `reply` frame's JSON — byte-identical to /chat's body — so
-// sendChatMessage() needs no second code path. Any failure to obtain a
-// stream (older gateway, proxy buffering, no ReadableStream) falls back to
-// /chat; a failure mid-stream does NOT re-send (the turn already ran).
-
-function parseSseFrames(buffer) {
-    // Returns { frames: [{event, data}], rest } — frames end at a blank line.
-    var frames = [];
-    var parts = buffer.split('\n\n');
-    var rest = parts.pop();
-    parts.forEach(function (block) {
-        var event = 'message';
-        var dataLines = [];
-        block.split('\n').forEach(function (line) {
-            if (line.indexOf(':') === 0) return; // comment / heartbeat
-            if (line.indexOf('event:') === 0) event = line.slice(6).trim();
-            else if (line.indexOf('data:') === 0) dataLines.push(line.slice(5).replace(/^ /, ''));
-        });
-        if (dataLines.length === 0) return;
-        var raw = dataLines.join('\n');
-        var data;
-        try { data = JSON.parse(raw); } catch (e) { data = { raw: raw }; }
-        frames.push({ event: event, data: data });
-    });
-    return { frames: frames, rest: rest };
-}
-
-// VTID-04110: incremental update for the live tool-call transcript instead
-// of the full-app renderApp() this used to call on every SSE frame. A long
-// agent turn emits a tool.call/tool.result pair per tool invocation (a
-// multi-step run can be a dozen or more) plus a model.turn frame per model
-// call — each one used to tear down and rebuild the ENTIRE Command Hub DOM
-// (sidebar, header, the whole overlay), which is what produced the visible
-// flicker on every step. Mirrors the incremental-update pattern this file
-// already uses for polling (VTID-01151's updateApprovalsBadge) — mutate
-// only the one DOM node that actually changed.
-function updateOperatorLiveTranscriptDom() {
-    var existing = document.querySelector('.chat-tool-activity--live');
-    if (!existing) {
-        // Not mounted yet (first frame of the turn) — do one real render so
-        // the container exists; every later frame in this turn takes the
-        // fast, non-rebuilding path below.
-        renderApp();
-        return;
-    }
-    existing.replaceWith(renderOperatorLiveTranscript());
-    var messagesEl = document.querySelector('.chat-messages');
-    if (messagesEl && state.chatStickToBottom) {
-        messagesEl.scrollTop = messagesEl.scrollHeight;
-    }
-}
-
-function applyOperatorTurnFrame(frame) {
-    // VTID-04975: Kiro frames have their own handler.
-    if (frame.event && frame.event.indexOf('kiro.') === 0) { applyKiroTurnFrame(frame); return; }
-    var d = frame.data || {};
-    if (frame.event === 'tool.call') {
-        state.chatLiveTranscript[d.index] = {
-            index: d.index, name: d.name, args: d.args, status: 'running', started_at: Date.now()
-        };
-        updateOperatorLiveTranscriptDom();
-    } else if (frame.event === 'tool.result') {
-        var entry = state.chatLiveTranscript[d.index] || { index: d.index, name: d.name };
-        entry.status = d.ok ? 'ok' : 'failed';
-        entry.duration_ms = d.duration_ms;
-        entry.error = d.error;
-        entry.excerpt = d.excerpt;
-        state.chatLiveTranscript[d.index] = entry;
-        updateOperatorLiveTranscriptDom();
-    } else if (frame.event === 'model.turn') {
-        state.chatLiveModelTurns.push(d);
-        updateOperatorLiveTranscriptDom();
-    }
-}
-
-async function streamOperatorTurn(payload) {
-    var response = await fetch('/api/v1/operator/chat/stream', {
-        method: 'POST',
-        headers: buildContextHeaders({ 'Content-Type': 'application/json', 'Accept': 'text/event-stream' }),
-        body: JSON.stringify(payload)
-    });
-    if (!response.ok) {
-        var err = new Error('Chat request failed: ' + response.status);
-        err.status = response.status;
-        throw err;
-    }
-    var ctype = response.headers.get('content-type') || '';
-    if (ctype.indexOf('text/event-stream') === -1 || !response.body || !response.body.getReader) {
-        var e = new Error('stream unavailable');
-        e.streamUnavailable = true;
-        throw e;
-    }
-    var reader = response.body.getReader();
-    var decoder = new TextDecoder();
-    var buffer = '';
-    var reply = null;
-    var error = null;
-    while (true) {
-        var chunk = await reader.read();
-        if (chunk.done) break;
-        buffer += decoder.decode(chunk.value, { stream: true });
-        var parsed = parseSseFrames(buffer);
-        buffer = parsed.rest;
-        parsed.frames.forEach(function (frame) {
-            if (frame.event === 'reply') reply = frame.data;
-            else if (frame.event === 'error') error = frame.data;
-            else applyOperatorTurnFrame(frame);
-        });
-    }
-    if (reply) return reply;
-    if (error) {
-        var failed = new Error((error.details || error.error || 'Chat request failed') + '');
-        failed.status = error.status || 500;
-        throw failed;
-    }
-    var incomplete = new Error('stream ended without a reply');
-    incomplete.streamIncomplete = true;
-    throw incomplete;
-}
-
-async function requestOperatorTurn(payload) {
-    state.chatLiveTranscript = [];
-    state.chatLiveModelTurns = [];
-    resetKiroLiveTranscript();
-    try {
-        return await streamOperatorTurn(payload);
-    } catch (err) {
-        // A 404 means a gateway without the stream route; a missing stream
-        // means a proxy/browser that cannot deliver one. Both fall back to
-        // the one-shot endpoint. Anything else already ran the turn.
-        var canFallback = err && (err.status === 404 || err.streamUnavailable);
-        if (!canFallback) throw err;
-        console.warn('[VTID-04028] operator stream unavailable, falling back to /chat:', err.message);
-        var response = await fetch('/api/v1/operator/chat', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify(payload)
-        });
-        if (!response.ok) {
-            throw new Error('Chat request failed: ' + response.status);
-        }
-        return await response.json();
-    }
-}
-
-function formatToolDuration(ms) {
-    if (typeof ms !== 'number' || !(ms >= 0)) return '';
-    return ms < 1000 ? Math.round(ms) + 'ms' : (ms / 1000).toFixed(1) + 's';
-}
-
-// VTID-04031: token / cost formatting for the turn badge and the live transcript.
-function formatTokenCount(n) {
-    if (typeof n !== 'number' || !(n >= 0)) return '';
-    return n >= 1000 ? (n / 1000).toFixed(1) + 'k' : String(Math.round(n));
-}
-
-function formatTurnCostUsd(meta) {
-    if (!meta || !meta.usage) return '';
-    if (meta.cost_priced === false) return 'unpriced';
-    if (typeof meta.cost_usd !== 'number') return '';
-    return '$' + (meta.cost_usd < 0.01 ? meta.cost_usd.toFixed(4) : meta.cost_usd.toFixed(3));
-}
-
-function formatTurnCostBadge(meta) {
-    if (!meta || !meta.provider) return '';
-    var parts = [meta.provider + (meta.model ? ' \u00b7 ' + meta.model : '')];
-    var dur = formatToolDuration(meta.duration_ms);
-    if (dur) parts.push(dur);
-    if (meta.usage && (meta.usage.input_tokens || meta.usage.output_tokens)) {
-        parts.push(formatTokenCount(meta.usage.input_tokens) + '\u2191 ' + formatTokenCount(meta.usage.output_tokens) + '\u2193');
-    }
-    var cost = formatTurnCostUsd(meta);
-    if (cost) parts.push(cost);
-    return parts.join(' \u00b7 ');
-}
 
 // VTID-04181: the badge's $ figure is computed from the MODEL_COSTS table —
 // the same list prices the router's telemetry is priced with — so it is an
@@ -24080,23 +22943,6 @@ function formatTurnCostBadge(meta) {
 // detail view, so the caveat is appended there, right under the estimate.
 var TURN_COST_ESTIMATE_NOTE = 'Estimate from list prices, not exact billing';
 
-function describeTurnCost(meta) {
-    if (!meta) return '';
-    var lines = ['Provider: ' + (meta.provider || '?'), 'Model: ' + (meta.model || '?')];
-    if (typeof meta.duration_ms === 'number') lines.push('Turn: ' + formatToolDuration(meta.duration_ms) + (typeof meta.tool_calls === 'number' ? ' (' + meta.tool_calls + ' tool call' + (meta.tool_calls === 1 ? '' : 's') + ')' : ''));
-    if (meta.usage) lines.push('Tokens: ' + (meta.usage.input_tokens || 0) + ' in / ' + (meta.usage.output_tokens || 0) + ' out' + (typeof meta.model_calls === 'number' ? ' over ' + meta.model_calls + ' model call' + (meta.model_calls === 1 ? '' : 's') : ''));
-    if (meta.usage) {
-        if (meta.cost_priced === false) {
-            // No dollar figure is shown for an unknown model, so no estimate
-            // caveat is needed — the table simply does not know the model.
-            lines.push('Cost: model not in the price table');
-        } else {
-            lines.push('Est. cost: $' + Number(meta.cost_usd || 0).toFixed(6));
-            lines.push(TURN_COST_ESTIMATE_NOTE);
-        }
-    }
-    return lines.join('\n');
-}
 
 // VTID-04033 (W4i): after a turn queues (or approves) a Dev Autopilot
 // execution, the console follows it — the same per-execution SSE tail the
@@ -24120,20 +22966,6 @@ var OPERATOR_EXEC_TERMINAL_LABELS = {
     'dev_autopilot.execution.auto_archived': 'archived'
 };
 
-// The execution ids a finished turn should follow: successful results of the
-// queue/approve tools that carry an execution_id, deduplicated in order.
-function extractFollowedExecutionIds(toolResults) {
-    var ids = [];
-    (Array.isArray(toolResults) ? toolResults : []).forEach(function (tr) {
-        if (!tr || !OPERATOR_EXEC_FOLLOW_TOOLS[tr.name]) return;
-        var resp = tr.response;
-        if (!resp || typeof resp !== 'object' || resp.ok === false) return;
-        var id = typeof resp.execution_id === 'string' ? resp.execution_id.trim() : '';
-        if (!id || ids.indexOf(id) !== -1) return;
-        ids.push(id);
-    });
-    return ids;
-}
 
 function followOperatorExecution(execId, tool) {
     if (!execId) return;
@@ -24216,57 +23048,6 @@ function describeFollowedStep(step) {
     return topic + (text ? ': ' + text : '');
 }
 
-// The panel under a reply for each execution that turn queued: a chip linking
-// to the row on Autopilot Live, a live/terminal marker, and the last steps.
-function renderOperatorExecutionFollow(execId) {
-    var slot = state.operatorExecFollow[execId] || { steps: [], terminal: null };
-    var panel = document.createElement('div');
-    panel.className = 'chat-exec-follow' + (slot.terminal ? ' chat-exec-follow--done' : ' chat-exec-follow--live');
-
-    var head = document.createElement('div');
-    head.className = 'chat-exec-follow-head';
-
-    var chip = document.createElement('a');
-    chip.className = 'chat-exec-follow-chip';
-    chip.href = '/command-hub/autopilot/live/#autopilot-live-exec-' + execId;
-    chip.textContent = 'execution ' + execId.slice(0, 8);
-    chip.title = 'Open this execution on Autopilot Live';
-    head.appendChild(chip);
-
-    var status = document.createElement('span');
-    if (slot.terminal) {
-        status.className = 'chat-exec-follow-status chat-exec-follow-status--done';
-        status.textContent = OPERATOR_EXEC_TERMINAL_LABELS[slot.terminal] || String(slot.terminal).replace('dev_autopilot.execution.', '');
-    } else if (slot.error) {
-        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
-        status.textContent = slot.error;
-    } else if (slot.streamError) {
-        status.className = 'chat-exec-follow-status chat-exec-follow-status--error';
-        status.textContent = 'stream reconnecting…';
-    } else {
-        status.className = 'chat-exec-follow-status chat-exec-follow-status--live';
-        status.textContent = (slot.tool === 'approved' ? 'approved' : 'queued') + ' · following';
-    }
-    head.appendChild(status);
-    panel.appendChild(head);
-
-    if (slot.steps.length === 0) {
-        var empty = document.createElement('div');
-        empty.className = 'chat-tool-activity-line' + (slot.terminal ? '' : ' chat-tool-activity-line--running');
-        empty.textContent = slot.terminal ? 'No step events were recorded.' : String.fromCodePoint(0x2026) + ' Waiting for the executor to pick it up';
-        panel.appendChild(empty);
-    }
-    slot.steps.forEach(function (step) {
-        var line = document.createElement('div');
-        var st = step && step.status;
-        var isErr = st === 'error' || (step && step.metadata && step.metadata.is_error);
-        line.className = 'chat-tool-activity-line chat-exec-follow-line' + (isErr ? ' chat-tool-activity-line--failed' : st === 'success' ? ' chat-tool-activity-line--ok' : '');
-        line.textContent = describeFollowedStep(step);
-        try { line.title = new Date(step.created_at).toLocaleTimeString(); } catch (_e) { /* no title */ }
-        panel.appendChild(line);
-    });
-    return panel;
-}
 
 // VTID-04265: the Autopilot Live view's own step/tool-call transcript for a
 // Dev Autopilot execution — reuses the exact SSE stream (followOperatorExecution,
@@ -24313,272 +23094,63 @@ function renderAutopilotLiveStepsPanel(execId) {
     return panel;
 }
 
-// ---------------------------------------------------------------------------
-// VTID-04975: Kiro engine in the Operator Console
-// ---------------------------------------------------------------------------
-// A thread answers either with the Operator (default) or with Kiro
-// (kiro-cli over ACP, run by the gateway). The engine is picked on an empty
-// thread and fixed once the first message is sent; the gateway keeps an
-// existing thread's engine whatever the request says. Kiro reads and
-// searches on its own; before it edits or runs anything it asks, and the ask
-// shows here as an approval card. No answer in time means denied.
 
-var KIRO_TOOL_STATUS = { completed: 'ok', failed: 'failed' };
 
-function operatorThreadEngine(thread) {
-    return thread && thread.engine === 'kiro' ? 'kiro' : 'llm';
-}
 
-function activeOperatorEngine() {
-    var thread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
-    return operatorThreadEngine(thread);
-}
 
-function canChangeOperatorEngine() {
-    return state.chatMessages.length === 0 && !state.chatSending;
-}
 
-function kiroIsConnected() {
-    return !!(state.kiroStatus && state.kiroStatus.enabled === true);
-}
 
-function setActiveOperatorEngine(engine) {
-    var thread = (state.operatorThreads || []).find(function (t) { return t.id === state.operatorActiveThreadId; });
-    if (!thread || !canChangeOperatorEngine()) return;
-    if (engine === 'kiro' && !kiroIsConnected()) return;
-    if (engine === 'kiro') thread.engine = 'kiro';
-    else delete thread.engine;
-    saveOperatorThreadsIndex(state.operatorThreads);
-    renderApp();
-}
+
 
 var _kiroStatusRequested = false;
-async function fetchKiroStatus() {
-    if (_kiroStatusRequested || !state.authToken) return;
-    _kiroStatusRequested = true;
-    try {
-        var res = await fetch('/api/v1/operator/kiro/status', { headers: buildContextHeaders({}) });
-        state.kiroStatus = res.ok ? await res.json() : { ok: false, enabled: false, error: res.status };
-    } catch (e) {
-        state.kiroStatus = { ok: false, enabled: false, error: 'unreachable' };
-    }
-    renderApp();
+var _kiroStatusPending = null;
+
+
+/**
+ * VTID-05003: the first message of an empty, unchosen thread waits for a status
+ * read still in flight, so it goes to the engine the default picks (at most the
+ * gateway's 2 s runner lookup). Returns false when a send is already waiting.
+ */
+var _kiroDefaultWaiting = false;
+
+/** VTID-05003: the part of a reply's meta the fallback action and Kiro badge need, persisted with history. */
+function kiroReplyMeta(meta) {
+    if (!meta || meta.engine !== 'kiro') return undefined;
+    var kept = { engine: 'kiro', kiro_status: meta.kiro_status || null, kiro_model: meta.kiro_model || null };
+    // VTID-05064: why Kiro stopped early, and whether earlier uncommitted edits were lost — only when present.
+    if (meta.stop_reason && KIRO_STOPPED_EARLY_STATUSES[meta.kiro_status]) kept.stop_reason = String(meta.stop_reason);
+    if (meta.kiro_workspace === 'lost') kept.kiro_workspace = 'lost';
+    return kept;
 }
 
-function resetKiroLiveTranscript() {
-    state.chatLiveKiro = { text: '', tools: [], permissions: [] };
-}
+/** VTID-05064: a Kiro reply that ended before Kiro finished the work. */
+var KIRO_STOPPED_EARLY_STATUSES = { refused: true, incomplete: true };
 
-function applyKiroTurnFrame(frame) {
-    var d = frame.data || {};
-    var live = state.chatLiveKiro;
-    if (frame.event === 'kiro.message_chunk') {
-        live.text += d.text || '';
-    } else if (frame.event === 'kiro.tool_call') {
-        live.tools.push({ id: d.tool_call_id, title: d.title || d.kind || 'Tool', kind: d.kind, status: 'running' });
-    } else if (frame.event === 'kiro.tool_update') {
-        var tool = live.tools.find(function (t) { return t.id === d.tool_call_id; });
-        if (tool) {
-            tool.status = KIRO_TOOL_STATUS[d.status] || tool.status;
-            if (d.title) tool.title = d.title;
-        }
-    } else if (frame.event === 'kiro.permission_request') {
-        live.permissions.push({ id: d.request_id, title: d.title || 'A tool', kind: d.kind, expires_at: d.expires_at, answer: null });
-    } else {
-        // VTID-04984: after a turn, re-read Kiro's model list (the session may be new).
-        if (frame.event === 'kiro.turn_end' && state.kiroModels) delete state.kiroModels[state.operatorActiveThreadId];
-        return;
-    }
-    updateOperatorLiveTranscriptDom();
-}
 
-function kiroLiveHasContent() {
-    var live = state.chatLiveKiro;
-    return !!(live && (live.text || live.tools.length || live.permissions.length));
-}
 
-async function answerKiroPermission(requestId, allow) {
-    var card = state.chatLiveKiro.permissions.find(function (p) { return p.id === requestId; });
-    if (!card || card.answer) return;
-    card.answer = 'sending';
-    updateOperatorLiveTranscriptDom();
-    try {
-        var res = await fetch('/api/v1/operator/kiro/permissions/' + encodeURIComponent(requestId), {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ allow: allow })
-        });
-        card.answer = res.ok ? (allow ? 'allowed' : 'denied') : (res.status === 404 ? 'expired' : 'error');
-    } catch (e) {
-        card.answer = 'error';
-    }
-    updateOperatorLiveTranscriptDom();
-}
 
-async function stopKiroTurn() {
-    if (!state.operatorActiveThreadId) return;
-    try {
-        await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(state.operatorActiveThreadId) + '/cancel', {
-            method: 'POST', headers: buildContextHeaders({})
-        });
-    } catch (e) {
-        console.warn('[VTID-04975] Kiro cancel failed:', e);
-    }
-}
+/** VTID-05003: no silent fallback — a Kiro reply that could not be served offers the Operator explicitly. */
+var KIRO_FALLBACK_STATUSES = { no_credits: true, not_connected: true };
 
-async function endKiroSession() {
-    if (!state.operatorActiveThreadId) return;
-    try {
-        var res = await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(state.operatorActiveThreadId), {
-            method: 'DELETE', headers: buildContextHeaders({})
-        });
-        showToast(res.ok || res.status === 404 ? 'Kiro session ended' : 'Could not end the Kiro session', res.ok || res.status === 404 ? 'success' : 'error');
-    } catch (e) {
-        showToast('Could not end the Kiro session', 'error');
-    }
-}
 
-// VTID-04984: model selection inside Kiro. The list is whatever Kiro offers
-// for the thread's session; picking one switches it through Kiro. Before the
-// first message there is no session, so there is nothing to list yet.
-function ensureKiroModels(threadId) {
-    if (!threadId || !state.authToken) return;
-    state.kiroModels = state.kiroModels || {};
-    if (state.kiroModels[threadId]) return;
-    state.kiroModels[threadId] = { loading: true, models: [], current: null };
-    fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(threadId) + '/models', { headers: buildContextHeaders({}) })
-        .then(function (res) { return res.ok ? res.json() : null; })
-        .then(function (body) {
-            state.kiroModels[threadId] = { loaded: true, models: (body && body.models) || [], current: (body && body.current_model) || null };
-            renderApp();
-        })
-        .catch(function () { state.kiroModels[threadId] = { loaded: true, models: [], current: null }; });
-}
 
-function kiroModelName(modelId) {
-    var entry = (state.kiroModels || {})[state.operatorActiveThreadId];
-    var m = entry && entry.models.find(function (x) { return x.id === modelId; });
-    return m ? m.name : modelId;
-}
 
-async function selectKiroModel(threadId, modelId) {
-    try {
-        var res = await fetch('/api/v1/operator/kiro/sessions/' + encodeURIComponent(threadId) + '/model', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ model_id: modelId })
-        });
-        var body = await res.json().catch(function () { return {}; });
-        if (res.ok && body.ok) {
-            state.kiroModels[threadId] = { loaded: true, models: body.models || [], current: body.current_model || modelId };
-        } else {
-            showToast(body.message || 'Kiro could not switch the model', 'error');
-        }
-    } catch (e) {
-        showToast('Kiro could not switch the model', 'error');
-    }
-    renderApp();
-}
 
-function renderKiroModelSelect(threadId) {
-    ensureKiroModels(threadId);
-    var entry = (state.kiroModels || {})[threadId];
-    if (!entry || !entry.models.length) return null;
-    var select = document.createElement('select');
-    select.className = 'chat-kiro-model-select';
-    select.setAttribute('aria-label', 'Kiro model');
-    select.disabled = !!state.chatSending;
-    entry.models.forEach(function (m) {
-        var opt = document.createElement('option');
-        opt.value = m.id;
-        opt.textContent = m.name;
-        if (m.description) opt.title = m.description;
-        if (m.id === entry.current) opt.selected = true;
-        select.appendChild(opt);
-    });
-    select.onchange = function () { selectKiroModel(threadId, select.value); };
-    return select;
-}
 
-/** Title-bar control: Operator | Kiro on an empty thread, a fixed badge after. */
-function renderOperatorEngineSwitch() {
-    var engine = activeOperatorEngine();
-    if (!canChangeOperatorEngine()) {
-        if (engine !== 'kiro') return null;
-        var fixed = document.createElement('div');
-        fixed.className = 'chat-engine-fixed';
-        var badge = document.createElement('span');
-        badge.className = 'chat-engine-badge';
-        badge.textContent = 'Kiro';
-        fixed.appendChild(badge);
-        // VTID-04984: Kiro's own models for this session.
-        var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);
-        if (modelSelect) fixed.appendChild(modelSelect);
-        if (!state.chatSending) {
-            var end = document.createElement('button');
-            end.type = 'button';
-            end.className = 'chat-engine-end-btn';
-            end.textContent = 'End session';
-            end.title = 'Close this thread’s Kiro session. The next message starts a fresh one.';
-            end.onclick = function () { endKiroSession(); };
-            fixed.appendChild(end);
-        }
-        return fixed;
-    }
-    var group = document.createElement('div');
-    group.className = 'chat-engine-switch';
-    group.setAttribute('role', 'group');
-    group.setAttribute('aria-label', 'Answer this thread with');
-    [['llm', 'Operator'], ['kiro', 'Kiro']].forEach(function (opt) {
-        var btn = document.createElement('button');
-        btn.type = 'button';
-        btn.className = 'chat-engine-option' + (engine === opt[0] ? ' chat-engine-option--active' : '');
-        btn.textContent = opt[1];
-        btn.setAttribute('aria-pressed', engine === opt[0] ? 'true' : 'false');
-        if (opt[0] === 'kiro' && !kiroIsConnected()) {
-            btn.disabled = true;
-            btn.title = state.kiroStatus ? 'Kiro is not connected on this deployment yet' : 'Checking Kiro…';
-        }
-        btn.onclick = function () { setActiveOperatorEngine(opt[0]); };
-        group.appendChild(btn);
-    });
-    return group;
-}
+
+
+
+
+
 
 // VTID-04999: each user links their OWN Kiro API key. The key is typed into a
 // password field, sent once to /kiro/key and cleared; it is never kept in
 // state or browser storage. The status only says linked/not linked and when.
 var _kiroKeyRequested = false;
-async function fetchKiroKeyStatus(force) {
-    if ((_kiroKeyRequested && !force) || !state.authToken) return;
-    _kiroKeyRequested = true;
-    try {
-        var res = await fetch('/api/v1/operator/kiro/key', { headers: buildContextHeaders({}) });
-        var body = await res.json().catch(function () { return {}; });
-        state.kiroKey = res.ok && body.ok
-            ? { loaded: true, linked: body.linked === true, updated_at: body.updated_at || null }
-            : { loaded: true, unavailable: true };
-    } catch (e) {
-        state.kiroKey = { loaded: true, unavailable: true };
-    }
-    renderApp();
-}
 
 // One input element reused across re-renders, so a background re-render never
 // wipes what the user is typing. Its value is cleared the moment it is sent.
 var _kiroKeyInput = null;
-function kiroKeyInput() {
-    if (!_kiroKeyInput) {
-        _kiroKeyInput = document.createElement('input');
-        _kiroKeyInput.type = 'password';
-        _kiroKeyInput.className = 'kiro-key-input';
-        _kiroKeyInput.autocomplete = 'off';
-        _kiroKeyInput.spellcheck = false;
-        _kiroKeyInput.placeholder = 'Paste your Kiro API key';
-        _kiroKeyInput.setAttribute('aria-label', 'Kiro API key');
-    }
-    return _kiroKeyInput;
-}
 
 /** Sign-out: drop any unsent key draft and the previous user's key status. */
 function resetKiroKeyState() {
@@ -24589,969 +23161,15 @@ function resetKiroKeyState() {
     state.kiroKey = null;
 }
 
-async function linkKiroKey() {
-    var input = kiroKeyInput();
-    var key = (input.value || '').trim();
-    input.value = '';
-    if (!key) return;
-    state.kiroKey = Object.assign({}, state.kiroKey, { busy: true });
-    renderApp();
-    try {
-        var res = await fetch('/api/v1/operator/kiro/key', {
-            method: 'PUT',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({ key: key })
-        });
-        key = '';
-        var body = await res.json().catch(function () { return {}; });
-        if (res.ok && body.ok) {
-            state.kiroKey = { loaded: true, linked: true, updated_at: body.updated_at || null };
-            showToast('Kiro API key linked', 'success');
-        } else {
-            state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
-            showToast(body.error === 'INVALID_KEY' || body.error === 'invalid_key' ? 'That does not look like a Kiro API key' : 'Could not link the Kiro API key', 'error');
-        }
-    } catch (e) {
-        state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
-        showToast('Could not link the Kiro API key', 'error');
-    }
-    renderApp();
-}
 
-async function revokeKiroKey() {
-    if (!confirm('Revoke your Kiro API key? Your open Kiro sessions end now.')) return;
-    state.kiroKey = Object.assign({}, state.kiroKey, { busy: true });
-    renderApp();
-    try {
-        var res = await fetch('/api/v1/operator/kiro/key', { method: 'DELETE', headers: buildContextHeaders({}) });
-        if (res.ok) {
-            state.kiroKey = { loaded: true, linked: false, updated_at: null };
-            showToast('Kiro API key revoked', 'success');
-        } else {
-            state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
-            showToast('Could not revoke the Kiro API key', 'error');
-        }
-    } catch (e) {
-        state.kiroKey = Object.assign({}, state.kiroKey, { busy: false });
-        showToast('Could not revoke the Kiro API key', 'error');
-    }
-    renderApp();
-}
 
-function kiroKeyStatusText() {
-    var k = state.kiroKey;
-    if (!k) return 'checking…';
-    if (k.unavailable) return 'not available on this deployment';
-    if (!k.linked) return 'not linked';
-    return k.updated_at ? 'linked · ' + new Date(k.updated_at).toLocaleDateString() : 'linked';
-}
 
-/** Link / Replace / Revoke for the signed-in user's own Kiro API key. */
-function renderKiroKeyControls() {
-    var k = state.kiroKey;
-    if (!k || k.unavailable) return null;
-    var box = document.createElement('div');
-    box.className = 'kiro-key';
-    if (!k.linked || k.editing) {
-        var form = document.createElement('form');
-        form.className = 'kiro-key-form';
-        form.onsubmit = function (e) { e.preventDefault(); linkKiroKey(); };
-        var input = kiroKeyInput();
-        input.disabled = !!k.busy;
-        form.appendChild(input);
-        var link = document.createElement('button');
-        link.type = 'submit';
-        link.className = 'kiro-key-btn kiro-key-btn--primary';
-        link.textContent = k.busy ? 'Linking…' : k.linked ? 'Replace' : 'Link';
-        link.disabled = !!k.busy;
-        form.appendChild(link);
-        if (k.linked) {
-            var cancel = document.createElement('button');
-            cancel.type = 'button';
-            cancel.className = 'kiro-key-btn';
-            cancel.textContent = 'Cancel';
-            cancel.onclick = function () { kiroKeyInput().value = ''; state.kiroKey = Object.assign({}, k, { editing: false }); renderApp(); };
-            form.appendChild(cancel);
-        }
-        box.appendChild(form);
-        var note = document.createElement('div');
-        note.className = 'kiro-key-note';
-        note.textContent = 'Your own key from your Kiro account. It is stored encrypted for your account only and never shown again.';
-        box.appendChild(note);
-    } else {
-        var actions = document.createElement('div');
-        actions.className = 'kiro-key-actions';
-        var replace = document.createElement('button');
-        replace.type = 'button';
-        replace.className = 'kiro-key-btn';
-        replace.textContent = 'Replace';
-        replace.disabled = !!k.busy;
-        replace.onclick = function () { state.kiroKey = Object.assign({}, k, { editing: true }); renderApp(); };
-        actions.appendChild(replace);
-        var revoke = document.createElement('button');
-        revoke.type = 'button';
-        revoke.className = 'kiro-key-btn kiro-key-btn--danger';
-        revoke.textContent = 'Revoke';
-        revoke.disabled = !!k.busy;
-        revoke.onclick = function () { revokeKiroKey(); };
-        actions.appendChild(revoke);
-        box.appendChild(actions);
-    }
-    return box;
-}
 
-/** Empty state of a Kiro thread: what Kiro can do here and whether it is ready. */
-function renderKiroThreadPanel() {
-    fetchKiroKeyStatus();
-    var panel = document.createElement('div');
-    panel.className = 'kiro-panel';
 
-    var head = document.createElement('div');
-    head.className = 'kiro-panel-head';
-    var title = document.createElement('div');
-    title.className = 'kiro-panel-title';
-    title.textContent = 'Kiro workspace';
-    head.appendChild(title);
-    var status = document.createElement('span');
-    var connected = kiroIsConnected();
-    status.className = 'kiro-panel-status ' + (connected ? 'kiro-panel-status--on' : 'kiro-panel-status--off');
-    status.textContent = !state.kiroStatus ? 'Checking…' : connected ? 'Connected' : 'Not connected';
-    head.appendChild(status);
-    panel.appendChild(head);
 
-    var rows = [
-        ['Reads & searches', 'on its own'],
-        ['Edits files, runs commands', 'asks you first — denied after 2 minutes without an answer'],
-        ['Your Kiro API key', kiroKeyStatusText()]
-    ];
-    var list = document.createElement('dl');
-    list.className = 'kiro-panel-rows';
-    rows.forEach(function (r) {
-        var dt = document.createElement('dt');
-        dt.textContent = r[0];
-        var dd = document.createElement('dd');
-        dd.textContent = r[1];
-        list.appendChild(dt);
-        list.appendChild(dd);
-    });
-    panel.appendChild(list);
-    var keyControls = renderKiroKeyControls();
-    if (keyControls) panel.appendChild(keyControls);
 
-    var hint = document.createElement('div');
-    hint.className = 'kiro-panel-hint';
-    hint.textContent = connected && state.kiroKey && state.kiroKey.linked === false
-        ? 'Link your Kiro API key above, then describe the change you want.'
-        : connected
-        ? 'Describe the change you want. Kiro streams its work below and asks before it touches anything.'
-        : 'Kiro answers once it is connected for your account. Until then this thread replies “not connected”.';
-    panel.appendChild(hint);
-    return panel;
-}
 
-/** Kiro's part of the live transcript: streamed text, tool lines, approval cards, Stop. */
-function appendKiroLiveTranscript(wrap) {
-    var live = state.chatLiveKiro;
-    if (!live || activeOperatorEngine() !== 'kiro') return;
-    live.tools.forEach(function (tool) {
-        var line = document.createElement('div');
-        line.className = 'chat-tool-activity-line chat-tool-activity-line--' + tool.status;
-        var marker = tool.status === 'ok' ? '✓ ' : tool.status === 'failed' ? '✗ ' : '… ';
-        line.textContent = marker + tool.title + (tool.status === 'running' ? ' (running)' : '');
-        wrap.appendChild(line);
-    });
-    // Kiro's own words first, then what it is waiting on you for, right above Stop.
-    if (live.text) {
-        var text = document.createElement('div');
-        text.className = 'kiro-live-text';
-        text.textContent = live.text;
-        wrap.appendChild(text);
-    }
-    live.permissions.forEach(function (p) {
-        var card = document.createElement('div');
-        // Literal class names, so the dead-CSS matcher (find-dead-css-classes.mjs) sees them used.
-        var answerClass = { allowed: 'kiro-approval--allowed', denied: 'kiro-approval--denied', expired: 'kiro-approval--expired', error: 'kiro-approval--error' }[p.answer];
-        card.className = 'kiro-approval' + (answerClass ? ' ' + answerClass : '');
-        card.setAttribute('role', 'group');
-        card.setAttribute('aria-label', 'Kiro asks for permission');
-        var what = document.createElement('div');
-        what.className = 'kiro-approval-text';
-        what.textContent = 'Kiro wants to ' + (p.kind ? p.kind + ': ' : '') + p.title;
-        card.appendChild(what);
-        if (!p.answer) {
-            var actions = document.createElement('div');
-            actions.className = 'kiro-approval-actions';
-            [[true, 'Allow'], [false, 'Deny']].forEach(function (a) {
-                var b = document.createElement('button');
-                b.type = 'button';
-                b.className = 'kiro-approval-btn' + (a[0] ? ' kiro-approval-btn--allow' : '');
-                b.textContent = a[1];
-                b.onclick = function () { answerKiroPermission(p.id, a[0]); };
-                actions.appendChild(b);
-            });
-            card.appendChild(actions);
-        } else {
-            var done = document.createElement('div');
-            done.className = 'kiro-approval-result';
-            done.textContent = { sending: 'Sending…', allowed: 'Allowed', denied: 'Denied', expired: 'Expired — denied', error: 'Could not send — Kiro will deny it' }[p.answer] || p.answer;
-            card.appendChild(done);
-        }
-        wrap.appendChild(card);
-    });
-    var stop = document.createElement('button');
-    stop.type = 'button';
-    stop.className = 'kiro-stop-btn';
-    stop.textContent = 'Stop';
-    stop.title = 'Stop Kiro’s current turn';
-    stop.onclick = function () { stopKiroTurn(); };
-    wrap.appendChild(stop);
-}
 
-function renderOperatorLiveTranscript() {
-    var wrap = document.createElement('div');
-    wrap.className = 'chat-tool-activity chat-tool-activity--live';
-    state.chatLiveTranscript.forEach(function (entry) {
-        if (!entry) return;
-        var line = document.createElement('div');
-        line.className = 'chat-tool-activity-line chat-tool-activity-line--' + (entry.status || 'running');
-        var marker = entry.status === 'ok' ? String.fromCodePoint(0x2713) + ' '
-            : entry.status === 'failed' ? String.fromCodePoint(0x2717) + ' '
-            : String.fromCodePoint(0x2026) + ' ';
-        var text = marker + describeToolActivity({ name: entry.name, response: {} });
-        if (entry.status === 'running') text += ' (running)';
-        else if (typeof entry.duration_ms === 'number') text += ' · ' + formatToolDuration(entry.duration_ms);
-        if (entry.status === 'failed' && entry.error) text += ' — ' + entry.error;
-        line.textContent = text;
-        line.title = entry.args ? JSON.stringify(entry.args) : '';
-        wrap.appendChild(line);
-    });
-    // VTID-04031: each model call as it completes — provider, model, stage,
-    // duration and, when the provider reported usage, tokens + est. cost.
-    state.chatLiveModelTurns.forEach(function (d) {
-        if (!d) return;
-        var mline = document.createElement('div');
-        mline.className = 'chat-tool-activity-line chat-tool-activity-line--model';
-        mline.textContent = '\u2234 ' + formatTurnCostBadge({
-            provider: d.provider, model: d.model, duration_ms: d.duration_ms, usage: d.usage, cost_usd: d.cost_usd, cost_priced: d.cost_priced
-        }) + (d.stage ? ' (' + d.stage + ')' : '');
-        wrap.appendChild(mline);
-    });
-    if (state.chatLiveTranscript.length === 0 && state.chatLiveModelTurns.length === 0) {
-        var thinking = document.createElement('div');
-        thinking.className = 'chat-tool-activity-line chat-tool-activity-line--running';
-        thinking.textContent = String.fromCodePoint(0x2026) + ' Thinking';
-        // VTID-04975: a Kiro turn that is already streaming is not "Thinking".
-        if (!kiroLiveHasContent()) wrap.appendChild(thinking);
-    }
-    // VTID-04975: a Kiro thread's streamed work, approval cards and Stop.
-    appendKiroLiveTranscript(wrap);
-    return wrap;
-}
-
-async function sendChatMessage() {
-    if (state.chatSending) return;
-
-    // VTID-0526-D: Reset typing flag - user is done typing, now sending
-    state.chatIsTyping = false;
-    // VTID-03907: Stop any in-progress voice dictation once the message is sent
-    if (state.chatDictationActive) stopOperatorDictation();
-
-    const now = new Date();
-    const timestamp = now.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' });
-    const messageText = state.chatInputValue.trim();
-
-    if (!messageText) return;
-
-    // VTID-04106: re-arm auto-scroll on every send, regardless of where the
-    // user was scrolled beforehand — see the VTID-0539 anchor check in
-    // _renderAppCore() and the .chat-messages scroll listener above that
-    // otherwise leaves this false while reading older history.
-    state.chatStickToBottom = true;
-
-    // VTID-01041: Handle pending title capture (user is responding to "What should be the title?" prompt)
-    if (state.pendingTitleVtid) {
-        var titleInput = messageText.toLowerCase();
-        var skipKeywords = ['skip', 'cancel', 'no', 'none', 'never mind', 'nevermind'];
-        var isSkip = skipKeywords.some(function (kw) { return titleInput === kw; });
-
-        // Add user message to UI
-        state.chatMessages.push({
-            type: 'user',
-            content: messageText,
-            timestamp: timestamp,
-            ts: now.getTime()
-        });
-
-        if (isSkip) {
-            // User chose to skip - keep placeholder
-            state.chatMessages.push({
-                type: 'system',
-                content: 'Title skipped. The task will keep its placeholder title.',
-                timestamp: timestamp,
-                ts: now.getTime()
-            });
-            state.pendingTitleVtid = null;
-            state.pendingTitleRetryCount = 0;
-        } else if (messageText.trim() === '') {
-            // Empty input - retry once, then keep placeholder
-            if (state.pendingTitleRetryCount < 1) {
-                state.pendingTitleRetryCount++;
-                state.chatMessages.push({
-                    type: 'system',
-                    content: 'Please enter a title for **' + state.pendingTitleVtid + '**, or type "skip" to keep the placeholder.',
-                    timestamp: timestamp,
-                    ts: now.getTime()
-                });
-            } else {
-                state.chatMessages.push({
-                    type: 'system',
-                    content: 'No title provided. The task will keep its placeholder title.',
-                    timestamp: timestamp,
-                    ts: now.getTime()
-                });
-                state.pendingTitleVtid = null;
-                state.pendingTitleRetryCount = 0;
-            }
-        } else {
-            // Valid title - save it
-            setTaskTitleOverride(state.pendingTitleVtid, messageText.trim());
-            state.chatMessages.push({
-                type: 'system',
-                content: String.fromCodePoint(0x2705) + ' Title updated: **' + state.pendingTitleVtid + '** — "' + messageText.trim() + '"',
-                timestamp: timestamp,
-                ts: now.getTime()
-            });
-            console.log('[VTID-01041] Title captured for', state.pendingTitleVtid, ':', messageText.trim());
-            state.pendingTitleVtid = null;
-            state.pendingTitleRetryCount = 0;
-            // Refresh the board to show the new title
-            fetchTasks();
-        }
-
-        // Clear input and re-render
-        state.chatInputValue = '';
-        renderApp();
-        return; // Don't send to backend - this was just title capture
-    }
-
-    // VTID-01027: Add user message to session history
-    var userHistoryEntry = {
-        role: 'user',
-        content: messageText,
-        ts: now.getTime()
-    };
-    state.operatorChatHistory.push(userHistoryEntry);
-    saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
-    touchActiveOperatorThread();
-
-    // Add user message
-    state.chatMessages.push({
-        type: 'user',
-        content: messageText,
-        timestamp: timestamp,
-        ts: now.getTime(),
-        attachments: [...state.chatAttachments]
-    });
-
-    // Prepare attachments for API
-    const attachments = state.chatAttachments.map(a => ({
-        oasis_ref: a.oasis_ref,
-        kind: a.kind
-    }));
-
-    // VTID-01027: Build context from history (excluding the message we just added)
-    var contextHistory = state.operatorChatHistory.slice(0, -1);
-    var context = buildOperatorChatContext(contextHistory);
-
-    // Clear input and attachments
-    state.chatInputValue = '';
-    state.chatAttachments = [];
-    state.chatSending = true;
-    renderApp();
-
-    // VTID-0526-D: Scroll to bottom after user message (safe - typing flag is reset)
-    requestAnimationFrame(function () {
-        var messagesContainer = document.querySelector('.chat-messages');
-        if (messagesContainer) {
-            messagesContainer.scrollTop = messagesContainer.scrollHeight;
-        }
-    });
-
-    try {
-        // VTID-01025: Route directly to operator/chat which handles both general questions
-        // AND Vitana knowledge via the knowledge_search tool when appropriate
-        // VTID-01027: Include conversation_id and context for session memory
-        console.log('[Operator] Sending message to operator chat:', messageText);
-        console.log('[VTID-01027] Sending with conversation_id:', state.operatorConversationId, 'context messages:', context.length);
-
-        // VTID-04028: stream the turn (tool-call transcript live), falling
-        // back to the one-shot /chat reply when streaming is unavailable.
-        const result = await requestOperatorTurn({
-            message: messageText,
-            // VTID-04309: the server-side thread is the console thread. Without
-            // it every request got a random thread (144 of 152 live threads
-            // had exactly one turn), so rolling summaries never accrued.
-            threadId: state.operatorActiveThreadId || undefined,
-            // VTID-04975: picks the engine for a new thread; ignored for an existing one.
-            engine: activeOperatorEngine() === 'kiro' ? 'kiro' : undefined,
-            conversation_id: state.operatorConversationId,
-            context: context.length > 0 ? context : undefined,
-            attachments: attachments.length > 0 ? attachments : undefined
-        });
-        console.log('[Operator] Chat response:', result);
-
-        // VTID-04028: carry the measured per-tool durations from the live
-        // transcript onto the final message so the activity lines keep them.
-        if (Array.isArray(result.toolResults) && state.chatLiveTranscript.length > 0) {
-            result.toolResults.forEach(function (tr, i) {
-                var entry = state.chatLiveTranscript[i];
-                if (entry && entry.name === tr.name && typeof entry.duration_ms === 'number') {
-                    tr.duration_ms = entry.duration_ms;
-                }
-            });
-        }
-
-        // VTID-0537: Use the reply from the Gemini Operator Tools Bridge
-        let replyContent = result.reply || 'No response received';
-
-        // VTID-0537: Check if a task was created via tools
-        const hasCreatedTask = result.createdTask && result.createdTask.vtid;
-
-        // VTID-01041: Build enhanced content with explicit success/failure confirmation
-        if (hasCreatedTask) {
-            var createdVtid = result.createdTask.vtid;
-            var createdTitle = result.createdTask.title || '';
-            var effectiveCreatedTitle = getEffectiveTaskTitle(result.createdTask);
-            var needsTitlePrompt = isPlaceholderTitle(createdTitle);
-
-            // VTID-01041: Explicit success confirmation
-            replyContent += '\n\n' + String.fromCodePoint(0x2705) + ' Task created: **' + createdVtid + '** — "' + effectiveCreatedTitle + '" (Scheduled)';
-
-            // VTID-01019: Add task creation to Live Feed for consistency
-            state.tickerEvents.unshift({
-                id: Date.now(),
-                timestamp: new Date().toLocaleTimeString(),
-                type: 'operator',
-                topic: 'operator.chat.task.created',
-                content: 'Task created via chat: ' + createdVtid,
-                vtid: createdVtid
-            });
-
-            // VTID-01041: If title is placeholder, prompt user for title
-            if (needsTitlePrompt) {
-                // Store the VTID awaiting title input
-                state.pendingTitleVtid = createdVtid;
-                state.pendingTitleRetryCount = 0;
-                replyContent += '\n\nWhat should be the title for **' + createdVtid + '**?';
-            }
-        }
-
-        // VTID-01027: Add assistant response to session history.
-        // VTID-04104: followExecIds must be persisted here too, not only on
-        // the in-memory chatMessages entry below — operatorChatHistory is
-        // what actually survives a thread switch or page reload
-        // (saveOperatorThreadHistory/getOperatorThreadHistory), and without
-        // this field the restore path (switchOperatorThread, the page-load
-        // bootstrap) can never re-attach the live follow panel for a turn
-        // that queued an execution, even though the execution itself keeps
-        // running on the backend the whole time.
-        var turnFollowExecIds = extractFollowedExecutionIds(result.toolResults);
-        var assistantHistoryEntry = {
-            role: 'assistant',
-            content: replyContent,
-            ts: Date.now(),
-            followExecIds: turnFollowExecIds
-        };
-        state.operatorChatHistory.push(assistantHistoryEntry);
-        saveOperatorThreadHistory(state.operatorActiveThreadId, state.operatorChatHistory);
-        touchActiveOperatorThread();
-
-        state.chatMessages.push({
-            type: 'system',
-            content: replyContent,
-            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            ts: Date.now(),
-            oasis_ref: result.oasis_ref,
-            threadId: result.threadId,
-            createdTask: result.createdTask,
-            toolResults: result.toolResults,
-            meta: result.meta,
-            followExecIds: turnFollowExecIds
-        });
-
-        // VTID-04033: follow every execution this turn queued or approved.
-        turnFollowExecIds.forEach(function (execId) {
-            var tr = (result.toolResults || []).filter(function (t) { return t && t.response && t.response.execution_id === execId; })[0];
-            followOperatorExecution(execId, tr ? OPERATOR_EXEC_FOLLOW_TOOLS[tr.name] : null);
-        });
-
-    } catch (error) {
-        console.error('[Operator] Chat error:', error);
-        // VTID-01041: Explicit failure confirmation with emoji
-        var errorContent = String.fromCodePoint(0x274C) + ' Task creation failed: ' + error.message;
-        state.chatMessages.push({
-            type: 'system',
-            content: errorContent,
-            timestamp: new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' }),
-            ts: Date.now(),
-            isError: true
-        });
-    } finally {
-        state.chatSending = false;
-        renderApp();
-
-        // VTID-0526-D: Single rAF for scroll + conditional focus after message complete
-        requestAnimationFrame(function () {
-            // Scroll to bottom to show the reply
-            var messagesContainer = document.querySelector('.chat-messages');
-            if (messagesContainer) {
-                messagesContainer.scrollTop = messagesContainer.scrollHeight;
-            }
-            // Only re-focus if input lost focus during send
-            var textarea = document.querySelector('.chat-textarea');
-            if (textarea && document.activeElement !== textarea) {
-                textarea.focus();
-            }
-        });
-    }
-}
-
-function renderOperatorTicker() {
-    const container = document.createElement('div');
-    container.className = 'ticker-container';
-    container.dataset.scrollRetain = 'true';
-    container.dataset.scrollKey = 'ticker-container';
-
-    // Heartbeat status banner
-    // VTID-0526-D: Show LIVE status and stage counters as soon as telemetry loads (no heartbeat required)
-    const statusBanner = document.createElement('div');
-    const hasStageCounters = state.stageCounters && (state.stageCounters.PLANNER > 0 || state.stageCounters.WORKER > 0 || state.stageCounters.VALIDATOR > 0 || state.stageCounters.DEPLOY > 0 || state.lastTelemetryRefresh);
-    const isLive = state.operatorHeartbeatActive || hasStageCounters;
-    statusBanner.className = isLive ? 'ticker-status-banner ticker-live' : 'ticker-status-banner ticker-standby';
-
-    // VTID-0526-D: Show stage counters immediately from telemetry, even before heartbeat snapshot
-    const counters = state.stageCounters;
-    const snapshot = state.operatorHeartbeatSnapshot;
-
-    if (isLive) {
-        // VTID-01210: Summary view with progress counter
-        const completedCount = snapshot?.tasks?.by_status?.completed || 0;
-        const totalCount = snapshot?.tasks?.total || counters.PLANNER + counters.WORKER + counters.VALIDATOR + counters.DEPLOY;
-        const inProgressCount = snapshot?.tasks?.by_status?.in_progress || 0;
-
-        statusBanner.innerHTML = `
-            <div class="ticker-status-row ticker-summary-row">
-                <span class="ticker-status-label">STATUS:</span>
-                <span class="ticker-status-value status-live">LIVE</span>
-                <span class="ticker-progress-counter">
-                    <span class="ticker-progress-completed">${completedCount}</span>
-                    <span class="ticker-progress-of">of</span>
-                    <span class="ticker-progress-total">${totalCount}</span>
-                    <span class="ticker-progress-label">tasks completed</span>
-                </span>
-                <span class="ticker-status-label">CICD:</span>
-                <span class="ticker-status-value status-${snapshot?.cicd?.status || 'ok'}">${(snapshot?.cicd?.status || 'OK').toUpperCase()}</span>
-            </div>
-            <div class="ticker-status-row ticker-status-tasks">
-                <span>Scheduled: ${snapshot?.tasks?.by_status?.scheduled || 0}</span>
-                <span>In Progress: ${inProgressCount}</span>
-                <span>Completed: ${completedCount}</span>
-            </div>
-            <div class="ticker-status-row ticker-stage-counters">
-                <span class="stage-counter stage-planner" title="Planning stage events">
-                    <span class="stage-icon">P</span>
-                    <span class="stage-count">${counters.PLANNER}</span>
-                </span>
-                <span class="stage-counter stage-worker" title="Worker stage events">
-                    <span class="stage-icon">W</span>
-                    <span class="stage-count">${counters.WORKER}</span>
-                </span>
-                <span class="stage-counter stage-validator" title="Validator stage events">
-                    <span class="stage-icon">V</span>
-                    <span class="stage-count">${counters.VALIDATOR}</span>
-                </span>
-                <span class="stage-counter stage-deploy" title="Deploy stage events">
-                    <span class="stage-icon">D</span>
-                    <span class="stage-count">${counters.DEPLOY}</span>
-                </span>
-            </div>
-        `;
-    } else if (state.stageCountersLoading) {
-        statusBanner.innerHTML = `
-            <div class="ticker-status-row">
-                <span class="ticker-status-value status-standby">LOADING</span>
-                <span class="ticker-hint">Fetching telemetry...</span>
-            </div>
-        `;
-    } else {
-        statusBanner.innerHTML = `
-            <div class="ticker-status-row">
-                <span class="ticker-status-value status-standby">STANDBY</span>
-                <span class="ticker-hint">Loading live events...</span>
-            </div>
-        `;
-    }
-    container.appendChild(statusBanner);
-
-    // VTID-01209: Active Executions section - show in-progress tasks with pipeline status
-    if (state.activeExecutions && state.activeExecutions.length > 0) {
-        var activeSection = document.createElement('div');
-        activeSection.className = 'ticker-active-executions';
-
-        var activeHeader = document.createElement('div');
-        activeHeader.className = 'ticker-active-header';
-        activeHeader.innerHTML = '<span class="active-header-badge">' + state.activeExecutions.length + ' ACTIVE</span> Pipeline Executions';
-        activeSection.appendChild(activeHeader);
-
-        state.activeExecutions.forEach(function (execData) {
-            var execCard = renderTaskExecutionStatus(execData, { variant: 'ticker-card', showRecent: false });
-            activeSection.appendChild(execCard);
-        });
-
-        container.appendChild(activeSection);
-    }
-
-    // VTID-0600: Ticker filter toolbar
-    var filterToolbar = document.createElement('div');
-    filterToolbar.className = 'ticker-filter-toolbar';
-
-    var collapseToggle = document.createElement('label');
-    collapseToggle.className = 'ticker-collapse-toggle';
-    var collapseCheckbox = document.createElement('input');
-    collapseCheckbox.type = 'checkbox';
-    collapseCheckbox.checked = state.tickerCollapseHeartbeat;
-    collapseCheckbox.onchange = function () {
-        state.tickerCollapseHeartbeat = collapseCheckbox.checked;
-        renderApp();
-    };
-    collapseToggle.appendChild(collapseCheckbox);
-    collapseToggle.appendChild(document.createTextNode(' Collapse heartbeat'));
-    filterToolbar.appendChild(collapseToggle);
-
-    var severityFilter = document.createElement('select');
-    severityFilter.className = 'ticker-severity-filter';
-    severityFilter.innerHTML =
-        '<option value="all">All Events</option>' +
-        '<option value="critical">Critical Only</option>' +
-        '<option value="important">Important+</option>';
-    severityFilter.value = state.tickerSeverityFilter;
-    severityFilter.onchange = function () {
-        state.tickerSeverityFilter = severityFilter.value;
-        renderApp();
-    };
-    filterToolbar.appendChild(severityFilter);
-
-    container.appendChild(filterToolbar);
-
-    // Events list
-    const eventsList = document.createElement('div');
-    eventsList.className = 'ticker-events-list';
-    eventsList.dataset.scrollRetain = 'true';
-    eventsList.dataset.scrollKey = 'ticker-events';
-
-    if (state.tickerEvents.length === 0) {
-        const empty = document.createElement('div');
-        empty.className = 'ticker-empty';
-        empty.textContent = state.operatorHeartbeatActive ? 'Waiting for events...' : 'Loading events...';
-        eventsList.appendChild(empty);
-    } else {
-        // VTID-0600: Classify and sort events by severity
-        var classifiedEvents = state.tickerEvents.map(function (event) {
-            var eventCopy = Object.assign({}, event);
-            // Determine severity from event type/content
-            var type = (event.type || '').toLowerCase();
-            var content = (event.content || '').toLowerCase();
-
-            if (type === 'error' || content.includes('failed') || content.includes('blocked') || content.includes('denied')) {
-                eventCopy.severity = 'critical';
-            } else if (type === 'governance' || type === 'deploy' || content.includes('success') || content.includes('allowed')) {
-                eventCopy.severity = 'important';
-            } else if (type === 'heartbeat' || type === 'ping' || content.includes('heartbeat') || content.includes('health')) {
-                eventCopy.severity = 'low';
-            } else {
-                eventCopy.severity = 'info';
-            }
-            return eventCopy;
-        });
-
-        // Filter by severity if filter is active
-        if (state.tickerSeverityFilter === 'critical') {
-            classifiedEvents = classifiedEvents.filter(function (e) { return e.severity === 'critical'; });
-        } else if (state.tickerSeverityFilter === 'important') {
-            classifiedEvents = classifiedEvents.filter(function (e) { return e.severity === 'critical' || e.severity === 'important'; });
-        }
-
-        // Sort: critical first, then important, then info, then low
-        var severityOrder = { critical: 0, important: 1, info: 2, low: 3 };
-        classifiedEvents.sort(function (a, b) {
-            return severityOrder[a.severity] - severityOrder[b.severity];
-        });
-
-        // Group heartbeat events if collapsing is enabled
-        var heartbeatEvents = [];
-        var otherEvents = [];
-
-        if (state.tickerCollapseHeartbeat) {
-            classifiedEvents.forEach(function (event) {
-                if (event.severity === 'low') {
-                    heartbeatEvents.push(event);
-                } else {
-                    otherEvents.push(event);
-                }
-            });
-        } else {
-            otherEvents = classifiedEvents;
-        }
-
-        // Render other events first
-        otherEvents.forEach(function (event) {
-            var item = document.createElement('div');
-            item.className = 'ticker-item ticker-item-' + event.severity;
-
-            // DEV-COMHU-0202: Add status-based class for deploy events
-            if (event.topic && event.topic.includes('.success')) {
-                item.classList.add('ticker-item-success');
-            } else if (event.topic && (event.topic.includes('.failed') || event.topic.includes('.blocked'))) {
-                item.classList.add('ticker-item-error');
-            }
-
-            // Severity indicator
-            var severityDot = document.createElement('span');
-            severityDot.className = 'ticker-severity-dot ticker-severity-' + event.severity;
-            item.appendChild(severityDot);
-
-            var timestamp = document.createElement('div');
-            timestamp.className = 'ticker-timestamp';
-            timestamp.textContent = event.timestamp;
-            item.appendChild(timestamp);
-
-            // VTID-0526-D: Show task_stage badge if present
-            if (event.task_stage) {
-                var stageBadge = document.createElement('div');
-                stageBadge.className = 'ticker-stage ticker-stage-' + event.task_stage.toLowerCase();
-                stageBadge.textContent = event.task_stage.charAt(0);
-                stageBadge.title = event.task_stage;
-                item.appendChild(stageBadge);
-            }
-
-            // DEV-COMHU-0202: Show VTID badge for deploy/governance events
-            if (event.vtid) {
-                var vtidBadge = document.createElement('div');
-                vtidBadge.className = 'ticker-vtid';
-                vtidBadge.textContent = event.vtid;
-                vtidBadge.title = 'VTID: ' + event.vtid;
-                item.appendChild(vtidBadge);
-            }
-
-            // DEV-COMHU-0202: Show SWV badge if present
-            if (event.swv) {
-                var swvBadge = document.createElement('div');
-                swvBadge.className = 'ticker-swv';
-                swvBadge.textContent = event.swv;
-                swvBadge.title = 'SWV: ' + event.swv;
-                item.appendChild(swvBadge);
-            }
-
-            var content = document.createElement('div');
-            content.className = 'ticker-content';
-            content.textContent = event.content;
-            item.appendChild(content);
-
-            // DEV-COMHU-0202: Show topic for deploy events instead of generic type
-            var typeLabel = event.topic && event.topic.startsWith('deploy.') ? event.topic : event.type;
-            var type = document.createElement('div');
-            type.className = 'ticker-type ticker-type-' + event.type;
-            type.textContent = typeLabel;
-            item.appendChild(type);
-
-            eventsList.appendChild(item);
-        });
-
-        // VTID-01210: Render collapsed heartbeat section as a single indicator line
-        if (state.tickerCollapseHeartbeat && heartbeatEvents.length > 0) {
-            var heartbeatSection = document.createElement('div');
-            heartbeatSection.className = 'ticker-heartbeat-collapsed';
-
-            // Get last heartbeat timestamp
-            var lastHeartbeat = heartbeatEvents[0]?.timestamp || 'N/A';
-
-            var heartbeatHeader = document.createElement('div');
-            heartbeatHeader.className = 'ticker-heartbeat-header';
-            heartbeatHeader.innerHTML = `
-                <span class="heartbeat-icon">♡</span>
-                <span class="heartbeat-count">${heartbeatEvents.length} heartbeats</span>
-                <span class="heartbeat-last">(last: ${lastHeartbeat})</span>
-                <button class="ticker-expand-btn">Expand ▼</button>
-            `;
-            heartbeatHeader.onclick = function () {
-                heartbeatSection.classList.toggle('expanded');
-                var btn = heartbeatHeader.querySelector('.ticker-expand-btn');
-                btn.textContent = heartbeatSection.classList.contains('expanded') ? 'Collapse ▲' : 'Expand ▼';
-            };
-            heartbeatSection.appendChild(heartbeatHeader);
-
-            var heartbeatList = document.createElement('div');
-            heartbeatList.className = 'ticker-heartbeat-list';
-
-            heartbeatEvents.slice(0, 10).forEach(function (event) {
-                var item = document.createElement('div');
-                item.className = 'ticker-item ticker-item-low ticker-item-mini';
-                item.innerHTML = '<span class="ticker-timestamp">' + event.timestamp + '</span> ' + event.content;
-                heartbeatList.appendChild(item);
-            });
-
-            if (heartbeatEvents.length > 10) {
-                var moreNote = document.createElement('div');
-                moreNote.className = 'ticker-more-note';
-                moreNote.textContent = '... and ' + (heartbeatEvents.length - 10) + ' more heartbeat events';
-                heartbeatList.appendChild(moreNote);
-            }
-
-            heartbeatSection.appendChild(heartbeatList);
-            eventsList.appendChild(heartbeatSection);
-        }
-    }
-
-    container.appendChild(eventsList);
-
-    return container;
-}
-
-/**
- * VTID-0524: Renders the operator history tab showing deployment history
- * with VTID + SWV + status + timestamp
- */
-function renderOperatorHistory() {
-    const container = document.createElement('div');
-    container.className = 'history-container';
-
-    // Header
-    const header = document.createElement('div');
-    header.className = 'history-header';
-
-    const title = document.createElement('span');
-    title.textContent = 'Deployment History';
-    header.appendChild(title);
-
-    // SPEC-01: Per-view refresh buttons removed - use global refresh icon in header
-
-    container.appendChild(header);
-
-    // Content
-    const content = document.createElement('div');
-    content.className = 'history-content';
-    content.dataset.scrollRetain = 'true';
-    content.dataset.scrollKey = 'operator-history';
-
-    if (state.historyLoading) {
-        content.innerHTML = '<div class="history-loading">Loading deployment history...</div>';
-    } else if (state.historyError) {
-        const errorDiv = document.createElement('div');
-        errorDiv.className = 'history-error';
-        errorDiv.textContent = 'Error: ' + state.historyError;
-        content.appendChild(errorDiv);
-    } else if (!state.versionHistory || state.versionHistory.length === 0) {
-        content.innerHTML = '<div class="history-empty">No deployments yet. Click Refresh to load.</div>';
-        // Auto-fetch on first open if empty
-        if (!state.historyLoading) {
-            setTimeout(async () => {
-                state.historyLoading = true;
-                renderApp();
-                try {
-                    state.versionHistory = await fetchDeploymentHistory();
-                } catch (error) {
-                    state.historyError = error.message;
-                } finally {
-                    state.historyLoading = false;
-                    renderApp();
-                }
-            }, 100);
-        }
-    } else {
-        // VTID-0524 + VTID-0600: Render deployment history table with human-readable meaning
-        const table = document.createElement('table');
-        table.className = 'history-table';
-
-        const thead = document.createElement('thead');
-        const theadTr = document.createElement('tr');
-
-        // VTID-0600: Added 'Summary', 'Triggered By', and 'Meaning' columns
-        ['VTID', 'Service', 'SWV', 'Timestamp', 'Status', 'Summary', 'Triggered By'].forEach(function (headerText) {
-            const th = document.createElement('th');
-            th.textContent = headerText;
-            theadTr.appendChild(th);
-        });
-        thead.appendChild(theadTr);
-        table.appendChild(thead);
-
-        const tbody = document.createElement('tbody');
-        state.versionHistory.forEach(function (deploy) {
-            const tr = document.createElement('tr');
-
-            // VTID column
-            const vtidTd = document.createElement('td');
-            vtidTd.className = 'history-vtid';
-            vtidTd.textContent = deploy.vtid || '-';
-            tr.appendChild(vtidTd);
-
-            // Service column
-            const serviceTd = document.createElement('td');
-            serviceTd.className = 'history-service';
-            serviceTd.textContent = deploy.service || '-';
-            tr.appendChild(serviceTd);
-
-            // SWV column
-            const swvTd = document.createElement('td');
-            swvTd.className = 'history-swv';
-            swvTd.textContent = deploy.swv || '-';
-            tr.appendChild(swvTd);
-
-            // Timestamp column
-            const timeTd = document.createElement('td');
-            timeTd.className = 'history-time';
-            timeTd.textContent = deploy.createdAt ? new Date(deploy.createdAt).toLocaleString() : '-';
-            tr.appendChild(timeTd);
-
-            // Status column with color coding
-            const statusTd = document.createElement('td');
-            statusTd.className = 'history-status';
-            const statusBadge = document.createElement('span');
-            statusBadge.className = 'history-status-badge';
-            if (deploy.status === 'success') {
-                statusBadge.className += ' history-status-success';
-            } else if (deploy.status === 'failure') {
-                statusBadge.className += ' history-status-failed';
-            }
-            statusBadge.textContent = deploy.status || 'unknown';
-            statusTd.appendChild(statusBadge);
-            tr.appendChild(statusTd);
-
-            // VTID-0600: Event Summary column (derived from VTID and service)
-            const summaryTd = document.createElement('td');
-            summaryTd.className = 'history-summary';
-            var summary = generateDeploySummary(deploy);
-            summaryTd.textContent = summary;
-            tr.appendChild(summaryTd);
-
-            // VTID-0600: Triggered By column
-            const triggeredByTd = document.createElement('td');
-            triggeredByTd.className = 'history-triggered-by';
-            var triggeredBy = deploy.initiator || 'user';
-            var triggeredByBadge = document.createElement('span');
-            triggeredByBadge.className = 'history-trigger-badge history-trigger-' + triggeredBy.toLowerCase();
-            triggeredByBadge.textContent = triggeredBy === 'agent' ? 'CI/CD' : 'User';
-            triggeredByTd.appendChild(triggeredByBadge);
-            tr.appendChild(triggeredByTd);
-
-            tbody.appendChild(tr);
-        });
-        table.appendChild(tbody);
-        content.appendChild(table);
-    }
-
-    container.appendChild(content);
-    return container;
-}
 
 // --- Publish Modal (VTID-0517) ---
 
@@ -27873,44 +25491,6 @@ async function startOperatorLiveTicker() {
 }
 
 
-/**
- * Upload file for operator chat
- */
-async function uploadOperatorFile(file, kind) {
-    console.log('[Operator] Uploading file:', file.name, kind);
-
-    try {
-        const response = await fetch('/api/v1/operator/upload', {
-            method: 'POST',
-            headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
-            body: JSON.stringify({
-                name: file.name,
-                kind: kind,
-                content_type: file.type || 'application/octet-stream'
-            })
-        });
-
-        if (!response.ok) {
-            throw new Error(`Upload failed: ${response.status}`);
-        }
-
-        const result = await response.json();
-        console.log('[Operator] File uploaded:', result);
-
-        // Add to chat attachments
-        state.chatAttachments.push({
-            oasis_ref: result.oasis_ref,
-            kind: kind,
-            name: result.name
-        });
-
-        renderApp();
-
-    } catch (error) {
-        console.error('[Operator] Upload error:', error);
-        alert('Failed to upload file: ' + error.message);
-    }
-}
 
 // --- VTID-0520: CI/CD Health Indicator ---
 
@@ -28111,6 +25691,10 @@ var FALLBACK_HEALTH_ENDPOINTS = [
     { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
     { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
     { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+    // VTID-05141: gateway twins of three ALERT-* workflows.
+    { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+    { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+    { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
     // VTID-04664: systems that had no check.
     { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
     { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
@@ -30585,624 +28169,16 @@ function rerenderOverviewRecommends() {
     if (old) old.replaceWith(renderOverviewRecommendsPanel());
 }
 
-// ---------------------------------------------------------------------------
-// 11. fetchOperatorTaskQueue — GET /api/v1/tasks?status=pending,in_progress
-// ---------------------------------------------------------------------------
-async function fetchOperatorTaskQueue() {
-    if (state.operatorTaskQueue.loading) return;
-    state.operatorTaskQueue.loading = true;
-    state.operatorTaskQueue.error = null;
-    renderApp();
 
-    try {
-        var response = await fetch('/api/v1/tasks?status=pending,in_progress,scheduled,blocked,failed&limit=50');
-        if (!response.ok) throw new Error('Task queue fetch failed: ' + response.status);
 
-        var data = await response.json();
-        var items = data.data || data.tasks || (Array.isArray(data) ? data : []);
-        state.operatorTaskQueue.items = items;
-        state.operatorTaskQueue.fetched = true;
-        state.operatorTaskQueue.error = null;
-        console.log('[Supervision] Operator task queue loaded:', items.length);
-    } catch (error) {
-        console.error('[VTID-01240] Failed to fetch operator task queue:', error);
-        state.operatorTaskQueue.error = error.message;
-    } finally {
-        state.operatorTaskQueue.loading = false;
-        renderApp();
-    }
-}
 
-// ---------------------------------------------------------------------------
-// 12. renderOperatorTaskQueueView — task queue table with clickable rows
-// ---------------------------------------------------------------------------
-function renderOperatorTaskQueueView() {
-    var container = document.createElement('div');
-    container.className = 'operator-task-queue-container';
-
-    // Auto-fetch
-    if (!state.operatorTaskQueue.fetched && !state.operatorTaskQueue.loading) {
-        fetchOperatorTaskQueue();
-    }
-
-    // Loading
-    if (state.operatorTaskQueue.loading && state.operatorTaskQueue.items.length === 0) {
-        var loading = document.createElement('div');
-        loading.className = 'placeholder-content';
-        loading.textContent = 'Loading task queue...';
-        container.appendChild(loading);
-        return container;
-    }
-
-    // Error
-    if (state.operatorTaskQueue.error) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorTaskQueue.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Empty
-    if (state.operatorTaskQueue.items.length === 0) {
-        var emptyDiv = document.createElement('div');
-        emptyDiv.className = 'placeholder-content';
-        emptyDiv.textContent = 'No active tasks found.';
-        container.appendChild(emptyDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var title = document.createElement('span');
-    title.className = 'toolbar-title';
-    title.textContent = 'Task Queue (' + state.operatorTaskQueue.items.length + ')';
-    header.appendChild(title);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.operatorTaskQueue.fetched = false;
-        fetchOperatorTaskQueue();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Status filter buttons
-    var filterBar = document.createElement('div');
-    filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;';
-    var filters = [
-        { key: 'all', label: 'All' },
-        { key: 'scheduled', label: 'Scheduled' },
-        { key: 'in_progress', label: 'In Progress' },
-        { key: 'pending', label: 'Pending' },
-        { key: 'blocked', label: 'Blocked' },
-        { key: 'failed', label: 'Failed' }
-    ];
-    filters.forEach(function (f) {
-        var btn = document.createElement('button');
-        btn.className = 'btn btn-sm' + (state.operatorTaskQueue.statusFilter === f.key ? ' btn-primary' : '');
-        btn.textContent = f.label;
-        btn.onclick = function () {
-            state.operatorTaskQueue.statusFilter = f.key;
-            renderApp();
-        };
-        filterBar.appendChild(btn);
-    });
-    container.appendChild(filterBar);
-
-    // Filter items
-    var displayItems = state.operatorTaskQueue.items;
-    if (state.operatorTaskQueue.statusFilter !== 'all') {
-        displayItems = displayItems.filter(function (task) {
-            return (task.status || '').toLowerCase() === state.operatorTaskQueue.statusFilter;
-        });
-    }
-
-    if (displayItems.length === 0) {
-        var noMatch = document.createElement('div');
-        noMatch.className = 'placeholder-content';
-        noMatch.textContent = 'No tasks matching filter "' + state.operatorTaskQueue.statusFilter + '".';
-        container.appendChild(noMatch);
-        return container;
-    }
-
-    // Table
-    var table = document.createElement('table');
-    table.className = 'list-table';
-
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['VTID', 'Title', 'Status', 'Spec', 'Role', 'Updated'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    displayItems.forEach(function (task) {
-        var row = document.createElement('tr');
-        row.className = 'clickable-row';
-        if (state.selectedTask && state.selectedTask.vtid === task.vtid) {
-            row.className += ' selected';
-        }
-        makeClickable(row, function () {
-            state.selectedTask = task;
-            state.selectedTaskDetail = null;
-            state.selectedTaskDetailLoading = true;
-            state.executionStatus = null;
-            state.executionStatusLoading = false;
-            renderApp();
-            fetchVtidDetail(task.vtid);
-        }, { label: 'View task details: ' + (task.vtid || task.title || 'task') });
-        row.style.cursor = 'pointer';
-
-        var vtidTd = document.createElement('td');
-        vtidTd.className = 'vtid-cell';
-        vtidTd.textContent = task.vtid || '';
-        row.appendChild(vtidTd);
-
-        var titleTd = document.createElement('td');
-        titleTd.textContent = task.title || task.vtid || '';
-        row.appendChild(titleTd);
-
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (task.status || 'pending').toLowerCase();
-        statusBadge.textContent = task.status || 'pending';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
-
-        var specTd = document.createElement('td');
-        var specStatus = task.spec_status || 'missing';
-        var specBadge = document.createElement('span');
-        specBadge.className = 'status-badge status-' + specStatus.toLowerCase();
-        specBadge.textContent = specStatus;
-        specTd.appendChild(specBadge);
-        row.appendChild(specTd);
-
-        var roleTd = document.createElement('td');
-        var roles = task.target_roles || task.target_role || [];
-        if (typeof roles === 'string') roles = [roles];
-        roleTd.textContent = Array.isArray(roles) ? roles.join(', ') : '';
-        row.appendChild(roleTd);
-
-        var updatedTd = document.createElement('td');
-        updatedTd.textContent = formatEventTimestamp(task.updated_at || task.created_at);
-        row.appendChild(updatedTd);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 13. fetchOperatorDashboard — composite fetch for supervision dashboard
-// ---------------------------------------------------------------------------
-async function fetchOperatorDashboard() {
-    if (state.operatorDashboard.loading) return;
-    state.operatorDashboard.loading = true;
-    state.operatorDashboard.error = null;
-    renderApp();
-
-    try {
-        var results = await Promise.allSettled([
-            // VTID-04887: the admin-gated in-process route. The service-token
-            // /api/v1/autopilot/pipeline/summary always answered 401 here.
-            fetch('/api/v1/ops/pipeline-summary', {
-                headers: buildContextHeaders({ Accept: 'application/json' })
-            }).then(function (r) {
-                if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
-                return r.json();
-            }),
-            fetch('/api/v1/operator/heartbeat').then(function (r) {
-                if (!r.ok) throw new Error('Heartbeat: ' + r.status);
-                return r.json();
-            }),
-            fetch('/api/v1/approvals/pending?limit=5').then(function (r) {
-                if (!r.ok) throw new Error('Approvals: ' + r.status);
-                return r.json();
-            })
-        ]);
-
-        var pipeline = results[0].status === 'fulfilled' ? results[0].value : null;
-        var heartbeat = results[1].status === 'fulfilled' ? results[1].value : null;
-        var approvals = results[2].status === 'fulfilled' ? results[2].value : null;
-
-        state.operatorDashboard.data = {
-            pipeline: pipeline,
-            heartbeat: heartbeat,
-            approvals: approvals
-        };
-        state.operatorDashboard.fetched = true;
-        state.operatorDashboard.error = null;
-        console.log('[Supervision] Dashboard loaded');
-    } catch (error) {
-        console.error('[Supervision] Dashboard fetch error:', error);
-        state.operatorDashboard.error = error.message;
-    } finally {
-        state.operatorDashboard.loading = false;
-        renderApp();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 14. renderOperatorDashboardView — supervision dashboard landing page
-// ---------------------------------------------------------------------------
-function renderOperatorDashboardView() {
-    var container = document.createElement('div');
-    container.className = 'operator-dashboard-container';
-
-    // Auto-fetch
-    if (!state.operatorDashboard.fetched && !state.operatorDashboard.loading) {
-        fetchOperatorDashboard();
-    }
-
-    // Loading
-    if (state.operatorDashboard.loading && !state.operatorDashboard.data) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading supervision dashboard\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
-    }
-
-    // Error
-    if (state.operatorDashboard.error && !state.operatorDashboard.data) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorDashboard.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    var dashData = state.operatorDashboard.data || {};
-    var pipeline = dashData.pipeline || {};
-    var heartbeat = dashData.heartbeat || {};
-    var approvals = dashData.approvals || {};
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var titleEl = document.createElement('span');
-    titleEl.className = 'toolbar-title';
-    titleEl.textContent = 'Supervision Dashboard';
-    header.appendChild(titleEl);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.operatorDashboard.fetched = false;
-        fetchOperatorDashboard();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // ── A. Operational Readiness Strip ──
-    var readinessSection = document.createElement('div');
-    readinessSection.className = 'pipeline-middle-row';
-    readinessSection.style.cssText = 'display:flex;gap:16px;margin-bottom:16px;flex-wrap:wrap;';
-
-    var readinessItems = [
-        { label: 'Autopilot Loop', value: pipeline.loop_running, type: 'bool' },
-        { label: 'Execution Armed', value: pipeline.execution_armed, type: 'bool' },
-        { label: 'Workers Active', value: pipeline.workers_active, type: 'bool' },
-        { label: 'Success Rate', value: pipeline.success_rate, type: 'percent' }
-    ];
-
-    readinessItems.forEach(function (item) {
-        var card = document.createElement('div');
-        card.style.cssText = 'background:#1e293b;border-radius:8px;padding:12px 16px;flex:1;min-width:140px;text-align:center;';
-
-        if (item.type === 'bool') {
-            var dot = document.createElement('div');
-            dot.className = 'health-dot';
-            dot.style.cssText = 'width:12px;height:12px;border-radius:50%;display:inline-block;margin-right:8px;background:' +
-                (item.value ? '#10b981' : '#ef4444') + ';';
-            card.appendChild(dot);
-
-            var label = document.createElement('span');
-            label.style.color = '#94a3b8';
-            label.textContent = item.label;
-            card.appendChild(label);
-
-            var status = document.createElement('div');
-            status.style.cssText = 'font-size:13px;margin-top:4px;color:' + (item.value ? '#10b981' : '#ef4444') + ';';
-            status.textContent = item.value ? 'Active' : 'Inactive';
-            card.appendChild(status);
-        } else {
-            var pctLabel = document.createElement('div');
-            pctLabel.style.color = '#94a3b8';
-            pctLabel.textContent = item.label;
-            card.appendChild(pctLabel);
-
-            var pctVal = document.createElement('div');
-            var rate = typeof item.value === 'number' ? item.value : 0;
-            pctVal.style.cssText = 'font-size:24px;font-weight:bold;color:' +
-                (rate >= 80 ? '#10b981' : rate >= 50 ? '#f59e0b' : '#ef4444') + ';';
-            pctVal.textContent = rate + '%';
-            card.appendChild(pctVal);
-        }
-
-        readinessSection.appendChild(card);
-    });
-
-    container.appendChild(readinessSection);
-
-    // ── B. Pipeline Funnel ──
-    var funnel = pipeline.funnel || {};
-    var funnelSection = document.createElement('div');
-    funnelSection.className = 'pipeline-funnel';
-
-    var funnelStages = [
-        { key: 'scheduled', label: 'Scheduled', color: '#3b82f6' },
-        { key: 'in_progress', label: 'In Progress', color: '#f59e0b' },
-        { key: 'completed', label: 'Completed', color: '#10b981' }
-    ];
-
-    funnelStages.forEach(function (stage, idx) {
-        var stageEl = document.createElement('div');
-        stageEl.className = 'funnel-stage';
-        stageEl.style.borderTopColor = stage.color;
-
-        var countEl = document.createElement('div');
-        countEl.className = 'funnel-count';
-        countEl.textContent = String(funnel[stage.key] || 0);
-        countEl.style.color = stage.color;
-
-        var labelEl = document.createElement('div');
-        labelEl.className = 'funnel-label';
-        labelEl.textContent = stage.label;
-
-        stageEl.appendChild(countEl);
-        stageEl.appendChild(labelEl);
-        funnelSection.appendChild(stageEl);
-
-        if (idx < funnelStages.length - 1) {
-            var arrow = document.createElement('div');
-            arrow.className = 'funnel-arrow';
-            arrow.textContent = '\u2192';
-            funnelSection.appendChild(arrow);
-        }
-    });
-
-    container.appendChild(funnelSection);
-
-    // Sub-counts
-    var subCounts = document.createElement('div');
-    subCounts.className = 'funnel-sub-counts';
-
-    var subItems = [
-        { label: 'Broken', count: funnel.broken || 0, color: '#ef4444' },
-        { label: 'Stuck', count: funnel.stuck || 0, color: '#f59e0b' },
-        { label: 'Rejected', count: funnel.rejected || 0, color: '#6b7280' }
-    ];
-
-    subItems.forEach(function (item) {
-        var badge = document.createElement('span');
-        badge.className = 'funnel-sub-badge';
-        badge.style.color = item.color;
-        badge.style.borderColor = item.color;
-        badge.textContent = item.label + ': ' + item.count;
-        subCounts.appendChild(badge);
-    });
-
-    container.appendChild(subCounts);
-
-    // ── C. Needs Your Action ──
-    var actionSection = document.createElement('div');
-    actionSection.style.cssText = 'display:flex;gap:12px;margin:16px 0;flex-wrap:wrap;';
-
-    var attQueue = (pipeline.attention_queue || []);
-    var approvalCount = 0;
-    if (approvals.data) approvalCount = approvals.data.length;
-    else if (approvals.items) approvalCount = approvals.items.length;
-    else if (Array.isArray(approvals)) approvalCount = approvals.length;
-    var recsCount = (pipeline.recommendations || []).length;
-
-    var actionCards = [
-        { label: 'Approvals Pending', count: approvalCount, color: '#f59e0b', tab: 'deployments' },
-        { label: 'Attention Items', count: attQueue.length, color: '#ef4444', tab: 'runbook' },
-        { label: 'Recommendations', count: recsCount, color: '#3b82f6', tab: 'runbook' }
-    ];
-
-    actionCards.forEach(function (card) {
-        var el = document.createElement('div');
-        el.style.cssText = 'background:#1e293b;border-radius:8px;padding:16px;flex:1;min-width:160px;cursor:pointer;border-left:3px solid ' + card.color + ';';
-        el.onclick = function () {
-            var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
-            if (section) {
-                var t = section.tabs.find(function (t) { return t.key === card.tab; });
-                if (t && t.path) {
-                    history.pushState(null, '', t.path);
-                    renderApp();
-                }
-            }
-        };
-
-        var countEl = document.createElement('div');
-        countEl.style.cssText = 'font-size:28px;font-weight:bold;color:' + card.color + ';';
-        countEl.textContent = String(card.count);
-        el.appendChild(countEl);
-
-        var labelEl = document.createElement('div');
-        labelEl.style.cssText = 'color:#94a3b8;font-size:13px;margin-top:4px;';
-        labelEl.textContent = card.label;
-        el.appendChild(labelEl);
-
-        actionSection.appendChild(el);
-    });
-
-    container.appendChild(actionSection);
-
-    // ── D. Attention Queue (top 5) ──
-    var attTitle = document.createElement('div');
-    attTitle.className = 'section-title';
-    attTitle.textContent = attQueue.length > 0
-        ? 'Attention Queue (' + attQueue.length + ')'
-        : 'Attention Queue \u2014 All Clear';
-    container.appendChild(attTitle);
-
-    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
-
-    if (attQueue.length === 0) {
-        var allClear = document.createElement('div');
-        allClear.className = 'attention-all-clear';
-        allClear.textContent = 'No tasks need immediate attention. System is running smoothly.';
-        container.appendChild(allClear);
-    } else {
-        var displayQueue = attQueue.slice(0, 5);
-        displayQueue.forEach(function (item) {
-            var card = document.createElement('div');
-            card.className = 'attention-item';
-            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
-
-            var topRow = document.createElement('div');
-            topRow.className = 'attention-item-top';
-
-            var badge = document.createElement('span');
-            badge.className = 'severity-badge';
-            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
-            badge.textContent = item.severity;
-
-            var vtidEl = document.createElement('span');
-            vtidEl.className = 'attention-vtid';
-            vtidEl.textContent = item.vtid;
-
-            var titleSpan = document.createElement('span');
-            titleSpan.className = 'attention-title';
-            titleSpan.textContent = item.title || '';
-
-            topRow.appendChild(badge);
-            topRow.appendChild(vtidEl);
-            topRow.appendChild(titleSpan);
-
-            var bottomRow = document.createElement('div');
-            bottomRow.className = 'attention-item-bottom';
-
-            var reasonEl = document.createElement('span');
-            reasonEl.textContent = item.reason || '';
-            bottomRow.appendChild(reasonEl);
-
-            if (item.stuck_minutes) {
-                var timeEl = document.createElement('span');
-                timeEl.className = 'attention-time';
-                var mins = item.stuck_minutes;
-                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
-                bottomRow.appendChild(timeEl);
-            }
-
-            var viewBtn = document.createElement('button');
-            viewBtn.className = 'btn btn-sm';
-            viewBtn.textContent = 'View Task';
-            viewBtn.onclick = function (e) {
-                e.stopPropagation();
-                state.selectedTask = {
-                    vtid: item.vtid,
-                    title: item.title,
-                    status: item.status || 'scheduled',
-                    spec_status: item.spec_status || 'missing',
-                    summary: item.reason || '',
-                    oasisColumn: '',
-                    _attentionContext: {
-                        severity: item.severity,
-                        reason: item.reason,
-                        stuck_minutes: item.stuck_minutes
-                    }
-                };
-                state.selectedTaskDetail = null;
-                state.selectedTaskDetailLoading = true;
-                state.executionStatus = null;
-                state.executionStatusLoading = false;
-                renderApp();
-                fetchVtidDetail(item.vtid);
-            };
-
-            card.appendChild(topRow);
-            card.appendChild(bottomRow);
-            card.appendChild(viewBtn);
-            container.appendChild(card);
-        });
-
-        if (attQueue.length > 5) {
-            var viewAll = document.createElement('div');
-            viewAll.style.cssText = 'text-align:center;margin-top:8px;';
-            var viewAllBtn = document.createElement('button');
-            viewAllBtn.className = 'btn btn-sm';
-            viewAllBtn.textContent = 'View all ' + attQueue.length + ' items in Runbook';
-            viewAllBtn.onclick = function () {
-                var section = NAVIGATION_CONFIG.find(function (s) { return s.section === 'operator'; });
-                if (section) {
-                    var t = section.tabs.find(function (t) { return t.key === 'runbook'; });
-                    if (t && t.path) {
-                        history.pushState(null, '', t.path);
-                        renderApp();
-                    }
-                }
-            };
-            viewAll.appendChild(viewAllBtn);
-            container.appendChild(viewAll);
-        }
-    }
-
-    return container;
-}
 
 // ---------------------------------------------------------------------------
 // 15. fetchOperatorEventStream — GET /api/v1/oasis/events?limit=100
 // ---------------------------------------------------------------------------
 var _operatorEventStreamInterval = null;
 
-async function fetchOperatorEventStream() {
-    if (state.operatorEventStream.loading) return;
-    var isInitialLoad = !state.operatorEventStream.fetched;
-    state.operatorEventStream.loading = true;
-    state.operatorEventStream.error = null;
-    if (isInitialLoad) renderApp();
 
-    try {
-        var response = await fetch('/api/v1/oasis/events?limit=100');
-        if (!response.ok) throw new Error('Events fetch failed: ' + response.status);
-
-        var data = await response.json();
-        var items = data.data || data.events || (Array.isArray(data) ? data : []);
-        state.operatorEventStream.items = items;
-        state.operatorEventStream.fetched = true;
-        state.operatorEventStream.error = null;
-        console.log('[Supervision] Event stream loaded:', items.length);
-    } catch (error) {
-        console.error('[Supervision] Event stream fetch error:', error);
-        state.operatorEventStream.error = error.message;
-    } finally {
-        state.operatorEventStream.loading = false;
-        if (isInitialLoad) {
-            renderApp();
-        } else {
-            refreshOperatorContent();
-        }
-    }
-}
-
-function startOperatorEventStreamRefresh() {
-    if (_operatorEventStreamInterval) return;
-    _operatorEventStreamInterval = setInterval(function () {
-        fetchOperatorEventStream();
-    }, 30000);
-}
 
 function stopOperatorEventStreamRefresh() {
     if (_operatorEventStreamInterval) {
@@ -31211,669 +28187,10 @@ function stopOperatorEventStreamRefresh() {
     }
 }
 
-// ---------------------------------------------------------------------------
-// 16. renderOperatorEventStreamView — OASIS event feed
-// ---------------------------------------------------------------------------
-function renderOperatorEventStreamView() {
-    var container = document.createElement('div');
-    container.className = 'operator-event-stream-container';
 
-    // Auto-fetch + start auto-refresh
-    if (!state.operatorEventStream.fetched && !state.operatorEventStream.loading) {
-        fetchOperatorEventStream();
-        startOperatorEventStreamRefresh();
-    } else if (!_operatorEventStreamInterval) {
-        startOperatorEventStreamRefresh();
-    }
 
-    // Loading
-    if (state.operatorEventStream.loading && state.operatorEventStream.items.length === 0) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading event stream\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
-    }
 
-    // Error
-    if (state.operatorEventStream.error && state.operatorEventStream.items.length === 0) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorEventStream.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
 
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var titleEl = document.createElement('span');
-    titleEl.className = 'toolbar-title';
-    titleEl.textContent = 'Event Stream (' + state.operatorEventStream.items.length + ')';
-    header.appendChild(titleEl);
-
-    var autoLabel = document.createElement('span');
-    autoLabel.style.cssText = 'color:#10b981;font-size:12px;margin-right:8px;';
-    autoLabel.textContent = 'Auto-refresh 30s';
-    header.appendChild(autoLabel);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        fetchOperatorEventStream();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // Domain filter buttons
-    var filterBar = document.createElement('div');
-    filterBar.style.cssText = 'display:flex;gap:6px;margin-bottom:12px;flex-wrap:wrap;';
-
-    var domainColors = {
-        'all': '#94a3b8',
-        'cicd': '#3b82f6',
-        'operator': '#10b981',
-        'vtid': '#8b5cf6',
-        'deploy': '#f59e0b',
-        'governance': '#ef4444',
-        'autopilot': '#06b6d4'
-    };
-
-    var domainFilters = ['all', 'cicd', 'operator', 'vtid', 'deploy', 'governance', 'autopilot'];
-    domainFilters.forEach(function (d) {
-        var btn = document.createElement('button');
-        btn.className = 'btn btn-sm' + (state.operatorEventStream.domainFilter === d ? ' btn-primary' : '');
-        btn.textContent = d === 'all' ? 'All' : d;
-        if (d !== 'all') {
-            btn.style.borderLeft = '3px solid ' + (domainColors[d] || '#94a3b8');
-        }
-        btn.onclick = function () {
-            state.operatorEventStream.domainFilter = d;
-            renderApp();
-        };
-        filterBar.appendChild(btn);
-    });
-    container.appendChild(filterBar);
-
-    // Filter items by domain
-    var displayItems = state.operatorEventStream.items;
-    if (state.operatorEventStream.domainFilter !== 'all') {
-        var filterDomain = state.operatorEventStream.domainFilter;
-        displayItems = displayItems.filter(function (ev) {
-            var topic = (ev.topic || ev.type || '').toLowerCase();
-            return topic.startsWith(filterDomain);
-        });
-    }
-
-    if (displayItems.length === 0) {
-        var noMatch = document.createElement('div');
-        noMatch.className = 'placeholder-content';
-        noMatch.textContent = 'No events matching filter "' + state.operatorEventStream.domainFilter + '".';
-        container.appendChild(noMatch);
-        return container;
-    }
-
-    // Table — uses oasis-events-table CSS for consistent sizing
-    var table = document.createElement('table');
-    table.className = 'list-table oasis-events-table';
-
-    var thead = document.createElement('thead');
-    var headerRow = document.createElement('tr');
-    ['Time', 'VTID', 'Topic', 'Status', 'Message'].forEach(function (h) {
-        var th = document.createElement('th');
-        th.textContent = h;
-        headerRow.appendChild(th);
-    });
-    thead.appendChild(headerRow);
-    table.appendChild(thead);
-
-    var tbody = document.createElement('tbody');
-    displayItems.forEach(function (ev) {
-        var row = document.createElement('tr');
-
-        var timeTd = document.createElement('td');
-        timeTd.className = 'event-timestamp';
-        timeTd.textContent = formatEventTimestamp(ev.created_at || ev.timestamp);
-        row.appendChild(timeTd);
-
-        var vtidTd = document.createElement('td');
-        vtidTd.className = 'event-vtid';
-        if (ev.vtid) {
-            var vtidLink = document.createElement('span');
-            vtidLink.className = 'vtid-link';
-            vtidLink.textContent = ev.vtid;
-            vtidLink.onclick = function (e) {
-                e.stopPropagation();
-                state.selectedTask = { vtid: ev.vtid, title: '', status: 'unknown' };
-                state.selectedTaskDetail = null;
-                state.selectedTaskDetailLoading = true;
-                renderApp();
-                fetchVtidDetail(ev.vtid);
-            };
-            vtidTd.appendChild(vtidLink);
-        } else {
-            vtidTd.textContent = '-';
-        }
-        row.appendChild(vtidTd);
-
-        var topicTd = document.createElement('td');
-        topicTd.className = 'event-topic';
-        topicTd.textContent = ev.topic || ev.type || '';
-        row.appendChild(topicTd);
-
-        var statusTd = document.createElement('td');
-        var statusBadge = document.createElement('span');
-        statusBadge.className = 'status-badge status-' + (ev.status || 'info').toLowerCase();
-        statusBadge.textContent = ev.status || 'info';
-        statusTd.appendChild(statusBadge);
-        row.appendChild(statusTd);
-
-        var msgTd = document.createElement('td');
-        msgTd.className = 'event-message';
-        var msgText = (ev.message || '');
-        msgTd.textContent = msgText.length > 80 ? msgText.substring(0, 80) + '...' : msgText;
-        row.appendChild(msgTd);
-
-        tbody.appendChild(row);
-    });
-    table.appendChild(tbody);
-    container.appendChild(table);
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 17. fetchOperatorDeployments — deployments + pending approvals
-// ---------------------------------------------------------------------------
-async function fetchOperatorDeployments() {
-    if (state.operatorDeployments.loading) return;
-    state.operatorDeployments.loading = true;
-    state.operatorDeployments.error = null;
-    renderApp();
-
-    try {
-        var results = await Promise.allSettled([
-            fetch('/api/v1/operator/deployments?limit=20').then(function (r) {
-                if (!r.ok) throw new Error('Deployments: ' + r.status);
-                return r.json();
-            }),
-            fetch('/api/v1/approvals/pending?limit=20').then(function (r) {
-                if (!r.ok) throw new Error('Approvals: ' + r.status);
-                return r.json();
-            })
-        ]);
-
-        var deploys = results[0].status === 'fulfilled' ? results[0].value : { data: [] };
-        var approvalsData = results[1].status === 'fulfilled' ? results[1].value : { data: [] };
-
-        state.operatorDeployments.deployments = deploys.data || deploys.deployments || (Array.isArray(deploys) ? deploys : []);
-        state.operatorDeployments.approvals = approvalsData.data || approvalsData.items || (Array.isArray(approvalsData) ? approvalsData : []);
-        state.operatorDeployments.fetched = true;
-        state.operatorDeployments.error = null;
-        console.log('[Supervision] Deployments loaded:', state.operatorDeployments.deployments.length, 'deploys,', state.operatorDeployments.approvals.length, 'approvals');
-    } catch (error) {
-        console.error('[Supervision] Deployments fetch error:', error);
-        state.operatorDeployments.error = error.message;
-    } finally {
-        state.operatorDeployments.loading = false;
-        renderApp();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 18. renderOperatorDeploymentsView — approvals + deployment history
-// ---------------------------------------------------------------------------
-function renderOperatorDeploymentsView() {
-    var container = document.createElement('div');
-    container.className = 'operator-deployments-container';
-
-    // Auto-fetch
-    if (!state.operatorDeployments.fetched && !state.operatorDeployments.loading) {
-        fetchOperatorDeployments();
-    }
-
-    // Loading
-    if (state.operatorDeployments.loading && state.operatorDeployments.deployments.length === 0 && state.operatorDeployments.approvals.length === 0) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading deployments\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
-    }
-
-    // Error
-    if (state.operatorDeployments.error && state.operatorDeployments.deployments.length === 0) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorDeployments.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var titleEl = document.createElement('span');
-    titleEl.className = 'toolbar-title';
-    titleEl.textContent = 'Deployments & Approvals';
-    header.appendChild(titleEl);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.operatorDeployments.fetched = false;
-        fetchOperatorDeployments();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // ── A. Pending Approvals ──
-    var apprSection = document.createElement('div');
-    var apprTitle = document.createElement('div');
-    apprTitle.className = 'section-title';
-    apprTitle.textContent = 'Pending Approvals (' + state.operatorDeployments.approvals.length + ')';
-    apprSection.appendChild(apprTitle);
-
-    if (state.operatorDeployments.approvals.length === 0) {
-        var noAppr = document.createElement('div');
-        noAppr.className = 'attention-all-clear';
-        noAppr.textContent = 'No approvals pending.';
-        apprSection.appendChild(noAppr);
-    } else {
-        state.operatorDeployments.approvals.forEach(function (appr) {
-            var card = document.createElement('div');
-            card.className = 'attention-item';
-            card.style.borderLeftColor = '#f59e0b';
-
-            var topRow = document.createElement('div');
-            topRow.className = 'attention-item-top';
-
-            var vtidEl = document.createElement('span');
-            vtidEl.className = 'attention-vtid';
-            vtidEl.textContent = appr.vtid || 'PR #' + (appr.pr_number || '?');
-            topRow.appendChild(vtidEl);
-
-            var titleSpan = document.createElement('span');
-            titleSpan.className = 'attention-title';
-            titleSpan.textContent = appr.pr_title || appr.title || '';
-            topRow.appendChild(titleSpan);
-
-            card.appendChild(topRow);
-
-            var bottomRow = document.createElement('div');
-            bottomRow.className = 'attention-item-bottom';
-
-            if (appr.ci_status) {
-                var ciBadge = document.createElement('span');
-                ciBadge.className = 'status-badge status-' + (appr.ci_status === 'pass' ? 'success' : appr.ci_status).toLowerCase();
-                ciBadge.textContent = 'CI: ' + appr.ci_status;
-                bottomRow.appendChild(ciBadge);
-            }
-
-            if (appr.governance_status) {
-                var govBadge = document.createElement('span');
-                govBadge.className = 'status-badge status-' + (appr.governance_status === 'pass' ? 'success' : appr.governance_status).toLowerCase();
-                govBadge.style.marginLeft = '6px';
-                govBadge.textContent = 'Gov: ' + appr.governance_status;
-                bottomRow.appendChild(govBadge);
-            }
-
-            card.appendChild(bottomRow);
-            apprSection.appendChild(card);
-        });
-    }
-
-    container.appendChild(apprSection);
-
-    // ── B. Recent Deployments ──
-    var deplSection = document.createElement('div');
-    deplSection.style.marginTop = '20px';
-
-    var deplTitle = document.createElement('div');
-    deplTitle.className = 'section-title';
-    deplTitle.textContent = 'Recent Deployments (' + state.operatorDeployments.deployments.length + ')';
-    deplSection.appendChild(deplTitle);
-
-    if (state.operatorDeployments.deployments.length === 0) {
-        var noDepl = document.createElement('div');
-        noDepl.className = 'placeholder-content';
-        noDepl.textContent = 'No recent deployments found.';
-        deplSection.appendChild(noDepl);
-    } else {
-        var table = document.createElement('table');
-        table.className = 'list-table oasis-events-table';
-
-        var thead = document.createElement('thead');
-        var headerRow = document.createElement('tr');
-        ['Service', 'Commit', 'Status', 'Env', 'Initiator', 'Time'].forEach(function (h) {
-            var th = document.createElement('th');
-            th.textContent = h;
-            headerRow.appendChild(th);
-        });
-        thead.appendChild(headerRow);
-        table.appendChild(thead);
-
-        var tbody = document.createElement('tbody');
-        state.operatorDeployments.deployments.forEach(function (d) {
-            var row = document.createElement('tr');
-
-            var svcTd = document.createElement('td');
-            svcTd.textContent = d.service || '';
-            row.appendChild(svcTd);
-
-            var commitTd = document.createElement('td');
-            commitTd.className = 'event-vtid';
-            commitTd.textContent = (d.git_commit || '').substring(0, 7);
-            row.appendChild(commitTd);
-
-            var statusTd = document.createElement('td');
-            var statusBadge = document.createElement('span');
-            statusBadge.className = 'status-badge status-' + (d.status || 'pending').toLowerCase();
-            statusBadge.textContent = d.status || 'pending';
-            statusTd.appendChild(statusBadge);
-            row.appendChild(statusTd);
-
-            var envTd = document.createElement('td');
-            envTd.textContent = d.environment || '';
-            row.appendChild(envTd);
-
-            var initTd = document.createElement('td');
-            initTd.textContent = d.initiator || '';
-            row.appendChild(initTd);
-
-            var timeTd = document.createElement('td');
-            timeTd.className = 'event-timestamp';
-            timeTd.textContent = formatEventTimestamp(d.created_at);
-            row.appendChild(timeTd);
-
-            tbody.appendChild(row);
-        });
-        table.appendChild(tbody);
-        deplSection.appendChild(table);
-    }
-
-    container.appendChild(deplSection);
-
-    return container;
-}
-
-// ---------------------------------------------------------------------------
-// 19. fetchOperatorRunbook — attention queue + recommendations
-// ---------------------------------------------------------------------------
-async function fetchOperatorRunbook() {
-    if (state.operatorRunbook.loading) return;
-    state.operatorRunbook.loading = true;
-    state.operatorRunbook.error = null;
-    renderApp();
-
-    try {
-        var results = await Promise.allSettled([
-            // VTID-04887: the admin-gated in-process route. The service-token
-            // /api/v1/autopilot/pipeline/summary always answered 401 here.
-            fetch('/api/v1/ops/pipeline-summary', {
-                headers: buildContextHeaders({ Accept: 'application/json' })
-            }).then(function (r) {
-                if (!r.ok) throw new Error('Pipeline summary: ' + r.status);
-                return r.json();
-            }),
-            fetch('/api/v1/autopilot/recommendations?status=new&limit=20', {
-                headers: buildContextHeaders({})
-            }).then(function (r) {
-                if (!r.ok) throw new Error('Recommendations: ' + r.status);
-                return r.json();
-            })
-        ]);
-
-        var pipelineSummary = results[0].status === 'fulfilled' ? results[0].value : {};
-        var recsData = results[1].status === 'fulfilled' ? results[1].value : {};
-
-        state.operatorRunbook.attention = pipelineSummary.attention_queue || [];
-        state.operatorRunbook.recommendations = recsData.data || recsData.recommendations || (Array.isArray(recsData) ? recsData : []);
-        state.operatorRunbook.fetched = true;
-        state.operatorRunbook.error = null;
-        console.log('[Supervision] Runbook loaded:', state.operatorRunbook.attention.length, 'attention,', state.operatorRunbook.recommendations.length, 'recs');
-    } catch (error) {
-        console.error('[Supervision] Runbook fetch error:', error);
-        state.operatorRunbook.error = error.message;
-    } finally {
-        state.operatorRunbook.loading = false;
-        renderApp();
-    }
-}
-
-// ---------------------------------------------------------------------------
-// 20. renderOperatorRunbookView — attention queue + recommendations
-// ---------------------------------------------------------------------------
-function renderOperatorRunbookView() {
-    var container = document.createElement('div');
-    container.className = 'operator-runbook-container';
-
-    // Auto-fetch
-    if (!state.operatorRunbook.fetched && !state.operatorRunbook.loading) {
-        fetchOperatorRunbook();
-    }
-
-    // Loading
-    if (state.operatorRunbook.loading && state.operatorRunbook.attention.length === 0 && state.operatorRunbook.recommendations.length === 0) {
-        var spinnerWrap = document.createElement('div');
-        spinnerWrap.className = 'attention-spinner-container';
-        var spinner = document.createElement('div');
-        spinner.className = 'attention-spinner';
-        spinnerWrap.appendChild(spinner);
-        var spinText = document.createElement('div');
-        spinText.className = 'attention-spinner-text';
-        spinText.textContent = 'Loading runbook\u2026';
-        spinnerWrap.appendChild(spinText);
-        container.appendChild(spinnerWrap);
-        return container;
-    }
-
-    // Error
-    if (state.operatorRunbook.error && state.operatorRunbook.attention.length === 0) {
-        var errorDiv = document.createElement('div');
-        errorDiv.className = 'placeholder-content error-text';
-        errorDiv.textContent = 'Error: ' + state.operatorRunbook.error;
-        container.appendChild(errorDiv);
-        return container;
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'list-toolbar';
-    var titleEl = document.createElement('span');
-    titleEl.className = 'toolbar-title';
-    titleEl.textContent = 'Runbook';
-    header.appendChild(titleEl);
-
-    var refreshBtn = document.createElement('button');
-    refreshBtn.className = 'btn btn-sm';
-    refreshBtn.textContent = 'Refresh';
-    refreshBtn.onclick = function () {
-        state.operatorRunbook.fetched = false;
-        fetchOperatorRunbook();
-    };
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    // ── A. Attention Required ──
-    var attQueue = state.operatorRunbook.attention;
-    var attSection = document.createElement('div');
-
-    var attTitle = document.createElement('div');
-    attTitle.className = 'section-title';
-    attTitle.textContent = attQueue.length > 0
-        ? 'Attention Required (' + attQueue.length + ' items)'
-        : 'Attention Required \u2014 All Clear';
-    attSection.appendChild(attTitle);
-
-    var severityColors = { BROKEN: '#ef4444', STUCK: '#f59e0b', BLOCKED: '#6b7280', NEW: '#3b82f6' };
-
-    if (attQueue.length === 0) {
-        var allClear = document.createElement('div');
-        allClear.className = 'attention-all-clear';
-        allClear.textContent = 'No tasks need immediate attention. System is running smoothly.';
-        attSection.appendChild(allClear);
-    } else {
-        attQueue.forEach(function (item) {
-            var card = document.createElement('div');
-            card.className = 'attention-item';
-            card.style.borderLeftColor = severityColors[item.severity] || '#6b7280';
-
-            var topRow = document.createElement('div');
-            topRow.className = 'attention-item-top';
-
-            var badge = document.createElement('span');
-            badge.className = 'severity-badge';
-            badge.style.backgroundColor = severityColors[item.severity] || '#6b7280';
-            badge.textContent = item.severity;
-
-            var vtidEl = document.createElement('span');
-            vtidEl.className = 'attention-vtid';
-            vtidEl.textContent = item.vtid;
-
-            var titleSpan = document.createElement('span');
-            titleSpan.className = 'attention-title';
-            titleSpan.textContent = item.title || '';
-
-            topRow.appendChild(badge);
-            topRow.appendChild(vtidEl);
-            topRow.appendChild(titleSpan);
-
-            var bottomRow = document.createElement('div');
-            bottomRow.className = 'attention-item-bottom';
-
-            var reasonEl = document.createElement('span');
-            reasonEl.textContent = item.reason || '';
-            bottomRow.appendChild(reasonEl);
-
-            if (item.stuck_minutes) {
-                var timeEl = document.createElement('span');
-                timeEl.className = 'attention-time';
-                var mins = item.stuck_minutes;
-                timeEl.textContent = mins >= 60 ? Math.floor(mins / 60) + 'h ' + (mins % 60) + 'm' : mins + 'm';
-                bottomRow.appendChild(timeEl);
-            }
-
-            var viewBtn = document.createElement('button');
-            viewBtn.className = 'btn btn-sm';
-            viewBtn.textContent = 'View Task';
-            viewBtn.onclick = function (e) {
-                e.stopPropagation();
-                state.selectedTask = {
-                    vtid: item.vtid,
-                    title: item.title,
-                    status: item.status || 'scheduled',
-                    spec_status: item.spec_status || 'missing',
-                    summary: item.reason || '',
-                    oasisColumn: '',
-                    _attentionContext: {
-                        severity: item.severity,
-                        reason: item.reason,
-                        stuck_minutes: item.stuck_minutes
-                    }
-                };
-                state.selectedTaskDetail = null;
-                state.selectedTaskDetailLoading = true;
-                state.executionStatus = null;
-                state.executionStatusLoading = false;
-                renderApp();
-                fetchVtidDetail(item.vtid);
-            };
-
-            card.appendChild(topRow);
-            card.appendChild(bottomRow);
-            card.appendChild(viewBtn);
-            attSection.appendChild(card);
-        });
-    }
-
-    container.appendChild(attSection);
-
-    // ── B. Recommendations ──
-    var recs = state.operatorRunbook.recommendations;
-    var recsSection = document.createElement('div');
-    recsSection.style.marginTop = '20px';
-
-    var recsTitle = document.createElement('div');
-    recsTitle.className = 'section-title';
-    recsTitle.textContent = 'Recommendations (' + recs.length + ')';
-    recsSection.appendChild(recsTitle);
-
-    if (recs.length === 0) {
-        var noRecs = document.createElement('div');
-        noRecs.className = 'placeholder-content';
-        noRecs.textContent = 'No pending recommendations.';
-        recsSection.appendChild(noRecs);
-    } else {
-        recs.forEach(function (rec) {
-            var card = document.createElement('div');
-            card.className = 'recommendation-card';
-
-            var cardTop = document.createElement('div');
-            cardTop.className = 'rec-card-top';
-
-            var recTitle = document.createElement('span');
-            recTitle.className = 'rec-card-title';
-            recTitle.textContent = rec.title || '';
-            cardTop.appendChild(recTitle);
-
-            if (rec.domain) {
-                var domainBadge = document.createElement('span');
-                domainBadge.className = 'status-badge status-info';
-                domainBadge.textContent = rec.domain;
-                cardTop.appendChild(domainBadge);
-            }
-
-            card.appendChild(cardTop);
-
-            if (rec.summary) {
-                var summaryEl = document.createElement('div');
-                summaryEl.style.cssText = 'color:#94a3b8;font-size:13px;margin:6px 0;';
-                summaryEl.textContent = rec.summary;
-                card.appendChild(summaryEl);
-            }
-
-            var cardBottom = document.createElement('div');
-            cardBottom.style.cssText = 'display:flex;gap:8px;margin-top:8px;';
-
-            if (rec.risk_level) {
-                var riskBadge = document.createElement('span');
-                var riskColor = rec.risk_level === 'low' ? '#10b981' : rec.risk_level === 'high' ? '#ef4444' : '#f59e0b';
-                riskBadge.style.cssText = 'font-size:12px;color:' + riskColor + ';';
-                riskBadge.textContent = 'Risk: ' + rec.risk_level;
-                cardBottom.appendChild(riskBadge);
-            }
-
-            if (rec.impact_score !== undefined) {
-                var impactBadge = document.createElement('span');
-                impactBadge.style.cssText = 'font-size:12px;color:#94a3b8;';
-                impactBadge.textContent = 'Impact: ' + rec.impact_score;
-                cardBottom.appendChild(impactBadge);
-            }
-
-            card.appendChild(cardBottom);
-            recsSection.appendChild(card);
-        });
-    }
-
-    container.appendChild(recsSection);
-
-    return container;
-}
 
 // ---------------------------------------------------------------------------
 // 20. renderCommandHubLiveConsoleView — interactive console with chat input
@@ -39774,94 +36091,6 @@ function renderInfraServicesView() {
 }
 
 /**
- * renderInfraHealthView - Aggregate health overview.
- * Shows overall system health score, service count, degraded services.
- */
-function renderInfraHealthView() {
-    var container = document.createElement('div');
-    container.className = 'infra-health-container';
-
-    // Auto-fetch services if not loaded (reuse infraServices data)
-    if (!state.infraServices.fetched && !state.infraServices.loading) {
-        fetchInfraServices();
-    }
-
-    // Header
-    var header = document.createElement('div');
-    header.className = 'infra-section-header';
-    header.innerHTML = '<h2>System Health</h2><p class="infra-subtitle">Aggregate health view across all infrastructure services. Highlights degraded or down services.</p>';
-    container.appendChild(header);
-
-    if (state.infraServices.loading) {
-        var loadingDiv = document.createElement('div');
-        loadingDiv.className = 'infra-empty';
-        loadingDiv.textContent = 'Loading...';
-        container.appendChild(loadingDiv);
-        return container;
-    }
-
-    var services = state.infraServices.items;
-    var totalCount = services.length;
-    var healthyCount = services.filter(function (s) { return s.status === 'healthy'; }).length;
-    var degradedCount = services.filter(function (s) { return s.status === 'degraded'; }).length;
-    var downCount = services.filter(function (s) { return s.status === 'down'; }).length;
-    var healthScore = totalCount > 0 ? Math.round((healthyCount / totalCount) * 100) : 0;
-
-    // Metric Cards Grid (4 across)
-    var cardsGrid = document.createElement('div');
-    cardsGrid.className = 'infra-card-grid';
-
-    var healthCards = [
-        { label: 'Health Score', value: healthScore + '%', detail: healthyCount + ' of ' + totalCount + ' services healthy' },
-        { label: 'Healthy', value: String(healthyCount), detail: 'Services responding normally' },
-        { label: 'Degraded', value: String(degradedCount), detail: 'Services with partial issues' },
-        { label: 'Down', value: String(downCount), detail: 'Services not responding' }
-    ];
-
-    healthCards.forEach(function (info) {
-        var card = document.createElement('div');
-        card.className = 'infra-metric-card';
-        card.innerHTML =
-            '<div class="infra-metric-card__label">' + escapeHtml(info.label) + '</div>' +
-            '<div class="infra-metric-card__value">' + escapeHtml(info.value) + '</div>' +
-            '<div class="infra-metric-card__detail">' + escapeHtml(info.detail) + '</div>';
-        cardsGrid.appendChild(card);
-    });
-    container.appendChild(cardsGrid);
-
-    // Degraded services highlighted
-    var degradedServices = services.filter(function (s) { return s.status !== 'healthy'; });
-    if (degradedServices.length > 0) {
-        var alertSection = document.createElement('div');
-        alertSection.className = 'infra-panel infra-panel--warning';
-        alertSection.innerHTML = '<h3>Attention Required</h3>';
-
-        var alertList = document.createElement('ul');
-        degradedServices.forEach(function (s) {
-            var li = document.createElement('li');
-            li.innerHTML = '<strong>' + escapeHtml(s.name) + '</strong> — ' +
-                '<span class="infra-card__badge infra-card__badge--' + s.status + '">' + s.status.toUpperCase() + '</span>' +
-                ' (' + s.latency_ms + 'ms)' +
-                (s.error ? ' — ' + escapeHtml(s.error) : '');
-            alertList.appendChild(li);
-        });
-        alertSection.appendChild(alertList);
-        container.appendChild(alertSection);
-    }
-
-    // Heartbeat info
-    var heartbeatSection = document.createElement('div');
-    heartbeatSection.className = 'infra-panel';
-    heartbeatSection.innerHTML = '<h3>Heartbeat</h3>' +
-        '<p>Operator heartbeat endpoint: <code>GET /api/v1/operator/heartbeat</code></p>' +
-        '<p>Gateway polls the operator heartbeat to detect service availability. ' +
-        'The Operator Console live ticker uses SSE for real-time event streaming.</p>';
-    container.appendChild(heartbeatSection);
-
-    return container;
-}
-
-/**
  * fetchInfraDeployments - GET /api/v1/operator/deployments?limit=30
  */
 function fetchInfraDeployments() {
@@ -40530,7 +36759,22 @@ var DEV_AUTOPILOT_CONFIG_FIELDS = [
     { key: 'select_all_cap', label: 'Select-all cap', min: 1, max: 500 },
     { key: 'max_auto_fix_depth', label: 'Max auto-fix depth', min: 0, max: 20 },
     { key: 'post_deploy_verification_window_minutes', label: 'Post-deploy verification window (minutes)', min: 1, max: 1440 },
+    // VTID-05146: a held_overlap execution older than this ends (overlap_hold_timeout).
+    { key: 'overlap_hold_max_hours', label: 'Overlap hold limit (hours)', min: 1, max: 720 },
 ];
+
+// VTID-05146 (C2): frozen_scope — temporary never-touch globs while people
+// work an area (one per line). It can only take work away from the executor.
+function devAutopilotFrozenScopeText(cfg) {
+    var list = Array.isArray(cfg && cfg.frozen_scope) ? cfg.frozen_scope : [];
+    return list.join('\n');
+}
+
+function devAutopilotFrozenScopeDraft() {
+    var draft = state.devAutopilot.configDraft || {};
+    if (!Object.prototype.hasOwnProperty.call(draft, 'frozen_scope')) return null;
+    return String(draft.frozen_scope || '').split('\n').map(function (l) { return l.trim(); }).filter(function (l) { return l.length > 0; });
+}
 
 function devAutopilotSaveConfig() {
     var cfg = state.devAutopilot.config || {};
@@ -40553,6 +36797,8 @@ function devAutopilotSaveConfig() {
         }
         if (n !== cfg[f.key]) patch[f.key] = n;
     });
+    var frozenDraft = devAutopilotFrozenScopeDraft();
+    if (frozenDraft !== null && frozenDraft.join('\n') !== devAutopilotFrozenScopeText(cfg)) patch.frozen_scope = frozenDraft;
     if (invalid) {
         state.devAutopilot.configSaveError = invalid;
         renderApp();
@@ -40620,6 +36866,23 @@ function renderDevAutopilotConfigPanel() {
         wrap.appendChild(input);
         body.appendChild(wrap);
     });
+
+    var frozenWrap = document.createElement('label');
+    frozenWrap.className = 'dev-autopilot-config-field dev-autopilot-config-field--wide';
+    frozenWrap.textContent = 'Frozen scope — the autopilot never approves or merges a change here (one glob per line)';
+    var frozenInput = document.createElement('textarea');
+    frozenInput.className = 'dev-autopilot-config-input dev-autopilot-config-textarea';
+    frozenInput.rows = 3;
+    frozenInput.placeholder = 'services/gateway/src/frontend/command-hub/**';
+    frozenInput.value = Object.prototype.hasOwnProperty.call(state.devAutopilot.configDraft, 'frozen_scope')
+        ? state.devAutopilot.configDraft.frozen_scope
+        : devAutopilotFrozenScopeText(cfg);
+    frozenInput.disabled = !!state.devAutopilot.configSaving;
+    frozenInput.oninput = function (e) {
+        state.devAutopilot.configDraft.frozen_scope = e.target.value;
+    };
+    frozenWrap.appendChild(frozenInput);
+    body.appendChild(frozenWrap);
 
     section.appendChild(body);
 
@@ -40751,6 +37014,8 @@ function renderDevAutopilotView() {
         { label: 'Kill switch', value: cfg.kill_switch ? 'ARMED' : 'off', color: cfg.kill_switch ? '#ef4444' : '#22c55e' },
         { label: 'Budget', value: '—/' + (cfg.daily_budget || '—') + ' today', color: '#eab308' },
         { label: 'Spend today', value: spend ? ('$' + Number(spend.spend_usd_today || 0).toFixed(4) + ' · ' + spend.runs_today + ' run' + (spend.runs_today === 1 ? '' : 's')) : '—', color: '#f97316', title: TURN_COST_ESTIMATE_NOTE },
+        // VTID-05077: plans the planner's fallback (Opus 4.6) wrote instead of DeepSeek, last 24 h.
+        { label: 'Planner fallback 24h', value: (spend && spend.planner && spend.planner.plans_24h) ? (spend.planner.fallback_24h + '/' + spend.planner.plans_24h + ' plans (' + Math.round((spend.planner.fallback_rate_24h || 0) * 100) + '%)') : '—', color: (spend && spend.planner && spend.planner.fallback_rate_24h > 0.05) ? '#ef4444' : '#888', title: 'Plan versions of the last 24 hours written by the planner fallback instead of its primary model (VTID-05077)' },
         { label: 'Concurrency cap', value: (cfg.concurrency_cap || '—'), color: '#888' },
         { label: 'Queue', value: queueCount + ' new', color: '#3b82f6' },
         { label: 'Last run', value: (state.devAutopilot.runs[0] && state.devAutopilot.runs[0].started_at) ? new Date(state.devAutopilot.runs[0].started_at).toLocaleString() : '—', color: '#888' },
@@ -41540,6 +37805,32 @@ function devAutopilotBatchAction(action, hours) {
     });
 }
 
+// VTID-05146 (C1): re-run the open-PR overlap check for a held execution and
+// release it only when nothing blocks any more — never a skip of the check.
+function devAutopilotReleaseHold(execId) {
+    var key = 'release:' + execId;
+    if (devAutopilotInFlight(key)) return;
+    devAutopilotMarkFlight(key, true);
+    renderApp();
+    devAutopilotApi('/executions/' + execId + '/release-hold', 'POST', {}).then(function (data) {
+        devAutopilotMarkFlight(key, false);
+        if (data && data.state === 'released') {
+            showToast('Released — no open PR shares its files any more', 'success');
+        } else if (data && data.state === 'still_held') {
+            showToast('Still held — open PR' + ((data.blocking_prs || []).length === 1 ? ' ' : 's ') + (data.blocking_prs || []).map(function (n) { return '#' + n; }).join(', ') + (data.frozen_files && data.frozen_files.length ? ' (and frozen scope)' : '') + ' still change the same files', 'warning');
+        } else if (data && data.state === 'timed_out') {
+            showToast('The hold had run past its limit — execution ended (overlap_hold_timeout)', 'warning');
+        } else {
+            showToast((data && data.error) || 'Release check failed', 'error');
+        }
+        fetchAutopilotLive().then(renderApp, renderApp);
+    }).catch(function (err) {
+        devAutopilotMarkFlight(key, false);
+        showToast('Network error: ' + (err.message || err), 'error');
+        renderApp();
+    });
+}
+
 function devAutopilotCancelExecution(execId) {
     var key = 'cancel:' + execId;
     if (devAutopilotInFlight(key)) return;
@@ -42266,9 +38557,12 @@ function autonomyPulseSeverityColor(s) {
     return s === 'critical' ? '#ef4444' : s === 'warning' ? '#eab308' : '#3b82f6';
 }
 function autonomyPulseSourceColor(s) {
+    // VTID-05148: graduation proposals (L3 Learn) are read-only info items.
+    if (s === 'graduation_proposal') return '#3b82f6';
     return s === 'dev_autopilot_finding' ? '#a855f7' : s === 'self_healing' ? '#f97316' : '#22c55e';
 }
 function autonomyPulseSourceLabel(s) {
+    if (s === 'graduation_proposal') return 'GRADUATION';
     return s === 'dev_autopilot_finding' ? 'DEV AUTOPILOT' : s === 'self_healing' ? 'SELF-HEAL' : 'EXECUTION';
 }
 function autonomyPulseActionSpec(action) {
@@ -42277,9 +38571,7 @@ function autonomyPulseActionSpec(action) {
         case 'reject':         return { label: 'Reject', color: '#ef4444' };
         case 'snooze':         return { label: 'Snooze 24h', color: '#eab308' };
         case 'view_plan':      return { label: 'View plan', color: '#3b82f6' };
-        case 'investigate':    return { label: 'Investigate', color: '#3b82f6' };
-        case 'apply_heal':     return { label: 'Apply heal', color: '#22c55e' };
-        case 'discard_heal':   return { label: 'Discard', color: '#ef4444' };
+        case 'investigate':    return { label: 'Open', color: '#3b82f6' };
         case 'cancel':         return { label: 'Cancel', color: '#ef4444' };
         case 'view_trace':     return { label: 'View trace', color: '#3b82f6' };
         default:               return { label: action, color: 'var(--text-secondary, #aaa)' };
@@ -42323,16 +38615,8 @@ function autonomyPulseDoAction(item, action) {
             promise = fetch('/api/v1/dev-autopilot/executions/' + execId + '/reject', { method: 'POST', headers, body: '{}' });
         }
     }
-    // self_healing apply_heal / discard_heal — Self-Healing endpoints live
-    // under /api/v1/self-healing; route there.
-    if (item.source === 'self_healing') {
-        var vtid = item.metadata.vtid;
-        if (action === 'apply_heal') {
-            promise = fetch('/api/v1/self-healing/approve', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
-        } else if (action === 'discard_heal') {
-            promise = fetch('/api/v1/self-healing/reject', { method: 'POST', headers, body: JSON.stringify({ vtid: vtid }) });
-        }
-    }
+    // VTID-05098: self-healing and test-contract items are acted on in their
+    // own tabs; Pulse only offers 'investigate' (Open) for them.
 
     if (!promise) {
         delete state.autonomyPulse.actionInFlight[key];
@@ -45993,14 +42277,33 @@ function renderSelfHealingView() {
                 approveBtn.className = 'infra-btn infra-btn--success';
                 approveBtn.textContent = 'APPROVE';
                 approveBtn.onclick = function() {
-                    fetch('/api/v1/specs/approve', {
+                    // VTID-05122: the real route is POST /api/v1/specs/:vtid/approve
+                    // (requireServiceOrAdmin, approver from the Bearer JWT). Report
+                    // failures instead of an unconditional success toast.
+                    approveBtn.disabled = true;
+                    approveBtn.textContent = 'APPROVING…';
+                    fetch('/api/v1/specs/' + encodeURIComponent(task.vtid) + '/approve', {
                         method: 'POST',
-                        headers: { 'Content-Type': 'application/json' },
-                        body: JSON.stringify({ vtid: task.vtid })
-                    }).then(function() {
+                        headers: buildContextHeaders({ 'Content-Type': 'application/json' }),
+                        body: '{}'
+                    }).then(function(r) {
+                        return r.json().catch(function() { return {}; }).then(function(j) {
+                            state.selfHealing.fetched = false;
+                            fetchSelfHealingData();
+                            if (r.ok && j && j.ok) {
+                                showToast('Spec approved for ' + task.vtid, 'success');
+                            } else {
+                                showToast('Approve failed: ' + (j.message || j.error || 'HTTP ' + r.status), 'error');
+                                approveBtn.disabled = false;
+                                approveBtn.textContent = 'APPROVE';
+                            }
+                        });
+                    }).catch(function(err) {
+                        approveBtn.disabled = false;
+                        approveBtn.textContent = 'APPROVE';
                         state.selfHealing.fetched = false;
                         fetchSelfHealingData();
-                        showToast('Spec approved for ' + task.vtid, 'success');
+                        showToast('Approve failed: ' + err.message, 'error');
                     });
                 };
                 actions.appendChild(approveBtn);
@@ -48473,6 +44776,7 @@ function renderAutopilotLiveView() {
             var statusColor = exec.status === 'running' || exec.status === 'ci' || exec.status === 'merging' ? '#3b82f6'
                 : exec.status === 'cooling' ? '#eab308'
                 : exec.status === 'awaiting_approval' ? '#f59e0b' // VTID-04029: branch pushed, PR held for a human decision
+                : exec.status === 'held_overlap' ? '#f97316' // VTID-05146: waiting for open PRs that change the same files
                 : exec.status === 'deploying' || exec.status === 'verifying' ? '#a855f7'
                 : '#888';
             card.style.cssText = 'padding:10px 12px;background:rgba(255,255,255,0.02);border:1px solid #2a2a3a;border-left:3px solid ' + statusColor + ';border-radius:6px;margin-bottom:0.5rem;display:flex;align-items:center;gap:1rem;flex-wrap:wrap;';
@@ -48559,6 +44863,49 @@ function renderAutopilotLiveView() {
                 liveCancelBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--cancel' + (liveCancelling ? ' dev-autopilot-decision-btn--busy' : '');
                 liveCancelBtn.onclick = function () { devAutopilotCancelExecution(exec.id); };
                 card.appendChild(liveCancelBtn);
+            }
+
+            // VTID-05146 (C1): held because an open PR (any author) changes the
+            // same files, or the PR touches frozen_scope. Shows the blocking
+            // PRs; "Re-check & release" re-runs the check, never skips it.
+            if (exec.status === 'held_overlap') {
+                var hold = (exec.metadata && exec.metadata.overlap_hold) || {};
+                var holdInfo = document.createElement('div');
+                holdInfo.className = 'dev-autopilot-hold-info';
+                var holdText = document.createElement('span');
+                holdText.textContent = (hold.from === 'cooling' ? 'Held before the run' : 'Held before the merge') + ' — waiting for';
+                holdInfo.appendChild(holdText);
+                (hold.blocking_prs || []).forEach(function (b) {
+                    var a = document.createElement('a');
+                    a.href = 'https://github.com/exafyltd/vitana-platform/pull/' + b.pr;
+                    a.target = '_blank';
+                    a.rel = 'noopener';
+                    a.className = 'dev-autopilot-hold-pr';
+                    a.textContent = '#' + b.pr;
+                    a.title = (b.files || []).join('\n');
+                    holdInfo.appendChild(a);
+                });
+                if ((hold.frozen_files || []).length) {
+                    var frozenNote = document.createElement('span');
+                    frozenNote.className = 'dev-autopilot-hold-frozen';
+                    frozenNote.textContent = 'frozen scope: ' + hold.frozen_files.slice(0, 3).join(', ') + (hold.frozen_files.length > 3 ? ', …' : '');
+                    holdInfo.appendChild(frozenNote);
+                }
+                if (hold.held_at) {
+                    var heldSince = document.createElement('span');
+                    heldSince.className = 'dev-autopilot-hold-since';
+                    heldSince.textContent = 'since ' + autopilotSupervisorAgo(hold.held_at);
+                    holdInfo.appendChild(heldSince);
+                }
+                card.appendChild(holdInfo);
+                var releasing = devAutopilotInFlight('release:' + exec.id);
+                var releaseBtn = document.createElement('button');
+                releaseBtn.textContent = releasing ? 'Checking…' : 'Re-check & release';
+                releaseBtn.disabled = releasing;
+                releaseBtn.title = 'Run the open-PR overlap check now; the execution is released only if nothing blocks it any more';
+                releaseBtn.className = 'dev-autopilot-decision-btn dev-autopilot-decision-btn--approve' + (releasing ? ' dev-autopilot-decision-btn--busy' : '');
+                releaseBtn.onclick = function () { devAutopilotReleaseHold(exec.id); };
+                card.appendChild(releaseBtn);
             }
 
             // VTID-04029: the agent pushed its branch and is waiting for a
@@ -50607,26 +46954,6 @@ function renderAutopilotCommunityView() {
         '</ul>';
     container.appendChild(info);
 
-    return container;
-}
-
-function renderAutopilotAdminView() {
-    var container = document.createElement('div');
-    container.style.padding = '1.5rem';
-    container.innerHTML = '<h2>Autopilot — Admin <span class="status-badge status-warning" style="margin-left:.5rem;font-size:.7rem;">Coming soon</span></h2>' +
-        '<p class="section-subtitle">The admin-role equivalent of community Autopilot — automated recommendations for platform admins.</p>';
-
-    var card = document.createElement('div');
-    card.className = 'databases-arch-note';
-    card.innerHTML = '<h3>Planned scope</h3>' +
-        '<ul>' +
-        '<li>Recommendations for admins based on platform signals: flagged content, stalled tenants, unassigned VTIDs, governance violations approaching SLA, user growth anomalies.</li>' +
-        '<li>Same intake / accept / dismiss / snooze flow as community Autopilot, but with admin-facing actions (open PR, run migration, escalate to Exafy).</li>' +
-        '<li>Shares the same Autopilot engine as the other roles — differences are in the recommendation sources and the action handlers.</li>' +
-        '<li>Tracked under the parallel autopilot build-out running alongside Dev Autopilot.</li>' +
-        '</ul>' +
-        '<p style="margin-top:.75rem;font-size:.8rem;color:var(--color-text-secondary);">This tab reserves the slot in the Autonomy section so the direction is visible. When the implementation lands, the render function in <code>app.js</code> gets swapped for the real view.</p>';
-    container.appendChild(card);
     return container;
 }
 
@@ -53064,309 +49391,3 @@ function memoryOpsRenderInspector(container) {
     });
 }
 
-// ─────────────────────────────────────────────────────────────────────────
-// BOOTSTRAP-CMDHUB-I18N-OPS — Localization Operations view
-// ─────────────────────────────────────────────────────────────────────────
-// Read-only locales table + trigger buttons (translate / audit / runs).
-// Data: GET /api/v1/admin/i18n-ops/locales (60s server-side cache).
-// Triggers POST /api/v1/admin/i18n-ops/translate or /audit.
-// Lists recent runs from GET /api/v1/admin/i18n-ops/workflow-runs.
-//
-// CSP-safe: no inline event handlers. All listeners attached via JS.
-function renderOperatorLocalizationView() {
-    var container = document.createElement('div');
-    container.className = 'operator-localization-container';
-    container.style.padding = '24px';
-
-    var header = document.createElement('div');
-    header.style.cssText = 'margin-bottom:20px;display:flex;justify-content:space-between;align-items:flex-start;gap:16px;';
-    var titleBlock = document.createElement('div');
-    var h1 = document.createElement('h1');
-    h1.textContent = 'Localization Operations';
-    h1.style.cssText = 'margin:0 0 6px;font-size:22px;color:var(--color-text,#fff);';
-    titleBlock.appendChild(h1);
-    var sub = document.createElement('div');
-    sub.textContent = 'Locale catalog status, audit verdicts, and translate / audit workflow controls.';
-    sub.style.cssText = 'opacity:0.7;font-size:13px;';
-    titleBlock.appendChild(sub);
-    header.appendChild(titleBlock);
-    var refreshBtn = document.createElement('button');
-    refreshBtn.textContent = '⟳ Refresh';
-    refreshBtn.style.cssText = 'padding:8px 14px;background:rgba(255,255,255,0.06);border:1px solid rgba(255,255,255,0.18);border-radius:6px;color:#fff;cursor:pointer;font-size:13px;';
-    header.appendChild(refreshBtn);
-    container.appendChild(header);
-
-    var statusEl = document.createElement('div');
-    statusEl.style.cssText = 'opacity:0.65;font-size:12px;margin-bottom:14px;font-family:monospace;';
-    container.appendChild(statusEl);
-
-    var tableWrap = document.createElement('div');
-    container.appendChild(tableWrap);
-
-    var runsHeader = document.createElement('h2');
-    runsHeader.textContent = 'Recent workflow runs';
-    runsHeader.style.cssText = 'margin:32px 0 10px;font-size:16px;color:var(--color-text,#fff);';
-    container.appendChild(runsHeader);
-
-    var runsTabs = document.createElement('div');
-    runsTabs.style.cssText = 'display:flex;gap:6px;margin-bottom:10px;';
-    var activeRuns = 'i18n-translate.yml';
-    var workflows = [
-        { key: 'i18n-translate.yml', label: 'Translate' },
-        { key: 'i18n-audit-llm.yml', label: 'Audit (LLM)' },
-        { key: 'i18n-check.yml', label: 'CI lint check' },
-    ];
-    var runsBody = document.createElement('div');
-    function renderRunsTabs() {
-        runsTabs.innerHTML = '';
-        workflows.forEach(function (w) {
-            var btn = document.createElement('button');
-            btn.textContent = w.label;
-            var isActive = activeRuns === w.key;
-            btn.style.cssText = 'padding:6px 12px;background:' + (isActive ? 'rgba(86,168,255,0.2)' : 'rgba(255,255,255,0.04)') +
-                ';border:1px solid ' + (isActive ? 'rgba(86,168,255,0.6)' : 'rgba(255,255,255,0.12)') + ';border-radius:6px;color:#fff;cursor:pointer;font-size:12px;';
-            btn.addEventListener('click', function () {
-                activeRuns = w.key;
-                renderRunsTabs();
-                fetchRuns();
-            });
-            runsTabs.appendChild(btn);
-        });
-    }
-    container.appendChild(runsTabs);
-    container.appendChild(runsBody);
-
-    function setStatus(text) { statusEl.textContent = text || ''; }
-
-    function authHeader() {
-        var token = localStorage.getItem('vitana.authToken') || '';
-        return token ? { Authorization: 'Bearer ' + token } : {};
-    }
-
-    function fetchLocales() {
-        setStatus('Loading…');
-        tableWrap.innerHTML = '';
-        fetch('/api/v1/admin/i18n-ops/locales', { headers: authHeader() })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data || !data.ok) {
-                    setStatus('Error: ' + (data && data.error || 'unknown'));
-                    return;
-                }
-                setStatus('Source EN keys: ' + (data.en_total || 0) + ' · Updated ' + new Date(data.generated_at).toLocaleTimeString());
-                renderTable(data.locales || []);
-            })
-            .catch(function (e) {
-                setStatus('Network error: ' + (e && e.message || e));
-            });
-    }
-
-    function renderTable(rows) {
-        tableWrap.innerHTML = '';
-        var table = document.createElement('table');
-        table.style.cssText = 'width:100%;border-collapse:collapse;font-size:13px;background:rgba(255,255,255,0.02);';
-        var thead = document.createElement('thead');
-        thead.innerHTML = '<tr>' +
-            ['Locale', 'Status', 'Catalog', 'Audit pass', 'Last audit', 'Actions']
-                .map(function (c) {
-                    return '<th style="text-align:left;padding:10px 12px;border-bottom:1px solid rgba(255,255,255,0.1);font-weight:600;opacity:0.85;">' + c + '</th>';
-                }).join('') + '</tr>';
-        table.appendChild(thead);
-        var tbody = document.createElement('tbody');
-
-        rows.forEach(function (row) {
-            var tr = document.createElement('tr');
-            tr.style.borderBottom = '1px solid rgba(255,255,255,0.06)';
-
-            // Locale
-            var tdLocale = document.createElement('td');
-            tdLocale.style.cssText = 'padding:10px 12px;font-family:monospace;font-weight:600;';
-            tdLocale.textContent = row.code;
-            tr.appendChild(tdLocale);
-
-            // Status pill
-            var tdStatus = document.createElement('td');
-            tdStatus.style.padding = '10px 12px';
-            var pill = document.createElement('span');
-            var statusColor = row.status === 'ga' ? '#3ddc84' : row.status === 'beta' ? '#f0b400' : '#888';
-            pill.style.cssText = 'padding:2px 8px;border-radius:10px;font-size:11px;font-weight:600;background:' + statusColor + '22;color:' + statusColor + ';border:1px solid ' + statusColor + '55;';
-            pill.textContent = (row.status || 'draft').toUpperCase();
-            tdStatus.appendChild(pill);
-            tr.appendChild(tdStatus);
-
-            // Catalog progress
-            var tdCat = document.createElement('td');
-            tdCat.style.padding = '10px 12px';
-            var pct = row.completeness_pct || 0;
-            var barWrap = document.createElement('div');
-            barWrap.style.cssText = 'width:120px;background:rgba(255,255,255,0.08);border-radius:3px;height:6px;position:relative;';
-            var bar = document.createElement('div');
-            bar.style.cssText = 'width:' + pct + '%;background:' + (pct >= 90 ? '#3ddc84' : pct >= 50 ? '#56a8ff' : '#888') + ';height:100%;border-radius:3px;';
-            barWrap.appendChild(bar);
-            var text = document.createElement('div');
-            text.style.cssText = 'font-size:11px;opacity:0.7;margin-top:3px;';
-            text.textContent = (row.locale_total || 0) + ' / ' + (row.en_total || 0) + ' (' + pct + '%)';
-            tdCat.appendChild(barWrap);
-            tdCat.appendChild(text);
-            tr.appendChild(tdCat);
-
-            // Audit pass rate
-            var tdAudit = document.createElement('td');
-            tdAudit.style.padding = '10px 12px';
-            if (row.audit_total > 0) {
-                var rate = row.audit_pass_rate_pct;
-                var auditColor = rate >= 90 ? '#3ddc84' : rate >= 70 ? '#f0b400' : '#ff8080';
-                tdAudit.innerHTML = '<span style="font-weight:600;color:' + auditColor + '">' + rate + '%</span> <span style="opacity:0.6;font-size:11px">(' + row.audit_flagged + ' flagged / ' + row.audit_total + ')</span>';
-            } else {
-                tdAudit.innerHTML = '<span style="opacity:0.5;font-size:11px">no audit yet</span>';
-            }
-            tr.appendChild(tdAudit);
-
-            // Last audit
-            var tdLast = document.createElement('td');
-            tdLast.style.cssText = 'padding:10px 12px;opacity:0.7;font-size:11px;';
-            tdLast.textContent = row.last_audit_at ? new Date(row.last_audit_at).toLocaleString() : '—';
-            tr.appendChild(tdLast);
-
-            // Actions
-            var tdActions = document.createElement('td');
-            tdActions.style.cssText = 'padding:10px 12px;display:flex;gap:6px;';
-            var translateBtn = makeActionBtn('Translate', '#56a8ff', function () {
-                if (!confirm('Translate ' + row.code + ' via DeepSeek? This dispatches the i18n-translate.yml workflow.')) return;
-                triggerTranslate(row.lang_code, 'deepseek', translateBtn);
-            });
-            var auditBtn = makeActionBtn('Audit', '#a87dff', function () {
-                if (!confirm('Audit ' + row.code + ' via Gemini? This dispatches the i18n-audit-llm.yml workflow.')) return;
-                triggerAudit(row.lang_code, 'gemini', auditBtn);
-            });
-            tdActions.appendChild(translateBtn);
-            tdActions.appendChild(auditBtn);
-            tr.appendChild(tdActions);
-            tbody.appendChild(tr);
-        });
-
-        table.appendChild(tbody);
-        tableWrap.appendChild(table);
-    }
-
-    function makeActionBtn(label, color, onClick) {
-        var btn = document.createElement('button');
-        btn.textContent = label;
-        btn.style.cssText = 'padding:5px 10px;background:' + color + '22;border:1px solid ' + color + '66;border-radius:4px;color:' + color + ';cursor:pointer;font-size:11px;font-weight:600;';
-        btn.addEventListener('click', onClick);
-        return btn;
-    }
-
-    function triggerTranslate(locale, provider, btn) {
-        btn.textContent = '…';
-        btn.disabled = true;
-        fetch('/api/v1/admin/i18n-ops/translate', {
-            method: 'POST',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
-            body: JSON.stringify({ locale: locale, provider: provider }),
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                btn.disabled = false;
-                if (data && data.ok) {
-                    btn.textContent = '✓ Dispatched';
-                    setTimeout(function () { btn.textContent = 'Translate'; }, 4000);
-                    if (typeof window.showToast === 'function') {
-                        window.showToast('Translate dispatched for ' + locale, 'success');
-                    }
-                    setTimeout(fetchRuns, 1500);
-                } else {
-                    btn.textContent = 'Translate';
-                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
-                }
-            })
-            .catch(function (e) {
-                btn.disabled = false;
-                btn.textContent = 'Translate';
-                alert('Network error: ' + (e && e.message || e));
-            });
-    }
-
-    function triggerAudit(locale, provider, btn) {
-        btn.textContent = '…';
-        btn.disabled = true;
-        fetch('/api/v1/admin/i18n-ops/audit', {
-            method: 'POST',
-            headers: Object.assign({ 'Content-Type': 'application/json' }, authHeader()),
-            body: JSON.stringify({ locale: locale, provider: provider }),
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                btn.disabled = false;
-                if (data && data.ok) {
-                    btn.textContent = '✓ Dispatched';
-                    setTimeout(function () { btn.textContent = 'Audit'; }, 4000);
-                    if (typeof window.showToast === 'function') {
-                        window.showToast('Audit dispatched for ' + locale, 'success');
-                    }
-                    setTimeout(fetchRuns, 1500);
-                } else {
-                    btn.textContent = 'Audit';
-                    alert('Failed: ' + (data && (data.message || data.error) || 'unknown'));
-                }
-            })
-            .catch(function (e) {
-                btn.disabled = false;
-                btn.textContent = 'Audit';
-                alert('Network error: ' + (e && e.message || e));
-            });
-    }
-
-    function fetchRuns() {
-        runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">Loading runs…</div>';
-        fetch('/api/v1/admin/i18n-ops/workflow-runs?workflow=' + encodeURIComponent(activeRuns) + '&limit=10', {
-            headers: authHeader(),
-        })
-            .then(function (r) { return r.json(); })
-            .then(function (data) {
-                if (!data || !data.ok || !data.runs || !data.runs.length) {
-                    runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;">No recent runs.</div>';
-                    return;
-                }
-                runsBody.innerHTML = '';
-                var list = document.createElement('div');
-                list.style.cssText = 'display:flex;flex-direction:column;gap:4px;';
-                data.runs.forEach(function (run) {
-                    var row = document.createElement('div');
-                    row.style.cssText = 'display:flex;align-items:center;gap:12px;padding:8px 10px;background:rgba(255,255,255,0.03);border:1px solid rgba(255,255,255,0.08);border-radius:6px;font-size:12px;';
-                    var pillColor = run.conclusion === 'success' ? '#3ddc84' : run.conclusion === 'failure' ? '#ff8080' : run.status === 'in_progress' ? '#56a8ff' : '#888';
-                    var pillText = run.status === 'completed' ? (run.conclusion || '?') : run.status;
-                    row.innerHTML =
-                        '<span style="padding:2px 8px;border-radius:10px;font-size:10px;font-weight:600;background:' + pillColor + '22;color:' + pillColor + ';border:1px solid ' + pillColor + '55;text-transform:uppercase">' + pillText + '</span>' +
-                        '<span style="font-family:monospace;opacity:0.85">#' + (run.run_number || '?') + '</span>' +
-                        '<span style="flex:1;opacity:0.85;overflow:hidden;text-overflow:ellipsis;white-space:nowrap">' + (run.display_title || '').replace(/</g, '&lt;') + '</span>' +
-                        '<span style="opacity:0.6">' + (run.actor_login || '?') + '</span>' +
-                        '<span style="opacity:0.6">' + (run.created_at ? new Date(run.created_at).toLocaleString() : '') + '</span>';
-                    if (run.html_url) {
-                        var openBtn = document.createElement('a');
-                        openBtn.href = run.html_url;
-                        openBtn.target = '_blank';
-                        openBtn.rel = 'noopener noreferrer';
-                        openBtn.textContent = '↗';
-                        openBtn.style.cssText = 'color:#56a8ff;text-decoration:none;font-size:14px;padding:0 4px;';
-                        row.appendChild(openBtn);
-                    }
-                    list.appendChild(row);
-                });
-                runsBody.appendChild(list);
-            })
-            .catch(function (e) {
-                runsBody.innerHTML = '<div style="opacity:0.5;font-size:12px;padding:8px;color:#ff8080">Error: ' + (e && e.message || e) + '</div>';
-            });
-    }
-
-    refreshBtn.addEventListener('click', function () {
-        fetchLocales();
-        fetchRuns();
-    });
-
-    renderRunsTabs();
-    fetchLocales();
-    fetchRuns();
-    return container;
-}

@@ -92,13 +92,14 @@ describe('VTID-04808 gate', () => {
     });
   });
 
-  test('nothing open that overlaps, no plan files, or no finding → no call, no row', async () => {
+  test('nothing open that overlaps, no plan files, or no finding → no call, only skipped rows (VTID-05012)', async () => {
     const call = jest.fn();
     expect(await runPrClashCheck({ executionId: 'm1', deps: deps(MERGING, [ELSEWHERE]), env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(await runPrClashCheck({ executionId: 'm1', deps: deps({ ...MERGING, files: [] }, [SAME_FILE]), env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(await runPrClashCheck({ executionId: 'm1', deps: deps(null, [SAME_FILE]), env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(call).not.toHaveBeenCalled();
-    expect(rows).toEqual([]);
+    expect(rows.filter((r) => r.jev_outcome === 'skipped').map((r) => r.skip_reason)).toEqual(['no_overlapping_changes', 'no_merging_files', 'no_merging_files']);
+    expect(rows.every((r) => r.jev_outcome === 'skipped')).toBe(true);
   });
 
   test('Jev unavailable → a fallback row; a throwing loader → null; never throws', async () => {

@@ -10,8 +10,9 @@
 # override (Option A). See services/postgrest-aurora-proxy/README.md.
 #
 # Staging-first (CLAUDE.md §16): auto-deploys on push to main when the
-# service tree changes. There is deliberately NO prod twin — production is a
-# later, owner-approved step once staging is smoke-tested.
+# service tree changes. Production is a separate service and task family
+# (`vitana-postgrest-aurora-proxy-prod` / `vitana-postgrest-aurora-prod`)
+# rolled only by AWS-PROD-DEPLOY-POSTGREST-AURORA-PROXY.yml (VTID-05023).
 #
 # The ECR repo `vitana/postgrest-aurora-proxy`, the ECS service
 # `vitana-postgrest-aurora-proxy`, and the Cloud Map DNS entry do NOT exist

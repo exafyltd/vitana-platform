@@ -1,0 +1,7 @@
+VTID-05005 local checks, 2026-10-09
+gateway full suite (npx jest): Test Suites: 1 skipped, 1578 passed, 1578 of 1579 total
+                               Tests: 25 skipped, 6 todo, 25152 passed, 25183 total
+gateway Kiro/roles suites:     147 passed
+npm run test:operator:         30 passed
+kiro-runner (vitest):          28 passed
+tsc --noEmit: gateway clean, kiro-runner clean

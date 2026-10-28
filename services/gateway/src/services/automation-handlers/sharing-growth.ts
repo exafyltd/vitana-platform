@@ -8,13 +8,14 @@
 import { randomUUID } from 'crypto';
 import { AutomationContext, REWARD_TABLE } from '../../types/automations';
 import { registerHandler } from '../automation-executor';
+// VTID-05099: the one canonical Vitana bot id (the old fallback …0000 is no user).
+import { VITANA_BOT_USER_ID } from '../../lib/vitana-bot';
 import * as repo from './sharing-growth-repository';
 import { creditWalletSucceeded, referralRewardEventId } from '../wallet/vtna-reward-keys';
 import { rewardAmount } from '../rewards/vtna-reward-rules';
 import { proposeToMember, tallyOutcomes, type ProposalOutcome } from '../community-autopilot/automation-proposals';
 
 const APP_URL = process.env.APP_URL || 'https://vitana.app';
-const VITANA_BOT_USER_ID = process.env.VITANA_BOT_USER_ID || '00000000-0000-0000-0000-000000000000';
 
 // ── Short code generator ────────────────────────────────────
 function generateShortCode(): string {

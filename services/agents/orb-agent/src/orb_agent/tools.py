@@ -709,47 +709,170 @@ async def search_calendar(context: RunContext, query: str, days_ahead: int = 14)
 
 @function_tool
 async def create_calendar_event(
-    context: RunContext, title: str, when_iso: str, duration_min: int = 60
+    context: RunContext,
+    title: str,
+    when_iso: str,
+    duration_min: int = 60,
+    confirmed: bool | None = None,
 ) -> str:
-    """Create a calendar event.
+    """Create an entry in the member's Vitana calendar.
+
+    Two steps: call without `confirmed` first, read the title, date and time
+    back to the member and ask; call again with confirmed=True only after they
+    say yes. Never in the past.
 
     Args:
         title: Event title.
         when_iso: Start time in ISO 8601 (e.g. "2026-05-17T15:00:00+02:00").
         duration_min: Duration in minutes (default 60).
+        confirmed: True ONLY after the member confirmed the read-back.
     """
-    # VTID-03011: translate to gateway shape (start_time + end_time).
-    body = await _gw(context).post(
-        "/api/v1/calendar/events",
-        _to_calendar_payload(title, when_iso, duration_min),
-    )
+    # VTID-04918: through the shared dispatcher, so the shared calendar write
+    # guard (confirmed + not in the past) applies here exactly as on the
+    # gateway live session and in text chat. The direct calendar-route POST
+    # this replaced had no guard at all.
+    body = await _dispatch(context, "create_calendar_event", {
+        "title": title,
+        "start_time": when_iso,
+        "duration_min": duration_min,
+        "confirmed": confirmed,
+    })
     return summarize(body)
 
 
 @function_tool
-async def add_to_calendar(context: RunContext, title: str, when_iso: str) -> str:
-    """Add an event to the user's calendar (VTID-01943)."""
-    # VTID-03011: translate to gateway shape (start_time + end_time, +60min default).
-    body = await _gw(context).post(
-        "/api/v1/calendar/events",
-        _to_calendar_payload(title, when_iso, 60),
-    )
+async def add_to_calendar(
+    context: RunContext,
+    title: str,
+    start: str,
+    end: str | None = None,
+    description: str | None = None,
+) -> str:
+    """Add an event to the member's connected Google calendar (VTID-01943).
+
+    For the Vitana calendar use create_calendar_event instead.
+
+    Args:
+        title: Event title.
+        start: RFC3339 start time in the member's timezone.
+        end: Optional RFC3339 end (default start + 1h).
+        description: Optional notes.
+    """
+    # VTID-04918: same meaning as the gateway's add_to_calendar (calendar.create
+    # capability on the connected external calendar), not a Vitana entry.
+    body = await _dispatch(context, "add_to_calendar", {
+        "title": title,
+        "start": start,
+        "end": end,
+        "description": description,
+    })
     return summarize(body)
 
 
 @function_tool
-async def get_schedule(context: RunContext, date_iso: str | None = None) -> str:
-    """Return the user's schedule for a given date (defaults to today)."""
-    # Calendar router exposes /events/today and /events/upcoming. Without a
-    # specific date we default to /today; with a date we fall back to the
-    # generic /events search constrained to that day.
-    if date_iso:
-        body = await _gw(context).get(
-            "/api/v1/calendar/events",
-            {"from": date_iso, "to": date_iso},
-        )
-    else:
-        body = await _gw(context).get("/api/v1/calendar/events/today")
+async def get_schedule(context: RunContext, days_ahead: int = 1) -> str:
+    """Upcoming events from the member's connected Google calendar.
+
+    For the Vitana calendar use search_calendar.
+
+    Args:
+        days_ahead: How many days ahead (1 = today, 7 = this week).
+    """
+    # VTID-04918: same meaning as the gateway's get_schedule (calendar.list
+    # capability on the connected external calendar).
+    body = await _dispatch(context, "get_schedule", {"days_ahead": days_ahead})
+    return summarize(body)
+
+
+@function_tool
+async def share_calendar_entry_to_feed(
+    context: RunContext,
+    entry_id: str | None = None,
+    title_query: str | None = None,
+    text: str | None = None,
+    is_public: bool | None = None,
+    card_title: str | None = None,
+    include_location: bool | None = None,
+    card_token: str | None = None,
+    sensitive_ack: bool | None = None,
+    confirmed: bool | None = None,
+) -> str:
+    """Share one of the member's own upcoming calendar entries to their feed.
+
+    Any entry: an event, a live room, or a private, business, medical or
+    reminder entry. Compose a short post in the member's language. Two steps:
+    call without `confirmed` first, read the entry, what others see on the
+    card and the post text back and ask; call again with the same arguments,
+    the preview's card_token and confirmed=True only after they say yes.
+
+    Args:
+        entry_id: The calendar entry id, if known.
+        title_query: Fuzzy title to find the entry when entry_id is unknown.
+        text: The post text in the member's language.
+        is_public: False keeps the post visible to the member only, True shows
+            it to the community. Required with confirmed=True — send what the
+            member approved.
+        card_title: For an own entry: the title others see (default: the entry title).
+        include_location: For an own entry: True shows the place on the card.
+        card_token: With confirmed=True for an own entry: the card_token from the preview.
+        sensitive_ack: True ONLY when the preview said sensitive and the member
+            confirmed after you said it is a health appointment.
+        confirmed: True ONLY after the member confirmed.
+    """
+    body = await _dispatch(context, "share_calendar_entry_to_feed", {
+        "entry_id": entry_id,
+        "title_query": title_query,
+        "text": text,
+        "is_public": is_public,
+        "card_title": card_title,
+        "include_location": include_location,
+        "card_token": card_token,
+        "sensitive_ack": sensitive_ack,
+        "confirmed": confirmed,
+    })
+    return summarize(body)
+
+
+@function_tool
+async def invite_to_calendar_entry(
+    context: RunContext,
+    recipient_user_id: str,
+    entry_id: str | None = None,
+    title_query: str | None = None,
+    card_title: str | None = None,
+    include_location: bool | None = None,
+    card_token: str | None = None,
+    sensitive_ack: bool | None = None,
+    confirmed: bool | None = None,
+) -> str:
+    """Invite another member to an entry in the member's calendar (an invite card in their chat).
+
+    Resolve the person with resolve_recipient first. Two steps: call without
+    `confirmed`, tell the member which entry goes to whom and what the card
+    shows and ask; call again with the same arguments, the preview's
+    card_token and confirmed=True only after they say yes.
+
+    Args:
+        recipient_user_id: The invited person's user id from resolve_recipient.
+        entry_id: The calendar entry id, if known.
+        title_query: Fuzzy title to find the entry when entry_id is unknown.
+        card_title: For an own entry: the title on the card (default: the entry title).
+        include_location: For an own entry: True shows the place on the card.
+        card_token: With confirmed=True for an own entry: the card_token from the preview.
+        sensitive_ack: True ONLY when the preview said sensitive and the member
+            confirmed after you said it is a health appointment.
+        confirmed: True ONLY after the member confirmed.
+    """
+    body = await _dispatch(context, "invite_to_calendar_entry", {
+        "recipient_user_id": recipient_user_id,
+        "entry_id": entry_id,
+        "title_query": title_query,
+        "card_title": card_title,
+        "include_location": include_location,
+        "card_token": card_token,
+        "sensitive_ack": sensitive_ack,
+        "confirmed": confirmed,
+    })
     return summarize(body)
 
 
@@ -3410,13 +3533,17 @@ async def leave_group_chat(context: RunContext, group: str | None = None, group_
 
 
 @function_tool
-async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, confirmed: bool | None = None) -> str:
-    """Share one of the user's own upcoming calendar events with a community member via direct message."""
+async def send_calendar_invite_in_chat(context: RunContext, member: str | None = None, member_user_id: str | None = None, event: str | None = None, event_id: str | None = None, card_title: str | None = None, include_location: bool | None = None, card_token: str | None = None, sensitive_ack: bool | None = None, confirmed: bool | None = None) -> str:
+    """Share one of the user's own upcoming calendar events with a community member via direct message (confirm with the preview's card_token)."""
     body = await _dispatch_with_directive(context, "send_calendar_invite_in_chat", {
             "member": member,
             "member_user_id": member_user_id,
             "event": event,
             "event_id": event_id,
+            "card_title": card_title,
+            "include_location": include_location,
+            "card_token": card_token,
+            "sensitive_ack": sensitive_ack,
             "confirmed": confirmed,
         })
     return summarize(body)
@@ -6489,8 +6616,9 @@ def all_tool_names() -> list[str]:
         "search_memory", "search_knowledge", "search_web", "recall_conversation_at_time",
         # Persona / Handoff (2)
         "switch_persona", "report_to_specialist",
-        # Calendar (4)
+        # Calendar (6) — VTID-04918 adds share to feed + invite
         "search_calendar", "create_calendar_event", "add_to_calendar", "get_schedule",
+        "share_calendar_entry_to_feed", "invite_to_calendar_entry",
         # Community / Events / Recommendations (4) — find_community_member auto-redirects
         "search_events", "search_community", "find_community_member", "get_recommendations",
         # Media / Capability prefs (2)

@@ -1,8 +1,20 @@
 {
+  "$schema": "https://agent-plugins.org/schemas/1.0.0/mcp.schema.json",
   "mcpServers": {
     "vitanaland-commerce": {
       "type": "streamable-http",
-      "url": "https://gateway.vitanaland.com/mcp/chatgpt"
+      "url": "https://gateway.vitanaland.com/mcp/chatgpt",
+      "extensions": {
+        "com.openai": {
+          "auth": {
+            "type": "oauth",
+            "client": {
+              "mode": "dcr"
+            },
+            "baseScopes": ["email", "profile"]
+          }
+        }
+      }
     }
   }
 }

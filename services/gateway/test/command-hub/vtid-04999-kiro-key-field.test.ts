@@ -9,11 +9,22 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { extractedOperatorBlock, readBundleFile } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('var KIRO_TOOL_STATUS'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: the key-controls functions were extracted to operator-console.js.
+const OPERATOR_CONSOLE = readBundleFile('operator-console.js');
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// moved to operator-console.js; their module vars stayed in app.js.
+// extractedOperatorBlock() rebuilds the original executable slice unchanged.
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'confirm', 'console'],
+  ['resetKiroKeyState'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; value = ''; type = ''; placeholder = ''; autocomplete = '';
@@ -97,27 +108,54 @@ describe('VTID-04999 Kiro key field', () => {
     expect(bad.state.kiroKey.linked).toBe(false);
   });
 
-  it('linked → the date, Replace and Revoke; Replace shows the field again', () => {
+  it('linked → a green "✓ Connected" and only "Manage key" (VTID-05004)', () => {
     const { api, state } = load(ok({}), { kiroKey: { loaded: true, linked: true, updated_at: '2026-10-08T10:00:00.000Z' } });
-    expect(api.kiroKeyStatusText()).toMatch(/^linked · /);
+    expect(api.kiroKeyStatusText()).toBe('✓ Connected');
     const box: El = api.renderKiroKeyControls();
     expect(box.find('kiro-key-input')).toHaveLength(0);
-    const [replace, revoke] = box.find('kiro-key-btn');
-    expect([replace.textContent, revoke.textContent]).toEqual(['Replace', 'Revoke']);
-    replace.onclick!();
+    expect(box.find('kiro-key-btn')).toHaveLength(0);
+    const manage = box.find('kiro-key-manage');
+    expect(manage).toHaveLength(1);
+    expect(manage[0].textContent).toBe('Manage key');
+    const panel: El = api.renderKiroThreadPanel();
+    expect(panel.find('kiro-key-ok').map((e) => e.textContent)).toEqual(['✓ Connected']);
+    manage[0].onclick!();
+    expect(state.kiroKey.managing).toBe(true);
+  });
+
+  it('Manage key → Replace, Revoke and Done; Done closes it; Replace shows the field again', () => {
+    const { api, state } = load(ok({}), { kiroKey: { loaded: true, linked: true, managing: true } });
+    const box: El = api.renderKiroKeyControls();
+    expect(box.find('kiro-key-btn').map((e) => e.textContent)).toEqual(['Replace', 'Revoke', 'Done']);
+    box.find('kiro-key-btn')[2].onclick!();
+    expect(state.kiroKey.managing).toBe(false);
+    expect(api.renderKiroKeyControls().find('kiro-key-btn')).toHaveLength(0);
+    state.kiroKey = { loaded: true, linked: true, managing: true };
+    api.renderKiroKeyControls().find('kiro-key-btn')[0].onclick!();
     expect(state.kiroKey.editing).toBe(true);
     expect(api.renderKiroKeyControls().find('kiro-key-btn--primary')[0].textContent).toBe('Replace');
   });
 
-  it('Revoke asks first, DELETEs and shows not linked', async () => {
+  it('Revoke is reached through Manage key, asks first, DELETEs and shows not linked', async () => {
     const { api, state, fetchMock, calls } = load(ok({ linked: false }), { kiroKey: { loaded: true, linked: true } });
-    await api.revokeKiroKey();
+    api.renderKiroKeyControls().find('kiro-key-manage')[0].onclick!();
+    const revoke = api.renderKiroKeyControls().find('kiro-key-btn--danger')[0];
+    expect(revoke.textContent).toBe('Revoke');
+    revoke.onclick!();
+    await new Promise((r) => setTimeout(r, 0));
     expect(calls.confirms).toBe(1);
     expect(fetchMock.mock.calls[0][1].method).toBe('DELETE');
     expect(state.kiroKey).toEqual({ loaded: true, linked: false, updated_at: null });
     const no = load(ok({}), { kiroKey: { loaded: true, linked: true } }, false);
     await no.api.revokeKiroKey();
     expect(no.fetchMock).not.toHaveBeenCalled();
+  });
+
+  it('a failed revoke keeps the manage view open', async () => {
+    const { api, state } = load(async () => ({ ok: false, status: 502, json: async () => ({ ok: false }) }), { kiroKey: { loaded: true, linked: true, managing: true } });
+    await api.revokeKiroKey();
+    expect(state.kiroKey.managing).toBe(true);
+    expect(state.kiroKey.linked).toBe(true);
   });
 
   it('sign-out drops an unsent draft and the previous user’s key status, and the next user’s status is read fresh', async () => {
@@ -151,11 +189,17 @@ describe('VTID-04999 Kiro key field', () => {
 describe('VTID-04999 wiring (source check)', () => {
   it('styles exist, no inline styles, and the cache-bust is bumped', () => {
     for (const cls of ['.kiro-key-input', '.kiro-key-btn--primary', '.kiro-key-btn--danger', '.kiro-key-note', '.kiro-key-form']) expect(CSS).toContain(cls);
-    const keyBlock = BLOCK.slice(BLOCK.indexOf('var _kiroKeyRequested'), BLOCK.indexOf('function renderKiroThreadPanel'));
+    // VTID-05073: the key-controls region (fetchKiroKeyStatus .. renderKiroThreadPanel)
+    // now lives in operator-console.js; the _kiroKeyRequested var stayed in app.js so
+    // it is no longer co-located with the functions. Same region, same checks.
+    const keyBlock = OPERATOR_CONSOLE.slice(OPERATOR_CONSOLE.indexOf('function fetchKiroKeyStatus'), OPERATOR_CONSOLE.indexOf('function renderKiroThreadPanel'));
     expect(keyBlock).not.toMatch(/\.style\b|style=/);
     expect(keyBlock).not.toMatch(/localStorage|sessionStorage/);
     const html = readFileSync(join(FE, 'index.html'), 'utf8');
-    expect(html).toContain('app.js?v=20261108-vtid-04999');
-    expect(html).toContain('styles.css?v=20261108-vtid-04999');
+    // Bumped past VTID-04999 by later Command Hub changes (VTID-05003); never back to an older build.
+    expect(html).not.toContain('app.js?v=20261108-vtid-04999');
+    expect(CSS).toContain('.kiro-key-ok');
+    expect(CSS).toContain('.kiro-key-manage');
+    expect(html).toMatch(/app\.js\?v=2026\d{4}-vtid-\d{5}/);
   });
 });

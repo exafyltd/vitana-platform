@@ -9,7 +9,7 @@
  *
  * Body contract (exact; the client side is built by another stream):
  *   {
- *     session_id: string,                      // ≤ 64 chars
+ *     session_id: string,                      // ≤ 160 chars (VTID-05002 owner-bearing ids)
  *     entry: 'mobile' | 'desktop' | 'command_hub',
  *     transport: 'ws' | 'sse',
  *     marks: { [name: string]: number },       // ≤ 20 marks, name ≤ 64 chars,
@@ -40,7 +40,8 @@ export const clientLatencyBeaconSchema = z
     // Empty when the member closed the overlay before a session existed
     // (found on staging: that cycle was rejected with a 400 and lost). The key
     // stays required; an empty value is recorded as session_id null.
-    session_id: z.string().max(64),
+    // VTID-05002: 160 fits `live-<uuid>.<encrypted owner>` (~93 chars) with room.
+    session_id: z.string().max(160),
     entry: z.enum(['mobile', 'desktop', 'command_hub']),
     transport: z.enum(['ws', 'sse']),
     marks: z

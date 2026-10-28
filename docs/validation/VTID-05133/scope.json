@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-05133",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/community-mcp.ts",
+    "services/gateway/src/services/community-mcp.ts",
+    "services/gateway/src/services/ai-connection-grants.ts",
+    "services/gateway/src/routes/commerce-mcp.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/src/middleware/cors.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "supabase/migrations/20261013150000_vtid_05133_ai_connection_grants.sql",
+    "DATABASE_SCHEMA.md",
+    "services/gateway/test/vtid-05133-*.test.ts",
+    "services/gateway/test/community-mcp.test.ts",
+    "services/gateway/test/helpers/vtid-05133-fake-supabase.ts",
+    "docs/validation/VTID-05133/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

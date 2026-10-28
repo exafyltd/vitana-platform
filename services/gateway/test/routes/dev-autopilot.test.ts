@@ -52,6 +52,8 @@ jest.mock('../../src/services/dev-autopilot-outcomes', () => ({
   // the real implementation here so this file's GET /spend tests exercise
   // real route-to-summary wiring, not a second hand-written stub of it.
   summarizeSpendToday: jest.requireActual('../../src/services/dev-autopilot-outcomes').summarizeSpendToday,
+  // VTID-05077: the spend route also reports the planner fallback rate (pure).
+  summarizePlannerFallback: jest.requireActual('../../src/services/dev-autopilot-outcomes').summarizePlannerFallback,
 }));
 
 import { ingestScan } from '../../src/services/dev-autopilot-synthesis';
@@ -1191,7 +1193,7 @@ describe('GET /executions', () => {
     ]);
     await asAdmin(request(app).get('/api/v1/dev-autopilot/executions'));
     // VTID-04029: a held execution (awaiting_approval) is active too.
-    expect(seenUrl).toContain('status=in.(cooling,running,awaiting_approval,ci,merging,deploying,verifying)');
+    expect(seenUrl).toContain('status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)');
   });
 
   it('omits the status clause entirely for ?status=all', async () => {
@@ -1365,20 +1367,54 @@ describe('GET /spend', () => {
               { metadata: { agent_runs: [{ cost_usd: 0.02, input_tokens: 200, output_tokens: 20, recorded_at: todayIso }] } },
             ])
           : undefined,
+      (url) => (url.includes('/rest/v1/dev_autopilot_plan_versions') ? jsonRes(200, []) : undefined),
     ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
     expect(res.status).toBe(200);
+    // VTID-05077: the response also carries the planner fallback rate.
     expect(res.body).toEqual({
       ok: true,
       spend_usd_today: 0.03,
       input_tokens_today: 300,
       output_tokens_today: 30,
       runs_today: 2,
+      planner: { plans_24h: 0, fallback_24h: 0, fallback_rate_24h: null },
     });
   });
 
+  it('VTID-05077: reports how many plan versions of the last 24 h the planner fallback wrote', async () => {
+    let plannerUrl = '';
+    setFetchRoutes([
+      (url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined),
+      (url) => {
+        if (!url.includes('/rest/v1/dev_autopilot_plan_versions')) return undefined;
+        plannerUrl = url;
+        return jsonRes(200, [{ planner_provider: 'deepseek' }, { planner_provider: 'bedrock' }, { planner_provider: null }]);
+      },
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body.planner).toEqual({ plans_24h: 2, fallback_24h: 1, fallback_rate_24h: 0.5 });
+    expect(plannerUrl).toContain('select=planner_provider');
+    expect(plannerUrl).toMatch(/created_at=gte\./);
+    expect(plannerUrl).toMatch(/limit=\d+/);
+  });
+
+  it('VTID-05077: a failed plan-version read leaves planner null and never fails the spend answer', async () => {
+    setFetchRoutes([
+      (url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined),
+      (url) => (url.includes('/rest/v1/dev_autopilot_plan_versions') ? jsonRes(500, {}) : undefined),
+    ]);
+    const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
+    expect(res.status).toBe(200);
+    expect(res.body.planner).toBeNull();
+  });
+
   it('returns all zeros, not an error, when there are no outcome rows yet', async () => {
-    setFetchRoutes([(url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined)]);
+    setFetchRoutes([
+      (url) => (url.includes('/rest/v1/dev_autopilot_outcomes') ? jsonRes(200, []) : undefined),
+      (url) => (url.includes('/rest/v1/dev_autopilot_plan_versions') ? jsonRes(200, []) : undefined),
+    ]);
     const res = await asAdmin(request(app).get('/api/v1/dev-autopilot/spend'));
     expect(res.status).toBe(200);
     expect(res.body).toEqual({
@@ -1387,6 +1423,7 @@ describe('GET /spend', () => {
       input_tokens_today: 0,
       output_tokens_today: 0,
       runs_today: 0,
+      planner: { plans_24h: 0, fallback_24h: 0, fallback_rate_24h: null },
     });
   });
 

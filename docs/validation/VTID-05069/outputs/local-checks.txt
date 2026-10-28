@@ -1,0 +1,26 @@
+# VTID-05069 local checks (2026-10-10, branch claude/amazing-ride-wipu1l-p4 on origin/main bec05342)
+
+# services/gateway
+npx tsc --noEmit -p .                                                    # clean (only TS2742 portability notes caused by the worktree's symlinked node_modules; none in changed files)
+node --check src/frontend/command-hub/pipeline-tree.js                   # ok
+node --check src/frontend/command-hub/app.js                             # ok
+node --check test/command-hub/fixtures/pipeline-tree-harness.js          # ok
+npx jest test/operator-runs-view.test.ts                                 # 38 passed
+npx jest test/command-hub/vtid-05069-pipeline-tree.test.ts               # 16 passed
+npm run test:operator                                                    # 57 passed
+npm run test:support                                                     # 87 passed (4 suites)
+npm run test:roles                                                       # 105 passed
+npx jest test/command-hub test/scripts/command-hub-ownership-guard.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/operator-runs-view.test.ts   # 43 suites, 648 passed
+npx jest --silent                                                        # 1617 suites passed, 6 failed under machine load (load average 16-19, parallel sessions: SIGKILLed worker, 5 s timeouts)
+npx jest -w 2 <the 6 suites>                                             # 5 passed; events-stream-backpressure passed on its own rerun (9/9) — timing-only, no change touches them
+# visual evidence (fixture views through the real renderer, local file harness, no network)
+npx tsx test/command-hub/fixtures/capture-pipeline-tree.ts ../../docs/validation/VTID-05069/outputs
+  desktop-s1.png overflow=0   desktop-s2.png overflow=0   desktop-s3.png overflow=0   (1400x900)
+  mobile-s1.png overflow=0    mobile-s2.png overflow=0    mobile-s3.png overflow=0    (390x844, no horizontal overflow)
+
+# repo root
+node --check scripts/ci/command-hub-ownership-guard.js                   # ok
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend # APPROVED: 46 in-remit files; scripts/ci/command-hub-ownership-guard.js reported as not judged
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of services/gateway/src/frontend/>   # No CSP pattern hits in added lines
+node scripts/ci/validator-path-guard.cjs --route-evidence-required <diff>  # route added → ROUTE_MOUNT/FINAL_URL/CURL_PROOF in acceptance.md
+node -e "validateManifest(docs/validation/VTID-05069/staging-tests.json, { vtid: 'VTID-05069', service: 'gateway' })"   # { ok: true, errors: [] }

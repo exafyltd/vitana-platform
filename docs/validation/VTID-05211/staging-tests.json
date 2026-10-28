@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05211",
+  "service": "gateway",
+  "note": "Gateway-only filter on GET /api/v1/enrichment-cards. Read-only probes only. Which cards a signed-in member sees is proven by Jest (it needs a member with open cards and a stack with and without the Meta OAuth clients, which staging cannot switch); the signed-in browser check of the profile list runs in vitana-v1 (tests/e2e/staging/vtid-05210-profile-card-placement.staging.spec.ts).",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "the enrichment-cards route is mounted and requires a login", "path": "/api/v1/enrichment-cards?screen=profile", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/routes/enrichment-cards.test.ts test/services/enrichment", "cwd": "services/gateway", "reason": "Proves the profile list (E1–E7, E11), E6/E7 hidden without their OAuth client (id and secret) on every screen that lists them and back once configured, profile_completion_pct unchanged, and every existing filtering, cooldown and boost rule" }
+  ]
+}

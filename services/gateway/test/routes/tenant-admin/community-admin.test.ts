@@ -76,6 +76,12 @@ jest.mock('@supabase/supabase-js', () => ({
         eq: jest.fn(() => ({
           eq: jest.fn(() => ({
             single: mockUserTenantsSingle,
+            // VTID-05147: requireTenantAdmin also reads the permitted roles
+            // (user_permitted_roles awaited here, memberships one .eq() deeper);
+            // the test caller holds a granted admin role.
+            eq: jest.fn(() => Promise.resolve({ data: [], error: null })),
+            then: (resolve: any, reject: any) =>
+              Promise.resolve({ data: [{ role: 'admin' }], error: null }).then(resolve, reject),
           })),
         })),
       })),
@@ -105,6 +111,13 @@ const tenantAdminClaims = (tenantId: string) => ({
   email: 'admin-a@example.com',
   app_metadata: { active_tenant_id: tenantId, exafy_admin: false },
 });
+
+// VTID-05042: routes whose data has no tenant_id column are platform-only.
+const EXAFY_ADMIN_CLAIMS = {
+  sub: 'super-admin',
+  email: 'super@exafy.io',
+  app_metadata: { exafy_admin: true },
+};
 
 function mockVerifiedJwt(payload: object) {
   (jose.jwtVerify as jest.Mock).mockResolvedValue({ payload });
@@ -175,7 +188,7 @@ describe('Community Admin routes', () => {
   // --- GET /meetups ---
 
   it('GET /meetups enriches events with organizer profiles and tickets', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const events = [
       { id: 'evt-1', title: 'Yoga', created_by: 'org-1', start_time: '2026-08-01T10:00:00Z' },
       { id: 'evt-2', title: 'Run', created_by: 'org-2', start_time: '2026-08-02T10:00:00Z' },
@@ -220,7 +233,7 @@ describe('Community Admin routes', () => {
   });
 
   it('GET /meetups returns empty list with count 0 when there are no events', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({ data: [], error: null });
 
     const res = await request(app)
@@ -235,7 +248,7 @@ describe('Community Admin routes', () => {
   });
 
   it('GET /meetups degrades to ok:true with empty list on a query error', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({
       data: null,
       error: { message: 'table missing' },
@@ -250,7 +263,7 @@ describe('Community Admin routes', () => {
   });
 
   it('GET /meetups caps limit at 500', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({ data: [], error: null });
 
     await request(app)
@@ -263,7 +276,7 @@ describe('Community Admin routes', () => {
   // --- DELETE /meetups/:id ---
 
   it('DELETE /meetups/:id deletes the event by id for an authorized admin', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({ error: null });
 
     const res = await request(app)
@@ -278,7 +291,7 @@ describe('Community Admin routes', () => {
   });
 
   it('DELETE /meetups/:id returns 500 when the delete fails', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({ error: { message: 'fk violation' } });
 
     const res = await request(app)
@@ -292,7 +305,7 @@ describe('Community Admin routes', () => {
   // --- GET /groups / /live-rooms / /creators / /memberships ---
 
   it('GET /groups lists groups with count', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     const rows = [{ id: 'g1' }, { id: 'g2' }];
     chainFor('global_community_groups').mockResolvedValue({ data: rows, error: null });
 
@@ -316,10 +329,12 @@ describe('Community Admin routes', () => {
     expect(res.status).toBe(200);
     expect(res.body.rooms).toHaveLength(1);
     expect(chainFor('live_rooms').limit).toHaveBeenCalledWith(200);
+    // VTID-05042: scoped to the URL's tenant
+    expect(chainFor('live_rooms').eq).toHaveBeenCalledWith('tenant_id', TENANT_A);
   });
 
   it('GET /creators lists creator profiles', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('creator_profiles').mockResolvedValue({ data: [{ id: 'c1' }], error: null });
 
     const res = await request(app)
@@ -351,10 +366,39 @@ describe('Community Admin routes', () => {
     warnSpy.mockRestore();
   });
 
+  it('GET /memberships is scoped to the URL tenant via eq(tenant_id) (VTID-05042)', async () => {
+    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    chainFor('community_memberships').mockResolvedValue({ data: [{ id: 'm1' }], error: null });
+
+    const res = await request(app)
+      .get(url(TENANT_A, '/memberships'))
+      .set('Authorization', 'Bearer t');
+
+    expect(res.status).toBe(200);
+    expect(res.body).toEqual({ ok: true, memberships: [{ id: 'm1' }], count: 1 });
+    expect(chainFor('community_memberships').eq).toHaveBeenCalledWith('tenant_id', TENANT_A);
+  });
+
+  it.each(['/live-rooms', '/memberships'])(
+    'exafy_admin GET %s is also scoped to the URL tenant (VTID-05042)',
+    async (tail) => {
+      mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
+      const table = tail === '/live-rooms' ? 'live_rooms' : 'community_memberships';
+      chainFor(table).mockResolvedValue({ data: [], error: null });
+
+      const res = await request(app)
+        .get(url(TENANT_B, tail))
+        .set('Authorization', 'Bearer t');
+
+      expect(res.status).toBe(200);
+      expect(chainFor(table).eq).toHaveBeenCalledWith('tenant_id', TENANT_B);
+    },
+  );
+
   // --- GET /stats ---
 
   it('GET /stats aggregates head counts across the four community tables', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     chainFor('global_community_events').mockResolvedValue({ count: 3 });
     chainFor('global_community_groups').mockResolvedValue({ count: 2 });
     chainFor('live_rooms').mockResolvedValue({ count: 5 });
@@ -372,7 +416,7 @@ describe('Community Admin routes', () => {
   });
 
   it('GET /stats returns zeros when counts are missing', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     for (const t of [
       'global_community_events',
       'global_community_groups',
@@ -391,7 +435,7 @@ describe('Community Admin routes', () => {
   });
 
   it('GET /groups returns 503 when the DB client is unavailable', async () => {
-    mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+    mockVerifiedJwt(EXAFY_ADMIN_CLAIMS);
     mockGetSupabase.mockReturnValue(null as any);
 
     const res = await request(app)
@@ -401,4 +445,28 @@ describe('Community Admin routes', () => {
     expect(res.status).toBe(503);
     expect(res.body.error).toBe('DB_UNAVAILABLE');
   });
+
+  // --- VTID-05042: tables without tenant_id are platform-only ---
+
+  it.each([
+    ['get', '/meetups'],
+    ['delete', '/meetups/evt-1'],
+    ['get', '/groups'],
+    ['get', '/creators'],
+    ['get', '/stats'],
+  ])(
+    '%s %s returns 403 PLATFORM_SCOPE_ONLY for a tenant admin of their own tenant, no query issued (VTID-05042)',
+    async (method, tail) => {
+      mockVerifiedJwt(tenantAdminClaims(TENANT_A));
+
+      const res = await (request(app) as any)[method](url(TENANT_A, tail))
+        .set('Authorization', 'Bearer t');
+
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'PLATFORM_SCOPE_ONLY' });
+      expect(mockSupabase.from).not.toHaveBeenCalled();
+      expect(chainFor('global_community_events').delete).not.toHaveBeenCalled();
+    },
+  );
+
 });

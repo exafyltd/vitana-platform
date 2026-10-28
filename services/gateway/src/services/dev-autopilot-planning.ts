@@ -51,12 +51,25 @@ import {
   loadSchemaSnippets,
   formatSchemaBlock,
 } from './dev-autopilot-schema-context';
-import { applyScannerOverrides } from './dev-autopilot-safety';
 
 import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
 import { isPlannerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
 import { recordShown } from './watcher/feedback';
-import { devPlannerModel } from './dev-pipeline-models';
+import { devPlannerModel, devPlannerFallbackModel } from './dev-pipeline-models';
+import {
+  PLANNER_DEADLINE_MS,
+  PLANNER_MAX_TOOL_CALLS,
+  PLANNER_MAX_TURNS,
+  checkPlanPaths,
+  createPlannerToolExecutor,
+  pathFeedback,
+  plannerRouterTools,
+  plannerToolsEnabled,
+  plannerToolsPromptBlock,
+  readPlanPathEntries,
+  resolveMainRefs,
+} from './dev-autopilot/planner-tools';
+import { applyScannerOverrides } from './dev-autopilot-safety';
 import { isPlannabilityOn, recordPlannabilityOutcome, runPlannabilityCheck } from './jev/gates/plannability-gate';
 
 const LOG_PREFIX = '[dev-autopilot-planning]';
@@ -171,12 +184,16 @@ interface MessagesResponse {
 async function callRoutedLlm(
   prompt: string,
   vtid?: string | null,
-): Promise<{ ok: boolean; text?: string; usage?: MessagesResponse['usage']; error?: string }> {
+): Promise<PlannerCallResult> {
   // Lazy import to avoid a circular dep at module init time.
   const { callViaRouter } = await import('./llm-router');
-  // VTID-04593: the planner runs on DeepSeek Flash (primary only; the stage's
-  // own fallback still applies). The shared `planner` policy row is untouched.
+  // VTID-04593: the planner runs on DeepSeek Flash. VTID-05077: its fallback is
+  // Bedrock Opus 4.6, passed per call (the shared `planner` row is untouched),
+  // and DeepSeek's thinking is off — Flash reasons by default and spent the
+  // whole 8,000-token cap on hidden reasoning in about half of all plans
+  // (VTID-04794; 128 of 246 calls, 2026-10-05..11).
   const planner = devPlannerModel();
+  const fallback = devPlannerFallbackModel();
   const r = await callViaRouter('planner', prompt, {
     vtid: vtid ?? null,
     service: 'dev-autopilot-planning',
@@ -184,16 +201,96 @@ async function callRoutedLlm(
     maxTokens: 8000,
     providerOverride: planner.provider,
     modelOverride: planner.model,
+    fallbackOverride: { provider: fallback.provider, model: fallback.model },
+    ...(planner.provider === 'deepseek' ? { deepseekThinking: 'disabled' as const } : {}),
   });
+  return plannerCallResult(r);
+}
+
+/**
+ * VTID-05078 (Phase B): the planner as a bounded read-only tool loop — same
+ * primary (DeepSeek, thinking off) and fallback (Opus 4.6) as callRoutedLlm,
+ * at most PLANNER_MAX_TOOL_CALLS tool calls and PLANNER_DEADLINE_MS, then the
+ * model writes the plan with what it has.
+ */
+async function callPlannerWithTools(
+  prompt: string,
+  vtid: string,
+): Promise<{ result: PlannerCallResult; stats: NonNullable<PlanningSessionResult['tool_stats']> }> {
+  const { runStageToolLoop } = await import('./llm-stage-tool-loop');
+  const planner = devPlannerModel();
+  const fallback = devPlannerFallbackModel();
+  const refs = await resolveMainRefs();
+  const loop = await runStageToolLoop({
+    stage: 'planner',
+    service: 'dev-autopilot-planning',
+    vtid,
+    systemPrompt: 'You are the Vitana Dev Autopilot planner. Read the code you need with your read-only tools, then answer with the plan document only.',
+    prompt,
+    tools: plannerRouterTools(),
+    execute: createPlannerToolExecutor({ refs }),
+    maxTurns: PLANNER_MAX_TURNS,
+    maxToolCalls: PLANNER_MAX_TOOL_CALLS,
+    deadlineMs: PLANNER_DEADLINE_MS,
+    maxTokens: 8000,
+    allowFallback: true,
+    providerOverride: planner.provider,
+    modelOverride: planner.model,
+    fallbackOverride: { provider: fallback.provider, model: fallback.model },
+    ...(planner.provider === 'deepseek' ? { deepseekThinking: 'disabled' as const } : {}),
+  });
+  const toolErrors = loop.steps.filter((st) => st.kind === 'tool' && st.isError).length;
+  const stats = { tool_calls: loop.toolCalls, tool_errors: toolErrors, tool_names: loop.toolNames, budget_exhausted: loop.budgetExhausted, stalled: loop.stalled };
+  const result = plannerCallResult({
+    ok: loop.ok,
+    text: loop.text,
+    error: loop.error,
+    provider: loop.provider,
+    model: loop.model,
+    fallbackUsed: loop.fallbackUsed,
+    usage: loop.usage,
+  });
+  return { result, stats };
+}
+
+/** VTID-05077: what one planner call returned, with who answered it. */
+export interface PlannerCallResult {
+  ok: boolean;
+  text?: string;
+  usage?: MessagesResponse['usage'];
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+}
+
+/**
+ * VTID-05077 (A3): maps a router result to the planner's shape. A failure
+ * always carries a reason — the router's own error, or a named empty answer —
+ * never a bare "unknown error". Pure; exported for tests.
+ */
+export function plannerCallResult(r: {
+  ok: boolean;
+  text?: string;
+  error?: string;
+  provider?: string;
+  model?: string;
+  fallbackUsed?: boolean;
+  stopReason?: string;
+  usage?: { inputTokens: number; outputTokens: number };
+}): PlannerCallResult {
+  const who = { provider: r.provider, model: r.model, fallbackUsed: Boolean(r.fallbackUsed) };
   if (!r.ok) {
-    return { ok: false, error: r.error || 'router returned ok=false' };
+    return { ok: false, error: r.error || `router returned ok=false without an error (${r.provider || '?'}/${r.model || '?'})`, ...who };
+  }
+  if (!(r.text || '').trim()) {
+    return { ok: false, error: `${r.provider || '?'}/${r.model || '?'} returned an empty plan (stop_reason=${r.stopReason || 'n/a'})`, ...who };
   }
   return {
     ok: true,
     text: r.text,
-    usage: r.usage
-      ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
-      : undefined,
+    usage: r.usage ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens } : undefined,
+    ...who,
   };
 }
 
@@ -222,6 +319,28 @@ async function fetchFileFromGitHub(
     return { ok: true, content, status: res.status };
   } catch (err) {
     return { ok: false, error: String(err) };
+  }
+}
+
+/**
+ * VTID-05078 (B3): does `path` exist in the execution repo at its ref? true /
+ * false, or null when GitHub could not answer (treated as "not proven
+ * missing" — a transient API error never fails a plan). Server-side check
+ * only; the model never sees this credential.
+ */
+async function planPathExists(filePath: string): Promise<boolean | null> {
+  const token = process.env.PLAN_SPARRING_GITHUB_TOKEN || process.env.GITHUB_SAFE_MERGE_TOKEN || process.env.GITHUB_TOKEN || '';
+  if (!token) return null;
+  const encoded = filePath.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  try {
+    const res = await fetch(`https://api.github.com/repos/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(GITHUB_REF)}`, {
+      method: 'GET',
+      headers: { Authorization: `Bearer ${token}`, Accept: 'application/vnd.github.v3.object', 'User-Agent': 'vitana-dev-autopilot-planner' },
+    });
+    if (res.status === 404) return false;
+    return res.ok ? true : null;
+  } catch {
+    return null;
   }
 }
 
@@ -420,6 +539,8 @@ export function buildPlanningPrompt(
    * flag is off or nothing was recalled.
    */
   devMemoryBlock?: string,
+  /** VTID-05078: the planner has read-only tools on both repos and the index. */
+  opts: { toolsEnabled?: boolean } = {},
 ): string {
   const snap = finding.spec_snapshot || {};
   const lines: string[] = [];
@@ -700,13 +821,25 @@ export function buildPlanningPrompt(
 
   lines.push(
     `## Your task`,
-    `The referenced file is attached below. Use it (plus the finding metadata`,
-    `above) to produce a complete, actionable plan. Do NOT ask to see other`,
-    `files — infer tests/types/callers by naming conventions and state them`,
-    `as candidates in the plan. Cite every file you propose to modify by its`,
-    `repo-relative path (e.g. \`services/gateway/src/...\`), matching the style`,
-    `of the finding's file path. A plan that cites a nonexistent path will be`,
-    `rejected by validation.`,
+    ...(opts.toolsEnabled
+      ? [
+          `The referenced file is attached below. Read whatever else you need with`,
+          `your tools, then produce a complete, actionable plan. Cite every file you`,
+          `propose to modify by its repo-relative path (e.g. \`services/gateway/src/...\`).`,
+          `A plan that cites a nonexistent path will be rejected by validation.`,
+          ``,
+          plannerToolsPromptBlock(),
+        ]
+      : [
+          `The referenced file is attached below. Use it (plus the finding metadata`,
+          `above) to produce a complete, actionable plan. Do NOT ask to see other`,
+          `files — infer tests/types/callers by naming conventions and state them`,
+          `as candidates in the plan. Cite every file you propose to modify by its`,
+          `repo-relative path (e.g. \`services/gateway/src/...\`), matching the style`,
+          `of the finding's file path. A plan that cites a nonexistent path will be`,
+          `rejected by validation.`,
+          `Mark a file the plan creates with "(new)" on its line in "Files to modify".`,
+        ]),
     ``,
     `If the flagged file is partial (head/focus/tail excerpts only), work`,
     `from what you can see and explicitly note in the plan any areas where`,
@@ -848,7 +981,7 @@ async function runPlanningSession(
   feedbackNote: string | undefined,
   scope?: { allow?: string[]; deny?: string[] },
   supa?: SupaConfig,
-): Promise<{ ok: boolean; plan_markdown?: string; session_id?: string; error?: string }> {
+): Promise<PlanningSessionResult> {
   const sessionId = `plan_${randomUUID().slice(0, 12)}`;
 
   // VTID-03854: this used to gate on `!ANTHROPIC_API_KEY` — permanently true
@@ -955,13 +1088,23 @@ async function runPlanningSession(
       devMemoryBlock = '';
     }
   }
-  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock, devMemoryBlock) + fileSection;
+  // VTID-05078: read-only tools on both repos + the code index when the
+  // read-only token exists (and never on the worker-queue path).
+  const toolsOn = plannerToolsEnabled() && !isWorkerQueueEnabled();
+  const prompt = buildPlanningPrompt(finding, previousPlan, feedbackNote, scope, lessons, schemaBlock, watcherBlock, devMemoryBlock, { toolsEnabled: toolsOn }) + fileSection;
 
   // Route through the local worker queue when enabled, so the LLM call draws
   // on the Claude subscription instead of the pay-per-token API key. Falls
   // back to the routed LLM call (llm_routing_policy 'planner' stage) when
   // the feature flag is off.
-  let call = isWorkerQueueEnabled()
+  let toolStats: PlanningSessionResult['tool_stats'];
+  let call = toolsOn
+    ? await (async () => {
+        const loop = await callPlannerWithTools(prompt, `VTID-DA-FIND-${finding.id.slice(0, 8)}`);
+        toolStats = loop.stats;
+        return loop.result;
+      })()
+    : isWorkerQueueEnabled()
     ? await runWorkerTask(
         {
           kind: 'plan',
@@ -1033,7 +1176,31 @@ async function runPlanningSession(
     `${LOG_PREFIX} plan generated for ${finding.id} in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'routed-llm'} (${call.usage?.input_tokens || '?'} in / ${call.usage?.output_tokens || '?'} out tokens)`,
   );
 
-  return { ok: true, plan_markdown: call.text, session_id: sessionId };
+  // VTID-05077: who wrote it. The worker-queue path (claude subscription) has no
+  // router provider; it is recorded as such.
+  const routed = call as Partial<PlannerCallResult>;
+  return {
+    ok: true,
+    plan_markdown: call.text,
+    session_id: sessionId,
+    planner_provider: routed.provider ?? (isWorkerQueueEnabled() ? 'claude_subscription' : undefined),
+    planner_model: routed.model ?? (isWorkerQueueEnabled() ? PLANNING_MODEL : undefined),
+    fallback_used: Boolean(routed.fallbackUsed),
+    ...(toolStats ? { tool_stats: toolStats } : {}),
+  };
+}
+
+/** VTID-05077: one planning session's result, with who wrote the plan. */
+export interface PlanningSessionResult {
+  ok: boolean;
+  plan_markdown?: string;
+  session_id?: string;
+  error?: string;
+  planner_provider?: string;
+  planner_model?: string;
+  fallback_used?: boolean;
+  /** VTID-05078 (B4a): how the planner used its tools on this plan. */
+  tool_stats?: { tool_calls: number; tool_errors: number; tool_names: string[]; budget_exhausted: boolean; stalled: boolean };
 }
 
 // =============================================================================
@@ -1113,6 +1280,7 @@ export async function generatePlanVersion(
   // without losing TypeScript's narrowing across reassignment.
   let plan_markdown: string = initialSession.plan_markdown;
   let session_id: string | undefined = initialSession.session_id;
+  let writtenBy: { provider?: string; model?: string; fallback: boolean; toolStats?: PlanningSessionResult['tool_stats'] } = { provider: initialSession.planner_provider, model: initialSession.planner_model, fallback: Boolean(initialSession.fallback_used), toolStats: initialSession.tool_stats };
 
   // VTID-02680: for feedback-bridged findings, the bridge has already
   // pre-validated `proposed_files` against allow_scope/deny_scope. Trust
@@ -1153,6 +1321,7 @@ export async function generatePlanVersion(
     if (retrySession.ok && retrySession.plan_markdown) {
       plan_markdown = retrySession.plan_markdown;
       session_id = retrySession.session_id;
+      writtenBy = { provider: retrySession.planner_provider, model: retrySession.planner_model, fallback: Boolean(retrySession.fallback_used), toolStats: retrySession.tool_stats };
       files_referenced = (isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0)
         ? (proposedFiles as string[]).filter(p => typeof p === 'string' && p.includes('/'))
         : extractFilePaths(plan_markdown);
@@ -1169,6 +1338,56 @@ export async function generatePlanVersion(
   if (isFeedbackLane && Array.isArray(proposedFiles)) {
     console.log(`${LOG_PREFIX} feedback finding ${findingId}: using bridge-validated files (${files_referenced.length}) instead of planner extraction`);
   }
+  // VTID-05078 (Phase B, B3/B4): every path in "Files to modify" must exist at
+  // main or be marked "(new)", and must not be denied; one revision round with
+  // the reasons, then the plan fails with them. A community-app path routes
+  // the plan to a human (the executor only changes vitana-platform).
+  const bridgeValidated = isFeedbackLane && Array.isArray(proposedFiles) && proposedFiles.length > 0;
+  let pathEntries = bridgeValidated ? [] : readPlanPathEntries(plan_markdown);
+  if (pathEntries.length > 0) {
+    const deny = applyScannerOverrides(scope?.allow || [], scope?.deny || [], finding.spec_snapshot?.scanner).effectiveDeny;
+    let check = await checkPlanPaths(pathEntries, { deny, exists: planPathExists });
+    if (!check.ok && !opts.feedback_note) {
+      console.log(`${LOG_PREFIX} plan v${nextVersion} for ${findingId.slice(0, 8)} failed path validation (${check.problems.length}) — one revision round`);
+      const revision = await runPlanningSession(finding, plan_markdown, pathFeedback(check.problems), scope, supa);
+      if (revision.ok && revision.plan_markdown) {
+        plan_markdown = revision.plan_markdown;
+        session_id = revision.session_id;
+        writtenBy = { provider: revision.planner_provider, model: revision.planner_model, fallback: Boolean(revision.fallback_used), toolStats: revision.tool_stats };
+        files_referenced = extractFilePaths(plan_markdown);
+        pathEntries = readPlanPathEntries(plan_markdown);
+        check = await checkPlanPaths(pathEntries, { deny, exists: planPathExists });
+      }
+    }
+    if (!check.ok) {
+      void recordPlannabilityOutcome(plannability, { ok: false, error: 'path validation failed' });
+      const error = `Plan failed path validation: ${check.problems.join('; ')}`;
+      await emitOasisEvent({
+        vtid: PLAN_VTID,
+        type: 'dev_autopilot.plan.failed',
+        source: 'dev-autopilot',
+        status: 'error',
+        message: `Plan generation failed for ${findingId}: ${error}`.slice(0, 1000),
+        payload: { finding_id: findingId, error, path_problems: check.problems, session_id },
+      });
+      return { ok: false, error };
+    }
+    if (check.communityApp) {
+      // The executor cannot change exafyltd/vitana-v1: no files to execute, so
+      // the safety gate keeps this plan in the human queue.
+      files_referenced = [];
+      plan_markdown = `> **Needs a human:** this plan changes \`exafyltd/vitana-v1\`, which the Dev Autopilot cannot change. It stays in the queue for a developer.\n\n${plan_markdown}`;
+      await emitOasisEvent({
+        vtid: PLAN_VTID,
+        type: 'dev_autopilot.plan.needs_human',
+        source: 'dev-autopilot',
+        status: 'info',
+        message: `Plan v${nextVersion} for ${findingId} changes exafyltd/vitana-v1 — routed to a human`,
+        payload: { finding_id: findingId, version: nextVersion, reason: 'community_app_change' },
+      });
+    }
+  }
+
   const plan_html = renderPlanHtml(plan_markdown);
 
   // 4. Persist plan version
@@ -1183,6 +1402,8 @@ export async function generatePlanVersion(
       planning_session_id: session_id,
       feedback_note: opts.feedback_note || null,
       files_referenced,
+      planner_provider: writtenBy.provider ?? null,
+      planner_model: writtenBy.model ?? null,
     }),
   });
   if (!insertR.ok) {
@@ -1197,8 +1418,20 @@ export async function generatePlanVersion(
     source: 'dev-autopilot',
     status: 'success',
     message: `Plan v${nextVersion} generated for ${findingId} (${files_referenced.length} files cited)`,
-    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced },
+    payload: { finding_id: findingId, version: nextVersion, session_id, files: files_referenced, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null, fallback_used: writtenBy.fallback, tool_stats: writtenBy.toolStats ?? null },
   });
+
+  // VTID-05077 (A2): the fallback is allowed but never silent.
+  if (writtenBy.fallback) {
+    await emitOasisEvent({
+      vtid: PLAN_VTID,
+      type: 'dev_autopilot.plan.fallback_used',
+      source: 'dev-autopilot',
+      status: 'warning',
+      message: `Plan v${nextVersion} for ${findingId} was written by the fallback ${writtenBy.provider}/${writtenBy.model}, not the primary planner`,
+      payload: { finding_id: findingId, version: nextVersion, planner_provider: writtenBy.provider ?? null, planner_model: writtenBy.model ?? null },
+    });
+  }
 
   return {
     ok: true,

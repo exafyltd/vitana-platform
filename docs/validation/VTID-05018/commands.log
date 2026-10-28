@@ -1,0 +1,6 @@
+$ npx tsc --noEmit -p services/gateway
+(exit 0)
+$ npx jest test/vtid-05018 test/vtid-04975 test/vtid-04984 test/vtid-05003 test/vtid-05005 test/vtid-05006 test/vtid-05014 test/vtid-04999 test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04560-role-separation-regression.test.ts
+Tests: 265 passed, 265 total
+$ npx jest test/vtid-04465-operator-pipeline-regression.test.ts   (with the 2 new VTID-05018 scenarios)
+Tests: 38 passed, 38 total

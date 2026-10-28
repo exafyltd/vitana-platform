@@ -196,6 +196,24 @@ export function findReusableJob(
   return best;
 }
 
+/**
+ * VTID-05141 (P4): agents_registry.enabled is the per-agent kill switch. A
+ * disabled agent's delegation is refused before any work starts (fail-open on
+ * lookup problems — see assertAgentEnabled). Replaceable for tests.
+ */
+type AgentEnabledGate = (agentId: string, caller: DelegationCaller) => Promise<{ allowed: boolean; error?: string }>;
+const defaultAgentEnabledGate: AgentEnabledGate = async (agentId, caller) => {
+  const { getSupabase } = await import('../../lib/supabase');
+  const sb = getSupabase();
+  if (!sb) return { allowed: true };
+  const { assertAgentEnabled } = await import('./run-ledger');
+  return assertAgentEnabled(sb, agentId, { plane: 'orb', surface: caller.surface });
+};
+let agentEnabledGate: AgentEnabledGate = defaultAgentEnabledGate;
+export function setAgentEnabledGate(gate: AgentEnabledGate | null | undefined): void {
+  agentEnabledGate = gate ?? defaultAgentEnabledGate;
+}
+
 export async function delegateToAgent(
   agentId: string,
   request: string,
@@ -225,6 +243,10 @@ export async function delegateToAgent(
       status: 'escalate', agent_id: agentId, policy,
       note: 'This needs confirmation on a screen, not by voice. Tell the user where to confirm it.',
     };
+  }
+  const gate = await agentEnabledGate(agentId, caller);
+  if (!gate.allowed) {
+    return { status: 'refused', agent_id: agentId, error: gate.error || `agent '${agentId}' is switched off` };
   }
 
   const now = opts.now ?? Date.now;

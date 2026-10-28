@@ -42,6 +42,7 @@ import { checkoutUniversalCart, CHECKOUT_ERROR_STATUS } from '../services/checko
 import { getMonthlySpend } from '../services/budget/spend-service';
 import * as cartRepo from '../services/universal-cart/universal-cart-repository';
 import * as ctxRepo from './universal-cart-context-repository';
+import { resolvePrimaryTenant } from '../services/tenancy/tenant-context';
 
 export const VTID = 'VTID-03213';
 
@@ -162,14 +163,21 @@ export async function getActiveRole(
  * Uses the service-role client so the lookup is consistent regardless of RLS.
  */
 export async function resolvePrimaryTenantId(user_id: string): Promise<string | null> {
-  const supabase = getSupabase();
-  if (!supabase) return null;
-  const { data, error } = await ctxRepo.fetchPrimaryTenantId(supabase, user_id);
-  if (error) {
-    console.error(`[${VTID}] primary-tenant fallback lookup error:`, error.message);
-    return null;
+  // VTID-05149: the shared, deterministic resolver (services/tenancy/tenant-context.ts).
+  const result = await resolvePrimaryTenant(user_id);
+  switch (result.status) {
+    case 'found':
+      return result.tenantId;
+    case 'none':
+      return null;
+    case 'unavailable':
+      console.error(`[${VTID}] primary-tenant fallback lookup unavailable`);
+      return null;
+    default: {
+      const unreachable: never = result;
+      return unreachable;
+    }
   }
-  return (data?.tenant_id as string | undefined) ?? null;
 }
 
 /**

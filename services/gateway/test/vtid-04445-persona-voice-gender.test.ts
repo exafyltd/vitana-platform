@@ -29,6 +29,12 @@ import {
   VERTEX_SPECIALIST_FALLBACK_VOICE,
 } from '../src/orb/live/upstream/vertex-serbian-bridge';
 import { personaVoiceAvailability } from '../src/orb/live/voice/specialist-voice-availability';
+import {
+  AUDIOBOOK_POLLY_VOICES,
+  AUDIOBOOK_RU_POLLY_VOICE,
+  AUDIOBOOK_GOOGLE_VOICES,
+  resolveAudiobookVoice,
+} from '../src/services/guided-journey/audiobook-voices';
 
 const LANGS = ['de', 'en', 'es', 'fr', 'pt', 'pl', 'ru', 'sr', 'ar', 'zh', 'tr'];
 
@@ -77,6 +83,37 @@ describe('Polly (cascade, greetings, narration, reminders)', () => {
       const v = resolvePollySpecialistVoice(lang);
       if (!v) continue; // tr/zh/sr: covered by the male Fish voices below
       expect({ lang, g: voiceGender('polly', String(v.voiceId)) }).toEqual({ lang, g: 'male' });
+    }
+  });
+});
+
+describe('Audiobook narration (VTID-05026)', () => {
+  const catalogOf = (provider: 'polly' | 'google') => (provider === 'polly' ? 'polly' : 'google_tts');
+  const nameOf = (v: { provider: string } & Record<string, unknown>) =>
+    String(v.provider === 'polly' ? v.voiceId : v.name);
+
+  it('every entry of the Audiobook table is a known female voice', () => {
+    const all = [
+      ...Object.values(AUDIOBOOK_POLLY_VOICES),
+      AUDIOBOOK_RU_POLLY_VOICE,
+      ...Object.values(AUDIOBOOK_GOOGLE_VOICES)
+        .filter((v): v is NonNullable<typeof v> => !!v)
+        .map((v) => ({ provider: 'google' as const, ...v })),
+    ];
+    for (const v of all) {
+      const name = nameOf(v as never);
+      expect({ name, g: voiceGender(catalogOf(v.provider), name) }).toEqual({ name, g: 'female' });
+    }
+  });
+
+  it('whatever the switches say, every resolved Audiobook voice is female', () => {
+    for (const env of [{}, { AUDIOBOOK_GOOGLE_RU_ENABLED: 'true', AUDIOBOOK_GOOGLE_SR_ENABLED: 'true', AUDIOBOOK_GOOGLE_DAILY_CHAR_CAP_PER_TASK: '1000' }]) {
+      for (const lang of LANGS) {
+        const v = resolveAudiobookVoice(lang, env as NodeJS.ProcessEnv);
+        if (!v) continue; // sr with its switch off: no voice, 422
+        const name = nameOf(v as never);
+        expect({ lang, g: voiceGender(catalogOf(v.provider), name) }).toEqual({ lang, g: 'female' });
+      }
     }
   });
 });

@@ -1,0 +1,182 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ab95b8a9ff4022fa6/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ab95b8a9ff4022fa6/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ab95b8a9ff4022fa6/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-05069-pipeline-tree.test.ts
+  VTID-05069 run card — state 1 (running in both repos)
+    ✓ header: spinner, VTID · title, step summary, started time + duration, Collapse and Stop (16 ms)
+    ✓ tree rows in order with status icons, the parallel chip and the live "now:" line (3 ms)
+    ✓ a caret collapses a node through the callback; the card toggle and Stop call theirs (2 ms)
+    ✓ a node collapsed by the viewer hides its children (1 ms)
+  VTID-05069 run card — state 2 (CI failed, fix forward)
+    ✓ the failing check as a red line, the attempt chip, and the live step under the fix (13 ms)
+  VTID-05069 run card — state 3 (Gate 2)
+    ✓ waiting icon, Gate 2 box with the question, Show N commits and Yes, publish (5 ms)
+    ✓ Show commits lists every commit PUBLISH would ship, this VTID's highlighted (2 ms)
+    ✓ a finished run is collapsed to its header (Expand), unknown sources are listed in the footer (2 ms)
+  VTID-05069 SSE frame parser
+    ✓ splits complete frames, keeps the partial tail, skips heartbeats (1 ms)
+    ✓ formats durations (3 ms)
+  VTID-05069 wiring, CSP and styles
+    ✓ index.html loads pipeline-tree.css and pipeline-tree.js (before app.js), cache-busted (1 ms)
+    ✓ app.js only calls the two hooks (3 ms)
+    ✓ CSP: no innerHTML, no inline styles, no eval, no external hosts; English admin text (2 ms)
+    ✓ stream: fetch with the hub auth headers (not EventSource), aborted when not wanted (1 ms)
+    ✓ styles: every status icon, reduced motion stills the spinners, phone layout (1 ms)
+    ✓ allowlisted in the Command Hub ownership guard (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/operator-runs.test.ts
+  auth
+    ✓ GET /by-thread/a5069000-0000-4000-8000-000000000001 without a caller answers 401 JSON (33 ms)
+    ✓ GET /VTID-05069 without a caller answers 401 JSON (7 ms)
+    ✓ GET /VTID-05069/stream without a caller answers 401 JSON (5 ms)
+  GET /by-thread/:threadId
+    ✓ returns the thread runs for the caller (5 ms)
+    ✓ maps errors: forbidden → 403, invalid_thread → 400, other → 503 (10 ms)
+    ✓ a malformed thread id → 400 without a lookup (3 ms)
+  GET /:vtid
+    ✓ returns the view, passing the optional thread id (9 ms)
+    ✓ a bad VTID or thread id → 400; a builder refusal → 400 (24 ms)
+  GET /:vtid/stream
+    ✓ sends view frames and an end frame as SSE (5 ms)
+    ✓ a builder error becomes an error frame; a bad VTID → 400 JSON (6 ms)
+
+PASS test/vtid-04868-plan-sparring-session-layer.test.ts
+  VTID-04868 Plan Sparring Gate — session layer
+    ✓ CLAUDE.md carries rules 51-55 and puts allocation after sparring (2 ms)
+    ✓ the partner agent is read-only and pinned to Opus 4.6 (1 ms)
+    ✓ the skill defines >=2 passes, round caps and the record location (1 ms)
+    ✓ hook DENIES an allocation that references no sparring record (before it runs) (37 ms)
+    ✓ hook also denies /vtid/allocate and direct ledger inserts, including multi-line SQL (131 ms)
+    ✓ hook allows the call when a sparring record is referenced, and ignores unrelated commands (79 ms)
+    ✓ settings.json registers the hook for Bash and execute_sql (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/operator-runs-view.test.ts
+  state 1 — work running in both repos
+    ✓ plan passed, both repos implementing with the live Kiro step, everything after pending (29 ms)
+    ✓ Kiro working before any push: one "Kiro workspace" node under Repositories, repos not started (1 ms)
+    ✓ a Kiro approval card turns Implement into waiting-for-you (1 ms)
+  state 2 — CI failed, fixed automatically
+    ✓ CI failed with the failing check, fix forward attempt 1 of 3 running with the live step, v1 merged (4 ms)
+    ✓ counts pushes after the first failed CI and stops after 3 attempts (terminal, failed) (1 ms)
+    ✓ a green head after a failure: fix forward passed, CI passed (2 ms)
+  state 3 — staging verified, waiting for your yes
+    ✓ repos collapsed with both PRs, deploy + verify passed, Gate 2 waiting with every commit PUBLISH would ship (3 ms)
+    ✓ STAGING-VERIFY failed: red line with the failing suite, no Gate 2 (1 ms)
+    ✓ VTID-05144: a newer superseded run does not hide an older passed run — still passed, Gate 2 waiting (2 ms)
+    ✓ VTID-05144: a newer superseded run does not hide an older failed run — still failed (1 ms)
+    ✓ VTID-05144: only superseded runs → pending, waiting for a verification (1 ms)
+    ✓ production contains both merges → Gate 2 + Production passed, terminal, done (1 ms)
+  failing sources
+    ✓ GitHub search down → PR/CI/Merge unknown and listed in unavailable; the plan still shows (1 ms)
+    ✓ check runs down → only CI unknown (1 ms)
+    ✓ sparring store down → Plan unknown; production version down → Production + Gate 2 unknown (1 ms)
+  GitHub search budget (10/min) and the 30 s cache
+    ✓ one search per VTID per 30 s; past 10 searches a minute the last result is reused and marked stale (10 ms)
+    ✓ buildRunView serves the cached view for 30 s to every viewer (2 ms)
+  validation
+    ✓ rejects "VTID-5069" (1 ms)
+    ✓ rejects "vtid-05069"
+    ✓ rejects "VTID-050690" (1 ms)
+    ✓ rejects "VTID-05069; drop"
+    ✓ rejects ""
+  thread linking
+    ✓ Kiro-event VTIDs and ledger-backed assistant mentions, newest first, unknown VTIDs dropped (1 ms)
+    ✓ at most 5 (1 ms)
+    ✓ by-thread: one GitHub search for all of the thread's VTIDs; no linked VTID → no views (3 ms)
+    ✓ another user's thread → forbidden; a bad thread id → invalid (1 ms)
+  live follow (SSE loop)
+    ✓ sends the view, then only changes; polls 15 s while running; closes 60 s after terminal (3 ms)
+    ✓ waits 60 s between checks while only Gate 2 is open, and stops after 2 h (21 ms)
+    ✓ stops when the listener is gone (1 ms)
+  helpers
+    ✓ summarizes check runs (failed conclusions, running, first failure) (1 ms)
+    ✓ reads the community-app version stamp
+    ✓ a running child keeps the parent running even next to a failed one
+  routes /api/v1/operator/runs
+    ✓ GET /VTID-05072 without a caller → 401 JSON; non-admin → 403 (38 ms)
+    ✓ GET /VTID-05072/stream without a caller → 401 JSON; non-admin → 403 (7 ms)
+    ✓ GET /by-thread/thread-05071-spinner without a caller → 401 JSON; non-admin → 403 (8 ms)
+    ✓ every route is behind requireAdminAuth
+    ✓ GET /:vtid → the view; invalid VTID or thread id → 400 (18 ms)
+    ✓ GET /by-thread/:threadId → linked VTIDs + views; another user's thread → 403 (6 ms)
+    ✓ GET /:vtid/stream → SSE view frame, then end after the terminal grace (4 ms)
+  wiring
+    ✓ mounted at /api/v1/operator/runs before the operator router; atlas agents domain owns it (2 ms)
+    ✓ run-view writes nothing (GET-only REST reads)
+
+PASS test/services/testing/publish-gate.test.ts
+  publish gate — pure pieces
+    ✓ is on unless PUBLISH_REQUIRE_STAGING_VERIFY is exactly "false" (1 ms)
+    ✓ accepts an override reason only at or above the minimum, and clips it (1 ms)
+    ✓ maps an OASIS row, including failed test names (2 ms)
+    ✓ verifies only a passed run for the same commit (1 ms)
+    ✓ blocks a failed run without a reason (1 ms)
+    ✓ blocks a superseded run without a reason
+    ✓ blocks a weird run without a reason (1 ms)
+    ✓ blocks when no run exists and when the lookup failed
+    ✓ lets a blocked publish through with a written reason, keeping why it was blocked (1 ms)
+    ✓ ignores a too-short reason
+    ✓ reports disabled when the kill switch is off
+  publish gate — evaluatePublishGate
+    ✓ uses the newest row for the service and commit (1 ms)
+    ✓ prefers the newest passed row over a newer superseded one
+    ✓ prefers the newest failed row over a newer superseded one — still blocked as failed (8 ms)
+    ✓ still blocks when only superseded rows exist (1 ms)
+    ✓ pickVerificationRow: newest decisive row, else the newest row, else null (2 ms)
+    ✓ fails closed on a lookup error and when Supabase is not configured (1 ms)
+    ✓ skips the lookup entirely when disabled
+    ✓ passes the service through (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04715-staging-verify-deployed-commit.test.ts
+  VTID-04715: the staging deploy records the commit it deployed
+    ✓ writes the checked-out commit, never GITHUB_SHA, after a successful deploy (2 ms)
+    ✓ uploads it as the deployed-commit artifact
+    ✓ records it after the smoke check that proves staging serves it
+  VTID-04715: STAGING-VERIFY verifies the recorded commit
+    ✓ downloads the artifact from the triggering deploy run, tolerating its absence (1 ms)
+    ✓ prefers the recorded commit, falls back to the event commit, and rejects a malformed one (1 ms)
+    ✓ resolves the commit before anything reads it
+    ✓ never defines SHA at job level, so GITHUB_ENV is the single source (1 ms)
+
+Test Suites: 6 passed, 6 total
+Tests:       100 passed, 100 total
+Snapshots:   0 total
+Time:        2.336 s, estimated 4 s
+Ran all test suites matching /test\/services\/testing\/publish-gate.test.ts|test\/operator-runs-view.test.ts|test\/operator-runs.test.ts|test\/command-hub\/vtid-05069-pipeline-tree.test.ts|test\/vtid-04715-staging-verify-deployed-commit.test.ts|test\/vtid-04868-plan-sparring-session-layer.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

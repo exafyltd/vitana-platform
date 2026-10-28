@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05042",
+  "files": [
+    "services/gateway/src/routes/admin-partner-health.ts",
+    "services/gateway/src/middleware/require-tenant-admin.ts",
+    "services/gateway/src/routes/tenant-admin/audit-log.ts",
+    "services/gateway/src/routes/tenant-admin/overview.ts",
+    "services/gateway/src/routes/tenant-admin/community-admin.ts",
+    "services/gateway/src/routes/tenant-admin/community-admin-repository.ts",
+    "services/gateway/src/routes/tenant-admin/content-moderation.ts",
+    "services/gateway/test/admin-partner-health.test.ts",
+    "services/gateway/test/middleware/require-tenant-admin.test.ts",
+    "services/gateway/test/routes/tenant-admin/audit-log.test.ts",
+    "services/gateway/test/routes/tenant-admin/overview.test.ts",
+    "services/gateway/test/routes/tenant-admin/community-admin.test.ts",
+    "services/gateway/test/routes/tenant-admin/content-moderation.test.ts",
+    "docs/validation/VTID-05042/**"
+  ]
+}

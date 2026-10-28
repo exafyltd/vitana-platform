@@ -19,11 +19,13 @@ on:
     paths:
       - 'services/**'
       - '.github/workflows/TEST-SUITE.yml'
+      - 'scripts/ci/test-suite/**'
   push:
     branches: [ main ]
     paths:
       - 'services/**'
       - '.github/workflows/TEST-SUITE.yml'
+      - 'scripts/ci/test-suite/**'
   schedule:
     # Nightly stability run — 03:17 UTC (odd minute to avoid cron rush)
     - cron: '17 3 * * *'
@@ -34,10 +36,18 @@ concurrency:
   cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 jobs:
+  # VTID-05272 (plan kiro-autonomy-fallback §5 H): the gateway suite runs as 4
+  # Jest shards in parallel; gateway-shard-union proves the 4 shards together
+  # ran exactly `npx jest --listTests` (nothing missing, nothing twice).
+  # TEST-SUITE-RERUN.yml re-runs a failed run once, only for an infra death.
   gateway:
-    name: Gateway (Jest, ~7.5k tests)
+    name: Gateway (Jest, shard ${{ matrix.shard }}/4)
     runs-on: ubuntu-latest
     timeout-minutes: 25
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [1, 2, 3, 4]
     defaults:
       run:
         working-directory: services/gateway
@@ -47,15 +57,53 @@ jobs:
       # package.json (pnpm@9.0.0). Passing a version too makes it error with
       # "Multiple versions of pnpm specified" — see the note in UNIT.yml.
       - uses: pnpm/action-setup@v4
+      # VTID-05307: cache the pnpm store keyed on the root pnpm-lock.yaml so the
+      # four shards reuse one warm store instead of re-downloading every install.
+      # pnpm/action-setup must run first (it does) so setup-node can find pnpm.
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: pnpm
+          cache-dependency-path: pnpm-lock.yaml
       - name: Install
         run: pnpm install --frozen-lockfile
-      - name: Run Jest suite
-        run: npx jest --silent --maxWorkers=100%
+      - name: List tests
+        run: npx jest --listTests > "list-${{ matrix.shard }}.txt"
         env:
           NODE_ENV: test
+      - name: Run Jest suite
+        run: npx jest --silent --maxWorkers=100% --shard=${{ matrix.shard }}/4 --json --outputFile="shard-${{ matrix.shard }}.json"
+        env:
+          NODE_ENV: test
+      - name: Upload shard result
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: gateway-shard-${{ matrix.shard }}
+          path: |
+            services/gateway/list-${{ matrix.shard }}.txt
+            services/gateway/shard-${{ matrix.shard }}.json
+          if-no-files-found: warn
+          retention-days: 7
+  gateway-shard-union:
+    name: gateway-shard-union
+    needs: [gateway]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Download shard results
+        uses: actions/download-artifact@v4
+        with:
+          pattern: gateway-shard-*
+          path: shards
+          merge-multiple: true
+      - name: Check shard union
+        run: node scripts/ci/test-suite/shard-union.mjs --dir shards --shards 4 --summary "$GITHUB_STEP_SUMMARY"
 
   services:
     name: ${{ matrix.service }} (${{ matrix.runner }})
@@ -64,19 +112,28 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
+        # VTID-05307: `cache`/`lockfile` drive setup-node's dependency cache per
+        # service (npm cache keyed on each service's package-lock.json; pnpm
+        # store for the pnpm-based service), so repeat runs skip re-downloading.
         include:
           - service: vcaop
             install: npm install --no-audit --no-fund
             test: npm test
             runner: jest
+            cache: npm
+            lockfile: services/vcaop/package-lock.json
           - service: oasis-projector
             install: npm ci --no-audit --no-fund
             test: npx jest --silent
             runner: jest
+            cache: npm
+            lockfile: services/oasis-projector/package-lock.json
           - service: openclaw-bridge
             install: pnpm install --frozen-lockfile
             test: npx vitest run
             runner: vitest
+            cache: pnpm
+            lockfile: services/openclaw-bridge/pnpm-lock.yaml
     defaults:
       run:
         working-directory: services/${{ matrix.service }}
@@ -87,6 +144,8 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: '20.x'
+          cache: ${{ matrix.cache }}
+          cache-dependency-path: ${{ matrix.lockfile }}
       - name: Install
         run: ${{ matrix.install }}
       - name: Run tests
@@ -96,15 +155,17 @@ jobs:
 
   summary:
     name: Test Suite Summary
-    needs: [gateway, services]
+    needs: [gateway, gateway-shard-union, services]
     if: always()
     runs-on: ubuntu-latest
     steps:
       - name: Report
         run: |
           echo "gateway: ${{ needs.gateway.result }}"
+          echo "gateway-shard-union: ${{ needs.gateway-shard-union.result }}"
           echo "services: ${{ needs.services.result }}"
-          if [ "${{ needs.gateway.result }}" != "success" ] || [ "${{ needs.services.result }}" != "success" ]; then
+          # A skipped or cancelled shard/union counts as a failure (VTID-05272).
+          if [ "${{ needs.gateway.result }}" != "success" ] || [ "${{ needs.gateway-shard-union.result }}" != "success" ] || [ "${{ needs.services.result }}" != "success" ]; then
             echo "❌ Test suite failed — see docs/TEST_COVERAGE_PLAN.md §4.3 (escalation rule)"
             exit 1
           fi

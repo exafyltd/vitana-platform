@@ -13,7 +13,18 @@
  *   /test-actor-guard     the VTID-03506 notification guard is installed + enabled
  *   /vtid-ledger          ci_ledger_integrity_check() finds nothing (7 days)
  *   /orb-session-ledger   ci_orb_session_state_health(): table present, no failed acks
- *   /push-dispatch        no unsent push older than 15 min / backlog under 25 (48 h window)
+ *   /push-dispatch        no unsent push older than 15 min / backlog under 25 (48 h window);
+ *                         active-member reach >= 90 % over 7 days (VTID-05027)
+ *   /welcome-greeting     ci_welcome_greeting_health(): signups greeted, none unflagged (24 h)
+ *   /orb-bootstrap-latency  orb.live.context.bootstrap p50 <= 6 s, at most one build > 12 s (90 min)
+ *   /newday-briefing-loop no stamp_briefing_date_write failure, no reconnect-bucket
+ *                         full briefing (60 min)
+ *
+ * VTID-05141: the last three are the gateway twins of
+ * ALERT-WELCOME-GREETING-HEALTH.yml, ALERT-ORB-BOOTSTRAP-LATENCY.yml and
+ * ALERT-NEWDAY-BRIEFING-LOOP.yml, with the same queries and thresholds, so
+ * each ALERT workflow can become a thin GET of its route (one implementation
+ * per check).
  *
  * Read-only. Public like the other health routes: aggregates only, no user
  * data. Every source is cached for CACHE_MS so a busy panel cannot turn into
@@ -160,15 +171,31 @@ export const PUSH_BACKLOG_MAX = 25;
  */
 export const PUSH_FCM_ERROR_RATIO_MAX = 0.5;
 export const PUSH_FCM_MIN_ATTEMPTS = 20;
+/**
+ * VTID-05027: share of ACTIVE members (last 7 days) whose push-eligible
+ * notifications reached at least one device. Below this, with enough
+ * eligible members to mean something, the check is degraded.
+ */
+export const PUSH_REACH_MIN_RATIO = 0.9;
+export const PUSH_REACH_MIN_ELIGIBLE = 10;
+
+export interface PushReach {
+  active: number;
+  eligible: number;
+  reached: number;
+}
 
 export function evalPushDispatch(
   rows: Array<{ created_at: string }>,
   now = Date.now(),
   outcomes?: Record<string, number>,
+  reach?: PushReach,
 ): OpsCheck {
   const oldestMin = rows.length ? Math.round((now - new Date(rows[0].created_at).getTime()) / 60000) : 0;
   const base: Record<string, unknown> = rows.length ? { unsent: rows.length, oldest_age_min: oldestMin } : { unsent: 0 };
   if (outcomes) base.outcomes = outcomes;
+  const reachRatio = reach && reach.eligible > 0 ? Math.round((reach.reached / reach.eligible) * 100) / 100 : null;
+  if (reach) base.active_reach_7d = { ...reach, ratio: reachRatio };
   if (rows.length && oldestMin > PUSH_DOWN_MIN) return { status: 'down', reason: 'push_dispatch_stalled', ...base };
   if (rows.length && (oldestMin > PUSH_STALE_MIN || rows.length > PUSH_BACKLOG_MAX)) {
     return { status: 'degraded', reason: 'push_backlog_growing', ...base };
@@ -180,7 +207,83 @@ export function evalPushDispatch(
       return { status: 'degraded', reason: 'fcm_send_errors', fcm_error_ratio: Math.round((fcmErrors / fcmAttempts) * 100) / 100, ...base };
     }
   }
+  if (reach && reach.eligible >= PUSH_REACH_MIN_ELIGIBLE && reach.reached / reach.eligible < PUSH_REACH_MIN_RATIO) {
+    return { status: 'degraded', reason: 'active_member_reach_low', ...base };
+  }
   return { status: 'ok', ...base };
+}
+
+// ── VTID-05141: twins of three ALERT-* workflows ────────────────────────────
+
+/** ALERT-WELCOME-GREETING-HEALTH.yml: ci_welcome_greeting_health() over 24 h. */
+export function evalWelcomeGreeting(h: {
+  signups_24h?: unknown;
+  greeted_senders_24h?: unknown;
+  unflagged_24h?: unknown;
+}): OpsCheck {
+  // Same parse rule as the workflow (jq -r value must match ^[0-9]+$).
+  const count = (v: unknown) => (/^[0-9]+$/.test(String(v)) ? Number(v) : NaN);
+  const signups = count(h.signups_24h);
+  const senders = count(h.greeted_senders_24h);
+  const unflagged = count(h.unflagged_24h);
+  if ([signups, senders, unflagged].some(Number.isNaN)) return { status: 'down', reason: 'unparseable_health_output' };
+  const base = { signups_24h: signups, greeted_senders_24h: senders, unflagged_24h: unflagged };
+  // Signups happened but the trigger emitted zero greetings: trigger broken or disabled.
+  if (signups > 0 && senders === 0) return { status: 'down', reason: 'signups_without_greetings', ...base };
+  // A recent user still has welcome_chat_sent=false: the fan-out is failing for them.
+  if (unflagged > 0) return { status: 'degraded', reason: 'unflagged_recent_users', ...base };
+  return { status: 'ok', ...base };
+}
+
+/** Same values as ALERT-ORB-BOOTSTRAP-LATENCY.yml (env P50_THRESHOLD_MS, MAX_THRESHOLD_MS, WINDOW_MINUTES). */
+export const ORB_BOOTSTRAP_P50_MS = 6000;
+export const ORB_BOOTSTRAP_MAX_MS = 12000;
+export const ORB_BOOTSTRAP_WINDOW_MIN = 90;
+export const ORB_BOOTSTRAP_LIMIT = 1000;
+
+export function evalOrbBootstrapLatency(rows: Array<{ metadata?: { latency_ms?: unknown } | null }>): OpsCheck {
+  const lat = rows
+    .map((r) => Number(r?.metadata?.latency_ms))
+    .filter((n) => Number.isFinite(n))
+    .sort((a, b) => a - b);
+  // No traffic is not a failure: the ORB is idle (common at night).
+  if (lat.length === 0) return { status: 'ok', idle: true, n: 0, window_min: ORB_BOOTSTRAP_WINDOW_MIN };
+  const pct = (p: number) => lat[Math.min(lat.length - 1, Math.floor(lat.length * p))];
+  const p50 = pct(0.5);
+  const p95 = pct(0.95);
+  const max = lat[lat.length - 1];
+  const overMax = lat.filter((n) => n > ORB_BOOTSTRAP_MAX_MS).length;
+  const base = { n: lat.length, p50_ms: p50, p95_ms: p95, max_ms: max, over_max: overMax, window_min: ORB_BOOTSTRAP_WINDOW_MIN };
+  const problems: string[] = [];
+  if (p50 > ORB_BOOTSTRAP_P50_MS) problems.push('p50_over_threshold');
+  // One slow build can be a cold start; more than one is the stampede signature (VTID-03504).
+  if (overMax > 1) problems.push('repeated_builds_over_max');
+  return problems.length ? { status: 'degraded', reason: problems.join(','), ...base } : { status: 'ok', ...base };
+}
+
+/** Same lookback as ALERT-NEWDAY-BRIEFING-LOOP.yml (env LOOKBACK_MINUTES) and its per-query limit. */
+export const NEWDAY_LOOKBACK_MIN = 60;
+export const NEWDAY_QUERY_LIMIT = 50;
+
+type DiagRow = { id?: string; created_at?: string; metadata?: Record<string, unknown> | null };
+
+export function evalNewdayBriefingLoop(stampFailures: DiagRow[], reconnectBriefings: DiagRow[]): OpsCheck {
+  const byResult: Record<string, number> = {};
+  for (const r of stampFailures) {
+    const result = String(r.metadata?.result || 'unknown');
+    byResult[result] = (byResult[result] || 0) + 1;
+  }
+  const base = {
+    lookback_min: NEWDAY_LOOKBACK_MIN,
+    stamp_write_failures: stampFailures.length,
+    stamp_write_failures_by_result: byResult,
+    reconnect_bucket_briefings: reconnectBriefings.length,
+    session_ids: reconnectBriefings.slice(0, 10).map((r) => (r.metadata?.session_id as string) || 'unknown'),
+  };
+  const problems: string[] = [];
+  if (stampFailures.length > 0) problems.push('stamp_briefing_date_write_failures');
+  if (reconnectBriefings.length > 0) problems.push('reconnect_bucket_briefing_regression');
+  return problems.length ? { status: 'degraded', reason: problems.join(','), ...base } : { status: 'ok', ...base };
 }
 
 // ── Routes ──────────────────────────────────────────────────────────────────
@@ -255,8 +358,79 @@ router.get('/push-dispatch', (_req: Request, res: Response) => { // public-route
       }),
       Date.now(),
       await cached('push_outcomes', loadPushOutcomes),
+      await cached('push_reach', loadPushReach),
     ),
   );
+});
+
+router.get('/welcome-greeting', (_req: Request, res: Response) => { // public-route
+  respond(res, async () =>
+    evalWelcomeGreeting(
+      await cached('welcome', async () => {
+        const sb = getSupabase();
+        if (!sb) throw new Error('supabase_unconfigured');
+        const { data, error } = await sb.rpc('ci_welcome_greeting_health');
+        if (error) throw new Error(`ci_welcome_greeting_health: ${error.message}`);
+        return (data ?? {}) as Record<string, unknown>;
+      }),
+    ),
+  );
+});
+
+router.get('/orb-bootstrap-latency', (_req: Request, res: Response) => { // public-route
+  respond(res, async () =>
+    evalOrbBootstrapLatency(
+      await cached('orb_bootstrap', async () => {
+        const sb = getSupabase();
+        if (!sb) throw new Error('supabase_unconfigured');
+        const since = new Date(Date.now() - ORB_BOOTSTRAP_WINDOW_MIN * 60 * 1000).toISOString();
+        const { data, error } = await sb
+          .from('oasis_events')
+          .select('created_at,metadata')
+          .eq('topic', 'orb.live.context.bootstrap')
+          .gte('created_at', since)
+          .order('created_at', { ascending: false })
+          .limit(ORB_BOOTSTRAP_LIMIT);
+        if (error) throw new Error(`oasis_events: ${error.message}`);
+        return (data ?? []) as Array<{ metadata?: { latency_ms?: unknown } | null }>;
+      }),
+    ),
+  );
+});
+
+router.get('/newday-briefing-loop', (_req: Request, res: Response) => { // public-route
+  respond(res, async () => {
+    const [stamp, reconnect] = await cached('newday', async () => {
+      const sb = getSupabase();
+      if (!sb) throw new Error('supabase_unconfigured');
+      const since = new Date(Date.now() - NEWDAY_LOOKBACK_MIN * 60 * 1000).toISOString();
+      // 1. stamp_briefing_date_write failures (result=error or result=threw)
+      const q1 = await sb
+        .from('oasis_events')
+        .select('id,created_at,metadata')
+        .eq('topic', 'orb.live.diag')
+        .eq('metadata->>stage', 'stamp_briefing_date_write')
+        .in('metadata->>result', ['error', 'threw'])
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(NEWDAY_QUERY_LIMIT);
+      if (q1.error) throw new Error(`stamp_briefing_date_write: ${q1.error.message}`);
+      // 2. VTID-04255 regression: a full-briefing wake_opener on a reconnect-bucket session
+      const q2 = await sb
+        .from('oasis_events')
+        .select('id,created_at,metadata')
+        .eq('topic', 'orb.live.diag')
+        .eq('metadata->>stage', 'greeting_sent')
+        .in('metadata->>wake_opener', ['newday_overview', 'safe_fast_newday_overview'])
+        .eq('metadata->>bucket', 'reconnect')
+        .gte('created_at', since)
+        .order('created_at', { ascending: false })
+        .limit(NEWDAY_QUERY_LIMIT);
+      if (q2.error) throw new Error(`reconnect_bucket_briefings: ${q2.error.message}`);
+      return [(q1.data ?? []) as DiagRow[], (q2.data ?? []) as DiagRow[]] as const;
+    });
+    return evalNewdayBriefingLoop(stamp, reconnect);
+  });
 });
 
 /**
@@ -279,6 +453,25 @@ async function loadPushOutcomes(): Promise<Record<string, number> | undefined> {
     const counts: Record<string, number> = {};
     for (const r of (data ?? []) as Array<{ push_outcome: string }>) counts[r.push_outcome] = (counts[r.push_outcome] ?? 0) + 1;
     return counts;
+  } catch {
+    return undefined;
+  }
+}
+
+/**
+ * VTID-05027: active-member push reach over 7 days (push_reach_active RPC).
+ * Undefined when it cannot be read (function not migrated yet, RPC error), so
+ * the field is omitted and never raises a false alarm.
+ */
+async function loadPushReach(): Promise<PushReach | undefined> {
+  const sb = getSupabase();
+  if (!sb) return undefined;
+  try {
+    const { data, error } = await sb.rpc('push_reach_active', { p_days: 7 });
+    if (error) return undefined;
+    const row = (Array.isArray(data) ? data[0] : data) as Partial<Record<keyof PushReach, number | string>> | null;
+    if (!row) return undefined;
+    return { active: Number(row.active ?? 0), eligible: Number(row.eligible ?? 0), reached: Number(row.reached ?? 0) };
   } catch {
     return undefined;
   }

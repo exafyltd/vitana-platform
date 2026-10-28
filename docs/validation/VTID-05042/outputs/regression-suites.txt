@@ -1,0 +1,9 @@
+== npm run test:roles
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total
+== npm run test:support
+Test Suites: 4 passed, 4 total
+Tests:       87 passed, 87 total
+== npm run test:operator
+Test Suites: 1 passed, 1 total
+Tests:       38 passed, 38 total

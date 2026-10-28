@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05161",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "integrations list is mounted and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/integrations", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "wearable connections is mounted and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/wearables/connections", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "wearable providers answers the catalogue without a member (legacy path, flags off on staging)", "method": "GET", "path": "/api/v1/wearables/providers", "expect_status": 200, "expect_json": { "ok": true } },
+    { "kind": "existing", "ref": "npx jest test/vtid-05161-health-sources.test.ts test/migrations/vtid-05161-health-sources-migration.test.ts", "cwd": "services/gateway",
+      "reason": "B1 ships dark: HEALTH_SOURCES_DUAL_WRITE and HEALTH_SOURCES_READ are forced off when VITANA_ENV=staging, and health_sources is Aurora-only (absent on the shared Supabase project), so on staging every touched route must answer exactly as before — the three read-only GETs above prove the routes are mounted and answer JSON. Every write path (the dual-write mirrors, their failure accounting and OASIS event, the byte-identical read switch for both flag states, the legacy fallback, the reconciler) is proven by Jest over an in-memory database; the migrations (backfill, RLS, the connector FK, reconcile counts, erasure, the user_integrations revoke, the placement guard) on a throwaway Postgres by scripts/ci/sql-tests/run-health-sources-test.sh (outputs/sql-health-sources.txt). The signed-in 200 reads of /integrations and /wearables/connections run the unchanged legacy code with the flags off." }
+  ]
+}

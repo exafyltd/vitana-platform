@@ -14,12 +14,19 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readBundleFile } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
+// VTID-05073: dismissOperatorThreadId (and other Operator helpers) were
+// extracted to operator-console.js, which loads before app.js. The eval'd
+// BLOCK must still define every name the `return { ... }` lists, so prepend
+// the extracted declarations (declarations-only, safe to include wholesale)
+// to the unchanged app.js slice. No assertion text changes.
+const OPERATOR_CONSOLE = readBundleFile('operator-console.js');
 const START = APP_JS.indexOf('var OPERATOR_THREADS_DISMISSED_KEY');
 const END = APP_JS.indexOf('/** Switch the active thread and restore its history into the UI. */');
-const BLOCK = APP_JS.slice(START, END);
+const BLOCK = OPERATOR_CONSOLE + '\n' + APP_JS.slice(START, END);
 
 function load(opts: { state?: any; fetchImpl?: (url: string, init?: any) => Promise<any>; storage?: Record<string, string> } = {}) {
   const storage: Record<string, string> = opts.storage ?? {};
@@ -34,13 +41,15 @@ function load(opts: { state?: any; fetchImpl?: (url: string, init?: any) => Prom
   // eslint-disable-next-line no-new-func
   const api = new Function(
     'state', 'localStorage', 'fetch', 'buildContextHeaders', 'renderApp', 'switchOperatorThread',
-    'saveOperatorThreadsIndex', 'saveOperatorThreadHistory', 'window', 'console',
+    'saveOperatorThreadsIndex', 'saveOperatorThreadHistory', 'window', 'console', 'kiroReplyMeta',
     BLOCK + '\nreturn { mergeServerOperatorThreads, syncOperatorThreadsFromServer, loadOperatorThreadFromServer, dismissOperatorThreadId, loadDismissedOperatorThreadIds };',
   )(
     state, localStorage, fetchMock, () => ({ Authorization: 'Bearer t' }), () => { calls.renders++; },
     (id: string) => { calls.switched.push(id); state.operatorActiveThreadId = id; },
     (idx: any) => { calls.savedIndex = idx; }, (id: string, h: any) => { calls.savedHistory[id] = h; },
     {}, { warn: () => undefined, log: () => undefined },
+    // VTID-05003: the transcript loader keeps a reply's Kiro meta; not under test here.
+    () => undefined,
   );
   return { api, state, calls, fetchMock, storage };
 }
@@ -144,7 +153,8 @@ describe('VTID-04437 wiring', () => {
     expect(fn).toMatch(/if \(history\.length === 0\) loadOperatorThreadFromServer\(thread\.id\);\s*else syncOperatorVoiceTurns\(\);/);
   });
   it('deleteOperatorThread dismisses the id', () => {
-    const fn = APP_JS.slice(APP_JS.indexOf('function deleteOperatorThread('), APP_JS.indexOf('function archiveOperatorThread('));
+    // VTID-05073: deleteOperatorThread/archiveOperatorThread moved to operator-console.js.
+    const fn = OPERATOR_CONSOLE.slice(OPERATOR_CONSOLE.indexOf('function deleteOperatorThread('), OPERATOR_CONSOLE.indexOf('function archiveOperatorThread('));
     expect(fn).toContain('dismissOperatorThreadId(threadId);');
   });
   it('initOperatorChatSession starts the server sync with the deep-link id', () => {

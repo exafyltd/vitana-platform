@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05153",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05153/plan-sparring.md",
+  "paths": [
+    "services/gateway/src/services/catalog-check/**",
+    "services/gateway/src/services/platform-detect.ts",
+    "services/gateway/src/services/routine-runner/sources.ts",
+    "services/gateway/src/services/routine-runner/checks.ts",
+    "services/gateway/src/routes/vcaop-portal-my-products.ts",
+    "services/gateway/src/services/partner-onboarding-service.ts",
+    "services/gateway/src/routes/partner-onboarding.ts",
+    "services/gateway/src/services/partner-onboarding-checklist.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/src/services/partner-review.ts",
+    "services/gateway/src/services/loop-catalog.ts",
+    "services/gateway/src/routes/autonomy-loops.ts",
+    "services/gateway/src/frontend/command-hub/loops-catalog.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/specs/loop-catalog-v1.json",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "supabase/migrations/20261014000000_vtid_05153_supplier_catalog_check_routine_seed.sql",
+    "routines/supplier-catalog-check.md",
+    "services/gateway/test/**",
+    "docs/validation/*/staging-tests.json",
+    "docs/autonomy/LOOP-ENGINEERING.md",
+    "docs/CHANGELOG.md",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05153/**"
+  ]
+}

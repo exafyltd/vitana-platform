@@ -1,0 +1,33 @@
+PASS migration applies over existing pacer rows
+PASS migration is re-runnable
+PASS pacer accepts welcome_banner
+PASS pacer accepts did_you_know_card
+PASS pacer accepts onboarding_coach
+PASS pacer accepts messenger_companion
+PASS pacer rejects an unknown surface
+PASS pacer constraint is validated
+PASS first real claim of the day succeeds — {"id":1,"ok":true,"claimed":true}
+PASS second real claim same day (other sender) is refused — {"ok":true,"reason":"already_sent_today","claimed":false}
+PASS a staff-mode claim same day is refused too — {"ok":true,"reason":"already_sent_today","claimed":false}
+PASS next local day is claimable again — {"id":4,"ok":true,"claimed":true}
+PASS another member is independent — {"id":5,"ok":true,"claimed":true}
+PASS shadow claim succeeds
+PASS second shadow claim same day refused — {"ok":true,"reason":"already_decided_today","claimed":false}
+PASS real claim succeeds on a day that has a shadow row — {"id":8,"ok":true,"claimed":true}
+PASS finish shadow row — {"ok":true}
+PASS finish twice is refused (not pending)
+PASS finish rejects an unknown status
+PASS claim rejects an unknown mode
+PASS claim rejects an unknown sender
+PASS reply marks a row
+PASS the latest sent row was marked — [{"d":"2026-10-21"}]
+PASS member with only shadow/pending rows: nothing marked
+PASS preference defaults: enabled, health+community on, business off — {"enabled":true,"topic_health":true,"topic_community":true,"topic_business":false}
+PASS claim_companion_message: service_role only — {"a":false,"s":true}
+PASS finish_companion_message: service_role only — {"a":false,"s":true}
+PASS mark_companion_replied: service_role only — {"a":false,"s":true}
+PASS ledger not selectable by authenticated
+PASS RLS enabled on both tables — [{"relname":"companion_messages_ledger","relrowsecurity":true},{"relname":"companion_preferences","relrowsecurity":true}]
+PASS unknown live surface aborts the whole migration — aborted=true leftover=null
+
+ALL PASS

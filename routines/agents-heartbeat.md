@@ -1,6 +1,8 @@
 # Routine: agents-heartbeat
 
 **Schedule:** `30 5 * * *` (daily 05:30 UTC, scheduler jitter pads to ~05:38)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103), once per UTC day at the time above — not as a claude.ai session. The steps below are the spec the runner implements: it calls the audit function behind each `$GATEWAY_URL/...` endpoint directly, records the run in `routine_runs` (`trigger = gateway-runner`), and on a breach emits the event with `source: routine.<name>`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'agents-heartbeat'`
 **OASIS VTID for emitted events:** `VTID-02004`
 
@@ -15,11 +17,6 @@ Silent-agent-death is otherwise the single class of failure we cannot detect qui
 | 🟢 `success` | All registered agents are healthy. Nothing to do. |
 | 🟡 `partial` | One or more agents degraded/down → OASIS event emitted → self-healing now investigating. |
 | 🔴 `failure` | Routine itself errored (registry endpoint down, gateway 5xx). |
-
-## Required environment
-
-- `GATEWAY_URL` = `https://gateway-q74ibpv6ia-uc.a.run.app`
-- `ROUTINE_INGEST_TOKEN` (embedded)
 
 ## Steps
 

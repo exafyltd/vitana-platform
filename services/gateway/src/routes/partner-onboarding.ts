@@ -43,6 +43,7 @@ import {
 import { detectPlatform } from '../services/platform-detect';
 import { availableTermsLocales, loadBaselineVersions, loadCurrentTerms, requestDelegation, termsForDisplay } from '../services/partner-terms';
 import { VERIFICATION_LEVEL_REQUIRED, isCompleteOffering, verificationIsStale, type OfferingFields } from '../services/partner-onboarding-checklist';
+import { CATALOG_CHECK_CATEGORY } from '../services/catalog-check/validators';
 import {
   computeVerification,
   domainProofInstructions,
@@ -62,6 +63,7 @@ import {
   lookupDomainProofTxt,
   readEmailConfirmation,
 } from '../services/partner-verification-io';
+import { inferCompanyFacts } from '../services/commerce-company-inference';
 
 const router = Router();
 
@@ -145,7 +147,35 @@ export async function loadCatalogueSource(
   if (products.error) return { source: null, error: products.error.message };
   const rows = (Array.isArray(products.data) ? products.data : []) as unknown as OfferingFields[];
   const completeOfferings = rows.filter(isCompleteOffering).length;
-  return { source: { connections, completeOfferings }, error: null };
+  const returnedProducts = await countReturnedProducts(supabase, merchantIds);
+  return {
+    source: { connections, completeOfferings, ...(returnedProducts > 0 ? { returnedProducts } : {}) },
+    error: null,
+  };
+}
+
+/**
+ * VTID-05153: how many of the org's wave-1-category products the catalogue
+ * check returned to the supplier (attributes.catalog_check.state). A head
+ * count, separate from the offering scan (OFFERING_FIELDS is not widened).
+ * Advisory only — it never changes a step's status — so a read error counts
+ * as none and is logged, instead of failing the checklist.
+ */
+export async function countReturnedProducts(supabase: Supa, merchantIds: string[]): Promise<number> {
+  if (merchantIds.length === 0) return 0;
+  try {
+    const { count, error } = await supabase
+      .from('products')
+      .select('id', { count: 'exact', head: true })
+      .in('merchant_id', merchantIds)
+      .eq('category', CATALOG_CHECK_CATEGORY)
+      .eq('attributes->catalog_check->>state', 'returned_to_supplier');
+    if (error) throw new Error(error.message);
+    return typeof count === 'number' ? count : 0;
+  } catch (err) {
+    console.warn(`[partner-onboarding] returned-products count unavailable: ${err instanceof Error ? err.message : String(err)}`);
+    return 0;
+  }
 }
 
 export async function loadChecklist(supabase: Supa, org: OrgRow): Promise<{ checklist: Checklist | null; error: string | null }> {
@@ -211,6 +241,58 @@ router.post('/start', requireAuth, async (req: Request, res: Response) => {
   // VTID-04847: the rules live in services/partner-onboarding-service.ts.
   const r = await startOnboarding(supabase, callerOf(req, callerId), req.body ?? {});
   return res.status(r.status).json(r.body);
+});
+
+// ==================== Company suggestions (VTID-05209) ====================
+
+/**
+ * Country and website Vitanaland can already suggest (saved values, VAT ID
+ * prefix, website domain, the caller's confirmed business email). Read-only:
+ * a suggestion is stored only when the supplier confirms it through
+ * POST /partner-orgs/register or PATCH /:orgId/company. Plain facts only.
+ */
+async function sendSuggestions(
+  res: Response,
+  supabase: Supa,
+  callerId: string,
+  stored: { country?: string | null; website?: string | null; vat_id?: string | null } | null,
+  query: Request['query'],
+) {
+  const typed = (k: string) => (typeof query[k] === 'string' ? String(query[k]).slice(0, 2048) : null);
+  const needsEmail = !(stored?.country && stored?.website);
+  const email = needsEmail ? await readEmailConfirmation(supabase as any, callerId) : { status: 'unavailable' as const, email: null };
+  const s = inferCompanyFacts({
+    stored,
+    website: typed('website'),
+    vatId: typed('vat_id'),
+    email: email.email,
+    emailConfirmed: email.status === 'confirmed',
+  });
+  return res.status(200).json({ ok: true, country: s.country, website: s.website });
+}
+
+// Registered before GET /:orgId, which would otherwise capture this path.
+router.get('/company-suggestions', requireAuth, async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  return sendSuggestions(res, supabase, callerId, null, req.query);
+});
+
+router.get('/:orgId/company-suggestions', requireAuth, requireOrgAdmin(), async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const callerId = getCallerId(req);
+  if (!callerId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const { data, error } = await supabase
+    .from('partner_organizations')
+    .select('country, website, vat_id')
+    .eq('id', req.params.orgId)
+    .maybeSingle();
+  if (error) return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+  if (!data) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+  return sendSuggestions(res, supabase, callerId, data, req.query);
 });
 
 // ==================== Status ====================

@@ -120,6 +120,27 @@ export interface ActionResult {
   raw?: Record<string, unknown>;
 }
 
+/** VTID-05030: what the connector knows about a connection it is asked to revoke. */
+export interface RevokeAccessInput {
+  /** Opened (decrypted) tokens, or null when none is stored. */
+  access_token: string | null;
+  refresh_token: string | null;
+  /** Vendor-side user id (Terra user_id, Vital user_id). */
+  provider_user_id: string | null;
+  /** Vendor-side provider slug where the aggregator needs one (Vital). */
+  provider_slug?: string | null;
+}
+
+/**
+ * VTID-05030: outcome of a vendor-side revoke. Never thrown — a connector
+ * that cannot revoke reports 'unsupported', a missing identifier 'no_token'.
+ */
+export interface RevokeAccessResult {
+  status: 'ok' | 'failed' | 'unsupported' | 'no_token';
+  http_status?: number;
+  detail?: string;
+}
+
 export interface WebhookRequest {
   headers: Record<string, string | string[] | undefined>;
   body: Buffer | string | Record<string, unknown>;
@@ -159,6 +180,12 @@ export interface Connector {
 
   /** Verify + parse an incoming webhook. Returns normalized events. */
   handleWebhook?(req: WebhookRequest): Promise<{ valid: boolean; events: NormalizedEvent[]; error?: string }>;
+
+  /**
+   * VTID-05030: revoke this app's access at the vendor on disconnect.
+   * Best-effort; must not throw (see RevokeAccessResult).
+   */
+  revokeAccess?(input: RevokeAccessInput): Promise<RevokeAccessResult>;
 
   /** Optional: for aggregators (Terra), generate a widget URL for user to link. */
   generateWidgetUrl?(ctx: ConnectorContext, options?: Record<string, unknown>): Promise<{ url: string; session_id: string } | null>;

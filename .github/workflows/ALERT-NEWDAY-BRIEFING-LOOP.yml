@@ -40,6 +40,20 @@ name: Alert — New-Day Briefing Loop / Stamp-Write Health
 # through PostgREST — no RPC or migration needed, matching
 # ALERT-PUSH-DISPATCH-HEALTH.yml's precedent.
 
+#
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green). The transport notes above describe the old inline
+# query and are kept as history.
+#
+# Route: /api/v1/ops/health/newday-briefing-loop (60 min: any stamp_briefing_date_write
+# failure or any newday_overview/safe_fast_newday_overview greeting on a
+# bucket=reconnect session is degraded).
+
 on:
   schedule:
     - cron: '*/20 * * * *'   # every 20 minutes — catch a recurrence within an hour, not a day
@@ -48,97 +62,44 @@ on:
 permissions:
   contents: read
 
-env:
-  # How far back to look on each run. Generously wider than the cron
-  # interval so a missed run doesn't create a blind spot.
-  LOOKBACK_MINUTES: '60'
-
 jobs:
   newday-briefing-loop-health:
     runs-on: ubuntu-latest
     steps:
-      - name: Fetch recent stamp-write failures and reconnect-bucket briefing greetings
+      - name: Check new-day briefing loop health
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/newday-briefing-loop
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
             exit 1
           fi
-
-          SINCE=$(node -e "console.log(new Date(Date.now() - ${LOOKBACK_MINUTES}*60000).toISOString())")
-
-          # 1. stamp_briefing_date_write failures (result=error or result=threw)
-          HTTP1=$(curl -sS -o stamp_failures.json -w '%{http_code}' -G \
-            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
-            --data-urlencode 'select=id,created_at,metadata' \
-            --data-urlencode 'topic=eq.orb.live.diag' \
-            --data-urlencode "metadata->>stage=eq.stamp_briefing_date_write" \
-            --data-urlencode "metadata->>result=in.(error,threw)" \
-            --data-urlencode "created_at=gte.${SINCE}" \
-            --data-urlencode 'order=created_at.desc' \
-            --data-urlencode 'limit=50' \
-            -H "apikey: $SUPABASE_SERVICE_ROLE" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
-          if [ "$HTTP1" != "200" ]; then
-            echo "::error::stamp_briefing_date_write query returned HTTP $HTTP1"
-            head -c 500 stamp_failures.json || true
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
             exit 1
           fi
-
-          # 2. VTID-04255 regression check: a full-briefing wake_opener firing
-          #    while ctx.bucket==='reconnect' should be structurally
-          #    unreachable after this fix — any hit means the fix regressed.
-          HTTP2=$(curl -sS -o reconnect_briefings.json -w '%{http_code}' -G \
-            "${SUPABASE_URL%/}/rest/v1/oasis_events" \
-            --data-urlencode 'select=id,created_at,metadata' \
-            --data-urlencode 'topic=eq.orb.live.diag' \
-            --data-urlencode "metadata->>stage=eq.greeting_sent" \
-            --data-urlencode "metadata->>wake_opener=in.(newday_overview,safe_fast_newday_overview)" \
-            --data-urlencode "metadata->>bucket=eq.reconnect" \
-            --data-urlencode "created_at=gte.${SINCE}" \
-            --data-urlencode 'order=created_at.desc' \
-            --data-urlencode 'limit=50' \
-            -H "apikey: $SUPABASE_SERVICE_ROLE" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE")
-          if [ "$HTTP2" != "200" ]; then
-            echo "::error::reconnect-bucket briefing regression query returned HTTP $HTTP2"
-            head -c 500 reconnect_briefings.json || true
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::new-day briefing loop is not healthy (stamp_briefing_date_write failures or a full briefing on a reconnect-bucket session — VTID-04255): status=$STATUS reason=$REASON (see the JSON above)."
             exit 1
           fi
+          echo "OK: status=$STATUS"
 
-      - name: Evaluate
-        run: |
-          set -euo pipefail
-          node -e '
-            const fs = require("fs");
-            const stampFailures = JSON.parse(fs.readFileSync("stamp_failures.json", "utf8"));
-            const reconnectBriefings = JSON.parse(fs.readFileSync("reconnect_briefings.json", "utf8"));
-
-            console.log(`stamp_write_failures=${stampFailures.length}  reconnect_bucket_briefing_regressions=${reconnectBriefings.length}  lookback_min=${process.env.LOOKBACK_MINUTES}`);
-
-            const problems = [];
-
-            if (stampFailures.length > 0) {
-              const byResult = {};
-              for (const r of stampFailures) {
-                const result = r.metadata?.result || "unknown";
-                byResult[result] = (byResult[result] || 0) + 1;
-              }
-              problems.push(`${stampFailures.length} stamp_briefing_date_write failure(s) in the last ${process.env.LOOKBACK_MINUTES}min (by result: ${JSON.stringify(byResult)}) — the last_full_briefing_date write is still broken (VTID-04255: check the AWS Secrets Manager service-role credential on vitana/supabase/prod/service-role-key-GfBpSP, then force a new ECS deployment on vitana-gateway-awsdr)`);
-            }
-
-            if (reconnectBriefings.length > 0) {
-              const users = reconnectBriefings.map((r) => r.metadata?.session_id || "unknown").join(", ");
-              problems.push(`${reconnectBriefings.length} full-briefing greeting(s) fired on a bucket=reconnect session in the last ${process.env.LOOKBACK_MINUTES}min (session_ids: ${users}) — this combination should be structurally unreachable after VTID-04255; the fix in compute-greeting-decision.ts (shouldAttemptNewdayOverview/tryDayCloseRung) may have been reverted or bypassed by a new code path`);
-            }
-
-            if (problems.length) {
-              console.log("::error::" + problems.join(" | "));
-              process.exit(1);
-            }
-
-            console.log("No stamp-write failures and no reconnect-bucket briefing regressions in the lookback window.");
-          '
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-newday-briefing-loop" "alert-workflow://ALERT-NEWDAY-BRIEFING-LOOP" "new-day briefing loop regression (stamp-write failures or reconnect-bucket briefings)"

@@ -30,6 +30,7 @@ jest.mock('../../src/services/jev/jev-repository', () => ({
   recordSpendRpc: jest.fn(async () => ok(0)),
   fetchMonthSpendRows: jest.fn(async () => ok([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }])),
   shadowGateStatsRpc: jest.fn(async () => ok([])),
+  fetchDevAutopilotKillSwitch: jest.fn(async () => ok({ kill_switch: true, updated_at: '2026-10-07T08:08:58Z' })),
   insertShadowDecision: jest.fn(async () => ok({ id: 's1' })),
   updateShadowOutcome: jest.fn(async () => ok(null)),
 }));
@@ -185,5 +186,18 @@ describe('VTID-04473 jev routes', () => {
     expect(res.body.data.spend_month).toEqual([{ tenant_id: 't1', plane: 'internal', calls: 3, input_tokens: 2400, cost_usd: 0.0001 }]);
     expect(res.body.data.shadow_gates).toEqual([]);
     expect(res.body.data).toHaveProperty('gate_modes');
+    // VTID-05012: the loop next to its gates.
+    expect(res.body.data.loops).toEqual({ dev_autopilot: { kill_switch: true, updated_at: '2026-10-07T08:08:58Z' } });
+    expect(Array.isArray(res.body.data.gate_health)).toBe(true);
+  });
+
+  test('VTID-05012: ?days=1 still computes gate health over 2 days; ?days>=2 reuses the window', async () => {
+    const repo = jest.requireMock('../../src/services/jev/jev-repository');
+    repo.shadowGateStatsRpc.mockClear();
+    await request(app()).get('/api/v1/jev/admin/stats?days=1').set('x-test-user', 'root').set('x-test-admin', '1');
+    expect(repo.shadowGateStatsRpc.mock.calls.map((c: unknown[]) => c[1])).toEqual([1, 2]);
+    repo.shadowGateStatsRpc.mockClear();
+    await request(app()).get('/api/v1/jev/admin/stats?days=7').set('x-test-user', 'root').set('x-test-admin', '1');
+    expect(repo.shadowGateStatsRpc.mock.calls.map((c: unknown[]) => c[1])).toEqual([7]);
   });
 });

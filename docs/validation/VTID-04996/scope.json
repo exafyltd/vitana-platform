@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04996",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/calendar-service.ts",
+    "services/gateway/src/routes/calendar.ts",
+    "services/gateway/test/vtid-04996-calendar-find-a-time.test.ts",
+    "services/gateway/test/calendar/**",
+    "services/gateway/package.json",
+    "docs/validation/VTID-04996/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

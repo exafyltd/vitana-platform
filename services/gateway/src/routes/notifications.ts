@@ -22,8 +22,33 @@ import {
 } from '../middleware/auth-supabase-jwt';
 import { createClient } from '@supabase/supabase-js';
 import * as repo from './notifications-repository';
+import { isNativePushDirectEnabled } from '../services/native-push-flags';
 
 const router = Router();
+
+const NATIVE_APP_VERSION_RE = /^[0-9A-Za-z.+-]+$/;
+
+/**
+ * VTID-05177 — the native-app token fields, or null for every other client.
+ * Only ios_native / android_native are accepted; app_version is kept only
+ * when it is at most 32 characters of [0-9A-Za-z.+-] (else null).
+ */
+export function resolveNativeDevice(
+  deviceType: unknown,
+  appVersion: unknown,
+): { device_type: 'ios_native' | 'android_native'; app_version: string | null; device_label: string } | null {
+  if (deviceType !== 'ios_native' && deviceType !== 'android_native') return null;
+  const version =
+    typeof appVersion === 'string' && appVersion.length > 0 && appVersion.length <= 32 && NATIVE_APP_VERSION_RE.test(appVersion)
+      ? appVersion
+      : null;
+  const platform = deviceType === 'ios_native' ? 'ios' : 'android';
+  return {
+    device_type: deviceType,
+    app_version: version,
+    device_label: version ? `native-${platform} ${version}` : `native-${platform}`,
+  };
+}
 
 function getSupabase() {
   return createClient(
@@ -41,6 +66,16 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
   const { fcm_token, device_label } = req.body;
   if (!fcm_token || typeof fcm_token !== 'string') {
     return res.status(400).json({ ok: false, error: 'fcm_token is required' });
+  }
+
+  // VTID-05177: a native-app token (ios_native / android_native) carries its
+  // type and version; the label is set here, never taken from the client, so
+  // it can never match the Appilix detectors in notification-service.ts.
+  // Every other device_type — including today's 'appilix' — is ignored
+  // exactly as before, so today's clients produce today's row.
+  const nativeDevice = resolveNativeDevice(req.body?.device_type, req.body?.app_version);
+  if (nativeDevice && !isNativePushDirectEnabled()) {
+    console.warn('[Notifications] native token registered while NATIVE_PUSH_DIRECT_ENABLED is off');
   }
 
   const supabase = getSupabase();
@@ -73,8 +108,9 @@ router.post('/token', requireAuth, requireTenant, async (req: Request, res: Resp
     user_id: identity.user_id,
     tenant_id: identity.tenant_id,
     fcm_token,
-    device_label: device_label || null,
+    device_label: nativeDevice ? nativeDevice.device_label : device_label || null,
     updated_at: new Date().toISOString(),
+    ...(nativeDevice ? { device_type: nativeDevice.device_type, app_version: nativeDevice.app_version } : {}),
   });
 
   if (error) {

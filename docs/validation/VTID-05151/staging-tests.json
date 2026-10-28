@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05151",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05151-public-tenant-registry-migration.test.ts test/vtid-05041-definer-lockdown.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the gateway build changes only by a test file; the two migrations are not applied by merge (owner-approved RUN-MIGRATION.yml run, then post-check.sql), so this pins the migration text and runs the local-Postgres harness: anon access, whitelist, exact resolution, forward compatibility, idempotent seed, rollbacks. The live RPC is probed read-only by the vitana-v1 staging spec tests/e2e/staging/vtid-05151-tenant-registry.staging.spec.ts after apply"
+    }
+  ]
+}

@@ -156,6 +156,11 @@ export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
   { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
   { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
   { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+  // VTID-05141: gateway twins of three ALERT-* workflows (same queries and
+  // thresholds), owned by L1 through these groups.
+  { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+  { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+  { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
   // VTID-04664 (Phase 3): systems that had no health check at all
   // (routes/ops-runtime-health.ts).
   { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },

@@ -1,0 +1,15 @@
+# VTID-05215 — commands run (session kiro-202610151913-51bd, worktree .worktrees/pm-p2-registry)
+# Docs only: no build, no route, no migration, no deploy.
+
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo . --branch kiro/pm-agent/p2-registry
+# first run (lane at in-review): ❌ illegal transition "ready" → "in-review" — lane set to executing
+# re-run: exit 0 — outputs/collab-validate.txt (includes validatePrograms + validateRegistry over docs/programs/*/program.md)
+
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/pm-agent/p2-registry
+# exit 0 — outputs/lane-scope.txt (warnings only: session id names no seat)
+
+$ node --test scripts/collab/queue.test.mjs
+# local Windows run: cancelled after ~287 s ("Promise resolution is still pending"), 0 failures; the CI `unit` job runs it
+
+$ git push -u origin kiro/pm-agent/p2-registry
+$ git ls-remote origin refs/heads/kiro/pm-agent/p2-registry   # verified each push

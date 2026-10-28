@@ -135,10 +135,14 @@ describe('VTID-03958: AWS-PROD-DEPLOY-GATEWAY.yml stays under the 25-input ceili
     expect(inputs.env_overrides.default).toBe('');
   });
 
-  it('net input count is 24 (was 25, at the ceiling, before this change)', () => {
+  // VTID-05023 part 9 deliberately takes the 25th (last) slot for `data_backend`:
+  // it switches Secrets Manager references (valueFrom), which env_overrides
+  // (plain env values only) cannot express. The next input must retire one.
+  it('net input count is 25 (24 after this change; VTID-05023 data_backend took the last slot)', () => {
     const doc = yaml.load(raw) as any;
     const inputs = doc.on.workflow_dispatch.inputs;
-    expect(Object.keys(inputs).length).toBe(24);
+    expect(Object.keys(inputs).length).toBe(25);
+    expect(inputs.data_backend).toBeDefined();
   });
 
   it('the nova_sonic_enabled override block no longer references the removed env wiring', () => {

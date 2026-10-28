@@ -45,8 +45,11 @@ import {
 import { createOrgProduct, findOrgMerchant, upsertOrgMerchant } from './partner-setup';
 import { BUSINESS_CATEGORIES, catalogueVerticalForCategory, isBusinessCategory } from './commerce-ai-setup';
 import { loadOrg, type Supa } from '../routes/partner-onboarding';
+import { supplierCatalogCheckView } from '../routes/vcaop-portal-my-products';
 import { SANDBOX_SUBMIT_NOTE, isSandboxAccount } from './sandbox-accounts';
 import { cleanText, MAX_LEN, MAX_LIST_ITEMS, SUPPLIER_DATA_NOTE, supplierData } from './commerce-mcp-safety';
+import { inferCompanyFacts, type CompanySuggestions } from './commerce-company-inference';
+import { readEmailConfirmation } from './partner-verification-io';
 
 export const MCP_PROTOCOL_VERSIONS = ['2025-06-18', '2025-03-26', '2024-11-05'] as const;
 export const MCP_SERVER_INFO = { name: 'vitanaland-commerce', title: 'Vitanaland Commerce', version: '1.0.0' };
@@ -85,15 +88,17 @@ const SECURITY_SCHEMES = [{ type: 'oauth2', scopes: [...MCP_SCOPES] }] as const;
 /**
  * OpenAI requires all three hints as explicit booleans on every tool.
  * - readOnly: the tool changes nothing.
- * - destructive: it can erase or irreversibly change something. Our writes only
- *   create or overwrite DRAFT data that another call restores; the one change that
- *   restarts a passed verification is gated behind `confirmed` instead.
+ * - destructive (VTID-05142): it overwrites existing values in place, so the previous
+ *   value is lost unless the caller still knows it. True for update_business and
+ *   update_product (OpenAI's plugin review flagged both); false for the tools that
+ *   only create, read, run checks or submit. The one change that restarts a passed
+ *   verification is also gated behind `confirmed`.
  * - openWorld: it reaches outside Vitanaland (the supplier's website, DNS, VIES,
  *   their shop platform).
  */
-const hints = (h: { readOnly: boolean; idempotent: boolean; openWorld?: boolean }) => ({
+const hints = (h: { readOnly: boolean; idempotent: boolean; openWorld?: boolean; destructive?: boolean }) => ({
   readOnlyHint: h.readOnly,
-  destructiveHint: false,
+  destructiveHint: h.destructive === true,
   idempotentHint: h.idempotent,
   openWorldHint: h.openWorld === true,
 });
@@ -158,7 +163,7 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id'],
       additionalProperties: false,
     },
-    annotations: hints({ readOnly: false, idempotent: true }),
+    annotations: hints({ readOnly: false, idempotent: true, destructive: true }),
     securitySchemes: SECURITY_SCHEMES,
     _meta: { securitySchemes: SECURITY_SCHEMES },
   },
@@ -223,7 +228,7 @@ export const COMMERCE_MCP_TOOLS = [
       required: ['organization_id', 'product_id'],
       additionalProperties: false,
     },
-    annotations: hints({ readOnly: false, idempotent: true }),
+    annotations: hints({ readOnly: false, idempotent: true, destructive: true }),
     securitySchemes: SECURITY_SCHEMES,
     _meta: { securitySchemes: SECURITY_SCHEMES },
   },
@@ -284,6 +289,8 @@ export type ToolErrorCode =
   | 'prerequisites_missing'
   | 'rate_limited'
   | 'unavailable'
+  /** VTID-05133: the member has not allowed this assistant to use that category. */
+  | 'permission_needed'
   | 'internal';
 
 export function toolError(code: ToolErrorCode, message: string, details?: Record<string, unknown>): ToolCallResult {
@@ -332,6 +339,13 @@ function isCatalogueMapping(st: { detail?: { source?: unknown } | null; missing?
   return Boolean(st && (st.detail?.source === 'catalogue' || st.missing?.includes('complete_offering')));
 }
 
+/**
+ * VTID-05153: the catalogue check returned products after three failed checks
+ * (list_products shows each product's check state and error codes).
+ */
+const CATALOGUE_FIXES_ACTION =
+  'Some products failed the catalogue check three times: call list_products, then update_product for each product whose check state is returned_to_supplier, fixing the listed error codes.';
+
 const STEP_SUPPLIER_ACTIONS: Record<string, string> = {
   terms: 'Read and accept the Partner Terms on Vitanaland.',
   tracking_test: 'Finish the tracking test on Vitanaland.',
@@ -348,13 +362,21 @@ export function nextAction(
   checklist: {
     next_step?: string | null;
     complete?: boolean;
-    steps?: Array<{ key: string; detail?: { source?: unknown } | null; missing?: string[] }>;
+    steps?: Array<{ key: string; required?: boolean; status?: string; detail?: { source?: unknown } | null; missing?: string[] }>;
   } | null,
   typeless: boolean,
   link: string,
 ): { step: string | null; tool: string | null; supplier_action: string | null; link: string | null } {
   if (typeless) return { step: 'business_type', tool: 'update_business', supplier_action: null, link: null };
   if (!checklist) return { step: null, tool: null, supplier_action: null, link: null };
+  // VTID-05153: products the catalogue check returned are fixed next, unless
+  // a required step before the catalogue is still open.
+  const steps = checklist.steps ?? [];
+  const catIdx = steps.findIndex((s) => s.key === 'catalogue');
+  if (catIdx >= 0 && steps[catIdx].missing?.includes('catalogue_fixes')) {
+    const earlierOpen = steps.slice(0, catIdx).some((s) => s.required && s.status !== 'done');
+    if (!earlierOpen) return { step: 'catalogue', tool: 'update_product', supplier_action: CATALOGUE_FIXES_ACTION, link: null };
+  }
   if (checklist.complete) return { step: null, tool: 'submit_for_verification', supplier_action: null, link: null };
   const step = checklist.next_step ?? null;
   if (!step) return { step: null, tool: null, supplier_action: null, link: null };
@@ -366,12 +388,63 @@ export function nextAction(
   return { step, tool, supplier_action: supplierAction, link: supplierAction ? link : null };
 }
 
-export function shapeStatus(body: Record<string, any>, portalUrl: string): Record<string, unknown> {
+/** VTID-05209: where a suggested value came from, in plain words for the assistant. */
+const SUGGESTION_SOURCE_WORDS: Record<string, string> = {
+  vat_id: "the VAT ID's country prefix",
+  website_domain: "the website's country domain",
+  email_domain: "the supplier's confirmed business email address",
+};
+
+const SUGGESTION_HOW =
+  'Confirm the suggested values with the supplier in one question (they can correct them), then call update_business. Never save a suggestion without the supplier confirming it.';
+
+/**
+ * VTID-05209: country/website Vitanaland can suggest while they are missing.
+ * Only the missing ones; a saved value is never re-suggested.
+ */
+export function shapeSuggested(
+  org: { country?: string | null; website?: string | null },
+  s: CompanySuggestions | null | undefined,
+): Record<string, unknown> | null {
+  if (!s) return null;
+  const out: Record<string, unknown> = {};
+  if (!org.country && s.country && s.country.source !== 'stored') {
+    out.country = { value: s.country.value, from: SUGGESTION_SOURCE_WORDS[s.country.source] ?? s.country.source };
+  }
+  if (!org.website && s.website && s.website.source !== 'stored') {
+    out.website = { value: s.website.value, from: SUGGESTION_SOURCE_WORDS[s.website.source] ?? s.website.source };
+  }
+  return Object.keys(out).length ? out : null;
+}
+
+/**
+ * VTID-05209: the caller's suggestion for a business whose country or website
+ * is still missing. One auth lookup, only when something is missing.
+ */
+export async function companySuggestionsFor(ctx: McpCallContext, body: Record<string, any>): Promise<CompanySuggestions | null> {
+  const org = body?.organization;
+  if (!org || (org.country && org.website)) return null;
+  try {
+    const email = await readEmailConfirmation(ctx.supabase as any, ctx.caller.userId);
+    return inferCompanyFacts({
+      stored: { country: org.country ?? null, website: org.website ?? null, vat_id: org.vat_id ?? null },
+      email: email.email,
+      emailConfirmed: email.status === 'confirmed',
+    });
+  } catch {
+    // A suggestion is a convenience: never let it fail the status.
+    return null;
+  }
+}
+
+export function shapeStatus(body: Record<string, any>, portalUrl: string, suggestions?: CompanySuggestions | null): Record<string, unknown> {
   const org = body.organization ?? {};
   const checklist = body.checklist ?? null;
   const steps = Array.isArray(checklist?.steps) ? checklist.steps : [];
   // VTID-04890: a business without a type has no checklist; say what is missing.
   const typeless = !checklist && org.partner_type == null;
+  const suggested = shapeSuggested(org, suggestions);
+  const action = nextAction(checklist, typeless, `${portalUrl}/commerce?org=${org.id}`);
   return {
     organization_id: org.id,
     business_type: org.partner_type,
@@ -385,7 +458,8 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
     }),
     supplier_data_note: SUPPLIER_DATA_NOTE,
     next_step: typeless ? 'business_type' : checklist?.next_step ?? null,
-    next_action: nextAction(checklist, typeless, `${portalUrl}/commerce?org=${org.id}`),
+    next_action: suggested && action.step === 'company' ? { ...action, how: SUGGESTION_HOW } : action,
+    ...(suggested ? { suggested } : {}),
     ready_to_submit: checklist?.submit_ready ?? false,
     missing_to_submit: typeless ? ['business_type'] : checklist?.submit_missing ?? [],
     steps: steps.map((st: any) => ({
@@ -413,6 +487,11 @@ export function shapeStatus(body: Record<string, any>, portalUrl: string): Recor
   };
 }
 
+function productCheck(cc: unknown): { check?: { state: string; codes: string[] } } {
+  const v = supplierCatalogCheckView(cc);
+  return v ? { check: { state: v.state, codes: v.errors.map((e) => e.code) } } : {};
+}
+
 export const shapeProduct = (p: Record<string, any>) => ({
   product_id: p.id,
   price: typeof p.price_cents === 'number' ? p.price_cents / 100 : null,
@@ -420,6 +499,8 @@ export const shapeProduct = (p: Record<string, any>) => ({
   availability: p.availability,
   kind: p.attributes?.kind ?? null,
   live: p.is_active === true,
+  // VTID-05153: the catalogue check's state and error codes, nothing else.
+  ...productCheck(p.attributes?.catalog_check),
   ...supplierData({
     title: cleanText(p.title),
     url: cleanText(p.affiliate_url, MAX_LEN.url),
@@ -543,8 +624,9 @@ async function connectStore(ctx: McpCallContext, args: Record<string, unknown>):
   const started = await startConnection(ctx.supabase, ctx.caller, orgId, {}, { reuseExisting: true });
   if (started.status >= 400) return fromService(started);
   const conn = (started.body as any).connection ?? {};
+  const suggestions = await companySuggestionsFor(ctx, started.body as Record<string, any>);
   return toolOk({
-    ...shapeStatus(started.body as Record<string, any>, ctx.portalUrl),
+    ...shapeStatus(started.body as Record<string, any>, ctx.portalUrl, suggestions),
     recognised: true,
     detection: { confidence: det.confidence ?? 'none', ...supplierData({ platform_name: cleanText(det.platform_name) }) },
     supplier_data_note: SUPPLIER_DATA_NOTE,
@@ -564,6 +646,13 @@ const PRODUCT_PATCH_KEYS: Record<string, (v: unknown) => [string, unknown] | nul
   ships_to_countries: (v) => (Array.isArray(v) ? ['ships_to_countries', v] : null),
   availability: (v) => (str(v) ? ['availability', str(v)] : null),
 };
+
+/** VTID-05209: a status result with the company suggestion attached while country or website is missing. */
+async function fromServiceWithSuggestions(ctx: McpCallContext, r: ServiceResult): Promise<ToolCallResult> {
+  if (r.status >= 400) return fromService(r);
+  const suggestions = await companySuggestionsFor(ctx, r.body as Record<string, any>);
+  return fromService(r, (b) => shapeStatus(b, ctx.portalUrl, suggestions));
+}
 
 export async function callCommerceTool(ctx: McpCallContext, name: string, rawArgs: unknown): Promise<ToolCallResult> {
   const args = (rawArgs && typeof rawArgs === 'object' ? rawArgs : {}) as Record<string, unknown>;
@@ -588,12 +677,12 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
             : {}),
         }));
       }
-      return fromService(await getOnboardingStatus(s, ctx.caller, orgId), (b) => shapeStatus(b, ctx.portalUrl));
+      return fromServiceWithSuggestions(ctx, await getOnboardingStatus(s, ctx.caller, orgId));
     }
     case 'create_business':
-      return fromService(
+      return fromServiceWithSuggestions(
+        ctx,
         await startOnboarding(s, ctx.caller, { display_name: args.name, partner_type: args.business_type }, { source: 'commerce-mcp' }),
-        (b) => shapeStatus(b, ctx.portalUrl),
       );
     case 'update_business': {
       const orgId = str(args.organization_id);
@@ -607,9 +696,9 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
         if (!parsed.ok) return toolError('invalid_input', parsed.error);
       }
       if (args.business_type !== undefined && !hasFacts) {
-        return fromService(
+        return fromServiceWithSuggestions(
+          ctx,
           await setMissingPartnerType(s, ctx.caller, orgId, args.business_type, { source: 'commerce-mcp' }),
-          (b) => shapeStatus(b, ctx.portalUrl),
         );
       }
       if (args.confirmed !== true) {
@@ -626,7 +715,7 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
         const typed = await setMissingPartnerType(s, ctx.caller, orgId, args.business_type, { source: 'commerce-mcp' });
         if (typed.status >= 400) return fromService(typed);
       }
-      return fromService(await updateCompany(s, ctx.caller, orgId, facts, { source: 'commerce-mcp' }), (b) => shapeStatus(b, ctx.portalUrl));
+      return fromServiceWithSuggestions(ctx, await updateCompany(s, ctx.caller, orgId, facts, { source: 'commerce-mcp' }));
     }
     case 'add_product':
       return addProduct(ctx, args);
@@ -656,8 +745,11 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
       const orgId = str(args.organization_id);
       if (!orgId) return toolError('invalid_input', 'organization_id is required');
       // A 10 s overall budget (VIES alone may take 8 s): slow checks come back partial.
-      return fromService(await checkVerification(s, ctx.caller, orgId, { budgetMs: 10_000 }), (b) => ({
-        ...shapeStatus(b, ctx.portalUrl),
+      const checked = await checkVerification(s, ctx.caller, orgId, { budgetMs: 10_000 });
+      if (checked.status >= 400) return fromService(checked);
+      const suggestions = await companySuggestionsFor(ctx, checked.body as Record<string, any>);
+      return fromService(checked, (b) => ({
+        ...shapeStatus(b, ctx.portalUrl, suggestions),
         verification: b.verification,
       }));
     }
@@ -669,7 +761,7 @@ export async function callCommerceTool(ctx: McpCallContext, name: string, rawArg
       if (args.confirmed !== true) {
         return toolError('confirmation_required', 'Ask the supplier to confirm the submission, then call again with confirmed=true.');
       }
-      return fromService(await submitForVerification(s, ctx.caller, orgId, { source: 'commerce-mcp' }), (b) => shapeStatus(b, ctx.portalUrl));
+      return fromServiceWithSuggestions(ctx, await submitForVerification(s, ctx.caller, orgId, { source: 'commerce-mcp' }));
     }
     default:
       return toolError('not_found', `Unknown tool: ${name}`);

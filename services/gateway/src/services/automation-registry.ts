@@ -915,6 +915,18 @@ const MEMORY_INTEL: AutomationDefinition[] = [
     targetRoles: [...MEMBER_ROLES],
     handler: 'runDiaryThemeRollup',
   },
+  {
+    // VTID-05171 (Life Timeline P5): the stored-but-silent activity (every
+    // screen visit) becomes routines the companion reads — screen_habit,
+    // active_hours, feature_affinity, pillar_rhythm — plus at most one
+    // "Vitana noticed" Index insight per member per day. Respects the
+    // member's timeline_learning_prefs. AP-0906 is unchanged.
+    id: 'AP-0916', name: 'Timeline Habit Rollup', domain: 'memory-intelligence',
+    status: 'IMPLEMENTED', priority: 'P2', triggerType: 'cron',
+    triggerConfig: { cronExpression: '15 4 * * *' }, // daily 4:15am
+    targetRoles: [...MEMBER_ROLES],
+    handler: 'runTimelineHabitRollup',
+  },
 ];
 
 // =============================================================================

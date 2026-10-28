@@ -62,6 +62,12 @@ Dead / disconnected (do not build on): `/auth/login` hooks; AP-1301…1307 onboa
    VTNA trigger, which pays at signup (VTID-04878).
 4. **Measure the baseline** (read-only SQL): welcome-DM reply rate, D1/D7 return, time-to-first-ORB-conversation for the last 60 days of signups.
 
+**Status (2026-10-10, sparred + owner approved):**
+- Item 1 is done in VTID-05038: the trigger is restored and the 12 members who had been skipped were backfilled.
+- Item 2 needs no work. `on_user_journey_created` on `auth.users` already inserts the row, and 0 of 237 primary members lack one. The coach takes tenure from `user_tenants.created_at`.
+- Item 3 is superseded by `onboarding_coach_state.stage` (`done` at 90 days), which slice 1 shipped.
+- Item 4 is done in VTID-05039: see `docs/validation/VTID-05039/baseline.md`.
+
 ## 4. Design
 
 ### 4.1 Principle
@@ -187,7 +193,7 @@ for listen-through and day-7 return and adds the social metrics: % talking to Vi
 | 3 | ORB rung + context provider + sample asks | platform | `npm run test:roles` green (rule 42h); community profile only |
 | 4 | Mariia welcome DM + social bridge (both-sides pilot allowlist) | both | simulation: zero rows to anyone outside the allowlist; zero VTNA from VOA flows |
 | 5 | Inspiration posts: library + admin review, offer flow, `post_kind` (vitana-v1 migration), trigger skip, feed cap | both | simulation: no tenant push, cap, no repeat, `authenticated` cannot set `post_kind` |
-| 6 | Day 8–90 cadence, recap, EventBridge script (prod only) | platform | |
+| 6 | Day 8–90 cadence, recap | platform | (the daily shadow tick's EventBridge job moved forward to VTID-05039) |
 | 7 | Funnel dashboard + weekly report | platform | |
 
 Every slice that deploys carries `docs/validation/<VTID>/staging-tests.json` with **read-only** specs (Staging Verification Gate, rules 46–48); anything needing a write is proven by the CI simulation.

@@ -1,0 +1,64 @@
+{
+  "vtid": "VTID-05048",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "governance control write refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/governance/controls/__s4_probe_nonexistent__",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (no auth, no body, nonexistent key); before the fix the default 'operator' role passed and zod answered 400, after it requireServiceOrAdmin answers 401 before the body is read"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "spec approval refuses an unauthenticated caller",
+      "method": "POST",
+      "path": "/api/v1/specs/VTID-00000/approve",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (no auth, nonexistent VTID); before the fix the route answered 404 with no gate, after it 401 and no ledger read"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "governance controls list stays readable (Command Hub)",
+      "method": "GET",
+      "path": "/api/v1/governance/controls",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET; the Command Hub lists controls without a token"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "governance rules stay readable",
+      "method": "GET",
+      "path": "/api/v1/governance/rules",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET; optionalAuth added to the governance router must not gate reads"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "autopilot prefs require a signed-in caller",
+      "method": "GET",
+      "path": "/api/v1/autopilot/prefs",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET without auth -> 401. Note: routes/autopilot.ts (mounted first at /api/v1/autopilot) already answers 401 to any non-service caller here, so this probe proves the path stays closed; the tenant change itself is proven by the jest ref"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05048-s4-caller-identity.test.ts test/routes/autopilot-prompts.test.ts test/routes/automations-wallet-balance.test.ts test/orb-tools/governance-tools.test.ts test/orb-tools/admin-governance-tools.test.ts test/vtid-04465-operator-pipeline-regression.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the auth/actor matrix for both writes, tenant resolution on governance/reminders/automations/autopilot, the ORB control tools' headers, and the operator pipeline (dev_approve_spec)"
+    }
+  ]
+}

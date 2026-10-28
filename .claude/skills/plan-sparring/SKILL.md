@@ -49,6 +49,12 @@ yes. A "yes" in chat is the standing instruction for everything up to Gate 2. Re
 approval line in `plan-sparring.md`. In the gateway tier the binding approval is the exafy_admin
 click (`POST /api/v1/plans/spar/:id/approve`).
 
+**CI-sparred plans (VTID-05214/05218):** a plan pushed as PR `plan(<slug>): …` with `.kiro/specs/<slug>/plan.md` is
+sparred by `PLAN-SPAR.yml` through the gateway (session created with `approval_policy: converged-auto-v1`). When it
+converges the gateway records the policy approval and CI allocates the lanes' VTIDs — no Gate 1 message. Not converged
+after the re-plan session → the plan is parked (Command Hub board). Use this path for plans Kiro authors; a plan you
+spar here with the local partner still goes to the owner as Gate 1.
+
 ## 5. Then allocate
 A PreToolUse hook denies any allocation call (allocate_global_vtid, /vtid/allocate, a direct
 vtid_ledger insert) that references no sparring record; re-issue it with the reference.
@@ -63,7 +69,7 @@ and the verdict.
 Allocate immediately, never asking about the VTID. Implement, test, PR, merge, then run the
 post-merge loop. In a cloud session, arm a `send_later` self check-in about 8 minutes after merge
 and re-arm it every 5 minutes, up to 2 hours. Each check-in reads the STAGING-VERIFY result for the
-merge commit. Before Gate 2, check that the newest full staging run (`staging.verify.*` with `metadata.full=true`) for the service is under 24 h old; if not, dispatch `STAGING-VERIFY.yml` with `full=true` and wait for it (VTID-04949). On pass, send Gate 2 ("Staging verified — ready for deployment to production?") with
+merge commit. Before Gate 2, check that the newest passed or failed full staging run (`staging.verify.passed|failed` with `metadata.full=true`) for the service is under 24 h old; superseded full runs are skipped; a failed one blocks. If none is under 24 h, dispatch `STAGING-VERIFY.yml` with `full=true` and wait for it (VTID-04949, VTID-05144). On pass, send Gate 2 ("Staging verified — ready for deployment to production?") with
 the evidence. On fail, fix forward, at most 3 attempts per failure before escalating with evidence.
 If the work outgrows the approved scope, add the change to the plan and send it back to the same
 partner for one round. CONVERGED → continue. Not converged → that is the one mid-flight question.

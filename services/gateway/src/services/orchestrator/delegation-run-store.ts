@@ -21,6 +21,7 @@
 
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbSurface } from '../../orb/live/surface';
+import { assertAgentEnabled } from './run-ledger';
 
 export const DELEGATION_PERSIST_ENABLED_ENV = 'ORCHESTRATOR_DELEGATION_PERSIST_ENABLED';
 export const DELEGATION_RUN_PLANE = 'orb';
@@ -150,6 +151,12 @@ export function createSupabaseDelegationRunStore(getClient: () => Promise<Supaba
       if (!isPersistableJob(job)) return;
       try {
         const sb = await getClient();
+        // VTID-05141 (P4): a disabled agent gets no native run row; the refusal
+        // is reported like an insert failure (warn, never throw — see header).
+        const gate = await assertAgentEnabled(sb, job.agent_id, {
+          plane: DELEGATION_RUN_PLANE, job_id: job.job_id, surface: job.surface,
+        });
+        if (!gate.allowed) { warn('insert', gate.error); return; }
         const { error } = await sb.from('agent_runs').insert(toStartRow(job, caller, tier));
         if (error) warn('insert', error.message);
       } catch (err) { warn('insert', err); }

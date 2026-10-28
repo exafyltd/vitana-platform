@@ -26,6 +26,7 @@
  */
 
 import { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute } from './vitana-index/record-recompute';
 import { getSupabase } from '../lib/supabase';
 import { writeDiaryEpisode, updateDiaryEpisodeText, resolveTenantId } from './memory/diary';
 import { shouldBlockTool } from './intelligence/role-policy-enforcer';
@@ -42,6 +43,8 @@ import { resolvePillarKey } from '../lib/vitana-pillars';
 import { SUPERLATIVES_TOOL_HANDLERS, SUPERLATIVES_TOOL_DECLARATIONS } from './orb-tools/superlatives-tools';
 import { DIARY_MEMORY_TOOL_HANDLERS, DIARY_MEMORY_TOOL_DECLARATIONS } from './orb-tools/diary-memory-tools';
 import { CALENDAR_MGMT_TOOL_HANDLERS, CALENDAR_MGMT_TOOL_DECLARATIONS } from './orb-tools/calendar-management-tools';
+// VTID-04918: calendar create / share to feed / invite — one implementation for every assistant path.
+import { CALENDAR_SOCIAL_TOOL_HANDLERS, CALENDAR_SOCIAL_TOOL_DECLARATIONS } from './orb-tools/calendar-social-tools';
 import { REMINDERS_CLOCK_TOOL_HANDLERS, REMINDERS_CLOCK_TOOL_DECLARATIONS } from './orb-tools/reminders-clock-tools';
 import { GROUPS_EVENTS_TOOL_HANDLERS, GROUPS_EVENTS_TOOL_DECLARATIONS } from './orb-tools/groups-events-tools';
 import { CHAT_PRIVACY_TOOL_HANDLERS, CHAT_PRIVACY_TOOL_DECLARATIONS } from './orb-tools/chat-privacy-tools';
@@ -61,6 +64,8 @@ import { WALLET_PAYMENTS_TOOL_HANDLERS, WALLET_PAYMENTS_TOOL_DECLARATIONS } from
 import { MESSAGING_DEPTH_TOOL_HANDLERS, MESSAGING_DEPTH_TOOL_DECLARATIONS } from './orb-tools/messaging-depth-tools';
 import { EVENTS_TICKETS_TOOL_HANDLERS, EVENTS_TICKETS_TOOL_DECLARATIONS } from './orb-tools/events-tickets-tools';
 import { HEALTH_DEPTH_TOOL_HANDLERS, HEALTH_DEPTH_TOOL_DECLARATIONS } from './orb-tools/health-depth-tools';
+// VTID-05171: Life Timeline — get_my_timeline.
+import { TIMELINE_TOOL_HANDLERS, TIMELINE_TOOL_DECLARATIONS } from './orb-tools/timeline-tools';
 // VTID-03885: Partner Health Test Integration — DoctorBox is Partner #001.
 import { PARTNER_HEALTH_TEST_TOOL_HANDLERS, PARTNER_HEALTH_TEST_TOOL_DECLARATIONS } from './orb-tools/partner-health-test-tools';
 // WAVE-2-VOICE-CATALOG-V2 — second wave of the approved 425-tool expansion:
@@ -2734,11 +2739,13 @@ export async function tool_send_chat_message(
         const truncatedBody = body.length > 100 ? body.slice(0, 97) + '...' : body;
         const insertedId = (inserted as { id?: string } | null)?.id ?? null;
         const { notifyUserAsync } = await import('./notification-service');
-        notifyUserAsync(
-          recipientUserId,
-          tenantId,
-          'new_chat_message',
-          {
+        // VTID-05137: same per-conversation coalescing as routes/chat.ts —
+        // decided (awaited) here, before the fire-and-forget dispatch.
+        const { coalesceChatPushes, chatConversationKey } = await import('./chat-push-coalescer');
+        const [prepared] = await coalesceChatPushes(sb, chatConversationKey({ senderId: id.user_id }), [{
+          userId: recipientUserId,
+          kind: 'message',
+          payload: {
             title: senderName,
             body: truncatedBody,
             data: {
@@ -2755,8 +2762,9 @@ export async function tool_send_chat_message(
               source: 'voice',
             },
           },
-          sb,
-        );
+        }]);
+        if (prepared.opts) notifyUserAsync(recipientUserId, tenantId, 'new_chat_message', prepared.payload, sb, prepared.opts);
+        else notifyUserAsync(recipientUserId, tenantId, 'new_chat_message', prepared.payload, sb);
       }
     } catch (notifyErr: unknown) {
       const m = notifyErr instanceof Error ? notifyErr.message : 'notify dispatch failed';
@@ -4249,9 +4257,12 @@ export async function tool_save_diary_entry(
   // 4) Recompute Index.
   let pillars_after: Record<string, number> | null = null;
   try {
-    const { data: rec, error: rpcErr } = await sb.rpc('health_compute_vitana_index_for_user', {
-      p_user_id: identity.user_id,
-      p_date: entryDate,
+    // VTID-05168: locked + recorded recompute (trigger 'diary').
+    const { data: rec, error: rpcErr } = await recordIndexRecompute(sb, {
+      userId: identity.user_id,
+      date: entryDate,
+      trigger: 'diary',
+      sourceKind: 'diary_entry',
     });
     if (rpcErr) {
       // supabase-js resolves normally with {data:null, error} on an RPC
@@ -4540,39 +4551,40 @@ export async function tool_get_day_summary(
   }
 }
 
-async function _getWeakestPillarAndGoal(
+// VTID-05089 (Health Hub D6a): the marketplace tools read only the member's
+// Life Compass goal. They never read the Vitana Index (vitana_index_scores):
+// once the Index can contain device-derived data, an Index-driven product
+// filter would be a device-data -> commerce path (program plan section 2b).
+//
+// VTID-05156: this used to select `current_goal`, a column that does not
+// exist on life_compass — PostgREST answered 42703, the error was ignored and
+// the goal was always null. Same corrected query as tool_get_life_compass
+// above (VTID-03022): primary_goal, the one is_active row, newest first.
+// A read error is now logged instead of silently swallowed.
+async function _getCompassGoal(
   sb: SupabaseClient,
   userId: string,
-): Promise<{ weakest_pillar: string | null; compass_goal: string | null }> {
-  let weakest: string | null = null;
+  tool: 'find_perfect_product' | 'find_perfect_practitioner',
+): Promise<{ compass_goal: string | null }> {
   let goal: string | null = null;
   try {
-    const { data: idx } = await sb
-      .from('vitana_index_scores')
-      .select('pillars')
+    const { data: lc, error } = await sb
+      .from('life_compass')
+      .select('primary_goal')
       .eq('user_id', userId)
-      .order('computed_at', { ascending: false })
+      .eq('is_active', true)
+      .order('created_at', { ascending: false })
       .limit(1)
       .maybeSingle();
-    if (idx?.pillars && typeof idx.pillars === 'object') {
-      const pairs = Object.entries(idx.pillars as Record<string, number>);
-      pairs.sort((a, b) => a[1] - b[1]);
-      weakest = pairs[0]?.[0] ?? null;
+    if (error) {
+      console.warn(`[${tool}] life_compass read failed: ${error.code ?? error.message}`);
+      return { compass_goal: null };
     }
-  } catch {
-    /* table may not exist in all envs */
-  }
-  try {
-    const { data: lc } = await sb
-      .from('life_compass')
-      .select('current_goal')
-      .eq('user_id', userId)
-      .maybeSingle();
-    goal = (lc?.current_goal as string) ?? null;
+    goal = String((lc as { primary_goal?: unknown } | null)?.primary_goal ?? '').trim() || null;
   } catch {
     /* table may not exist */
   }
-  return { weakest_pillar: weakest, compass_goal: goal };
+  return { compass_goal: goal };
 }
 
 export async function tool_find_perfect_product(
@@ -4587,8 +4599,9 @@ export async function tool_find_perfect_product(
     ? (args.exclude_ingredients as string[]).map((s) => String(s).toLowerCase())
     : [];
 
-  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
-  const targetPillar = askedPillar || ctx.weakest_pillar || '';
+  const ctx = await _getCompassGoal(sb, identity.user_id, 'find_perfect_product');
+  // VTID-05089: the pillar filter applies only when the member names one.
+  const targetPillar = askedPillar;
 
   let query = sb.from('products_catalog').select('*').limit(10);
   if (targetPillar) query = query.contains('pillar_tags', [targetPillar]);
@@ -4652,7 +4665,7 @@ export async function tool_find_perfect_practitioner(
   const telehealthOk = args.telehealth_ok;
   const maxPrice = args.max_price != null ? Number(args.max_price) : null;
 
-  const ctx = await _getWeakestPillarAndGoal(sb, identity.user_id);
+  const ctx = await _getCompassGoal(sb, identity.user_id, 'find_perfect_practitioner');
 
   let query = sb.from('services_catalog').select('*').limit(10);
   if (specialty) query = query.ilike('specialty', `%${specialty}%`);
@@ -5350,6 +5363,7 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...SUPERLATIVES_TOOL_HANDLERS,
   ...DIARY_MEMORY_TOOL_HANDLERS,
   ...CALENDAR_MGMT_TOOL_HANDLERS,
+  ...CALENDAR_SOCIAL_TOOL_HANDLERS,
   ...REMINDERS_CLOCK_TOOL_HANDLERS,
   ...GROUPS_EVENTS_TOOL_HANDLERS,
   ...CHAT_PRIVACY_TOOL_HANDLERS,
@@ -5367,6 +5381,8 @@ export const ORB_TOOL_REGISTRY: Record<string, OrbToolHandler> = {
   ...MESSAGING_DEPTH_TOOL_HANDLERS,
   ...EVENTS_TICKETS_TOOL_HANDLERS,
   ...HEALTH_DEPTH_TOOL_HANDLERS,
+  // VTID-05171: Life Timeline
+  ...TIMELINE_TOOL_HANDLERS,
   // VTID-03885: Partner Health Test Integration
   ...PARTNER_HEALTH_TEST_TOOL_HANDLERS,
   // WAVE-2-VOICE-CATALOG-V2
@@ -5418,6 +5434,7 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...SUPERLATIVES_TOOL_DECLARATIONS,
   ...DIARY_MEMORY_TOOL_DECLARATIONS,
   ...CALENDAR_MGMT_TOOL_DECLARATIONS,
+  ...CALENDAR_SOCIAL_TOOL_DECLARATIONS,
   ...REMINDERS_CLOCK_TOOL_DECLARATIONS,
   ...GROUPS_EVENTS_TOOL_DECLARATIONS,
   ...CHAT_PRIVACY_TOOL_DECLARATIONS,
@@ -5432,6 +5449,8 @@ export const NEW_DOMAIN_TOOL_DECLARATIONS: Array<Record<string, unknown>> = [
   ...MESSAGING_DEPTH_TOOL_DECLARATIONS,
   ...EVENTS_TICKETS_TOOL_DECLARATIONS,
   ...HEALTH_DEPTH_TOOL_DECLARATIONS,
+  // VTID-05171: Life Timeline
+  ...TIMELINE_TOOL_DECLARATIONS,
   // VTID-03885: Partner Health Test Integration
   ...PARTNER_HEALTH_TEST_TOOL_DECLARATIONS,
   // WAVE-4-VOICE-CATALOG-V2 (community)

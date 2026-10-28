@@ -67,11 +67,17 @@ function getSupabase() {
   return createClient(url, key);
 }
 
+// VTID-05019/VTID-05047: every cicd route this skill calls (except /cicd/health) requires the gateway's service token.
+function prRouteAuth(_path: string): Record<string, string> {
+  const t = process.env.GATEWAY_SERVICE_TOKEN ?? '';
+  return t ? { Authorization: `Bearer ${t}` } : {};
+}
+
 async function callGateway(path: string, method: 'GET' | 'POST', body?: Record<string, unknown>): Promise<unknown> {
   const gatewayUrl = process.env.GATEWAY_URL ?? 'http://localhost:8080';
   const res = await fetch(`${gatewayUrl}/api/v1${path}`, {
     method,
-    headers: { 'Content-Type': 'application/json' },
+    headers: { 'Content-Type': 'application/json', ...prRouteAuth(path) },
     body: body ? JSON.stringify(body) : undefined,
   });
   if (!res.ok) {

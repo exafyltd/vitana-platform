@@ -1,0 +1,6 @@
+aurora-restore-01-defaults VTID-05167 block: rc=0 errors=0
+aurora-restore-02-check-unique-constraints VTID-05167 block: rc=0 errors=0
+aurora-restore-03-indexes VTID-05167 block: rc=0 errors=0
+aurora-restore-04-triggers VTID-05167 block: rc=0 errors=0
+aurora-restore-05-rls-enable VTID-05167 block: rc=0 errors=0
+aurora-restore-06-policies VTID-05167 block: rc=0 errors=0

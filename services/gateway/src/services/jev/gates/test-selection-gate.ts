@@ -27,7 +27,7 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import { getSupabase } from '../../../lib/supabase';
 import { decide, DecideOptions } from '../jev-decision-service';
 import * as repo from '../jev-repository';
-import { jevGateMode, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
+import { jevGateMode, recordJevGateSkip, recordJevShadowDecision, recordJevShadowOutcome } from '../jev-shadow';
 import type { CiCheckEvidence } from './ci-failure-gate';
 
 export const TEST_SELECTION_GATE = 'test_selection';
@@ -171,6 +171,11 @@ export async function runTestSelectionCheck(a: {
     );
   } catch (err: any) {
     console.warn(`[jev] ${TEST_SELECTION_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+    // VTID-05012: the error is recorded as a skip, not only a console line.
+    await recordJevGateSkip(
+      { gate: TEST_SELECTION_GATE, decision: 'test_suite_relevance', mode, reason: 'error', subject_type: 'dev_autopilot_execution', subject_ref: a.executionId, system_action: 'runner_paired_suites_only' },
+      a.sb,
+    );
     return null;
   }
 }

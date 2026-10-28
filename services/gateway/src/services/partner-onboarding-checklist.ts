@@ -112,7 +112,16 @@ export interface ChecklistInput {
    * external catalogue connection, mapping is derived from complete
    * offerings; with one, the connections reconcile owns the mapping row.
    */
-  catalogueSource: { connections: number; completeOfferings: number };
+  catalogueSource: {
+    connections: number;
+    completeOfferings: number;
+    /**
+     * VTID-05153: products the catalogue check returned to the supplier after
+     * three failed checks. Adds `catalogue_fixes` to the catalogue step's
+     * `missing`; the step's status is never changed by it.
+     */
+    returnedProducts?: number;
+  };
 }
 
 /** The product fields `isCompleteOffering` reads. */
@@ -258,6 +267,15 @@ export function buildChecklist(input: ChecklistInput): Checklist {
           }
         }
       }
+    }
+
+    // VTID-05153: rows the catalogue check sent back are named on the
+    // catalogue step. Status stays as it is, so lifecycle, submit and go-live
+    // decide exactly as before.
+    const returned = input.catalogueSource.returnedProducts ?? 0;
+    if (key === 'catalogue' && returned > 0) {
+      missing = [...(missing ?? []), 'catalogue_fixes'];
+      detail = { ...(detail ?? {}), returned_products: returned };
     }
 
     if (!isRequired && key !== 'team' && status === 'todo') status = 'not_required';

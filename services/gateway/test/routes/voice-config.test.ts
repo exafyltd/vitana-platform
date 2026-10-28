@@ -19,14 +19,20 @@ import express from 'express';
 // ---------------------------------------------------------------------------
 
 const mockSynthesizeSpeech = jest.fn();
+const mockListVoices = jest.fn();
 jest.mock('@google-cloud/text-to-speech', () => ({
   __esModule: true,
   default: {
     TextToSpeechClient: jest.fn().mockImplementation(() => ({
       synthesizeSpeech: mockSynthesizeSpeech,
+      listVoices: mockListVoices,
     })),
   },
   protos: {},
+}));
+// VTID-05026: the Google preview runs on the task-role auth client.
+jest.mock('../../src/lib/google-access-token', () => ({
+  getGoogleAwsClient: () => ({}),
 }));
 
 const mockGetVoiceConfig = jest.fn();
@@ -257,55 +263,54 @@ describe('POST /api/v1/voice/preview', () => {
     expect(res.body.error).toMatch(/elevenlabs.*not implemented/);
   });
 
-  it('synthesizes with the default English voice and returns audio/mpeg bytes', async () => {
+  // VTID-05026: `google_tts` is the Audiobook narration preview, ru and sr only.
+  it('refuses google_tts (the default provider) for a language other than ru/sr', async () => {
     mockIdentity = ADMIN_IDENTITY;
-    const res = await request(app).post('/api/v1/voice/preview').send({ text: 'Hello there' });
+    for (const language of [undefined, 'en', 'de', 'hr', 'bs']) {
+      const res = await request(app).post('/api/v1/voice/preview').send({ text: 'Hello there', language });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toMatch(/ru and sr/);
+    }
+    expect(mockSynthesizeSpeech).not.toHaveBeenCalled();
+  });
 
+  it('ru renders the pinned Audiobook voice, MP3, no model_name for Chirp 3 HD', async () => {
+    mockIdentity = ADMIN_IDENTITY;
+    const res = await request(app).post('/api/v1/voice/preview').send({ text: 'Привет', language: 'ru' });
     expect(res.status).toBe(200);
     expect(res.headers['content-type']).toMatch(/audio\/mpeg/);
+    expect(res.headers['x-vitana-tts-voice']).toBe('ru-RU-Chirp3-HD-Aoede');
+    expect(res.headers['x-vitana-tts-render-ms']).toMatch(/^\d+$/);
     expect(Buffer.compare(res.body, Buffer.from('fake-mp3-bytes'))).toBe(0);
-    expect(mockSynthesizeSpeech).toHaveBeenCalledWith(
-      expect.objectContaining({
-        input: { text: 'Hello there' },
-        voice: { languageCode: 'en-US', name: 'en-US-Neural2-H' },
-        audioConfig: expect.objectContaining({ speakingRate: 1.0, pitch: 0 }),
-      }),
-    );
+    expect(mockSynthesizeSpeech).toHaveBeenCalledWith({
+      input: { text: 'Привет' },
+      voice: { languageCode: 'ru-RU', name: 'ru-RU-Chirp3-HD-Aoede' },
+      audioConfig: { audioEncoding: 'MP3' },
+    });
   });
 
-  it('sets modelName for a gemini-tier voice', async () => {
+  it('sr auditions another sr-RS voice by name; a voice of another language is refused', async () => {
     mockIdentity = ADMIN_IDENTITY;
-    const res = await request(app)
+    const ok = await request(app)
       .post('/api/v1/voice/preview')
-      .send({ text: 'Hallo', language: 'de', voice: 'Kore' });
-
-    expect(res.status).toBe(200);
-    const callArg = mockSynthesizeSpeech.mock.calls[0][0];
-    expect(callArg.voice.name).toBe('Kore');
-    expect(callArg.voice.modelName).toBe('gemini-2.5-flash-tts');
+      .send({ text: 'Zdravo', language: 'sr', voice: 'sr-RS-Chirp3-HD-Leda' });
+    expect(ok.status).toBe(200);
+    expect(mockSynthesizeSpeech.mock.calls[0][0].voice).toEqual({ languageCode: 'sr-RS', name: 'sr-RS-Chirp3-HD-Leda' });
+    const wrong = await request(app)
+      .post('/api/v1/voice/preview')
+      .send({ text: 'Zdravo', language: 'sr', voice: 'hr-HR-Standard-A' });
+    expect(wrong.status).toBe(400);
   });
 
-  it('clamps an out-of-range speaking_rate', async () => {
+  it('answers 422 when Google returns no audio or throws', async () => {
     mockIdentity = ADMIN_IDENTITY;
-    await request(app).post('/api/v1/voice/preview').send({ text: 'hi', speaking_rate: 99 });
-    const callArg = mockSynthesizeSpeech.mock.calls[0][0];
-    expect(callArg.audioConfig.speakingRate).toBe(4.0);
-  });
-
-  it('returns 500 when the TTS client returns no audio content', async () => {
-    mockIdentity = ADMIN_IDENTITY;
-    mockSynthesizeSpeech.mockResolvedValue([{}]);
-    const res = await request(app).post('/api/v1/voice/preview').send({ text: 'hi' });
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('no audio content');
-  });
-
-  it('returns 500 when the TTS client throws', async () => {
-    mockIdentity = ADMIN_IDENTITY;
-    mockSynthesizeSpeech.mockRejectedValue(new Error('quota exceeded'));
-    const res = await request(app).post('/api/v1/voice/preview').send({ text: 'hi' });
-    expect(res.status).toBe(500);
-    expect(res.body.error).toBe('quota exceeded');
+    mockSynthesizeSpeech.mockResolvedValueOnce([{}]);
+    const empty = await request(app).post('/api/v1/voice/preview').send({ text: 'hi', language: 'ru' });
+    expect(empty.status).toBe(422);
+    mockSynthesizeSpeech.mockRejectedValueOnce(new Error('quota exceeded'));
+    const thrown = await request(app).post('/api/v1/voice/preview').send({ text: 'hi', language: 'sr' });
+    expect(thrown.status).toBe(422);
+    expect(thrown.body.error).toBe('google_tts synthesis failed');
   });
 
   // VTID-03970 — Fish Audio preview branch.
@@ -357,6 +362,49 @@ describe('POST /api/v1/voice/preview', () => {
       // Deliberately does NOT call the Google TTS client on the fish path.
       expect(mockSynthesizeSpeech).not.toHaveBeenCalled();
     });
+  });
+});
+
+// ---------------------------------------------------------------------------
+// GET /api/v1/voice/preview/google-voices — VTID-05026
+// ---------------------------------------------------------------------------
+describe('GET /api/v1/voice/preview/google-voices', () => {
+  beforeEach(() => {
+    mockListVoices.mockReset();
+    mockListVoices.mockResolvedValue([
+      {
+        voices: [
+          { name: 'ru-RU-Chirp3-HD-Aoede', languageCodes: ['ru-RU'], ssmlGender: 'FEMALE', naturalSampleRateHertz: 24000 },
+          { name: 'ru-RU-Chirp3-HD-Charon', languageCodes: ['ru-RU'], ssmlGender: 'MALE', naturalSampleRateHertz: 24000 },
+        ],
+      },
+    ]);
+  });
+
+  it('401 unauthenticated, 403 non-admin', async () => {
+    expect((await request(app).get('/api/v1/voice/preview/google-voices?lang=ru')).status).toBe(401);
+    mockIdentity = NON_ADMIN_IDENTITY;
+    expect((await request(app).get('/api/v1/voice/preview/google-voices?lang=ru')).status).toBe(403);
+    expect(mockListVoices).not.toHaveBeenCalled();
+  });
+
+  it('refuses every language but ru and sr', async () => {
+    mockIdentity = ADMIN_IDENTITY;
+    for (const lang of ['en', 'de', 'hr', '']) {
+      expect((await request(app).get(`/api/v1/voice/preview/google-voices?lang=${lang}`)).status).toBe(400);
+    }
+    expect(mockListVoices).not.toHaveBeenCalled();
+  });
+
+  it('lists only the female voices, with the pinned one', async () => {
+    mockIdentity = ADMIN_IDENTITY;
+    const res = await request(app).get('/api/v1/voice/preview/google-voices?lang=ru');
+    expect(res.status).toBe(200);
+    expect(mockListVoices).toHaveBeenCalledWith({ languageCode: 'ru-RU' });
+    expect(res.body.pinned).toBe('ru-RU-Chirp3-HD-Aoede');
+    expect(res.body.voices).toEqual([
+      { name: 'ru-RU-Chirp3-HD-Aoede', ssml_gender: 'FEMALE', natural_sample_rate_hertz: 24000 },
+    ]);
   });
 });
 

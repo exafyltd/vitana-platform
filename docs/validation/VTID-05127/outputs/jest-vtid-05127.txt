@@ -1,0 +1,36 @@
+PASS test/vtid-05127-phone-verify-switch-wiring.test.ts
+  VTID-05127 production wiring step
+    ✓ reads both repository variables and calls the shared wiring script on the partial task definition (5 ms)
+    ✓ runs after the checkout and before step 2/2, so env_overrides can still switch it off (1 ms)
+    ✓ step 2/2 never strips the phone settings by name
+    ✓ the secret is only ever a valueFrom reference, never a plain value (1 ms)
+    ✓ pins the exact anchored ARN pattern (1 ms)
+  VTID-05127 wiring decision (scripts/ci/phone-verify-wiring.sh)
+    ✓ ARN + enabled → secret wired, PHONE_VERIFY_ENABLED=true, other entries kept (29 ms)
+    ✓ ARN + not enabled → secret wired, PHONE_VERIFY_ENABLED=false (22 ms)
+    ✓ no ARN + enabled → fails (on without its secret) (11 ms)
+    ✓ no ARN + not enabled → PHONE_VERIFY_ENABLED=false and the stale secret ref removed (30 ms)
+    ✓ rejects an ARN with wrong prefix (7 ms)
+    ✓ rejects an ARN with other account (7 ms)
+    ✓ rejects an ARN with suffix too short (9 ms)
+    ✓ rejects an ARN with trailing text (7 ms)
+    ✓ rejects an ARN with another secret with the same prefix (8 ms)
+    ✓ enabled value "TRUE" is off (18 ms)
+    ✓ enabled value " true" is off (18 ms)
+    ✓ enabled value "true " is off (18 ms)
+    ✓ enabled value "1" is off (13 ms)
+    ✓ enabled value "yes" is off (16 ms)
+  VTID-05127 staging wiring step
+    ✓ looks up the staging secret and never fails the deploy when it is absent (1 ms)
+    ✓ absent → PHONE_VERIFY_ENABLED=false; present → secret ref + true (merged by name via connected-apps.json)
+    ✓ runs before the roll step, which merges connected-apps.json by name and does not strip the phone settings itself (1 ms)
+  VTID-05127 setup script
+    ✓ grants only SendTextMessage, scoped to this account and region
+    ✓ dry run without credentials stops at the account check and changes nothing (13 ms)
+    ✓ never prints the secret value
+Test Suites: 1 passed, 1 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        1.172 s
+Ran all test suites matching /test\/vtid-05127-phone-verify-switch-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

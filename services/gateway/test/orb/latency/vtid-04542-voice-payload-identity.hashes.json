@@ -24,8 +24,8 @@
     "voice": "tina",
     "instruction_sha256": "8f336c90b4c6cde71bc1c5cad997d33d1795291fb9967631f9f706fa10da88f3",
     "instruction_bytes": 20282,
-    "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
-    "tools_bytes": 65566,
+    "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
+    "tools_bytes": 65575,
     "tool_count": 50,
     "deferred_tools": 0
   },
@@ -34,8 +34,8 @@
     "voice": "amy",
     "instruction_sha256": "1d857b035082cbe4212f91702beb0bb9c972b5dd8c35cb8287bff23f65aa079f",
     "instruction_bytes": 21142,
-    "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
-    "tools_bytes": 65566,
+    "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
+    "tools_bytes": 65575,
     "tool_count": 50,
     "deferred_tools": 0
   },
@@ -44,9 +44,9 @@
     "voice": "polly:ru",
     "instruction_sha256": "59c6e5ebed4201717adf8b73a0bded5556f4fa616f26cd34792a5498ffe49a24",
     "instruction_bytes": 20129,
-    "tools_sha256": "e12cdedd92ac8a23b54dadf259fd920436bf1a712f01653066366e06937a240e",
-    "tools_bytes": 222053,
-    "tool_count": 296,
+    "tools_sha256": "41c67664f9aa155cacec768589a5c7621fdb80f05e87798abf1a76a060f8d3e1",
+    "tools_bytes": 228266,
+    "tool_count": 299,
     "deferred_tools": 0
   },
   "connect:command-hub-developer-en": {
@@ -64,8 +64,8 @@
     "voice": "matthew",
     "instruction_sha256": "fd0779ba9333e3853fe95d53e7b67f7732e98faf7414def764eb80b9d18128d5",
     "instruction_bytes": 1973,
-    "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
-    "tools_bytes": 65566,
+    "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
+    "tools_bytes": 65575,
     "tool_count": 50,
     "deferred_tools": 0
   },
@@ -74,8 +74,8 @@
     "voice": "tina",
     "instruction_sha256": "d1e2ddd4414289b2fade0a0f9b924648e979e04c8d833125b1c817b68d739b55",
     "instruction_bytes": 21805,
-    "tools_sha256": "cea0077da9bc07993487482a03c62775b9abef182b268f0b981b81f81cc60158",
-    "tools_bytes": 65566,
+    "tools_sha256": "b720a4cf1ca04701765ef2e1741df428da88c588498c48f44417580ad722fe69",
+    "tools_bytes": 65575,
     "tool_count": 50,
     "deferred_tools": 0
   },

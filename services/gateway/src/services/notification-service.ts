@@ -16,6 +16,8 @@
 import * as admin from 'firebase-admin';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './notification-service-repository';
+import { dispatchPush } from './push-routing';
+import { CHAT_PUSH_TYPES, isViewingChat, messageIdOf } from './chat-viewing-presence';
 import {
   isNotificationTypeAllowed,
   isMemberCategoryAllowed,
@@ -107,6 +109,9 @@ export const TYPE_META: Record<string, TypeMeta> = {
   orb_proactive_message:           { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
   conversation_followup_reminder:  { channel: 'inapp',          priority: 'p2', category: 'chat' },
   orb_suggestion:                  { channel: 'push_and_inapp', priority: 'p1', category: 'chat' },
+  // VTID-05100: Vitana Companion Messages — one proactive Vitana DM a day.
+  // p2 so the member's quiet hours hold the push (the DM still lands).
+  vitana_companion_message:        { channel: 'push_and_inapp', priority: 'p2', category: 'chat' },
   // Emitted by the notify_on_reaction() Postgres trigger on message_reactions
   // inserts (not via notifyUser()), so this entry is documentation/parity
   // only — the trigger hardcodes the same channel/priority in its INSERT.
@@ -147,6 +152,9 @@ export const TYPE_META: Record<string, TypeMeta> = {
   // lab_report_processed's OTHER caller (health-wellness.ts's "still being
   // analyzed" ping, which deliberately stays in-app-only).
   health_test_result_ready: { channel: 'push_and_inapp',  priority: 'p1', category: 'health' },
+  // VTID-05055: staff proposed a partner test result as the member's own —
+  // the member must confirm it in the app before any link/order exists.
+  partner_link_request:     { channel: 'push_and_inapp',  priority: 'p1', category: 'health' },
   wearable_data_synced:     { channel: 'silent',          priority: 'p3', category: 'health' },
   // Signals
   predictive_signal_detected:  { channel: 'push_and_inapp', priority: 'p0', category: 'signal' },
@@ -265,7 +273,23 @@ export type PushOutcome =
   | 'suppressed_type_disabled'
   | 'suppressed_push_disabled'
   | 'suppressed_dnd'
-  | 'dispatch_exception';
+  | 'dispatch_exception'
+  // VTID-05137: a chat push held back because the recipient was already
+  // pushed for this conversation moments ago (chat-push-coalescer.ts).
+  | 'coalesced'
+  // VTID-05312: the recipient is viewing that conversation (chat-viewing-presence.ts).
+  | 'suppressed_viewing'
+  // VTID-05312: a second notification row for the same message and recipient.
+  | 'suppressed_duplicate';
+
+/**
+ * VTID-05137: per-call options. `suppressPush: 'coalesced'` writes the in-app
+ * row exactly as usual but sends no push (the caller decided — notifyUser
+ * never runs the chat coalescer itself).
+ */
+export interface NotifyUserOptions {
+  suppressPush?: 'coalesced';
+}
 
 /** The delivery outcome of one notification after FCM and Appilix ran. */
 export function classifyPushOutcome(fcm: PushFanoutOutcome, appilixSent: boolean): PushOutcome {
@@ -299,8 +323,13 @@ export async function recordPushOutcome(
  */
 export async function sendPushNotification(
   deviceToken: string,
-  payload: NotificationPayload
+  payload: NotificationPayload,
+  opts?: { badge?: number },
 ): Promise<FcmSendResult> {
+  // VTID-05177: an APNs badge is set only for an ios_native token on the
+  // notifyUser native pass (NATIVE_PUSH_DIRECT_ENABLED). Without `badge` the
+  // message is exactly today's.
+  const badge = opts?.badge;
   try {
     await fcm.send({
       token: deviceToken,
@@ -316,6 +345,14 @@ export async function sendPushNotification(
         ? {
             android: { notification: { tag: payload.tag } },
             apns: { headers: { 'apns-collapse-id': payload.tag.slice(0, 64) } },
+          }
+        : {}),
+      ...(badge !== undefined
+        ? {
+            apns: {
+              ...(payload.tag ? { headers: { 'apns-collapse-id': payload.tag.slice(0, 64) } } : {}),
+              payload: { aps: { badge } },
+            },
           }
         : {}),
       webpush: {
@@ -350,16 +387,40 @@ export async function sendPushToUser(
   tenantId: string,
   payload: NotificationPayload,
   supabase: SupabaseClient<any, any, any>,
-  opts?: { excludeAppilixTagged?: boolean; outcome?: PushFanoutOutcome }
+  opts?: {
+    excludeAppilixTagged?: boolean;
+    outcome?: PushFanoutOutcome;
+    /**
+     * VTID-05177 — set only by dispatchPush() while NATIVE_PUSH_DIRECT_ENABLED
+     * is on. 'native' = device_type ios_native/android_native; 'legacy' =
+     * every other token (web push, Appilix). Unset = today's query and token
+     * set, unchanged.
+     */
+    tokenClass?: PushTokenClass;
+    /**
+     * VTID-05177 — badge source for ios_native targets. Called at most once
+     * per call, and only when an ios_native token is among the targets; a
+     * null result (count failed) leaves the badge out.
+     */
+    iosBadge?: () => Promise<number | null>;
+  }
 ): Promise<number> {
   // Only devices this user still OWNS (VTID-03481). A revoked row means the
   // device was taken over by another account, or the user signed out on it —
   // pushing there would buzz a phone that now belongs to someone else, which
   // is how one device ended up receiving the same post notification once per
   // account that had ever signed in on it.
-  const { data: tokens } = await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId);
+  const tokenClass = opts?.tokenClass;
+  const { data: rawTokens } = tokenClass
+    ? await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId, { withDeviceType: true })
+    : await repo.fetchLiveDeviceTokensForUser(supabase, userId, tenantId);
+  const allTokens = rawTokens as LiveDeviceToken[] | null;
 
-  if (!tokens?.length) return 0;
+  if (!allTokens?.length) return 0;
+
+  const tokens = tokenClass
+    ? allTokens.filter((t) => isNativeDeviceType(t.device_type) === (tokenClass === 'native'))
+    : allTokens;
 
   // Tokens registered from inside the Appilix WebView (tagged "Appilix " by
   // registerAppilixDevice()) can only be tapped safely via an Appilix-native
@@ -377,9 +438,17 @@ export async function sendPushToUser(
   // VTID-04962: only an accepted send counts. Compare against the result
   // strings explicitly — every FcmSendResult is a truthy string.
   const tally = opts?.outcome ?? newPushFanoutOutcome();
+  let badge: number | undefined;
+  if (opts?.iosBadge && targets.some((t) => t.device_type === 'ios_native')) {
+    const count = await opts.iosBadge().catch(() => null);
+    badge = typeof count === 'number' ? count : undefined;
+  }
   let sent = 0;
-  for (const { fcm_token } of targets) {
-    const result = await sendPushNotification(fcm_token, payload);
+  for (const { fcm_token, device_type } of targets) {
+    const result =
+      badge !== undefined && device_type === 'ios_native'
+        ? await sendPushNotification(fcm_token, payload, { badge })
+        : await sendPushNotification(fcm_token, payload);
     if (result === 'sent') {
       sent++;
       tally.sent++;
@@ -609,6 +678,25 @@ export async function sendAppilixPush(
   return results.some((sent) => sent === true);
 }
 
+// ── Native token classes (VTID-05177) ─────────────────────────
+// Routing itself lives in ./push-routing.ts (dispatchPush). Kept here: the
+// token-class vocabulary sendPushToUser filters on.
+
+export type PushTokenClass = 'native' | 'legacy';
+
+export const NATIVE_DEVICE_TYPES = ['ios_native', 'android_native'] as const;
+export type NativeDeviceType = (typeof NATIVE_DEVICE_TYPES)[number];
+
+interface LiveDeviceToken {
+  fcm_token: string;
+  device_label: string | null;
+  device_type?: string | null;
+}
+
+export function isNativeDeviceType(v: unknown): v is NativeDeviceType {
+  return v === 'ios_native' || v === 'android_native';
+}
+
 // ── Dynamic Category Preference Check ────────────────────────
 // In-memory cache for notification_categories (avoids DB hit per notification)
 
@@ -728,7 +816,8 @@ export async function notifyUser(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): Promise<{ pushed: number; inapp: boolean; suppressed?: string }> {
   const meta = TYPE_META[type] || { channel: 'push_and_inapp' as Channel, priority: 'p2' as Priority, category: 'system' as Category };
   const sourceKey = normalizeSourceKey(payload.data?.automation_id);
@@ -779,10 +868,32 @@ export async function notifyUser(
 
   // ── 3. Determine effective actions ───────────────────────
   const shouldWriteInapp = meta.channel !== 'push'; // inapp, push_and_inapp, silent all write
-  const shouldSendPush =
+  const pushAllowed =
     (meta.channel === 'push' || meta.channel === 'push_and_inapp') &&
     !pushBlockedByDnd &&
     (prefs ? prefs.push_enabled !== false : true);
+  // VTID-05137: the caller held this push back (chat burst). The row is still
+  // written, with push_sent_at set so the /push-dispatch cron never sends it.
+  const pushCoalesced = pushAllowed && opts?.suppressPush === 'coalesced';
+  // VTID-05312: no push for the conversation the recipient is looking at. The
+  // row is written exactly like a coalesced one (push_sent_at set at INSERT, so
+  // /push-dispatch never sends it later) with outcome suppressed_viewing.
+  const pushViewing = pushAllowed && !pushCoalesced && CHAT_PUSH_TYPES.has(type)
+    && (await isViewingChat(supabase, userId, tenantId, type, payload.data));
+  const shouldSendPush = pushAllowed && !pushCoalesced && !pushViewing;
+
+  // VTID-05312: dedup — an unpushed row for the same recipient and message
+  // (e.g. written by the vitana-v1 trigger) is marked handled; this row is the
+  // one that pushes. Best effort.
+  const chatMessageId = CHAT_PUSH_TYPES.has(type) ? messageIdOf(payload.data) : null;
+  if (chatMessageId && meta.channel !== 'push') {
+    try {
+      const { error: dedupError } = (await repo.markUnpushedChatDuplicatesHandled(supabase, userId, chatMessageId)) ?? {};
+      if (dedupError) throw new Error(dedupError.message);
+    } catch (err: any) {
+      console.warn(`[Notifications] chat dedup failed (ignored): ${err?.message || err}`);
+    }
+  }
 
   // ── 4. Write in-app notification record ──────────────────
   // When shouldSendPush is true, set push_sent_at at INSERT time to prevent
@@ -804,10 +915,10 @@ export async function notifyUser(
       priority: meta.priority,
       title: payload.title,
       body: payload.body,
-      data: payload.data || {},
+      data: pushCoalesced ? { ...(payload.data || {}), push_coalesced: 'true' } : payload.data || {},
       ...(recipientVitanaId && { recipient_vitana_id: recipientVitanaId }),
     };
-    if (shouldSendPush) {
+    if (shouldSendPush || pushCoalesced || pushViewing) {
       insertData.push_sent_at = new Date().toISOString();
     }
     const { data: inserted, error } = await repo.insertUserNotification(supabase, insertData);
@@ -849,33 +960,33 @@ export async function notifyUser(
     // of every notification.
     // VTID-03507 widens this: signed out EVERYWHERE, or still signed in
     // elsewhere but no longer the owner of the phone Appilix would reach.
-    const appilixSuppressed =
-      (await isSignedOutOnAllKnownDevices(userId, supabase)) ||
-      (await hasLostDeviceToAnotherAccount(userId, supabase));
-
-    if (payload.data?.url) {
-      // Notifications with deep-link URLs must go through Appilix first.
-      // Appilix honors open_link_url on tap; FCM-delivered notifications
-      // crash the Appilix WebView ("Something went wrong") because FCM
-      // doesn't pass the URL to Appilix's native tap handler.
-      appilixSent = appilixSuppressed ? false : await sendAppilixPush(userId, payload);
-      if (!appilixSent) {
-        // Appilix reported no device for this user (e.g. its client-side
-        // identity registration never took) — do NOT retry via raw FCM on
-        // an Appilix-tagged token, since that's the exact delivery path
-        // that crashes the WebView on tap. Only non-Appilix tokens (real
-        // browser web-push) are safe to fall back to here.
-        pushed = await sendPushToUser(userId, tenantId, payload, supabase, {
-          excludeAppilixTagged: true,
-          outcome: fcmTally,
-        });
-      }
-    } else {
-      pushed = await sendPushToUser(userId, tenantId, payload, supabase, { outcome: fcmTally });
-      if (pushed === 0 && !appilixSuppressed) {
-        appilixSent = await sendAppilixPush(userId, payload);
-      }
-    }
+    //
+    // Deep-link pushes go Appilix-first: Appilix honors open_link_url on tap,
+    // while an FCM-delivered notification crashes the Appilix WebView
+    // ("Something went wrong") because FCM doesn't pass the URL to Appilix's
+    // native tap handler. If Appilix reports no device, the FCM fallback
+    // skips Appilix-tagged tokens — the exact delivery path that crashes the
+    // WebView — so only real browser web-push tokens are tried. Without a
+    // URL: FCM first, Appilix only if FCM reached zero tokens.
+    //
+    // VTID-05177: the routing lives in dispatchPush(); with the native
+    // switches unset it makes exactly the calls this block made before.
+    const dispatched = await dispatchPush({
+      userId,
+      tenantId,
+      payload,
+      supabase,
+      policy: {
+        kind: 'deep_link_split',
+        hasDeepLink: !!payload.data?.url,
+        suppression: 'signed_out_or_lost_device',
+        excludeAppilixTaggedOnFallback: true,
+      },
+      outcome: fcmTally,
+      iosBadge: true,
+    });
+    pushed = dispatched.sent;
+    appilixSent = dispatched.appilixSent;
   }
 
   // VTID-04962: record what actually happened on the row this call wrote.
@@ -883,7 +994,11 @@ export async function notifyUser(
   if (notificationId && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
     const outcome: PushOutcome = shouldSendPush
       ? classifyPushOutcome(fcmTally, appilixSent)
-      : pushBlockedByDnd
+      : pushViewing
+        ? 'suppressed_viewing'
+      : pushCoalesced
+        ? 'coalesced'
+        : pushBlockedByDnd
         ? 'suppressed_dnd'
         : 'suppressed_push_disabled';
     await recordPushOutcome(supabase, notificationId, outcome);
@@ -893,6 +1008,8 @@ export async function notifyUser(
     `[Notifications] ${type} → user=${userId.slice(0, 8)}… ` +
     `inapp=${inappWritten} push=${pushed} appilix=${appilixSent} ch=${meta.channel} pri=${meta.priority}` +
     (pushBlockedByDnd ? ' (DND)' : '') +
+    (pushCoalesced ? ' (coalesced)' : '') +
+    (pushViewing ? ' (viewing)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );
 
@@ -922,9 +1039,10 @@ export function notifyUserAsync(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): void {
-  notifyUser(userId, tenantId, type, payload, supabase).catch((err) => {
+  notifyUser(userId, tenantId, type, payload, supabase, opts).catch((err) => {
     console.error(`[Notifications] Async dispatch failed for ${type}:`, err.message || err);
   });
 }
@@ -938,9 +1056,10 @@ export function notifyUsersAsync(
   tenantId: string,
   type: string,
   payload: NotificationPayload,
-  supabase: SupabaseClient<any, any, any>
+  supabase: SupabaseClient<any, any, any>,
+  opts?: NotifyUserOptions,
 ): void {
   for (const uid of userIds) {
-    notifyUserAsync(uid, tenantId, type, payload, supabase);
+    notifyUserAsync(uid, tenantId, type, payload, supabase, opts);
   }
 }

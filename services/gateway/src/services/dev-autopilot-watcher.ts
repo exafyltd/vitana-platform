@@ -33,6 +33,17 @@ import { isPrClashOn, recordPrClashOutcome, runPrClashCheck, type OpenChange } f
 import { isChangeRiskOn, recordChangeRiskOutcome } from './jev/gates/change-risk-gate';
 import { isFixVerificationOn, runFixVerificationCheck, type FixContext, type FixVerdict } from './jev/gates/fix-verification-gate';
 import { isLlmMergeReviewEnabled, runLlmMergeReview } from './dev-autopilot-llm-review';
+import {
+  HELD_OVERLAP,
+  describeBlocks,
+  guardFiles,
+  holdExecution,
+  holdExpired,
+  loadOverlapConfig,
+  loadPlanFiles,
+  readHold,
+  sameBlocks,
+} from './dev-autopilot-overlap';
 import { deployTopicsInFilter, normalizeDeployEvent } from './dev-autopilot-deploy-topics';
 import { currentEnv } from './dev-autopilot-env-ownership';
 import { isVerificationNoiseTopic } from './oasis-noise-topics';
@@ -161,6 +172,7 @@ interface ExecutionRow {
   branch?: string | null;
   pr_url?: string | null;
   pr_number?: number | null;
+  plan_version?: number | null;
   updated_at?: string;
   metadata?: Record<string, unknown> | null;
 }
@@ -168,7 +180,7 @@ interface ExecutionRow {
 async function loadExecutions(s: SupaConfig, status: string): Promise<ExecutionRow[]> {
   const r = await supa<ExecutionRow[]>(
     s,
-    `/rest/v1/dev_autopilot_executions?status=eq.${status}&select=id,finding_id,status,branch,pr_url,pr_number,updated_at,metadata&limit=50`,
+    `/rest/v1/dev_autopilot_executions?status=eq.${status}&select=id,finding_id,status,branch,pr_url,pr_number,plan_version,updated_at,metadata&limit=50`,
   );
   // VTID-04005: only rows this environment claimed (or legacy unstamped rows).
   return r.ok && r.data ? filterOwnedExecutions(r.data, LOG_PREFIX) : [];
@@ -592,6 +604,156 @@ async function bridgeFailure(execId: string, stage: FailureStage, error?: string
 }
 
 // =============================================================================
+// VTID-05146 (C1): held_overlap — waiting for open PRs that share files
+// =============================================================================
+
+export interface HeldRecheckOutcome {
+  execution_id: string;
+  state: 'released' | 'still_held' | 'timed_out' | 'error';
+  blocking_prs: number[];
+  frozen_files: string[];
+  error?: string;
+}
+
+function withoutHold(metadata: Record<string, unknown> | null | undefined): Record<string, unknown> {
+  const { overlap_hold: _drop, ...rest } = (metadata || {}) as Record<string, unknown>;
+  return rest;
+}
+
+/**
+ * Re-check one held execution: release it when nothing blocks any more, end it
+ * as failed/overlap_hold_timeout past `overlap_hold_max_hours`, otherwise keep
+ * it held (recording a changed set of blocking PRs). A release never skips the
+ * check, and nothing is merged here — a released PR goes back to 'ci' after its
+ * branch is brought up to date, and the normal CI path judges it again.
+ */
+async function recheckHeld(
+  s: SupaConfig,
+  exec: ExecutionRow & { plan_version?: number | null },
+  cfg: { frozen_scope: string[]; overlap_hold_max_hours: number },
+  by: string,
+): Promise<HeldRecheckOutcome> {
+  const hold = readHold(exec.metadata);
+  const from: 'cooling' | 'ci' = hold?.from ?? (exec.pr_number ? 'ci' : 'cooling');
+  const out = (state: HeldRecheckOutcome['state'], blocks: number[] = [], frozen: string[] = [], error?: string): HeldRecheckOutcome =>
+    ({ execution_id: exec.id, state, blocking_prs: blocks, frozen_files: frozen, ...(error ? { error } : {}) });
+
+  if (holdExpired(hold?.held_at, cfg.overlap_hold_max_hours)) {
+    const moved = await transitionStatus(s, exec.id, HELD_OVERLAP, 'failed', {
+      metadata: {
+        ...(exec.metadata || {}),
+        failure_reason: 'overlap_hold_timeout',
+        overlap_hold_timeout: { at: new Date().toISOString(), max_hours: cfg.overlap_hold_max_hours, blocking_prs: hold?.blocking_prs || [] },
+      },
+    });
+    if (!moved) return out('error', [], [], 'row was no longer held');
+    if (exec.pr_number) {
+      try {
+        await githubService.closePullRequestWithComment(GITHUB_REPO, exec.pr_number,
+          `Dev Autopilot: this PR waited ${cfg.overlap_hold_max_hours} h for other open pull requests that change the same files `
+          + `(${describeBlocks(hold?.blocking_prs || [], hold?.frozen_files || [])}) and was not merged. Closed; the finding goes back to the queue `
+          + `and will be planned again against the code as it is then.\n\n---\n_Dev Autopilot (VTID-05146)_`);
+      } catch (err) {
+        console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] closing timed-out PR #${exec.pr_number} failed: ${err}`);
+      }
+    }
+    await terminalizeVtidLedgerForExecution(s, exec.id, 'failed');
+    await emitOasisEvent({
+      vtid: WATCHER_VTID,
+      type: 'dev_autopilot.execution.overlap_hold_timeout',
+      source: 'dev-autopilot-watcher',
+      status: 'warning',
+      message: `Execution ${exec.id.slice(0, 8)} ended: held longer than ${cfg.overlap_hold_max_hours} h (overlap_hold_timeout)${exec.pr_number ? `; PR #${exec.pr_number} closed` : ''}`,
+      payload: { execution_id: exec.id, finding_id: exec.finding_id, pr_url: exec.pr_url, from, blocking_prs: (hold?.blocking_prs || []).map((b) => b.pr) },
+    });
+    return out('timed_out', (hold?.blocking_prs || []).map((b) => b.pr));
+  }
+
+  let files: string[] | null;
+  if (from === 'ci') {
+    if (!exec.pr_number) return out('error', [], [], 'held at merge without a PR number');
+    try {
+      const got = await githubService.getAllPrFiles(GITHUB_REPO, exec.pr_number);
+      files = got.complete ? got.files : null;
+    } catch (err) {
+      return out('error', [], [], `PR file list failed: ${err}`);
+    }
+  } else {
+    files = await loadPlanFiles(s, exec.finding_id, exec.plan_version);
+  }
+  if (!files) return out('error', [], [], 'file list unavailable');
+  const guard = await guardFiles(GITHUB_REPO, files, { ownPr: exec.pr_number, frozenScope: from === 'ci' ? cfg.frozen_scope : [] });
+  if (!guard.ok) return out('error', [], [], guard.error);
+
+  if (guard.blocks.length || guard.frozen.length) {
+    if (!hold || !sameBlocks(hold.blocking_prs, guard.blocks) || JSON.stringify(hold.frozen_files) !== JSON.stringify(guard.frozen)) {
+      await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.${HELD_OVERLAP}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          updated_at: new Date().toISOString(),
+          metadata: { ...(exec.metadata || {}), overlap_hold: { ...(hold || { from, held_at: new Date().toISOString() }), checked_at: new Date().toISOString(), blocking_prs: guard.blocks, frozen_files: guard.frozen } },
+        }),
+      });
+    }
+    return out('still_held', guard.blocks.map((b) => b.pr), guard.frozen);
+  }
+
+  // Clear. A held PR is brought up to date with main first (its CI then
+  // re-runs on the combined head); "already up to date" is not an error.
+  if (from === 'ci' && exec.pr_number) {
+    try {
+      const pr = await githubService.getPullRequest(GITHUB_REPO, exec.pr_number) as { head?: { sha?: string } };
+      if (pr?.head?.sha) await githubService.updatePullRequestBranch(GITHUB_REPO, exec.pr_number, pr.head.sha);
+    } catch (err) {
+      console.log(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] update-branch on release: ${err} (continuing; CI re-validates)`);
+    }
+  }
+  const released = { at: new Date().toISOString(), by, held_since: hold?.held_at || null };
+  const moved = await transitionStatus(s, exec.id, HELD_OVERLAP, from, {
+    ...(from === 'cooling' ? { execute_after: new Date().toISOString() } : {}),
+    metadata: { ...withoutHold(exec.metadata), overlap_released: released },
+  });
+  if (!moved) return out('error', [], [], 'row was no longer held');
+  await emitOasisEvent({
+    vtid: WATCHER_VTID,
+    type: 'dev_autopilot.execution.overlap_released',
+    source: 'dev-autopilot-watcher',
+    status: 'info',
+    message: `Execution ${exec.id.slice(0, 8)} released back to ${from} (${by}): no open PR shares its files any more`,
+    payload: { execution_id: exec.id, finding_id: exec.finding_id, pr_url: exec.pr_url, from, by, held_since: released.held_since },
+  });
+  return out('released');
+}
+
+/** Every held execution this environment owns, once per CI tick. */
+export async function heldOverlapTick(s: SupaConfig | null = getSupabase()): Promise<HeldRecheckOutcome[]> {
+  if (!s) return [];
+  const held = await loadExecutions(s, HELD_OVERLAP);
+  if (held.length === 0) return [];
+  const cfg = await loadOverlapConfig(s);
+  if (!cfg) return [];
+  const results: HeldRecheckOutcome[] = [];
+  for (const exec of held) results.push(await recheckHeld(s, exec, cfg, 'watcher'));
+  return results;
+}
+
+/**
+ * The Command Hub's "release" action (developer role): the same check, now.
+ * It never skips the check — a still-blocked execution stays held.
+ */
+export async function releaseHeldExecution(execId: string, by: string): Promise<HeldRecheckOutcome | { execution_id: string; state: 'not_held' }> {
+  const s = getSupabase();
+  if (!s) return { execution_id: execId, state: 'error', blocking_prs: [], frozen_files: [], error: 'Supabase not configured' };
+  const r = await supa<ExecutionRow[]>(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=id,finding_id,status,branch,pr_url,pr_number,plan_version,updated_at,metadata&limit=1`);
+  const row = r.ok && r.data ? r.data[0] : undefined;
+  if (!row || row.status !== HELD_OVERLAP) return { execution_id: execId, state: 'not_held' };
+  const cfg = await loadOverlapConfig(s);
+  if (!cfg) return { execution_id: execId, state: 'error', blocking_prs: [], frozen_files: [], error: 'config unreadable' };
+  return recheckHeld(s, row, cfg, by);
+}
+
+// =============================================================================
 // CI watcher: ci → merging → deploying
 // =============================================================================
 
@@ -599,6 +761,10 @@ export async function ciWatcherTick(): Promise<void> {
   const s = getSupabase();
   if (!s) return;
   if (await killSwitchArmed(s)) return;
+
+  // VTID-05146 (C1): held executions first — a released one re-enters 'ci'
+  // (or 'cooling') and is judged from scratch by the normal path.
+  await heldOverlapTick(s);
 
   const execs = await loadExecutions(s, 'ci');
   for (const exec of execs) {
@@ -859,6 +1025,36 @@ export async function ciWatcherTick(): Promise<void> {
       continue;
     }
 
+    // VTID-05146 (C1b, C2): no auto-merge while another open PR — any author,
+    // any branch, drafts included — changes a file this PR changes, or while
+    // this PR touches frozen_scope. Such a PR is held, never merged on a
+    // timeout. GitHub or config unreadable → no merge this tick.
+    const overlapCfg = await loadOverlapConfig(s);
+    if (!overlapCfg) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] overlap config unreadable; refusing merge this tick`);
+      continue;
+    }
+    let prFilesForGuard: { files: string[]; complete: boolean };
+    try {
+      prFilesForGuard = await githubService.getAllPrFiles(GITHUB_REPO, exec.pr_number);
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR file list failed: ${err}; refusing merge this tick`);
+      continue;
+    }
+    if (!prFilesForGuard.complete) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] PR #${exec.pr_number} file list incomplete; refusing merge this tick`);
+      continue;
+    }
+    const guard = await guardFiles(GITHUB_REPO, prFilesForGuard.files, { ownPr: exec.pr_number, frozenScope: overlapCfg.frozen_scope });
+    if (!guard.ok) {
+      console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] open-PR overlap check failed: ${guard.error}; refusing merge this tick`);
+      continue;
+    }
+    if (guard.blocks.length || guard.frozen.length) {
+      await holdExecution(s, exec, 'ci', guard.blocks, guard.frozen);
+      continue;
+    }
+
     // Both gate evaluations passed. Proceed with merge.
     // VTID-04808 (Jev A7): shadow clash check against the other open PRs.
     clashCheckBeforeMerge(s, exec);
@@ -917,11 +1113,31 @@ export async function ciWatcherTick(): Promise<void> {
     // VTID-03853: real LLM merge review — see dev-autopilot-llm-review.ts's
     // header comment for why this exists here specifically (this is the
     // ONLY gate in the pipeline that a diff's actual content ever passes
-    // through before an autonomous merge). Off by default and fails open on
-    // any infrastructure problem; only a real, parsed "block" verdict stops
-    // the merge.
+    // through before an autonomous merge). Off by default. VTID-05146 (C3):
+    // fail-closed — a review that could not run is retried once; if it still
+    // cannot run, the merge is blocked and the PR stays open for a person.
     if (isLlmMergeReviewEnabled()) {
-      const review = await runLlmMergeReview({ repo: GITHUB_REPO, prNumber: exec.pr_number as number, vtid: WATCHER_VTID });
+      let review = await runLlmMergeReview({ repo: GITHUB_REPO, prNumber: exec.pr_number as number, vtid: WATCHER_VTID });
+      if (!review.ok) {
+        console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] LLM merge review could not run (${review.error}); retrying once`);
+        review = await runLlmMergeReview({ repo: GITHUB_REPO, prNumber: exec.pr_number as number, vtid: WATCHER_VTID });
+      }
+      if (!review.ok) {
+        await emitOasisEvent({
+          vtid: WATCHER_VTID,
+          type: 'dev_autopilot.execution.llm_review_unavailable',
+          source: 'dev-autopilot-watcher',
+          status: 'error',
+          message: `LLM merge review for ${exec.id.slice(0, 8)} could not run twice — merge blocked (fail-closed); PR ${exec.pr_url} left open for a person`,
+          payload: { execution_id: exec.id, pr_url: exec.pr_url, error: review.error, provider: review.provider, model: review.model },
+        });
+        // Not the change's fault: no self-heal child. The ledger closes as failed.
+        await transitionStatus(s, exec.id, 'merging', 'failed', {
+          metadata: { ...(exec.metadata || {}), llm_review_unavailable: review.error || review.summary },
+        });
+        await terminalizeVtidLedgerForExecution(s, exec.id, 'failed');
+        continue;
+      }
       await emitOasisEvent({
         vtid: WATCHER_VTID,
         type: review.passed ? 'dev_autopilot.execution.llm_review_passed' : 'dev_autopilot.execution.llm_review_blocked',

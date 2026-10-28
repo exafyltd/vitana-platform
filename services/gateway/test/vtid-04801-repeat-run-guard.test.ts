@@ -74,11 +74,12 @@ describe('VTID-04801 gate', () => {
     expect(call).not.toHaveBeenCalled();
   });
 
-  test('no failed attempt in the window: no row', async () => {
+  test('no failed attempt in the window: no Jev row, one skipped row (VTID-05012)', async () => {
     const call = jest.fn();
     expect(await runRepeatRunCheck({ executionId: 'e1', findingId: 'f1', load: async () => ctx({ previous: null }), env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(call).not.toHaveBeenCalled();
-    expect(rows).toHaveLength(0);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ jev_outcome: 'skipped', skip_reason: 'no_previous_run', cost_usd: 0 });
   });
 
   test('same plan version as the failed attempt: a rules row, no Jev call', async () => {
@@ -103,10 +104,11 @@ describe('VTID-04801 gate', () => {
     });
   });
 
-  test('a throwing loader or call never throws and writes nothing', async () => {
+  test('a throwing loader or call never throws and writes only a skipped error row (VTID-05012)', async () => {
     await expect(runRepeatRunCheck({ executionId: 'e', findingId: 'f', load: async () => { throw new Error('db'); }, env: SHADOW, sb })).resolves.toBeNull();
     await expect(runRepeatRunCheck({ executionId: 'e', findingId: 'f', load: async () => ctx(), env: SHADOW, sb, decideOptions: { call: jest.fn().mockRejectedValue(new Error('net')) } })).resolves.toBeNull();
-    expect(rows).toHaveLength(0);
+    expect(rows.filter((r) => r.jev_outcome === 'skipped').map((r) => r.skip_reason)).toEqual(['error', 'error']);
+    expect(rows.every((r) => r.jev_outcome === 'skipped')).toBe(true);
   });
 });
 

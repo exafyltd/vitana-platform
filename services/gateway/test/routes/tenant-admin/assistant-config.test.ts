@@ -67,6 +67,12 @@ jest.mock('@supabase/supabase-js', () => ({
         eq: jest.fn(() => ({
           eq: jest.fn(() => ({
             single: mockUserTenantsSingle,
+            // VTID-05147: requireTenantAdmin also reads the permitted roles
+            // (user_permitted_roles awaited here, memberships one .eq() deeper);
+            // the test caller holds a granted admin role.
+            eq: jest.fn(() => Promise.resolve({ data: [], error: null })),
+            then: (resolve: any, reject: any) =>
+              Promise.resolve({ data: [{ role: 'admin' }], error: null }).then(resolve, reject),
           })),
         })),
       })),

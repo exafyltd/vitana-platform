@@ -141,70 +141,86 @@ function deriveStatus(row: AgentRow): AgentRowWithDerivedStatus {
 }
 
 // =============================================================================
+// readAgentsRegistry — list all agents with derived status (VTID-05103: also
+// called directly by the in-gateway routine runner, agents-heartbeat)
+// =============================================================================
+
+export async function readAgentsRegistry(
+  params: { tier?: string; provider?: string; status?: string } = {}
+): Promise<{ ok: true; counts: any; agents: AgentRowWithDerivedStatus[]; by_tier: any } | { ok: false; error: string }> {
+  const { tier, provider, status } = params;
+
+  const filters: string[] = [];
+  if (tier) filters.push(`tier=eq.${encodeURIComponent(tier)}`);
+  if (provider) filters.push(`llm_provider=eq.${encodeURIComponent(provider)}`);
+  filters.push('select=*');
+  filters.push('order=tier.asc,agent_id.asc');
+
+  const result = await supabaseRequest<AgentRow[]>(
+    `/rest/v1/agents_registry?${filters.join('&')}`
+  );
+
+  if (!result.ok || !result.data) {
+    return { ok: false, error: result.error || 'Failed to load agents registry' };
+  }
+
+  let rows = result.data.map(deriveStatus);
+  if (status) {
+    rows = rows.filter((r) => r.derived_status === status);
+  }
+
+  const byTier = {
+    service: rows.filter((r) => r.tier === 'service'),
+    embedded: rows.filter((r) => r.tier === 'embedded'),
+    scheduled: rows.filter((r) => r.tier === 'scheduled'),
+  };
+
+  const counts = {
+    total: rows.length,
+    by_tier: {
+      service: byTier.service.length,
+      embedded: byTier.embedded.length,
+      scheduled: byTier.scheduled.length,
+    },
+    by_status: {
+      healthy: rows.filter((r) => r.derived_status === 'healthy').length,
+      degraded: rows.filter((r) => r.derived_status === 'degraded').length,
+      down: rows.filter((r) => r.derived_status === 'down').length,
+      unknown: rows.filter((r) => r.derived_status === 'unknown').length,
+    },
+    by_provider: {
+      claude: rows.filter((r) => r.llm_provider === 'claude').length,
+      gemini: rows.filter((r) => r.llm_provider === 'gemini').length,
+      conductor: rows.filter((r) => r.llm_provider === 'conductor').length,
+      none: rows.filter((r) => r.llm_provider === 'none').length,
+      unknown: rows.filter((r) => r.llm_provider === 'unknown' || r.llm_provider === null).length,
+    },
+  };
+
+  return { ok: true, counts, agents: rows, by_tier: byTier };
+}
+
+// =============================================================================
 // GET /api/v1/agents/registry — list all agents
 // =============================================================================
 
 agentsRegistryRouter.get('/api/v1/agents/registry', async (req: Request, res: Response) => {
   try {
-    const tier = typeof req.query.tier === 'string' ? req.query.tier : undefined;
-    const provider = typeof req.query.provider === 'string' ? req.query.provider : undefined;
-    const status = typeof req.query.status === 'string' ? req.query.status : undefined;
+    const result = await readAgentsRegistry({
+      tier: typeof req.query.tier === 'string' ? req.query.tier : undefined,
+      provider: typeof req.query.provider === 'string' ? req.query.provider : undefined,
+      status: typeof req.query.status === 'string' ? req.query.status : undefined,
+    });
 
-    const filters: string[] = [];
-    if (tier) filters.push(`tier=eq.${encodeURIComponent(tier)}`);
-    if (provider) filters.push(`llm_provider=eq.${encodeURIComponent(provider)}`);
-    filters.push('select=*');
-    filters.push('order=tier.asc,agent_id.asc');
-
-    const result = await supabaseRequest<AgentRow[]>(
-      `/rest/v1/agents_registry?${filters.join('&')}`
-    );
-
-    if (!result.ok || !result.data) {
-      return res.status(500).json({
-        ok: false,
-        error: result.error || 'Failed to load agents registry',
-      });
+    if (!result.ok) {
+      return res.status(500).json({ ok: false, error: result.error });
     }
-
-    let rows = result.data.map(deriveStatus);
-    if (status) {
-      rows = rows.filter((r) => r.derived_status === status);
-    }
-
-    const byTier = {
-      service: rows.filter((r) => r.tier === 'service'),
-      embedded: rows.filter((r) => r.tier === 'embedded'),
-      scheduled: rows.filter((r) => r.tier === 'scheduled'),
-    };
-
-    const counts = {
-      total: rows.length,
-      by_tier: {
-        service: byTier.service.length,
-        embedded: byTier.embedded.length,
-        scheduled: byTier.scheduled.length,
-      },
-      by_status: {
-        healthy: rows.filter((r) => r.derived_status === 'healthy').length,
-        degraded: rows.filter((r) => r.derived_status === 'degraded').length,
-        down: rows.filter((r) => r.derived_status === 'down').length,
-        unknown: rows.filter((r) => r.derived_status === 'unknown').length,
-      },
-      by_provider: {
-        claude: rows.filter((r) => r.llm_provider === 'claude').length,
-        gemini: rows.filter((r) => r.llm_provider === 'gemini').length,
-        conductor: rows.filter((r) => r.llm_provider === 'conductor').length,
-        none: rows.filter((r) => r.llm_provider === 'none').length,
-        unknown: rows.filter((r) => r.llm_provider === 'unknown' || r.llm_provider === null).length,
-      },
-    };
 
     return res.status(200).json({
       ok: true,
-      counts,
-      agents: rows,
-      by_tier: byTier,
+      counts: result.counts,
+      agents: result.agents,
+      by_tier: result.by_tier,
       timestamp: new Date().toISOString(),
     });
   } catch (error: any) {

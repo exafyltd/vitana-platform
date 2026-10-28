@@ -33,6 +33,32 @@ const GUARDED_HOST = /(^|\.)supabase\.co$|gateway\.vitanaland\.com$/;
 const PRODUCTION_HOST = /^(vitanaland\.com|www\.vitanaland\.com|gateway\.vitanaland\.com|dr-app\.vitanaland\.com|dr-gateway\.vitanaland\.com)$/;
 const ALWAYS_ALLOWED_WRITES = [/\/auth\/v1\/token(\?|$)/];
 
+// VTID-05129 — requests the app fires on almost every page that this guard
+// aborts but no spec should fail on. Each entry matches ONE blocked record
+// exactly ("METHOD URL", anchored), so a production-host record (suffixed
+// " (production host)") never matches. They STAY ABORTED; only the failure is
+// tolerated. MIRROR of DEFAULT_ALLOWED_ABORTS in lib.cjs — lib.test.cjs fails
+// if the two differ. A spec adds its own entries via allowAbortedWrites.
+const DEFAULT_ALLOWED_ABORTS: RegExp[] = [
+  // Telemetry beacons (fire-and-forget).
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/rum\/beacon(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/diag\/notif-tap(\?[^ ]*)?$/,
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/analytics\/events\/batch(\?[^ ]*)?$/,
+  // Voice widget warm-up on load (useOrbVoiceWidget) — only this path.
+  /^POST https:\/\/preview-aws-gateway\.vitanaland\.com\/api\/v1\/orb\/live\/session\/prewarm(\?[^ ]*)?$/,
+  // Chat presence and the activity log.
+  /^(POST|PATCH) https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/thread_presence(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/user_activity_log(\?[^ ]*)?$/,
+  // Read-only RPCs and functions (supabase-js sends rpc/invoke as POST).
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/(get_role_preference|get_my_permitted_roles|list_roles_for_active_tenant|get_profile_health_summary|get_user_profile_by_identifier)(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/list_my_memberships(\?[^ ]*)?$/,
+  // Real production writes fired app-wide on load, never a spec's subject:
+  // the daily Vitana Index upsert and daily match generation. The guard
+  // aborts them; specs only stop failing on that abort.
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/rest\/v1\/rpc\/health_compute_vitana_index(\?[^ ]*)?$/,
+  /^POST https:\/\/inmkhvwdcuyhnxkgfvsb\.supabase\.co\/functions\/v1\/generate-daily-matches(\?[^ ]*)?$/,
+];
+
 type GuardOptions = { allowAbortedWrites: RegExp | RegExp[] | null };
 type GuardFixtures = { stagingGuard: void };
 
@@ -96,7 +122,7 @@ export const test = base.extend<GuardOptions & GuardFixtures>({
       }
       const allow: RegExp[] =
         allowAbortedWrites == null ? [] : Array.isArray(allowAbortedWrites) ? allowAbortedWrites : [allowAbortedWrites];
-      const unexpected = blocked.filter((b) => !allow.some((r) => r.test(b)));
+      const unexpected = blocked.filter((b) => !DEFAULT_ALLOWED_ABORTS.some((r) => r.test(b)) && !allow.some((r) => r.test(b)));
       if (unexpected.length) {
         throw new Error(
           `staging-guard aborted ${unexpected.length} request(s) — staging writes reach production data, and a staging build must not call production:\n  ${unexpected.join('\n  ')}`,

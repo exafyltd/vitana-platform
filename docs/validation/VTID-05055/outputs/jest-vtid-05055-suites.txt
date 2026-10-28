@@ -1,0 +1,299 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-d8/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).
+
+      69 |   if (error) {
+      70 |     if (isMissingSchemaError(error)) {
+    > 71 |       console.warn('[VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).');
+         |               ^
+      72 |       return { ok: false, status: 503, error: 'MEMBER_CONFIRMATION_UNAVAILABLE' };
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:71:15)
+      at test/partner-health/link-confirmation.test.ts:115:17
+
+  console.warn
+    [VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).
+
+      69 |   if (error) {
+      70 |     if (isMissingSchemaError(error)) {
+    > 71 |       console.warn('[VTID-05055] fn_confirm_partner_link_request missing — migration not applied; refusing (no fallback to a direct link).');
+         |               ^
+      72 |       return { ok: false, status: 503, error: 'MEMBER_CONFIRMATION_UNAVAILABLE' };
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:71:15)
+      at test/partner-health/link-confirmation.test.ts:115:17
+
+  console.error
+    [VTID-05055] member confirm failed for inbox inbox-1: duplicate key value violates unique constraint "partner_health_test_orders_partner_ext_uidx"
+
+      73 |     }
+      74 |     // Rolled back by Postgres: the row is still 'pending_member'.
+    > 75 |     console.error(`[VTID-05055] member confirm failed for inbox ${row.id}: ${error.message}`);
+         |             ^
+      76 |     return { ok: false, status: 500, error: 'CONFIRM_FAILED' };
+      77 |   }
+      78 |
+
+      at materializeMemberConfirmedLink (src/services/partner-health/link-confirmation.ts:75:13)
+      at Object.<anonymous> (test/partner-health/link-confirmation.test.ts:122:19)
+
+PASS test/partner-health/link-confirmation.test.ts
+  materializeMemberConfirmedLink
+    ✓ success → link + order, health_test.order_created with the member as actor (19 ms)
+    ✓ RPC not_pending → 409, nothing emitted (2 ms)
+    ✓ RPC not_in_tenant → 409, nothing written (2 ms)
+    ✓ function missing (migration pending) → 503 MEMBER_CONFIRMATION_UNAVAILABLE (21 ms)
+    ✓ function missing (migration pending) → 503 MEMBER_CONFIRMATION_UNAVAILABLE (4 ms)
+    ✓ an RPC error leaves the row pending_member (rolled back) and a retry succeeds (6 ms)
+    ✓ the order stands when the audit emit fails (logged, not hidden, not rolled back) (2 ms)
+  declineMemberLink
+    ✓ pending_member → declined, member appended, row stays unresolved (4 ms)
+    ✓ 404 when the row is not the caller's; 409 when no longer pending; 409 when the CAS updates nothing (2 ms)
+  isMissingSchemaError
+    ✓ recognises missing columns/functions, nothing else (2 ms)
+  migration contract — fn_confirm_partner_link_request
+    ✓ exists, is SECURITY DEFINER with SET search_path = public and returns jsonb (2 ms)
+    ✓ EXECUTE is revoked from PUBLIC, anon and authenticated and granted to service_role only (1 ms)
+    ✓ locks the row, re-checks tenant membership on the STORED tenant, writes what confirm-match wrote (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-05055] link-requests: proposal columns missing (migration not applied) — answering an empty list.
+
+      67 |   if (error) {
+      68 |     if (isMissingSchemaError(error)) {
+    > 69 |       console.warn('[VTID-05055] link-requests: proposal columns missing (migration not applied) — answering an empty list.');
+         |               ^
+      70 |       return res.json({ ok: true, requests: [] });
+      71 |     }
+      72 |     return res.status(500).json({ ok: false, error: 'LINK_REQUESTS_UNAVAILABLE' });
+
+      at src/routes/partner-health-member.ts:69:15
+
+PASS test/vtid-05055-member-link-migration.test.ts
+  VTID-05055 migration
+    ✓ exists (2 ms)
+    ✓ is additive only — no drops, no RLS/policy changes, no deletes (1 ms)
+    ✓ adds every proposal column idempotently, all nullable except the declined-users array (2 ms)
+    ✓ constrains member_link_status to the three states
+    ✓ indexes pending requests by the proposed member (member reads are scoped by user) (1 ms)
+    ✓ switches partner_link_request ON exactly like VTID-04926 (idempotent, keeps an admin "off") (1 ms)
+  VTID-05055 gateway registries agree with the migration
+    ✓ the admin notification catalog lists partner_link_request as member/health with localized text
+    ✓ the notification type config sends it as push + in-app (1 ms)
+    ✓ the OASIS event union has the new health_test.* types (1 ms)
+    ✓ the notification text is translated in every shipped locale, DE in du-form (6 ms)
+
+PASS test/partner-health-member.test.ts
+  auth
+    ✓ get /api/v1/partner-health/member/link-requests → 401 without a user token, nothing read or written (37 ms)
+    ✓ post /api/v1/partner-health/member/link-requests/inbox-1/confirm → 401 without a user token, nothing read or written (13 ms)
+    ✓ post /api/v1/partner-health/member/link-requests/inbox-1/decline → 401 without a user token, nothing read or written (5 ms)
+  GET /link-requests
+    ✓ lists only the caller's pending rows, scoped by user_id and not by the session tenant (9 ms)
+    ✓ answers an empty list when the proposal columns are missing (migration not applied) (11 ms)
+    ✓ 500 on any other database error (never an empty list that hides a fault) (4 ms)
+  POST /link-requests/:id/confirm
+    ✓ 404 for another member's row — no existence leak, no RPC (6 ms)
+    ✓ happy path: creates the link + order through fn_confirm_partner_link_request, member is the actor (7 ms)
+    ✓ a member whose session is in tenant B confirms a request proposed in tenant A (the stored tenant is re-checked in the RPC) (7 ms)
+    ✓ second confirm → 409 (row no longer pending), no RPC (4 ms)
+    ✓ race: the RPC reports not_pending → 409 (4 ms)
+    ✓ 503 when the migration is not applied — never the old direct link (3 ms)
+  POST /link-requests/:id/decline
+    ✓ sets declined + appends the member to member_declined_user_ids, leaves the row unresolved, emits link_declined (6 ms)
+    ✓ 404 for another member's row (4 ms)
+    ✓ 409 when no longer pending (3 ms)
+    ✓ 503 when the migration is not applied (3 ms)
+  route mount
+    ✓ index.ts mounts the member router exactly once, at /api/v1/partner-health/member (1 ms)
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /orders: insert failed — failing closed
+
+      160 |     });
+      161 |     if (!result?.ok) {
+    > 162 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      163 |       return false;
+      164 |     }
+      165 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:162:15)
+      at src/routes/admin-partner-health.ts:232:19
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /inbox: insert failed — failing closed
+
+      160 |     });
+      161 |     if (!result?.ok) {
+    > 162 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      163 |       return false;
+      164 |     }
+      165 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:162:15)
+      at src/routes/admin-partner-health.ts:319:19
+
+  console.error
+    [VTID-05055] health_test.staff_read not written for GET /candidates/:inboxId: insert failed — failing closed
+
+      160 |     });
+      161 |     if (!result?.ok) {
+    > 162 |       console.error(`[VTID-05055] health_test.staff_read not written for ${route}: ${result?.error ?? 'unknown'} — failing closed`);
+          |               ^
+      163 |       return false;
+      164 |     }
+      165 |     return true;
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:162:15)
+      at src/routes/admin-partner-health.ts:365:19
+
+  console.error
+    [VTID-05055] health_test.staff_read threw for GET /orders: Error: network — failing closed
+
+      165 |     return true;
+      166 |   } catch (err) {
+    > 167 |     console.error(`[VTID-05055] health_test.staff_read threw for ${route}: ${String(err)} — failing closed`);
+          |             ^
+      168 |     return false;
+      169 |   }
+      170 | }
+
+      at auditStaffRead (src/routes/admin-partner-health.ts:167:13)
+      at src/routes/admin-partner-health.ts:232:19
+
+  console.warn
+    [VTID-05055] upload-result: body partner_key=doctorbox ignored; order order-1 belongs to partner_key=acme-labs.
+
+      415 |
+      416 |   if (bodyPartnerKey && bodyPartnerKey !== partnerKey) {
+    > 417 |     console.warn(`[VTID-05055] upload-result: body partner_key=${bodyPartnerKey} ignored; order ${orderId} belongs to partner_key=${partnerKey}.`);
+          |             ^
+      418 |     await emitOasisEvent({
+      419 |       vtid: VTID_D8,
+      420 |       type: 'health_test.partner_key_mismatch',
+
+      at src/routes/admin-partner-health.ts:417:13
+
+  console.error
+    [VTID-05055] upload-result: order order-1 has no partner_registry row — refusing (no default partner).
+
+      410 |   const partnerKey = typeof registry?.partner_key === 'string' && registry.partner_key ? registry.partner_key : null;
+      411 |   if (!partnerKey) {
+    > 412 |     console.error(`[VTID-05055] upload-result: order ${orderId} has no partner_registry row — refusing (no default partner).`);
+          |             ^
+      413 |     return res.status(500).json({ ok: false, error: 'PARTNER_NOT_REGISTERED' });
+      414 |   }
+      415 |
+
+      at src/routes/admin-partner-health.ts:412:13
+
+  console.warn
+    [VTID-05055] upload-result: body partner_key=doctorbox ignored; order order-1 belongs to partner_key=labcorp-api.
+
+      415 |
+      416 |   if (bodyPartnerKey && bodyPartnerKey !== partnerKey) {
+    > 417 |     console.warn(`[VTID-05055] upload-result: body partner_key=${bodyPartnerKey} ignored; order ${orderId} belongs to partner_key=${partnerKey}.`);
+          |             ^
+      418 |     await emitOasisEvent({
+      419 |       vtid: VTID_D8,
+      420 |       type: 'health_test.partner_key_mismatch',
+
+      at src/routes/admin-partner-health.ts:417:13
+
+PASS test/admin-partner-health.test.ts
+  admin-partner-health — auth
+    ✓ 401 without any token (31 ms)
+    ✓ 403 for an authenticated caller with no admin/partner-org access at all (VTID-03932) (7 ms)
+  GET /orders
+    ✓ returns orders (admin scope, no partner_id filter) (6 ms)
+  GET /orders — org-scoped access (VTID-03932)
+    ✓ staff sees any order for their org's linked partner (5 ms)
+    ✓ professional sees only orders assigned to them (6 ms)
+  PATCH /orders/:id
+    ✓ 400 when status is result_ready (derived state, not settable here) (18 ms)
+    ✓ 404 when the order does not exist (5 ms)
+    ✓ 200 happy path — delegates to recordStatusChange (5 ms)
+    ✓ 403 when a professional attempts to PATCH an order not assigned to them (VTID-03932) (7 ms)
+    ✓ 200 when a professional PATCHes an order assigned to them (5 ms)
+  GET /inbox
+    ✓ returns unresolved inbox rows (4 ms)
+  GET /candidates/:inboxId
+    ✓ returns a note (no candidates) when the raw payload has no merchant_id (4 ms)
+    ✓ returns ranked candidates when a merchant_id is present (4 ms)
+  POST /inbox/:id/upload-result
+    ✓ 400 when order_id is missing (4 ms)
+    ✓ 200 happy path — delegates to the adapter + ingestPartnerResult (4 ms)
+  POST /inbox/:id/confirm-match
+    ✓ 400 when matched_user_id/matched_tenant_id are missing (4 ms)
+    ✓ 404 when the inbox row does not exist (4 ms)
+    ✓ 409 when the inbox row is already resolved (4 ms)
+  POST /inbox/:id/confirm-match — member proposal (VTID-05055)
+    ✓ 202 — writes the proposal, notifies the member with tt() keys, creates NO link and NO order (8 ms)
+    ✓ 400 USER_NOT_IN_TENANT when the named user is not a member of the named tenant (9 ms)
+    ✓ 409 when the row is already waiting for a member (4 ms)
+    ✓ 409 MEMBER_DECLINED when the same member already declined this row (3 ms)
+    ✓ 202 for a DIFFERENT member after someone else declined (4 ms)
+    ✓ 409 when the compare-and-set updates no row (changed concurrently) (4 ms)
+    ✓ 503 MEMBER_CONFIRMATION_UNAVAILABLE without the migration — and never the old direct link (4 ms)
+    ✓ 403 for a professional-only org member (full partner access required) (3 ms)
+  audited staff reads (VTID-05055)
+    ✓ GET /orders emits health_test.staff_read with the actor and ids only (5 ms)
+    ✓ GET /inbox emits health_test.staff_read without raw_payload and selects the proposal columns (4 ms)
+    ✓ GET /inbox falls back to the legacy column list when the migration is missing (3 ms)
+    ✓ GET /candidates/:inboxId emits health_test.staff_read with the candidate user ids (3 ms)
+    ✓ GET /orders fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (17 ms)
+    ✓ GET /inbox fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (4 ms)
+    ✓ GET /candidates/inbox-1 fails closed with 503 AUDIT_UNAVAILABLE when the audit event is not written (5 ms)
+    ✓ fails closed when the audit emit throws (5 ms)
+    ✓ 401 and 403 paths emit nothing (8 ms)
+  POST /inbox/:id/upload-result — partner_key from the order (VTID-05055)
+    ✓ a body 'doctorbox' on a self-registered partner's order → ingestion runs with the org's own key and the manual format (5 ms)
+    ✓ derives doctorbox from the order (no body key needed) and records no manual format (3 ms)
+    ✓ 500 PARTNER_NOT_REGISTERED when the order has no partner_registry row — never a 'doctorbox' default (3 ms)
+    ✓ 400 NO_ADAPTER for a non-manual partner without an adapter (5 ms)
+  POST /inbox/manual
+    ✓ 400 when partner_id or raw_payload is missing (9 ms)
+    ✓ 403 for a professional-only org member (assigned-order-only, not full access) (2 ms)
+    ✓ 201 happy path for admin — no candidates given, reason=no_match (4 ms)
+    ✓ 201 happy path for the org's own staff — candidate user ids given, reason=ambiguous_match (3 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       83 passed, 83 total
+Snapshots:   0 total
+Time:        1.995 s, estimated 2 s
+Ran all test suites matching /test\/admin-partner-health.test.ts|test\/partner-health-member.test.ts|test\/partner-health\/link-confirmation.test.ts|test\/vtid-05055-member-link-migration.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

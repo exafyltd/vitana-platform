@@ -25,7 +25,9 @@ import { PLAN_SPARRING_REPOS, createCodeToolExecutor, planSparringGithubToken } 
 import { runPartnerPass, type CallLlm, type ExecuteTool } from './partner';
 import * as repo from './plan-sparring-repository';
 import {
+  APPROVAL_POLICIES,
   ROUND_CAPS,
+  type ApprovalPolicy,
   type ChangeClass,
   type EscalationReason,
   type Finding,
@@ -42,6 +44,27 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PASS_DEADLINE_MS: Record<ChangeClass, number> = { light: 10 * 60_000, standard: 15 * 60_000, expedited: 5 * 60_000 };
 /** Sessions that never got a real review may be re-run instead of deduplicated. */
 const RETRYABLE_REASONS: string[] = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
+/**
+ * VTID-05254: age after which an in_progress session with no round is treated as dead. A dead pass and a
+ * slow live one look the same on the row, so this is flat and well past the longest pass deadline (15 min).
+ */
+export const STALE_AFTER_MS = 60 * 60_000;
+
+/**
+ * VTID-05254: true when the session's round-1 partner pass died before writing anything — in_progress,
+ * no rounds, unapproved, and last touched more than STALE_AFTER_MS ago. A missing or unparsable timestamp
+ * counts as not dead.
+ */
+export function isDeadRoundOne(s: SparringSession, nowMs: number): boolean {
+  if (s.verdict !== 'in_progress') return false;
+  if ((s.rounds ?? []).length !== 0) return false;
+  if (s.human_approved_by || s.policy_approved_at) return false;
+  const ts = s.updated_at ?? s.created_at;
+  if (!ts) return false;
+  const t = Date.parse(ts);
+  if (Number.isNaN(t)) return false;
+  return t < nowMs - STALE_AFTER_MS;
+}
 
 export interface PlanSparringDeps {
   sb: SupabaseClient;
@@ -89,6 +112,8 @@ export interface CreateInput {
   repo?: string;
   extra_refs?: Record<string, string>;
   plan_id?: string;
+  /** VTID-05214: ask for policy approval when the session converges (PLAN-SPAR.yml sends `converged-auto-v1`). */
+  approval_policy?: ApprovalPolicy;
 }
 
 export function validateCreateInput(body: unknown): CreateInput {
@@ -112,6 +137,9 @@ export function validateCreateInput(body: unknown): CreateInput {
     }
   }
   if (b.plan_id !== undefined && (typeof b.plan_id !== 'string' || !UUID_RE.test(b.plan_id))) throw new SparringError(400, 'plan_id_invalid');
+  if (b.approval_policy !== undefined && !(APPROVAL_POLICIES as readonly string[]).includes(b.approval_policy as string)) {
+    throw new SparringError(400, 'approval_policy_invalid');
+  }
   return {
     plan_text: b.plan_text,
     producer: b.producer,
@@ -120,6 +148,7 @@ export function validateCreateInput(body: unknown): CreateInput {
     repo: repoName,
     extra_refs: extra,
     plan_id: b.plan_id as string | undefined,
+    ...(b.approval_policy !== undefined ? { approval_policy: b.approval_policy as ApprovalPolicy } : {}),
   };
 }
 
@@ -239,9 +268,22 @@ export async function createSparringSession(
   if (existing.error) throw new SparringError(502, 'store_error', existing.error.message);
   if (existing.data) {
     const e = existing.data;
-    const retryable =
-      !e.human_approved_by && e.verdict === 'escalated' && (e.escalation_reasons ?? []).some((r) => RETRYABLE_REASONS.includes(r));
-    if (!retryable) return { session: e, deduplicated: true };
+    const nowMs = (deps.now ?? Date.now)();
+    if (isDeadRoundOne(e, nowMs)) {
+      // VTID-05254: the round-1 pass died; escalate the dead row (guarded) and re-run on a fresh session.
+      const upd = await repo.escalateDeadRoundOne(deps.sb, e.id, new Date(nowMs - STALE_AFTER_MS).toISOString());
+      if (upd.error) throw new SparringError(502, 'store_error', upd.error.message);
+      if (!upd.data || upd.data.length === 0) {
+        // Lost the race (another request changed the row): return the newest row, no insert.
+        const again = await repo.fetchSessionByPlanHash(deps.sb, input.producer, plan.hash);
+        if (again.error) throw new SparringError(502, 'store_error', again.error.message);
+        return { session: again.data ?? e, deduplicated: true };
+      }
+    } else {
+      const retryable =
+        !e.human_approved_by && e.verdict === 'escalated' && (e.escalation_reasons ?? []).some((r) => RETRYABLE_REASONS.includes(r));
+      if (!retryable) return { session: e, deduplicated: true };
+    }
   }
 
   const ins = await repo.insertSession(deps.sb, {
@@ -251,6 +293,7 @@ export async function createSparringSession(
     change_class: input.change_class,
     trust_tier: 'gateway',
     base_ref: input.base_ref,
+    ...(input.approval_policy ? { approval_policy: input.approval_policy } : {}),
   });
   if (ins.error || !ins.data) throw new SparringError(502, 'store_error', ins.error?.message ?? 'insert returned no row');
   const session = ins.data;
@@ -323,7 +366,7 @@ export function validateRoundInput(body: unknown): { responses: PlannerResponse[
 export async function submitPlannerRound(id: string, body: unknown, deps: PlanSparringDeps): Promise<SparringSession> {
   const input = validateRoundInput(body);
   const session = await mustFetch(deps, id);
-  if (session.human_approved_by) throw new SparringError(409, 'already_approved');
+  if (session.human_approved_by || session.policy_approved_at) throw new SparringError(409, 'already_approved');
   if (session.verdict !== 'in_progress') throw new SparringError(409, `session_${session.verdict}`);
   const previous = session.rounds[session.rounds.length - 1];
   if (!previous || !previous.review) throw new SparringError(409, 'no_review_to_answer');
@@ -395,6 +438,13 @@ export async function submitPlannerRound(id: string, body: unknown, deps: PlanSp
     { round: n, at, plan_hash: plan.hash, plan_text: plan.canonical, planner_responses: input.responses, review: pass.review, tool_log: pass.toolLog, evidence_floor: pass.evidenceFloor, repo_refs: refs },
     state,
   );
+  // VTID-05214: a converged session that asked for it is approved by policy (owner decision 2026-10-14). Every finding
+  // of the previous pass was answered (checked above) and the final hash is the hash of the plan text just reviewed.
+  // Never for an escalated session.
+  if (state.verdict === 'converged' && session.approval_policy) {
+    const p = await repo.recordPolicyApproval(deps.sb, session.id, { rule: session.approval_policy, at });
+    if (p.error) throw new SparringError(502, 'store_error', `policy_approval: ${p.error.message}`);
+  }
   return mustFetch(deps, id);
 }
 
@@ -420,7 +470,8 @@ export async function approveSparringSession(
   if (!actor || typeof actor.user_id !== 'string' || !UUID_RE.test(actor.user_id)) throw new SparringError(403, 'verified_actor_required');
   const b = (body ?? {}) as Record<string, unknown>;
   const session = await mustFetch(deps, id);
-  if (session.human_approved_by) throw new SparringError(409, 'already_approved');
+  // VTID-05214: a policy-approved session is already approved.
+  if (session.human_approved_by || session.policy_approved_at) throw new SparringError(409, 'already_approved');
   if (session.trust_tier !== 'gateway' || session.verdict === 'pending_human_approval') {
     throw new SparringError(409, 'gateway_pass_required');
   }

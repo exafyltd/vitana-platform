@@ -168,7 +168,9 @@ jobs:
       # additional round trip, six more report rows.
       - name: '5-12. Database + governance health (RPCs)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -343,7 +345,9 @@ jobs:
       # duplicating the check (CLAUDE.md ALWAYS 9).
       - name: '16. ORB session-state health (VTID-03480 regression guard)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -376,7 +380,9 @@ jobs:
       # ALERT-OASIS-LEDGER-INTEGRITY.yml.
       - name: '17. OASIS ledger integrity (VTID-03516 regression guard)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -481,9 +487,18 @@ jobs:
       # something is being written, memory reaches the prompt, >=90% of rows
       # older than 2h are embedded, no new DLQ rows, AP-0910 ran in the last
       # 3h, and no same-value fact churn (VTID-04341 regression guard).
+      #
+      # VTID-05088: "nothing written" only fails when somebody actually spoke.
+      # On 2026-10-11 row 21 went red on a day nobody had a voice conversation
+      # while the pipeline was healthy. user_speech_turns_24h is counted from
+      # the speech stream, upstream of the writer, so a broken writer still
+      # shows speech > 0 and fails here; speech that never reached the writer
+      # (transcript_turns_24h = 0) fails as speech-not-recorded.
       - name: '21. Memory system health (VTID-04345)'
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
         run: |
           set +e
@@ -506,16 +521,52 @@ jobs:
           AP=$(jq -r '.ap0910_last_run // ""' mem.json)
           AP_AGE_H=999
           if [ -n "$AP" ]; then AP_AGE_H=$(( ( $(date -u +%s) - $(date -u -d "$AP" +%s) ) / 3600 )); fi
+          SPEECH=$(j .user_speech_turns_24h); TURNS=$(j .transcript_turns_24h)
           BAD=""
-          [ "$WRITES" -eq 0 ] && BAD="$BAD no-memory-writes-24h;"
+          [ "$SPEECH" -gt 0 ] && [ "$WRITES" -eq 0 ] && BAD="$BAD no-memory-writes-24h;"
+          [ "$SPEECH" -gt 0 ] && [ "$TURNS" -eq 0 ] && BAD="$BAD speech-not-recorded;"
           [ "$CTX" -gt 0 ] && [ "$CTX_MEM" -eq 0 ] && BAD="$BAD memory-never-reached-prompt;"
           [ "$COV" -lt 90 ] && BAD="$BAD embedding-coverage-${COV}pct;"
           [ "$DLQ" -gt 0 ] && BAD="$BAD dlq-${DLQ}-new;"
           [ "$AP_AGE_H" -gt 3 ] && BAD="$BAD AP-0910-last-run-${AP_AGE_H}h-ago;"
           [ "$LANG" -gt 25 ] && BAD="$BAD preferred_language-churn-${LANG};"
-          D="writes/24h $WRITES, prompt-with-memory $CTX_MEM/$CTX, with-diary $CTX_DIARY, embedded ${COV}% ($EMB/$ROWS), dlq-new $DLQ, AP-0910 ${AP_AGE_H}h ago"
+          if [ "$SPEECH" -eq 0 ]; then SP="no user speech in 24h (nothing to remember)"; else SP="user speech turns $SPEECH, recorded $TURNS"; fi
+          D="$SP, writes/24h $WRITES, prompt-with-memory $CTX_MEM/$CTX, with-diary $CTX_DIARY, embedded ${COV}% ($EMB/$ROWS), dlq-new $DLQ, AP-0910 ${AP_AGE_H}h ago"
           if [ -z "$BAD" ]; then R=PASS; else R=FAIL; D="$BAD $D"; fi
           echo "| 21 | Memory system health | $R | $D |" >> "$REPORT"
+
+      # 21b — Tenant isolation health (VTID-05149). REPORT-ONLY: always INFO,
+      # never FAIL, not counted in TOTAL_CHECKS, so nothing here pages anyone.
+      # ci_tenant_isolation_health() (M3, 20261014000300) counts rows whose
+      # tenant_id points at no tenant or is NULL, users with 0 or 2+ primary
+      # memberships and memberships/user_tenants drift. The baseline is not 0
+      # (2026-10-13: 3,628 foreign, 2,158 NULL); paging thresholds come with
+      # the WS2 cleanup that drives them to 0.
+      - name: '21b. Tenant isolation health (report-only, VTID-05149)'
+        env:
+          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+        run: |
+          set +e
+          HTTP=$(curl -sS -o iso.json -w '%{http_code}' \
+            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_tenant_isolation_health" \
+            -H "apikey: $SUPABASE_SERVICE_ROLE" \
+            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
+            -H 'Content-Type: application/json' -d '{}')
+          if [ "$HTTP" != "200" ]; then
+            echo "| 21b | Tenant isolation health | INFO | RPC HTTP $HTTP (not applied yet?) |" >> "$REPORT"
+            exit 0
+          fi
+          if ! jq -e 'type == "object"' iso.json >/dev/null 2>&1; then
+            echo "| 21b | Tenant isolation health | INFO | RPC HTTP 200 but the reply is not a JSON object |" >> "$REPORT"
+            exit 0
+          fi
+          j() { jq -r "$1 // 0" iso.json 2>/dev/null; }
+          TOP=$(jq -r '[(.foreign_tenant_tables // [])[:3][] | "\(.table) \(.rows)"] | join(", ")' iso.json 2>/dev/null)
+          ERRS=$(jq -r '(.scan_errors // []) | length' iso.json 2>/dev/null)
+          D="foreign $(j .foreign_tenant_rows) (top: ${TOP:-none}), null $(j .null_tenant_rows), primary 0/2+: $(j .users_zero_primary)/$(j .users_multi_primary), drift $(j .memberships_not_in_user_tenants)/$(j .user_tenants_not_in_memberships), default=$(j .default_tenant_count)"
+          [ "${ERRS:-0}" != "0" ] && D="$D, scan errors $ERRS"
+          echo "| 21b | Tenant isolation health | INFO | $D |" >> "$REPORT"
 
       # VTID-03666: watchlist extended with the three newer ALERT-*.yml
       # workflows that did not exist when this list was first written —

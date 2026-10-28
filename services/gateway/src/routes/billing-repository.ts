@@ -278,6 +278,12 @@ export function fetchVoiceDegradeEventsSince(sb: any, since: string) {
     .gte('created_at', since);
 }
 
+/**
+ * VTID-05044: every tenant's feature_flags. This used to be .maybeSingle(),
+ * which errors as soon as a second tenant_settings row exists — the error was
+ * dropped and /admin/metrics silently reported a null marketing budget. The
+ * budget is kept per tenant (fn_redeem_code), so the caller aggregates.
+ */
 export function fetchTenantSettingsFeatureFlags(sb: any) {
-  return sb.from('tenant_settings').select('feature_flags').maybeSingle();
+  return sb.from('tenant_settings').select('tenant_id, feature_flags');
 }

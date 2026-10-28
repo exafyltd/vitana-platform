@@ -48,7 +48,7 @@ import { assertPublicHost, detectPlatform } from './platform-detect';
 import { PRODUCT_FIELDS, catalogueEvent, findOrgMerchant, syncCatalogueStep } from './partner-setup';
 import { isPartnerTriageOn, runPartnerTriage } from './jev/gates/partner-triage-gate';
 import { loadChecklist, loadOrg, makeOrgKey, type OrgRow, type Supa } from '../routes/partner-onboarding';
-import { ProductPatchSchema, SHIPS_SOMEWHERE_MESSAGE, shipsSomewhere } from '../routes/vcaop-portal-my-products';
+import { ProductPatchSchema, SHIPS_SOMEWHERE_MESSAGE, shipsSomewhere, withSupplierCatalogCheck } from '../routes/vcaop-portal-my-products';
 import { insertConnection } from '../routes/vcaop-portal-my';
 import {
   CONNECTIONS_LOCKED_STATES,
@@ -476,7 +476,11 @@ export async function listCatalogue(s: Supa, caller: Caller, orgId: string): Pro
     .order('updated_at', { ascending: false })
     .limit(500);
   if (pErr) return fail(500, { error: pErr.message });
-  return { status: 200, body: { ok: true, merchant: found.merchant, products: data ?? [] } };
+  // VTID-05153: the catalogue check's result reaches the supplier shaped.
+  return {
+    status: 200,
+    body: { ok: true, merchant: found.merchant, products: ((data ?? []) as Array<Record<string, unknown>>).map(withSupplierCatalogCheck) },
+  };
 }
 
 /** Change one of the org's products (never makes it live). */
@@ -522,9 +526,11 @@ export async function updateProduct(
   // VTID-04933: `attributes.admin_listing` is the admin's listing decision
   // (keep offline / allow listing). A supplier never sets it, and replacing
   // `attributes` keeps the decision that is already there.
+  // VTID-05153: the same for `attributes.catalog_check`, the catalogue
+  // check's result (the schema already drops both keys from the input).
   const patch: Record<string, unknown> = { ...parsed.data };
   if (patch.attributes && typeof patch.attributes === 'object') {
-    const { admin_listing: _ignored, ...supplierAttrs } = patch.attributes as Record<string, unknown>;
+    const { admin_listing: _ignored, catalog_check: _ignoredCheck, ...supplierAttrs } = patch.attributes as Record<string, unknown>;
     const { data: cur, error: curErr } = await s
       .from('products')
       .select('attributes')
@@ -533,8 +539,11 @@ export async function updateProduct(
       .maybeSingle();
     if (curErr) return fail(500, { error: curErr.message });
     if (!cur) return fail(404, { error: 'PRODUCT_NOT_FOUND' });
-    const kept = ((cur as { attributes?: Record<string, unknown> | null }).attributes ?? {}).admin_listing;
-    patch.attributes = kept === undefined ? supplierAttrs : { ...supplierAttrs, admin_listing: kept };
+    const curAttrs = (cur as { attributes?: Record<string, unknown> | null }).attributes ?? {};
+    const kept: Record<string, unknown> = {};
+    if (curAttrs.admin_listing !== undefined) kept.admin_listing = curAttrs.admin_listing;
+    if (curAttrs.catalog_check !== undefined) kept.catalog_check = curAttrs.catalog_check;
+    patch.attributes = { ...supplierAttrs, ...kept };
   }
 
   // merchant_id is the authorization: another org's product matches no row.
@@ -551,7 +560,7 @@ export async function updateProduct(
   const step = await syncCatalogueStep(s, org.id, merchantId, caller.userId);
   if (step.error) return fail(500, { error: step.error });
   if (step.changed) await catalogueEvent(org.id, step, caller.userId);
-  return orgState(s, org.id, 200, { product: data });
+  return orgState(s, org.id, 200, { product: withSupplierCatalogCheck(data as Record<string, unknown>) });
 }
 
 

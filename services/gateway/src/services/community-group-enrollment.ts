@@ -13,6 +13,7 @@
 
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './community-group-enrollment-repository';
+import { fetchExcludedTestServiceAccountIdsStrict } from '../lib/excluded-test-service-accounts';
 
 /**
  * Reads a numeric member cap from a group's metadata. Returns null (uncapped)
@@ -37,6 +38,21 @@ export async function addUserToSystemGroups(
   const tag = '[GroupEnrollment]';
 
   try {
+    // VTID-05038: a registered service/test account never joins a group roster
+    // (CLAUDE.md rules 43/45). Fail closed: if the allowlists can't be read,
+    // enrol nobody this time — the DB trigger and the next login cover a real
+    // member.
+    const excluded = await fetchExcludedTestServiceAccountIdsStrict(supabase);
+    if (!excluded.ok) {
+      console.warn(`${tag} Exclusion lookup failed, skipping enrollment: ${excluded.error}`);
+      skipped.push({ group_id: '*', reason: 'exclusion_lookup_failed' });
+      return { added, skipped };
+    }
+    if (excluded.ids.has(userId)) {
+      skipped.push({ group_id: '*', reason: 'excluded_account' });
+      return { added, skipped };
+    }
+
     const { data: groups, error: groupsErr } = await repo.fetchSystemChatGroups(supabase, tenantId);
 
     if (groupsErr) {

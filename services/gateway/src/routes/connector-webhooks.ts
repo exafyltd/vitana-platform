@@ -8,7 +8,9 @@
  * mirrored to OASIS, and the raw webhook is logged for audit.
  *
  * No auth — webhooks come from third parties. Security is via HMAC
- * signature in the connector's own verifyTerraSignature / equivalent.
+ * signature, verified over the RAW body (index.ts mounts express.raw on
+ * /api/v1/connectors/webhook) by connectors/runtime/webhook-signature.ts.
+ * Every verifier fails closed when its secret is unset (VTID-05031).
  */
 
 import { Router, Request, Response } from 'express';
@@ -16,6 +18,8 @@ import { getSupabase } from '../lib/supabase';
 import { getConnector } from '../connectors';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import * as repo from './connector-webhooks-repository';
+import { dualWriteUserConnections } from '../services/health-sources/legacy-mirror';
+import { bridgeWearableDays, isWearableFeatureBridgeEnabled, utcDateOf } from '../services/wearable-features-bridge';
 
 const router = Router();
 
@@ -77,7 +81,8 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
         payload: parsedPayload as object,
       });
     }
-    return res.status(500).json({ ok: false, error: message });
+    // VTID-05031: the exception text stays in the audit row, never in the response.
+    return res.status(500).json({ ok: false, error: 'handler_error' });
   }
 
   if (!result.valid) {
@@ -97,6 +102,15 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
   // Persist normalized events
   let persisted = 0;
   let skipped = 0;
+  // VTID-05089: member-days whose wearable rows persisted without error,
+  // bridged into health_features_daily once per user after the loop.
+  const bridgeTargets = new Map<string, { tenantId: string; dates: Set<string> }>();
+  const noteBridgeDay = (uid: string, tid: string, date: string | null) => {
+    if (!date) return;
+    const t = bridgeTargets.get(uid) ?? { tenantId: tid, dates: new Set<string>() };
+    t.dates.add(date);
+    bridgeTargets.set(uid, t);
+  };
   for (const event of result.events) {
     const userId = event.user_id ?? null;
     try {
@@ -128,14 +142,20 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
           provider_user_id: (event.payload.terra_user_id as string | undefined) ?? null,
           provider_username: (event.payload.provider as string | undefined) ?? null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_completed');
       }
 
       // On auth.revoked: flip inactive
       if (event.topic === 'connector.wearable.auth.revoked' && conn) {
+        // VTID-05030: the vendor revoked access — stored tokens are dead, wipe them.
         await repo.updateUserConnectionState(supabase, conn.id, {
           is_active: false,
           disconnected_at: new Date().toISOString(),
+          access_token: null,
+          refresh_token: null,
+          token_expires_at: null,
         });
+        dualWriteUserConnections(supabase, { user_id: userId, connector_id: connector.id }, 'webhook.auth_revoked');
       }
 
       // On data events: upsert into daily metrics / workouts
@@ -166,18 +186,20 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
               patch[k] = event.payload[k];
             }
           }
-          await repo.upsertWearableDailyMetrics(supabase, patch);
+          const dm = await repo.upsertWearableDailyMetrics(supabase, patch);
+          if (!dm?.error) noteBridgeDay(userId, tenantId, metric_date);
         }
       } else if (event.topic === 'connector.wearable.workout.recorded') {
         if (tenantId) {
-          await repo.upsertWearableWorkout(supabase, {
+          const startedAt = (event.payload.started_at as string | null) ?? new Date().toISOString();
+          const wo = await repo.upsertWearableWorkout(supabase, {
             tenant_id: tenantId,
             user_id: userId,
             user_connection_id: userConnectionId,
             provider,
             external_workout_id: (event.payload.external_workout_id as string | null) ?? null,
             workout_type: (event.payload.workout_type as string | null) ?? null,
-            started_at: (event.payload.started_at as string | null) ?? new Date().toISOString(),
+            started_at: startedAt,
             ended_at: (event.payload.ended_at as string | null) ?? null,
             duration_minutes: (event.payload.duration_minutes as number | null) ?? null,
             distance_meters: (event.payload.distance_meters as number | null) ?? null,
@@ -186,6 +208,7 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
             max_hr: (event.payload.max_hr as number | null) ?? null,
             raw: event.raw ?? null,
           });
+          if (!wo?.error) noteBridgeDay(userId, tenantId, utcDateOf(startedAt));
         }
       }
 
@@ -207,6 +230,22 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
     }
   }
 
+  // VTID-05089 (Health Hub D6a): bridge persisted member-days into
+  // health_features_daily + one Index recompute, once per distinct user.
+  // Dark unless WEARABLE_FEATURE_BRIDGE_ENABLED === 'true' and not staging.
+  // A bridge failure never changes this webhook's response: the raw data is
+  // already stored, and the 02:00 recompute plus the next webhook repair it.
+  if (supabase && bridgeTargets.size > 0 && isWearableFeatureBridgeEnabled()) {
+    for (const [uid, t] of bridgeTargets) {
+      try {
+        await bridgeWearableDays(supabase, { tenantId: t.tenantId, userId: uid, dates: Array.from(t.dates) });
+      } catch (err: unknown) {
+        const message = err instanceof Error ? err.message : String(err);
+        console.warn(`[connector-webhook] wearable features bridge failed: ${message}`);
+      }
+    }
+  }
+
   if (supabase) {
     await repo.insertConnectorWebhookLog(supabase, {
       connector_id: connectorId,
@@ -214,10 +253,27 @@ router.post('/webhook/:connectorId', async (req: Request, res: Response) => {
       signature_valid: true,
       processed: true,
       payload: parsedPayload as object,
+      // VTID-05174: erase_user_data() reaches this row directly. Only here,
+      // after signature verification; the failure sites above stay NULL
+      // (their payload is unauthenticated).
+      user_id: singleBatchMember(result.events),
     });
   }
 
   res.json({ ok: true, processed: persisted, skipped });
 });
+
+/**
+ * VTID-05174: the member a verified batch belongs to — set only when every
+ * normalized event resolved to the same non-null member; an empty, mixed or
+ * partly unresolved batch gives null (the erasure endpoint's payload match
+ * still covers those rows).
+ */
+export function singleBatchMember(events: Array<{ user_id?: string | null }>): string | null {
+  if (events.length === 0) return null;
+  const first = events[0].user_id ?? null;
+  if (!first) return null;
+  return events.every((e) => (e.user_id ?? null) === first) ? first : null;
+}
 
 export default router;

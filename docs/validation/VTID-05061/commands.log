@@ -1,0 +1,16 @@
+$ cd services/gateway
+$ npx jest test/vtid-05061-reaper-sparring-guard.test.ts test/vtid-03818-reaper-terminal-flag.test.ts
+Tests: 10 passed, 10 total (2 suites)
+$ (mutation M1..M5 applied one at a time, file restored after each) npx jest test/vtid-05061-reaper-sparring-guard.test.ts
+M1 drop guard from candidate SELECT       -> Tests: 2 failed, 5 passed, 7 total
+M2 drop guard from PATCH filter           -> Tests: 2 failed, 5 passed, 7 total
+M3 drop sparring_id filter (both)         -> Tests: 2 failed, 5 passed, 7 total
+M4 drop sparring_id_unverified (both)     -> Tests: 2 failed, 5 passed, 7 total
+M5 drop the warn                          -> Tests: 1 failed, 6 passed, 7 total
+$ npm run test:operator
+Tests: 40 passed, 40 total
+$ npx tsc --noEmit -p . --declaration false
+(tsconfig error TS5069: declarationMap needs declaration; flag combination rejected by this tsconfig)
+$ npx tsc --noEmit -p .
+1 error: src/services/connected-apps/contacts-import.ts TS2307 'libphonenumber-js' not found (untouched file; the
+local node_modules lacks the declared dependency; identical on the baseline without this change). No error in touched files.

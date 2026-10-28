@@ -15,6 +15,7 @@
  */
 
 import type { SupabaseClient } from '@supabase/supabase-js';
+import { recordIndexRecompute, type IndexRecomputeTrigger } from '../vitana-index/record-recompute';
 
 export async function fetchUserTenantIdForVoiceLog(sb: SupabaseClient, userId: string) {
   return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).limit(1).maybeSingle();
@@ -56,6 +57,18 @@ export async function upsertManualEntryUserIntegration(
   return sb.from('user_integrations').upsert(row, { onConflict: 'user_id,integration_id' });
 }
 
-export async function computeVitanaIndexForUser(sb: SupabaseClient, userId: string, date: string) {
-  return sb.rpc('health_compute_vitana_index_for_user', { p_user_id: userId, p_date: date });
+/** VTID-05168: locked + recorded recompute (see services/vitana-index/record-recompute.ts). */
+export async function computeVitanaIndexForUser(
+  sb: SupabaseClient,
+  userId: string,
+  date: string,
+  source: { trigger?: IndexRecomputeTrigger; sourceKind?: string | null; sourceRef?: string | null } = {},
+) {
+  return recordIndexRecompute(sb, {
+    userId,
+    date: date,
+    trigger: source.trigger ?? 'voice_log',
+    sourceKind: source.sourceKind ?? null,
+    sourceRef: source.sourceRef ?? null,
+  });
 }

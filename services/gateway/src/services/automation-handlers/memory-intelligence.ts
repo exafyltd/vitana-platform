@@ -962,7 +962,19 @@ async function runDiaryThemeRollupHandler(ctx: AutomationContext) {
   return { usersAffected: r.written, actionsTaken: r.written };
 }
 
+// ── AP-0916: Timeline Habit Rollup (VTID-05171, Life Timeline P5) ─────────
+// Silent activity → user_routines (screen_habit, active_hours,
+// feature_affinity, pillar_rhythm) + ≤1 "Vitana noticed" insight per member
+// per day. Honors timeline_learning_prefs; no model calls.
+async function runTimelineHabitRollupHandler(ctx: AutomationContext) {
+  const { runTimelineHabitRollup } = await import('../timeline/habit-rollup');
+  const r = await runTimelineHabitRollup(ctx.supabase, { log: ctx.log });
+  await ctx.emitEvent('autopilot.memory.timeline_habits_rolled_up', { ...r });
+  return { usersAffected: r.users_scanned, actionsTaken: r.routines_written + r.insights_written };
+}
+
 export function registerMemoryIntelligenceHandlers(): void {
+  registerHandler('runTimelineHabitRollup', runTimelineHabitRollupHandler);
   registerHandler('runDiaryThemeRollup', runDiaryThemeRollupHandler);
   registerHandler('runDailyLearningEpisodes', runDailyLearningEpisodes);
   registerHandler('runMemoryInformedMatching', runMemoryInformedMatching);

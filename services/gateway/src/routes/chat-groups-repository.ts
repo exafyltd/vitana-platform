@@ -72,11 +72,20 @@ export async function fetchChatGroupWithMembers(sb: SupabaseClient, groupId: str
 
 export async function listChatGroupMessages(
   sb: SupabaseClient,
-  args: { groupId: string; limit: number; before?: string },
+  args: { groupId: string; limit: number; before?: string; after?: string },
 ) {
+  // VTID-05310: `after` pages forward (ascending); otherwise newest first as before.
+  if (args.after) {
+    return sb.from('chat_messages').select('*').eq('group_id', args.groupId).gt('created_at', args.after).order('created_at', { ascending: true }).limit(args.limit);
+  }
   let q = sb.from('chat_messages').select('*').eq('group_id', args.groupId).order('created_at', { ascending: false }).limit(args.limit);
   if (args.before) q = q.lt('created_at', args.before);
   return q;
+}
+
+/** VTID-05310: base query of one group's messages, for the `around` window. */
+export function groupScopeQuery(sb: SupabaseClient, groupId: string): () => any {
+  return () => sb.from('chat_messages').select('*').eq('group_id', groupId);
 }
 
 // ─── Send / edit / delete ──────────────────────────────────────────────
@@ -105,6 +114,19 @@ export async function markChatGroupRead(sb: SupabaseClient, groupId: string, use
     .update({ last_read_at: new Date().toISOString() })
     .eq('group_id', groupId)
     .eq('user_id', userId);
+}
+
+// VTID-05137: opening a group clears its chat notifications too, so the
+// per-conversation push coalescing (chat-push-coalescer.ts) restarts and the
+// "{count} new messages" summary counts only what is really unread.
+export async function markGroupChatNotificationsRead(sb: SupabaseClient, groupId: string, userId: string) {
+  return sb
+    .from('user_notifications')
+    .update({ read_at: new Date().toISOString() })
+    .eq('user_id', userId)
+    .in('type', ['new_chat_message', 'chat_mention'])
+    .is('read_at', null)
+    .filter('data->>group_id', 'eq', groupId);
 }
 
 // ─── Ownership / membership guards ──────────────────────────────────────────────

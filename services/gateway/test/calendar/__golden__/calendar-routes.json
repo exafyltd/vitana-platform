@@ -731,6 +731,39 @@
         "count": 1
       }
     },
+    "slots": {
+      "status": 200,
+      "type": "application/json",
+      "body": {
+        "ok": true,
+        "data": [
+          {
+            "start": "2026-10-06T05:00:00.000Z",
+            "end": "2026-10-06T06:00:00.000Z",
+            "duration_minutes": 60,
+            "free_until": "2026-10-06T20:00:00.000Z"
+          }
+        ],
+        "count": 1,
+        "mode": "slots"
+      }
+    },
+    "slots_bad_duration": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required"
+      }
+    },
+    "slots_bad_range": {
+      "status": 400,
+      "type": "application/json",
+      "body": {
+        "ok": false,
+        "error": "duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required"
+      }
+    },
     "conflicts_missing": {
       "status": 400,
       "type": "application/json",
@@ -831,6 +864,20 @@
       ]
     ],
     [
+      "findFreeSlots",
+      [
+        "u1",
+        null,
+        {
+          "from": "2026-10-06T00:00:00.000Z",
+          "to": "2026-10-09T00:00:00.000Z",
+          "durationMin": 45,
+          "limit": 2,
+          "userTimezone": "Europe/Berlin"
+        }
+      ]
+    ],
+    [
       "findConflicts",
       [
         "u1",
@@ -865,6 +912,10 @@
     "POST /events/:id/move",
     "POST /events/:id/complete",
     "POST /events/:id/share-to-feed",
+    "POST /feed-posts/:postId/add",
+    "GET /events/:id/invite-preview",
+    "GET /invites/:messageId",
+    "POST /invites/:messageId/respond",
     "DELETE /events/:id",
     "POST /journey/initialize",
     "POST /reschedule",
@@ -1155,6 +1206,8 @@
           ],
           "movable": false,
           "shareable": false,
+          "invitable": false,
+          "sensitive": false,
           "shared_post_id": null
         },
         {
@@ -1213,6 +1266,8 @@
           ],
           "movable": true,
           "shareable": false,
+          "invitable": false,
+          "sensitive": false,
           "shared_post_id": null
         },
         {

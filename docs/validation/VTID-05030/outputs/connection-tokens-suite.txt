@@ -1,0 +1,31 @@
+$ npx jest test/vtid-05030-connection-tokens.test.ts
+    ✓ round-trips and never stores the plaintext (7 ms)
+    ✓ uses a fresh IV each time (2 ms)
+    ✓ a tampered iv byte opens to null (15 ms)
+    ✓ a tampered tag byte opens to null (4 ms)
+    ✓ a tampered ciphertext byte opens to null (4 ms)
+    ✓ a truncated payload, a wrong prefix, plaintext and null open to null (16 ms)
+    ✓ a value sealed under another key opens to null (3 ms)
+    ✓ seals nothing without a key (1 ms)
+    ✓ stores only sealed tokens (40 ms)
+    ✓ without the key stores nothing and redirects with storage_unavailable (18 ms)
+    ✓ an exchange failure redirects with a fixed code, never the exception text (17 ms)
+    ✓ wipes the tokens before revoking, and revokes with the opened tokens (11 ms)
+    ✓ a vendor failure still disconnects (9 ms)
+    ✓ a vendor that throws or hangs is bounded and reported as failed (52 ms)
+    ✓ no row → no_token; no revoke support → unsupported (1 ms)
+    ✓ the repository wipe clears all three token columns (1 ms)
+    ✓ requires a signed-in user (4 ms)
+    ✓ wipes the stored tokens (1 ms)
+    ✓ Terra: DELETE /v2/auth/deauthenticateUser with dev-id + x-api-key; 404 counts as ok (2 ms)
+    ✓ Vital: DELETE {base}/user/{id}/{provider} with x-vital-api-key, no doubled /v2 (1 ms)
+    ✓ Strava: POST /oauth/deauthorize with the access token (1 ms)
+    ✓ Fitbit: POST /oauth2/revoke with Basic client auth and the refresh token (1 ms)
+    ✓ Oura: unsupported, no network call (1 ms)
+    ✓ no identifier → no_token without a network call (1 ms)
+    ✓ a network error is reported, never thrown (1 ms)
+    ✓ revokes everything from anon and authenticated
+    ✓ grants nothing back and drops the client write policies
+    ✓ the OAuth callback only writes sealed values (2 ms)
+Test Suites: 1 passed, 1 total
+Tests:       28 passed, 28 total

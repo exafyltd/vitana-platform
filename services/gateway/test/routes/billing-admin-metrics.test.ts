@@ -93,3 +93,71 @@ describe('GET /admin/metrics — swallowed-error visibility', () => {
     expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining(`${name} boom`));
   });
 });
+
+describe('GET /admin/metrics — marketing budget across tenants (VTID-05044)', () => {
+  let errorSpy: jest.SpyInstance;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    errorSpy = jest.spyOn(console, 'error').mockImplementation(() => {});
+    mockFetchActiveOrTrialingSubscriptions.mockResolvedValue({ data: [], error: null });
+    mockFetchActiveMonthlyPlanPrices.mockResolvedValue({ data: [], error: null });
+    mockFetchPaywallFunnelSince.mockResolvedValue({ data: [], error: null });
+    mockFetchRedemptionsSince.mockResolvedValue({ data: [], error: null });
+    mockFetchVoiceDegradeEventsSince.mockResolvedValue({ data: [], error: null });
+  });
+
+  afterEach(() => errorSpy.mockRestore());
+
+  it('2 tenant rows: sums the budgets and reports each tenant', async () => {
+    mockFetchTenantSettingsFeatureFlags.mockResolvedValue({
+      data: [
+        { tenant_id: 't1', feature_flags: { marketing_budget_eur_remaining_cents: 1500 } },
+        { tenant_id: 't2', feature_flags: { marketing_budget_eur_remaining_cents: 2500 } },
+      ],
+      error: null,
+    });
+
+    const res = await request(buildApp()).get('/api/v1/billing/admin/metrics');
+
+    expect(res.status).toBe(200);
+    expect(res.body.marketing_budget_remaining_cents).toBe(4000);
+    expect(res.body.marketing_budget_remaining_by_tenant).toEqual({ t1: 1500, t2: 2500 });
+  });
+
+  it('a tenant without a budget is null in the map and left out of the sum', async () => {
+    mockFetchTenantSettingsFeatureFlags.mockResolvedValue({
+      data: [
+        { tenant_id: 't1', feature_flags: { marketing_budget_eur_remaining_cents: 700 } },
+        { tenant_id: 't2', feature_flags: null },
+      ],
+      error: null,
+    });
+
+    const res = await request(buildApp()).get('/api/v1/billing/admin/metrics');
+
+    expect(res.body.marketing_budget_remaining_cents).toBe(700);
+    expect(res.body.marketing_budget_remaining_by_tenant).toEqual({ t1: 700, t2: null });
+  });
+
+  it('0 rows: the total is null and the map is empty', async () => {
+    mockFetchTenantSettingsFeatureFlags.mockResolvedValue({ data: [], error: null });
+
+    const res = await request(buildApp()).get('/api/v1/billing/admin/metrics');
+
+    expect(res.status).toBe(200);
+    expect(res.body.marketing_budget_remaining_cents).toBeNull();
+    expect(res.body.marketing_budget_remaining_by_tenant).toEqual({});
+  });
+
+  it('a read error is logged, not swallowed', async () => {
+    mockFetchTenantSettingsFeatureFlags.mockResolvedValue({ data: null, error: { message: 'budget boom' } });
+
+    const res = await request(buildApp()).get('/api/v1/billing/admin/metrics');
+
+    expect(res.status).toBe(200);
+    expect(res.body.marketing_budget_remaining_cents).toBeNull();
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('fetchTenantSettingsFeatureFlags'));
+    expect(errorSpy).toHaveBeenCalledWith(expect.stringContaining('budget boom'));
+  });
+});

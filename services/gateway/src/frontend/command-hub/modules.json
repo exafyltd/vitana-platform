@@ -1,0 +1,24 @@
+{
+  "bundle": [
+    { "file": "orb-widget.js", "kind": "module" },
+    { "file": "pipeline-tree.js", "kind": "module" },
+    { "file": "kiro-console.js", "kind": "module" },
+    { "file": "loops-catalog.js", "kind": "module" },
+    { "file": "svg-preview.js", "kind": "module" },
+    { "file": "operator-console.js", "kind": "extracted" },
+    { "file": "app.js", "kind": "app" },
+    { "file": "voice-self-healing.js", "kind": "post_app" },
+    { "file": "voice-supervisor.js", "kind": "post_app" },
+    { "file": "intelligence-panels.js", "kind": "post_app" },
+    { "file": "command-hub-staging.js", "kind": "post_app" }
+  ],
+  "indexed_only": [
+    "orb-voice-bench.js",
+    "watcher.js",
+    "intent-engine.js",
+    "intelligence-cockpit-nav.js",
+    "intent-moderation.js",
+    "voice-budget.js",
+    "navigation-config.js"
+  ]
+}

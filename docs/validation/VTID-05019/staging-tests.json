@@ -1,0 +1,34 @@
+{
+  "vtid": "VTID-05019",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "create-pr refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/github/create-pr",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is created"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "safe-merge refuses an invalid caller (cicd mount)",
+      "method": "POST",
+      "path": "/api/v1/cicd/safe-merge",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is merged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05019-cicd-pr-routes-auth.test.ts test/vtid-05014-kiro-v1-writes.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the gate on both routes and all three prefixes, and every caller sending the service token"
+    }
+  ]
+}

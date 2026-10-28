@@ -253,6 +253,16 @@ on:
           - rebuild-main
           - env-only
         default: 'promote-staging'
+      # VTID-05023 part 9: input 25 of 25 (GitHub's ceiling) — retire one before adding another.
+      data_backend:
+        description: 'keep (default) = leave SUPABASE_URL as the live task def has it; aurora = SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy + SUPABASE_PUBLIC_URL; supabase = original refs (rollback)'
+        required: false
+        type: choice
+        options:
+          - keep
+          - supabase
+          - aurora
+        default: 'keep'
       expected_commit:
         description: 'promote-staging only: full commit SHA the operator expects staging to be serving — run fails if staging moved (set automatically by the Command Hub PUBLISH button)'
         required: false
@@ -964,6 +974,64 @@ jobs:
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Daily key wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DAILY_API_KEY") | .name]')"
 
+      - name: Build task-definition (Kiro runner)
+        # VTID-05003: the Operator's Kiro engine on the PRODUCTION kiro-runner
+        # (vitana-kiro-runner-awsdr, scripts/aws/setup-kiro-runner.sh --env production).
+        # This role has no secretsmanager:Describe*, so presence is the repository
+        # variable KIRO_RUNNER_PROD_TOKEN_ARN (the full ARN the setup script prints).
+        # Set => KIRO_RUNNER_URL (production runner only) + KIRO_RUNNER_TOKEN +
+        # KIRO_ENGINE_ENABLED=true. Unset => KIRO_ENGINE_ENABLED=false and no runner
+        # refs, so a deploy never points production at a runner that is not there.
+        # Never the staging runner (guarded by test/vtid-05003-kiro-default-engine.test.ts).
+        # VTID-05005: KIRO_MCP_ENABLED follows the engine — Kiro sessions get the Operator's read tools.
+        # VTID-05006: Kiro WRITES follow the engine too (owner decision 2026-10-09, "ship and turn on
+        # writes", after STAGING-VERIFY 37977916422). Each write still needs an open VTID and the user's
+        # Allow in the thread. Off-switch: dispatch with env_overrides {"KIRO_MCP_WRITE_ENABLED":"false"}.
+        env:
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
+        run: |
+          set -e
+          case "$KIRO_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/kiro-runner/production/runner-token-*) ;;
+            *) echo "::error::KIRO_RUNNER_PROD_TOKEN_ARN is not the production runner token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$KIRO_TOKEN_ARN" '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("KIRO_ENGINE_ENABLED","KIRO_MCP_ENABLED","KIRO_MCP_WRITE_ENABLED","KIRO_RUNNER_URL") | not) ]
+                + ( if $T == "" then [ {name:"KIRO_ENGINE_ENABLED", value:"false"}, {name:"KIRO_MCP_ENABLED", value:"false"}, {name:"KIRO_MCP_WRITE_ENABLED", value:"false"} ]
+                    else [ {name:"KIRO_ENGINE_ENABLED", value:"true"},
+                           {name:"KIRO_MCP_ENABLED", value:"true"},
+                           {name:"KIRO_MCP_WRITE_ENABLED", value:"true"},
+                           {name:"KIRO_RUNNER_URL", value:"http://kiro-runner-prod.vitana.internal:8080"} ] end ) )
+            | .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "KIRO_RUNNER_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"KIRO_RUNNER_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Kiro wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("KIRO_"))] + [.containerDefinitions[0].secrets[] | select(.name | startswith("KIRO_")) | {name}]')"
+
+      - name: Build task-definition (dev-memory pack token)
+        # VTID-05009: DEV_MEMORY_PACK_TOKEN for the developer morning pack
+        # (VTID-04408). Kiro pattern: this role has no secretsmanager:Describe*,
+        # so presence is the repository variable DEV_MEMORY_PACK_TOKEN_PROD_ARN
+        # (full ARN of vitana/gateway/prod/dev-memory-pack-token). Unset => no
+        # ref, so a deploy never points at a secret that does not exist.
+        env:
+          PACK_TOKEN_ARN: ${{ vars.DEV_MEMORY_PACK_TOKEN_PROD_ARN }}
+        run: |
+          set -e
+          case "$PACK_TOKEN_ARN" in
+            "") ;;
+            arn:aws:secretsmanager:eu-central-1:472838866351:secret:vitana/gateway/prod/dev-memory-pack-token-*) ;;
+            *) echo "::error::DEV_MEMORY_PACK_TOKEN_PROD_ARN is not the prod dev-memory pack token ARN"; exit 1 ;;
+          esac
+          NEW_DEF=$(jq --arg T "$PACK_TOKEN_ARN" '
+            .containerDefinitions[0].secrets |=
+              ( [ (. // [])[] | select(.name != "DEV_MEMORY_PACK_TOKEN") ]
+                + ( if $T == "" then [] else [ {name:"DEV_MEMORY_PACK_TOKEN", valueFrom:$T} ] end ) )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Dev-memory pack token wired: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].secrets[] | select(.name == "DEV_MEMORY_PACK_TOKEN") | .name]')"
+
       - name: Build task-definition (reward payouts on)
         # VTID-04896 pinned the VTNA reward sweep (VTID-04878) off in production
         # until the owner approved it; VTID-04899 did the same for the immediate
@@ -991,6 +1059,47 @@ jobs:
                 + [ {name:"AUTOPILOT_ACTION_REWARD_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Autopilot reward pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "AUTOPILOT_ACTION_REWARD_ENABLED")]')"
+
+      - name: Build task-definition (routine runner on)
+        # VTID-05103 (sparred plan, owner approved 2026-10-12): the deterministic
+        # daily routines run inside the gateway (services/routine-runner), once
+        # per UTC day each, exactly once across tasks. Pinned "true" here like
+        # the reward sweep so a publish never silently drops it. Off: dispatch
+        # with env_overrides={"ROUTINE_RUNNER_ENABLED":"false"} (applied in 2/2).
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name != "ROUTINE_RUNNER_ENABLED") ]
+                + [ {name:"ROUTINE_RUNNER_ENABLED", value:"true"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Routine runner pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name == "ROUTINE_RUNNER_ENABLED")]')"
+
+      - name: Build task-definition (onboarding coach shadow mode on)
+        # VTID-05039 (sparred plan, owner approved 2026-10-10): the Vitana
+        # Onboarding Assistant's coach (VTID-04892) runs in SHADOW mode in
+        # production — once a day it records what Vitana would do for each new
+        # member and sends nothing. Pinned here so a publish never loses or
+        # resurrects it by accident (the VTID-03513/04127 lesson).
+        #   FEATURE_ONBOARDING_ASSISTANT_ENV  staging+prod; staging still
+        #     resolves disabled-on-staging first (it shares this database).
+        #   VOA_ROLLOUT_DATE  ONE-TIME OWNER DECISION, not a per-deploy toggle:
+        #     the cohort anchor (members who joined from this date - 30 days).
+        #     Changing it changes who is in the cohort.
+        #   VOA_MODE is deliberately NOT set (= shadow; there is no live mode).
+        # Off: dispatch with env_overrides={"FEATURE_ONBOARDING_ASSISTANT_ENV":"off"}
+        # (applied in 2/2, after this step). The daily schedule then still
+        # fires and gets {mode:"off"}; full silence also needs
+        # scripts/aws/setup-eventbridge-cron-migration.sh --only gateway-onboarding-coach-tick --delete
+        run: |
+          set -e
+          NEW_DEF=$(jq '
+            .containerDefinitions[0].environment |=
+              ( [ (. // [])[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE") | not) ]
+                + [ {name:"FEATURE_ONBOARDING_ASSISTANT_ENV", value:"staging+prod"},
+                    {name:"VOA_ROLLOUT_DATE", value:"2026-10-10"} ] )' /tmp/vitana-new-task-def.json)
+          echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
+          echo "Onboarding coach pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | IN("FEATURE_ONBOARDING_ASSISTANT_ENV","VOA_ROLLOUT_DATE","VOA_MODE"))]')"
 
       - name: Build task-definition (reminders dispatch on)
         # VTID-04963: production runs the reminders tick + sweeper (and the
@@ -1069,6 +1178,58 @@ jobs:
           fi
           echo "$NEW_DEF" > /tmp/vitana-new-task-def.json
           echo "Calendar gates pinned: $(echo "$NEW_DEF" | jq -c '[.containerDefinitions[0].environment[] | select(.name | startswith("CALENDAR_")) | .name]')"
+
+      - name: Build task-definition (data backend — VTID-05023)
+        # VTID-05023 part 9 (Supabase -> Aurora, option B). One shared script,
+        # scripts/aws/taskdef-data-backend.py (tests: scripts/aws/test/
+        # test_taskdef_data_backend.py), used by every prod deploy workflow.
+        #   keep (default; PUBLISH never passes this input): the file is passed
+        #     through byte for byte, so whatever backend the live task def is on
+        #     is carried forward.
+        #   aurora: SUPABASE_URL -> vitana/supabase/prod/url-aurora-proxy (value:
+        #     the INTERNAL proxy, http://postgrest-aurora-prod.vitana.internal:8080
+        #     — /rest/v1 from Aurora, /auth /storage /functions /realtime passed
+        #     through to Supabase) and SUPABASE_PUBLIC_URL=https://inmkhvwdcuyhnxkgfvsb.supabase.co
+        #     for every member-visible URL (R1(b), src/lib/supabase-public-url.ts).
+        #   supabase: the original vitana/supabase/prod/url ref, SUPABASE_PUBLIC_URL
+        #     removed (rollback).
+        # Applied to the file derived from THIS service's (vitana-gateway-awsdr)
+        # live task def in every deploy mode — promote-staging takes only the
+        # image from staging; the script refuses any other task family.
+        # This role has no secretsmanager:Describe* (VTID-03880): the script
+        # tries describe-secret and on AccessDenied uses the repository variable
+        # SUPABASE_URL_AURORA_PROXY_PROD_ARN; a secret that does not exist, or
+        # neither, fails here before anything is registered.
+        env:
+          DATA_BACKEND: ${{ inputs.data_backend || 'keep' }}
+          DATA_BACKEND_AURORA_URL_SECRET_ARN: ${{ vars.SUPABASE_URL_AURORA_PROXY_PROD_ARN }}
+        run: |
+          set -euo pipefail
+          F=/tmp/vitana-new-task-def.json
+          DB_SCRIPT=scripts/aws/taskdef-data-backend.py
+          if [ ! -f "$DB_SCRIPT" ]; then
+            if [ "$DATA_BACKEND" != keep ]; then echo "::error::data_backend=$DATA_BACKEND needs $DB_SCRIPT, which this ref predates"; exit 1; fi
+            echo "data_backend=keep (script not in this ref) - task definition unchanged"; exit 0
+          fi
+          python3 "$DB_SCRIPT" --backend "$DATA_BACKEND" --service gateway --resolve \
+            --summary "$GITHUB_STEP_SUMMARY" < "$F" > "$F.next"
+          mv "$F.next" "$F"
+
+      - name: Build task-definition (phone verification)
+        # VTID-05127: phone verification by SMS code (VTID-05095) ships off.
+        # The owner switches it on with two repository variables after
+        # scripts/aws/setup-phone-verify-sms.sh --env prod --apply and the AWS
+        # SMS sandbox exit (docs/validation/VTID-05127/SWITCH-ON.md):
+        #   PHONE_VERIFY_HMAC_SECRET_PROD_ARN  full ARN (this role has no
+        #     secretsmanager:Describe*); empty = no secret ref
+        #   PHONE_VERIFY_PROD_ENABLED          exact 'true' = on
+        # On without the ARN fails here. Logic: scripts/ci/phone-verify-wiring.sh.
+        # Off-switch without touching the variables: env_overrides
+        # {"PHONE_VERIFY_ENABLED":"false"} (step 2/2 runs after this one).
+        env:
+          PHONE_VERIFY_ARN: ${{ vars.PHONE_VERIFY_HMAC_SECRET_PROD_ARN }}
+          PHONE_VERIFY_ENABLED_VAR: ${{ vars.PHONE_VERIFY_PROD_ENABLED }}
+        run: bash scripts/ci/phone-verify-wiring.sh /tmp/vitana-new-task-def.json
 
       - name: Build task-definition (2/2 — optional overrides) + register + roll the service
         id: roll
@@ -1366,15 +1527,17 @@ jobs:
           # VTID-04824: the Jev secret and gate switches are set in their own step,
           # "Build task-definition (Jev gates)", before this one.
 
-          # VTID-04784: memory plan phase 2. Prod keeps serving the legacy ORB
-          # memory read; recall() runs in the background and one counts-only
-          # '[VTID-04784] recall-shadow' line compares the two per session.
-          # Read-only, never awaited. The recall switch itself stays unset
-          # until scripts/memory/recall-shadow-report.sh shows they agree.
+          # VTID-04784: memory plan phase 2. One counts-only '[VTID-04784]
+          # recall-shadow' line per session compares recall() with the legacy
+          # ORB memory read. VTID-05007 (owner, 2026-10-09, 72 h prod shadow:
+          # facts 293/296 equal, 0 failed reads): prod now SERVES recall()
+          # and the shadow keeps logging the legacy read for the 2-week watch.
+          # Off: env-only dispatch, env_overrides={"MEMORY_ORB_RECALL_ENABLED":"false"}.
           NEW_DEF=$(echo "$NEW_DEF" | jq '
             .containerDefinitions[0].environment |=
-              ( [ .[] | select(.name != "MEMORY_ORB_RECALL_SHADOW") ]
-                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"} ] )')
+              ( [ .[] | select(.name | IN("MEMORY_ORB_RECALL_SHADOW","MEMORY_ORB_RECALL_ENABLED") | not) ]
+                + [ {name:"MEMORY_ORB_RECALL_SHADOW", value:"true"},
+                    {name:"MEMORY_ORB_RECALL_ENABLED", value:"true"} ] )')
 
           # VTID-04786: AP-0910 memory embedding backfill runs here from its own
           # in-process loop (every 30 min, one task per interval via
@@ -1463,6 +1626,7 @@ jobs:
         id: sweepcheck
         env:
           ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}
+          KIRO_TOKEN_ARN: ${{ vars.KIRO_RUNNER_PROD_TOKEN_ARN }}
         run: |
           set -e
           EXPECTED=true
@@ -1491,6 +1655,19 @@ jobs:
           echo "AUTOPILOT_ACTION_REWARD_ENABLED=$LIVE_AP (expected $EXPECTED_AP)"
           if [ "$LIVE_AP" != "$EXPECTED_AP" ]; then
             echo "::error::AUTOPILOT_ACTION_REWARD_ENABLED is '$LIVE_AP' on the live task definition, expected '$EXPECTED_AP'"
+            exit 1
+          fi
+          # VTID-05003: Kiro is on exactly when the production runner token variable is set.
+          EXPECTED_KIRO=false
+          [ -n "$KIRO_TOKEN_ARN" ] && EXPECTED_KIRO=true
+          if [ -n "$ENV_OVERRIDES_INPUT" ] && echo "$ENV_OVERRIDES_INPUT" | jq -e 'has("KIRO_ENGINE_ENABLED")' >/dev/null 2>&1; then
+            EXPECTED_KIRO=$(echo "$ENV_OVERRIDES_INPUT" | jq -r '.KIRO_ENGINE_ENABLED | tostring')
+          fi
+          LIVE_KIRO=$(aws ecs describe-task-definition --task-definition "$TD" \
+            --query 'taskDefinition.containerDefinitions[0].environment[?name==`KIRO_ENGINE_ENABLED`].value | [0]' --output text)
+          echo "KIRO_ENGINE_ENABLED=$LIVE_KIRO (expected $EXPECTED_KIRO)"
+          if [ "$LIVE_KIRO" != "$EXPECTED_KIRO" ]; then
+            echo "::error::KIRO_ENGINE_ENABLED is '$LIVE_KIRO' on the live task definition, expected '$EXPECTED_KIRO'"
             exit 1
           fi
 
@@ -1570,7 +1747,9 @@ jobs:
       - name: Emit OASIS event + software_versions row (best-effort)
         if: always()
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+          # VTID-05023 part 9: REST base. Repo variable DATA_REST_URL (unset =
+          # unchanged) is https://data.vitanaland.com after the Aurora flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
           SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
           SHA: ${{ steps.source.outputs.sha }}
           SHORT: ${{ steps.source.outputs.short }}
@@ -1613,6 +1792,7 @@ jobs:
           {
             echo "## AWS Production (DR) gateway deploy"
             echo "- Mode: ${{ steps.source.outputs.mode }}"
+            echo "- Data backend input: ${{ inputs.data_backend || 'keep' }} (resulting refs: see the data backend lines above)"
             echo "- Image: \`${{ steps.source.outputs.image || steps.build.outputs.image }}\`"
             echo "- Commit: \`${{ steps.source.outputs.sha }}\`"
             echo "- Verified live at: ${{ env.GATEWAY_URL }}"

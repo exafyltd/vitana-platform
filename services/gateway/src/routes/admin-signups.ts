@@ -21,7 +21,10 @@ import { getSupabase } from '../lib/supabase';
 import { requireExafyAdmin, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
 import { notifyUserAsync } from '../services/notification-service';
 import { dispatchEvent } from '../services/automation-executor';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
+import { resolveActorTenant } from '../services/jobs/job-tenant-loop';
 import * as repo from '../services/admin-signups/admin-signups-repository';
+import { ensureProvisioned } from '../services/auth-bridge/auth-bridge';
 
 const router = Router();
 const VTID = 'ADMIN-SIGNUPS';
@@ -201,7 +204,13 @@ router.post('/log-result', async (req: Request, res: Response) => {
 
     // Dispatch automation event when user completes onboarding
     if (status === 'onboarded' && auth_user_id) {
-      const tenantId = process.env.DEFAULT_TENANT_ID;
+      // VTID-05267 (mt-jobs/jobs-automation-actor-tenant): MT_RESOLUTION_V2 off
+      // ⇒ DEFAULT_TENANT_ID (today). On ⇒ the NEW user's primary tenant
+      // (server-side membership lookup, so the caller never chooses the
+      // tenant); unresolvable ⇒ no dispatch (logged), never DEFAULT_TENANT_ID.
+      const tenantId = isMtResolutionV2Enabled()
+        ? await resolveActorTenant({ userId: auth_user_id })
+        : process.env.DEFAULT_TENANT_ID;
       if (tenantId) {
         // Look up referral/shared_link source from signup_attempts
         const { data: attempt } = await repo.fetchAttemptReferralInfo(supabase, attempt_id);
@@ -313,6 +322,10 @@ router.post('/:id/repair', requireExafyAdmin, async (req: AuthenticatedRequest, 
     if (!attempt.auth_user_id) {
       return res.status(400).json({ ok: false, error: 'NO_AUTH_USER', message: 'User has not completed email verification' });
     }
+
+    // VTID-05023 part 4: after the cutover, repair re-runs the full sign-up
+    // provisioning on Aurora first (no-op unless AUTH_BRIDGE_ENABLED=true).
+    await ensureProvisioned(attempt.auth_user_id);
 
     // Check if app_users row exists
     const { data: existingUser } = await repo.fetchAppUserByUserId(supabase, attempt.auth_user_id);

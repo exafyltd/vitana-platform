@@ -18,11 +18,13 @@
 
 import * as fs from 'fs';
 import * as path from 'path';
+import { readCommandHubBundle } from './command-hub/bundle';
 
-const SOURCE = fs.readFileSync(
-  path.join(__dirname, '../src/frontend/command-hub/app.js'),
-  'utf8'
-);
+// VTID-05073: several functions this suite pins (renderOperatorChat,
+// describeToolActivity, startNewOperatorThread, ...) were extracted into
+// operator-console.js. Read the whole Command Hub bundle so both the moved
+// functions and the ones still in app.js resolve. Assertions are unchanged.
+const SOURCE = readCommandHubBundle();
 
 const CSS = fs.readFileSync(
   path.join(__dirname, '../src/frontend/command-hub/styles.css'),
@@ -51,7 +53,8 @@ describe('Multi-thread conversation state (VTID-03822)', () => {
   });
 
   it('startNewOperatorThread() creates a fresh thread, clears legacy single-thread keys, and re-renders', () => {
-    const start = SOURCE.indexOf('function startNewOperatorThread()');
+    // VTID-05003: the function takes an optional { engine } argument now.
+    const start = SOURCE.indexOf('function startNewOperatorThread(');
     const end = SOURCE.indexOf('\n}', start);
     expect(start).toBeGreaterThan(-1);
     const body = SOURCE.slice(start, end);
@@ -103,8 +106,9 @@ describe('Operator chat message rendering (VTID-03822)', () => {
     expect(start).toBeGreaterThan(-1);
     // VTID-03949 grew the session title bar above the messages loop by
     // ~1.5KB, pushing this block further into the function; VTID-04309's
-    // voice-turn tag added ~0.5KB more.
-    const body = SOURCE.slice(start, start + 6500);
+    // voice-turn tag added ~0.5KB more; VTID-05067's Kiro-pane hand-off and
+    // image thumbnails ~1KB more.
+    const body = SOURCE.slice(start, start + 8000);
     expect(body).toContain('if (msg.toolResults && msg.toolResults.length > 0)');
     expect(body).toContain('describeToolActivity(tr)');
   });

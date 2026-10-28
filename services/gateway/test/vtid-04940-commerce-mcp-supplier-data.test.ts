@@ -128,8 +128,10 @@ describe('tool catalogue (what the Directory review reads)', () => {
     expect(tool.description.length).toBeGreaterThan(20);
     expect(typeof tool.annotations.readOnlyHint).toBe('boolean');
     if (tool.annotations.readOnlyHint === false) {
-      // A write tool must say whether it destroys anything; none of ours does.
-      expect((tool.annotations as { destructiveHint?: boolean }).destructiveHint).toBe(false);
+      // VTID-05142: a write tool must say whether it destroys anything; the two that overwrite
+      // existing values in place say so, the others only create, run checks or submit.
+      const overwrites = ['update_business', 'update_product'].includes(tool.name);
+      expect((tool.annotations as { destructiveHint?: boolean }).destructiveHint).toBe(overwrites);
     }
     expect(tool.inputSchema.type).toBe('object');
   });

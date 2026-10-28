@@ -13,6 +13,7 @@ import {
 const ADMIN_ID: OrbToolIdentity = { user_id: 'u-adm', tenant_id: 't-1', role: 'admin' };
 const COMMUNITY_ID: OrbToolIdentity = { user_id: 'u-com', tenant_id: 't-1', role: 'community' };
 const ANON_ID: OrbToolIdentity = { user_id: '', tenant_id: null, role: 'admin' };
+const EXAFY_ID: OrbToolIdentity = { user_id: 'u-exafy', tenant_id: 't-1', role: 'exafy_admin' };
 
 function makeSb(): SupabaseClient {
   return {} as unknown as SupabaseClient;
@@ -58,14 +59,23 @@ describe('admin_set_control_key', () => {
     expect(r.ok).toBe(false);
   });
 
+  // VTID-05048: the control write is platform-level (requireServiceOrAdmin);
+  // a tenant admin may no longer reach it through voice.
+  it('refuses a tenant admin (role admin) before any gateway call', async () => {
+    const fetchFn = mockFetch(200, { ok: true });
+    const r = await admin_set_control_key({ key: 'x', enabled: false, reason: 'incident', confirm: true }, ADMIN_ID, makeSb());
+    expect(r.ok).toBe(false);
+    expect(fetchFn).not.toHaveBeenCalled();
+  });
+
   it('requires confirmation', async () => {
-    const r = await admin_set_control_key({ key: 'x', enabled: true, reason: 'incident' }, ADMIN_ID, makeSb());
+    const r = await admin_set_control_key({ key: 'x', enabled: true, reason: 'incident' }, EXAFY_ID, makeSb());
     expect((r as { result: { requires_confirmation: boolean } }).result.requires_confirmation).toBe(true);
   });
 
   it('sets the control after confirm=true', async () => {
     mockFetch(200, { ok: true });
-    const r = await admin_set_control_key({ key: 'x', enabled: false, reason: 'incident', confirm: true }, ADMIN_ID, makeSb());
+    const r = await admin_set_control_key({ key: 'x', enabled: false, reason: 'incident', confirm: true }, EXAFY_ID, makeSb());
     expect(r.text).toContain('disabled');
   });
 });

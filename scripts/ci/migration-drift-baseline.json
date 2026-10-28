@@ -1,8 +1,10 @@
 {
   "_comment": "VTID-03486. Tables declared by supabase/migrations/**.sql that do NOT exist in production. This is pre-existing drift recorded so the CI check can fail only on NEW drift. It is a backlog to shrink, not an amnesty — every entry is a migration whose SQL never reached the database.",
+  "_comment_aurora_only": "VTID-05158. aurora_only_tables: tables that must exist ONLY on Aurora (0T; production after the cutover). Never reported missing from Supabase; the check FAILS if one appears there. Each entry names its VTID and reason.",
   "generated_at": "2026-08-04",
-  "count": 103,
+  "count": 108,
   "known_missing_tables": [
+    "activity_catalog",
     "analytics_celebrate_events",
     "assistant_promises",
     "autopilot_logs",
@@ -83,6 +85,9 @@
     "taste_signals",
     "teacher_capability_refresh_schedule",
     "tenant_assistant_speeches",
+    "tenant_content_pipeline",
+    "tenant_pack_intake",
+    "timeline_learning_prefs",
     "topic_registry",
     "trust_scores",
     "usage_outcomes",
@@ -103,8 +108,56 @@
     "user_topic_profile",
     "value_profiles",
     "value_signals",
+    "vitana_index_movements",
     "voice_clock_items",
     "vtid_specs",
     "wallet_balances"
+  ],
+  "aurora_only_tables": [
+    {
+      "table": "health_codes",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_series_5m",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_series_1h",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_series_1d",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_observations",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_ingest_batches",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_ingest_quarantine",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_store_maintenance_runs",
+      "vtid": "VTID-05158",
+      "reason": "Health Hub store (Phase 1 A1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    },
+    {
+      "table": "health_sources",
+      "vtid": "VTID-05161",
+      "reason": "Health Hub connection model (Phase 1 B1): Aurora only — 0T, production after the cutover. Never Supabase (migration placement guard)."
+    }
   ]
 }

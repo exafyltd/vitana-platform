@@ -35,14 +35,21 @@ import { processMessage } from '../services/ai-orchestrator';
 import { isOperatorRouteOn, recordOperatorRouteOutcome, runOperatorRoute } from '../services/jev/gates/operator-route-gate';
 // VTID-0536: Gemini Operator Tools Bridge
 import { processWithGemini, type OperatorTurnEventSink } from '../services/gemini-operator';
-import { getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
-import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel } from '../services/kiro/kiro-turn';
+import { ensureOperatorThread, getThreadEngine, getThreadSummary, isOperatorThreadsEnabled, maybeSummarizeThread, recordOperatorTurn, listOperatorThreadMessages, listOperatorThreads } from '../services/operator-threads';
+import { runKiroTurn, cancelKiroTurn, closeKiroSession, isKiroEngineEnabled, openKiroSessionCount, listKiroModels, setKiroModel, type KiroHistoryMessage } from '../services/kiro/kiro-turn';
+import { getSupabase, supa } from '../services/dev-autopilot-execute'; // VTID-05060
 import { answerPermission } from '../services/kiro/permission-broker';
-import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest } from '../services/kiro/remote-backend';
+import { registerKiroBackendFromEnv, runnerConfig, kiroKeyRequest, kiroKeyLinked, clearKiroKeyCache } from '../services/kiro/remote-backend';
+import { confirmationStore, decideConfirmation } from '../services/kiro/kiro-mcp-confirmations';
+import { kiroRepoReadiness } from '../services/kiro/kiro-repo-readiness';
+import { getKiroCredits, kiroDefaultEngine } from '../services/kiro/credit-state';
 
 // VTID-04999: run Kiro on the private kiro-runner when the engine and the runner are configured.
 registerKiroBackendFromEnv();
-import type { KiroTurnEventSink } from '../services/kiro/kiro-events';
+import type { KiroTurnEvent, KiroTurnEventSink } from '../services/kiro/kiro-events';
+import { startKiroRun, setKiroRunExecutor, answerPersistedPermission, LEGACY_KIRO_FRAME_TYPES, type KiroRunExecutorInput } from '../services/kiro/kiro-runs';
+// VTID-05067: images pasted into the console (operator_media + private bucket operator-media).
+import { getOperatorMedia, readOperatorMediaBase64, loadOperatorMediaForUser, OPERATOR_MEDIA_LIMITS } from '../services/operator-media';
 import { extractAndRecordTurnMemory, isTurnMemoryEnabled } from '../services/operator-turn-memory';
 import { writeDevMemory } from '../services/dev-agent-memory';
 // VTID-03851: verified-caller marker for autopilot_execute_task (set or
@@ -257,20 +264,117 @@ interface OperatorChatTurnOutcome {
   body: Record<string, unknown>;
 }
 
+/** VTID-05060: the newest operator.kiro.model_selected pick by this user for this thread, or null. */
+export async function latestKiroModelPick(threadId: string, userId: string | null): Promise<string | null> {
+  if (!userId) return null;
+  const s = getSupabase();
+  if (!s) return null;
+  const q = `/rest/v1/oasis_events?type=eq.operator.kiro.model_selected&actor_id=eq.${encodeURIComponent(userId)}`
+    + `&payload->>thread_id=eq.${encodeURIComponent(threadId)}&select=payload&order=created_at.desc&limit=1`;
+  const r = await supa<Array<{ payload?: { model_id?: unknown } }>>(s, q);
+  const id = r.ok && r.data && r.data[0] ? r.data[0].payload?.model_id : null;
+  return typeof id === 'string' && id ? id : null;
+}
+
 /**
  * VTID-04975: one operator chat turn answered by Kiro. Same reply shape as the
  * LLM path; the thread is recorded with engine 'kiro' (no rolling summary — the
  * conversation lives in the Kiro session) and the reply is logged to OASIS.
  * The user's message was already logged by the caller.
+ *
+ * VTID-05065: the turn now runs as a server-side RUN (services/kiro/kiro-runs.ts):
+ * this starts one (or queues it behind the thread's current run) and waits for it,
+ * forwarding the run's events as the same frames the console has always received.
+ * The reply body is the one executeKiroChatTurn returns, unchanged. A client that
+ * disconnects stops the frames, not the run.
  */
 async function runKiroChatTurn(a: {
   requestId: string; threadId: string; createdAt: string; message: string;
   attachments: Array<{ oasis_ref: string; kind: string }>; mode: string;
+  media?: Array<{ media_id: string; mime_type: string }>;
   conversation_id?: string; validatedVtid: string | undefined; userId: string | null;
   isAdmin: boolean; channel?: string; emit?: KiroTurnEventSink;
 }): Promise<OperatorChatTurnOutcome> {
   if (!a.isAdmin) return { status: 403, body: { ok: false, error: 'kiro_requires_admin' } };
-  const result = await runKiroTurn({ threadId: a.threadId, userId: a.userId, message: a.message, emit: a.emit });
+  const emit = a.emit;
+  const started = await startKiroRun({
+    threadId: a.threadId,
+    userId: a.userId,
+    message: a.message,
+    turn: { requestId: a.requestId, createdAt: a.createdAt, attachments: a.attachments, media: a.media, mode: a.mode, conversation_id: a.conversation_id, validatedVtid: a.validatedVtid, channel: a.channel },
+    // Only the frame types the console has always received; run.status and answers are run-route only.
+    listener: emit ? (ev) => { if (LEGACY_KIRO_FRAME_TYPES.has(ev.type)) emit({ type: ev.type, ...ev.payload } as KiroTurnEvent); } : undefined,
+  });
+  if (!started.ok) return { status: started.error === 'queue_full' ? 409 : 503, body: { ok: false, error: started.error } };
+  return started.done;
+}
+
+/**
+ * VTID-05065: the Kiro chat turn itself (formerly the body of runKiroChatTurn), run by
+ * kiro-runs.ts for every run — the old /chat path and the run routes share it.
+ */
+async function executeKiroChatTurn(a: KiroRunExecutorInput): Promise<OperatorChatTurnOutcome> {
+  // VTID-05018: if Kiro has to open a new session for this thread, it gets the thread's earlier
+  // turns (this user's thread only; the current message is recorded after the turn).
+  const loadHistory = async (): Promise<KiroHistoryMessage[]> => {
+    const r = await listOperatorThreadMessages(a.threadId, { userId: a.userId, limit: 60 });
+    if (!r.ok) return [];
+    return r.messages
+      .filter((m) => m.role === 'user' || m.role === 'assistant')
+      .map((m) => {
+        // VTID-05064: how an assistant turn ended and whether it left unpushed edits.
+        const meta = (m.meta ?? {}) as Record<string, unknown>;
+        const stop = typeof meta.stop_reason === 'string' ? meta.stop_reason : null;
+        const dirty = Array.isArray(meta.kiro_workspace_dirty) ? (meta.kiro_workspace_dirty as unknown[]).filter((x): x is string => typeof x === 'string') : null;
+        return { role: m.role as 'user' | 'assistant', content: String(m.content ?? ''), ...(stop ? { stopReason: stop } : {}), ...(dirty ? { workspaceDirty: dirty } : {}) };
+      });
+  };
+  // VTID-05060: the developer's own last pick in Kiro's drop-down for this thread, from the
+  // operator.kiro.model_selected event the model route already records (owner's own, newest).
+  const loadModelPick = (): Promise<string | null> => latestKiroModelPick(a.threadId, a.userId);
+  // VTID-05067: the run's images, read from storage only if Kiro accepts image input.
+  const media = a.media ?? [];
+  const loadImages = async () => {
+    const out: Array<{ mimeType: string; data: string }> = [];
+    for (const m of media) {
+      const row = await getOperatorMedia(m.media_id);
+      const img = row && row.user_id === a.userId ? await readOperatorMediaBase64(row) : null;
+      if (img) out.push(img);
+    }
+    return out;
+  };
+  // VTID-05068: onReattach / resume let a run survive a gateway deploy (kiro-runs.ts).
+  const result = await runKiroTurn({ onReattach: a.onReattach, resume: a.resume, threadId: a.threadId, userId: a.userId, message: a.message, imageCount: media.length, loadImages, emit: a.emit, loadHistory, loadModelPick });
+  // VTID-05003: a used-up Kiro Power seat is a governed state transition, logged once per change.
+  if (result.meta.kiro_status === 'no_credits' && result.meta.credits_changed === true) {
+    await emitOasisEvent({
+      vtid: 'VTID-05003',
+      type: 'operator.kiro.credits_exhausted',
+      source: 'gateway-operator',
+      status: 'warning',
+      message: 'Kiro credits used up for this user; new Operator threads default to the Operator',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId, source: result.meta.credit_source ?? null },
+    }).catch(() => {});
+  }
+
+  // VTID-05064: the thread's parked workspace came back, or its unpushed edits are gone.
+  if (result.meta.kiro_workspace === 'restored' || result.meta.kiro_workspace === 'lost') {
+    const lost = result.meta.kiro_workspace === 'lost';
+    await emitOasisEvent({
+      vtid: 'VTID-05064',
+      type: lost ? 'operator.kiro.parked_workspace_lost' : 'operator.kiro.workspace_restored',
+      source: 'gateway-operator',
+      status: lost ? 'warning' : 'info',
+      message: lost ? 'Unpushed Kiro edits of this thread were lost (runner restarted or retention expired)' : 'Kiro reopened this thread\'s workspace with its unpushed edits',
+      actor_id: a.userId ?? undefined,
+      actor_role: 'admin',
+      surface: 'command-hub',
+      payload: { thread_id: a.threadId },
+    }).catch(() => {});
+  }
 
   if (isOperatorThreadsEnabled()) {
     recordOperatorTurn({
@@ -280,7 +384,14 @@ async function runKiroChatTurn(a: {
       reply: result.reply,
       tools: result.toolResults.map((tr) => ({ name: tr.name, result: JSON.stringify(tr.response ?? {}) })),
       engine: 'kiro',
-      meta: { conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null, ...(a.channel ? { channel: a.channel } : {}) },
+      meta: {
+        conversation_id: a.conversation_id || null, request_id: a.requestId, engine: 'kiro', kiro_status: result.meta.kiro_status ?? null,
+        // VTID-05064: kept so a later session can tell a cut-off reply and lost unpushed edits.
+        ...(result.meta.stop_reason ? { stop_reason: result.meta.stop_reason } : {}),
+        ...(result.meta.kiro_workspace ? { kiro_workspace: result.meta.kiro_workspace } : {}),
+        ...(Array.isArray(result.meta.kiro_workspace_dirty) ? { kiro_workspace_dirty: result.meta.kiro_workspace_dirty } : {}),
+        ...(a.channel ? { channel: a.channel } : {}),
+      },
     }).catch((err) => console.warn('[VTID-04975] kiro thread record failed:', err instanceof Error ? err.message : err));
   }
 
@@ -308,6 +419,9 @@ async function runKiroChatTurn(a: {
     },
   };
 }
+
+// VTID-05065: every Kiro run executes the one chat-turn implementation above.
+setKiroRunExecutor(executeKiroChatTurn);
 
 export async function runOperatorChatTurn(
   req: Request,
@@ -350,6 +464,13 @@ export async function runOperatorChatTurn(
     // down (assistantEventResult / oasis_ref). VTID-03851 only added
     // optionalAuth on the registration line; no new state mutation here.
     const callerIdentity = (req as AuthenticatedRequest).identity;
+    // VTID-05067: images attached by media id must be the caller's own, at most 4 per message.
+    const mediaIds = [...new Set(attachments.map((a) => a.media_id).filter((x): x is string => typeof x === 'string'))];
+    if (mediaIds.length > OPERATOR_MEDIA_LIMITS.maxPerMessage) {
+      return { status: 400, body: { ok: false, error: 'too_many_attachments', max: OPERATOR_MEDIA_LIMITS.maxPerMessage } };
+    }
+    const mediaRows = mediaIds.length > 0 ? await loadOperatorMediaForUser(mediaIds, callerIdentity?.user_id ?? null) : { ok: true as const, media: [] };
+    if (!mediaRows.ok) return { status: 400, body: { ok: false, error: mediaRows.error === 'too_many' ? 'too_many_attachments' : 'invalid_attachment' } };
     if (callerIdentity?.user_id) {
       setThreadAuth(threadId, { user_id: callerIdentity.user_id, exafy_admin: callerIdentity.exafy_admin === true });
     } else {
@@ -468,9 +589,17 @@ export async function runOperatorChatTurn(
     // VTID-04975: an existing thread keeps the engine it was created with; the
     // request's `engine` only picks it for a NEW thread. A Kiro thread leaves
     // here — everything below is the unchanged LLM path.
-    if (((await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm') === 'kiro') {
+    const threadEngine = (await getThreadEngine(threadId)) ?? validation.data.engine ?? 'llm';
+    // VTID-05064: the thread exists server-side from the moment the message is sent, so a
+    // reload while the first turn runs still lists it. Awaited (one upsert) so the row is there
+    // before the turn; never throws.
+    if (isOperatorThreadsEnabled()) {
+      await ensureOperatorThread({ threadId, identity: { user_id: callerIdentity?.user_id || null, role: geminiUserRole || null }, userText: message, engine: threadEngine === 'kiro' ? 'kiro' : undefined });
+    }
+    if (threadEngine === 'kiro') {
       return runKiroChatTurn({
         requestId, threadId, createdAt, message, attachments, mode, conversation_id,
+        media: mediaRows.media.map((m) => ({ media_id: m.id, mime_type: m.mime_type })),
         validatedVtid, userId: callerIdentity?.user_id ?? null, isAdmin: geminiUserRole === 'admin',
         channel: opts.channel,
         // Kiro events are additive frame types; the stream route writes `type` as the frame name.
@@ -483,7 +612,14 @@ export async function runOperatorChatTurn(
     const threadSummary = isOperatorThreadsEnabled() ? await getThreadSummary(threadId).catch(() => null) : null;
     // VTID-04816 (Jev A10, shadow): which lane the message asks for, judged beside the turn.
     const routeCheck = isOperatorRouteOn() ? runOperatorRoute({ threadId, message, developerTools: geminiUserRole === 'admin' }) : null;
+    // VTID-05067: the pasted images go to the model as image blocks (the router's `images`, VTID-03496).
+    const turnImages: Array<{ mimeType: string; base64: string }> = [];
+    for (const m of mediaRows.media) {
+      const img = await readOperatorMediaBase64(m);
+      if (img) turnImages.push({ mimeType: img.mimeType, base64: img.data });
+    }
     let geminiResult = await processWithGemini({
+      images: turnImages.length > 0 ? turnImages : undefined,
       text: message,
       threadId,
       attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -526,6 +662,7 @@ export async function runOperatorChatTurn(
         `time, do not narrate or describe the call in your reply text.]`;
       try {
         const retryResult = await processWithGemini({
+          images: turnImages.length > 0 ? turnImages : undefined,
           text: retryText,
           threadId,
           attachments: attachments.map(a => ({ oasis_ref: a.oasis_ref, kind: a.kind })),
@@ -771,15 +908,27 @@ router.post('/chat/stream', optionalAuth, operatorMachineAuth, async (req: Reque
 // user who owns it may cancel/close it or answer its permission cards.
 
 /** GET /kiro/status — is the engine switched on, and how many sessions are open. */
-router.get('/kiro/status', requireAdminAuth, (_req: AuthenticatedRequest, res: Response) => {
-  return res.json({ ok: true, enabled: isKiroEngineEnabled(), runner_configured: runnerConfig() !== null, open_sessions: openKiroSessionCount() });
+router.get('/kiro/status', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const enabled = isKiroEngineEnabled();
+  const runnerConfigured = runnerConfig() !== null;
+  const userId = req.identity?.user_id ?? null;
+  // VTID-05003: the signed-in user's own key and credits decide the default engine for new threads.
+  const keyLinked: boolean | 'unknown' = enabled && runnerConfigured && userId ? await kiroKeyLinked(userId) : 'unknown';
+  const credits = getKiroCredits(userId);
+  return res.json({
+    ok: true, enabled, runner_configured: runnerConfigured, open_sessions: openKiroSessionCount(),
+    key_linked: keyLinked, credits,
+    default_engine: kiroDefaultEngine({ enabled, runnerConfigured, keyLinked, credits }),
+  });
 });
 
 /** POST /kiro/permissions/:requestId { allow: boolean } — answer an approval card. */
 router.post('/kiro/permissions/:requestId', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
   const parsed = z.object({ allow: z.boolean() }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY' });
-  const r = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  let r: { ok: true } | { ok: false; error: 'not_found' | 'forbidden' } = answerPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
+  // VTID-05065: the card may wait in a run on another gateway task — answer it on the run record.
+  if (!r.ok && r.error === 'not_found') r = await answerPersistedPermission(req.params.requestId, req.identity?.user_id ?? null, parsed.data.allow);
   if (!r.ok) return res.status(r.error === 'forbidden' ? 403 : 404).json({ ok: false, error: r.error });
   // Every approval decision is a governed state transition: no key, no prompt, no tool arguments.
   await emitOasisEvent({
@@ -862,6 +1011,47 @@ router.delete('/kiro/sessions/:threadId', requireAdminAuth, async (req: Authenti
   return res.json({ ok: true });
 });
 
+// ==================== Kiro write confirmations (VTID-05006) ====================
+// The Allow/Deny cards for writes a Kiro session asked the Operator's tools to do.
+// The caller's own rows only (user id from the identity, never the request).
+
+// VTID-05014: read-only — can the gateway's token for each repo Kiro writes to read it,
+// and what does GitHub report as that token's permissions. No writes, no token values.
+router.get('/kiro/repos', requireAdminAuth, async (_req: AuthenticatedRequest, res: Response) => {
+  return res.json({ ok: true, repos: await kiroRepoReadiness() });
+});
+
+router.get('/kiro/confirmations', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const threadId = typeof req.query.thread_id === 'string' ? req.query.thread_id.slice(0, 200) : '';
+  if (!threadId) return res.status(400).json({ ok: false, error: 'thread_id required' });
+  const pending = await confirmationStore().pending(caller, threadId);
+  return res.json({ ok: true, pending });
+});
+
+router.post('/kiro/confirmations/:id', requireAdminAuth, async (req: AuthenticatedRequest, res: Response) => {
+  const caller = req.identity?.user_id;
+  if (!caller) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  const decision = req.body?.decision;
+  if (decision !== 'allow' && decision !== 'deny') return res.status(400).json({ ok: false, error: 'decision must be allow or deny' });
+  const ok = await decideConfirmation(String(req.params.id), caller, decision);
+  // Not pending any more (answered, expired, or not the caller's): nothing changes.
+  if (!ok) return res.status(409).json({ ok: false, error: 'not_pending' });
+  await emitOasisEvent({
+    vtid: 'VTID-05006',
+    type: decision === 'allow' ? 'operator.kiro.write_confirmed' : 'operator.kiro.write_denied',
+    source: 'gateway-operator',
+    status: 'info',
+    message: `Kiro write ${decision === 'allow' ? 'allowed' : 'denied'} by the user`,
+    actor_id: caller,
+    actor_role: 'admin',
+    surface: 'command-hub',
+    payload: { confirmation_id: String(req.params.id) },
+  }).catch(() => {});
+  return res.json({ ok: true });
+});
+
 // ==================== Kiro API key (VTID-04999) ====================
 // Each user links their OWN key: the user id is only ever the signed-in
 // identity, never a body or URL value. The key is forwarded to the runner,
@@ -883,6 +1073,7 @@ router.put('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, res:
   const parsed = z.object({ key: z.string().min(1).max(4096).regex(/^\S+$/) }).safeParse(req.body);
   if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_KEY' });
   const r = await kiroKeyRequest('PUT', userId, parsed.data.key);
+  clearKiroKeyCache(userId);
   if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
   await emitOasisEvent({
     vtid: 'VTID-04999',
@@ -903,6 +1094,7 @@ router.delete('/kiro/key', requireAdminAuth, async (req: AuthenticatedRequest, r
   const userId = req.identity?.user_id;
   if (!userId) return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
   const r = await kiroKeyRequest('DELETE', userId);
+  clearKiroKeyCache(userId);
   if (!r.ok) return res.status(r.status).json({ ok: false, error: r.error });
   await emitOasisEvent({
     vtid: 'VTID-04999',

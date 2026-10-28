@@ -93,27 +93,38 @@ jobs:
           echo ""
           FAILED=0
 
-          # Check dist bundle (required - this is what gets deployed)
-          echo "📦 Checking dist bundle: services/gateway/dist/frontend/command-hub/app.js"
-          if node --check services/gateway/dist/frontend/command-hub/app.js 2>&1; then
-            echo "✅ dist/frontend/command-hub/app.js: VALID JavaScript syntax"
-          else
-            echo "❌ dist/frontend/command-hub/app.js: SYNTAX ERROR DETECTED"
-            FAILED=1
-          fi
+          # VTID-05072: the bundle file list comes from modules.json (single
+          # source of truth), so node --check runs over every manifest bundle
+          # file, not only app.js.
+          BUNDLE_FILES=$(node -e "const m=require('./services/gateway/src/frontend/command-hub/modules.json'); process.stdout.write(m.bundle.map(e=>e.file).join(' '));")
+          echo "Manifest bundle files: $BUNDLE_FILES"
           echo ""
 
-          # Check src bundle (if present)
-          if [ -f "services/gateway/src/frontend/command-hub/app.js" ]; then
-            echo "📄 Checking src bundle: services/gateway/src/frontend/command-hub/app.js"
-            if node --check services/gateway/src/frontend/command-hub/app.js 2>&1; then
-              echo "✅ src/frontend/command-hub/app.js: VALID JavaScript syntax"
+          # Check dist bundle (required - this is what gets deployed)
+          for FILE in $BUNDLE_FILES; do
+            echo "📦 Checking dist bundle: services/gateway/dist/frontend/command-hub/$FILE"
+            if node --check "services/gateway/dist/frontend/command-hub/$FILE" 2>&1; then
+              echo "✅ dist/frontend/command-hub/$FILE: VALID JavaScript syntax"
             else
-              echo "❌ src/frontend/command-hub/app.js: SYNTAX ERROR DETECTED"
+              echo "❌ dist/frontend/command-hub/$FILE: SYNTAX ERROR DETECTED"
               FAILED=1
             fi
             echo ""
-          fi
+          done
+
+          # Check src bundle (if present)
+          for FILE in $BUNDLE_FILES; do
+            if [ -f "services/gateway/src/frontend/command-hub/$FILE" ]; then
+              echo "📄 Checking src bundle: services/gateway/src/frontend/command-hub/$FILE"
+              if node --check "services/gateway/src/frontend/command-hub/$FILE" 2>&1; then
+                echo "✅ src/frontend/command-hub/$FILE: VALID JavaScript syntax"
+              else
+                echo "❌ src/frontend/command-hub/$FILE: SYNTAX ERROR DETECTED"
+                FAILED=1
+              fi
+              echo ""
+            fi
+          done
 
           # Final verdict
           echo "============================================="

@@ -1,0 +1,126 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ae9b46dc7288c67bf/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ae9b46dc7288c67bf/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/.claude/worktrees/agent-ae9b46dc7288c67bf/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/data/feature-tips.locale-coverage.test.ts
+  FEATURE_TIPS locale coverage
+    ✓ every tip has a title and description for every registered gateway locale (42 ms)
+    ✓ every non-English value is genuinely translated, not a copy of English (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/data/enrichment-card-tips.locale-coverage.test.ts
+  ENRICHMENT_CARD_TIPS locale coverage
+    ✓ covers all 15 cards: E1–E11 and G1–G4 (54 ms)
+    ✓ every card has a non-empty title and description for every registered gateway locale (3 ms)
+    ✓ every non-English title and description is genuinely translated, not a copy of English (1 ms)
+    ✓ German is du-form (no Sie/Ihr/Ihnen) (4 ms)
+    ✓ enrichmentCardText returns the requested locale (1 ms)
+
+PASS test/services/enrichment/completion-resolver.test.ts
+  computeCompletions — each E-check
+    ✓ a member with nothing done has E1–E11 all false (2 ms)
+    ✓ E1 avatar: set → true, empty string → false (1 ms)
+    ✓ E2 bio: trimmed length must be > 50 (2 ms)
+    ✓ E3 post (1 ms)
+    ✓ E4 interests: non-empty slugs → true; [] or blanks → false (1 ms)
+    ✓ E5 location (2 ms)
+    ✓ E6/E7 instagram and facebook independently (1 ms)
+    ✓ E8 calendar, E9 contacts, E10 device token (1 ms)
+    ✓ E11 cover
+  resolveCompletions — through the repository
+    ✓ maps every source to its card and reads only the caller (5 ms)
+    ✓ a member with no profile row and no data has every card incomplete (1 ms)
+    ✓ loadEnrichmentCardState returns the dismissal rows and no boost triggers in Phase 1 (1 ms)
+    ✓ a read error in fetchProfileEnrichmentFields throws EnrichmentDataError naming profiles (28 ms)
+    ✓ a read error in fetchAnyProfilePost throws EnrichmentDataError naming profile_posts (1 ms)
+    ✓ a read error in fetchActiveSocialConnections throws EnrichmentDataError naming social_connections (1 ms)
+    ✓ a read error in fetchEnabledCalendarApp throws EnrichmentDataError naming connected_app_settings (1 ms)
+    ✓ a read error in fetchAnyContact throws EnrichmentDataError naming contacts (2 ms)
+    ✓ a read error in fetchActiveDeviceToken throws EnrichmentDataError naming user_device_tokens (9 ms)
+    ✓ a read error in fetchEnrichmentCardStates throws EnrichmentDataError naming user_enrichment_cards (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/enrichment/completion-resolver-repository.test.ts
+  ✓ profiles: the five enrichment fields of the caller (27 ms)
+  ✓ social_connections: is_active + disconnected_at IS NULL, instagram/facebook, no status column (9 ms)
+  ✓ connected_app_settings: enabled calendar apps only (1 ms)
+  ✓ user_device_tokens: not revoked, token present (1 ms)
+  ✓ profile_posts and contacts: one row is enough (1 ms)
+  ✓ dismissal upsert writes only the caller row and never cooldown_days (13 ms)
+
+PASS test/routes/enrichment-cards.test.ts
+  auth and validation
+    ✓ GET without a token → 401 JSON (31 ms)
+    ✓ POST /dismiss without a token → 401 JSON, nothing written (15 ms)
+    ✓ GET with unknown screen "nope" → 400 JSON (6 ms)
+    ✓ GET with unknown screen "" → 400 JSON (4 ms)
+    ✓ GET with unknown screen "HOME" → 400 JSON (6 ms)
+    ✓ GET without a screen → 400 (3 ms)
+    ✓ POST /dismiss with card_type "E12" → 400, nothing written (17 ms)
+    ✓ POST /dismiss with card_type "G4" → 400, nothing written (4 ms)
+    ✓ POST /dismiss with card_type "F1" → 400, nothing written (6 ms)
+    ✓ POST /dismiss with card_type "" → 400, nothing written (5 ms)
+    ✓ POST /dismiss with card_type 7 → 400, nothing written (3 ms)
+  GET — screen filtering, priority, completion
+    ✓ home: every incomplete card in static priority order, localized, with profile_completion_pct (8 ms)
+    ✓ screen=profile returns ["E1", "E2", "E3", "E6", "E7", "E8", "E9", "E4", "E5", "E10", "E11"] (4 ms)
+    ✓ screen=messenger returns ["E1", "E2", "E3", "E6", "E7", "E8", "E9", "E4", "E5", "E10", "E11"] (3 ms)
+    ✓ screen=calendar returns ["E8"] (3 ms)
+    ✓ screen=longevity-journey returns ["E4", "E5"] (7 ms)
+    ✓ screen=autopilot returns ["E10"] (4 ms)
+    ✓ screen=community returns ["E3", "E6", "E7"] (5 ms)
+    ✓ screen=make-a-post returns ["E3"] (5 ms)
+    ✓ screen=vitana-index returns [] (4 ms)
+    ✓ screen=talk-to-vitana returns [] (5 ms)
+    ✓ completed cards are excluded and profile_completion_pct reflects them (4 ms)
+    ✓ a member with everything done gets an empty list (not an error) (4 ms)
+    ✓ ?locale= wins over the stored locale (no lookup) (8 ms)
+    ✓ an unsupported ?locale= falls back to the stored locale (7 ms)
+  GET — dismissal cooldown (7 days)
+    ✓ a card dismissed now is hidden for 7 days and back on day 8 (15 ms)
+    ✓ the stored cooldown_days is honoured; a row without dismissed_at hides nothing (20 ms)
+  GET — errors
+    ✓ a database read error → 500 JSON, never an empty list (5 ms)
+    ✓ no Supabase client → 500 JSON (5 ms)
+  POST /dismiss
+    ✓ upserts only the caller row with now() and returns dismissed_until = now + cooldown (5 ms)
+    ✓ a write error → 500 JSON (5 ms)
+  eligibleEnrichmentCards — the shared rule (route + Messenger companion)
+    ✓ is the same rule the route serves (1 ms)
+    ✓ an unknown screen or an unknown completion state shows nothing (1 ms)
+    ✓ a dismissal hides the card until dismissed_at + cooldown_days (1 ms)
+
+Test Suites: 5 passed, 5 total
+Tests:       66 passed, 66 total
+Snapshots:   0 total
+Time:        6.712 s
+Ran all test suites matching /test\/services\/enrichment|test\/routes\/enrichment-cards|test\/data\/enrichment-card-tips.locale-coverage|test\/data\/feature-tips.locale-coverage/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

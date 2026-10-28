@@ -2,25 +2,21 @@
  * Developer voice tools — Governance (Wave 2, plan section C2).
  *
  * Thin dispatch layer over routes/governance.ts and routes/governance-controls.ts.
- * Those routes trust caller-supplied x-tenant-id / x-user-id / x-user-role
- * headers rather than enforcing real per-request auth (see
- * governance-controller.ts / governance-controls.ts) — handlers here forward
- * an 'admin' role header for the internal self-call since developerGate()
- * has already restricted the caller to developer/admin/exafy_admin.
+ * VTID-05048: those routes no longer trust caller-supplied x-user-id /
+ * x-user-role headers. Reads are open; the control write (dev_set_control)
+ * is requireServiceOrAdmin, so it uses the same service-token + caller-label
+ * headers and exafy_admin gate as admin_set_control_key.
  */
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { developerGate, clampLimit, relAge, gatewayApiCall } from './developer-tools';
+import { controlWriteGate, controlWriteHeaders } from './admin-governance-tools';
 
 type Handler = (
   args: OrbToolArgs,
   id: OrbToolIdentity,
   sb: SupabaseClient,
 ) => Promise<OrbToolResult>;
-
-function adminHeaders(id: OrbToolIdentity): Record<string, string> {
-  return { 'x-user-id': id.user_id, 'x-user-role': 'admin' };
-}
 
 // ---------------------------------------------------------------------------
 // 16. dev_evaluate_governance — POST /api/v1/governance/evaluate
@@ -58,7 +54,7 @@ export const dev_evaluate_governance: Handler = async (args, id) => {
 export const dev_governance_status: Handler = async (_args, id) => {
   const denied = developerGate(id);
   if (denied) return denied;
-  const { ok, status, body } = await gatewayApiCall('/api/v1/governance/controls', { headers: adminHeaders(id) });
+  const { ok, status, body } = await gatewayApiCall('/api/v1/governance/controls');
   if (!ok || body.ok !== true) return { ok: false, error: `dev_governance_status failed (${status}): ${String(body.error ?? 'unknown')}` };
   const controls = (Array.isArray(body.data) ? body.data : []) as Array<{ key: string; enabled: boolean }>;
   const disabled = controls.filter((c) => !c.enabled);
@@ -247,7 +243,7 @@ export const dev_get_control: Handler = async (args, id) => {
   if (denied) return denied;
   const key = String(args.key ?? '').trim();
   if (!key) return { ok: false, error: 'dev_get_control requires a control key, e.g. "vtid_allocator_enabled".' };
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`, { headers: adminHeaders(id) });
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`);
   if (!ok) {
     return status === 404
       ? { ok: true, result: { found: false }, text: `No control key "${key}" found.` }
@@ -262,7 +258,7 @@ export const dev_get_control: Handler = async (args, id) => {
 // ---------------------------------------------------------------------------
 
 export const dev_set_control: Handler = async (args, id) => {
-  const denied = developerGate(id);
+  const denied = developerGate(id) ?? controlWriteGate(id);
   if (denied) return denied;
   const key = String(args.key ?? '').trim();
   if (!key) return { ok: false, error: 'dev_set_control requires a control key.' };
@@ -278,7 +274,7 @@ export const dev_set_control: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}`, {
     method: 'POST',
-    headers: adminHeaders(id),
+    headers: controlWriteHeaders(id),
     body: {
       enabled,
       reason,
@@ -299,7 +295,7 @@ export const dev_get_control_history: Handler = async (args, id) => {
   const key = String(args.key ?? '').trim();
   if (!key) return { ok: false, error: 'dev_get_control_history requires a control key.' };
   const limit = clampLimit(args.limit, 10, 200);
-  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}/history?limit=${limit}`, { headers: adminHeaders(id) });
+  const { ok, status, body } = await gatewayApiCall(`/api/v1/governance/controls/${encodeURIComponent(key)}/history?limit=${limit}`);
   if (!ok) return { ok: false, error: `dev_get_control_history failed (${status}): ${String(body.error ?? 'unknown')}` };
   const rows = (Array.isArray(body.data) ? body.data : []) as Array<{ from_enabled: boolean; to_enabled: boolean; reason: string; created_at: string }>;
   if (rows.length === 0) return { ok: true, result: { history: [] }, text: `No history for control "${key}".` };

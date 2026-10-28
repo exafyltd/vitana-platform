@@ -1,6 +1,8 @@
 # Routine: supabase-io-audit
 
 **Schedule:** `0 6 * * *` (daily 06:00 UTC)
+**Runs in:** the gateway's routine runner (`services/gateway/src/services/routine-runner`, VTID-05103), once per UTC day at the time above — not as a claude.ai session. The steps below are the spec the runner implements: it calls the audit function behind each `$GATEWAY_URL/...` endpoint directly, records the run in `routine_runs` (`trigger = gateway-runner`), and on a breach emits the event with `source: routine.<name>`, `status: warning` and hands it to the self-healing intake. No token or URL is involved.
+
 **Catalog row:** `routines.name = 'supabase-io-audit'`
 **OASIS VTID for emitted events:** `VTID-02006`
 
@@ -13,11 +15,6 @@ Reads three IO-pressure signals via the gateway audit endpoint (server-side aggr
 | 🟢 `success` | All three signals within thresholds. |
 | 🟡 `partial` | Threshold breached → OASIS event emitted, self-healing notified. |
 | 🔴 `failure` | Routine itself errored. |
-
-## Required environment
-
-- `GATEWAY_URL` = `https://gateway-q74ibpv6ia-uc.a.run.app`
-- `ROUTINE_INGEST_TOKEN` (embedded — same gate as the existing routine ingest)
 
 ## Steps
 

@@ -119,7 +119,8 @@ describe('source contracts', () => {
     const loop = s.slice(s.indexOf("router.post('/push-dispatch'"));
     const check = loop.indexOf('isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey)');
     expect(check).toBeGreaterThan(0);
-    expect(check).toBeLessThan(loop.indexOf('sendPushToUser('));
+    // VTID-05177: the site pushes through dispatchPush() (services/push-routing.ts).
+    expect(check).toBeLessThan(loop.indexOf('dispatchPush('));
   });
 
   test('reminder push waits on the full delivery decision for reminder_due', () => {
@@ -127,7 +128,7 @@ describe('source contracts', () => {
     const fn = s.slice(s.indexOf('export async function scheduleReminderFcmPush'));
     expect(s).toContain("REMINDER_NOTIFICATION_TYPE = 'reminder_due'");
     expect(fn.indexOf('decidePushDelivery(')).toBeGreaterThan(0);
-    expect(fn.indexOf('decidePushDelivery(')).toBeLessThan(fn.indexOf('sendPushToUser('));
+    expect(fn.indexOf('decidePushDelivery(')).toBeLessThan(fn.indexOf('dispatchPush('));
     expect(fn).toMatch(/if \(!decision\.send\)[\s\S]{0,120}return;/);
   });
 
@@ -148,7 +149,9 @@ describe('source contracts', () => {
         else if (f.name.endsWith('.ts')) {
           const rel = path.relative(root, p);
           if (rel === path.join('services', 'notification-service.ts')) continue;
-          if (/await (sendPushToUser|sendAppilixPush|sendPushNotification)\(/.test(fs.readFileSync(p, 'utf8'))) offenders.push(rel);
+          // VTID-05177: the shared router the gated sites call; it has no entry point of its own.
+          if (rel === path.join('services', 'push-routing.ts')) continue;
+          if (/await (sendPushToUser|sendAppilixPush|sendPushNotification|dispatchPush)\(/.test(fs.readFileSync(p, 'utf8'))) offenders.push(rel);
         }
       }
     };

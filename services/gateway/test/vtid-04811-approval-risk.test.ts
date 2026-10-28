@@ -85,7 +85,7 @@ describe('VTID-04811 decision and input', () => {
 });
 
 describe('VTID-04811 gate', () => {
-  test('off (default, typo), not queued, or payroll: nothing asked or written', async () => {
+  test('off (default, typo), not queued, or payroll: nothing asked; only payroll writes a skipped row (VTID-05012)', async () => {
     const call = jest.fn();
     for (const env of [JEV_ON, { ...JEV_ON, JEV_APPROVAL_RISK_MODE: 'on' }] as NodeJS.ProcessEnv[]) {
       expect(isApprovalRiskOn(env)).toBe(false);
@@ -94,7 +94,8 @@ describe('VTID-04811 gate', () => {
     expect(await runApprovalRiskCheck({ ...PAYMENT, status: 'executed' }, 'ap1', { env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(await runApprovalRiskCheck(PAYROLL, 'ap2', { env: SHADOW, sb, decideOptions: { call } })).toBeNull();
     expect(call).not.toHaveBeenCalled();
-    expect(rows).toEqual([]);
+    expect(rows).toHaveLength(1);
+    expect(rows[0]).toMatchObject({ jev_outcome: 'skipped', skip_reason: 'payroll_excluded', subject_ref: 'ap2', cost_usd: 0 });
   });
 
   test('shadow: one row per approval with the level', async () => {

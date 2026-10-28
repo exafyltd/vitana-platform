@@ -1,0 +1,50 @@
+name: SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE
+run-name: 'memory functions migrate revoke against a throwaway Postgres [VTID: VTID-05125] (${{ github.ref_name }})'
+
+# VTID-05125 — runs the migration that revokes the `migrate` (AWS DMS source)
+# role's EXECUTE on write_fact, get_current_facts, recall_at_time_range and
+# memory_facts_semantic_search against a disposable Postgres service
+# container: revoke + service_role kept, idempotency, refusals that roll back
+# (members re-granted, service_role revoked, a function missing, a fifth
+# overload) and an absent `migrate` role. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*_vtid_05125_memory_functions_revoke_migrate.sql'
+      - 'scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh'
+      - '.github/workflows/SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml'
+  push:
+    paths:
+      - 'supabase/migrations/*_vtid_05125_memory_functions_revoke_migrate.sql'
+      - 'scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh'
+      - '.github/workflows/SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the memory functions migrate revoke test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          bash scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh 2>&1 | tee /tmp/migrate-revoke.log
+      - name: Assert the test ran to the end
+        run: grep -q '^PASS vtid-05125 memory functions migrate revoke' /tmp/migrate-revoke.log

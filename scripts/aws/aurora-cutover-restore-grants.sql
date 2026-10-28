@@ -1215,7 +1215,7 @@ GRANT DELETE ON TABLE public.user_health_plans TO service_role;
 GRANT DELETE ON TABLE public.user_hidden_posts TO anon;
 GRANT DELETE ON TABLE public.user_hidden_posts TO authenticated;
 GRANT DELETE ON TABLE public.user_hidden_posts TO service_role;
-GRANT DELETE ON TABLE public.user_integrations TO authenticated;
+-- VTID-05161: no browser DELETE on user_integrations (owner read-only).
 GRANT DELETE ON TABLE public.user_integrations TO service_role;
 GRANT DELETE ON TABLE public.user_intent_cover_library TO authenticated;
 GRANT DELETE ON TABLE public.user_intent_cover_library TO service_role;
@@ -2609,7 +2609,7 @@ GRANT INSERT ON TABLE public.user_health_plans TO service_role;
 GRANT INSERT ON TABLE public.user_hidden_posts TO anon;
 GRANT INSERT ON TABLE public.user_hidden_posts TO authenticated;
 GRANT INSERT ON TABLE public.user_hidden_posts TO service_role;
-GRANT INSERT ON TABLE public.user_integrations TO authenticated;
+-- VTID-05161: no browser INSERT on user_integrations (owner read-only).
 GRANT INSERT ON TABLE public.user_integrations TO service_role;
 GRANT INSERT ON TABLE public.user_intent_cover_library TO authenticated;
 GRANT INSERT ON TABLE public.user_intent_cover_library TO service_role;
@@ -3999,7 +3999,7 @@ GRANT UPDATE ON TABLE public.user_health_plans TO service_role;
 GRANT UPDATE ON TABLE public.user_hidden_posts TO anon;
 GRANT UPDATE ON TABLE public.user_hidden_posts TO authenticated;
 GRANT UPDATE ON TABLE public.user_hidden_posts TO service_role;
-GRANT UPDATE ON TABLE public.user_integrations TO authenticated;
+-- VTID-05161: no browser UPDATE on user_integrations (owner read-only).
 GRANT UPDATE ON TABLE public.user_integrations TO service_role;
 GRANT UPDATE ON TABLE public.user_intent_cover_library TO authenticated;
 GRANT UPDATE ON TABLE public.user_intent_cover_library TO service_role;
@@ -4192,3 +4192,7 @@ GRANT UPDATE ON TABLE public.workflow_step TO service_role;
 GRANT UPDATE ON TABLE public.workflow_version TO anon;
 GRANT UPDATE ON TABLE public.workflow_version TO authenticated;
 GRANT UPDATE ON TABLE public.workflow_version TO service_role;
+
+-- VTID-05161: health_sources (Aurora only, created after the cutover): member SELECT, gateway ALL.
+DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXECUTE $SQL05161$GRANT SELECT ON TABLE public.health_sources TO authenticated$SQL05161$; END IF; END $HS05161$;
+DO $HS05161$ BEGIN IF to_regclass('public.health_sources') IS NOT NULL THEN EXECUTE $SQL05161$GRANT ALL ON TABLE public.health_sources TO service_role$SQL05161$; END IF; END $HS05161$;

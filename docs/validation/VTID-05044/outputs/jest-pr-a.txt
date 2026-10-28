@@ -1,0 +1,5 @@
+PASS test/routes/billing-repository.test.ts
+PASS test/routes/tenant-admin/invitations.test.ts
+PASS test/routes/billing-admin-metrics.test.ts
+Test Suites: 3 passed, 3 total
+Tests:       76 passed, 76 total

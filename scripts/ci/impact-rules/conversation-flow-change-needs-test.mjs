@@ -86,8 +86,13 @@ const FLOW_SOURCE_RE = [
 // `npm run test:roles`), the canonical suite for the ORB profile and the
 // greeting ladder per surface. Its name matched no keyword, so extending it for
 // a work-surface opener change still reported the blocker. Same fix again.
+//
+// VTID-05026 — the Audiobook (guided-journey listening mode) suites are named
+// `vtid-04761-audiobook-audio*.test.ts` / `vtid-05026-audiobook-voices.test.ts`
+// and pin the guided-journey narration renderer, yet matched no keyword. Same
+// fix again: "audiobook" added.
 const FLOW_TEST_RE =
-  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health|navigation|nav-golden|role-separation).*\.(test|spec)\.(ts|tsx)$/i;
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health|navigation|nav-golden|role-separation|audiobook).*\.(test|spec)\.(ts|tsx)$/i;
 
 const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
 const EXEMPT_RE = /flow-test-exempt/;

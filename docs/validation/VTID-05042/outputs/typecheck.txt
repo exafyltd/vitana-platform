@@ -1,0 +1,6 @@
+== npx tsc --noEmit -p . --declaration false --declarationMap false
+(exit 0, no errors)
+== npx tsc --noEmit -p . (as-is)
+39 errors, all TS2742 "inferred type cannot be named" in files this change does not touch
+(discover-search-repository, notification-controls-repository, rewards/*-repository) - an artefact of
+the worktree node_modules being a symlink into another checkout; no TS2742 or other error in any touched file.

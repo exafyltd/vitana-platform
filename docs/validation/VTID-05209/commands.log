@@ -1,0 +1,4 @@
+$ PR_TITLE="VTID-05209: …" node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base origin/main --head HEAD
+see outputs/local-checks.txt
+$ (services/gateway) npm ci && npx tsc --noEmit && npx jest test/vtid-05209-company-suggestions.test.ts test/commerce-mcp.test.ts test/vtid-04940-commerce-mcp-supplier-data.test.ts test/vtid-04941-commerce-mcp-automation.test.ts test/partner-onboarding.test.ts
+NOT RUN LOCALLY: this session's network policy refuses registry.npmjs.org (direct DNS fails; the egress proxy rejects it), so no dependencies could be installed. Type-check and Jest run in CI on this PR (gateway Jest job); the PR is not merged until they are green.

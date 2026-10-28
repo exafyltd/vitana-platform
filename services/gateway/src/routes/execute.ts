@@ -34,6 +34,7 @@
  * This enables the CEO loop to run with one command from Command Hub or curl.
  */
 
+import { gatewayServiceAuthHeader } from '../middleware/require-service-or-admin';
 import { Router, Request, Response, NextFunction } from "express";
 import { z } from "zod";
 import { randomUUID } from "crypto";
@@ -1040,8 +1041,10 @@ async function executePrMerge(ctx: ExecutionContext): Promise<{
     // Call the autonomous-pr-merge endpoint internally
     const response = await fetch(`${GATEWAY_INTERNAL_URL}/api/v1/github/autonomous-pr-merge`, {
       method: "POST",
+      // VTID-05047: autonomous-pr-merge requires the gateway service token.
       headers: {
         "Content-Type": "application/json",
+        ...gatewayServiceAuthHeader(),
       },
       body: JSON.stringify(mergePayload),
     });

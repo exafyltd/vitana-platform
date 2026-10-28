@@ -18,6 +18,8 @@ import { VITANA_BOT_USER_ID } from '../lib/vitana-bot';
 import { notifyUserAsync } from './notification-service';
 import { emitOasisEvent } from './oasis-event-service';
 import * as repo from './proactive-match-messenger-repository';
+import * as companionRepo from './companion/companion-repository';
+import { localTime } from './companion/local-time';
 
 const VTID = 'VTID-01270';
 const MATCH_SHARE_BASE = 'https://e.vitanaland.com/matches';
@@ -302,6 +304,33 @@ export async function sendProactiveMatchMessages(
       total_matches_today: totalCount || matches.length,
     };
 
+    // Step 7b (VTID-05099): claim the member's one proactive Vitana DM for their
+    // local day, shared with Vitana Companion Messages (owner decision D1:
+    // at most one per member per day, whoever sends it). A ledger error fails
+    // OPEN — this message existed before the ledger and must keep working if
+    // the ledger is unavailable; a refused claim means today's slot is taken.
+    let companionClaimId: number | null = null;
+    try {
+      const [profile] = await companionRepo.fetchProfiles(supabase, [user_id]);
+      const claim = await companionRepo.claimMessage(supabase, {
+        user_id, tenant_id, local_date: localTime(new Date(), profile?.timezone).date,
+        mode: 'live', sender: 'proactive_match', moment_key: 'new_match', card_type: 'F5',
+        facts: { match_count: matchPreviews.length },
+      });
+      if (claim.ok && claim.claimed) companionClaimId = claim.id;
+      else if (claim.ok && !claim.claimed) {
+        return {
+          ok: true,
+          user_id,
+          messages_sent: 0,
+          matches_surfaced: [],
+          skipped_reason: 'companion_daily_limit',
+        };
+      } else console.warn(`[${VTID}] companion ledger claim failed, sending anyway: ${claim.error}`);
+    } catch (err: any) {
+      console.warn(`[${VTID}] companion ledger unavailable, sending anyway: ${err?.message ?? err}`);
+    }
+
     // Step 8: Insert chat message
     const { error: insertError } = await repo.insertProactiveMatchChatMessage(supabase, {
       tenant_id,
@@ -313,8 +342,10 @@ export async function sendProactiveMatchMessages(
     });
 
     if (insertError) {
+      if (companionClaimId !== null) await companionRepo.finishMessage(supabase, companionClaimId, 'failed', null, null).catch(() => undefined);
       throw new Error(`Chat message insert failed: ${insertError.message}`);
     }
+    if (companionClaimId !== null) await companionRepo.finishMessage(supabase, companionClaimId, 'sent', null, null).catch(() => undefined);
 
     // Step 9: Push notification
     const topMatch = matchPreviews[0];

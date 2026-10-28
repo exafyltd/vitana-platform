@@ -1,0 +1,10 @@
+# VTID-05039 commands (2026-10-10)
+# read-only, production: GET https://gateway.vitanaland.com/api/v1/onboarding-coach/status -> {"mode":"off","reason":"feature_off"}
+#   coach tables row counts -> 0/0/0; oasis_events onboarding.coach.* -> none; cohort snapshot -> 26 real members (1 tenant)
+# read-only, production: baseline.sql (Supabase MCP execute_sql, SELECT only) -> baseline.md
+# read-only cross-check: auth.sessions activity after day 2 -> 8 of 34
+cd services/gateway && npx jest test/vtid-05039-onboarding-coach-shadow-start.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts   # outputs/jest-shadow-start.txt
+# vtid-04226 job count 30 -> 31 (one job added on purpose, same pattern as VTID-04444/04505)
+npx jest $(grep -rlE "AWS-PROD-DEPLOY-GATEWAY|setup-eventbridge-cron-migration|workflows/" test)   # every workflow/scheduler guard suite green after the count update
+npx jest test/vtid-04892-onboarding-coach.test.ts                                                 # 23 passed (unchanged)
+bash -n scripts/aws/setup-eventbridge-cron-migration.sh                                           # ok

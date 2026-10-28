@@ -90,7 +90,7 @@ export const NAVIGATION_CONFIG = [
     tabs: [
       { key: "autopilot-community", label: "Autopilot (Community)" },
       { key: "autopilot-developer", label: "Autopilot (Developer)" },
-      { key: "autopilot-admin", label: "Autopilot (Admin)" },
+      { key: "loops", label: "Loops" },
       { key: "self-healing", label: "Self-Healing" },
       { key: "autonomy-pulse", label: "Autonomy Pulse" },
       { key: "autonomy-trace", label: "Autonomy Trace" }
@@ -186,7 +186,6 @@ export const NAVIGATION_CONFIG = [
     label: "Infrastructure",
     tabs: [
       { key: "services", label: "Services" },
-      { key: "health", label: "Health" },
       { key: "deployments", label: "Deployments" },
       { key: "logs", label: "Logs" },
       { key: "config", label: "Config" }

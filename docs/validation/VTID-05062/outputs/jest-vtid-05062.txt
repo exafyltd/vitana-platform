@@ -1,0 +1,8 @@
+    ✓ production HTML unavailable (null or throwing fetcher) → red (2 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       48 passed, 48 total
+Snapshots:   0 total
+Time:        1.073 s
+Ran all test suites matching /test\/vtid-05062-rum-nav-beacon.test.ts|test\/vtid-05062-screen-load-daily-report.test.ts|test\/vtid-05062-daily-report-route.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

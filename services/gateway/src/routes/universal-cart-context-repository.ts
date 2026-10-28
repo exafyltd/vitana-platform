@@ -29,10 +29,6 @@ export async function fetchActiveRoleForTenant(sb: SupabaseClient, userId: strin
   return sb.from('user_tenants').select('active_role').eq('user_id', userId).eq('tenant_id', tenantId).maybeSingle();
 }
 
-export async function fetchPrimaryTenantId(sb: SupabaseClient, userId: string) {
-  return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).maybeSingle();
-}
-
 // ==================== app_users / user_limitations ====================
 
 export async function fetchUserCurrencyPreference(sb: SupabaseClient, userId: string) {

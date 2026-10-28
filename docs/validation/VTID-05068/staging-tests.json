@@ -1,0 +1,33 @@
+{
+  "vtid": "VTID-05068",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the Kiro run routes the reattach finishes runs for are still mounted and admin-only",
+      "path": "/api/v1/operator/kiro/runs?thread_id=00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET without a token; the deployed build still serves the run API a reattached run is read through"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04465-operator-pipeline-regression.test.ts -t VTID-0506",
+      "cwd": "services/gateway",
+      "reason": "the real run service, executor, Kiro turn runner and ACP client over the fake database: a deploy mid-run lets the session go and the new task reattaches it (contiguous seq, one reply, no interrupted event), an open card is shown again and answered, a refused reattach is interrupted exactly as in Phase 1, a crashed task's run is reattached inside the window and interrupted past it; every Phase 1 run scenario unchanged"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05068-kiro-run-reattach.test.ts test/vtid-05065-kiro-runs.test.ts test/vtid-04999-kiro-runner-backend.test.ts",
+      "cwd": "services/gateway",
+      "reason": "token derived from the run's nonce and never stored, the candidate rule, ACP adoption and detach, the real remote backend over a real socket (header-only token, close 1001, reattached frame and same-tick replay, 4403/4404 refusals), wiring and migration"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx vitest run",
+      "cwd": "services/kiro-runner",
+      "reason": "a socket drop mid-turn keeps kiro-cli alive and buffers its output; the buffer cap ends the session; wrong, missing or expired token and wrong user or thread are refused; a reattach replays the buffered frames and unanswered requests in order; idle and lifetime timers still end a detached session"
+    }
+  ]
+}

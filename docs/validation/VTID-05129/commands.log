@@ -1,0 +1,6 @@
+$ node --test scripts/ci/staging-verify/lib.test.cjs
+# tests 43 / pass 43 / fail 0
+$ node --check scripts/ci/staging-verify/run.mjs
+syntax ok
+$ (vitana-v1) npx tsc --noEmit --strict --skipLibCheck --target es2022 --module esnext --moduleResolution bundler tests/e2e/staging/staging-guard.ts tests/e2e/staging/vtid-04973-feed-order.staging.spec.ts
+# rc=0 (guard copied in temporarily, as run.mjs does)

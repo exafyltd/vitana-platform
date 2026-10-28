@@ -111,6 +111,16 @@ INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID:-vitana/gateway/sta
 # token. A job selects it with `token_secret_id` in its extra Input; jobs
 # without one keep using INTERNAL_TOKEN_SECRET_ID (staging).
 PROD_INTERNAL_TOKEN_SECRET_ID="${GATEWAY_INTERNAL_TOKEN_SECRET_ID_PROD:-vitana/gateway/prod/internal-token}"
+# VTID-05011: every AP-XXXX automation job names the token of the gateway it
+# calls, derived here from AUTOMATIONS_GATEWAY_URL — never from the Lambda-wide
+# GATEWAY_INTERNAL_TOKEN_SECRET_ID, which also serves the staging-target jobs
+# (overriding it re-pointed their token and rewrote the IAM policy). Any URL
+# other than the two gateways is refused.
+case "$AUTOMATIONS_GATEWAY_URL" in
+  https://gateway.vitanaland.com) automations_token_secret_id="$PROD_INTERNAL_TOKEN_SECRET_ID" ;;
+  https://preview-aws-gateway.vitanaland.com) automations_token_secret_id="$INTERNAL_TOKEN_SECRET_ID" ;;
+  *) echo "ERROR: AUTOMATIONS_GATEWAY_URL must be https://gateway.vitanaland.com or https://preview-aws-gateway.vitanaland.com (got: $AUTOMATIONS_GATEWAY_URL)" >&2; exit 1 ;;
+esac
 
 LAMBDA_NAME="vitana-cron-dispatch"
 LAMBDA_EXEC_ROLE_NAME="vitana-cron-dispatch-lambda-exec"
@@ -143,27 +153,28 @@ fi
 # Verbatim from scripts/setup-cloud-scheduler.sh's JOBS + MEMORY_INTELLIGENCE_JOBS
 # + DIRECT_JOBS (minus push-dispatch, already migrated) + TENANT_DIRECT_JOBS.
 JOBS=(
-  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
-  "autopilot-memory-diary-theme-rollup|25 4 * * *|UTC|/api/v1/automations/cron/AP-0915|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\"}"
+  "autopilot-daily-match-delivery|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0101|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-morning-briefing|0 7 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0501|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-diary-reminder|0 21 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0505|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-weekly-community-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0502|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-weekly-reflection|0 20 * * 5|Europe/Berlin|/api/v1/automations/cron/AP-0506|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-group-recommendation-push|0 10 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0105|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-social-alignment|0 9 * * 1|Europe/Berlin|/api/v1/automations/cron/AP-0107|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-creator-digest|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0210|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-trending-events|0 18 * * 0|Europe/Berlin|/api/v1/automations/cron/AP-0305|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-wellness-check-in|0 10 * * 3|Europe/Berlin|/api/v1/automations/cron/AP-0604|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-upcoming-events-today|0 8 * * *|Europe/Berlin|/api/v1/automations/cron/AP-0510|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-routine-pattern-extraction|30 3 * * *|UTC|/api/v1/automations/cron/AP-0906|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-relationship-graph-projection|50 3 * * *|UTC|/api/v1/automations/cron/AP-0909|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-behavior-preference-inference|40 4 * * *|UTC|/api/v1/automations/cron/AP-0908|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-health-correlation-insights|55 4 * * *|UTC|/api/v1/automations/cron/AP-0912|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-user-model-synthesis|35 * * * *|UTC|/api/v1/automations/cron/AP-0911|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-own-post-capture|15 * * * *|UTC|/api/v1/automations/cron/AP-0913|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-embedding-backfill|25 * * * *|UTC|/api/v1/automations/cron/AP-0910|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-daily-learning-digest|10 * * * *|UTC|/api/v1/automations/cron/AP-0907|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-daily-learning-episode|45 * * * *|UTC|/api/v1/automations/cron/AP-0914|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-diary-theme-rollup|25 4 * * *|UTC|/api/v1/automations/cron/AP-0915|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
+  "autopilot-memory-timeline-habit-rollup|15 4 * * *|UTC|/api/v1/automations/cron/AP-0916|{\"tenant_id\":\"$TENANT_ID\"}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$AUTOMATIONS_GATEWAY_URL\",\"token_secret_id\":\"$automations_token_secret_id\"}"
   # VTID-04677: the scheduled-notifications routes require X-Gateway-Internal
   # (production token). NOTE: the reminders, daily-pace and night-push jobs
   # below are defined but have never been created in AWS — reminders run
@@ -185,6 +196,33 @@ JOBS=(
   # only scans members whose local hour is 07 or 17, and writes nothing unless
   # COMMUNITY_AUTOPILOT_SCAN_ENABLED=true on the target gateway. Staging first.
   "gateway-community-autopilot-scan|5 * * * *|UTC|/api/v1/autopilot/recommendations/community-scan|{}|{\"auth\":\"gateway_internal\",\"gateway_url\":\"$TEST_CONTRACTS_GATEWAY_URL\"}"
+  # VTID-05039 — Vitana Onboarding Assistant coach, SHADOW mode (VTID-04892):
+  # once a day, production gateway only (the staging gateway answers 409 —
+  # it shares this database). Records what Vitana would do per new member,
+  # sends nothing. Daily, not hourly: one decision per member per local day,
+  # and one tick_completed OASIS event a day instead of 24. The route enforces
+  # X-Gateway-Internal itself. Off: FEATURE_ONBOARDING_ASSISTANT_ENV=off on
+  # the gateway (the tick then answers {mode:"off"}); full silence: re-run
+  # with --only gateway-onboarding-coach-tick --delete.
+  "gateway-onboarding-coach-tick|17 6 * * *|UTC|/api/v1/scheduled-notifications/onboarding-coach-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
+  # VTID-05099 — Vitana Companion Messages, Phase 1 SHADOW: every 15 minutes,
+  # production gateway only (staging answers 409 — shared database). Each tick
+  # handles the members whose LOCAL time is inside the morning window
+  # (default 07:30–09:30), once per member per local day; records what Vitana
+  # would write, sends nothing. Inert until FEATURE_COMPANION_MESSAGES_ENV and
+  # COMPANION_MODE=shadow are set on the gateway (the tick answers {mode:"off"});
+  # full silence: re-run with --only gateway-companion-tick --delete.
+  "gateway-companion-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/companion-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
+  # VTID-05205 — team welcome DMs (Mariia day 0, Jovana day 1, Alex Blue day 2):
+  # every 15 minutes, production gateway only (staging answers 409 — shared
+  # database), so Mariia's welcome arrives within ~15 min of registration.
+  # Each member gets at most one welcome per tick and each welcome once
+  # (welcome_team_claims). Inert until FEATURE_WELCOME_TEAM_ENV, WELCOME_ROLLOUT_AT
+  # and WELCOME_TEAM_MODE are set on the gateway (the tick answers {mode:"off"});
+  # sending also needs WELCOME_TEAM_SEND_ENABLED=true and
+  # WELCOME_SENDER_NAMES_CONFIRMED=true. Full silence: re-run with
+  # --only gateway-welcome-team-tick --delete.
+  "gateway-welcome-team-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/welcome-team-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.

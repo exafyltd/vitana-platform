@@ -10,11 +10,22 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { extractedOperatorBlock, readCommandHubBundle } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
-const BLOCK = APP_JS.slice(APP_JS.indexOf('var KIRO_TOOL_STATUS'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: these call sites live inside functions extracted to
+// operator-console.js; source-check them against the whole bundle.
+const BUNDLE = readCommandHubBundle();
+// VTID-05073: the operatorThreadEngine..renderOperatorLiveTranscript functions
+// moved to operator-console.js; their module vars stayed in app.js.
+// extractedOperatorBlock() rebuilds the original executable slice unchanged.
+const BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'console'],
+);
 
 class El {
   tag: string; className = ''; textContent = ''; title = ''; value = ''; disabled = false; selected = false;
@@ -27,14 +38,14 @@ class El {
 const MODELS = [{ id: 'claude-sonnet', name: 'Claude Sonnet', description: 'Balanced' }, { id: 'claude-opus', name: 'Claude Opus' }];
 
 function load(fetchImpl: any, over: any = {}) {
-  const state: any = { authToken: 'tok', operatorActiveThreadId: 'T1', chatSending: false, kiroModels: {}, chatLiveKiro: { text: '', tools: [], permissions: [] }, ...over };
+  const state: any = { authToken: 'tok', operatorActiveThreadId: 'T1', chatSending: false, kiroModels: {}, ...over };
   const calls = { renders: 0, toasts: [] as string[] };
   const fetchMock = jest.fn(fetchImpl);
   // eslint-disable-next-line no-new-func
   const api = new Function(
     'state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex',
     'updateOperatorLiveTranscriptDom', 'showToast', 'console',
-    BLOCK + '\nreturn { ensureKiroModels, renderKiroModelSelect, selectKiroModel, kiroModelName, applyKiroTurnFrame };',
+    BLOCK + '\nreturn { ensureKiroModels, renderKiroModelSelect, selectKiroModel, kiroModelName, onKiroRunFinished };',
   )(
     state, { createElement: (t: string) => new El(t) }, fetchMock, (h: any) => ({ Authorization: 'Bearer tok', ...h }),
     () => { calls.renders++; }, () => {}, () => {}, (m: string) => { calls.toasts.push(m); }, { warn: () => undefined },
@@ -95,19 +106,21 @@ describe('VTID-04984 Kiro model dropdown', () => {
     expect(state.kiroModels.T1.current).toBe('claude-sonnet');
   });
 
-  it('re-reads the list after each Kiro turn and names the model that answered', () => {
-    const { api, state } = load(async () => ({}), { kiroModels: { T1: { loaded: true, models: MODELS, current: 'claude-sonnet' } } });
+  // VTID-05067: a run's end is reported by kiro-console.js (host.onRunFinished → onKiroRunFinished).
+  it('re-reads the list after each Kiro run (for the run\'s own thread) and names the model that answered', () => {
+    const { api, state } = load(async () => ({}), { kiroModels: { T1: { loaded: true, models: MODELS, current: 'claude-sonnet' }, T2: { loaded: true, models: [], current: null } } });
     expect(api.kiroModelName('claude-opus')).toBe('Claude Opus');
     expect(api.kiroModelName('unknown-id')).toBe('unknown-id');
-    api.applyKiroTurnFrame({ event: 'kiro.turn_end', data: { stop_reason: 'end_turn' } });
+    api.onKiroRunFinished('T1');
     expect(state.kiroModels.T1).toBeUndefined();
+    expect(state.kiroModels.T2).toBeDefined();
   });
 });
 
 describe('VTID-04984 wiring (source check)', () => {
   it('the fixed Kiro control holds the dropdown and each Kiro reply shows its model', () => {
-    expect(APP_JS).toContain('var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);');
-    expect(APP_JS).toContain("if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {");
+    expect(BUNDLE).toContain('var modelSelect = renderKiroModelSelect(state.operatorActiveThreadId);');
+    expect(BUNDLE).toContain("if (msg.meta && msg.meta.engine === 'kiro' && msg.meta.kiro_model) {");
   });
   it('the dropdown has its styles and the cache-bust is bumped', () => {
     expect(CSS).toContain('.chat-kiro-model-select');

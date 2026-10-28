@@ -1,0 +1,45 @@
+$ (read-only, production) information_schema / pg_constraint / pg_policies / pg_trigger reads of tenants, tenant_settings,
+  notification_type_controls, ai_provider_policies, tenant_autopilot_settings, chat_groups, chat_group_members,
+  tenant_invitations, service_bot_accounts, notification_test_actors, supported_locales
+(see outputs/live-before-2026-10-13.txt; the fixture mirrors these shapes)
+
+$ node scripts/tenants/gen-reserved-slugs.mjs --v1 <copy of vitana-v1 @ d09d66c4f with typescript resolvable> --commit d09d66c4f
+[VTID-05150] wrote services/gateway/src/services/tenant-provisioning/reserved-slugs.json (112 slugs, v1 d09d66c4f)
+
+$ bash scripts/ci/test-vtid-05150-provision-tenant.sh                       (Lane A M1 stand-in; PostgreSQL 16)
+VTID-05150: all assertions passed ... VTID-05150: harness passed             (outputs/harness-standin.txt)
+
+$ VTID_05150_LANE_A_M1=<lane A worktree>/supabase/migrations/20261014000100_vtid_05149_tenants_default_platform_flags.sql \
+    bash scripts/ci/test-vtid-05150-provision-tenant.sh                     (the real Lane A M1 file)
+VTID-05150: all assertions passed ... VTID-05150: harness passed             (outputs/harness-lane-a-m1.txt)
+
+$ cd services/gateway
+$ npx jest test/vtid-05150-admin-tenants-provisioning.test.ts
+Tests: 101 passed, 101 total
+$ npx jest test/vtid-05150-provision-tenant-sql.test.ts      (includes the SQL harness when initdb is present)
+Tests: 16 passed, 16 total
+$ npx jest test/vtid-05150-reserved-slugs.test.ts
+Tests: 8 passed, 8 total
+$ npx jest test/routes/admin-tenants.test.ts test/routes/tenant-admin/settings.test.ts
+Tests: 32 passed, 32 total
+$ npx jest test/vtid-05041-definer-lockdown.test.ts test/loop-catalog.test.ts
+Tests: all passed (definer guard: 05150 M2 revokes PUBLIC/anon; loop catalog: TENANT-RESERVED-SLUGS-DRIFT owned by L1 Repair)
+$ npm run test:roles
+Tests: 105 passed, 105 total
+$ npm run test:support
+Tests: 87 passed, 87 total
+$ npm run test:operator
+Tests: 64 passed, 64 total
+$ npx tsc --noEmit -p .
+3 errors, all "Cannot find module" for libphonenumber-js / @aws-sdk/client-pinpoint-sms-voice-v2 in files this change
+does not touch (the local node_modules predates those dependencies); no error in any VTID-05150 file.
+$ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05150/staging-tests.json'))"
+{"ok":true,"errors":[]}
+$ npx jest          (full gateway suite, local)
+Test Suites: 26 failed, 2 skipped, 1654 passed; Tests: 11 failed, 24 skipped, 6 todo, 26938 passed, 26979 total
+All 26 failing suites are environmental and untouched by this change:
+ - 20 suites: "Cannot find module 'libphonenumber-js/max'" / '@aws-sdk/client-pinpoint-sms-voice-v2' (the local
+   node_modules predates those dependencies; CI installs them);
+ - 6 SQL-harness suites (04809, 04859, 04868, 04878, 04981, 04988): "psql: …/supabase/tests/<fixture>.sql:
+   Permission denied" — those older scripts read fixtures straight from the checkout as the postgres user, and this
+   checkout lives in a root-only directory. The VTID-05150 harness copies its inputs next to the cluster and passes.

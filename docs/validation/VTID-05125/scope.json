@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05125",
+  "files": [
+    "supabase/migrations/20261013090000_vtid_05125_memory_functions_revoke_migrate.sql",
+    "scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh",
+    ".github/workflows/SQL-MEMORY-FUNCTIONS-MIGRATE-REVOKE.yml",
+    "docs/validation/VTID-05125/**"
+  ]
+}

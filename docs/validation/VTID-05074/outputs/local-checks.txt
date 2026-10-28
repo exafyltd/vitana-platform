@@ -1,0 +1,2 @@
+Rendered /privacy (2345 bytes), /terms (1622 bytes), /support (955 bytes) with a stubbed router: no <script, style=, src=, no "maxina".
+jest / tsc: not available in the build session (node_modules absent, registry blocked); CI is the first run.

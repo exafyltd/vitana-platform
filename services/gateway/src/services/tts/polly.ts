@@ -290,12 +290,23 @@ export async function synthesizePolly(opts: {
    * whether to retry with the receptionist voice.
    */
   voiceRole?: PollyVoiceRole;
+  /**
+   * VTID-05026 — an explicit voice, used instead of the receptionist or
+   * specialist table (the Audiobook voice table passes its own entry). Omitted
+   * by every other caller, whose request is byte-identical to before. An
+   * invalid voice/engine pair makes Polly reject the request, which returns
+   * null like any other failure — never a different voice.
+   */
+  voiceOverride?: PollyVoiceConfig;
 }): Promise<PollySynthesisResult | null> {
   const { text, lang, format } = opts;
   if (!text || text.trim().length === 0) return null;
 
-  const voice =
-    opts.voiceRole === 'specialist' ? resolvePollySpecialistVoice(lang) : resolvePollyVoice(lang);
+  const voice = opts.voiceOverride
+    ? opts.voiceOverride
+    : opts.voiceRole === 'specialist'
+      ? resolvePollySpecialistVoice(lang)
+      : resolvePollyVoice(lang);
   if (!voice && opts.voiceRole === 'specialist') {
     console.warn(`[POLLY] No specialist voice for lang='${normalizeLang(lang)}' — caller keeps the receptionist voice.`);
     return null;

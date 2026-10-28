@@ -175,6 +175,15 @@ export const FLAG_GATED_PRIORITY_TOOLS: readonly string[] = [
   'get_guidance',
 ];
 
+/**
+ * VTID-05171: tools packed only after every other declaration that fits —
+ * below the unranked catalog tools, not just below the priority list. They
+ * never displace anything; on a full catalog they are the first dropped.
+ * (`get_my_timeline`: the Life Timeline read; the Index itself stays
+ * reachable through `get_vitana_index`, which is a priority tool.)
+ */
+export const LAST_RESORT_TOOLS: readonly string[] = ['get_my_timeline'];
+
 export interface ToolCatalogBudgetResult {
   /** The catalog to send. Same array instance as the input when nothing was trimmed. */
   tools: object[];
@@ -302,13 +311,16 @@ export function enforceToolCatalogBudget(
     }
     remaining -= 2;
     // Priority first (in priority order), then the rest in catalog order.
+    // Three tiers: priority (in priority order), the rest (catalog order),
+    // then LAST_RESORT_TOOLS (catalog order).
+    const lastResort = new Set(LAST_RESORT_TOOLS);
     const ordered = decls
-      .map((d, idx) => ({ d, idx, rank: priorityRank.get(String(d?.name ?? '')) }))
-      .sort((a, b) => {
-        const ar = a.rank ?? Number.POSITIVE_INFINITY;
-        const br = b.rank ?? Number.POSITIVE_INFINITY;
-        return ar === br ? a.idx - b.idx : ar - br;
-      });
+      .map((d, idx) => {
+        const name = String(d?.name ?? '');
+        const rank = priorityRank.get(name);
+        return { d, idx, tier: rank !== undefined ? 0 : lastResort.has(name) ? 2 : 1, rank: rank ?? 0 };
+      })
+      .sort((a, b) => a.tier - b.tier || a.rank - b.rank || a.idx - b.idx);
     const keptIdx = new Set<number>();
     let keptCount = 0;
     for (const { d, idx } of ordered) {

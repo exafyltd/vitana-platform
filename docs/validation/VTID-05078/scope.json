@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05078",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/dev-autopilot/planner-tools.ts",
+    "services/gateway/src/services/dev-autopilot-planning.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/vtid-05078-planner-tools.test.ts",
+    "services/gateway/test/vtid-03854-planning-stub-gate.test.ts",
+    "services/gateway/test/vtid-04806-plannability.test.ts",
+    "docs/validation/VTID-05078/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

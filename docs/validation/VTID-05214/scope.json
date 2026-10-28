@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05214",
+  "kind": "feature",
+  "paths": [
+    "docs/validation/VTID-05214/**",
+    ".kiro/specs/pm-agent/**",
+    ".github/workflows/PLAN-SPAR.yml",
+    "supabase/migrations/20261015180000_vtid_05214_plan_sparring_policy_approval.sql",
+    "supabase/tests/vtid_05214_policy_approval.test.sql",
+    "scripts/ci/test-vtid-05214-policy-approval.sh",
+    "scripts/collab/**",
+    "services/gateway/src/services/plan-sparring/**",
+    "services/gateway/test/vtid-04868-plan-sparring-service.test.ts",
+    "services/gateway/test/vtid-05214-policy-approval-migration.test.ts",
+    "DATABASE_SCHEMA.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05214/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

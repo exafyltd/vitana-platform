@@ -80,7 +80,7 @@
     "autonomy": [
       "autopilot-community",
       "autopilot-developer",
-      "autopilot-admin",
+      "loops",
       "self-healing",
       "autonomy-pulse",
       "autonomy-trace"
@@ -144,7 +144,6 @@
     ],
     "infrastructure": [
       "services",
-      "health",
       "deployments",
       "logs",
       "config"
@@ -214,12 +213,12 @@
     ]
   },
   "screen_inventory": {
-    "total_screens": 133,
-    "total_entries": 315,
-    "last_synced": "2026-10-08",
+    "total_screens": 132,
+    "total_entries": 314,
+    "last_synced": "2026-10-12",
     "source": "auto-regen via services/gateway/scripts/regen-screens-catalog.mjs",
     "role_counts": {
-      "DEVELOPER": 133,
+      "DEVELOPER": 132,
       "COMMUNITY": 89,
       "PATIENT": 9,
       "PROFESSIONAL": 9,
@@ -480,10 +479,10 @@
         "role": "DEVELOPER"
       },
       {
-        "screen_id": "DEV-AUTOPILOT_ADMIN",
+        "screen_id": "DEV-LOOPS",
         "module": "Autonomy",
-        "tab": "Autopilot (Admin)",
-        "url_path": "/command-hub/autonomy/autopilot-admin/",
+        "tab": "Loops",
+        "url_path": "/command-hub/autonomy/loops/",
         "role": "DEVELOPER"
       },
       {
@@ -813,13 +812,6 @@
         "module": "Infrastructure",
         "tab": "Services",
         "url_path": "/command-hub/infrastructure/services/",
-        "role": "DEVELOPER"
-      },
-      {
-        "screen_id": "DEV-HEALTH",
-        "module": "Infrastructure",
-        "tab": "Health",
-        "url_path": "/command-hub/infrastructure/health/",
         "role": "DEVELOPER"
       },
       {

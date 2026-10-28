@@ -1,0 +1,60 @@
+{
+  "vtid": "VTID-05098",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Command Hub loads the VTID-05098 versions of app.js, styles.css and the Loops module",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": [
+        "app.js?v=20261121-vtid-05082",
+        "styles.css?v=20261121-vtid-05082",
+        "loops-catalog.js?v=20261121-vtid-05153",
+        "loops-catalog.css?v=20261117-vtid-05098"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served app.js redirects Infrastructure → Health and labels the Pulse link Open",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "'/command-hub/infrastructure/health/':        { section: 'diagnostics', tab: 'health-checks' }",
+        "case 'investigate':    return { label: 'Open', color: '#3b82f6' };",
+        "VTID-05098: self-healing and test-contract items are acted on in their"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served loops-catalog.js shows each overlap's outcome",
+      "path": "/command-hub/loops-catalog.js?v=20261121-vtid-05153",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "partly_resolved: 'Partly resolved'",
+        "loops-overlap-resolution"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "the retired migration-backlog audit endpoint is gone (404; content type not checked, the gateway has no JSON 404 handler)",
+      "path": "/api/v1/routines/audits/migration-backlog",
+      "expect_status": 404,
+      "expect_content_type": ""
+    },
+    {
+      "kind": "http",
+      "name": "a remaining routine audit endpoint still exists behind its token gate (staging has no ROUTINE_INGEST_TOKEN, so the gate fails closed with 503)",
+      "path": "/api/v1/routines/audits/oasis-summary",
+      "expect_status": 503,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": false,
+        "error": "ROUTINE_INGEST_TOKEN env var not configured"
+      }
+    }
+  ]
+}

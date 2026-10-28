@@ -14,12 +14,13 @@ import { test, expect } from './staging-guard';
 
 const SUPABASE = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co';
 const TOPIC = 'T251';
-// Ten languages with a voice today. Serbian has no voice yet (it is the next
-// change); it is checked separately below so the gap stays visible.
-const VOICED = ['de', 'en', 'fr', 'es', 'pt', 'pl', 'tr', 'zh', 'ar', 'ru'];
+// All eleven languages. Serbian gained its voice with VTID-05026 (Google,
+// behind its own switch, on in staging); until then it was checked for an
+// honest 422 instead.
+const VOICED = ['de', 'en', 'fr', 'es', 'pt', 'pl', 'tr', 'zh', 'ar', 'ru', 'sr'];
 
 test('each language narrates in its own language, never German', async ({ request }) => {
-  test.setTimeout(240_000);
+  test.setTimeout(900_000);
   const email = process.env.TEST_USER_EMAIL ?? '';
   const password = process.env.TEST_USER_PASSWORD ?? '';
   // Not a skip: a skipped check passed silently once already.
@@ -55,7 +56,8 @@ test('each language narrates in its own language, never German', async ({ reques
   for (const lang of VOICED) {
     const res = await request.get(`${gateway}/api/v1/journey/audiobook/topics/${TOPIC}/audio?lang=${lang}`, {
       headers: auth,
-      timeout: 60_000,
+      // VTID-05026: a cold Google render (ru, sr) measured up to 26.5 s.
+      timeout: 120_000,
     });
     const got = res.headers()['x-audiobook-narration-locale'];
     if (res.status() !== 200 || res.headers()['content-type'] !== 'audio/mpeg' || got !== lang) {
@@ -65,9 +67,4 @@ test('each language narrates in its own language, never German', async ({ reques
     expect((await res.body()).length, `${lang} audio is too short`).toBeGreaterThan(10_000);
   }
   expect(wrong, 'languages not narrated in their own language').toEqual([]);
-
-  // Serbian: no voice yet — refused honestly, never read in another voice.
-  const sr = await request.get(`${gateway}/api/v1/journey/audiobook/topics/${TOPIC}/audio?lang=sr`, { headers: auth });
-  expect(sr.status()).toBe(422);
-  expect((await sr.json()).error).toBe('narration_unavailable');
 });

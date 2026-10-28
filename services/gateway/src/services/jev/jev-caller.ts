@@ -34,11 +34,13 @@ import type { SupabaseClient } from '@supabase/supabase-js';
 import type { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
 import { getSupabase } from '../../lib/supabase';
 import { pickEffectiveRole } from '../orchestrator/active-role';
+import { computePermittedRoles } from '../../lib/permitted-roles';
 import type { JevCaller } from './jev-access';
 import * as repo from './jev-repository';
 
-/** The switcher roles get_my_permitted_roles() returns (v_all_roles). */
-export const JEV_SWITCHER_ROLES = ['community', 'patient', 'professional', 'staff', 'backoffice', 'admin', 'developer', 'infra'] as const;
+// VTID-05147: the permitted-role set moved to lib/permitted-roles.ts (the
+// gateway's other role gates use it too); re-exported so Jev is unchanged.
+export { computePermittedRoles, SWITCHER_ROLES as JEV_SWITCHER_ROLES } from '../../lib/permitted-roles';
 
 export class JevCallerError extends Error {
   constructor(public status: number, public reason: string) {
@@ -49,13 +51,6 @@ export class JevCallerError extends Error {
 function firstString(...values: unknown[]): string | null {
   for (const v of values) if (typeof v === 'string' && v.trim()) return v.trim();
   return null;
-}
-
-/** Union of grants, active memberships and community, in switcher order. */
-export function computePermittedRoles(grants: Array<{ role: unknown }>, memberships: Array<{ role: unknown }>): string[] {
-  const set = new Set<string>(['community']);
-  for (const r of [...grants, ...memberships]) if (typeof r?.role === 'string') set.add(r.role.trim().toLowerCase());
-  return JEV_SWITCHER_ROLES.filter((r) => set.has(r));
 }
 
 export async function resolveJevCaller(req: AuthenticatedRequest, sbOverride?: SupabaseClient | null): Promise<JevCaller> {

@@ -1,0 +1,8 @@
+# VTID-05148 local checks (2026-10-13)
+./node_modules/.bin/tsc --noEmit -p services/gateway                                     # no errors in changed code (only TS2742 portability notes from the worktree's symlinked node_modules, in untouched reward-* files)
+npx jest (services/gateway, full suite)                                                  # 1681 suites passed, 2 skipped; 27230 tests passed (styles.css touched by a suite as a side effect → reverted)
+npx jest test/vtid-05148 test/routine-runner test/loop-catalog.test.ts test/autonomy-pulse.test.ts test/vtid-04266-* test/routes/autonomy-loops.test.ts test/missing-test-scanner.test.ts test/command-hub test/vtid-05077-*   # 61 suites, 902 pass
+psql (throwaway local PG16, server as nobody) -f docs/validation/VTID-05148/migration-test.sql   # all assertions passed (outputs/migration-test.out)
+node: staging-verify lib.validateManifest over every docs/validation/*/staging-tests.json  # 332 manifests, 0 invalid
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs                      # regenerated after the app.js / loops-catalog.js change
+PR_TITLE="VTID-05148: …" node scripts/ci/command-hub-ownership-guard.js                  # PASSED (allowlisted marker; app.js, index.html, loops-catalog.js)

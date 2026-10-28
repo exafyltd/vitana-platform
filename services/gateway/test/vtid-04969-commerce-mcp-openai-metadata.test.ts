@@ -35,9 +35,9 @@ describe('tool metadata for the OpenAI review', () => {
       }
     }
   });
-  it('reads are read-only, nothing is destructive, and only tools that reach outside are open-world', () => {
+  it('reads are read-only, only the two overwrite tools are destructive, and only tools that reach outside are open-world', () => {
     expect(tools.filter((t) => t.annotations.readOnlyHint).map((t) => t.name)).toEqual(['get_onboarding_status', 'list_products']);
-    expect(tools.filter((t) => t.annotations.destructiveHint).map((t) => t.name)).toEqual([]);
+    expect(tools.filter((t) => t.annotations.destructiveHint).map((t) => t.name)).toEqual(['update_business', 'update_product']);
     expect(tools.filter((t) => t.annotations.openWorldHint).map((t) => t.name).sort()).toEqual(['check_verification', 'connect_store']);
   });
   it('every tool needs the OAuth sign-in, mirrored in _meta, without openid', () => {

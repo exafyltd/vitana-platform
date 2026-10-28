@@ -161,58 +161,29 @@ describe('Health Router', () => {
   });
 
   // ============================================================
-  // POST /wearables/ingest
+  // POST /wearables/ingest — RETIRED (VTID-05156)
   // ============================================================
-  describe('POST /wearables/ingest', () => {
-    it('returns 401 when Authorization header is absent', async () => {
-      const res = await request(testApp).post('/wearables/ingest').send({});
-      expect(res.status).toBe(401);
-    });
+  describe('POST /wearables/ingest (retired, VTID-05156)', () => {
+    const cases: Array<[string, Record<string, string>, unknown]> = [
+      ['no Authorization header', {}, {}],
+      ['a bearer token and a valid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] }],
+      ['a bearer token and an invalid body', { Authorization: AUTH_HEADER }, { provider: 'fitbit' }],
+    ];
 
-    it('returns 400 when me_context fails', async () => {
-      supabaseMock.rpc.mockResolvedValueOnce({
-        data: null,
-        error: { message: 'DB error' },
-      });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [] });
-      expect(res.status).toBe(400);
-    });
-
-    it('returns 400 when samples field is missing', async () => {
-      supabaseMock.rpc.mockResolvedValueOnce({ data: GOOD_CTX, error: null });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit' });
-      expect(res.status).toBe(400);
-      expect(res.body.error).toBe('INVALID_INPUT');
-    });
-
-    it('returns 502 for an RPC error', async () => {
-      supabaseMock.rpc
-        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
-        .mockResolvedValueOnce({ data: null, error: { message: 'DB down', code: '500' } });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] });
-      expect(res.status).toBe(502);
-    });
-
-    it('returns 200 with inserted_count on success', async () => {
-      supabaseMock.rpc
-        .mockResolvedValueOnce({ data: GOOD_CTX, error: null })
-        .mockResolvedValueOnce({ data: { inserted_count: 10 }, error: null });
-      const res = await request(testApp)
-        .post('/wearables/ingest')
-        .set('Authorization', AUTH_HEADER)
-        .send({ provider: 'fitbit', samples: [{ type: 'heart_rate', value: 72 }] });
-      expect(res.status).toBe(200);
-      expect(res.body.ok).toBe(true);
-      expect(res.body.inserted_count).toBe(10);
+    it.each(cases)('answers 410 ENDPOINT_RETIRED with %s, before any database call', async (_label, headers, body) => {
+      let req = request(testApp).post('/wearables/ingest');
+      for (const [k, v] of Object.entries(headers)) req = req.set(k, v);
+      const res = await req.send(body as object);
+      expect(res.status).toBe(410);
+      expect(res.body).toEqual({ ok: false, error: 'ENDPOINT_RETIRED' });
+      // No Supabase client is built and no RPC (me_context or the revoked
+      // health_ingest_wearable_samples) is called, and no OASIS event fires.
+      expect(mockCreateUserSupabaseClient).not.toHaveBeenCalled();
+      expect(mockGetSupabase).not.toHaveBeenCalled();
+      expect(supabaseMock.rpc).not.toHaveBeenCalled();
+      expect(supabaseMock.from).not.toHaveBeenCalled();
+      expect(adminMock.rpc).not.toHaveBeenCalled();
+      expect(mockEmitOasisEvent).not.toHaveBeenCalled();
     });
   });
 
@@ -487,10 +458,19 @@ describe('Health Router', () => {
       expect(res.body.error).toBe('SURVEY_WRITE_FAILED');
     });
 
-    it('returns 200 with ok:true and index.score_total on success', async () => {
-      // Legacy 3-question payload maps to 5 pillars (hydration/sleep default to 3).
-      // Baseline curve: rating 3 → 25 per pillar; 5 pillars × 25 × weight 1.0 = 125.
+    // VTID-05168 (sparring F15, owner decision D4b): the starting Index is no
+    // longer a separate TypeScript calculation upserted straight into
+    // vitana_index_scores. The survey is saved, then the canonical compute runs
+    // through the single locked + recorded writer, which scores the baseline
+    // from the saved answers. These two tests pin that contract.
+    const CANONICAL = {
+      ok: true, score_total: 127, score_nutrition: 10, score_hydration: 20, score_exercise: 25,
+      score_sleep: 32, score_mental: 40, model_version: 'v3-5pillar', confidence: 0.5, movement_id: 'm1',
+    };
+
+    it('returns 200 with ok:true and the canonical index after saving the survey', async () => {
       supabaseMock.rpc.mockResolvedValueOnce({ data: { tenant_id: 't1' }, error: null });
+      adminMock.rpc.mockResolvedValueOnce({ data: { ...CANONICAL, score_total: 125 }, error: null });
       const res = await request(testApp)
         .post('/baseline-survey')
         .set('Authorization', AUTH_HEADER)
@@ -498,15 +478,18 @@ describe('Health Router', () => {
       expect(res.status).toBe(200);
       expect(res.body.ok).toBe(true);
       expect(res.body.index.score_total).toBe(125);
-      expect(res.body.index.model_version).toBe('baseline-survey-v3-5pillar');
-      // Survey row is written via the user client; the Day-0 score via the admin client
+      expect(res.body.index.model_version).toBe('v3-5pillar');
+      // Survey row via the user client; the score via the recording RPC on the admin client.
       expect(supabaseMock.from).toHaveBeenCalledWith('vitana_index_baseline_survey');
-      expect(adminMock.from).toHaveBeenCalledWith('vitana_index_scores');
+      expect(adminMock.rpc).toHaveBeenCalledWith('vitana_index_recompute_and_record', expect.objectContaining({
+        p_user_id: 'u1', p_trigger: 'baseline_survey', p_source_kind: 'baseline_survey',
+      }));
+      expect(adminMock.from).not.toHaveBeenCalledWith('vitana_index_scores');
     });
 
-    it('returns 200 and honors an explicit 5-pillar payload', async () => {
-      // Curve: 1→10, 2→20, 3→25, 4→32, 5→40 → total 10+20+25+32+40 = 127
+    it('returns 200 and reports every pillar from the canonical compute', async () => {
       supabaseMock.rpc.mockResolvedValueOnce({ data: { tenant_id: 't1' }, error: null });
+      adminMock.rpc.mockResolvedValueOnce({ data: CANONICAL, error: null });
       const res = await request(testApp)
         .post('/baseline-survey')
         .set('Authorization', AUTH_HEADER)
@@ -515,6 +498,17 @@ describe('Health Router', () => {
       expect(res.body.index.score_total).toBe(127);
       expect(res.body.index.score_nutrition).toBe(10);
       expect(res.body.index.score_mental).toBe(40);
+    });
+
+    it('returns 400 SCORE_WRITE_FAILED when the recorded compute fails', async () => {
+      supabaseMock.rpc.mockResolvedValueOnce({ data: { tenant_id: 't1' }, error: null });
+      adminMock.rpc.mockResolvedValueOnce({ data: null, error: { message: 'boom' } });
+      const res = await request(testApp)
+        .post('/baseline-survey')
+        .set('Authorization', AUTH_HEADER)
+        .send({ nutrition: 1, hydration: 2, exercise: 3, sleep: 4, mental: 5 });
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('SCORE_WRITE_FAILED');
     });
   });
 

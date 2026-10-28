@@ -9,17 +9,16 @@ name: Alert — ORB Session State Health
 # VTID-03480 was precisely that `ok:false` in a payload nobody alerts on is not
 # detection.
 #
-# TRANSPORT: PostgREST over HTTPS, deliberately NOT `psql "$SUPABASE_DB_URL"`.
-# GitHub Actions cannot reach the Supabase pooler — the project has a network
-# allow-list and runner IPs are not on it:
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green).
 #
-#   psql: error: ... FATAL: (EADDRNOTALLOWED) address not in tenant allow_list
-#
-# ALERT-WELCOME-GREETING-HEALTH.yml, the workflow this one is modelled on, has
-# failed EVERY scheduled run for 6+ days on exactly that error. Building this
-# alert on the same transport would have produced a detector that cannot run —
-# the precise failure mode VTID-03480 is about. See
-# supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql.
+# Route: /api/v1/ops/health/orb-session-ledger (ci_orb_session_state_health,
+# supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql).
 #
 # Three independent conditions, because they fail in different ways:
 #   1. The relation exists at all           <- the exact VTID-03480 root cause
@@ -40,55 +39,38 @@ jobs:
     steps:
       - name: Fetch ORB session-state health
         env:
-          SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
-          SUPABASE_SERVICE_ROLE: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/orb-session-ledger
         run: |
           set -euo pipefail
-          if [ -z "${SUPABASE_URL:-}" ] || [ -z "${SUPABASE_SERVICE_ROLE:-}" ]; then
-            echo "::error::SUPABASE_URL / SUPABASE_SERVICE_ROLE secrets are not set on this repo."
-            exit 1
-          fi
-          HTTP=$(curl -sS -o health.json -w '%{http_code}' \
-            -X POST "${SUPABASE_URL%/}/rest/v1/rpc/ci_orb_session_state_health" \
-            -H "apikey: $SUPABASE_SERVICE_ROLE" \
-            -H "Authorization: Bearer $SUPABASE_SERVICE_ROLE" \
-            -H 'Content-Type: application/json' -d '{}')
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
           if [ "$HTTP" != "200" ]; then
-            echo "::error::ci_orb_session_state_health RPC returned HTTP $HTTP. If 404, the function is missing — apply supabase/migrations/20260804080000_vtid_03486_ci_health_rpcs.sql."
-            head -c 500 health.json || true
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
             exit 1
           fi
-          cat health.json
-          echo "---"
-
-          TABLE_EXISTS=$(jq -r '.table_exists' health.json)
-          STARTS=$(jq -r '.session_starts_24h' health.json)
-          WRITES=$(jq -r '.state_writes_24h' health.json)
-          ACKS=$(jq -r '.acks_24h' health.json)
-          FAILED=$(jq -r '.acks_failed_24h' health.json)
-          echo "Last 24h — table_exists=$TABLE_EXISTS starts=$STARTS writes=$WRITES acks=$ACKS acks_failed=$FAILED"
-
-          # 1. The relation itself. This is the VTID-03480 root cause.
-          if [ "$TABLE_EXISTS" != "true" ]; then
-            echo "::error::orb_session_state does NOT exist in production. This is the VTID-03480 failure exactly: an authored-but-never-applied migration. Every ORB session-state helper is failing soft right now — continuity, audio-ready handshake, pending CTA and opener rotation are all inert. Apply supabase/migrations/20260606000000_DEV_COMHU_0503_orb_session_state.sql."
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
             exit 1
           fi
-
-          # 2. Writes landing — only meaningful when there was real traffic. A
-          # quiet night is not a fault; that distinction is what made the
-          # overnight ack gap on 2026-08-04 a false alarm at n=2.
-          if [ "$STARTS" -ge "5" ] && [ "$WRITES" -eq "0" ]; then
-            echo "::error::$STARTS ORB sessions started in the last 24h but ZERO rows were written to orb_session_state. Writes are failing silently (the helpers never throw). Check GET /api/v1/admin/orb-session-state-health for schema_missing and the failure reason."
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::ORB session-state health is not healthy (relation missing, no writes under traffic, or ok:false acks — VTID-03480 regression; see GET /api/v1/admin/orb-session-state-health): status=$STATUS reason=$REASON (see the JSON above)."
             exit 1
           fi
+          echo "OK: status=$STATUS"
 
-          # 3. `ok` in an audio_ready.acked event is the return of
-          # writeOrbSessionState(), NOT the client's readiness. Misreading it as
-          # client readiness is what let VTID-03480 hide for months. Any
-          # ok:false means the write path is broken again.
-          if [ "$ACKS" -gt "0" ] && [ "$FAILED" -gt "0" ]; then
-            echo "::error::$FAILED of $ACKS audio-ready acks in the last 24h reported ok:false. That flag is the writeOrbSessionState() return value, not client readiness — the session-state write path is failing again (VTID-03480 regression)."
-            exit 1
-          fi
-
-          echo "✓ Healthy: relation present, writes landing, no ok:false acks."
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-orb-session-state-health" "alert-workflow://ALERT-ORB-SESSION-STATE-HEALTH" "ORB session-state writes unhealthy"

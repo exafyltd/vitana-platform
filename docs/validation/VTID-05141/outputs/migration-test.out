@@ -1,0 +1,3 @@
+COMMIT
+psql:docs/validation/VTID-05141/migration-test.sql:24: NOTICE:  VTID-05141 migration test: all assertions passed
+DO

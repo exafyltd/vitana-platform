@@ -1,0 +1,3 @@
+precondition: member forged active_role/role_preferences/user_active_roles before the migration
+migration applied twice (self-check passed both times)
+VTID-05147: all assertions passed

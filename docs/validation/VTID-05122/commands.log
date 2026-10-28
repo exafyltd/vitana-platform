@@ -1,0 +1,13 @@
+# VTID-05122 commands (worktree branch fu/VTID-05122, fast-forwarded to origin/main 02a41f019)
+cd services/gateway
+node scripts/generate-command-hub-symbol-index.mjs && node scripts/generate-command-hub-symbol-index.mjs --check   # ✓ in sync (1119 functions across 16 files)
+node scripts/regen-screens-catalog.mjs --check                                                                    # ✓ in sync (314 entries)
+npx jest test/command-hub/vtid-05122-spec-approve-route.test.ts test/vtid-05048-s4-caller-identity.test.ts      # 2 suites, 44 pass
+npx jest test/command-hub test/scripts/command-hub-ownership-guard.test.ts test/vtid-05048-s4-caller-identity.test.ts test/vtid-05077-planner-fallback-and-thinking.test.ts test/command-hub/vtid-05072-bundle-manifest.test.ts test/scripts/generate-command-hub-symbol-index.test.ts test/vtid-05071-kiro-keeps-thread.test.ts test/scripts/find-dead-css-classes.test.ts   # 54 suites, 787 pass (outputs/jest-command-hub.txt)
+npx tsc --noEmit -p .        # 3 errors, all TS2307 missing modules in the shared local node_modules (libphonenumber-js, @aws-sdk/client-pinpoint-sms-voice-v2) in files this change does not touch; 0 other errors
+npm run copy-frontend && node ../../scripts/ci/command-hub-golden-fingerprint.js   # PASSED
+cd ../..
+GITHUB_HEAD_REF=fu/VTID-05122 PR_TITLE="VTID-05122: ..." node scripts/ci/command-hub-ownership-guard.js   # Guard check PASSED
+GITHUB_HEAD_REF=fu/nothing PR_TITLE="no marker" node scripts/ci/command-hub-ownership-guard.js            # FAILED (negative control)
+node -e staging-verify validateManifest over every docs/validation/*/staging-tests.json                   # VTID-05122 ok; 0 invalid manifests
+node -e pr-gate validateScope + evaluateSparringRecord (VTID-05122)                                         # clean

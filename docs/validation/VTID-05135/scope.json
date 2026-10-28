@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05135",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/routes/commerce-mcp.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/commerce-mcp-probe-log.test.ts",
+    "docs/validation/VTID-05135/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

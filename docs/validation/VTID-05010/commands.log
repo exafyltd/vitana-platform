@@ -1,0 +1,8 @@
+$ bash scripts/ci/test-vtid-05010-diary-repair.sh   # 2026-10-09, local postgresql-16, never a live database
+psql:<tmp>/fixup.sql:68: NOTICE:  VTID-05010: voice diary episodes inserted: 2
+psql:<tmp>/fixup.sql:68: NOTICE:  VTID-05010: voice diary episodes inserted: 0
+PASS: VTID-05010 diary episode repair (insert 2, idempotent, shape, guard)
+
+# Read-only pre-check on the live project, 2026-10-09:
+#   both diary rows: source=voice, tags={diary,voice,orb}, 0 episodes, 1 user_tenants row each (primary)
+#   diary_entries created since 2026-10-05 09:30 UTC: 0 (VTID-04884 not yet proven on real data)

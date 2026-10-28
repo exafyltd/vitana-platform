@@ -29,6 +29,7 @@ import {
   getUserCalendarHistory,
   getCalendarGaps,
   findConflicts,
+  findFreeSlots,
   createCalendarEvent,
   bulkCreateCalendarEvents,
   updateCalendarEvent,
@@ -42,7 +43,8 @@ import {
 } from '../services/calendar-service';
 import { completeSourceForCalendarEvent } from '../services/calendar-producers';
 import { z } from 'zod';
-import { isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, shareRefOf, SHARE_TEXT_MAX } from '../services/calendar-share';
+import { addSharedEntryToCalendar, CARD_TITLE_MAX, entryShareRefOf, isSensitiveEntry, isShareableEntry, listSharedPostIds, shareCalendarEntryToFeed, SHARE_TEXT_MAX } from '../services/calendar-share';
+import { buildInviteFromEntry, getInviteState, respondToInvite, INVITE_RESPONSES } from '../services/calendar-invite';
 
 // Pillar keys — must match the 5 canonical Vitana pillars.
 const PILLAR_KEYS = ['nutrition', 'hydration', 'exercise', 'sleep', 'mental'] as const;
@@ -61,46 +63,64 @@ async function recomputeVitanaIndexForUser(
   const admin = getSupabase();
   if (!admin) return null;
   const today = new Date().toISOString().slice(0, 10);
+  const eventId = typeof eventMetadata.event_id === 'string' ? eventMetadata.event_id : null;
 
   try {
-    // Snapshot prior row (if any) so we can compute deltas.
+    // Snapshot prior row (if any) — used only until the VTID-05168 migration is
+    // applied; afterwards the recorded movement is the source of the delta.
     const { data: priorRow } = await repo.fetchVitanaIndexScoresForUserDate(admin, userId, today);
 
-    const { data: newResult, error: rpcErr } = await repo.healthComputeVitanaIndexForUserRpc(admin, {
-      p_user_id: userId,
-      p_date: today,
-      p_model_version: 'v3-5pillar',
-    });
+    // VTID-05168: locked + recorded. The calendar_events trigger has usually
+    // recomputed (and recorded) this completion already, so this call finds
+    // nothing new; the movement recorded for this event carries the delta.
+    const { data: newResult, error: rpcErr } = await repo.recordCalendarIndexRecompute(admin, userId, today, eventId);
     if (rpcErr || !(newResult as any)?.ok) {
       console.warn('[Calendar] recompute RPC failed:', rpcErr?.message || (newResult as any)?.error);
       return null;
     }
     const n = newResult as any;
 
-    const prior = (priorRow as any) ?? {
-      score_total: 0, score_nutrition: 0, score_hydration: 0,
-      score_exercise: 0, score_sleep: 0, score_mental: 0,
-    };
-    const per_pillar_delta: Record<PillarKey, number> = {
-      nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
-      hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
-      exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
-      sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
-      mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
-    };
-    const delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+    let per_pillar_delta: Record<PillarKey, number>;
+    let delta_total: number;
+    let priorTotal: number;
+    const recorded = eventId ? (await repo.fetchIndexMovementForSource(admin, userId, 'calendar_event', eventId)).data : null;
+    if (recorded) {
+      const dp = (recorded as any).delta_pillars ?? {};
+      per_pillar_delta = {
+        nutrition: Number(dp.nutrition ?? 0), hydration: Number(dp.hydration ?? 0),
+        exercise: Number(dp.exercise ?? 0), sleep: Number(dp.sleep ?? 0), mental: Number(dp.mental ?? 0),
+      };
+      delta_total = Number((recorded as any).delta_total ?? 0);
+      priorTotal = Number((recorded as any).before?.score_total ?? 0);
+    } else {
+      const prior = (priorRow as any) ?? {
+        score_total: 0, score_nutrition: 0, score_hydration: 0,
+        score_exercise: 0, score_sleep: 0, score_mental: 0,
+      };
+      per_pillar_delta = {
+        nutrition: (n.score_nutrition ?? 0) - (prior.score_nutrition ?? 0),
+        hydration: (n.score_hydration ?? 0) - (prior.score_hydration ?? 0),
+        exercise:  (n.score_exercise  ?? 0) - (prior.score_exercise  ?? 0),
+        sleep:     (n.score_sleep     ?? 0) - (prior.score_sleep     ?? 0),
+        mental:    (n.score_mental    ?? 0) - (prior.score_mental    ?? 0),
+      };
+      delta_total = (n.score_total ?? 0) - (prior.score_total ?? 0);
+      priorTotal = prior.score_total ?? 0;
+    }
 
     emitOasisEvent({
       vtid: 'SYSTEM',
       type: 'index.recomputed' as any,
       source: 'calendar-api',
       status: 'info',
-      message: `Vitana Index recomputed: ${prior.score_total ?? 0} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      message: `Vitana Index recomputed: ${priorTotal} → ${n.score_total} (Δ${delta_total >= 0 ? '+' : ''}${delta_total})`,
+      // VTID-05168: the member is the actor, so the profiler's last_movement finds it.
+      actor_id: userId,
       payload: {
         user_id: userId,
         date: today,
         new_score_total: n.score_total,
-        prior_score_total: prior.score_total ?? 0,
+        prior_score_total: priorTotal,
         delta_total,
         per_pillar_delta,
         subscores: n.subscores,
@@ -427,10 +447,11 @@ router.get('/events/window', async (req: Request, res: Response) => {
       const { listExternalBusy } = await import('../services/calendar-google-sync');
       external = await listExternalBusy(userId, { from: new Date(fromMs).toISOString(), to: new Date(toMs).toISOString() });
     }
-    // VTID-04916: can this entry be shared to the feed, and was it already?
+    // VTID-04916/05126: can this entry be shared to the feed and invited to
+    // (any own upcoming entry, VTID-05126), and was it already shared?
     const nowDate = new Date();
     const refIds = data
-      .map((it: any) => (it.event && !it.busy ? shareRefOf(it.event)?.ref_id : null))
+      .map((it: any) => (it.event && !it.busy ? entryShareRefOf(it.event)?.ref_id : null))
       .filter((id: string | null | undefined): id is string => !!id);
     let shared = new Map<string, string>();
     if (refIds.length) {
@@ -442,10 +463,13 @@ router.get('/events/window', async (req: Request, res: Response) => {
     }
     const decorated = data.map((it: any) => {
       if (!it.event || it.busy) return it;
-      const ref = shareRefOf(it.event);
+      const ref = entryShareRefOf(it.event);
+      const open = isShareableEntry(it.event, nowDate) && (it.occurrence_index ?? null) === null;
       return {
         ...it,
-        shareable: isShareableEntry(it.event, nowDate),
+        shareable: open,
+        invitable: open,
+        sensitive: isSensitiveEntry(it.event),
         shared_post_id: ref ? shared.get(ref.ref_id) ?? null : null,
       };
     });
@@ -521,6 +545,28 @@ router.get('/events/gaps', async (req: Request, res: Response) => {
     if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
 
     const role = getActiveRole(req);
+
+    // VTID-04996: "find a time". Any of duration/from/to/limit switches to slot
+    // search over the same busy time the calendar shows, inside the member's
+    // waking hours. Without them the day-gap answer is unchanged.
+    const q = req.query;
+    if (q.duration !== undefined || q.from !== undefined || q.to !== undefined || q.limit !== undefined) {
+      const durationMin = q.duration === undefined ? 60 : Number(q.duration);
+      const limit = q.limit === undefined ? 3 : Number(q.limit);
+      const from = q.from === undefined ? new Date() : new Date(String(q.from));
+      const to = q.to === undefined ? new Date(from.getTime() + 7 * 86_400_000) : new Date(String(q.to));
+      if (
+        !Number.isFinite(durationMin) || durationMin < 5 || durationMin > 12 * 60 ||
+        !Number.isInteger(limit) || limit < 1 || limit > 10 ||
+        Number.isNaN(from.getTime()) || Number.isNaN(to.getTime()) ||
+        to <= from || to.getTime() - from.getTime() > 14 * 86_400_000
+      ) {
+        return res.status(400).json({ ok: false, error: 'duration (5-720 min), limit (1-10) and a from/to range of at most 14 days are required' });
+      }
+      const slots = await findFreeSlots(userId, role, { from, to, durationMin, limit, userTimezone: await resolveUserTimezone(userId) });
+      return res.json({ ok: true, data: slots, count: slots.length, mode: 'slots' });
+    }
+
     const dateStr = req.query.date as string;
     const date = dateStr ? new Date(dateStr) : new Date();
     const gaps = await getCalendarGaps(userId, role, date);
@@ -836,6 +882,9 @@ const ShareToFeedSchema = z
   .object({
     text: z.string().max(SHARE_TEXT_MAX).optional(),
     is_public: z.boolean().optional(),
+    // VTID-05126: for an own entry, the title others see and whether the place is shown.
+    card_title: z.string().max(CARD_TITLE_MAX).optional(),
+    include_location: z.boolean().optional(),
   })
   .strict();
 
@@ -869,6 +918,107 @@ router.post('/events/:id/share-to-feed', async (req: Request, res: Response) => 
     return res.json({ ok: true, data: { post_id: result.post_id } });
   } catch (err: any) {
     console.error(`${LOG_PREFIX} POST /events/:id/share-to-feed error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+// =============================================================================
+// VTID-04917 — invites sent through the messenger
+//   GET  /events/:id/invite-preview → can this entry be invited to, and the
+//        card it would make (the app shows it before sending; nothing is sent)
+//   GET  /invites/:messageId        → { my_response, counts, is_sender }
+//   POST /invites/:messageId/respond { response: accepted|maybe|declined }
+//        → { response, action, path? }   (action: joined | open_event |
+//          open_room | added | removed | recorded)
+// The invite itself is sent with the chat send routes (message_type
+// 'calendar_invite', content_data { entry_id }); its card is built on the
+// server from the sender's own entry. Only the DM recipient or a member of
+// the group can answer, never the sender.
+// =============================================================================
+// =============================================================================
+// POST /feed-posts/:postId/add — VTID-05126 "In meinen Kalender"
+//   A member adds another member's shared own entry (a public calendar_entry
+//   post) to their calendar: title, times, the place only if the author
+//   showed it. The post's current card is read on the server; a cancelled or
+//   finished entry answers 409 NOT_OPEN. Idempotent.
+//   200 { action: added|already, event_id } · 404 NOT_FOUND · 409 OWN_POST | NOT_OPEN
+// =============================================================================
+router.post('/feed-posts/:postId/add', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const result = await addSharedEntryToCalendar(userId, req.params.postId);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+    if (result.action === 'added') {
+      emitOasisEvent({
+        vtid: 'VTID-05126',
+        type: 'calendar.feed_post.added' as any,
+        source: 'calendar-api',
+        status: 'info',
+        message: 'Shared calendar entry added from the feed',
+        payload: { user_id: userId, post_id: req.params.postId, event_id: result.event_id },
+      }).catch(() => {});
+    }
+    return res.json({ ok: true, data: { action: result.action, event_id: result.event_id } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /feed-posts/:postId/add error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/events/:id/invite-preview', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const entry = await getOwnCalendarEvent(req.params.id, userId);
+    const result = await buildInviteFromEntry(userId, entry as any);
+    if (!result.ok) {
+      return res.status(result.status).json({ ok: false, error: result.error, ...(result.reason ? { reason: result.reason } : {}) });
+    }
+    return res.json({ ok: true, data: result.metadata });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /events/:id/invite-preview error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+router.get('/invites/:messageId', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const state = await getInviteState(userId, req.params.messageId);
+    if (!state) return res.status(404).json({ ok: false, error: 'NOT_FOUND' });
+    return res.json({ ok: true, data: state });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} GET /invites/:messageId error:`, err.message);
+    return res.status(500).json({ ok: false, error: 'Internal error' });
+  }
+});
+
+const InviteRespondSchema = z.object({ response: z.enum(INVITE_RESPONSES) }).strict();
+
+router.post('/invites/:messageId/respond', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'User ID required' });
+    const parsed = InviteRespondSchema.safeParse(req.body ?? {});
+    if (!parsed.success) return res.status(400).json({ ok: false, error: 'INVALID_BODY', issues: parsed.error.issues });
+
+    const result = await respondToInvite(userId, req.params.messageId, parsed.data.response);
+    if (!result.ok) return res.status(result.status).json({ ok: false, error: result.error });
+
+    emitOasisEvent({
+      vtid: 'VTID-04917',
+      type: 'calendar.invite.responded' as any,
+      source: 'calendar-api',
+      status: 'info',
+      message: `Calendar invite ${result.response} (${result.action})`,
+      payload: { user_id: userId, message_id: req.params.messageId, response: result.response, action: result.action },
+    }).catch(() => {});
+
+    return res.json({ ok: true, data: { response: result.response, action: result.action, ...(result.path ? { path: result.path } : {}) } });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} POST /invites/:messageId/respond error:`, err.message);
     return res.status(500).json({ ok: false, error: 'Internal error' });
   }
 });

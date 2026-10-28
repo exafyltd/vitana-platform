@@ -7,6 +7,7 @@
  * triggerWorkflow/getWorkflowRuns/getWorkflowRunJobs), same functions the
  * existing cicd.ts routes already call — no new backend behaviour.
  */
+import { gatewayServiceAuthHeader } from '../../middleware/require-service-or-admin';
 import type { SupabaseClient } from '@supabase/supabase-js';
 import type { OrbToolArgs, OrbToolIdentity, OrbToolResult } from '../orb-tools-shared';
 import { developerGate, clampLimit, relAge, gatewayApiCall } from './developer-tools';
@@ -44,6 +45,7 @@ export const dev_create_pr: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/github/create-pr', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05019
     body: { vtid, title, body: String(args.body ?? ''), head, base: 'main' },
   });
   if (!ok) return { ok: true, result: { created: false, status, detail: body }, text: `Could not create the PR: ${String(body.error ?? `gateway returned ${status}`)}.` };
@@ -137,6 +139,7 @@ export const dev_merge_pr: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/cicd/merge', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05047
     body: { vtid, pr_number: prNumber, repo: repoArg(args) },
   });
   if (!ok || body.ok !== true) {
@@ -164,6 +167,7 @@ export const dev_safe_merge: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/github/safe-merge', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05019
     body: {
       vtid,
       pr_number: prNumber,
@@ -288,7 +292,7 @@ export const dev_get_run_jobs: Handler = async (args, id) => {
 export const dev_get_merge_lock: Handler = async (_args, id) => {
   const denied = developerGate(id);
   if (denied) return denied;
-  const { ok, status, body } = await gatewayApiCall('/api/v1/cicd/lock-status');
+  const { ok, status, body } = await gatewayApiCall('/api/v1/cicd/lock-status', { headers: gatewayServiceAuthHeader() /* VTID-05047 */ });
   if (!ok || body.ok !== true) return { ok: false, error: `dev_get_merge_lock failed (${status}): ${String(body.error ?? 'unknown')}` };
   const active = (Array.isArray(body.active_merges) ? body.active_merges : []) as string[];
   return {
@@ -316,6 +320,7 @@ export const dev_release_merge_lock: Handler = async (args, id) => {
   }
   const { ok, status, body } = await gatewayApiCall('/api/v1/cicd/lock-release', {
     method: 'POST',
+    headers: gatewayServiceAuthHeader(), // VTID-05047
     body: { vtid, reason: typeof args.reason === 'string' ? args.reason : 'released via voice' },
   });
   if (!ok || body.ok !== true) return { ok: true, result: { released: false, status, detail: body }, text: `Could not release the lock: ${String(body.error ?? `gateway returned ${status}`)}.` };
