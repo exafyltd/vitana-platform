@@ -6,7 +6,6 @@ depends_on: []
 executor: kiro
 seat: exafyltd
 area: messenger
-reviewer_seat: jtadic
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-v1]
 paths:
@@ -37,6 +36,8 @@ on origin/main, green 17/17 on head, full Vitest 3826/3826. CI: Vitest pending; 
 exafyltd/vitana-v1#1507 head 14d18a4b1: Vitest (jsdom), Edge data client and Realtime helper are green. pr-gate is red
 twice at its postgres service image pull (public.ecr.aws "Data limit exceeded", infra; out of scope of
 ci-ecr-public-auth, premise 4). It is re-run when the registry allows.
-Review route (§3a/§7, seat automation item B): `reviewer_seat: jtadic`, so seat `jtadic` (not this lane's seat and not
-in this lane's executing log) runs `vitana-lane-reviewer` on the PR's current head. The builder session released its
+Review route (§8, driver.md step 4): this plan has no live driver. The next Kiro session that resumes it (a seat
+automation or another interactive session, not in this lane's executing log) runs `vitana-lane-reviewer` on the PR's
+current head and commits the review entry. Setting `reviewer_seat` here is refused by Lane scope, because lane
+permissions come from the base revision. The builder session released its
 claim and runs no driver for this plan. The owner's merge approval is not a substitute for this review.
