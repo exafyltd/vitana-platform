@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: sparred
-updated: 2026-10-28T10:35Z
+state: approved
+sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
+vtids: [VTID-05362]
+updated: 2026-10-28T11:20Z
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 ---
 # Handoff — step-order-gate
@@ -21,3 +23,8 @@ there edited a lane file under `_plan`. Pushed as a `plan(` PR.
 
 ### 2026-10-28T10:35Z · ci-plan-spar · drafted → sparred
 Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-28T11:20Z · kiro-exafyltd-202610261510-099d · sparred → approved
+Record of the policy approval PLAN-SPAR gave: `sparring/state.json` verdict `converged`, `policy_approved_at`
+2026-10-28T10:29:48.476Z, `final_plan_hash` f084e090…; VTID-05362 is in `lanes/land-guard.md` (written by ci-plan-spar).
+The round commit did not move `handoff.md` past `sparred` (VTID reused from #4429), so the driver records it here.
