@@ -1,0 +1,5 @@
+﻿AC-3 durable-contract substring presence in committed command-hub source (lane base)
+  index.html contains 'svg-preview.js'        => True
+  index.html contains 'operator-console.js'   => True
+  svg-preview.js contains 'sanitizeSvgMarkup' => True
+  svg-preview.js contains 'SvgPreview'        => True
