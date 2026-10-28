@@ -1,6 +1,6 @@
 ---
 lane: coverage-manifests
-state: in-review
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -11,11 +11,11 @@ repos: [exafyltd/vitana-v1]
 paths:
   - docs/validation/commit-coverage.json
   - docs/validation/VTID-*/**
-updated: 2026-10-27T14:10Z
-claimed_by: kiro-exafyltd-202610220833-d231
+updated: 2026-10-28T13:27Z
 branch: kiro/spotlight-commit-coverage/coverage-manifests
 pr: https://github.com/exafyltd/vitana-v1/pull/1505
 vtid: VTID-05345
+parked_from: in-review
 ---
 # coverage-manifests — commit coverage + change suites for the desktop-spotlight merges (repo vitana-v1)
 Plan: `.kiro/specs/spotlight-commit-coverage/plan.md` and `tasks.md` section `coverage-manifests` (C1–C3).
@@ -60,3 +60,5 @@ Findings:
 - All 7 checks on 2d0e7f3a1 are green (pr-gate, change-suite, Vitest, preview-e2e, Edge data client, Lane scope,
   Realtime helper).
 Next: kiro lands exafyltd/vitana-v1#1505 under §7b (committed on the agent's behalf by the land step).
+### 2026-10-28T13:27Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
