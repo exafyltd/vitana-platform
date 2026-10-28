@@ -23,6 +23,7 @@
 import { Router, Request, Response } from 'express';
 import { createHash } from 'crypto';
 import { emitOasisEvent } from '../services/oasis-event-service';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
 import { claimCappedReward } from '../services/rewards/capped-reward';
 import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
 import { notifyUserAsync } from '../services/notification-service';
@@ -2289,23 +2290,37 @@ router.post('/community-scan', async (req: Request, res: Response) => {
   try {
     const { createClient } = await import('@supabase/supabase-js');
     const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
-    const { runCommunityScan } = await import('../services/community-autopilot/scan-runner');
+    const scanRunner = await import('../services/community-autopilot/scan-runner');
     const body = req.body ?? {};
-    const summary = await runCommunityScan(sb, {
+    const onlyUserId = typeof body.user_id === 'string' ? body.user_id : undefined;
+    const scanOpts = {
       dryRun: body.dry_run === true,
-      onlyUserId: typeof body.user_id === 'string' ? body.user_id : undefined,
       maxMembers: typeof body.max_members === 'number' ? body.max_members : undefined,
-    });
+    };
+    // VTID-05268 (mt-jobs): with MT_RESOLUTION_V2 on, the tick loops the active
+    // tenants (each member once, under their primary tenant, with that tenant's
+    // timezone) and still emits ONE event; off (or a single-member operator
+    // check) it is today's platform-wide run.
+    let summary: import('../services/community-autopilot/scan-runner').ScanRunSummary & { per_tenant?: unknown[] };
+    if (isMtResolutionV2Enabled() && !onlyUserId) {
+      const { loadActiveTenantContexts } = await import('../services/jobs/job-tenant-loop');
+      const tenants = await loadActiveTenantContexts(sb as any);
+      summary = await scanRunner.runCommunityScanForTenants(sb as any, tenants, scanOpts);
+    } else {
+      summary = await scanRunner.runCommunityScan(sb, { ...scanOpts, onlyUserId });
+    }
+    const eventPayload: Record<string, unknown> = {
+      enabled: summary.enabled, dry_run: summary.dry_run, members_considered: summary.members_considered,
+      members_due: summary.members_due, members_scanned: summary.members_scanned, rows_inserted: summary.rows_inserted,
+    };
+    if (summary.per_tenant) eventPayload.per_tenant = summary.per_tenant;
     await emitOasisEvent({
       vtid: 'SYSTEM',
       type: 'community_autopilot.scan.completed' as any,
       source: 'community-autopilot',
       status: 'info',
       message: `Community scan: ${summary.members_scanned} members, ${summary.rows_inserted} suggestions${summary.dry_run ? ' (dry run)' : ''}`,
-      payload: {
-        enabled: summary.enabled, dry_run: summary.dry_run, members_considered: summary.members_considered,
-        members_due: summary.members_due, members_scanned: summary.members_scanned, rows_inserted: summary.rows_inserted,
-      },
+      payload: eventPayload,
     }).catch(() => {});
     return res.json({ ok: true, ...summary });
   } catch (err: any) {

@@ -30,14 +30,17 @@ specs:
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
+  - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
   - vitana-platform:step-order-gate
   - vitana-platform:kiro-web-parity
+  - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:pipeline-lane-state-efficiency
+  - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
   - vitana-platform:pipeline-agent-wake-and-review
   - vitana-platform:context-map
@@ -87,9 +90,11 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
 - `vitana-platform:pipeline-agent-wake-and-review` — wake an absent driver on sparring/review events, an independent reviewer tier gated by shadow qualification, CI merge of converged plan PRs
 - `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
+- `vitana-platform:kiro-web-reliability` — one-command Kiro Web bootstrap, race-free commit/push git hooks, VALIDATOR-CHECK in preflight, parallel lane builders
 - `vitana-platform:plan-spar-stuck-session` — a PLAN-SPAR session whose partner never answers recovers inside the same run
 - `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
 - `vitana-platform:context-map` — one read-only command and one linked page to find routes, screens, areas, importers, rules and prior work; stale-link check
 - `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
 - `vitana-platform:reviewer-step-model` — every pinned review step's prompt opens with its own chain model, so the reviewer agent's self-check stops returning `model_unavailable`
 - `vitana-platform:quality-checks-followup` — merge-method wording (squash), quality checks inlined into Kiro Web steering, reviewer requester rule (protected)
+- `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics
