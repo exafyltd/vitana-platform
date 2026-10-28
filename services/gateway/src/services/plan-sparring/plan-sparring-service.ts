@@ -44,6 +44,27 @@ const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/
 const PASS_DEADLINE_MS: Record<ChangeClass, number> = { light: 10 * 60_000, standard: 15 * 60_000, expedited: 5 * 60_000 };
 /** Sessions that never got a real review may be re-run instead of deduplicated. */
 const RETRYABLE_REASONS: string[] = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
+/**
+ * VTID-05254: age after which an in_progress session with no round is treated as dead. A dead pass and a
+ * slow live one look the same on the row, so this is flat and well past the longest pass deadline (15 min).
+ */
+export const STALE_AFTER_MS = 60 * 60_000;
+
+/**
+ * VTID-05254: true when the session's round-1 partner pass died before writing anything — in_progress,
+ * no rounds, unapproved, and last touched more than STALE_AFTER_MS ago. A missing or unparsable timestamp
+ * counts as not dead.
+ */
+export function isDeadRoundOne(s: SparringSession, nowMs: number): boolean {
+  if (s.verdict !== 'in_progress') return false;
+  if ((s.rounds ?? []).length !== 0) return false;
+  if (s.human_approved_by || s.policy_approved_at) return false;
+  const ts = s.updated_at ?? s.created_at;
+  if (!ts) return false;
+  const t = Date.parse(ts);
+  if (Number.isNaN(t)) return false;
+  return t < nowMs - STALE_AFTER_MS;
+}
 
 export interface PlanSparringDeps {
   sb: SupabaseClient;
@@ -247,9 +268,22 @@ export async function createSparringSession(
   if (existing.error) throw new SparringError(502, 'store_error', existing.error.message);
   if (existing.data) {
     const e = existing.data;
-    const retryable =
-      !e.human_approved_by && e.verdict === 'escalated' && (e.escalation_reasons ?? []).some((r) => RETRYABLE_REASONS.includes(r));
-    if (!retryable) return { session: e, deduplicated: true };
+    const nowMs = (deps.now ?? Date.now)();
+    if (isDeadRoundOne(e, nowMs)) {
+      // VTID-05254: the round-1 pass died; escalate the dead row (guarded) and re-run on a fresh session.
+      const upd = await repo.escalateDeadRoundOne(deps.sb, e.id, new Date(nowMs - STALE_AFTER_MS).toISOString());
+      if (upd.error) throw new SparringError(502, 'store_error', upd.error.message);
+      if (!upd.data || upd.data.length === 0) {
+        // Lost the race (another request changed the row): return the newest row, no insert.
+        const again = await repo.fetchSessionByPlanHash(deps.sb, input.producer, plan.hash);
+        if (again.error) throw new SparringError(502, 'store_error', again.error.message);
+        return { session: again.data ?? e, deduplicated: true };
+      }
+    } else {
+      const retryable =
+        !e.human_approved_by && e.verdict === 'escalated' && (e.escalation_reasons ?? []).some((r) => RETRYABLE_REASONS.includes(r));
+      if (!retryable) return { session: e, deduplicated: true };
+    }
   }
 
   const ins = await repo.insertSession(deps.sb, {

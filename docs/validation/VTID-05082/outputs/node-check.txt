@@ -1,0 +1,2 @@
+src node --check exit=0
+dist node --check exit=0

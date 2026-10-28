@@ -9,14 +9,14 @@
       "expect_status": 200,
       "expect_content_type": "text/html",
       "expect_body_contains": [
-        "app.js?v=20261120-vtid-05148",
-        "styles.css?v=20261120-vtid-05148"
+        "app.js?v=20261121-vtid-05082",
+        "styles.css?v=20261121-vtid-05082"
       ]
     },
     {
       "kind": "http",
       "name": "served app.js shows the planner fallback rate chip",
-      "path": "/command-hub/app.js?v=20261120-vtid-05148",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
       "expect_status": 200,
       "expect_content_type": "javascript",
       "expect_body_contains": [

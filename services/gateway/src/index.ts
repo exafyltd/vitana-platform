@@ -1840,9 +1840,13 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
 
       // VTID-01250: Start Heartbeat Loop for autopilot automations
       try {
-        const heartbeatEnabled = process.env.AUTOPILOT_HEARTBEAT_ENABLED === 'true';
+        // VTID-05270 (mt-jobs): the gate also opens on MT_RESOLUTION_V2=true, and
+        // the tenant list is evaluated INSIDE each tick (runHeartbeatTick), so a
+        // flag flip takes effect on the next tick. Master off ⇒ today's single
+        // DEFAULT_TENANT_ID pass.
+        const { shouldRegisterHeartbeat, runHeartbeatTick } = require('./services/jobs/job-tenant-loop');
         const heartbeatTenantId = process.env.DEFAULT_TENANT_ID;
-        if (heartbeatEnabled && heartbeatTenantId) {
+        if (shouldRegisterHeartbeat(process.env)) {
           const { runHeartbeatCycle } = require('./services/automation-executor');
           const HEARTBEAT_INTERVAL_MS = parseInt(process.env.AUTOPILOT_HEARTBEAT_INTERVAL_MS || '60000', 10);
           let heartbeatRunning = false;
@@ -1850,9 +1854,9 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
             if (heartbeatRunning) return; // skip if previous cycle still running
             heartbeatRunning = true;
             try {
-              const result = await runHeartbeatCycle(heartbeatTenantId);
-              if (result.executed.length > 0 || result.failed.length > 0) {
-                console.log(`[Heartbeat] executed=${result.executed.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
+              const result = await runHeartbeatTick(runHeartbeatCycle);
+              if (result.executed > 0 || result.failed > 0) {
+                console.log(`[Heartbeat] executed=${result.executed} skipped=${result.skipped} failed=${result.failed}`);
               }
             } catch (err: any) {
               console.warn('[Heartbeat] Cycle error:', err.message || err);
@@ -1860,7 +1864,7 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
               heartbeatRunning = false;
             }
           }, HEARTBEAT_INTERVAL_MS);
-          console.log(`💓 Autopilot heartbeat loop started (interval: ${HEARTBEAT_INTERVAL_MS}ms, tenant: ${heartbeatTenantId.slice(0, 8)}…)`);
+          console.log(`💓 Autopilot heartbeat loop started (interval: ${HEARTBEAT_INTERVAL_MS}ms, tenant: ${heartbeatTenantId ? `${heartbeatTenantId.slice(0, 8)}…` : 'active tenants (MT_RESOLUTION_V2)'})`);
         } else {
           console.log('⏸️ Autopilot heartbeat loop disabled — set AUTOPILOT_HEARTBEAT_ENABLED=true and DEFAULT_TENANT_ID to enable');
         }
@@ -1868,33 +1872,18 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
         console.warn('⚠️ Autopilot heartbeat loop initialization failed (non-fatal):', error);
       }
 
-      // VTID-05216: Project Manager decide loop (P3 — observe + decide, dry_run).
-      // No-op unless PM_AGENT_ENABLED=true. It only ever runs the deterministic
-      // decide step and reports pm.decision; it NEVER acts (no merge, deploy,
-      // dispatch or write). `live` act is P4. The P3 loop uses the stub observer
-      // (p1/p2 live readers are not merged yet) and takes no pm_lease (lease is
-      // in the tick loop, out of P3 scope).
+      // VTID-05216 / VTID-05274: Project Manager loop. No-op unless
+      // PM_AGENT_ENABLED=true. PM_MODE=live runs observe → decide → act (live
+      // GitHub observer, safe-merge as the only merge path, pm-agent lane writes,
+      // Operator Chat Gate 2, pm_lease); any other mode only decides and reports.
+      // It never deploys, dispatches a workflow or allocates a VTID.
       try {
         const pm = require('./services/project-manager');
         if (pm.pmAgentEnabled() && pm.pmMode() !== 'off') {
+          const { startPmLoop, liveLoopDeps } = require('./services/project-manager/loop');
           const PM_TICK_MS = pm.pmTickIntervalMs();
-          let pmRunning = false;
-          const runPmTick = async () => {
-            if (pmRunning) return; // skip if a previous tick is still running
-            pmRunning = true;
-            try {
-              const decisions = await pm.runDecideTick();
-              if (decisions.length > 0) {
-                console.log(`[PM] mode=${pm.pmMode()} decisions=${decisions.length} (dry_run — reported only, no act)`);
-              }
-            } catch (err: any) {
-              console.warn('[PM] decide tick error:', err?.message || err);
-            } finally {
-              pmRunning = false;
-            }
-          };
-          setInterval(runPmTick, PM_TICK_MS);
-          console.log(`🗂️ Project Manager decide loop started (mode=${pm.pmMode()}, interval: ${PM_TICK_MS}ms, dry_run — no act)`);
+          startPmLoop({ deps: liveLoopDeps, intervalMs: PM_TICK_MS });
+          console.log(`🗂️ Project Manager loop started (mode=${pm.pmMode()}, interval: ${PM_TICK_MS}ms${pm.pmMode() === 'live' ? ', acting under pm_lease' : ', decide + report only'})`);
         } else {
           console.log('⏸️ Project Manager loop disabled — set PM_AGENT_ENABLED=true (PM_MODE=dry_run) to enable');
         }

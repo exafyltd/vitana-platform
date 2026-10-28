@@ -1,0 +1,232 @@
+TAP version 13
+# Subtest: a matching layout passes
+ok 1 - a matching layout passes
+  ---
+  duration_ms: 2.333711
+  type: 'test'
+  ...
+# Subtest: a rules file without a twin fails
+ok 2 - a rules file without a twin fails
+  ---
+  duration_ms: 0.544355
+  type: 'test'
+  ...
+# Subtest: globs that differ from paths fail
+ok 3 - globs that differ from paths fail
+  ---
+  duration_ms: 0.424287
+  type: 'test'
+  ...
+# Subtest: a link to a missing file fails
+ok 4 - a link to a missing file fails
+  ---
+  duration_ms: 0.309765
+  type: 'test'
+  ...
+# Subtest: no always file linking CLAUDE.md fails
+ok 5 - no always file linking CLAUDE.md fails
+  ---
+  duration_ms: 0.331196
+  type: 'test'
+  ...
+# Subtest: the twin must be fileMatch
+ok 6 - the twin must be fileMatch
+  ---
+  duration_ms: 0.406978
+  type: 'test'
+  ...
+# Subtest: this repository passes
+ok 7 - this repository passes
+  ---
+  duration_ms: 9.368597
+  type: 'test'
+  ...
+# Subtest: the Kiro notes say plan sparring is never skipped and how to load context
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+  ---
+  duration_ms: 0.261146
+  type: 'test'
+  ...
+# Subtest: agents: the shipped reviewer agent, workflow, hook and runbooks pass
+ok 9 - agents: the shipped reviewer agent, workflow, hook and runbooks pass
+  ---
+  duration_ms: 3.590734
+  type: 'test'
+  ...
+# Subtest: agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+ok 10 - agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+  ---
+  duration_ms: 0.678926
+  type: 'test'
+  ...
+# Subtest: agents: a missing reviewer agent fails
+ok 11 - agents: a missing reviewer agent fails
+  ---
+  duration_ms: 4.103866
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+ok 12 - agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+  ---
+  duration_ms: 19.363121
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+ok 13 - agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+  ---
+  duration_ms: 0.555779
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer names the full model chain
+ok 14 - agents: the reviewer names the full model chain
+  ---
+  duration_ms: 3.042258
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer name is fixed
+ok 15 - agents: the reviewer name is fixed
+  ---
+  duration_ms: 2.845945
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer may only have the read and shell tools
+ok 16 - agents: the reviewer may only have the read and shell tools
+  ---
+  duration_ms: 6.7939
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer must exclude every write tool
+ok 17 - agents: the reviewer must exclude every write tool
+  ---
+  duration_ms: 8.787533
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer gets no MCP servers
+ok 18 - agents: the reviewer gets no MCP servers
+  ---
+  duration_ms: 2.884773
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer fails loudly when its model is unavailable
+ok 19 - agents: the reviewer fails loudly when its model is unavailable
+  ---
+  duration_ms: 2.976612
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+ok 20 - agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+  ---
+  duration_ms: 15.087073
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer treats protected gate files as blocking
+ok 21 - agents: the reviewer treats protected gate files as blocking
+  ---
+  duration_ms: 3.383651
+  type: 'test'
+  ...
+# Subtest: agents: every agent file needs front matter with a name
+ok 22 - agents: every agent file needs front matter with a name
+  ---
+  duration_ms: 6.571122
+  type: 'test'
+  ...
+# Subtest: workflow: the shipped recipe passes the workflow schema checks
+ok 23 - workflow: the shipped recipe passes the workflow schema checks
+  ---
+  duration_ms: 1.46527
+  type: 'test'
+  ...
+# Subtest: workflow: input is the owner task text only
+ok 24 - workflow: input is the owner task text only
+  ---
+  duration_ms: 0.441622
+  type: 'test'
+  ...
+# Subtest: workflow: a recipe that does not parse fails
+ok 25 - workflow: a recipe that does not parse fails
+  ---
+  duration_ms: 1.419686
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+ok 26 - workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+  ---
+  duration_ms: 43.914808
+  type: 'test'
+  ...
+# Subtest: workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+ok 27 - workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+  ---
+  duration_ms: 1.984329
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+ok 28 - workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+  ---
+  duration_ms: 8.12135
+  type: 'test'
+  ...
+# Subtest: workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+ok 29 - workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+  ---
+  duration_ms: 9.266958
+  type: 'test'
+  ...
+# Subtest: workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+ok 30 - workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+  ---
+  duration_ms: 29.450689
+  type: 'test'
+  ...
+# Subtest: workflow: at most 6 lanes build in parallel
+ok 31 - workflow: at most 6 lanes build in parallel
+  ---
+  duration_ms: 4.409292
+  type: 'test'
+  ...
+# Subtest: workflow: lane landing is serialized by the merge lock
+ok 32 - workflow: lane landing is serialized by the merge lock
+  ---
+  duration_ms: 3.049931
+  type: 'test'
+  ...
+# Subtest: workflow: schema errors are reported
+ok 33 - workflow: schema errors are reported
+  ---
+  duration_ms: 3.927529
+  type: 'test'
+  ...
+# Subtest: workflow: every .kiro/pipeline file the recipe names exists
+ok 34 - workflow: every .kiro/pipeline file the recipe names exists
+  ---
+  duration_ms: 2.715688
+  type: 'test'
+  ...
+# Subtest: workflow: the steering entry point may only name pipeline files that exist (driver.md is text-only)
+ok 35 - workflow: the steering entry point may only name pipeline files that exist (driver.md is text-only)
+  ---
+  duration_ms: 3.916702
+  type: 'test'
+  ...
+# Subtest: hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+ok 36 - hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+  ---
+  duration_ms: 5.43177
+  type: 'test'
+  ...
+# Subtest: runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+ok 37 - runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+  ---
+  duration_ms: 11.363432
+  type: 'test'
+  ...
+1..37
+# tests 37
+# suites 0
+# pass 37
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 337.253437
