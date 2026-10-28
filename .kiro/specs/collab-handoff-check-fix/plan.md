@@ -17,9 +17,11 @@ unchanged since `bfcfddc1db`, where the errors were reproduced from each PR head
   handoff (#4415, #4413, #4406, #4405, #4404, #4393); on #4415 this is the only error. Open plan PRs that are red for
   this alone: #4243, #4348.
 - **R4 — specs not in any programme.** `validateRegistry` (`:843-847`) fails a PR whose touched spec is not listed by a
-  `docs/programs/<id>/program.md`. Not listed on `main`: `native-wave2-events-calendar`, `native-wave2-home-feed-news`,
-  `native-wave2-sharing-business`, `native-wave2-profile-settings`, `desktop-spotlight-finish`,
-  `i18n-propagate-stale-write`, `sparring-floor-retry` (#4373 is red for this alone). The other open `native-wave2-*`
+  `docs/programs/<id>/program.md`. Listed by no programme on `main`: `native-wave2-events-calendar`,
+  `native-wave2-home-feed-news`, `native-wave2-sharing-business`, `native-wave2-profile-settings`,
+  `desktop-spotlight-finish`, `i18n-propagate-stale-write`, `sparring-floor-retry` (#4373 is red for this alone). Of
+  these, only `native-wave2-home-feed-news`, `desktop-spotlight-finish` and `sparring-floor-retry` have a spec folder on
+  `main`; the others exist only on the heads of their open `plan(` PRs (#4271, #4349, #4278, #4157). The other open `native-wave2-*`
   plan PRs (#4269, #4270, #4272, #4275, #4276, #4322, #4332, #4430) are not listed either and fail the same way once
   their own R1 error is gone.
 - **Silent failure.** With `--summary` (how PR-GATE.yml:142 runs it), `validate` writes the whole report only to the
@@ -72,9 +74,12 @@ current head or the owner's instruction naming this plan (§7b). That is the one
    - `desktop-redesign`: `vitana-platform:desktop-spotlight-finish` (and `vitana-platform` added to its `repos`).
    - `standalone`: `vitana-platform:i18n-propagate-stale-write`, `vitana-platform:sparring-floor-retry`.
    A spec already listed by another programme on `main` at build time is left where it is (one programme per spec,
-   `validatePrograms`).
+   `validatePrograms`). **Slugs are taken from the trees, never typed from this list:** for a spec not on `main`, the
+   builder reads the folder name from the open PR head (`git ls-tree -d --name-only <pr-head> .kiro/specs/`) and
+   records each slug with its source (`main` or `#<pr> <head sha>`) in `docs/validation/<VTID>/commands.log`.
 6. Test `scripts/collab/program-registry.test.mjs`: `loadPrograms(<repo root>, 'HEAD')` maps each spec above to the
-   programme named here, and `validatePrograms` returns `[]`.
+   programme named here, each added slug matches the spec slug pattern (`/^[a-z0-9][a-z0-9-]*$/`) and is listed exactly
+   once across all programmes, and `validatePrograms` returns `[]`.
 
 ## Shared files, dependencies, order
 - No file is edited by both lanes. `docs/programs/standalone/program.md` is also changed by this plan PR (it lists
