@@ -3,9 +3,9 @@ slug: native-wave2-journey-autopilot
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: sparred
 author_seat: exafyltd
-updated: 2026-10-15T19:13Z
+updated: 2026-10-28T10:25Z
 sparring_record: .kiro/specs/native-wave2-journey-autopilot/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: main
@@ -41,3 +41,6 @@ lanes; then seat `exafyltd` claims lanes in dependency order — `journey` first
 is `done` (it renders the dashboard screen that `journey` owns, via a port, and consumes the core helpers that
 `journey` adds). Reviewer seat `hotmail` reviews each lane. Device-runtime parity (the last task in each lane) waits
 on the owner's G1 isolated test environment.
+
+### 2026-10-28T10:25Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
