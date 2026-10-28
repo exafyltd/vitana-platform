@@ -1,0 +1,234 @@
+diff --git a/scripts/collab/plan-spar.mjs b/scripts/collab/plan-spar.mjs
+index 8ef8cb43f2..37b53969dc 100644
+--- a/scripts/collab/plan-spar.mjs
++++ b/scripts/collab/plan-spar.mjs
+@@ -43,7 +43,10 @@ export const PLAN_SPARRING_REPOS = ['exafyltd/vitana-platform', 'exafyltd/vitana
+ const INFRA_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded', 'partner_output_invalid'];
+ const RETRYABLE_REASONS = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
+ const POLL_MS = 20_000;
+-const WAIT_MS = 25 * 60_000;
++// plan-spar-stuck-session: must stay greater than STALE_AFTER_MS in
++// services/gateway/src/services/plan-sparring/plan-sparring-service.ts (20 min): the one re-post after a stuck wait only
++// gets a fresh session when the stuck row is already older than that window (test: plan-spar.test.mjs).
++export const WAIT_MS = 25 * 60_000;
+ 
+ class Usage extends Error {}
+ 
+@@ -162,13 +165,28 @@ export function gatewayClient({ baseUrl, token, fetchImpl = fetch, sleep = (ms)
+   };
+   return {
+     async create(body) {
++      const done = (s) => s.rounds.length >= 1 || s.verdict !== 'in_progress';
++      // plan-spar-stuck-session: a session with no round after WAIT_MS (25 min) is older than the gateway's
++      // STALE_AFTER_MS (20 min), so one re-post of the same plan makes the gateway escalate the dead row
++      // (deadline_exceeded) and open a fresh session. Once only; a session still stuck fails loudly.
++      const recover = async (id) => {
++        try { return await waitFor(id, 1); } catch (err) {
++          if (!/no round 1 after/.test(String(err?.message))) throw err;
++          const again = await call('POST', '/api/v1/plans/spar', body);
++          const s = again.json?.session;
++          if (!s) throw new Error(`create re-post after a stuck session ${id}: HTTP ${again.status}`);
++          if (done(s)) return s;
++          if (s.id === id) throw new Error(`session ${id}: stuck (no round 1 after ${WAIT_MS / 60000} min, and the re-post returned the same session)`);
++          return waitFor(s.id, 1);
++        }
++      };
+       const r = await call('POST', '/api/v1/plans/spar', body);
+-      if (r.json?.session) return r.json.session.rounds.length >= 1 || r.json.session.verdict !== 'in_progress' ? r.json.session : waitFor(r.json.session.id, 1);
++      if (r.json?.session) return done(r.json.session) ? r.json.session : recover(r.json.session.id);
+       if (!lost(r)) throw new Error(`create: HTTP ${r.status} ${JSON.stringify(r.json)}`);
+       // The pass is still running server-side; re-posting the same plan returns that session (dedup by plan hash).
+       const again = await call('POST', '/api/v1/plans/spar', body);
+       if (!again.json?.session) throw new Error(`create retry: HTTP ${again.status}`);
+-      return waitFor(again.json.session.id, 1);
++      return done(again.json.session) ? again.json.session : recover(again.json.session.id);
+     },
+     async round(id, n, body) {
+       const r = await call('POST', `/api/v1/plans/spar/${id}/rounds`, body);
+diff --git a/scripts/collab/plan-spar.test.mjs b/scripts/collab/plan-spar.test.mjs
+index 89a058b5d8..ca12e2c8c1 100644
+--- a/scripts/collab/plan-spar.test.mjs
++++ b/scripts/collab/plan-spar.test.mjs
+@@ -550,3 +550,61 @@ test('resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch reso
+   const bad = async () => ({ status: 500, json: async () => ({}) });
+   await assert.rejects(resolveRef('exafyltd/vitana-v1', 'main', { token: 't', fetchImpl: bad }), /HTTP 500/);
+ });
++
++test('gateway client: a stuck round-1 session is re-posted once and recovers on the fresh session', async () => {
++  const seq = [];
++  let posts = 0;
++  const fetchImpl = async (url, opts) => {
++    seq.push(`${opts.method} ${url.replace('https://g', '')}`);
++    if (opts.method === 'POST') {
++      posts += 1;
++      const s = posts === 1 ? { id: 'STUCK', verdict: 'in_progress', rounds: [] } : { id: 'FRESH', verdict: 'in_progress', rounds: [{ round: 1 }] };
++      return { status: 200, text: async () => JSON.stringify({ ok: true, session: s }) };
++    }
++    return { status: 200, text: async () => JSON.stringify({ ok: true, session: { id: 'STUCK', verdict: 'in_progress', rounds: [] } }) };
++  };
++  let t = 0;
++  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
++  const s = await c.create({ plan_text: 'x' });
++  assert.equal(s.id, 'FRESH');
++  assert.equal(posts, 2);
++});
++
++test('gateway client: a session still stuck after the re-post fails with an explicit stuck error (no loop)', async () => {
++  let posts = 0;
++  const stuck = { id: 'STUCK', verdict: 'in_progress', rounds: [] };
++  const fetchImpl = async (url, opts) => {
++    if (opts.method === 'POST') posts += 1;
++    return { status: 200, text: async () => JSON.stringify({ ok: true, session: stuck }) };
++  };
++  let t = 0;
++  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
++  await assert.rejects(c.create({ plan_text: 'x' }), /stuck/);
++  assert.equal(posts, 2);
++});
++
++test('gateway client: the lost-response path (POST lost → re-post → stuck) also recovers on a fresh session, 3 posts', async () => {
++  let posts = 0;
++  const fetchImpl = async (url, opts) => {
++    if (opts.method === 'POST') {
++      posts += 1;
++      if (posts === 1) return { status: 504, text: async () => '<html>timeout</html>' };
++      const s = posts === 2 ? { id: 'STUCK', verdict: 'in_progress', rounds: [] } : { id: 'FRESH', verdict: 'in_progress', rounds: [{ round: 1 }] };
++      return { status: 200, text: async () => JSON.stringify({ ok: true, session: s }) };
++    }
++    return { status: 200, text: async () => JSON.stringify({ ok: true, session: { id: 'STUCK', verdict: 'in_progress', rounds: [] } }) };
++  };
++  let t = 0;
++  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
++  const s = await c.create({ plan_text: 'x' });
++  assert.equal(s.id, 'FRESH');
++  assert.equal(posts, 3);
++});
++
++test('timing invariant: the client waits longer than the gateway stale window (re-post recovery needs it)', async () => {
++  const { WAIT_MS } = await import('./plan-spar.mjs');
++  const src = (await import('node:fs')).readFileSync(new URL('../../services/gateway/src/services/plan-sparring/plan-sparring-service.ts', import.meta.url), 'utf8');
++  const m = /export const STALE_AFTER_MS = (\d+) \* 60_000;/.exec(src);
++  assert.ok(m, 'STALE_AFTER_MS declaration not found');
++  assert.ok(WAIT_MS > Number(m[1]) * 60_000, `WAIT_MS ${WAIT_MS} must exceed STALE_AFTER_MS ${m[1]} min`);
++});
+diff --git a/services/gateway/src/services/plan-sparring/partner.ts b/services/gateway/src/services/plan-sparring/partner.ts
+index 666f365284..04e43076a0 100644
+--- a/services/gateway/src/services/plan-sparring/partner.ts
++++ b/services/gateway/src/services/plan-sparring/partner.ts
+@@ -146,6 +146,17 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+   let tierIndex = 0;
+ 
+   const fail = (reason: EscalationReason, error: string): PartnerPassResult => ({ ok: false, reason, error, toolLog, modelLog });
++  // plan-spar-stuck-session: no awaited model call or tool call outlives the pass deadline (it was only checked
++  // between turns, so a call that never returned left the session without a round). The losing promise is not
++  // cancelled: llm-router / the Bedrock handler take no AbortSignal (follow-up, see the plan).
++  const TIMED_OUT = Symbol('timed-out');
++  const withinDeadline = async <T>(p: Promise<T>): Promise<T | typeof TIMED_OUT> => {
++    const remaining = Math.max(1, input.deadlineMs - (now() - startedAt));
++    let timer: ReturnType<typeof setTimeout> | undefined;
++    try {
++      return await Promise.race([p, new Promise<typeof TIMED_OUT>((res) => { timer = setTimeout(() => res(TIMED_OUT), remaining); })]);
++    } finally { if (timer) clearTimeout(timer); }
++  };
+ 
+   const invoke = (p: string, tier: PartnerTier): Promise<LLMRouterResult> =>
+     input.callLlm(PARTNER_STAGE, p, {
+@@ -177,7 +188,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+     for (;;) {
+       const tier = tiers[tierIndex];
+       const t0 = now();
+-      r = await invoke(prompt, tier);
++      const raced = await withinDeadline(invoke(prompt, tier));
++      if (raced === TIMED_OUT) return fail('deadline_exceeded', `partner model call exceeded the pass deadline (${input.deadlineMs}ms)`);
++      r = raced;
+       modelLog.push({
+         round: input.round,
+         provider: r.provider,
+@@ -269,7 +282,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
+         continue;
+       }
+       toolCallsUsed += 1;
+-      const exec = await input.executeTool(call.name, call.arguments ?? {});
++      const execOrTimeout = await withinDeadline(input.executeTool(call.name, call.arguments ?? {}));
++        if (execOrTimeout === TIMED_OUT) return fail('deadline_exceeded', `partner tool call ${call.name} exceeded the pass deadline (${input.deadlineMs}ms)`);
++        const exec = execOrTimeout;
+       toolLog.push(exec.log);
+       results.push({ id: call.id, name: call.name, result: exec.result, ...(exec.isError ? { isError: true } : {}) });
+     }
+diff --git a/services/gateway/src/services/plan-sparring/plan-sparring-service.ts b/services/gateway/src/services/plan-sparring/plan-sparring-service.ts
+index c367d2a8e2..d885f6e5c7 100644
+--- a/services/gateway/src/services/plan-sparring/plan-sparring-service.ts
++++ b/services/gateway/src/services/plan-sparring/plan-sparring-service.ts
+@@ -46,9 +46,13 @@ const PASS_DEADLINE_MS: Record<ChangeClass, number> = { light: 10 * 60_000, stan
+ const RETRYABLE_REASONS: string[] = ['model_unavailable', 'code_access_unavailable', 'deadline_exceeded'];
+ /**
+  * VTID-05254: age after which an in_progress session with no round is treated as dead. A dead pass and a
+- * slow live one look the same on the row, so this is flat and well past the longest pass deadline (15 min).
++ * slow live one look the same on the row, so this is flat and past the longest pass deadline (15 min).
++ * plan-spar-stuck-session: 20 min (was 60). Every partner model call is now bounded by the pass deadline
++ * (partner.ts), so a live pass ends by 15 min; 20 min stays below the CI client's 25-min wait, so the client's
++ * one re-post gets a fresh session instead of the stuck one. A late write to the escalated row is refused
++ * (appendRound, round_conflict).
+  */
+-export const STALE_AFTER_MS = 60 * 60_000;
++export const STALE_AFTER_MS = 20 * 60_000;
+ 
+ /**
+  * VTID-05254: true when the session's round-1 partner pass died before writing anything — in_progress,
+diff --git a/services/gateway/test/plan-sparring-stuck-session.test.ts b/services/gateway/test/plan-sparring-stuck-session.test.ts
+new file mode 100644
+index 0000000000..159bc63bba
+--- /dev/null
++++ b/services/gateway/test/plan-sparring-stuck-session.test.ts
+@@ -0,0 +1,51 @@
++/**
++ * plan-spar-stuck-session — an unresponsive partner never leaves a session without a round for longer than the
++ * CI client waits (scripts/collab/plan-spar.mjs WAIT_MS = 25 min):
++ *  (1) a single partner model call that never returns ends the pass at its deadline with `deadline_exceeded`
++ *      (an escalated round 1, infra + retryable), instead of hanging the request;
++ *  (2) a 0-round in_progress session older than the longest pass deadline + slack (20 min) is dead, so the
++ *      client's re-post gets a fresh session instead of the stuck one.
++ * The review itself is unchanged: no prompt, round cap, evidence floor or convergence rule is touched.
++ */
++import { runPartnerPass } from '../src/services/plan-sparring/partner';
++import { STALE_AFTER_MS, isDeadRoundOne } from '../src/services/plan-sparring/plan-sparring-service';
++
++describe('plan-spar-stuck-session', () => {
++  it('(1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline', async () => {
++    const callLlm = jest.fn(() => new Promise<never>(() => { /* the model never answers */ }));
++    const t0 = Date.now();
++    const r = await runPartnerPass({
++      round: 1, prompt: 'p', callLlm: callLlm as never, executeTool: (async () => ({ ok: true })) as never, deadlineMs: 200,
++    });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.reason).toBe('deadline_exceeded');
++    expect(Date.now() - t0).toBeLessThan(5_000);
++    expect(callLlm).toHaveBeenCalledTimes(1);
++  });
++
++  it('(1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline', async () => {
++    const callLlm = jest.fn(async () => ({
++      ok: true, provider: 'bedrock', model: 'm', text: '', usage: { inputTokens: 1, outputTokens: 1 },
++      toolCalls: [{ id: 't1', name: 'read_file', arguments: { path: 'CLAUDE.md' } }],
++    }));
++    const executeTool = jest.fn(() => new Promise<never>(() => { /* GitHub never answers */ }));
++    const t0 = Date.now();
++    const r = await runPartnerPass({ round: 1, prompt: 'p', callLlm: callLlm as never, executeTool: executeTool as never, deadlineMs: 300 });
++    expect(r.ok).toBe(false);
++    if (!r.ok) expect(r.reason).toBe('deadline_exceeded');
++    expect(Date.now() - t0).toBeLessThan(5_000);
++    expect(executeTool).toHaveBeenCalledTimes(1);
++  });
++
++  it('(2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min)', () => {
++    expect(STALE_AFTER_MS).toBeGreaterThan(15 * 60_000);
++    expect(STALE_AFTER_MS).toBeLessThan(25 * 60_000);
++  });
++
++  it('(3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup)', () => {
++    const NOW = Date.parse('2026-10-27T12:00:00Z');
++    const s = (min: number) => ({ verdict: 'in_progress', rounds: [], updated_at: new Date(NOW - min * 60_000).toISOString() }) as never;
++    expect(isDeadRoundOne(s(21), NOW)).toBe(true);
++    expect(isDeadRoundOne(s(19), NOW)).toBe(false);
++  });
++});

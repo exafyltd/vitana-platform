@@ -261,6 +261,8 @@ export type GatewayI18nKey =
   | 'notif.chat_mention.title'
   // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
   | 'notif.calendar_invite.body'
+  // VTID-05311: push for a shared post / event / product / profile — never the item's content.
+  | 'notif.chat_shared_content.body'
   // VTID-05137: body of the one push a burst of chat messages gets
   // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
   | 'notif.chat_burst.body'
