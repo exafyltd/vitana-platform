@@ -32,7 +32,7 @@ mode. Autonomous mode only changes how the session reports progress.
 `<workspace>/.kiro/steering/<repo>--<name>.md`. It prefixes each `#[[file:]]` link and `fileMatchPattern` glob with
 the repo folder, so the links resolve from the workspace root. A vitana-v1 file identical to the platform file and
 without links is written once. It also adds `vitana-platform--kiro-web-driver.md` (always included), which inlines
-`.kiro/pipeline/driver.md`, `common-rules.md` and `planning.md`, so the Kiro Web runbook is in context rather than only
+`.kiro/pipeline/driver.md`, `common-rules.md`, `planning.md` and `quality-checks.md` (the per-change-type quality checks, linked last so a truncation cuts it rather than the runbook), so the Kiro Web runbook is in context rather than only
 named. It writes nothing inside a repo and only replaces or removes files carrying its marker. `--check` writes
 nothing. It exits 1 when a generated file is missing or out of date, a link does not resolve, or a linked file has
 nested links. Every run prints the byte total of the always-included set with links inlined (about 123 KB today). A

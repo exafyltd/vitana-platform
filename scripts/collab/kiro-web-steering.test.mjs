@@ -33,6 +33,7 @@ const PIPELINE_FILES = {
   '.kiro/pipeline/driver.md': '# driver\n',
   '.kiro/pipeline/common-rules.md': '# common\n',
   '.kiro/pipeline/planning.md': '# planning\n',
+  '.kiro/pipeline/quality-checks.md': '# quality checks\n',
 };
 
 function workspace() {
@@ -177,4 +178,14 @@ test('R2-F1: a known Vitana checkout without .kiro/steering is skipped with a no
   const res = JSON.parse(r.out);
   assert.deepEqual(res.skipped, ['vitana-v1 (exafyltd/vitana-v1): no .kiro/steering/']);
   assert.ok(!res.files.some((f) => f.file.startsWith('vitana-v1--')));
+});
+
+// quality-checks-followup/steering-quality-checks: a Kiro Web session gets the per-change-type quality checks inlined.
+test('quality-checks: the driver file inlines .kiro/pipeline/quality-checks.md, after the runbook files', () => {
+  assert.ok(gen.DRIVER_LINKS.includes('.kiro/pipeline/quality-checks.md'), 'DRIVER_LINKS lacks quality-checks.md');
+  assert.equal(gen.DRIVER_LINKS.at(-1), '.kiro/pipeline/quality-checks.md', 'quality-checks.md is the last link');
+  for (const l of ['.kiro/pipeline/driver.md', '.kiro/pipeline/common-rules.md', '.kiro/pipeline/planning.md']) {
+    assert.ok(gen.DRIVER_LINKS.includes(l), `${l} is still linked`);
+  }
+  assert.ok(fs.existsSync(path.join(HERE, '..', '..', '.kiro', 'pipeline', 'quality-checks.md')), 'the linked file exists in this repo');
 });

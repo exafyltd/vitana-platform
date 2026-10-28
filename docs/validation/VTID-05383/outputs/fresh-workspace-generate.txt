@@ -1,0 +1,9 @@
+  always-included, links inlined: 142420 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+  written 15, removed 0
+kiro-web-steering: ok
+kiro-web-steering: ok
+--- driver file links:
+#[[file:vitana-platform/.kiro/pipeline/driver.md]]
+#[[file:vitana-platform/.kiro/pipeline/common-rules.md]]
+#[[file:vitana-platform/.kiro/pipeline/planning.md]]
+#[[file:vitana-platform/.kiro/pipeline/quality-checks.md]]
