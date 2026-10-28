@@ -1,36 +1,32 @@
 # Sparring round 1 — in_progress
 
-Session: `53dfe2bf-6ce3-46cf-8b20-13314324e497` · plan hash `a5eec78dc25bf35812403f59d85584158d2b5d83f87c7850c0022dc0bffbdc23`
+Session: `80ff16b5-6dc9-4c7d-910c-f72e6277dc0b` · plan hash `13e4981a65c0565eb758840e136ada1c7a37ac8930a3efd9526ae344bf6e8d5f`
 
 ## Summary
 
-The plan targets vitana-v1 exclusively, but this sparring session has no pinned ref for vitana-v1 and search returns 403. Consequently, none of the plan's specific code premises (line numbers in I18N-PROPAGATE.yml, i18n-check.yml filter paths, test file patterns) can be verified against actual source. Three governance premises were verified against vitana-platform. Two substantive findings are raised beyond the unverifiable-premises issue.
+This plan fixes a real, documented stale-write race in the vitana-v1 I18N-PROPAGATE workflow. The technical design (key-level 3-way merge, retry loop with fresh reset per attempt, fail-loud on errors) is sound in principle. However, **vitana-v1 is not pinned in this sparring session**, so every premise about the existing workflow (line numbers, step contents, file paths, test patterns) cannot be verified against the actual code. The plan claims `spar_refs` should enable vitana-v1 access, but either the handoff.md for this spec doesn't declare it, or the session creation didn't forward `extra_refs`. This is the blocking issue — without verification of the existing code, the plan could be building on wrong assumptions about line numbers, step structure, or path filters that have since changed.
 
 ## Findings
 
 ### R1-F1 [blocker]
 
-Every specific code premise in this plan refers to vitana-v1 (I18N-PROPAGATE.yml lines 181, 220-223, 232, 245-246, 261-265, 162; i18n-check.yml filter; scripts/ci/pr-gate/__tests__/*.test.mjs pattern), but the sparring session has no pinned ref for vitana-v1 and search returns 403. The sparring protocol requires verifying at least 3 premises against code via read_file — zero of these can be verified. The plan may be entirely correct, but it has not been adversarially checked against the target codebase.
+vitana-v1 is not pinned in this sparring session, making every premise about the existing I18N-PROPAGATE.yml, i18n-check.yml, and lib.test.mjs unverifiable. The plan's handoff.md must declare `spar_refs: - exafyltd/vitana-v1: <ref>` so the gateway forwards `extra_refs` and the partner can read vitana-v1 files. Without this, the plan's root-cause analysis (specific line numbers like :181, :220-223, :232, :245-246, :261-266), the i18n-check.yml path filter claim, and the test-pattern claim are all unverifiable assertions. The plan explicitly says 'these premises can be read directly' via spar_refs, but they cannot.
 
-- `exafyltd/vitana-platform:CLAUDE.md:486` — The partner is independent and adversarial. It sees the plan and the code, never the planner's reasoning; it verifies the plan's premises against the code (`file:line`) and its findings are kept verbatim.
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:60` — export function parseSparRefs(fm) { const raw = fm?.spar_refs; if (raw === undefined || raw === null) return []; // FR4: nothing declared → nothing forwarded
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:286` — const declared = existsSync(handoffForRefs) ? parseSparRefs(parseFrontMatter(readFileSync(handoffForRefs, 'utf8'))) : []; let extraRefs; for (const [r, ref] of declared) { ... (extraRefs ??= {})[r] = await resolveRef(r, ref, { token, fetchImpl });
+- `exafyltd/vitana-platform:services/gateway/src/services/plan-sparring/plan-sparring-service.ts:128` — if (b.extra_refs !== undefined) { ... for (const [k, v] of Object.entries(b.extra_refs as Record<string, unknown>)) { if (!(PLAN_SPARRING_REPOS as readonly string[]).includes(k) || typeof v !== 'string' || !SHA_RE.test(v)) { throw new SparringError(400, 'extra_refs_invalid'); } extra[k] = v; } }
 
-Suggestion: Re-run the sparring session with vitana-v1 pinned at the commit the plan references (5c4632ea9 or current main), so the partner can verify the workflow line numbers, the cp -r step, the i18n-check filter, the test pattern, and any other code-level premise. Without this, the sparring gate is not met.
+Suggestion: Ensure the handoff.md for this spec declares `spar_refs: - exafyltd/vitana-v1: main` (or a pinned SHA). Re-run the sparring session so that `extra_refs` is forwarded and the partner can read vitana-v1 files to verify every premise. Without this, the plan cannot pass sparring.
 
-### R1-F2 [major]
+### R1-F2 [minor]
 
-The plan's push loop for collect ('fetch → reset --hard origin/<ref> → script → commit → push, 5 attempts, then red') does not address what happens if the 3-way merge script itself is non-deterministic across retries due to 'ours' changing between iterations. Specifically: if a human pushes a commit between retry N's fetch and push, retry N+1 sees a different 'ours'. The plan says 'both changed → ours, plus ::warning::' — so the set of warnings (and the final file content) can change between retries. This is fine if each retry is self-contained, but the plan should confirm that the script produces no side effects (no partial writes, no appended warnings from prior attempts) that accumulate across retries. The plan also doesn't specify how many retries 'pivot' gets or what happens after exhausting them.
+The plan's narrative cross-references wrong line numbers in plan-spar.mjs. It says '`plan-spar.mjs:383-384`, `:257` `extra_refs`' but line 383-384 is about handoff state transitions (`const to = approved ? 'approved' : 'sparred';`) and line 257 is about VTID allocation binding (`bind = false;`). The actual extra_refs resolution is at lines 286-293 (resolving declared spar_refs) and 312-319 (passing extra_refs in the create body).
 
-- `exafyltd/vitana-platform:CLAUDE.md:168` — Always fail loudly if a required invariant is missing.
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:383` — const to = approved ? 'approved' : 'sparred'; // Allocation on: the plan is always Kiro's next move.
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:257` — bind = false;
+- `exafyltd/vitana-platform:scripts/collab/plan-spar.mjs:286` — const handoffForRefs = path.join(spec, 'handoff.md'); const declared = ... let extraRefs; for (const [r, ref] of declared) { ... (extraRefs ??= {})[r] = await resolveRef(r, ref, { token, fetchImpl }); } ... ...(extraRefs ? { extra_refs: extraRefs } : {}),
 
-Suggestion: Explicitly state in the plan that each retry iteration of the push loop starts from a clean working tree (reset --hard), so there are no accumulated side effects from prior attempts. Specify the retry count and failure mode for 'pivot' the same way collect's is specified (5 attempts, then red). Document that warnings are emitted per attempt (the last successful push's log is the one that matters).
-
-### R1-F3 [minor]
-
-The plan's test scenarios cover key-level merge behavior thoroughly but do not include a scenario for a file that exists only in 'ours' (a new locale shard added by a human after the fan-out's base SHA). The 3-way merge description says 'bot unchanged → ours' per leaf key, but a file absent from both 'base' and 'bot' has no keys in those sides at all. The script's behavior for this edge case should be specified and tested — presumably 'leave it alone', but the plan is silent.
-
-- `exafyltd/vitana-platform:CLAUDE.md:168` — Always fail loudly if a required invariant is missing.
-
-Suggestion: Add a test scenario: 'human adds a brand-new shard file after base SHA; bot has no artifact for it → file preserved unchanged'. Confirm the script only processes files present in the bot artifact directory, and therefore never touches files it didn't generate.
+Suggestion: Fix the plan's cross-reference to point to the correct lines (286-293 for resolution, 312-319 for forwarding). This is cosmetic but avoids confusion during implementation.
 
 ## Next
 
