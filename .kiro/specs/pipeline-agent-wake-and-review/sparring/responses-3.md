@@ -1,0 +1,9 @@
+# Responses to sparring round 3 (re-plan)
+
+```json
+[
+  {"finding_id": "R3-F1", "disposition": "accepted", "rationale": "guard.cjs and guard.test.cjs are already in lane reviewer-fallback's paths (lanes/reviewer-fallback.md); the plan text now names them and specifies the checkAgents block: when .kiro/agents/vitana-lane-reviewer-independent.md exists, tools/excludedTools/permissions/includeMcpJson/includePowers and the body must equal the chain reviewer's, and model: must be in a mirrored REVIEWER_INDEPENDENT_MODELS pinned equal to governance.ts by guard.test.cjs; with the list empty no model pin is allowed. pipeline-lane-state-efficiency does not edit guard.cjs (its only lane edits queue.mjs/queue.test.mjs).", "deferred_to": ""},
+  {"finding_id": "R3-F2", "disposition": "accepted", "rationale": "Option A: isAgentReview stays chain-only and unchanged. New isIndependentReview(r) enforces (a) accept + model in REVIEWER_AGENT_INDEPENDENT_MODELS and (b) fallback_reason === 'chain_unavailable'. Condition (c) is enforced at the call sites that hold lane and PR: reviewSatisfiesLane adds `isIndependentReview(r) && !filesTouchGovernance(pr.files ?? lane.paths) && reviewOnCurrentHead(r, pr)` after the chain branch; governanceMergeAllowed never unlocks a protected gate file or a governance lane with an independent review. Tests per call site and condition added to §3 lane 2 item 7.", "deferred_to": ""},
+  {"finding_id": "R3-F3", "disposition": "accepted", "rationale": "New lane 2b review-fallback-trailer (types.ts ReviewEntry.fallback_reason, observe-live.ts parses Collab-Fallback-Reason next to Collab-Reviewer/Collab-Reviewed-Head, tests for present/absent/other). Lane reviewer-fallback is built on top of it. Test added to lane 2: an independent accept without fallback_reason chain_unavailable is rejected.", "deferred_to": ""}
+]
+```

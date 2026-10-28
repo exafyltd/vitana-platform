@@ -86,6 +86,8 @@ function check(root) {
   // VTID-05275: the reviewer agent and the pipeline recipe live only in vitana-platform (the repo with
   // scripts/collab/queue.mjs); vitana-v1 ships the same guard without them and stays green.
   if (fs.existsSync(path.join(root, 'scripts', 'collab', 'queue.mjs'))) errors.push(...checkAgents(root));
+  // Plan owner-autonomy: the standing owner instruction and its complete stop table.
+  errors.push(...checkOwnerAutonomy(root));
   return errors;
 }
 
@@ -109,7 +111,16 @@ const HOOK = '.kiro/hooks/vitana-pipeline-start.json';
 const PIPELINE_DIR = '.kiro/pipeline';
 const PIPELINE_STEERING = '.kiro/steering/vitana-pipeline.md';
 // Named as text only and owned by another lane (plan section 7, "text-only cross references"); not required to exist.
-const TEXT_ONLY_REFS = new Set(['.kiro/pipeline/driver.md']);
+// VTID-05359: driver.md left this set; it is a required runbook with required content (RUNBOOK_REQUIRED below).
+const TEXT_ONLY_REFS = new Set([]);
+// VTID-05359 (plan reviewer-step-model D1-D3): every pinned review step's prompt starts with exactly
+// `Reviewer chain model for this step: <its modelId>. `; the agent's self-check keys on that line.
+const REVIEW_MODEL_LABEL = 'Reviewer chain model for this step: ';
+// Runbooks that must exist and carry these strings (a missing file or string is a `missing` error).
+const RUNBOOK_REQUIRED = Object.freeze({
+  '.kiro/pipeline/lane-review.md': [REVIEW_MODEL_LABEL],
+  '.kiro/pipeline/driver.md': [REVIEW_MODEL_LABEL],
+});
 const ALLOWED_TOOLS = new Set(['read', 'shell']);
 const REQUIRED_EXCLUDED = ['fs_write', 'fs_append', 'str_replace', 'delete_file'];
 const REQUIRED_BODY = [
@@ -119,6 +130,7 @@ const REQUIRED_BODY = [
   'Collab-Reviewer: agent:vitana-lane-reviewer (<model>)', 'Collab-Reviewed-Head:',
   'protected-gate-files.json',
   `Model chain: ${REVIEWER_MODELS.map((m) => '`' + m + '`').join(' → ')}`,
+  REVIEW_MODEL_LABEL,
 ];
 // Bundled Kiro workflow agents a recipe may use; workspace agents come from .kiro/agents/*.md.
 const BUNDLED_AGENTS = ['wf-coder', 'wf-planner', 'wf-code-reviewer', 'wf-design', 'wf-design-reviewer'];
@@ -186,6 +198,11 @@ function checkAgents(root) {
       if (!REVIEWER_MODELS.includes(s.modelId)) {
         errors.push(`${WORKFLOW}: review step ${s.id} modelId must be one of ${REVIEWER_MODELS.join(', ')}`);
       }
+      const line = REVIEW_MODEL_LABEL + s.modelId + '. ';
+      const p = typeof s.prompt === 'string' ? s.prompt : '';
+      if (!p.startsWith(line) || p.split(REVIEW_MODEL_LABEL).length !== 2) {
+        errors.push(`${WORKFLOW}: review step ${s.id} prompt must start with "${line}"`);
+      }
     }
     const raced = new Set();
     walkNodes(wf.steps, (n) => {
@@ -233,6 +250,11 @@ function checkAgents(root) {
       || typeof first.action.prompt !== 'string' || !first.action.prompt.includes(PIPELINE_STEERING))) {
       errors.push(`${HOOK}: must be version v1 with a SessionStart hook whose agent action prompt loads ${PIPELINE_STEERING}`);
     }
+  }
+  for (const [rel, required] of Object.entries(RUNBOOK_REQUIRED)) {
+    const text = readText(root, rel);
+    if (text === null) { errors.push(`${rel} missing`); continue; }
+    for (const s of required) if (!text.includes(s)) errors.push(`${rel}: is missing ${s}`);
   }
   const pipeDir = path.join(root, PIPELINE_DIR);
   const runbooks = fs.existsSync(pipeDir) ? fs.readdirSync(pipeDir).filter((f) => f.endsWith('.md')) : [];
@@ -481,9 +503,61 @@ function validateWorkflow(wf, workspaceAgents) {
   return errors;
 }
 
+/*
+ * Plan owner-autonomy: the standing owner instruction and its complete stop table live in one always-included steering
+ * file, identical in vitana-platform and vitana-v1. A later edit that drops the file, makes it optional, or removes a
+ * stop from its table is a red check, not a quiet change. Runs where the pipeline steering exists.
+ */
+const OWNER_AUTONOMY = '.kiro/steering/vitana-owner-autonomy.md';
+// One anchor per stop row of the table. Each must occur in a table row (a line starting with `| <n> |`), so deleting a
+// row cannot stay green because the same words appear elsewhere in the file.
+const OWNER_AUTONOMY_ROW_ANCHORS = Object.freeze([
+  ['target database', 'stop: migration apply needs owner approval of the file(s) and the target database (§7d)'],
+  ['§7c', 'stop: production'],
+  ['§3a', 'stop: protected gate files'],
+  ['data-loss', 'stop: security or data-loss risk'],
+  ['3 fix-forward attempts', 'stop: the same failure after 3 attempts'],
+  ['escalated sparring verdict', 'stop: escalated sparring'],
+  ['IF–THEN 31–32', 'stop: verification needing a live write'],
+  ['AGENTS.md', 'stop: another repository'],
+  ['Commerce UX contract', 'stop: Commerce onboarding friction'],
+  ['design.md', 'stop: design-contract change'],
+  ['§4.1', 'stop: VTID allocator down'],
+  ['Gate 1', 'stop: Gate 1 for Claude-local sparring'],
+  ['NEVER 34', 'stop: turning on product autonomy'],
+]);
+// The end point, the stop message and the no-trailing-question rule, anywhere in the file.
+const OWNER_AUTONOMY_TEXT_ANCHORS = Object.freeze([
+  ['STAGING-VERIFY', 'the default end point'],
+  ['five-part', 'the stop message'],
+  ['Never end a reply with an offer', 'the no-trailing-question rule'],
+]);
+const OWNER_AUTONOMY_ANCHORS = Object.freeze([...OWNER_AUTONOMY_ROW_ANCHORS, ...OWNER_AUTONOMY_TEXT_ANCHORS]);
+
+function checkOwnerAutonomy(root) {
+  const errors = [];
+  const pipeline = path.join(root, '.kiro', 'steering', 'vitana-pipeline.md');
+  if (!fs.existsSync(pipeline)) return errors;
+  const file = path.join(root, OWNER_AUTONOMY);
+  if (!fs.existsSync(file)) return [`${OWNER_AUTONOMY} missing (the standing owner instruction and its stop table)`];
+  const text = fs.readFileSync(file, 'utf8');
+  if (parseFrontMatter(frontMatter(text)).inclusion !== 'always') errors.push(`${OWNER_AUTONOMY}: inclusion must be always`);
+  const rows = text.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l)).join('\n');
+  for (const [anchor, what] of OWNER_AUTONOMY_ROW_ANCHORS) {
+    if (!rows.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} in a stop-table row (${what})`);
+  }
+  for (const [anchor, what] of OWNER_AUTONOMY_TEXT_ANCHORS) {
+    if (!text.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} (${what})`);
+  }
+  if (!fs.readFileSync(pipeline, 'utf8').includes('vitana-owner-autonomy.md')) {
+    errors.push('.kiro/steering/vitana-pipeline.md must point to vitana-owner-autonomy.md (the complete stop table)');
+  }
+  return errors;
+}
+
 module.exports = {
-  check, checkAgents, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, fileLinks,
-  REVIEWER_MODELS, STORE_COMMAND, GATE_COMMAND, GATED_STEPS, GATE_IDLE_TIMEOUT_SEC,
+  check, checkAgents, checkOwnerAutonomy, OWNER_AUTONOMY_ANCHORS, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, fileLinks,
+  REVIEWER_MODELS, REVIEW_MODEL_LABEL, STORE_COMMAND, GATE_COMMAND, GATED_STEPS, GATE_IDLE_TIMEOUT_SEC,
 };
 
 if (require.main === module) {
