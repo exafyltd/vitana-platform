@@ -4,10 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: executing
+state: in-review
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 vtids: [VTID-05362]
-updated: 2026-10-28T11:06Z
+updated: 2026-10-28T11:13Z
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 ---
 # Handoff — step-order-gate
@@ -31,3 +31,6 @@ The round commit did not move `handoff.md` past `sparred` (VTID reused from #442
 
 ### 2026-10-28T11:06Z · kiro-exafyltd-202610261510-099d · approved → executing
 Lane `land-guard` built (#4439).
+
+### 2026-10-28T11:13Z · kiro-exafyltd-202610261510-099d · executing → in-review
+The lane is in review and accepted.
