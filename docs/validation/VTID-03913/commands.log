@@ -1,0 +1,65 @@
+# VTID-03913 — commands actually run.
+
+# --- Investigation (in the prior session turn, VTID-03902 follow-up) ------
+
+# Confirmed the automated operator-planner sweep runs correctly (fires at
+# boot, processes real backlog), then found THREE sweep_completed events
+# within ~90 seconds — impossible for one process on a 5-min interval:
+#   SELECT created_at, topic, status, message, metadata FROM oasis_events
+#     WHERE topic = 'operator.planner.sweep_completed'
+#     ORDER BY created_at DESC LIMIT 5;
+#   -> same handful of VTIDs flap ok:true / ok:false ("spec_insert_failed")
+#      across overlapping sweeps -> concurrent processes racing on the
+#      same claim.
+
+grep -n "spec_insert_failed\|get_next_spec_version" -A 15 -B 5 \
+  services/gateway/src/routes/specs.ts
+#   -> Step 2's claim PATCH has no WHERE-condition equivalent (PostgREST
+#      filter) on current spec_status -- an unconditional compare-and-swap
+#      was never implemented. get_next_spec_version is also non-atomic,
+#      but becomes moot once only one caller can ever be "generating" a
+#      given vtid at a time.
+
+grep -rn "specs/.*generate\|executeDevGenerateSpec" services/gateway/src \
+  --include="*.ts" | grep -v ".test.ts"
+#   -> confirmed other callers (dev_generate_spec chat tool, task-intake,
+#      email-intake) call this route from states other than 'missing'
+#      (e.g. regenerating an existing draft) -- ruled out a
+#      spec_status=eq.missing filter, which would have broken legitimate
+#      regeneration; landed on spec_status=not.eq.generating instead.
+
+# --- Fix -------------------------------------------------------------
+
+# services/gateway/src/routes/specs.ts
+#   Step 2 claim: PATCH ...&spec_status=not.eq.generating with
+#   Prefer: return=representation; empty response array => 409
+#   already_generating, returned before touching the LLM, the version
+#   RPC, the spec insert, or spec_last_error.
+
+# --- Verification ------------------------------------------------------
+
+cd services/gateway
+
+npx jest test/specs-generate-claim.test.ts
+#   -> 3/3 new tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check: stripped "&spec_status=not.eq.generating" from the claim
+# URL and re-ran the same test file -- confirmed AC-1's test goes red
+# (received the plain, unconditional URL) while AC-2/AC-3 still pass
+# (a PATCH still "succeeds" unconditionally in that reverted state, so
+# only the conditionality assertion catches the regression). Restored the
+# fix and re-ran -- all 3 green again.
+
+npx tsc --noEmit
+#   -> clean, exit 0. (outputs/tsc.txt)
+
+npx jest
+#   -> full suite: 796/797 suites (1 pre-existing skip), 14,212/14,247
+#      tests passing, 0 failures. (outputs/full-suite.txt)
+
+# --- Manual retry of the 3 stuck VTIDs (after this PR deploys to staging) -
+
+# curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/specs/VTID-03350/generate -d '{}' -H 'Content-Type: application/json'
+# curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/specs/VTID-03869/generate -d '{}' -H 'Content-Type: application/json'
+# curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/specs/VTID-03870/generate -d '{}' -H 'Content-Type: application/json'
+# (results appended once run against the deployed fix)

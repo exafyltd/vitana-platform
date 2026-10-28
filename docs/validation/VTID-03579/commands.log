@@ -1,0 +1,49 @@
+# VTID-03579 verification commands, in order run.
+
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+# clean. (Pre-existing 'compression' / 'pg' module-resolution errors are absent
+# dependencies in the build container, unrelated to this change.)
+
+$ npx jest --silent
+# Tests: 12220 passed, 0 failed, 5 skipped, 6 todo
+# Suites: 632 passed, 9 failed — all 9 are "Cannot find module 'compression'"
+# or "'pg'", i.e. the same absent dependencies, not assertion failures.
+
+$ npx jest test/llm-router-agentic.test.ts --silent
+# 5 passed
+
+$ npx jest test/guide-session-summary-flow.test.ts --silent
+# 5 passed
+
+$ npx jest test/inline-fact-extractor-deepseek.test.ts --silent
+# 5 passed
+
+# --- Mutation checks: confirm the new tests actually bite ---
+
+# 1. Drop history from the Bedrock request path.
+$ sed -i "s/messages: \[...historyMessages, { role: 'user', content }\]/messages: [{ role: 'user', content }]/" src/services/llm-router.ts
+$ npx jest test/llm-router-agentic.test.ts --silent
+# 2 failed, 3 passed  <-- history assertions fail as intended
+$ git checkout src/services/llm-router.ts
+
+# 2. Truncate parallel tool calls to the first.
+$ sed -i 's/toolCall: toolCalls\[0\], toolCalls }/toolCall: toolCalls[0], toolCalls: toolCalls.slice(0,1) }/' src/providers/bedrock.ts
+$ npx jest test/providers/bedrock-vision-tools.test.ts --silent
+# 1 failed, 9 passed  <-- parallel-tool-call assertion fails as intended
+$ git checkout src/providers/bedrock.ts
+
+# --- Live routing state (production Supabase, read-only) ---
+
+$ select topic, metadata->>'provider', count(*), max(created_at)
+    from oasis_events where topic like 'llm.call.%'
+     and created_at > now() - interval '48 hours' group by 1,2;
+# vertex/gemini-3.1-pro-preview: last call 2026-08-10 21:41:02Z, none since.
+# llm_routing_policy v11 (Bedrock) activated 21:40:24Z — Google stops one
+# minute later. Confirms the router is off Google.
+#
+# KNOWN GAP, recorded deliberately: bedrock has emitted ZERO llm.call.started
+# events. The adapter is SKIPPED, not failing — the autopilot planner runs on
+# the GCP gateway, which has no BEDROCK_ROLE_ARN and no AWS credentials, so
+# isAvailable() is false and the router silently serves the DeepSeek fallback.
+# That is CLAUDE.md IF-THEN 31 exactly. The fix (repointing Cloud Scheduler at
+# the AWS gateway) is infrastructure, not code, and is not in this PR.

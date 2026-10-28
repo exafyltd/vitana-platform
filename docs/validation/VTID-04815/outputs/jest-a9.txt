@@ -1,0 +1,5 @@
+PASS test/vtid-04815-change-risk.test.ts
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.416 s)
+Test Suites: 3 passed, 3 total
+Tests:       50 passed, 50 total

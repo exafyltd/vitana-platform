@@ -1,0 +1,20 @@
+PASS test/inline-fact-extractor.test.ts
+PASS test/services/context-pack-builder.test.ts
+PASS test/services/automation-handlers-phase2.test.ts
+PASS test/services/memory-facts-service.test.ts
+PASS test/intelligence-stack-e2e.test.ts
+PASS test/memory-identity-lock.test.ts
+PASS test/extraction-dedup-manager.test.ts
+PASS test/memory-verification-conformance.test.ts (6.606 s)
+PASS test/services/memory-facts-fetchers.test.ts
+PASS test/dev-autopilot-schema-context.test.ts
+PASS test/services/intent-memory-hooks.test.ts
+PASS test/inline-fact-extractor-deepseek.test.ts
+PASS test/services/automation-handlers-memory-intelligence.test.ts
+PASS test/services/memory/vtid-04686-one-current-row-per-key.test.ts
+PASS test/services/context-pack-facts-boundary.test.ts
+PASS test/vtid-04494-write-fact-one-current-fact.test.ts
+PASS test/services/memory/remember.test.ts
+PASS test/vtid-05041-definer-lockdown.test.ts
+Test Suites: 18 passed, 18 total
+Tests:       431 passed, 431 total

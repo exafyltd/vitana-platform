@@ -1,0 +1,78 @@
+VTID-03683 — mutation verification
+
+Each seam broken independently, suite re-run, source restored. A guard that
+cannot fail when the thing it guards is removed is not a guard.
+
+Baseline: 11 passed, 0 failed.
+
+=== MUTATION 1: nova-native refusal removed ===
+  src/orb/live/upstream/cascaded-config.ts — evaluateCascadeEligibility()
+  -   if (isNovaSonicLanguageSupported(base)) {
+  -     return { eligible: false, reason: 'nova_supports_natively', ... };
+  -   }
+
+    ✕ REFUSES every language Nova speaks natively (5 ms)
+    ✕ takes exactly the languages Nova cannot speak AND both AWS services can (9 ms)
+Tests:       2 failed, 9 passed, 11 total
+
+  This is the mutation that matters most: without this check the cascade would
+  happily accept `de`, trading a working speech-to-speech session for a slower
+  three-hop one. Note the second failure — the coverage test also catches it,
+  because `listCascadeLanguages()` would no longer be just the Nova-blocked set.
+
+=== MUTATION 2: Polly-derived coverage guard removed ===
+  src/orb/live/upstream/cascaded-config.ts — evaluateCascadeEligibility()
+  -   if (!resolvePollyVoice(base)) {
+  -     return { eligible: false, reason: 'no_polly_voice', ... };
+  -   }
+
+    ✕ takes exactly the languages Nova cannot speak AND both AWS services can (9 ms)
+    ✕ refuses sr, and blames POLLY — the blocker that is actually verified (2 ms)
+    ✕ derives coverage from Polly rather than restating it (2 ms)
+Tests:       3 failed, 8 passed, 11 total
+
+  WORTH RECORDING: this mutation was survivable until `sr: 'sr-RS'` was added to
+  TRANSCRIBE_LANGUAGE_CODES. Before that, removing the Polly guard changed
+  nothing observable — every language in the Transcribe table happened to have a
+  Polly voice, so the seam test passed against a gate that no longer consulted
+  Polly at all. The seam assertion only bites when the two tables CAN disagree.
+  `sr-RS` is a real Transcribe streaming code (verified against the SDK's own
+  `LanguageCode` union), so listing it both makes the refusal reason
+  demonstrably true and makes this guard genuinely load-bearing.
+
+=== MUTATION 3: activation gate ignored ===
+  src/orb/live/upstream/upstream-provider-selector.ts — tryCascadeRescue()
+  -   if (ctx.cascade?.enabled !== true) return null;
+
+    ✕ without the flag, behaviour is byte-for-byte the old forced-Nova path
+Tests:       1 failed, 10 passed, 11 total
+
+  The one test that must fail here is the inertness guarantee — that deploying
+  this code changes no routing for anyone until someone deliberately enables it.
+
+=== restored ===
+Tests:       11 passed, 11 total
+
+Note which tests survive every mutation and why. The locale-normalisation test,
+the activation-gate parsing test, and the three positive routing assertions
+("flag on + covered routes to the cascade", "a live Vertex still wins", "a
+Nova-supported language is never diverted") survive all three mutations, because
+they must: they assert the mechanism works once switched on, and no mutation to
+a REFUSAL path is allowed to move them. A mutation set where everything fails
+is not a stronger result — it means the tests are coupled to each other rather
+than each pinning one property.
+
+All three mutation runs above were re-executed against the final 11-test suite
+rather than being carried over from the earlier 10-test run, so every count
+printed here was observed, not inferred.
+
+Full suite after all restorations: 673/674 suites (1 pre-existing skip),
+12940 passed, 0 failed. tsc --noEmit clean.
+
+One pre-existing test was updated rather than loosened:
+`test/orb/live/upstream/provider-name.test.ts` pins VOICE_PROVIDER_NAMES as an
+EXACT list and correctly failed when `cascaded` was added. It now names all four
+and keeps the exact-list form — adding a voice provider should require someone
+to say so there, which is precisely what it did here. `bedrock` stays in the
+rejected-aliases list even though the cascade calls Bedrock for its LLM leg: the
+provider name describes the transport, not the vendors behind it.

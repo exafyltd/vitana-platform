@@ -1,0 +1,15 @@
+    ✓ has unique, well-formed entries (55 ms)
+    ✓ uses only the Vitana Index pillars, and pillar categories carry their pillar (2 ms)
+    ✓ classifies exact before prefix, longest prefix first, unknown as silent (2 ms)
+    ✓ every activity type members actually had in the last 120 days (2026-10-13) is classified deliberately (2 ms)
+    ✓ the migration seed is exactly what the generator renders from the JSON (45 ms)
+    ✓ the migration tier/pillar checks match the catalog (1 ms)
+    ✕ drops orb.livekit.next_action.candidate (4 ms)
+    ✕ drops orb.livekit.next_action.suppressed (1 ms)
+    ✕ drops orb.livekit.next_action.suggested (1 ms)
+    ✕ drops orb.navigator.requested (1 ms)
+    ✕ drops orb.session.identity.resolved (1 ms)
+    ✕ drops vtid.live.audio_blocked (1 ms)
+    ✓ still projects a member moment (diary.create) (1 ms)
+    ✕ writeTimelineRow refuses a system type from a direct caller
+Tests:       7 failed, 7 passed, 14 total

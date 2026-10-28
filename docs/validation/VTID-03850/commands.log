@@ -1,0 +1,21 @@
+# VTID-03850 — commands run (2026-09-13)
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"staging-onramp-executions-dispatch-ecs-executor"}'
+  -> {"ok":true,"vtid":"VTID-03850"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03850 -d '{"title":"Pipeline: staging on-ramp executions run on the ECS executor","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03850'   (platform owner approved the plan in conversation)
+
+## Facts read (read-only)
+GitHub: list_workflow_runs AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml -> last successful build 2026-07-24 (run 30090888935, head 02108fbe)
+grep: .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml / AWS-PROD-DEPLOY-GATEWAY.yml -> no DEV_AUTOPILOT_USE_JOB / DEV_AUTOPILOT_JOB_CLOUD on either
+grep: services/gateway/src/services/dev-autopilot-execute.ts L2484-2503 -> RunTask failure falls back to in-process with a warning
+
+## Verification
+python3 yaml.safe_load + bash -n on the edited run: blocks                                             -> outputs/workflow-syntax.txt
+cd services/gateway && npx jest test/vtid-03850-staging-executor-dispatch-pinned.test.ts test/vtid-03820-onramp-staging-flag-pinned.test.ts
+                                                                                                        -> outputs/jest-scoped-pins.txt
+
+## After merge
+gh-equivalent: actions_run_trigger AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml ref=main reason="VTID-03850 ..."  -> outputs/executor-rebuild-run.txt
+curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info (6/6 samples on merge commit)     -> outputs/staging-build-info.txt

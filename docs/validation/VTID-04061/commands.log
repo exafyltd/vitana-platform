@@ -1,0 +1,27 @@
+# VTID-04061 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-18T11:38:00.556Z
+# execution_id=54cf3132-a050-4cf2-b4d3-b96a4d37e52f finding_id=1278e574-1288-4a9c-b513-cce3e89685ba plan_version=1
+# branch=dev-autopilot/54cf3132 base=main
+# llm provider=deepseek model=deepseek-flash
+
+# agent turns=81 fix_rounds=0 checks_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/54cf3132
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add services/gateway/src/frontend/command-hub/app.js   # modify
+$ git add services/gateway/src/frontend/command-hub/index.html   # modify
+$ git add services/gateway/src/frontend/command-hub/styles.css   # modify
+$ git add services/gateway/test/vtid-03852-llm-provider-badge.test.ts   # modify
+$ git add services/gateway/test/command-hub/dead-code-execution-card-removed.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04061/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/54cf3132
+$ gh pr create --base main --head dev-autopilot/54cf3132
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).

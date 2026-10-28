@@ -1,0 +1,12 @@
+# VTID-04810 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_CRM_DUPLICATE_ACCOUNT_MODE "04810 E5"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04810 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-e5.txt
+npx jest $(grep -rlE "command-orchestrator|crm-gates" test)             # Backoffice/CRM suites (outputs/jest-backoffice.txt)
+# Fixed during the build: customerRefOf has no kind for a company create, so the new record's id is read
+# from the receipt (id / name / company_id / customer_id) — without it the record itself showed up as its
+# own duplicate; "holding" is not a legal form (a holding is a different entity) and was removed from the list.
+# Evidence: production has no erp_commands yet (plan §10.3 E), so there is nothing to measure until the
+# Backoffice is used; the gate is ready for the first company creates.
+npx jest (full gateway suite, merged with origin/main 7898787)          # 1452 suites, 23288 passed, 0 failed (outputs/jest-full.txt)

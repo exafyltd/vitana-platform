@@ -1,0 +1,8 @@
+cd services/gateway
+UPDATE_CALENDAR_GOLDEN=1 npx jest test/calendar          # record golden outputs once
+npx jest test/calendar                                   # 110 passed (twice, stable)
+TZ=UTC npm run test:calendar -- --silent                 # 17 suites, 366 passed
+TZ=Pacific/Auckland npm run test:calendar -- --silent    # 17 suites, 366 passed
+TZ=America/Los_Angeles npm run test:calendar -- --silent # 17 suites, 366 passed
+(mutation check: 4 deliberate source edits, each caught, each reverted)
+npx tsc --noEmit -p .                                    # clean

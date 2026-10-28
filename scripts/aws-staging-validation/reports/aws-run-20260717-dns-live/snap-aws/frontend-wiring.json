@@ -1,0 +1,28 @@
+{
+  "bundle": "/assets/index-DbZWLn2I.js",
+  "urls": [
+    "http://localhost:9999",
+    "http://www.apache.org",
+    "http://www.w3.org",
+    "https://...",
+    "https://api.dicebear.com",
+    "https://deine-website.com",
+    "https://developer.mozilla.org",
+    "https://fcmregistrations.googleapis.com",
+    "https://firebaseinstallations.googleapis.com",
+    "https://gateway-q74ibpv6ia-uc.a.run.app",
+    "https://gateway.vitanaland.com",
+    "https://github.com",
+    "https://images.unsplash.com",
+    "https://inmkhvwdcuyhnxkgfvsb.supabase.co",
+    "https://linkedin.com",
+    "https://maps.google.com",
+    "https://oasis-operator-86804897789.us-central1.run.app",
+    "https://radix-ui.com",
+    "https://reactjs.org",
+    "https://vitanaland.com"
+  ],
+  "supabase_urls": [
+    "https://inmkhvwdcuyhnxkgfvsb.supabase.co"
+  ]
+}

@@ -1,0 +1,5 @@
+{"vtid":"VTID-04799","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04799-selfheal-pretriage.test.ts test/vtid-04759-selfheal-jev-gates.test.ts","cwd":"services/gateway","reason":"The gate runs when self-healing triages an incident, which a read-only staging probe cannot cause. The gate (modes, which incidents it asks about, enforce rule, agreement from the report) and the unchanged B1/B2 gates are proven by these suites."}
+]}

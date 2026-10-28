@@ -1,0 +1,35 @@
+NOTICE:  ok: S1 three goal entries
+NOTICE:  ok: S1 checkpoint 09:00 New York
+NOTICE:  ok: S1 milestone emoji
+NOTICE:  ok: S1 habit daily until end of target date
+NOTICE:  ok: S1 steps linked to entries
+NOTICE:  ok: S2 still three
+NOTICE:  ok: S2 unchanged entry not rewritten
+NOTICE:  ok: S3 entry moved
+NOTICE:  ok: S4 completed
+NOTICE:  ok: S4 completed entry kept its time
+NOTICE:  ok: S4 reopened
+NOTICE:  ok: S5 superseded -> cancelled
+NOTICE:  ok: S5 reactivated
+NOTICE:  ok: S5 deleted step cancelled
+NOTICE:  ok: S6 4 weeks = 28
+NOTICE:  ok: S6 10 days
+NOTICE:  ok: S6 hydration 10:00 Berlin
+NOTICE:  ok: S6 pillar emoji type
+NOTICE:  ok: S6 first three recommendations
+NOTICE:  ok: S6 non-array recommendations tolerated
+NOTICE:  ok: S6 deactivated -> cancelled
+NOTICE:  ok: S7 unpaid booking not in calendar
+NOTICE:  ok: S7 paid booking in calendar, duration used
+NOTICE:  ok: S7 cancelled
+NOTICE:  ok: S7 rebooked reactivates one row
+NOTICE:  ok: S8 lab entry
+NOTICE:  ok: S8 sample collected -> completed
+NOTICE:  ok: S9 host and holder
+NOTICE:  ok: S9 moved for both
+NOTICE:  ok: S9 revoked ticket cancelled
+NOTICE:  ok: S9 host unaffected
+NOTICE:  ok: S9 session cancelled
+WARNING:  VTID-04356 goal_plan_step 82a79798-0648-4a3f-973c-ca5fcfcffdec -> calendar failed: new row for relation "calendar_events" violates check constraint "boom"
+NOTICE:  ok: S10 source row kept despite calendar failure
+NOTICE:  ok: S11 habits staggered 08:00/08:30/09:00

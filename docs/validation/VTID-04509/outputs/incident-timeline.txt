@@ -1,0 +1,25 @@
+# VTID-04509 — staging evidence (read-only, oasis_events on the shared project). UTC, 2026-09-24.
+# Origin https://preview-aws.vitanaland.com, Nova Sonic, lang en.
+
+## Reported session: live-fcf24797-1b77-44d6-9bf1-398f7edc423f (member returning ~3 min after a 6-min conversation)
+15:57:29.723 vtid.live.session.start
+15:57:30.105 greeting_facts_user_journey_read   last_full_briefing_date=2026-09-24 (new-day briefing already delivered)
+15:57:30.691 nova_instruction_debug_dump        "[bootstrap context omitted to fit the Vertex Live setup budget]"; "Time since last ORB session: UNKNOWN"
+15:57:31.519 greeting_sent  wake_opener=conv_resume register=continue bucket=reconnect nba=next_session current_route=/connectors
+             (directive sent to Nova as a USER-role turn; payload suggested_next_step.execute_with_tool=narrate_guided_session)
+15:57:32.634 tool_call      narrate_guided_session   turn_count=0, audio_in=0  <- no user speech, nothing accepted
+15:57:32.864 tool.executed  narrate_guided_session   result: "The text below is this session's real narration, authored in German. Deliver it NOW ... translate every sentence ..."
+15:57:34.071 model_start_speaking
+15:57:46.293 upstream_closed reason=user_stop   audio_out=708 (~12 s of speech), turn_count=0 -> no turn_complete, words not recorded
+
+## Same path, earlier today, words recorded
+14:16:29  conv_resume/continue nba=next_session -> tool narrate_guided_session on turn 0 -> first output:
+          "Tippe jetzt auf den ORB und sag mir kurz Hallo, um es auszuprobieren." 4. Tippe jetzt ... Translation: "Tap on the ORB now and say hello briefly to try it out." Yes, that's correct. Now,…
+13:50:28  conv_resume/continue nba=focus_pillar -> tool create_calendar_event on turn 0 -> first output:
+          "Great! I've scheduled a nutrition improvement session for today at 1:00 PM. ..."   <- a booking the member never asked for
+
+## Contrast: same opener, read tools only (works)
+16:01:55  conv_resume/continue nba=complete_chat route=/inbox -> get_current_screen, view_messages ->
+          "I see you've got 30 new messages waiting from 30 different people. ... Would you like me to help you reply to one of these messages right now?"
+
+## 10-day count (conv_resume, register continue): turn-0 tool calls on 2026-09-12, -15, -17, -18 (x4), -19, -22, -24 (x5).

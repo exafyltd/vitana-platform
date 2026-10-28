@@ -1,0 +1,123 @@
+# VTID-03965 — commands run during this change
+
+## Live post-deploy re-verification of VTID-03964 (the trigger for this VTID)
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info"
+{"ok":true,"env":"staging","git_commit":"dd808d6e9dabaafe59db333694eae8c7de1dd6c3", ...}
+(confirms staging was serving VTID-03964's exact merged commit before re-testing)
+
+$ for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "run$i: HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/health"; done
+run1: HTTP:200 TIME:1.806806
+run2: HTTP:200 TIME:6.643071   <- still over the panel's 6s budget
+run3: HTTP:200 TIME:2.257869
+run4: HTTP:200 TIME:6.463758   <- still over the panel's 6s budget
+run5: HTTP:200 TIME:3.310133
+run6: HTTP:200 TIME:1.342645
+
+$ for i in 1 2 3 4 5 6; do curl -s -o /dev/null -w "run$i: HTTP:%{http_code} TIME:%{time_total}\n" --max-time 20 "https://preview-aws-gateway.vitanaland.com/api/v1/autopilot/pipeline/health"; done
+run1: HTTP:500 TIME:6.397351   <- real 500, still happening after VTID-03964
+run2: HTTP:500 TIME:2.895537   <- real 500, still happening after VTID-03964
+run3: HTTP:200 TIME:0.846834
+run4: HTTP:200 TIME:1.628609
+run5: HTTP:200 TIME:1.117377
+run6: HTTP:200 TIME:0.681695
+
+$ cat /tmp/ph_1.json
+{"ok":false,"error":"The operation was aborted."}
+$ cat /tmp/ph_2.json
+{"ok":false,"error":"Body is unusable: Body has already been read"}
+(the exact same failure signature as before VTID-03964 — the shared-
+AbortController theory was disproven by this evidence: independent
+AbortControllers per fetch did NOT eliminate it)
+
+## Root cause 1 — getLoopStats() internal sequential fallback
+Read services/gateway/src/services/autopilot-loop-store.ts: getLoopStats()
+awaits a primary RPC (bounded ~3s by VTID-03954's supabaseRequest timeout),
+and on failure/empty-result falls back to a SECOND sequential call,
+getLoopState() (also bounded ~3s). VTID-03964 parallelized getLoopStats()
+against isAutopilotExecutionArmed() in getEventLoopStatus() via Promise.all,
+but never touched this internal two-step fallback, which can still stack to
+~6s all by itself when Supabase is slow enough to trip the primary RPC's
+timeout (exactly when the fallback is also likely to be slow).
+
+## Root cause 2 — pipeline/health's unguarded post-Promise.all body parsing
+Read services/gateway/src/routes/autopilot.ts's /pipeline/health handler:
+taskCountsResp.json() / stuckTasksResp.json() / workersResp.json() are
+called AFTER Promise.all has already resolved and the AbortController
+timeouts have already been cleared in the `finally` block — completely
+unguarded by try/catch, and outside the .catch(() => null) that only
+protects the fetch() promise itself, not later body reads. A failed/
+corrupted body read (from Node's fetch/undici pooling this route's 3 direct
+fetches concurrently with getEventLoopStatus()'s own 2 internal fetches —
+up to 5 concurrent requests to the same Supabase host) throws straight past
+every existing guard into the route's top-level catch, producing a full 500
+for what should be one degraded data point.
+
+$ node -e "const {Agent} = require('undici'); console.log(typeof Agent)"
+Error: Cannot find module 'undici'
+$ node -e "const {Agent} = require('node:undici'); console.log(typeof Agent)"
+Error [ERR_UNKNOWN_BUILTIN_MODULE]: No such built-in module: node:undici
+(confirms a dispatcher/Agent-based fix is not safely available in this
+environment/Node build — ruled out rather than shipped unverified)
+
+## Fix 1 — cap getLoopStats() total wall-clock time
+services/gateway/src/services/autopilot-loop-store.ts: getLoopStats() now
+races the whole primary+fallback sequence (renamed to
+getLoopStatsUnbounded()) against a single 3000ms deadline via Promise.race,
+so the function resolves (degrades to null) within ~3s total regardless of
+how many sequential internal steps it takes.
+
+## Fix 2 — guard each response body parse independently
+services/gateway/src/routes/autopilot.ts's /pipeline/health: each of the
+three post-Promise.all .json() parses (task counts, stuck tasks, workers)
+is now wrapped in its own try/catch. A parse failure on any one degrades
+only that field (logged via console.error) instead of 500ing the whole
+route — matching the existing fetch-level .catch(() => null) pattern.
+
+## New/updated tests
+$ cd services/gateway && npx jest test/routes/autopilot.test.ts test/services/autopilot-loop-store.test.ts --silent
+Test Suites: 2 passed, 2 total
+(full output: outputs/jest-new-tests.txt)
+
+New test "caps total time at ~3s even when both the primary RPC and its
+fallback each hang to their own bound" (autopilot-loop-store.test.ts):
+resolves in ~3003ms, not ~6000ms.
+
+New test "degrades one field instead of 500ing the whole route when a
+response body fails to parse" (autopilot.test.ts): simulates the exact
+observed corruption signature ("Body is unusable: Body has already been
+read") on one of the three fetches; asserts 200 + degraded field instead
+of 500.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 927 passed, 927 of 928 total
+Tests:       29 skipped, 6 todo, 15234 passed, 15269 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight (no frontend files touched)
+$ git diff origin/main -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff_03965.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_03965.txt
+No CSP pattern hits in added lines.
+(diff is empty by construction — see outputs/csp-gate.txt)
+
+## Route Mount Evidence Gate — local pre-flight (no route added)
+$ git diff origin/main -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff_03965.txt
+$ node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff_03965.txt
+No route registration added — route-mount evidence not required for this diff.
+(exit 1, confirming the gate is correctly skipped — this PR only edits existing handler bodies)
+
+## Path Ownership Guard (gateway_backend profile) — local pre-flight
+$ git diff --name-only origin/main > /tmp/changed_files_03965.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files_03965.txt gateway_backend /tmp/empty_body_03965.txt
+APPROVED: 4 in-remit file(s) match the gateway_backend allowlist
+(exit 0)

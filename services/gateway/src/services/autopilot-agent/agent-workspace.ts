@@ -1,0 +1,362 @@
+/**
+ * VTID-04006: git workspace for one agent execution.
+ *
+ * A shallow clone into a scratch directory, a fresh branch, and at the end
+ * one commit pushed to that branch. The token never appears in logs: it is
+ * embedded in the remote URL only, and errors are scrubbed before they are
+ * surfaced. `exec` is injectable so the parsing helpers are unit-testable
+ * without a real git.
+ */
+
+import { execFile } from 'child_process';
+import { promises as fs } from 'fs';
+import os from 'os';
+import path from 'path';
+import { promisify } from 'util';
+import { describeBundle, loadCodeIndex, type CodeIndexBundle } from '../codeintel-index';
+
+const execFileP = promisify(execFile);
+
+export type ExecFn = (
+  cmd: string,
+  args: string[],
+  opts: { cwd?: string; timeoutMs?: number; env?: NodeJS.ProcessEnv },
+) => Promise<{ stdout: string; stderr: string }>;
+
+export const defaultExec: ExecFn = async (cmd, args, opts) => {
+  const { stdout, stderr } = await execFileP(cmd, args, {
+    cwd: opts.cwd,
+    timeout: opts.timeoutMs ?? 120_000,
+    maxBuffer: 64 * 1024 * 1024,
+    env: { ...process.env, GIT_TERMINAL_PROMPT: '0', ...(opts.env || {}) },
+  });
+  return { stdout: stdout.toString(), stderr: stderr.toString() };
+};
+
+export interface Workspace {
+  /** Scratch root (deleted by `cleanupWorkspace`). */
+  root: string;
+  /** The clone. All tools are jailed here. */
+  repoDir: string;
+  branch: string;
+  baseSha: string;
+}
+
+export interface ChangedFile {
+  path: string;
+  action: 'create' | 'modify' | 'delete';
+}
+
+export function scrubSecret(text: string, secret?: string): string {
+  if (!secret) return text;
+  return text.split(secret).join('***');
+}
+
+function remoteUrl(owner: string, repo: string, token: string): string {
+  return `https://x-access-token:${token}@github.com/${owner}/${repo}.git`;
+}
+
+export async function prepareWorkspace(opts: {
+  owner: string;
+  repo: string;
+  baseBranch: string;
+  branch: string;
+  token: string;
+  workRoot?: string;
+  exec?: ExecFn;
+  depth?: number;
+  /** VTID-04017 fix mode: `branch` already exists on the remote (the parent
+   *  execution's PR branch) — clone it directly and stay on it. */
+  existingBranch?: boolean;
+}): Promise<Workspace> {
+  const exec = opts.exec ?? defaultExec;
+  const root = await fs.mkdtemp(path.join(opts.workRoot || os.tmpdir(), 'autopilot-agent-'));
+  const repoDir = path.join(root, opts.repo);
+  try {
+    const cloneBranch = opts.existingBranch ? opts.branch : opts.baseBranch;
+    await exec('git', ['clone', '--depth', String(opts.depth ?? 1), '--branch', cloneBranch, '--single-branch', remoteUrl(opts.owner, opts.repo, opts.token), repoDir], { timeoutMs: 600_000 });
+    await exec('git', ['config', 'user.name', 'vitana-dev-autopilot'], { cwd: repoDir });
+    await exec('git', ['config', 'user.email', 'dev-autopilot@vitanaland.com'], { cwd: repoDir });
+    if (!opts.existingBranch) await exec('git', ['checkout', '-b', opts.branch], { cwd: repoDir });
+    const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
+    return { root, repoDir, branch: opts.branch, baseSha: stdout.trim() };
+  } catch (err) {
+    await fs.rm(root, { recursive: true, force: true }).catch(() => undefined);
+    throw new Error(`workspace clone failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
+  }
+}
+
+/**
+ * VTID-04017: fetch one ref from origin (shallow) and return its SHA. Used
+ * in fix mode to diff the PR branch against its base.
+ */
+export async function fetchRefSha(repoDir: string, ref: string, exec: ExecFn = defaultExec): Promise<string> {
+  await exec('git', ['fetch', '--depth', '1', 'origin', ref], { cwd: repoDir, timeoutMs: 300_000 });
+  const { stdout } = await exec('git', ['rev-parse', 'FETCH_HEAD'], { cwd: repoDir });
+  return stdout.trim();
+}
+
+/** Parse `git diff --name-status` output into changed files. */
+export function parseNameStatus(stdout: string): ChangedFile[] {
+  const out: ChangedFile[] = [];
+  for (const raw of stdout.split('\n')) {
+    const line = raw.trim();
+    if (!line) continue;
+    const parts = line.split('\t');
+    const code = parts[0] || '';
+    const p = parts[parts.length - 1] || '';
+    if (!p) continue;
+    const c = code[0];
+    const action: ChangedFile['action'] = c === 'D' ? 'delete' : c === 'A' ? 'create' : 'modify';
+    out.push({ path: p, action });
+  }
+  return out;
+}
+
+/**
+ * VTID-04017: every file that differs between the working tree (untracked
+ * included) and `baseSha` — in fix mode that is the whole PR, committed
+ * parent work plus this run's edits.
+ */
+export async function listChangedFilesSince(repoDir: string, baseSha: string, exec: ExecFn = defaultExec): Promise<ChangedFile[]> {
+  await exec('git', ['add', '-A', '--intent-to-add'], { cwd: repoDir }).catch(() => undefined);
+  const { stdout } = await exec('git', ['diff', '--name-status', baseSha], { cwd: repoDir });
+  return parseNameStatus(stdout);
+}
+
+/** Parse `git status --porcelain` into repo-relative changed files. */
+export function parsePorcelain(stdout: string): ChangedFile[] {
+  const out: ChangedFile[] = [];
+  for (const raw of stdout.split('\n')) {
+    if (!raw.trim()) continue;
+    const code = raw.slice(0, 2);
+    let p = raw.slice(3).trim();
+    if (p.includes(' -> ')) p = p.split(' -> ')[1];
+    if (p.startsWith('"') && p.endsWith('"')) p = p.slice(1, -1);
+    const x = code[0];
+    const y = code[1];
+    let action: ChangedFile['action'];
+    if (x === 'D' || y === 'D') action = 'delete';
+    else if (x === '?' || x === 'A') action = 'create';
+    else action = 'modify';
+    out.push({ path: p, action });
+  }
+  return out;
+}
+
+export async function listChangedFiles(repoDir: string, exec: ExecFn = defaultExec): Promise<ChangedFile[]> {
+  const { stdout } = await exec('git', ['status', '--porcelain', '--untracked-files=all'], { cwd: repoDir });
+  return parsePorcelain(stdout);
+}
+
+export async function gitDiff(repoDir: string, exec: ExecFn = defaultExec): Promise<string> {
+  // Untracked files are not in `git diff`; stage everything into the index
+  // view without committing so the model sees new files too.
+  await exec('git', ['add', '-A', '--intent-to-add'], { cwd: repoDir }).catch(() => undefined);
+  const { stdout } = await exec('git', ['diff'], { cwd: repoDir });
+  return stdout;
+}
+
+/**
+ * VTID-04029: the committed diff of HEAD against a base sha — `--stat` plus
+ * the full patch — for the approval preview that is stored on the execution
+ * row when the agent stops before opening a PR. Read-only; callers bound it.
+ */
+export async function gitDiffAgainstBase(
+  repoDir: string,
+  baseSha: string,
+  exec: ExecFn = defaultExec,
+): Promise<{ stat: string; patch: string; files: string[] }> {
+  const { stdout: stat } = await exec('git', ['diff', '--stat=120', `${baseSha}..HEAD`], { cwd: repoDir });
+  const { stdout: patch } = await exec('git', ['diff', `${baseSha}..HEAD`], { cwd: repoDir });
+  const { stdout: names } = await exec('git', ['diff', '--name-only', `${baseSha}..HEAD`], { cwd: repoDir });
+  return { stat, patch, files: names.split('\n').map((l) => l.trim()).filter(Boolean) };
+}
+
+export async function commitAndPush(
+  repoDir: string,
+  opts: { message: string; branch: string; token: string; exec?: ExecFn; force?: boolean },
+): Promise<{ sha: string }> {
+  const exec = opts.exec ?? defaultExec;
+  try {
+    await exec('git', ['add', '-A'], { cwd: repoDir });
+    // VTID-04217: in fix mode a clean `mergeBaseIntoBranch` already produced
+    // the merge commit, so the tree can be clean here — `git commit` would
+    // exit 1 ("nothing to commit") and the push would never happen. Commit
+    // only when something is staged; HEAD is the commit to push either way.
+    const { stdout: pending } = await exec('git', ['status', '--porcelain'], { cwd: repoDir });
+    if (pending.trim()) await exec('git', ['commit', '-q', '-m', opts.message], { cwd: repoDir });
+    const { stdout } = await exec('git', ['rev-parse', 'HEAD'], { cwd: repoDir });
+    // The branch name is unique to this execution (dev-autopilot/<exec8>);
+    // a stale remote branch from an earlier attempt of the same execution is
+    // replaced, never a branch anyone else owns. VTID-04017 fix mode pushes
+    // a plain fast-forward onto the parent's PR branch (force=false).
+    const force = opts.force !== false;
+    await exec('git', ['push', ...(force ? ['--force'] : []), '-u', 'origin', opts.branch], { cwd: repoDir, timeoutMs: 300_000 });
+    return { sha: stdout.trim() };
+  } catch (err) {
+    throw new Error(`commit/push failed: ${scrubSecret(err instanceof Error ? err.message : String(err), opts.token)}`);
+  }
+}
+
+/**
+ * VTID-04217: fix mode must be able to resolve a merge conflict. Measured on
+ * the 2026-09-21 batch (16 approved executions): 4 failed with
+ * `merge conflict (dirty)` because a sibling PR merged first and touched the
+ * same file; the fix-mode child got that reason as its CI evidence but had
+ * no way to bring `main` into its branch — no git merge in the tool surface,
+ * and a depth-1 clone with no shared history to merge across.
+ *
+ * `mergeBaseIntoBranch` runs BEFORE the agent's tool loop: deepen the clone
+ * so a merge base exists (`--unshallow` on the single-branch clone; a plain
+ * fetch when it is already complete), fetch the base branch, and
+ * `git merge` it. A clean merge leaves the merge commit on HEAD; a conflict
+ * leaves the standard `<<<<<<< / ======= / >>>>>>>` markers in the working
+ * tree and returns the conflicted paths so the task prompt can hand them
+ * to the agent. Nothing here decides anything — the runner refuses to push
+ * while any marker remains (`findFilesWithConflictMarkers`).
+ */
+export interface MergeBaseResult {
+  status: 'merged' | 'up_to_date' | 'conflict';
+  /** Paths still unmerged (only for `conflict`). */
+  conflicts: string[];
+  /** SHA of the base branch tip that was merged (FETCH_HEAD). */
+  baseSha: string;
+}
+
+const CONFLICT_MARKER_RE = /^(<{7}( |$)|={7}$|>{7}( |$))/m;
+
+export function textHasConflictMarkers(text: string): boolean {
+  return CONFLICT_MARKER_RE.test(text);
+}
+
+export async function listUnmergedFiles(repoDir: string, exec: ExecFn = defaultExec): Promise<string[]> {
+  const { stdout } = await exec('git', ['diff', '--name-only', '--diff-filter=U'], { cwd: repoDir });
+  return stdout.split('\n').map((l) => l.trim()).filter(Boolean);
+}
+
+export async function mergeBaseIntoBranch(
+  repoDir: string,
+  baseBranch: string,
+  opts: { exec?: ExecFn; mergeMessage?: string } = {},
+): Promise<MergeBaseResult> {
+  const exec = opts.exec ?? defaultExec;
+  // Deepen: `--unshallow` completes the single cloned branch's history (the
+  // fork point from the base is in it); on a clone that is already complete
+  // git refuses with "does not make sense", so fall back to a plain fetch.
+  try {
+    await exec('git', ['fetch', '--unshallow', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  } catch {
+    await exec('git', ['fetch', 'origin'], { cwd: repoDir, timeoutMs: 600_000 });
+  }
+  await exec('git', ['fetch', 'origin', baseBranch], { cwd: repoDir, timeoutMs: 600_000 });
+  const { stdout: baseOut } = await exec('git', ['rev-parse', 'FETCH_HEAD'], { cwd: repoDir });
+  const baseSha = baseOut.trim();
+  const message = opts.mergeMessage || `Merge origin/${baseBranch} into the PR branch (dev-autopilot fix mode, VTID-04217)`;
+  try {
+    const { stdout } = await exec('git', ['merge', '--no-edit', '-m', message, 'FETCH_HEAD'], { cwd: repoDir, timeoutMs: 300_000 });
+    if (/already up to date/i.test(stdout)) return { status: 'up_to_date', conflicts: [], baseSha };
+    return { status: 'merged', conflicts: [], baseSha };
+  } catch (err) {
+    const conflicts = await listUnmergedFiles(repoDir, exec).catch(() => [] as string[]);
+    if (conflicts.length > 0) return { status: 'conflict', conflicts, baseSha };
+    throw new Error(`merge of ${baseBranch} failed: ${err instanceof Error ? err.message : String(err)}`);
+  }
+}
+
+/** Files (among `paths`) that still carry conflict markers. Missing files are skipped. */
+export async function findFilesWithConflictMarkers(repoDir: string, paths: string[]): Promise<string[]> {
+  const out: string[] = [];
+  for (const rel of paths) {
+    try {
+      const text = await fs.readFile(path.join(repoDir, rel), 'utf8');
+      if (textHasConflictMarkers(text)) out.push(rel);
+    } catch {
+      /* deleted or binary — nothing to scan */
+    }
+  }
+  return out;
+}
+
+/**
+ * Make `<repoDir>/<projectRel>/node_modules` available without an install:
+ * symlink the executor image's own dependency tree (the image is built from
+ * the same package.json family). No-op when the source does not exist or the
+ * project already has node_modules.
+ */
+export async function linkNodeModules(repoDir: string, projectRel: string, source: string): Promise<'linked' | 'present' | 'no_source'> {
+  const target = path.join(repoDir, projectRel, 'node_modules');
+  try {
+    await fs.access(target);
+    return 'present';
+  } catch {
+    /* absent — fall through */
+  }
+  try {
+    await fs.access(source);
+  } catch {
+    return 'no_source';
+  }
+  await fs.symlink(source, target, 'dir');
+  return 'linked';
+}
+
+export async function cleanupWorkspace(ws: Workspace | null | undefined): Promise<void> {
+  if (!ws) return;
+  await fs.rm(ws.root, { recursive: true, force: true }).catch(() => undefined);
+}
+
+/**
+ * VTID-04229: pull the S3-published codebase index for this run.
+ *
+ * The bundle (Graphify graph + RepoWise facts, built by CODEINTEL-INDEX.yml
+ * on every merge to main) is loaded through codeintel-index.ts's shared
+ * loader — the executor never installs a CLI or builds an index itself.
+ * Gated by AGENT_CODE_INDEX_ENABLED (default on; exact `false` turns it
+ * off). Fail-open: a missing bucket/object/credential is returned as a
+ * plain reason in `stats.error` and the run continues without the three
+ * index tools (agentToolsFor), exactly like a missing memory source.
+ */
+export interface CodeIndexPullStats {
+  enabled: boolean;
+  source: string | null;
+  sha: string | null;
+  built_at: string | null;
+  nodes: number;
+  edges: number;
+  risk_files: number;
+  from_cache: boolean;
+  ms: number;
+  error: string | null;
+}
+
+export function isAgentCodeIndexEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.AGENT_CODE_INDEX_ENABLED || '').trim().toLowerCase() !== 'false';
+}
+
+export async function pullCodeIndex(
+  repo: string,
+  opts: { env?: NodeJS.ProcessEnv; load?: typeof loadCodeIndex; now?: () => number } = {},
+): Promise<{ bundle: CodeIndexBundle | null; stats: CodeIndexPullStats; describe: string | null }> {
+  const env = opts.env || process.env;
+  const now = opts.now || Date.now;
+  const stats: CodeIndexPullStats = { enabled: isAgentCodeIndexEnabled(env), source: null, sha: null, built_at: null, nodes: 0, edges: 0, risk_files: 0, from_cache: false, ms: 0, error: null };
+  if (!stats.enabled) return { bundle: null, stats, describe: null };
+  const started = now();
+  try {
+    const loaded = await (opts.load || loadCodeIndex)(repo, { env });
+    stats.source = loaded.source;
+    stats.sha = loaded.bundle.sha;
+    stats.built_at = loaded.bundle.builtAt;
+    stats.nodes = loaded.bundle.graph.nodes.length;
+    stats.edges = loaded.bundle.graph.edges.length;
+    stats.risk_files = Object.keys(loaded.bundle.risk.files).length;
+    stats.from_cache = loaded.fromCache;
+    stats.ms = now() - started;
+    return { bundle: loaded.bundle, stats, describe: describeBundle(loaded.bundle) };
+  } catch (err) {
+    stats.ms = now() - started;
+    stats.error = err instanceof Error ? err.message : String(err);
+    return { bundle: null, stats, describe: null };
+  }
+}

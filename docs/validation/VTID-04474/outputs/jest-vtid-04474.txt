@@ -1,0 +1,8 @@
+    ✓ ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is stripped then re-added as exact "true" on staging (4 ms)
+    ✓ ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED is stripped then re-added as exact "true" on staging
+    ✓ ORCHESTRATOR_DELEGATION_PERSIST_ENABLED is stripped then re-added as exact "true" on staging
+    ✓ ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is not declared on the prod workflow
+    ✓ ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED is not declared on the prod workflow
+    ✓ ORCHESTRATOR_DELEGATION_PERSIST_ENABLED is not declared on the prod workflow
+    ✓ does not enable run leases (their migration is not applied) (1 ms)
+Tests:       7 passed, 7 total

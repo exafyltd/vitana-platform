@@ -1,0 +1,341 @@
+/**
+ * VTID-02000: Marketplace Analyzer — 8th analyzer for the recommendation engine.
+ *
+ * Mirrors the pattern of llm-analyzer.ts but operates on the product catalog.
+ * For each user, pulls UserHealthContext, infers a primary condition (or uses
+ * the one provided by the caller), joins to `condition_product_mappings` to
+ * derive candidate ingredients, queries `products` applying geo + limitations
+ * filters, scores, and emits top candidates as autopilot recommendations.
+ *
+ * Scheduling: consumed by recommendation-generator via source_type='marketplace'.
+ * Runs in the existing daily 7 AM per-user cadence (community-user-analyzer path)
+ * AND the 6-hour OASIS cadence. No new scheduler infrastructure.
+ *
+ * Phase 0: pure heuristic — no LLM call required. Phase 2 adds the LLM pre-ranker
+ * mirroring llm-analyzer.ts's Gemini integration.
+ */
+
+import { createHash } from 'crypto';
+import { getSupabase } from '../../../lib/supabase';
+import { getUserHealthContext, inferPrimaryCondition } from '../../user-health-context';
+import { applyUserLimitations, type FilterableProduct } from '../../limitations-filter';
+
+const LOG_PREFIX = '[VTID-02000:Marketplace]';
+
+// ==================== Types ====================
+
+export interface MarketplaceSignal {
+  user_id: string;
+  tenant_id: string | null;
+  condition_key: string | null;
+  product_id: string;
+  product_title: string;
+  merchant_id: string | null;
+  price_cents: number | null;
+  currency: string | null;
+  match_score: number; // 0..1
+  match_reasons: Array<{ kind: string; text: string }>;
+  severity: 'low' | 'medium' | 'high';
+  confidence: number;
+}
+
+export interface MarketplaceAnalysisResult {
+  ok: boolean;
+  signals: MarketplaceSignal[];
+  summary: {
+    users_analyzed: number;
+    products_scored: number;
+    top_picks_per_user: number;
+    duration_ms: number;
+  };
+  error?: string;
+}
+
+interface ConditionMapping {
+  condition_key: string;
+  recommended_ingredients: Array<{ ingredient: string; evidence: string; rank: number }>;
+  recommended_health_goals: string[];
+  contraindicated_ingredients: string[];
+}
+
+interface ProductRow extends FilterableProduct {
+  id: string;
+  title: string;
+  merchant_id: string | null;
+  price_cents: number | null;
+  currency: string | null;
+  rating: number | null;
+  origin_country: string | null;
+  origin_region: string | null;
+  health_goals: string[];
+  ingredients_primary: string[];
+}
+
+// VTID-03138 (Phase C.7): marketplace weights resolved via PolicyResolver.
+// Literals below are the cache-cold safety net; production source of
+// truth is `decision_policy` rows under `ranker.marketplace.*`.
+import { getPolicyResolver } from '../../decision-contract/policy-resolver';
+import { POLICY_KEYS } from '../../decision-contract/policy-keys';
+import * as repo from './marketplace-analyzer-repository';
+
+interface MarketplaceWeights {
+  topPicksPerUser: number;
+  productCandidateLimit: number;
+  ingredientRankBase: number;
+  ingredientRankDecay: number;
+  evidenceMultipliers: { strong: number; moderate: number; weak: number };
+  goalMatchBoost: number;
+  sameRegionBonus: number;
+  ratingBoostCap: number;
+  pastPurchasePenalty: number;
+}
+
+function getMarketplaceWeights(): MarketplaceWeights {
+  const r = getPolicyResolver();
+  return {
+    topPicksPerUser:       r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_TOP_PICKS_PER_USER,       { defaultValue: 5 }),
+    productCandidateLimit: r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_PRODUCT_CANDIDATE_LIMIT, { defaultValue: 100 }),
+    ingredientRankBase:    r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_INGREDIENT_RANK_BASE,    { defaultValue: 0.5 }),
+    ingredientRankDecay:   r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_INGREDIENT_RANK_DECAY,   { defaultValue: 0.08 }),
+    evidenceMultipliers:   r.getValue<{ strong: number; moderate: number; weak: number }>(
+      POLICY_KEYS.RANKER_MARKETPLACE_EVIDENCE_MULTIPLIERS,
+      { defaultValue: { strong: 1.0, moderate: 0.8, weak: 0.5 } },
+    ),
+    goalMatchBoost:        r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_GOAL_MATCH_BOOST,        { defaultValue: 0.2 }),
+    sameRegionBonus:       r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_SAME_REGION_BONUS,      { defaultValue: 0.15 }),
+    ratingBoostCap:        r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_RATING_BOOST_CAP,       { defaultValue: 0.1 }),
+    pastPurchasePenalty:   r.getValue<number>(POLICY_KEYS.RANKER_MARKETPLACE_PAST_PURCHASE_PENALTY,   { defaultValue: -1.0 }),
+  };
+}
+
+// Legacy const exports preserved for any tests/inspectors that read them.
+// The hot path uses `getMarketplaceWeights()` via the resolver-backed snapshot.
+const TOP_PICKS_PER_USER = 5;
+const PRODUCT_CANDIDATE_LIMIT = 100;
+
+// ==================== Condition mapping fetch ====================
+
+async function fetchConditionMapping(condition_key: string): Promise<ConditionMapping | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+  const { data, error } = await repo.fetchActiveConditionProductMapping(supabase, condition_key);
+  if (error || !data) return null;
+  return {
+    condition_key: data.condition_key,
+    recommended_ingredients: (data.recommended_ingredients as Array<{ ingredient: string; evidence: string; rank: number }>) ?? [],
+    recommended_health_goals: data.recommended_health_goals ?? [],
+    contraindicated_ingredients: data.contraindicated_ingredients ?? [],
+  };
+}
+
+// ==================== Candidate fetch ====================
+
+async function fetchCandidateProducts(
+  mapping: ConditionMapping | null,
+  scopeRegion: string | null
+): Promise<ProductRow[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const query = repo.buildCandidateProductsQuery(supabase, getMarketplaceWeights().productCandidateLimit);
+
+  // Narrow by mapping ingredients if available — via GIN-indexed ingredients_primary
+  if (mapping?.recommended_ingredients.length) {
+    const ingredients = mapping.recommended_ingredients.map((i) => i.ingredient);
+    query.overlaps('ingredients_primary', ingredients);
+  } else if (mapping?.recommended_health_goals.length) {
+    query.overlaps('health_goals', mapping.recommended_health_goals);
+  }
+  // Prefer same-region products if user region known
+  if (scopeRegion) {
+    query.eq('origin_region', scopeRegion);
+  }
+
+  const { data, error } = await query;
+  if (error) {
+    console.warn(`${LOG_PREFIX} candidate fetch failed:`, error.message);
+    return [];
+  }
+  return (data ?? []) as ProductRow[];
+}
+
+// ==================== Scoring ====================
+
+function scoreProduct(
+  p: ProductRow,
+  mapping: ConditionMapping | null,
+  userRegion: string | null,
+  pastPurchaseIds: Set<string>
+): { score: number; reasons: Array<{ kind: string; text: string }> } {
+  const reasons: Array<{ kind: string; text: string }> = [];
+  let score = 0;
+  // VTID-03138 (Phase C.7): per-scoring-call snapshot.
+  const w = getMarketplaceWeights();
+
+  // Ingredient-fit (0..0.5) — highest-rank-match wins
+  if (mapping?.recommended_ingredients.length) {
+    const productIngs = new Set(p.ingredients_primary.map((x) => x.toLowerCase()));
+    for (const rec of mapping.recommended_ingredients) {
+      if (productIngs.has(rec.ingredient.toLowerCase())) {
+        const rankBoost = Math.max(0, w.ingredientRankBase - (rec.rank - 1) * w.ingredientRankDecay);
+        const evidenceBoost =
+          rec.evidence === 'strong' ? w.evidenceMultipliers.strong
+          : rec.evidence === 'moderate' ? w.evidenceMultipliers.moderate
+          : w.evidenceMultipliers.weak;
+        score += rankBoost * evidenceBoost;
+        reasons.push({
+          kind: 'condition',
+          text: `Contains ${rec.ingredient} — ${rec.evidence} evidence for ${mapping.condition_key}`,
+        });
+        break;
+      }
+    }
+  }
+
+  // Goal-fit (0..0.2)
+  if (mapping?.recommended_health_goals.length && p.health_goals?.length) {
+    const hg = new Set(p.health_goals.map((g) => g.toLowerCase()));
+    const match = mapping.recommended_health_goals.find((g) => hg.has(g.toLowerCase()));
+    if (match) {
+      score += w.goalMatchBoost;
+      reasons.push({ kind: 'goal', text: `Supports ${match}` });
+    }
+  }
+
+  // Origin-proximity (0..0.15) — same-region gets the full boost
+  if (userRegion && p.origin_region === userRegion) {
+    score += w.sameRegionBonus;
+    reasons.push({ kind: 'origin', text: `Ships from ${p.origin_country ?? 'your region'}` });
+  }
+
+  // Rating (0..0.1)
+  if (p.rating !== null && p.rating > 0) {
+    const ratingBoost = Math.max(0, Math.min(w.ratingBoostCap, ((p.rating - 3) / 2) * w.ratingBoostCap));
+    if (ratingBoost > 0.02) {
+      score += ratingBoost;
+      reasons.push({ kind: 'rating', text: `Rated ${p.rating.toFixed(1)}/5` });
+    }
+  }
+
+  // Penalty: past purchase (don't re-recommend)
+  if (pastPurchaseIds.has(p.id)) {
+    score += w.pastPurchasePenalty;
+  }
+
+  return { score: Math.max(0, Math.min(1, score)), reasons };
+}
+
+// ==================== Per-user analysis ====================
+
+export async function analyzeMarketplaceForUser(
+  user_id: string,
+  opts: { condition_key?: string | null } = {}
+): Promise<MarketplaceSignal[]> {
+  const ctx = await getUserHealthContext(user_id, { bypass_cache: true });
+  const conditionKey = opts.condition_key ?? inferPrimaryCondition(ctx);
+  if (!conditionKey) {
+    return [];
+  }
+
+  const mapping = await fetchConditionMapping(conditionKey);
+  if (!mapping) {
+    console.log(`${LOG_PREFIX} no condition mapping for ${conditionKey} — skipping user ${user_id}`);
+    return [];
+  }
+
+  const scopeRegion =
+    ctx.scope_preference === 'local' || ctx.scope_preference === 'regional'
+      ? ctx.region_group
+      : null;
+  const candidates = await fetchCandidateProducts(mapping, scopeRegion);
+  if (candidates.length === 0) return [];
+
+  // Apply hard limitations filter
+  const filtered = applyUserLimitations(candidates, ctx, { surface: 'marketplace_analyzer' });
+
+  const pastPurchaseIds = new Set(ctx.past_purchases.map((p) => p.product_id));
+  const scored = filtered.allowed
+    .map((p) => {
+      const { score, reasons } = scoreProduct(p as ProductRow, mapping, ctx.region_group, pastPurchaseIds);
+      return { product: p as ProductRow, score, reasons };
+    })
+    .filter((s) => s.score > 0.15)
+    .sort((a, b) => b.score - a.score)
+    .slice(0, getMarketplaceWeights().topPicksPerUser);
+
+  return scored.map((s) => ({
+    user_id,
+    tenant_id: ctx.tenant_id,
+    condition_key: conditionKey,
+    product_id: s.product.id,
+    product_title: s.product.title,
+    merchant_id: s.product.merchant_id,
+    price_cents: s.product.price_cents,
+    currency: s.product.currency,
+    match_score: s.score,
+    match_reasons: s.reasons,
+    severity: s.score > 0.7 ? 'high' : s.score > 0.4 ? 'medium' : 'low',
+    confidence: Math.min(0.95, s.score + 0.2),
+  }));
+}
+
+// ==================== Main analyzer entry (for recommendation-generator) ====================
+
+export async function analyzeMarketplace(opts: {
+  user_ids?: string[]; // if omitted, run for all "recent" users (stub for Phase 0)
+  limit_per_user?: number;
+}): Promise<MarketplaceAnalysisResult> {
+  const startTime = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) {
+    return {
+      ok: false,
+      signals: [],
+      summary: { users_analyzed: 0, products_scored: 0, top_picks_per_user: 0, duration_ms: 0 },
+      error: 'Supabase unavailable',
+    };
+  }
+
+  // Resolve user list — if not specified, pull users that have conditions set
+  let userIds: string[] = opts.user_ids ?? [];
+  if (userIds.length === 0) {
+    const { data } = await repo.fetchUsersWithLimitations(supabase, 50);
+    userIds = (data ?? []).map((r) => r.user_id as string);
+  }
+
+  const allSignals: MarketplaceSignal[] = [];
+  let productsScored = 0;
+
+  for (const uid of userIds) {
+    try {
+      const signals = await analyzeMarketplaceForUser(uid);
+      allSignals.push(...signals);
+      productsScored += signals.length;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} per-user analysis failed for ${uid}:`, err);
+    }
+  }
+
+  const duration = Date.now() - startTime;
+  console.log(
+    `${LOG_PREFIX} Analysis complete: ${userIds.length} users, ${allSignals.length} recommendations in ${duration}ms`
+  );
+
+  return {
+    ok: true,
+    signals: allSignals,
+    summary: {
+      users_analyzed: userIds.length,
+      products_scored: productsScored,
+      top_picks_per_user: getMarketplaceWeights().topPicksPerUser,
+      duration_ms: duration,
+    },
+  };
+}
+
+// ==================== Fingerprint ====================
+
+export function generateMarketplaceFingerprint(signal: MarketplaceSignal): string {
+  const data = `marketplace:${signal.user_id}:${signal.condition_key}:${signal.product_id}`;
+  return createHash('sha256').update(data).digest('hex').substring(0, 16);
+}

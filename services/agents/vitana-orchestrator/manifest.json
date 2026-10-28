@@ -1,0 +1,34 @@
+{
+  "name": "vitana-verification-engine",
+  "vtid": "VTID-01175",
+  "vt_layer": "oasis",
+  "vt_module": "agents",
+  "description": "Verification subsystem for Worker Orchestrator (VTID-01163) - validates worker output before completion",
+  "version": "1.1.0",
+  "type": "python-library",
+  "role": "verification-subsystem",
+  "integration": {
+    "orchestrator": "VTID-01163",
+    "note": "This is NOT a standalone orchestrator - it provides stage gates called BY VTID-01163"
+  },
+  "critical_rules": [
+    "Does NOT claim completion - OASIS is sole authority",
+    "Emits only vtid.stage.verification.* events (not terminal events)",
+    "Returns recommendations, not commands",
+    "Never bypasses Worker Orchestrator (VTID-01163)"
+  ],
+  "oasis_events": {
+    "emits": [
+      "vtid.stage.verification.start",
+      "vtid.stage.verification.passed",
+      "vtid.stage.verification.failed"
+    ],
+    "note": "Terminal events (completion/failure) are emitted ONLY by VTID-01163"
+  },
+  "exports": {
+    "VerificationStageGate": "Primary integration point for VTID-01163",
+    "StageGateConfig": "Configuration for stage gate",
+    "StageGateResult": "Result returned to orchestrator (recommendations only)",
+    "validators": ["FrontendValidator", "BackendValidator", "MemoryValidator"]
+  }
+}

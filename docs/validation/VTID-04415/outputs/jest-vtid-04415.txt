@@ -1,0 +1,11 @@
+PASS test/services/orchestrator/vtid-04415-delegation-run-store.test.ts
+    ✓ AC-1: the default store is null unless the flag is exactly "true" (5 ms)
+    ✓ AC-2: start is written, and finish is written only after start — even when the job finishes inside the ack window (16 ms)
+    ✓ AC-3: a cancelled job is written as cancelled (15 ms)
+    ✓ AC-4: a failing store never changes the delegation outcome (7 ms)
+    ✓ AC-5: a job this task no longer holds is found in the ledger, only by its owner on its surface (12 ms)
+    ✓ AC-6: latestJob prefers the newest of local and ledger; without a store it is local only (13 ms)
+    ✓ AC-7: the start row fits agent_runs (plane orb, surface in metadata, intent bounded, created_via allowed) (1 ms)
+    ✓ AC-8: only uuid-keyed jobs persist; results are bounded; unknown rows are rejected (2 ms)
+    ✓ AC-9: the Supabase store filters by plane, owner and surface on read (1 ms)
+Tests:       9 passed, 9 total

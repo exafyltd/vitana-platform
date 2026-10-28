@@ -1,0 +1,25 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/orb/live/characterization/safe-fast-greeting-respects-pending-guided-topic.characterization.test.ts
+  VTID-03771 — the safe-fast greeting branch never hijacks a pending guided topic
+    ✓ _hasPendingGuidedTopicAtOpen is declared exactly once in the whole file (hoisted, not duplicated) (3 ms)
+    ✓ the safe-fast branch's own `if` is gated on !_hasPendingGuidedTopicAtOpen (1 ms)
+    ✓ _hasPendingGuidedTopicAtOpen is declared BEFORE the safe-fast branch's `if`, not after (1 ms)
+    ✓ the flag still requires BOTH a pending topic AND this session having spoken nothing yet (unchanged condition, just relocated) (1 ms)
+    ✓ the normal ladder's decideOpening() call still reuses the flag correctly (no regression to the VTID-03727 fix) (1 ms)
+    ✓ a session with NO pending guided topic still takes the safe-fast branch when context is unresolved (no regression to the original DEV-COMHU-0513 B2 fast path) (1 ms)
+
+PASS test/orb/live/characterization/guided-topic-cadence-skip-not-silenced.characterization.test.ts
+  VTID-03727 — a pending, unspoken guided topic is never cadence-silenced
+    ✓ _hasPendingGuidedTopicAtOpen requires BOTH a pending topic AND this session having spoken nothing yet (1 ms)
+    ✓ isReconnect is suppressed by the pending-guided-topic flag (1 ms)
+    ✓ wakeCadenceSkip is suppressed by the SAME flag, not a separate/independent one (1 ms)
+    ✓ the flag is computed from THIS session's own turn_count, not carried over from a prior session object
+    ✓ does not touch silenceOnSkipEnabled (rung 9) — that stays gated on the pre-existing zero-turn-recovery flag only (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       11 passed, 11 total
+Snapshots:   0 total
+Time:        0.525 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,38 @@
+{
+ "tag": "desktop",
+ "counts": {
+  "planes": 2,
+  "runs": 14,
+  "agents": 7,
+  "errors": 0,
+  "tabActive": false
+ },
+ "horizontalOverflow": false,
+ "afterPlane": [
+  "Runs by plane — last 7 days",
+  "Unified runs — self_healing",
+  "Agent registry",
+  "Default role grants (shadow — not enforced yet)"
+ ],
+ "runRowsAfterPlane": 2,
+ "errors": []
+}
+{
+ "tag": "mobile",
+ "counts": {
+  "planes": 2,
+  "runs": 14,
+  "agents": 7,
+  "errors": 0,
+  "tabActive": false
+ },
+ "horizontalOverflow": false,
+ "afterPlane": [
+  "Runs by plane — last 7 days",
+  "Unified runs — self_healing",
+  "Agent registry",
+  "Default role grants (shadow — not enforced yet)"
+ ],
+ "runRowsAfterPlane": 2,
+ "errors": []
+}

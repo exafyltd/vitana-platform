@@ -1,0 +1,77 @@
+name: Orb Tools Lift Scanner
+
+# Reports drift between services/gateway/src/services/orb-tools-shared.ts
+# (the canonical ORB_TOOL_REGISTRY) and services/gateway/src/routes/orb-live.ts
+# (Vertex pipeline) — specifically: Vertex cases for tools in the registry
+# that still have inline logic instead of delegating to dispatchOrbToolForVertex.
+#
+# GATE MODE (PR 1.B-10 / VTID-02845). All Phase 1.B lifts have landed:
+# 41/47 Vertex case-arms delegate via dispatchOrbTool(ForVertex), the
+# remaining 6 are either intentional Vertex-only (switch_persona,
+# report_to_specialist) or inline-but-not-shared (calendar / reminders /
+# index / intents — flagged by the scanner as "vertex-only inline" with
+# no critical drift). Promoting ORB_TOOLS_PARITY_GATE=1 turns the scanner
+# into a hard merge gate so any future PR that adds a new inline Vertex
+# case for a tool that's already in the shared registry — i.e.
+# re-introduces parity drift — fails CI on contact.
+#
+# Report-only behavior is recoverable: flip back to '0' to silence the
+# gate while a new lift is in progress.
+
+on:
+  pull_request:
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+      - 'scripts/orb-tools-lift-scanner.mjs'
+      - '.github/workflows/ORB-TOOLS-LIFT-SCANNER.yml'
+  push:
+    branches:
+      - main
+    paths:
+      - 'services/gateway/src/services/orb-tools-shared.ts'
+      - 'services/gateway/src/routes/orb-live.ts'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  pull-requests: write
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Run lift-not-duplicate parity scanner
+        id: scan
+        env:
+          # PR 1.B-10 promoted this from '0' to '1'. Phase 1.B lifts
+          # complete — any new inline Vertex case for a tool already in
+          # ORB_TOOL_REGISTRY now FAILS the build (DRIFT-CRITICAL exit
+          # code 2). Flip back to '0' if a future lift is in progress
+          # and you need to merge work-in-progress.
+          ORB_TOOLS_PARITY_GATE: '1'
+        run: |
+          set -o pipefail
+          node scripts/orb-tools-lift-scanner.mjs 2>&1 | tee /tmp/orb-tools-parity.md
+          {
+            echo 'report<<__EOM__'
+            cat /tmp/orb-tools-parity.md
+            echo '__EOM__'
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Comment on PR
+        if: github.event_name == 'pull_request'
+        uses: marocchino/sticky-pull-request-comment@v2
+        with:
+          header: orb-tools-lift-scanner
+          message: ${{ steps.scan.outputs.report }}

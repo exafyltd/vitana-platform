@@ -1,0 +1,5 @@
+{"vtid":"VTID-04872","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev decision route still auth-gated","path":"/api/v1/jev/decisions/moderation_severity","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"existing","ref":"npx jest test/vtid-04872-jev-member-quota.test.ts","cwd":"services/gateway","reason":"The quota counts only member-spend Class B Jev calls, the member plane is closed on every gateway (JEV_COMMUNITY_ENABLED unset) and counting writes jev_member_daily_counters, so a read-only staging probe cannot reach it. Classes, modes, the limit, safety exemption, Class C refusal and the shadow event are proven by this suite."}
+]}

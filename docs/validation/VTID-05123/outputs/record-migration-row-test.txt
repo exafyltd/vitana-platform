@@ -1,0 +1,53 @@
+ok   plain: exit 0
+ok   plain: table exists
+ok   plain: row values
+ok   plain: statements/rollback NULL
+ok   own tx: exit 0
+ok   own tx: table exists
+ok   own tx: one row
+ok   raise plain: exit 1
+ok   raise plain: DDL rolled back
+ok   raise plain: no row
+ok   raise tx: exit 1
+ok   raise tx: DDL rolled back
+ok   raise tx: no row
+ok   partial: exit 1
+ok   partial: table exists (committed before the error)
+ok   partial: no row
+ok   twice: exit 0 / 0
+ok   twice: one row
+ok   twice: no warning on re-run
+ok   twice: re-run is an ON CONFLICT no-op, not a caught collision
+ok   dup a: exit 0
+ok   dup b: exit 0
+ok   dup b: applied
+ok   dup: one row, held by a
+ok   dup b: warning names the holder
+ok   mcp: exit 0
+ok   mcp: applied
+ok   mcp: still only the MCP row
+ok   mcp: warning
+ok   race: exit 0
+ok   race: applied
+ok   race: only the racer's row
+ok   race: unique_violation turned into a warning
+ok   race: post-verify warning
+ok   precheck fail: exit 1
+ok   precheck fail: DDL absent
+ok   precheck fail: no row
+ok   trailing comment: exit 0
+ok   trailing comment: applied
+ok   trailing comment: one row
+ok   data-fixups: exit 0 + applied + warning
+ok   odd basename: exit 0 + applied + warning
+ok   quote basename: exit 0 + applied + warning
+ok   RUN_ID=abc: exit 0 + applied + warning
+ok   8-digit prefix accepted by regex
+ok   nothing recorded by step 12
+ok   concurrently: exit 0 + index built + warning
+ok   concurrently: no recording block sent
+ok   no flag: exit 0 + applied
+ok   no flag: one request, file text only
+ok   no flag: no row
+ok   --record-migration with --sql: usage error
+PASS vtid-05123 record migration row (52 checks)

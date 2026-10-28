@@ -1,0 +1,140 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect-loop.test.ts
+  orb-widget _s._guidedTopicZeroAudioFailCount lifecycle (VTID-03776)
+    ✓ is declared in the initial _s state, defaulting to 0 (3 ms)
+    ✓ is reset to 0 by focusGuidedTopic (a fresh tap is a clean slate) (2 ms)
+    ✓ is reset to 0 by _hide() — a real close ends the overlay session (1 ms)
+  orb-widget _attemptReconnect guided-topic circuit breaker (VTID-03776 Fix B)
+    ✓ increments the zero-audio fail counter only when a guided topic is in flight AND nothing has been heard yet (1 ms)
+    ✓ drops both guidedTopic and _guidedTopicInFlight once the threshold is reached (1 ms)
+    ✓ the breaker check runs before the MAX_WIDGET_RECONNECTS stuck-state check, so a dropped topic still gets a fair remaining-budget retry (1 ms)
+    ✓ does NOT touch the counter or drop the topic once real audio has played (mid-lesson resume must survive)
+  orb-widget _attemptReconnect backoff-budget reset (VTID-03776 Fix A)
+    ✓ does NOT reset _reconnectCount on bare _s.active alone (1 ms)
+    ✓ gates the reset on _s._audioEverHeardThisOpen, nested inside the _s.active branch (1 ms)
+    ✓ still logs success and clears the disconnect banner regardless of whether the budget was reset (1 ms)
+    ✓ the reconnect loop itself is otherwise unchanged — still gated by _isOffline/_isReconnecting/MAX_WIDGET_RECONNECTS (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-reconnect.test.ts
+  orb-widget guided-topic reconnect (VTID-03675)
+    ✓ reads guided_topic_id into the start payload without nulling _s.guidedTopic (2 ms)
+    ✓ a client-side reconnect (_attemptReconnect -> _sessionStart) can still see a pending guided topic (1 ms)
+    ✓ clears guidedTopic in the SAME place guidedAutoClose is cleared on a completed guided turn
+    ✓ _hide() also clears a never-delivered guided topic so it cannot leak into a later session
+    ✓ focusGuidedTopic still arms both flags together (unchanged contract) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-reconnect-cue-not-premature.test.ts
+  orb-widget _attemptReconnect status cue (VTID-03727)
+    ✓ does not show the reconnecting caption unconditionally
+    ✓ picks the caption based on a dedicated flag, not greetingComplete directly
+    ✓ still shows a caption every time (never silently skips the status update)
+    ✓ the reconnect loop itself is unchanged otherwise — still gated by _isOffline/_isReconnecting/MAX_WIDGET_RECONNECTS (1 ms)
+  orb-widget _audioEverHeardThisOpen lifecycle (VTID-03727 Codex fix)
+    ✓ is declared in the initial _s state, defaulting to false
+    ✓ is set true at the SAME call site that sets greetingComplete true (the real "heard audio" moment) (1 ms)
+    ✓ is NOT reset by any of the reconnect paths that reset greetingComplete
+    ✓ IS reset by _hide() — a real close ends the overlay session
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (1 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen (1 ms)
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (1 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared (1 ms)
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session
+  orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)
+    ✓ re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared — same condition as _attemptReconnect (1 ms)
+    ✓ sets _isReconnecting = true before starting the reconnect — the health-probe watchdog's own "if (_s._isReconnecting) return;" guard is otherwise inert (1 ms)
+    ✓ resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch
+    ✓ the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step) (1 ms)
+  orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)
+    ✓ restores guidedTopic from _guidedTopicInFlight when guidedTopic is empty, immediately before the payload read
+    ✓ does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open)
+    ✓ logs the restore for future diagnosability
+    ✓ logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call
+    ✓ the existing _attemptReconnect/_resetAndReconnect restore-guards are unchanged (this is additive, not a replacement) (1 ms)
+  orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (VTID-03774)
+    ✓ is declared in the initial _s state, defaulting to false
+    ✓ focusGuidedTopic resets it to false on every fresh tap
+    ✓ is flipped true at the same turn-complete point that nulls _s.guidedTopic (1 ms)
+    ✓ _hide() clears it — a real close ends the overlay session (1 ms)
+    ✓ _sessionStart sends guided_topic_resume only when both guidedTopic AND the delivered flag are set
+    ✓ the resume field is nested inside the guidedTopic block, so it can never be sent without guided_topic_id (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-failed-start-recovery.test.ts
+  orb-widget failed session start (BOOTSTRAP-ORB-FASTSTART-DRIFT)
+    ✓ replaces the stale status text instead of leaving "Verbinden..." on screen (2 ms)
+    ✓ the failure status is localized and does not itself say "Verbinden..." (1 ms)
+    ✓ hands off to the retry loop so a slow start is not a permanent dead end (2 ms)
+    ✓ does not retry when the user is deliberately leaving (1 ms)
+    ✓ does not stack a second retry while one is already in flight (1 ms)
+    ✓ still records the error state the rest of the widget reads (1 ms)
+    ✓ the WS transport start shares this handler (its await is inside the try) (1 ms)
+    ✓ the 8s start budget still exists on both transports
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-audio-ready.test.ts
+  orb-widget audio-ready handshake (DEV-COMHU-0504)
+    ✓ _signalAudioReady is idempotent and gated on a running context (5 ms)
+    ✓ _signalAudioReady POSTs to the audio-ready endpoint with keepalive
+    ✓ is invoked on session start and on ctx resume (1 ms)
+    ✓ re-arms the ack flag on session stop
+    ✓ re-arms the ack flag at the top of _sessionStart so reconnect paths re-ack (review fix) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-auth-reactive.test.ts
+  orb-widget reactive auth contract (DEV-COMHU-0502)
+    ✓ setAuth lifts the anonymous lock when a real token arrives (1 ms)
+    ✓ clearAuth stops the live session, clears token, and wipes identity-bound continuity (anti-leak) (1 ms)
+    ✓ _wipeIdentityBoundState clears all identity-bound continuity fields (1 ms)
+    ✓ setAuth wipes continuity + stops the session ONLY on account switch (sub change) (1 ms)
+    ✓ _jwtSub extracts the JWT subject for account-switch detection
+    ✓ init seeds the identity baseline so a same-user refresh is not a switch (1 ms)
+    ✓ exposes clearAuth on the public API
+
+Test Suites: 7 passed, 7 total
+Tests:       68 passed, 68 total
+Snapshots:   0 total
+Time:        0.858 s, estimated 1 s
+Ran all test suites matching /test\/frontend\/orb-widget-guided-topic-reconnect-loop.test.ts|test\/frontend\/orb-widget-reconnect-cue-not-premature.test.ts|test\/frontend\/orb-widget-guided-topic-mid-lesson-resume.test.ts|test\/frontend\/orb-widget-guided-topic-reconnect.test.ts|test\/frontend\/orb-widget-failed-start-recovery.test.ts|test\/frontend\/orb-widget-audio-ready.test.ts|test\/frontend\/orb-widget-auth-reactive.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

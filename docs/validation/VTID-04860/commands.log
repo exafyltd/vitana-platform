@@ -1,0 +1,7 @@
+# VTID-04860 — commands run (2026-10-03)
+python3 rename_vtn.py <repo>          # regex (?<![A-Za-z0-9_])VTN(?![A-Za-z0-9_])(?!-(?:\d|\$\{)) -> VTNA, excluding supabase/migrations/ and docs/validation/
+cd services/gateway && npx jest test/vtid-04860-vtna-token-name.test.ts      # 3 passed
+echo "VTN" >> docs/knowledge-base/en/18-wallet/03-credits-system.md && npx jest test/vtid-04860-vtna-token-name.test.ts   # mutation: 1 failed (as intended), then reverted
+npx jest <18 suites for touched files>  # 338 passed
+npx tsc --noEmit -p services/gateway   # clean
+cd services/gateway && npm run build   # exit 0

@@ -1,0 +1,22 @@
+{
+  "query": "select p.user_id, p.display_name, p.registration_seq, p.created_at, is_hidden from profiles p left join global_community_profiles gcp on gcp.user_id = p.user_id where p.user_id in (bot_ids)",
+  "result": [
+    {
+      "user_id": "887b34cb-9ee9-47dc-ad53-db5be1869846",
+      "display_name": "claude-code-agent",
+      "registration_seq": 246,
+      "created_at": "2026-09-16 11:38:38.525781+00",
+      "hidden": false
+    },
+    {
+      "user_id": "856c30ed-7136-4bc5-8bfe-86a1e8ea1401",
+      "display_name": "operator-autopilot",
+      "registration_seq": 247,
+      "created_at": "2026-09-16 11:38:40.74971+00",
+      "hidden": false
+    }
+  ],
+  "max_registration_seq_across_all_profiles": 247,
+  "total_profiles": 225,
+  "conclusion": "both accounts are the #1 and #2 results of GET /api/v1/community/members?sort=newest (the default sort), unfiltered before this fix"
+}

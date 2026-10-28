@@ -1,0 +1,17 @@
+cd services/gateway
+npx jest test/orb/latency                                                # baseline on origin/main: 28/28, 56 snapshots
+npx jest test/vtid-05089-wearable-features-bridge.test.ts                # 55/55
+npx jest test/routes/vtid-05089-connector-webhooks-bridge.test.ts test/routes/connector-webhooks.test.ts test/vtid-05031-webhook-verification.test.ts test/vtid-05030-connection-tokens.test.ts   # 4 suites, 59/59
+npx jest test/vtid-05025-commerce-health-boundary.test.ts                # 46/46 (7 new VTID-05089 tests fail against origin/main orb-tools-shared.ts)
+npx jest test/orb/latency -u                                             # 5 snapshots + manifest updated: tool-catalog hash/bytes only (+9 bytes), no instruction hash changed
+npx jest test/orb/live/characterization -u                               # 4 snapshots updated: find_perfect_product description lines only
+npx tsc --noEmit -p .                                                    # 1 error, pre-existing and unrelated: contacts-import.ts TS2307 libphonenumber-js missing from the symlinked node_modules
+cd ../..
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "x (VTID-05089)"
+#   -> [staging-verify] ✓ change suite present and valid for VTID-05089 (exit 0)
+IMPACT_SCAN_DRY_RUN=true IMPACT_SCAN_BASE=origin/main node scripts/ci/dev-autopilot-impact-scan.mjs   # blocker=0 warning=0 info=0
+cd services/gateway
+npx jest --silent --maxWorkers=3   # 1638/1642 suites, 26401 passed; 4 failed suites all "Cannot find module 'libphonenumber-js'" (local node_modules gap, unrelated) — outputs/full-gateway-jest-summary.txt
+npm run test:support               # 4 suites, 87/87
+npm run test:operator              # 64/64
+npm run test:roles                 # 105/105

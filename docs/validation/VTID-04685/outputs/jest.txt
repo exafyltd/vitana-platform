@@ -1,0 +1,32 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+PASS test/services/memory/vtid-04685-hypothetical-not-a-fact.test.ts
+  VTID-04685 isHypothetical
+    ✓ treats "wenn ich einen hund hätte würde er max heißen" as hypothetical (7 ms)
+    ✓ treats "Falls ich ein Auto hätte, wäre es rot" as hypothetical (2 ms)
+    ✓ treats "hätte ich einen Garten, würde ich Tomaten pflanzen" as hypothetical (1 ms)
+    ✓ treats "stell dir vor ich wäre Pilot" as hypothetical
+    ✓ treats "if I had a dog it would be called Max" as hypothetical
+    ✓ treats "imagine if I lived in Paris" as hypothetical
+    ✓ treats "si tuviera un perro se llamaría Max" as hypothetical
+    ✓ does not treat "mein Hund heißt Bello" as hypothetical (1 ms)
+    ✓ does not treat "wenn ich morgen Zeit habe, gehe ich laufen" as hypothetical (1 ms)
+    ✓ does not treat "I have a dog called Max" as hypothetical (1 ms)
+    ✓ does not treat "merk dir mein lieblingsessen ist lasagne" as hypothetical (1 ms)
+    ✓ does not treat "" as hypothetical (1 ms)
+  VTID-04685 valueOnlyInNonStatements
+    ✓ drops a value said only inside a hypothetical (4 ms)
+    ✓ drops a value said only inside a forget request (2 ms)
+    ✓ keeps a value the member also states plainly (1 ms)
+    ✓ keeps a plain statement and ignores the assistant lines
+    ✓ keeps values it cannot place (the extractor paraphrased them) (1 ms)
+    ✓ reads member lines from labelled and unlabelled transcripts (2 ms)
+  VTID-04685 the extractor applies the rule
+    ✓ filters extracted facts through valueOnlyInNonStatements before persisting (1 ms)
+    ✓ tells the extraction model that hypotheticals and forget requests are not facts (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.739 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04685-hypothetical-not-a-fact.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

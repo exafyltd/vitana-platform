@@ -1,0 +1,13 @@
+# 2026-09-29T07:52:53Z staging probes (read-only, no token)
+build-info: {"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"1d9d210844e4e6e61984854891f0e852449471f1","booted_at":"2026-09-29T07:17:37.374Z","marker":"1d9d210844e4"}
+
+POST /api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/catalogue/products/import -> 404 text/html; charset=utf-8 <!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Error</title>
+</head>
+<body>
+<pre>Cannot POST /api
+POST /api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/catalogue/products -> 401 application/json; charset=utf-8 {"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorization header. Expected: Bearer <token>"}
+GET /api/v1/partner-onboarding/00000000-0000-4000-8000-000000000000/catalogue -> 401 application/json; charset=utf-8 {"ok":false,"error":"UNAUTHENTICATED","message":"Missing or invalid Authorization header. Expected: Bearer <token>"}

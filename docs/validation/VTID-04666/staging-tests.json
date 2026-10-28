@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04666",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "recommendations health answers JSON", "path": "/api/v1/autopilot/recommendations/health", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04666 test/dev-autopilot-synthesis.test.ts test/routes/dev-autopilot.test.ts test/routes/autopilot-recommendations.test.ts", "cwd": "services/gateway",
+      "reason": "The change filters what the analyzers write and what the developer lists return; proving it on staging would need analyzer runs and rejections that write to the production database, so the behaviour is proven by the suites and staging gets read-only probes" }
+  ]
+}

@@ -1,0 +1,633 @@
+/**
+ * VTID-DANCE-D12: Matchmaker agent (Claude Sonnet 4.6).
+ *
+ * Layer 2 over the SQL matcher. Takes the top-K candidates from
+ * compute_intent_matches() + the requester's full context, asks Claude
+ * Sonnet 4.6 to re-rank and explain, and returns a richer match list.
+ *
+ * Density-aware:
+ *  - solo  (pool < 5)  → simpler prompt, focus on presentation + fallbacks
+ *  - early (pool < 50) → moderate re-rank, broader candidate consideration
+ *  - growth+           → full reasoning, asymmetric compatibility, etc.
+ *
+ * Sensitive kinds (`partner_seek`, paid services) get extended thinking on
+ * by default. Other kinds use the default reasoning budget.
+ *
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off Gemini 2.5 Pro/Vertex to Claude
+ * Sonnet 4.6 via the direct Anthropic API — see claude-text-client.ts.
+ *
+ * Falls back gracefully to SQL ranking if Claude fails.
+ */
+
+import { getSupabase } from '../lib/supabase';
+import { withGeminiLog } from './gemini-call-log';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
+import type { MatchRow } from './intent-matcher';
+import * as repo from './matchmaker-agent-repository';
+import { fetchExcludedTestServiceAccountIds } from '../lib/excluded-test-service-accounts';
+
+const PRIMARY_MODEL = CLAUDE_SONNET_4_6;
+
+export interface MatchmakerCandidateOut {
+  match_id: string | null;            // null when this came purely from profile fallback
+  intent_id: string | null;           // null when this is a profile-only candidate
+  vitana_id: string | null;
+  display_name: string | null;
+  sql_score: number | null;
+  agent_score: number;                 // 0-1
+  reason: string;                      // one-sentence natural-language explanation
+  source: 'sql_match' | 'profile_fallback';
+  flags: string[];                     // ['low_specificity', 'cross_tenant', 'partner_redacted', etc.]
+}
+
+export interface MatchmakerResult {
+  ok: boolean;
+  mode: 'solo' | 'early' | 'growth';
+  pool_size: number;
+  candidates: MatchmakerCandidateOut[];
+  counter_questions: { id: string; prompt: string; options?: string[] }[];
+  voice_readback: string;              // ready-to-speak summary for ORB
+  reasoning_summary: string;           // for telemetry/debug
+  used_fallback: boolean;              // true when profile-as-supply was used
+}
+
+interface SourceIntent {
+  intent_id: string;
+  intent_kind: string;
+  category: string | null;
+  title: string;
+  scope: string;
+  kind_payload: Record<string, any>;
+  requester_user_id: string;
+  requester_vitana_id: string | null;
+  tenant_id: string;
+}
+
+interface RequesterContext {
+  vitana_id: string | null;
+  display_name: string | null;
+  city: string | null;
+  registration_seq: number | null;
+  dance_preferences: Record<string, any> | null;
+  life_compass_category: string | null;
+  recent_intents: Array<{ intent_kind: string; title: string; created_at: string }>;
+  recent_matches_outcomes: Array<{ kind_pairing: string; state: string; counterparty_vitana_id: string | null }>;
+}
+
+interface SqlCandidate {
+  match_id: string;
+  intent_b_id: string | null;
+  vitana_id_b: string | null;
+  cand_intent: SourceIntent | null;
+  cand_profile: { display_name: string | null; city: string | null; dance_preferences: Record<string, any> | null } | null;
+  sql_score: number;
+}
+
+interface ProfileFallbackCandidate {
+  user_id: string;
+  vitana_id: string | null;
+  display_name: string | null;
+  city: string | null;
+  dance_preferences: Record<string, any> | null;
+}
+
+/**
+ * D12 async wrapper: kick off matchmaker as fire-and-forget. The synchronous
+ * POST /intents path calls THIS — it persists a 'pending' row in
+ * intent_match_recommendations immediately, then runs the agent in the
+ * background and updates the row when complete. Clients poll
+ * GET /api/v1/intents/:id/matchmaker for the polished result.
+ */
+export function runMatchmakerAsync(intentId: string): void {
+  // Mark pending immediately so the poll endpoint has a row to return.
+  void markRecommendationStatus(intentId, 'pending');
+
+  // setImmediate keeps the work off the request thread without blocking the
+  // Node event loop on a long-running sync callback.
+  setImmediate(async () => {
+    const start = Date.now();
+    try {
+      await markRecommendationStatus(intentId, 'running');
+      const result = await runMatchmakerForIntent(intentId);
+      await persistRecommendation(intentId, result, Date.now() - start);
+      await persistProfileFallbackMatches(intentId, result);
+    } catch (err: any) {
+      await markRecommendationError(intentId, err?.message || 'unknown', Date.now() - start);
+    }
+  });
+}
+
+async function markRecommendationStatus(intentId: string, status: 'pending' | 'running' | 'skipped'): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status,
+      updated_at: new Date().toISOString(),
+    } as any);
+  } catch { /* best-effort */ }
+}
+
+async function persistRecommendation(intentId: string, result: MatchmakerResult, latencyMs: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status: 'complete',
+      mode: result.mode,
+      pool_size: result.pool_size,
+      candidates: result.candidates as any,
+      counter_questions: result.counter_questions as any,
+      voice_readback: result.voice_readback,
+      reasoning_summary: result.reasoning_summary,
+      used_fallback: result.used_fallback,
+      model: PRIMARY_MODEL,
+      latency_ms: latencyMs,
+      computed_at: new Date().toISOString(),
+      updated_at: new Date().toISOString(),
+    } as any);
+  } catch { /* best-effort */ }
+}
+
+async function markRecommendationError(intentId: string, error: string, latencyMs: number): Promise<void> {
+  const supabase = getSupabase();
+  if (!supabase) return;
+  try {
+    await repo.upsertIntentMatchRecommendation(supabase, {
+      intent_id: intentId,
+      status: 'error',
+      error: error.slice(0, 1000),
+      latency_ms: latencyMs,
+      updated_at: new Date().toISOString(),
+    } as any);
+  } catch { /* best-effort */ }
+}
+
+/**
+ * D11.E persistence: when the agent surfaced profile_fallback candidates,
+ * write them as intent_matches rows with external_target_kind='profile_match'
+ * so the standard match lifecycle (Express interest, decline, OASIS audit)
+ * applies. Idempotent per (intent, target_user).
+ */
+async function persistProfileFallbackMatches(intentId: string, result: MatchmakerResult): Promise<void> {
+  if (!result.used_fallback) return;
+  const supabase = getSupabase();
+  if (!supabase) return;
+
+  const fallbackRows = result.candidates
+    .filter((c) => c.source === 'profile_fallback' && c.vitana_id)
+    .map((c) => ({
+      vitana_id: c.vitana_id as string,
+      agent_score: c.agent_score,
+      reason: c.reason,
+    }));
+  if (fallbackRows.length === 0) return;
+
+  // Look up user_ids for the vitana_ids.
+  const { data: profs } = await repo.fetchProfilesByVitanaIds(supabase, fallbackRows.map((f) => f.vitana_id));
+
+  const vidToUid = new Map<string, string>(
+    ((profs as any[]) || []).map((p) => [String(p.vitana_id), String(p.user_id)])
+  );
+
+  // Pull source for vitana_id_a + intent_kind.
+  const { data: src } = await repo.fetchIntentRequesterAndKind(supabase, intentId);
+  const vitanaIdA = (src as any)?.requester_vitana_id as string | null;
+  const intentKind = (src as any)?.intent_kind as string | null;
+
+  const rows = fallbackRows
+    .map((f) => {
+      const uid = vidToUid.get(f.vitana_id);
+      if (!uid || !vitanaIdA) return null;
+      return {
+        intent_a_id: intentId,
+        intent_b_id: null,
+        vitana_id_a: vitanaIdA,
+        vitana_id_b: f.vitana_id,
+        external_target_kind: 'profile_match',
+        external_target_id: uid,
+        kind_pairing: `${intentKind ?? 'unknown'}::profile_match`,
+        score: f.agent_score,
+        match_reasons: { source: 'profile_fallback', agent_reason: f.reason } as any,
+        compass_aligned: false,
+        state: 'new',
+      };
+    })
+    .filter(Boolean) as any[];
+
+  if (rows.length === 0) return;
+  try {
+    await repo.upsertProfileFallbackMatches(supabase, rows);
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D11.E] profile_match persist failed: ${err.message}`);
+  }
+}
+
+/** Top-level entry: run the matchmaker over a fresh intent. */
+export async function runMatchmakerForIntent(intentId: string): Promise<MatchmakerResult> {
+  const ctx = await loadContext(intentId);
+  if (!ctx) {
+    return defaultEmptyResult('intent_not_found');
+  }
+
+  const { source, requester } = ctx;
+  const sqlCandidates = await loadSqlCandidates(intentId);
+  const poolSize = await probePoolSize(source);
+  const mode: MatchmakerResult['mode'] =
+    poolSize < 5 ? 'solo' : poolSize < 50 ? 'early' : 'growth';
+
+  // Profile fallback when SQL returns 0 candidates.
+  const profileFallback = sqlCandidates.length === 0
+    ? await loadProfileFallback(source, requester)
+    : [];
+
+  // Build the prompt and invoke Gemini.
+  const prompt = buildAgentPrompt({
+    source, requester, mode, poolSize,
+    sqlCandidates, profileFallback,
+  });
+
+  const model = PRIMARY_MODEL;
+
+  const agentResponse = await callAgent({
+    prompt, model, source, requester, intentId,
+  });
+
+  // If Claude failed, fall back to a deterministic shape from SQL only.
+  if (!agentResponse) {
+    return buildSqlOnlyResult({ source, mode, poolSize, sqlCandidates });
+  }
+
+  return {
+    ok: true,
+    mode,
+    pool_size: poolSize,
+    candidates: agentResponse.candidates,
+    counter_questions: agentResponse.counter_questions,
+    voice_readback: applyExpectationCopy(agentResponse.voice_readback, mode, poolSize),
+    reasoning_summary: agentResponse.reasoning_summary,
+    used_fallback: profileFallback.length > 0,
+  };
+}
+
+/**
+ * E3 — time-bound expectation copy. Until 2026-09-01 we append a short
+ * honesty paragraph to the voice readback for solo/early modes so users
+ * understand match approximation reflects community size, not engine
+ * quality. Sunsets automatically — after 2026-09-01 the function
+ * returns the readback unchanged.
+ */
+const EXPECTATION_SUNSET = Date.parse('2026-09-01T00:00:00Z');
+const EXPECTATION_COPY =
+  " Quick note — our community is still growing. The more precise you are about style, time and location, the better your matches, but I'll find you something even with broad criteria. Match quality sharpens as more people join.";
+
+function applyExpectationCopy(readback: string, mode: 'solo' | 'early' | 'growth', poolSize: number): string {
+  if (!readback) return readback;
+  if (Date.now() >= EXPECTATION_SUNSET) return readback;
+  if (mode === 'growth' && poolSize >= 50) return readback;
+  // Don't double-append if the model already mentioned community size.
+  const lower = readback.toLowerCase();
+  if (lower.includes('community is still growing') || lower.includes('still growing')) return readback;
+  return readback.trimEnd() + EXPECTATION_COPY;
+}
+
+// ─── Context loaders ────────────────────────────────────────────
+
+async function loadContext(intentId: string): Promise<{ source: SourceIntent; requester: RequesterContext } | null> {
+  const supabase = getSupabase();
+  if (!supabase) return null;
+
+  const { data: srcRow } = await repo.fetchSourceIntent(supabase, intentId);
+  if (!srcRow) return null;
+  const source = srcRow as any as SourceIntent;
+
+  const { data: profileRow } = await repo.fetchRequesterProfile(supabase, source.requester_user_id);
+
+  // Best-effort fetches — silent on error.
+  let lifeCompassCategory: string | null = null;
+  try {
+    const { data } = await repo.fetchLifeCompassCategory(supabase, source.requester_user_id);
+    lifeCompassCategory = ((data as any)?.category as string) ?? null;
+  } catch { /* table may not exist on every env */ }
+
+  const { data: recentIntents } = await repo.fetchRecentIntents(supabase, source.requester_user_id, 10);
+
+  const { data: recentOutcomes } = await repo.fetchRecentMatchOutcomes(supabase, source.requester_vitana_id ?? '', 20);
+
+  return {
+    source,
+    requester: {
+      vitana_id: (profileRow as any)?.vitana_id ?? null,
+      display_name: (profileRow as any)?.display_name ?? null,
+      city: (profileRow as any)?.city ?? null,
+      registration_seq: (profileRow as any)?.registration_seq ?? null,
+      dance_preferences: (profileRow as any)?.dance_preferences ?? null,
+      life_compass_category: lifeCompassCategory,
+      recent_intents: ((recentIntents as any[]) || []).map((r) => ({
+        intent_kind: r.intent_kind,
+        title: r.title,
+        created_at: r.created_at,
+      })),
+      recent_matches_outcomes: ((recentOutcomes as any[]) || []).map((m) => ({
+        kind_pairing: m.kind_pairing,
+        state: m.state,
+        counterparty_vitana_id: m.vitana_id_b,
+      })),
+    },
+  };
+}
+
+async function loadSqlCandidates(intentId: string): Promise<SqlCandidate[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const { data: matches } = await repo.fetchSqlMatchesForIntent(supabase, intentId, 20);
+  if (!matches || matches.length === 0) return [];
+
+  const intentBIds = (matches as any[]).map((m) => m.intent_b_id).filter(Boolean) as string[];
+  const userIds: string[] = [];
+
+  let intentMap: Record<string, SourceIntent> = {};
+  let profileMap: Record<string, any> = {};
+
+  if (intentBIds.length > 0) {
+    const { data: intents } = await repo.fetchIntentsByIds(supabase, intentBIds);
+    intentMap = Object.fromEntries(((intents as any[]) || []).map((r) => [r.intent_id, r]));
+    for (const r of (intents as any[]) || []) {
+      if (r.requester_user_id) userIds.push(r.requester_user_id);
+    }
+  }
+
+  if (userIds.length > 0) {
+    const { data: profs } = await repo.fetchProfilesByUserIds(supabase, userIds);
+    profileMap = Object.fromEntries(((profs as any[]) || []).map((r) => [r.user_id, r]));
+  }
+
+  return (matches as any[]).map((m) => {
+    const ci = m.intent_b_id ? intentMap[m.intent_b_id] : null;
+    const cp = ci?.requester_user_id ? profileMap[ci.requester_user_id] : null;
+    return {
+      match_id: m.match_id,
+      intent_b_id: m.intent_b_id,
+      vitana_id_b: m.vitana_id_b,
+      cand_intent: ci ?? null,
+      cand_profile: cp
+        ? { display_name: cp.display_name, city: cp.city, dance_preferences: cp.dance_preferences }
+        : null,
+      sql_score: m.score,
+    };
+  });
+}
+
+async function probePoolSize(source: SourceIntent): Promise<number> {
+  const supabase = getSupabase();
+  if (!supabase) return 0;
+  const { count } = await repo.countOpenIntentsExcludingUser(supabase, source.requester_user_id, ['open', 'matched', 'engaged']);
+  return count ?? 0;
+}
+
+/** Exported for tests (VTID-04888). */
+export async function loadProfileFallback(
+  source: SourceIntent, _requester: RequesterContext
+): Promise<ProfileFallbackCandidate[]> {
+  const supabase = getSupabase();
+  if (!supabase) return [];
+
+  const variety: string | null =
+    (source.kind_payload as any)?.dance?.variety
+    ?? (source.category && source.category.startsWith('dance.') ? source.category.split('.').pop() ?? null : null);
+
+  // Pull profiles that have ANY dance preferences set, prioritising same variety.
+  const { data: profs } = await repo.fetchProfilesWithDancePreferences(supabase, source.requester_user_id, 20);
+  // VTID-04888 (CLAUDE.md rule 45): test/service accounts are never offered to a member as a match. The
+  // intent_matches backstop trigger also refuses to store one; this keeps them out of the agent prompt too.
+  const excluded = await fetchExcludedTestServiceAccountIds(supabase);
+  const list = ((profs as any[]) || []).filter((p) => {
+    if (excluded.has(String(p.user_id))) return false;
+    const v = p.dance_preferences?.varieties;
+    return Array.isArray(v) && v.length > 0;
+  });
+
+  // Bias same-variety to top.
+  list.sort((a, b) => {
+    const avHas = variety && Array.isArray(a.dance_preferences?.varieties) && a.dance_preferences.varieties.includes(variety) ? 1 : 0;
+    const bvHas = variety && Array.isArray(b.dance_preferences?.varieties) && b.dance_preferences.varieties.includes(variety) ? 1 : 0;
+    return bvHas - avHas;
+  });
+
+  return list.slice(0, 5).map((p) => ({
+    user_id: p.user_id,
+    vitana_id: p.vitana_id,
+    display_name: p.display_name,
+    city: p.city,
+    dance_preferences: p.dance_preferences,
+  }));
+}
+
+// ─── Prompt builder + agent call ────────────────────────────────
+
+function buildAgentPrompt(args: {
+  source: SourceIntent;
+  requester: RequesterContext;
+  mode: MatchmakerResult['mode'];
+  poolSize: number;
+  sqlCandidates: SqlCandidate[];
+  profileFallback: ProfileFallbackCandidate[];
+}): string {
+  const { source, requester, mode, poolSize, sqlCandidates, profileFallback } = args;
+
+  return [
+    'You are Vitana\'s matchmaking agent. Your job is to take the candidates produced by the SQL matcher (and a possible profile fallback) and produce a high-quality, honest, voice-friendly response. Always respect the user\'s actual situation — never fake density.',
+    '',
+    `Density mode: ${mode} (pool size: ${poolSize}). Adjust strictness accordingly:`,
+    '  - solo:   pool is tiny. Surface ALL candidates, even with low SQL scores. Be honest that the community is small. Suggest sharing the post with friends.',
+    '  - early:  some candidates exist. Re-rank with reasoning. If specificity is low, broaden across category prefix.',
+    '  - growth: full pool. Re-rank tightly, favour reciprocal compatibility.',
+    '',
+    'CONTEXT — Source intent (the person asking):',
+    JSON.stringify({
+      kind: source.intent_kind,
+      category: source.category,
+      title: source.title,
+      scope: source.scope,
+      kind_payload: source.kind_payload,
+    }, null, 2),
+    '',
+    'CONTEXT — Requester profile + history:',
+    JSON.stringify({
+      vitana_id: requester.vitana_id,
+      display_name: requester.display_name,
+      city: requester.city,
+      registration_seq: requester.registration_seq,
+      dance_preferences: requester.dance_preferences,
+      life_compass_focus: requester.life_compass_category,
+      recent_intents: requester.recent_intents.slice(0, 5),
+      recent_match_outcomes: requester.recent_matches_outcomes.slice(0, 10),
+    }, null, 2),
+    '',
+    `CANDIDATES from SQL matcher (top ${sqlCandidates.length}):`,
+    JSON.stringify(sqlCandidates.map((c) => ({
+      match_id: c.match_id,
+      sql_score: c.sql_score,
+      counterparty_vitana_id: c.vitana_id_b,
+      counterparty_intent_kind: c.cand_intent?.intent_kind,
+      counterparty_category: c.cand_intent?.category,
+      counterparty_title: c.cand_intent?.title,
+      counterparty_scope: c.cand_intent?.scope?.slice(0, 280),
+      counterparty_kind_payload: c.cand_intent?.kind_payload,
+      counterparty_profile_city: c.cand_profile?.city,
+      counterparty_profile_dance_preferences: c.cand_profile?.dance_preferences,
+    })), null, 2),
+    '',
+    `PROFILE FALLBACK candidates (${profileFallback.length}; use only when SQL is empty or weak):`,
+    JSON.stringify(profileFallback.map((p) => ({
+      vitana_id: p.vitana_id,
+      display_name: p.display_name,
+      city: p.city,
+      dance_preferences: p.dance_preferences,
+    })), null, 2),
+    '',
+    'TASK:',
+    '1. Re-rank up to 5 best candidates. Each candidate gets:',
+    '   - agent_score (0-1) — your considered confidence',
+    '   - reason (one short sentence) — natural-language WHY this fits',
+    '   - flags (array) — e.g. ["low_specificity"] when both sides are vague, ["cross_tenant"], ["partner_redacted"]',
+    '   - source — "sql_match" or "profile_fallback"',
+    '2. If the source intent is sparse (no variety, no time, no location), produce 1–2 counter_questions in this exact shape:',
+    '   { "id": "variety", "prompt": "What style — salsa, tango, bachata, or open to anything?", "options": ["salsa","tango","bachata","kizomba","swing","open"] }',
+    '   { "id": "time", "prompt": "When — specific evening or any time?", "options": ["any","weekday-eve","weekend","specific"] }',
+    '   { "id": "location", "prompt": "Where — your city or somewhere else?" }',
+    '   Skip questions whose answer is already in the source kind_payload.',
+    '3. Produce a voice_readback string ORB will read aloud. Be honest about pool size:',
+    '   - mode=solo with 0 candidates: "I posted your ask — you\'re among the first looking for this in our community. The moment someone matches I\'ll let you know. Want me to share with friends?"',
+    '   - mode=solo with 1+ candidates: "You\'re early — I found N other people interested in something similar. Here are the closest signals: ..."',
+    '   - mode=early/growth: tighter, reasoned readback per candidate.',
+    '   Keep total readback under 60 words.',
+    '4. Produce a reasoning_summary (one paragraph) explaining your overall thinking — for telemetry, not for the user.',
+    '',
+    'OUTPUT — return ONLY valid JSON in this exact schema. No markdown, no prose:',
+    '{ "candidates": [ { "match_id": "...", "intent_id": "...", "vitana_id": "...", "display_name": "...", "sql_score": 0.0, "agent_score": 0.0, "reason": "...", "source": "sql_match", "flags": [...] } ], "counter_questions": [ ... ], "voice_readback": "...", "reasoning_summary": "..." }',
+  ].join('\n');
+}
+
+interface AgentRawOutput {
+  candidates?: Array<Partial<MatchmakerCandidateOut>>;
+  counter_questions?: Array<{ id: string; prompt: string; options?: string[] }>;
+  voice_readback?: string;
+  reasoning_summary?: string;
+}
+
+async function callAgent(args: {
+  prompt: string; model: string; source: SourceIntent; requester: RequesterContext; intentId: string;
+}): Promise<{
+  candidates: MatchmakerCandidateOut[];
+  counter_questions: { id: string; prompt: string; options?: string[] }[];
+  voice_readback: string;
+  reasoning_summary: string;
+} | null> {
+  const { prompt, model, source, requester, intentId } = args;
+
+  try {
+    const result = await withGeminiLog(
+      {
+        feature: 'matchmaker',
+        model,
+        user_id: source.requester_user_id ?? null,
+        vitana_id: requester.vitana_id,
+        intent_id: intentId,
+      },
+      async () => {
+        const raw = await callClaudeText({
+          model,
+          system: 'Return ONLY valid JSON matching the schema described in the prompt — no markdown, no prose.',
+          prompt,
+          maxTokens: 4096,
+          temperature: 0.2,
+        });
+        if (!raw) throw new Error('empty Claude response');
+        return raw;
+      }
+    );
+
+    if (!result) return null;
+    const parsed: AgentRawOutput = JSON.parse(result);
+    const candidates: MatchmakerCandidateOut[] = (parsed.candidates || [])
+      .map((c): MatchmakerCandidateOut => ({
+        match_id: c.match_id ?? null,
+        intent_id: c.intent_id ?? null,
+        vitana_id: c.vitana_id ?? null,
+        display_name: c.display_name ?? null,
+        sql_score: typeof c.sql_score === 'number' ? c.sql_score : null,
+        agent_score: typeof c.agent_score === 'number' ? Math.max(0, Math.min(1, c.agent_score)) : 0.5,
+        reason: c.reason ?? '',
+        source: (c.source as any) === 'profile_fallback' ? 'profile_fallback' : 'sql_match',
+        flags: Array.isArray(c.flags) ? c.flags : [],
+      }))
+      .slice(0, 5);
+
+    return {
+      candidates,
+      counter_questions: parsed.counter_questions || [],
+      voice_readback: parsed.voice_readback || '',
+      reasoning_summary: parsed.reasoning_summary || '',
+    };
+  } catch (err: any) {
+    console.warn(`[VTID-DANCE-D12] matchmaker agent (${model}) failed: ${err.message}`);
+    return null;
+  }
+}
+
+// ─── SQL-only fallback when Gemini fails ────────────────────────
+
+function buildSqlOnlyResult(args: {
+  source: SourceIntent;
+  mode: MatchmakerResult['mode'];
+  poolSize: number;
+  sqlCandidates: SqlCandidate[];
+}): MatchmakerResult {
+  const { mode, poolSize, sqlCandidates } = args;
+  const candidates = sqlCandidates.slice(0, 5).map((c): MatchmakerCandidateOut => ({
+    match_id: c.match_id,
+    intent_id: c.intent_b_id,
+    vitana_id: c.vitana_id_b,
+    display_name: c.cand_profile?.display_name ?? null,
+    sql_score: c.sql_score,
+    agent_score: c.sql_score,
+    reason: c.cand_intent?.title ?? 'Possible match',
+    source: 'sql_match',
+    flags: ['agent_unavailable'],
+  }));
+
+  const readback = candidates.length === 0
+    ? "I posted your ask — you're early in the community. I'll let you know the moment someone matches."
+    : `I found ${candidates.length} possible match${candidates.length === 1 ? '' : 'es'}. Take a look.`;
+
+  return {
+    ok: true,
+    mode,
+    pool_size: poolSize,
+    candidates,
+    counter_questions: [],
+    voice_readback: readback,
+    reasoning_summary: 'Gemini matchmaker unavailable; returned SQL-ranked candidates without re-ranking.',
+    used_fallback: false,
+  };
+}
+
+function defaultEmptyResult(_reason: string): MatchmakerResult {
+  return {
+    ok: false,
+    mode: 'solo',
+    pool_size: 0,
+    candidates: [],
+    counter_questions: [],
+    voice_readback: "I couldn't read your post — try again?",
+    reasoning_summary: 'intent_not_found',
+    used_fallback: false,
+  };
+}
+
+// Re-export for the route layer.
+export type { MatchRow };

@@ -1,0 +1,10 @@
+$ cd services/gateway && npx jest test/vtid-03839-onramp-approved-by-uuid.test.ts test/vtid-03820-operator-execution-onramp.test.ts test/dev-autopilot-finding-completion.test.ts test/dev-autopilot-execute.test.ts test/vtid-03820-execution-onramp-metadata.test.ts
+PASS test/vtid-03839-onramp-approved-by-uuid.test.ts
+PASS test/dev-autopilot-finding-completion.test.ts
+PASS test/dev-autopilot-execute.test.ts
+PASS test/vtid-03820-execution-onramp-metadata.test.ts
+PASS test/vtid-03820-operator-execution-onramp.test.ts
+Test Suites: 5 passed, 5 total
+Tests:       56 passed, 56 total
+Snapshots:   0 total
+Time:        4.013 s

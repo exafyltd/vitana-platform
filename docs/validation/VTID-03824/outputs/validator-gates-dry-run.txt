@@ -1,0 +1,49 @@
+Local dry-run of VALIDATOR-CHECK.yml's scriptable gates against this PR's
+actual diff (origin/main...HEAD), before pushing, so a real CI cycle isn't
+spent discovering an avoidable failure.
+
+$ git diff --name-only $(git merge-base origin/main HEAD) -- . | sort -u > /tmp/changed_files_sim.txt
+$ cat /tmp/pr_body_sim.txt   # mirrors the actual PR body's markers
+VTID: VTID-03824
+VALIDATION_PROFILE: gateway_backend
+SCOPE_ALLOWLIST: services/gateway/src/, services/gateway/test/, docs/validation/, scripts/ci/command-hub-ownership-guard.js
+ACCEPTANCE: docs/validation/VTID-03824/acceptance.md
+MERGE_PAYLOAD_PREVIEW: adds end_conversation ORB tool + server/widget wiring; no schema/infra change
+OASIS_IMPACT: no
+
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files_sim.txt gateway_backend /tmp/pr_body_sim.txt
+NOT JUDGED — 1 file(s) outside this gate's remit:
+  scripts/ci/command-hub-ownership-guard.js
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 15 in-remit file(s) match the gateway_backend allowlist
+EXIT=0
+
+$ git diff $(git merge-base origin/main HEAD) -- 'services/gateway/src/frontend/' 'services/gateway/dist/frontend/' > /tmp/csp_diff_sim.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_sim.txt
+No CSP pattern hits in added lines.
+CSP_EXIT=0
+
+$ git diff $(git merge-base origin/main HEAD) -- 'services/gateway/src/routes/' 'services/gateway/src/index.ts' 'services/gateway/src/app.ts' > /tmp/route_diff_sim.txt
+$ node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/route_diff_sim.txt
+No route registration added — route-mount evidence not required for this diff.
+ROUTE_EXIT=1   # correctly means "not required" (an `if` guard in the
+               # workflow only demands ROUTE_MOUNT:/FINAL_URL:/CURL_PROOF:
+               # when this exits 0) — the end_conversation case is a new
+               # arm inside the EXISTING executeLiveApiToolInner switch,
+               # not a new router.get/post/... registration.
+
+$ python3 - (acceptance-mapping simulation, same regex the Acceptance
+    Mapping Gate step uses against docs/validation/VTID-03824/acceptance.md)
+AC count: 9
+AC-1..AC-9: all OK (each followed within 12 lines by a TEST: line)
+ALL OK
+
+Also confirmed: `scripts/ci/command-hub-ownership-guard.js`'s
+ALLOWED_VTID_PATTERN now matches VTID-03824 (added in the previous
+commit), and the PR title now literally contains `VTID-03824` — the
+Command Hub Guardrails workflow (path-ownership-guard job) only
+re-evaluates `github.event.pull_request.title` on a fresh
+opened/synchronize/reopened event (it does not trigger on a bare
+title/body edit), so this commit's push is what carries the corrected
+title into that job's next run, not the earlier in-place title edit alone.

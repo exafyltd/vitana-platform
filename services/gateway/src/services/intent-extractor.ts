@@ -1,0 +1,254 @@
+/**
+ * VTID-01973: Per-kind intent extractor (P2-A).
+ *
+ * Strategy pattern over five LLM-driven extractors. After
+ * intent-classifier.ts identifies the kind, this module produces the
+ * kind-specific structured payload (kind_payload JSONB on user_intents).
+ *
+ * BOOTSTRAP-GEMINI-TO-CLAUDE: migrated off the Vertex Gemini fallback chain
+ * (gemini-2.5-flash → gemini-2.5-pro, plus an unconfigured Gemini API-key
+ * fallback) to Claude Sonnet 4.6 via the direct Anthropic API. JSON
+ * requested via prompt instructions, temp 0.1, low token budget.
+ *
+ * Returns { fields, confidence, missing_critical } so the dispatcher knows
+ * whether to fire single-shot or fall back to multi-turn slot-fill.
+ */
+
+import type { IntentKind } from './intent-classifier';
+import { withGeminiLog } from './gemini-call-log';
+import { callClaudeText, CLAUDE_SONNET_4_6 } from './claude-text-client';
+
+const EXTRACT_MAX_OUTPUT_TOKENS = 2048;
+
+export interface ExtractedIntent {
+  intent_kind: IntentKind;
+  category: string | null;
+  title: string | null;
+  scope: string | null;
+  kind_payload: Record<string, unknown>;
+  confidence: number; // 0-1
+  missing_critical: string[];
+}
+
+/**
+ * Human-friendly labels for the technical missing_critical field paths, used to
+ * build a warm "just one more thing" ask instead of leaking raw field names
+ * like "kind_payload.activity" into the voice/assistant copy.
+ */
+const FRIENDLY_FIELD_LABELS: Record<string, string> = {
+  title: 'a short title',
+  scope: 'a sentence about what you are looking for',
+  'kind_payload.activity': 'which activity',
+  'kind_payload.topic': 'the topic',
+  'kind_payload.direction': 'whether you want to lend, borrow, give or receive',
+  'kind_payload.object_or_skill': 'what exactly you need',
+  'kind_payload.learning': 'what you would like to learn',
+  'kind_payload.teaching': 'what you would like to teach',
+};
+
+/** Turn missing_critical paths into a friendly, comma/"and"-joined phrase. */
+export function friendlyMissingFields(missing: string[]): string {
+  const labels = missing.map(
+    (f) => FRIENDLY_FIELD_LABELS[f] || f.replace(/^kind_payload\./, ''),
+  );
+  if (labels.length === 0) return 'a little more detail';
+  if (labels.length === 1) return labels[0];
+  if (labels.length === 2) return `${labels[0]} and ${labels[1]}`;
+  return `${labels.slice(0, -1).join(', ')} and ${labels[labels.length - 1]}`;
+}
+
+const CRITICAL_FIELDS_BY_KIND: Record<IntentKind, string[]> = {
+  commercial_buy: ['title', 'scope'],
+  commercial_sell: ['title', 'scope'],
+  activity_seek: ['title', 'scope', 'kind_payload.activity'],
+  partner_seek: ['title', 'scope'],
+  social_seek: ['title', 'scope', 'kind_payload.topic'],
+  mutual_aid: ['title', 'scope', 'kind_payload.direction', 'kind_payload.object_or_skill'],
+  // VTID-DANCE-D2
+  learning_seek: ['title', 'scope', 'kind_payload.learning'],
+  mentor_seek:   ['title', 'scope', 'kind_payload.teaching'],
+};
+
+const SYSTEM_PROMPT_BY_KIND: Record<IntentKind, string> = {
+  commercial_buy: `Extract a commercial_buy intent. Return JSON only:
+{ "category": "<one of: home_services.refurbishment, home_services.electrician, home_services.plumbing, home_services.cleaning, pro_services.legal, pro_services.accounting, pro_services.translation, wellness.coaching, wellness.nutrition, travel.itinerary_planning, travel.local_guide, local.errands, local.delivery, local.handyman, digital.web_dev, digital.design, digital.marketing, education.tutoring, education.language, events.catering, events.photography, events.music, OR null if unclear>",
+  "title": "<short headline ≤140 chars>",
+  "scope": "<longer description 20-1500 chars, in user's words>",
+  "kind_payload": { "budget_min": <number or null>, "budget_max": <number or null>, "currency": "<ISO 4217, default EUR>", "location_mode": "<remote|on_site|hybrid|null>", "location_label": "<city or null>", "urgency": "<asap|this_week|flexible|null>", "due_date": "<ISO date or null>" },
+  "confidence": <0-1>
+}
+Leave fields null when unclear. Confidence reflects extraction certainty, not slot completeness.`,
+  commercial_sell: `Extract a commercial_sell intent. Return JSON only:
+{ "category": "<same enum as commercial_buy or null>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500 chars>",
+  "kind_payload": { "price_floor": <number or null>, "price_ceiling": <number or null>, "currency": "<ISO 4217, default EUR>", "pricing_model": "<hourly|per_project|per_unit|quote_on_request|null>", "location_served": "<city or region label or null>", "skill_keywords": [<array of strings>], "availability": "<active|paused|null>" },
+  "confidence": <0-1>
+}`,
+  activity_seek: `Extract an activity_seek intent. Return JSON only:
+{ "category": "<one of: sport.tennis, sport.running, sport.hiking, sport.cycling, sport.yoga, sport.gym, creative.music, creative.painting, learning.language, learning.book_club, dance.social_partner, dance.group_outing, dance.practice, dance.flash_mob, OR null>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": { "activity": "<canonical activity name>", "time_windows": [<array of strings like 'tue 18:00-20:00'>], "location_label": "<city/area or null>", "group_size_pref": "<1on1|small_group|large_group|null>", "skill_level": "<beginner|intermediate|advanced|null>" },
+  "confidence": <0-1>
+}
+
+DANCE category routing for activity_seek:
+- "dance partner / someone to dance with" → dance.social_partner
+- "going out dancing / Saturday night / nightclub" → dance.group_outing
+- "practice / training / weekly sessions" → dance.practice
+- "flash mob / crew / group performance" → dance.flash_mob
+
+When category starts with dance.*, ALSO include a top-level "dance" object in kind_payload:
+  "dance": { "variety": "<salsa|tango|bachata|kizomba|swing|ballroom|hiphop|contemporary|other|null>", "level_target": "<beginner|social|intermediate|advanced|professional|null>", "role_pref": "<lead|follow|either|null>", "formality": "<casual|social|professional|null>" }
+Leave fields null when not stated. The matcher reads dance.variety + dance.level_target + dance.role_pref for fine-grained scoring.`,
+  partner_seek: `Extract a partner_seek intent. Return JSON only — be PII-light and respect privacy:
+{ "category": "<life_partner|dating|companionship|null>",
+  "title": "<short tasteful headline ≤140>",
+  "scope": "<description 20-1500, NO last names, NO phone numbers, NO emails>",
+  "kind_payload": { "age_range": [<min int>,<max int>] or null, "gender_preference": "<string or null>", "location_radius_km": <number or null>, "life_stage": "<single|divorced|widowed|null>", "must_haves": [<short tags>], "deal_breakers": [<short tags>] },
+  "confidence": <0-1>
+}`,
+  social_seek: `Extract a social_seek intent (mentorship/networking/coffee chat — NOT romantic). Return JSON only:
+{ "category": "<mentorship|networking|coffee_chat|peer_support|null>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": { "topic": "<canonical topic e.g. 'fintech-fundraising'>", "time_windows": [<strings>], "location_label": "<city or 'remote'>", "format_pref": "<in_person|video|either|null>" },
+  "confidence": <0-1>
+}`,
+  mutual_aid: `Extract a mutual_aid intent. Return JSON only:
+{ "category": "<lend|borrow|gift|receive|help_me>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": { "direction": "<lend|borrow|give|receive|help_me>", "object_or_skill": "<short noun phrase>", "duration_estimate": "<short string or null>", "location_label": "<city/area>" },
+  "confidence": <0-1>
+}`,
+  // VTID-DANCE-D2: learning_seek + mentor_seek wired with optional dance facet.
+  // The dance enrichment helper adds a kind_payload.dance block post-extract
+  // when category starts with 'dance.'.
+  learning_seek: `Extract a learning_seek intent (user wants to LEARN a skill from a teacher). Return JSON only:
+{ "category": "<one of: dance.learning.salsa, dance.learning.tango, dance.learning.bachata, dance.learning.kizomba, dance.learning.swing, dance.learning.ballroom, dance.learning.hiphop, dance.learning.contemporary, dance.learning.other, OR null when topic is non-dance>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": {
+    "learning": { "topic": "<canonical skill noun e.g. 'salsa'>", "mode_pref": "<in_person|online|either|null>", "secondary_modes": [<strings>], "duration_pref": "<short string or null>", "urgency": "<asap|this_month|flexible|null>" },
+    "dance": { "variety": "<salsa|tango|bachata|kizomba|swing|ballroom|hiphop|contemporary|other|null>", "level_target": "<beginner|social|intermediate|advanced|professional|null>", "role_pref": "<lead|follow|either|null>", "formality": "<casual|social|professional|null>" },
+    "counterparty_filter": { "gender": "<string or null>", "age_min": <number or null>, "age_max": <number or null>, "max_radius_km": <number or null>, "location_label": "<city or null>", "max_price_cents": <number or null> }
+  },
+  "confidence": <0-1>
+}
+Set "dance" only if the topic is a dance variety; leave the whole "dance" object out otherwise. Set "counterparty_filter" only when the user explicitly states preferences (gender/age/radius/price); omit otherwise.`,
+  mentor_seek: `Extract a mentor_seek intent (user is OFFERING to teach a skill). Return JSON only:
+{ "category": "<one of: dance.teaching.salsa, dance.teaching.tango, dance.teaching.bachata, dance.teaching.kizomba, dance.teaching.swing, dance.teaching.ballroom, dance.teaching.hiphop, dance.teaching.contemporary, dance.teaching.other, OR null when topic is non-dance>",
+  "title": "<headline ≤140>",
+  "scope": "<description 20-1500>",
+  "kind_payload": {
+    "teaching": { "topic": "<canonical skill noun>", "modes_offered": [<'in_person','online','hybrid'>], "price_cents": <number or null — leave null if free or not stated>, "currency": "<ISO 4217, default EUR>", "slot_windows": [<strings like 'tue 19:00-20:30'>], "level_targets": [<'beginner','intermediate','advanced'>] },
+    "dance": { "variety": "<same enum as learning_seek or null>", "role_taught": "<lead|follow|both|null>", "formality": "<casual|social|professional|null>" }
+  },
+  "confidence": <0-1>
+}
+"dance" only when teaching a dance variety. price_cents=null means "free" or "not stated"; the dispatcher confirms free-vs-paid with the user.`,
+};
+
+/** Pull the first balanced JSON object out of a model response, tolerating fences/prose. */
+function extractJsonObject(raw: string): string {
+  const cleaned = raw.trim().replace(/^```(?:json)?/i, '').replace(/```$/, '').trim();
+  if (cleaned.startsWith('{')) return cleaned;
+  const start = cleaned.indexOf('{');
+  const end = cleaned.lastIndexOf('}');
+  return start >= 0 && end > start ? cleaned.slice(start, end + 1) : cleaned;
+}
+
+/** Confidence may arrive as a number or a stringified number ("0.9"); coerce + clamp. */
+function coerceConfidence(v: unknown): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' ? parseFloat(v) : NaN;
+  return Number.isFinite(n) ? Math.max(0, Math.min(1, n)) : 0;
+}
+
+function parseExtractorResponse(raw: string, kind: IntentKind): ExtractedIntent {
+  let parsed: any;
+  try {
+    parsed = JSON.parse(extractJsonObject(raw));
+  } catch {
+    return {
+      intent_kind: kind,
+      category: null,
+      title: null,
+      scope: null,
+      kind_payload: {},
+      confidence: 0,
+      missing_critical: CRITICAL_FIELDS_BY_KIND[kind],
+    };
+  }
+
+  const result: ExtractedIntent = {
+    intent_kind: kind,
+    category: typeof parsed.category === 'string' && parsed.category ? parsed.category : null,
+    title: typeof parsed.title === 'string' && parsed.title ? parsed.title.slice(0, 140) : null,
+    scope: typeof parsed.scope === 'string' && parsed.scope ? parsed.scope.slice(0, 1500) : null,
+    kind_payload: typeof parsed.kind_payload === 'object' && parsed.kind_payload ? parsed.kind_payload : {},
+    confidence: coerceConfidence(parsed.confidence),
+    missing_critical: [],
+  };
+
+  // Compute missing_critical from CRITICAL_FIELDS_BY_KIND.
+  for (const path of CRITICAL_FIELDS_BY_KIND[kind]) {
+    if (path === 'title' && !result.title) result.missing_critical.push('title');
+    else if (path === 'scope' && !result.scope) result.missing_critical.push('scope');
+    else if (path.startsWith('kind_payload.')) {
+      const key = path.slice('kind_payload.'.length);
+      if (!result.kind_payload[key]) result.missing_critical.push(path);
+    }
+  }
+
+  return result;
+}
+
+export async function extractIntent(utterance: string, kind: IntentKind): Promise<ExtractedIntent> {
+  const trimmed = (utterance || '').trim();
+  if (!trimmed) {
+    return {
+      intent_kind: kind,
+      category: null,
+      title: null,
+      scope: null,
+      kind_payload: {},
+      confidence: 0,
+      missing_critical: CRITICAL_FIELDS_BY_KIND[kind],
+    };
+  }
+
+  const systemPrompt = SYSTEM_PROMPT_BY_KIND[kind];
+  const prompt = `Utterance to extract from:\n${trimmed}`;
+
+  try {
+    const raw = await withGeminiLog(
+      { feature: 'extractor', model: CLAUDE_SONNET_4_6 },
+      async () => {
+        const text = await callClaudeText({
+          model: CLAUDE_SONNET_4_6,
+          system: systemPrompt,
+          prompt,
+          maxTokens: EXTRACT_MAX_OUTPUT_TOKENS,
+          temperature: 0.1,
+        });
+        if (!text) throw new Error('empty Claude response');
+        return text;
+      },
+    );
+    if (raw) return parseExtractorResponse(raw, kind);
+  } catch (err: any) {
+    console.warn(`[VTID-01973] Claude extractor failed (kind=${kind}): ${err?.message}`);
+  }
+
+  return {
+    intent_kind: kind,
+    category: null,
+    title: null,
+    scope: null,
+    kind_payload: {},
+    confidence: 0,
+    missing_critical: CRITICAL_FIELDS_BY_KIND[kind],
+  };
+}

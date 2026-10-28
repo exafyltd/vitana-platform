@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05006",
+  "files": [
+    "supabase/migrations/20261009180000_vtid_05006_kiro_mcp_confirmations.sql",
+    "DATABASE_SCHEMA.md",
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/routes/operator-kiro-mcp.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/frontend/command-hub/{app.js,styles.css,index.html}",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/src/services/conversation/conversation-flag-pins.generated.ts",
+    "services/gateway/test/vtid-05006-*.test.ts",
+    "services/gateway/test/vtid-04465-operator-pipeline-regression.test.ts",
+    "services/kiro-runner/**",
+    "scripts/ci/command-hub-ownership-guard.js",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-05006/**"
+  ]
+}

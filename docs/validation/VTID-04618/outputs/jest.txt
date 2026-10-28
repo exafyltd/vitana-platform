@@ -1,0 +1,3 @@
+Full gateway suite: Test Suites: 1 skipped, 1306 passed, 1306 of 1307 total
+Tests: 29 skipped, 6 todo, 20934 passed, 20969 total
+Snapshots: 109 passed, 109 total

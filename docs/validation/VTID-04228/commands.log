@@ -1,0 +1,24 @@
+# VTID-04228 — commands run (2026-09-21), appended as the verification proceeds
+# baseline (read-only, before #3529 merged)
+curl -sS https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info      # 9545b19 → then 28333b8 → (waiting for 70bd61a)
+Supabase MCP execute_sql: autopilot_recommendations / dev_autopilot_executions / oasis_events llm.call.* / self_healing_log / dev_autopilot_config / llm_routing_policy   # outputs/baseline-before.txt
+gh (MCP) merge_pull_request #3529 → 70bd61a; AWS-STAGE-DEPLOY-GATEWAY run 35617070698 in progress
+# after the deploy (staging = 70bd61a on 10/10 samples, task def vitana-gateway:491)
+gh (MCP) actions_run_trigger DEV-AUTOPILOT.yml ref=main inputs={dry_run:false}    # gateway_url default -> preview-aws-gateway (staging)
+gh (MCP) actions_run_trigger E2E-ORB-MONITOR.yml ref=main
+# results (both runs against the staging default host, head 70bd61a)
+gh (MCP) actions_get get_workflow_run 35618171751   # DEV-AUTOPILOT #325: success, 15:19:37→15:21:23Z, POST ok 200 run_id cf77d23c 2334 signals 15 new
+gh (MCP) actions_get get_workflow_run 35618174451   # E2E-ORB-MONITOR #2758: success, all legs passed → report step did not run
+# read-only trace (Supabase MCP execute_sql, project inmkhvwdcuyhnxkgfvsb, 15:30-15:40 UTC) — see outputs/trace-*.txt
+select stage, provider, model, fallback_used, count(*) from oasis_events where topic in ('llm.call.completed','llm.call.failed') and created_at > '2026-09-21T15:15:00Z' ...   # planner/bedrock/opus-4-5 ×41, fallback=false, 0 failed
+select vtid, count(*) from oasis_events where topic='llm.call.completed' ... group by vtid                                # 10/8/8/5/5/3/1/1 per finding
+select ... from autopilot_recommendations where source_type='dev_autopilot' and created_at > '2026-09-21T15:15:00Z'      # 15 rows status=new
+select finding_id, version, planning_session_id from dev_autopilot_plan_versions where created_at > ...                    # 9 rows (b869c955 v1+v2)
+select count(*) from dev_autopilot_executions where created_at > '2026-09-21T15:00:00Z'                                   # 0
+select count(*) from dev_autopilot_worker_queue where created_at > ...                                                      # 0
+select kill_switch, auto_approve_enabled from dev_autopilot_config order by updated_at desc limit 1                         # false / false (2026-09-17 18:47)
+select run_id, status, new_finding_count, completed_at from dev_autopilot_runs where run_id='cf77d23c-...'                 # ingesting / 0 / NULL  (§5e-2)
+select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.dev_autopilot_runs'::regclass          # 'done' is an allowed status
+select count(*) from self_healing_log where created_at > '2026-09-21T15:15:00Z'                                             # 0
+select topic, count(*) from oasis_events where topic like 'dev_autopilot.%' and created_at > ...                            # scan.started 1, scan.completed 1, plan.generated 8, plan.version_added 1
+aws logs filter-log-events --log-group-name /vitana/gateway --region eu-central-1 --filter-pattern '"dev-autopilot"' --start-time 15:17Z --end-time 15:40Z   # executor/watcher armed dry_run=false; duplicate concurrent planning; reaper tombstoned VTID-04231..04235 (not this session's)

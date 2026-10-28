@@ -1,0 +1,22 @@
+{
+  "fixture_id": "synthetic-001-greeting",
+  "source": "synthetic",
+  "captured_at": "2026-05-28T00:00:00Z",
+  "turn_count": 2,
+  "notes": "Baseline single-turn greeting then wake-brief. Cheapest possible session — used for latency floor.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Hello Vitana",
+      "expected_intent": "greeting"
+    },
+    {
+      "turn": 2,
+      "kind": "text",
+      "user_input": "What's on my plan today?",
+      "expected_tool": "get_today_plan",
+      "expected_intent": "plan.read"
+    }
+  ]
+}

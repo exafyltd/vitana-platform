@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04762",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "name": "Prolog migration invariants",
+      "ref": "npx jest test/vtid-04762-audiobook-prolog-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Staging shares the production database, so the migration is applied only at the production step; its execution was verified against PGlite (docs/validation/VTID-04762/migration-check.md) and this suite pins the shift, the guards and the du-form narration."
+    }
+  ]
+}

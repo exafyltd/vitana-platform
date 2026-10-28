@@ -1,0 +1,19 @@
+# VTID-04031 — commands run (2026-09-17, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'operator-console');   -- VTID-04031
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04031';
+
+# gateway
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                        # ok
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0
+npx jest test/vtid-04031-operator-turn-cost.test.ts test/vtid-04028-operator-turn-stream.test.ts \
+  test/vtid-03926-operator-chat-userrole.test.ts test/operator-chat-oasis.test.ts test/vtid-04022-operator-threads.test.ts
+                                                                                    # 5 suites, 59 tests, 0 failures (VTID-04028's cache-bust pin relaxed to at-or-after)
+
+# visual verification (local harness, nothing live)
+node docs/validation/VTID-04031/outputs/harness-server.js &                         # http://127.0.0.1:18431 — VTID-04028's harness with usage/cost on the frames + reply meta
+node docs/validation/VTID-04031/outputs/harness-shoot.js                            # Playwright: send a message, capture mid-turn + done, 1400x900 + 390x844
+# desktop done: badge "deepseek · deepseek-flash · 6.0s · 7.6k↑ 700↓ · $0.0016"; live: "∴ deepseek · deepseek-flash · 1.2s · 3.5k↑ 412↓ · $0.0008 (plan)"
+# mobile, run 1: badge clipped to "d…" in the VTID-03949 narrow column → phone-width wrap rule → run 2: badge wraps under the timestamp, readable

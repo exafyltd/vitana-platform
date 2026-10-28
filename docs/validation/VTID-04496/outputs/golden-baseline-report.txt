@@ -1,0 +1,164 @@
+=== NAV GOLDEN REPORT — legacy consultNavigator (keyword-only) ===
+ALL      n=167  correct  25.7%  reaches  43.7%  wrong   3  forbidden  0  silent  41  false-action  4
+
+intent:open n=107  correct  37.4%  reaches  37.4%  wrong   1  forbidden  0  silent  37  false-action  0
+intent:where n= 53  correct   0.0%  reaches  62.3%  wrong   2  forbidden  0  silent   4  false-action  0
+intent:none n=  7  correct  42.9%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  4
+
+ar       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   2  false-action  0
+de       n= 49  correct  34.7%  reaches  69.4%  wrong   2  forbidden  0  silent   1  false-action  2
+en       n= 68  correct  32.4%  reaches  54.4%  wrong   1  forbidden  0  silent   1  false-action  2
+es       n= 13  correct   7.7%  reaches   0.0%  wrong   0  forbidden  0  silent  11  false-action  0
+fr       n=  8  correct  12.5%  reaches  12.5%  wrong   0  forbidden  0  silent   4  false-action  0
+pl       n=  3  correct  33.3%  reaches  33.3%  wrong   0  forbidden  0  silent   2  false-action  0
+pt       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   2  false-action  0
+ru       n=  3  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   3  false-action  0
+sr       n= 15  correct   6.7%  reaches   0.0%  wrong   0  forbidden  0  silent  11  false-action  0
+tr       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   2  false-action  0
+zh       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   2  false-action  0
+
+Failures:
+     silent                       prod.news-to-cart.sr.1       "najnovije vesti otvori ekran" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       prod.news-unknown.sr.1       "najnovije vesti" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     clarified_with_right_option  prod.all-news.en.1           "open all news" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY]  expect∈[HOME.NEWS_ALL|HOME.OVERVIEW]
+     clarified_with_right_option  prod.news-feed.en.1          "open the news feed all news" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY]  expect∈[HOME.NEWS_ALL|HOME.OVERVIEW]
+     clarified_with_right_option  prod.news-screen.en.1        "news screen news feed" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     clarified_with_right_option  prod.vitana-index.sr.1       "Vitana indeks" → clarify[HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     clarified_with_right_option  news.en.2                    "Where can I read the longevity news?" → clarify[NEWS.DETAIL|HOME.OVERVIEW|HOME.NEWS_ALL]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     clarified_with_right_option  news.de.2                    "Wo finde ich die Neuigkeiten?" → clarify[HOME.OVERVIEW|HOME.NEWS_COMMUNITY|HEALTH.SERVICES_HUB]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.es.1                    "Muéstrame las últimas noticias" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.fr.1                    "Montre-moi les dernières actualités" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.sr.1                    "Pokaži mi najnovije vesti" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.pl.1                    "Pokaż mi najnowsze wiadomości o długowieczności" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.pt.1                    "Mostra-me as últimas notícias" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.ru.1                    "Покажи последние новости" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.tr.1                    "Bana son haberleri göster" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.ar.1                    "اعرض لي آخر الأخبار" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     silent                       news.zh.1                    "给我看最新的新闻" → none:-  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+     clarified_with_right_option  messages.en.1                "Open my messages" → clarify[INBOX.ARCHIVED|MESSAGES.OVERVIEW|INBOX.OVERVIEW]  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     clarified_with_right_option  messages.en.2                "Where can I see my messages?" → clarify[INBOX.ARCHIVED|MESSAGES.OVERVIEW|DISCOVER.MARKETPLACE]  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     clarified_with_right_option  messages.de.1                "Öffne meine Nachrichten" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|MESSAGES.OVERVIEW]  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     clarified_with_right_option  messages.de.2                "Wo sehe ich meine Chats?" → clarify[INTENTS.BOARD|INBOX.OVERVIEW]  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.es.1                "Abre mis mensajes" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     clarified_with_right_option  messages.fr.1                "Ouvre mes messages" → clarify[INBOX.ARCHIVED|MESSAGES.OVERVIEW|INBOX.OVERVIEW]  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.sr.1                "Otvori moje poruke" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.pl.1                "Otwórz moje wiadomości" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.pt.1                "Abre as minhas mensagens" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.ru.1                "Открой мои сообщения" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.tr.1                "Mesajlarımı aç" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.ar.1                "افتح رسائلي" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     silent                       messages.zh.1                "打开我的消息" → none:-  expect∈[INBOX.OVERVIEW|MESSAGES.OVERVIEW]
+     right_screen_wrong_behaviour journey.en.2                 "Where do I see my journey sessions?" → open:AUTOPILOT.MY_JOURNEY  expect∈[AUTOPILOT.MY_JOURNEY]
+     right_screen_wrong_behaviour journey.de.2                 "Wo finde ich meine Reise?" → open:AUTOPILOT.MY_JOURNEY  expect∈[AUTOPILOT.MY_JOURNEY]
+     silent                       journey.es.1                 "Abre mi viaje" → none:-  expect∈[AUTOPILOT.MY_JOURNEY]
+     silent                       journey.fr.1                 "Ouvre mon parcours" → none:-  expect∈[AUTOPILOT.MY_JOURNEY]
+     silent                       journey.sr.1                 "Otvori moje putovanje" → none:-  expect∈[AUTOPILOT.MY_JOURNEY]
+     right_screen_wrong_behaviour index.en.2                   "Where can I see my Vitana Index score?" → open:HEALTH.VITANA_INDEX  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     right_screen_wrong_behaviour index.de.2                   "Wo sehe ich meinen Vitana-Index?" → open:HEALTH.VITANA_INDEX  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     clarified_with_right_option  index.es.1                   "Muéstrame mi Índice Vitana" → clarify[HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     clarified_with_right_option  index.fr.1                   "Montre-moi mon indice Vitana" → clarify[HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     clarified_with_right_option  index.sr.1                   "Pokaži mi moj Vitana indeks" → clarify[HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     silent                       index.ru.1                   "Покажи мой индекс Витана" → none:-  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+     right_screen_wrong_behaviour compass.en.2                 "Where can I see my life goals?" → open:LIFE_COMPASS.OVERLAY  expect∈[LIFE_COMPASS.OVERLAY]
+     silent                       compass.es.1                 "Abre mi brújula de vida" → none:-  expect∈[LIFE_COMPASS.OVERLAY]
+     right_screen_wrong_behaviour biology.en.2                 "Where can I see my blood test results?" → open:HEALTH.BIOMARKER_RESULTS  expect∈[HEALTH.MY_BIOLOGY|HEALTH.BIOMARKER_RESULTS]
+     right_screen_wrong_behaviour biology.de.2                 "Wo sehe ich meine Blutwerte?" → open:HEALTH.MY_BIOLOGY  expect∈[HEALTH.MY_BIOLOGY|HEALTH.BIOMARKER_RESULTS]
+     silent                       biology.es.1                 "¿Dónde veo mis resultados de análisis de sangre?" → none:-  expect∈[HEALTH.MY_BIOLOGY|HEALTH.BIOMARKER_RESULTS]
+     silent                       biology.sr.1                 "Gde mogu da vidim rezultate krvi?" → none:-  expect∈[HEALTH.MY_BIOLOGY|HEALTH.BIOMARKER_RESULTS]
+     clarified_with_right_option  supplements-mine.en.1        "Show my supplements" → clarify[DISCOVER.SUPPLEMENTS|HEALTH.SUPPLEMENTS]  expect∈[HEALTH.SUPPLEMENTS]
+     clarified_with_right_option  supplements-mine.en.2        "Where do I see which supplements I take?" → clarify[DISCOVER.SUPPLEMENTS|HEALTH.SUPPLEMENTS|DISCOVER.MARKETPLACE]  expect∈[HEALTH.SUPPLEMENTS]
+     wrong_screen                 supplements-mine.de.1        "Zeig mir meine Nahrungsergänzungsmittel" → open:DISCOVER.SUPPLEMENTS  expect∈[HEALTH.SUPPLEMENTS]
+     clarified_with_right_option  health-plans.en.1            "Open my health plans" → clarify[HEALTH.PLANS|HEALTH.OVERVIEW|HEALTH.SERVICES_HUB]  expect∈[HEALTH.PLANS]
+     right_screen_wrong_behaviour health-tracker.en.2          "Where do I log my steps?" → open:HEALTH.TRACKER  expect∈[HEALTH.TRACKER]
+     right_screen_wrong_behaviour health-tracker.de.1          "Wo trage ich meine Schritte ein?" → open:HEALTH.TRACKER  expect∈[HEALTH.TRACKER]
+     right_screen_wrong_behaviour diary.en.2                   "Where can I write my daily diary?" → open:MEMORY.DIARY  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+     right_screen_wrong_behaviour diary.de.2                   "Wo schreibe ich mein Tagebuch?" → open:MEMORY.DIARY  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+     silent                       diary.es.1                   "Abre mi diario" → none:-  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+     silent                       diary.sr.1                   "Otvori moj dnevnik" → none:-  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+     wrong_screen                 memory.en.2                  "Where can I see what you remember about me?" → open:MEMORY.PERMISSIONS  expect∈[MEMORY.OVERVIEW|MEMORY.TIMELINE|MEMORY.RECALL]
+     silent                       memory.de.1                  "Öffne meinen Erinnerungsgarten" → none:-  expect∈[MEMORY.OVERVIEW|MEMORY.TIMELINE|MEMORY.RECALL]
+     clarified_with_right_option  calendar.en.1                "Open my calendar" → clarify[CONNECTORS.PRODUCTIVITY|CALENDAR.OVERVIEW|AUTOPILOT.MY_JOURNEY]  expect∈[CALENDAR.OVERVIEW]
+     right_screen_wrong_behaviour calendar.en.2                "Where can I see my appointments?" → open:CALENDAR.OVERVIEW  expect∈[CALENDAR.OVERVIEW]
+     clarified_with_right_option  calendar.de.1                "Öffne meinen Kalender" → clarify[CONNECTORS.PRODUCTIVITY|CALENDAR.OVERVIEW|AUTOPILOT.MY_JOURNEY]  expect∈[CALENDAR.OVERVIEW]
+     right_screen_wrong_behaviour calendar.de.2                "Wo sehe ich meine Termine?" → open:CALENDAR.OVERVIEW  expect∈[CALENDAR.OVERVIEW]
+     silent                       calendar.es.1                "Abre mi calendario" → none:-  expect∈[CALENDAR.OVERVIEW]
+     silent                       calendar.fr.1                "Ouvre mon calendrier" → none:-  expect∈[CALENDAR.OVERVIEW]
+     silent                       calendar.sr.1                "Otvori moj kalendar" → none:-  expect∈[CALENDAR.OVERVIEW]
+     clarified_with_right_option  reminders.en.1               "Show my reminders" → clarify[INBOX.REMINDERS|REMINDERS.OVERVIEW]  expect∈[REMINDERS.OVERVIEW|INBOX.REMINDERS]
+     clarified_with_right_option  events.en.1                  "Show me community events" → clarify[COMM.EVENTS|COMM.EVENTS_HOT|COMM.FEED]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     clarified_with_right_option  events.en.2                  "Where can I find meetups near me?" → clarify[COMM.EVENTS|COMM.FIND_PARTNER|COMM.EVENTS_UPCOMING]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     clarified_with_right_option  events.de.1                  "Zeig mir Community-Events" → clarify[COMM.EVENTS|COMM.EVENTS_HOT|COMM.FEED]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     right_screen_wrong_behaviour events.de.2                  "Wo finde ich Treffen?" → open:COMM.EVENTS  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     silent                       events.es.1                  "Muéstrame los eventos" → none:-  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     silent                       events.fr.1                  "Montre-moi les événements" → none:-  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     silent                       events.sr.1                  "Pokaži mi događaje" → none:-  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+     clarified_with_right_option  live-rooms.en.2              "Where can I join a live session?" → clarify[COMM.LIVE_ROOMS_PAST|AUTH.MAXINA_PORTAL|COMM.LIVE_ROOMS]  expect∈[COMM.LIVE_ROOMS|COMM.LIVE_ROOMS_LIVE|COMM.LIVE_ROOMS_ALL]
+     clarified_with_right_option  live-rooms.de.1              "Öffne die Live-Räume" → clarify[COMM.LIVE_ROOMS|COMM.LIVE_ROOMS_LIVE|COMM.LIVE_ROOMS_SCHEDULED]  expect∈[COMM.LIVE_ROOMS|COMM.LIVE_ROOMS_LIVE|COMM.LIVE_ROOMS_ALL]
+     silent                       groups.es.1                  "Muéstrame los grupos" → none:-  expect∈[COMM.GROUPS]
+     silent                       members.en.2                 "Where can I see who else is in the community?" → clarify[INTENTS.BOARD|COMM.FEED|AUTH.MAXINA_PORTAL]  expect∈[COMM.MEMBERS]
+     clarified_with_right_option  matches.en.1                 "Show me my matches" → clarify[COMM.FIND_PARTNER_MATCHES|HOME.MATCHES|COMM.FIND_PARTNER]  expect∈[HOME.MATCHES|COMM.FIND_PARTNER_MATCHES]
+     right_screen_wrong_behaviour find-partner.en.1            "Where can I find a training partner?" → open:COMM.FIND_PARTNER  expect∈[COMM.FIND_PARTNER|COMM.FIND_PARTNER_BOARD]
+     right_screen_wrong_behaviour find-partner.de.1            "Wo finde ich einen Trainingspartner?" → open:COMM.FIND_PARTNER_BOARD  expect∈[COMM.FIND_PARTNER|COMM.FIND_PARTNER_BOARD]
+     right_screen_wrong_behaviour media.en.2                   "Where can I listen to podcasts?" → open:COMM.MEDIA_PODCASTS  expect∈[COMM.MEDIA_HUB|COMM.MEDIA_PODCASTS|COMM.MEDIA_SHORTS|COMM.MEDIA_MUSIC]
+     right_screen_wrong_behaviour media.de.1                   "Wo kann ich Podcasts hören?" → open:COMM.MEDIA_PODCASTS  expect∈[COMM.MEDIA_HUB|COMM.MEDIA_PODCASTS|COMM.MEDIA_SHORTS|COMM.MEDIA_MUSIC]
+     silent                       cart.sr.1                    "Otvori moju korpu" → none:-  expect∈[DISCOVER.CART]
+     clarified_with_right_option  orders.en.1                  "Show my orders" → clarify[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]  expect∈[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]
+     clarified_with_right_option  orders.en.2                  "Where can I track my order?" → clarify[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]  expect∈[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]
+     clarified_with_right_option  orders.de.1                  "Zeig mir meine Bestellungen" → clarify[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]  expect∈[DISCOVER.ORDERS|DISCOVER.ORDERS_ACTIVE|DISCOVER.ORDERS_HISTORY]
+     right_screen_wrong_behaviour shop-supplements.en.1        "Where can I buy supplements?" → open:DISCOVER.SUPPLEMENTS  expect∈[DISCOVER.SUPPLEMENTS]
+     right_screen_wrong_behaviour shop-supplements.de.1        "Wo kann ich Nahrungsergänzungsmittel kaufen?" → open:DISCOVER.SUPPLEMENTS  expect∈[DISCOVER.SUPPLEMENTS]
+     right_screen_wrong_behaviour doctors.en.1                 "Where can I find a doctor or a coach?" → open:DISCOVER.DOCTORS_COACHES  expect∈[DISCOVER.DOCTORS_COACHES]
+     right_screen_wrong_behaviour doctors.de.1                 "Wo finde ich einen Arzt oder Coach?" → open:DISCOVER.DOCTORS_COACHES  expect∈[DISCOVER.DOCTORS_COACHES]
+     clarified_with_right_option  wallet.en.1                  "Open my wallet" → clarify[WALLET.OVERVIEW|WALLET.ACTIVITY|WALLET.ACTIONS]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     clarified_with_right_option  wallet.en.2                  "Where can I see my balance?" → clarify[WALLET.OVERVIEW|WALLET.BALANCE|DISCOVER.MARKETPLACE]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     clarified_with_right_option  wallet.de.1                  "Öffne meine Wallet" → clarify[WALLET.OVERVIEW|WALLET.ACTIVITY|WALLET.ACTIONS]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     right_screen_wrong_behaviour wallet.de.2                  "Wo sehe ich mein Guthaben?" → open:WALLET.BALANCE  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     silent                       wallet.es.1                  "Abre mi billetera" → none:-  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     silent                       wallet.sr.1                  "Otvori moj novčanik" → none:-  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+     clarified_with_right_option  subscriptions.en.1           "Where can I see my subscription?" → clarify[WALLET.OVERVIEW|WALLET.SUBSCRIPTIONS|DISCOVER.MARKETPLACE]  expect∈[WALLET.SUBSCRIPTIONS|SETTINGS.BILLING_PLAN]
+     wrong_screen                 subscriptions.de.1           "Wo sehe ich mein Abo?" → open:SETTINGS.BILLING  expect∈[WALLET.SUBSCRIPTIONS|SETTINGS.BILLING_PLAN]
+     clarified_with_right_option  rewards.en.1                 "Where can I see my rewards?" → clarify[WALLET.REWARDS|WALLET.OVERVIEW|DISCOVER.MARKETPLACE]  expect∈[WALLET.REWARDS]
+     clarified_with_right_option  profile.en.1                 "Open my profile" → clarify[PROFILE.ME|DISCOVER.PROVIDER_PROFILE|PROFILE.PRIVACY]  expect∈[PROFILE.ME]
+     clarified_with_right_option  profile.en.2                 "Where can I change my profile picture?" → clarify[PROFILE.ME|DISCOVER.PROVIDER_PROFILE|PROFILE.PRIVACY]  expect∈[PROFILE.ME]
+     clarified_with_right_option  profile.de.1                 "Öffne mein Profil" → clarify[PROFILE.ME|PROFILE.PRIVACY|PROFILE.PUBLIC]  expect∈[PROFILE.ME]
+     silent                       profile.es.1                 "Abre mi perfil" → none:-  expect∈[PROFILE.ME]
+     clarified_with_right_option  profile.fr.1                 "Ouvre mon profil" → clarify[COMM.MEMBERS|PROFILE.ME|DISCOVER.PROVIDER_PROFILE]  expect∈[PROFILE.ME]
+     clarified_with_right_option  profile.sr.1                 "Otvori moj profil" → clarify[COMM.MEMBERS|PROFILE.ME|DISCOVER.PROVIDER_PROFILE]  expect∈[PROFILE.ME]
+     clarified_with_right_option  settings.en.1                "Open settings" → clarify[SETTINGS.OVERVIEW|SETTINGS.PRIVACY|SETTINGS.AUTOPILOT]  expect∈[SETTINGS.OVERVIEW]
+     clarified_with_right_option  settings.de.1                "Öffne die Einstellungen" → clarify[SETTINGS.OVERVIEW|SETTINGS.AUTOPILOT|SETTINGS.PREFERENCES]  expect∈[SETTINGS.OVERVIEW]
+     right_screen_wrong_behaviour notifications.en.1           "Where can I turn off notifications?" → open:SETTINGS.NOTIFICATIONS  expect∈[SETTINGS.NOTIFICATIONS]
+     right_screen_wrong_behaviour notifications.de.1           "Wo schalte ich Benachrichtigungen aus?" → open:SETTINGS.NOTIFICATIONS  expect∈[SETTINGS.NOTIFICATIONS]
+     clarified_with_right_option  language.en.1                "Where can I change the app language?" → clarify[SETTINGS.PREFERENCES_LANGUAGE|SETTINGS.CONNECTED_APPS|SETTINGS.PREFERENCES]  expect∈[SETTINGS.PREFERENCES_LANGUAGE|SETTINGS.PREFERENCES]
+     right_screen_wrong_behaviour language.de.1                "Wo ändere ich die Sprache?" → open:SETTINGS.PREFERENCES_LANGUAGE  expect∈[SETTINGS.PREFERENCES_LANGUAGE|SETTINGS.PREFERENCES]
+     right_screen_wrong_behaviour billing.en.1                 "Where can I download my invoices?" → open:SETTINGS.BILLING_INVOICES  expect∈[SETTINGS.BILLING|SETTINGS.BILLING_INVOICES]
+     right_screen_wrong_behaviour billing.de.1                 "Wo finde ich meine Rechnungen?" → open:SETTINGS.BILLING_INVOICES  expect∈[SETTINGS.BILLING|SETTINGS.BILLING_INVOICES]
+     right_screen_wrong_behaviour support.en.1                 "Where can I contact support?" → open:SETTINGS.SUPPORT_CONTACT  expect∈[SETTINGS.SUPPORT|SETTINGS.SUPPORT_CONTACT|SETTINGS.SUPPORT_FAQ]
+     right_screen_wrong_behaviour support.de.1                 "Wo erreiche ich den Support?" → open:SETTINGS.SUPPORT_CONTACT  expect∈[SETTINGS.SUPPORT|SETTINGS.SUPPORT_CONTACT|SETTINGS.SUPPORT_FAQ]
+     right_screen_wrong_behaviour connectors.en.1              "Where can I connect my fitness tracker?" → open:CONNECTORS.FITNESS  expect∈[SETTINGS.CONNECTED_APPS|CONNECTORS.FITNESS|CONNECTORS.HEALTH]
+     right_screen_wrong_behaviour connectors.de.1              "Wo verbinde ich meine Fitness-App?" → open:CONNECTORS.FITNESS  expect∈[SETTINGS.CONNECTED_APPS|CONNECTORS.FITNESS|CONNECTORS.HEALTH]
+     clarified_with_right_option  voice-settings.en.1          "Where can I change Vitana's voice?" → clarify[SETTINGS.VOICE_AI|HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA]  expect∈[SETTINGS.VOICE_AI]
+     right_screen_wrong_behaviour earnings.en.1                "Where can I see how much I earned?" → open:WALLET.REWARDS  expect∈[BUSINESS.INSIGHTS_EARNINGS|BUSINESS.ANALYTICS|WALLET.REWARDS]
+     false_action                 none.en.1                    "How are you today?" → open:COMM.EVENTS_TODAY  expect∈[]
+     false_action                 none.en.3                    "What is a good breakfast for longevity?" → open:HOME.OVERVIEW  expect∈[]
+     false_action                 none.de.1                    "Wie geht es dir?" → open:BUSINESS.SELL_EARN  expect∈[]
+     false_action                 none.de.2                    "Was ist gut für meinen Schlaf?" → open:HEALTH.VITANA_INDEX  expect∈[]
+
+
+PASS test/nav-golden/nav-golden-baseline.test.ts
+  VTID-04496 golden navigation set — legacy navigator baseline
+✓ evaluates every golden case (2 ms)
+✓ does not regress below the recorded baseline (1 ms)
+
+✅ Test setup loaded - fetch mocked, env vars set
+
+
+PASS test/nav-golden/golden-set.integrity.test.ts
+  VTID-04496 golden navigation set — integrity
+✓ has unique case ids (1 ms)
+✓ only names screens that exist in the catalog (1 ms)
+✓ never expects and forbids the same screen
+✓ gives navigation cases at least one acceptable screen and non-navigation cases none (1 ms)
+✓ covers every shipped locale with at least one explicit "open" request
+✓ keeps every production failure as a permanent case (1 ms)
+
+Test Suites: 2 passed, 2 total

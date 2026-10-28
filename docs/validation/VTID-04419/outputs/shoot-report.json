@@ -1,0 +1,84 @@
+{
+ "tag": "desktop",
+ "report": [
+  {
+   "name": "simulator",
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 221 KB · 249 dropped · nova_sonic",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  },
+  {
+   "name": "journey-context",
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 221 KB · 249 dropped · nova_sonic",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  }
+ ],
+ "errors": []
+}
+{
+ "tag": "mobile",
+ "report": [
+  {
+   "name": "simulator",
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 221 KB · 249 dropped · nova_sonic",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  },
+  {
+   "name": "journey-context",
+   "tiles": [
+    "BUILDER | not recorded | built in 5 ms",
+    "CONTEXT AT SETUP | 0 chars | source: unknown",
+    "CONTEXT WAIT | timed out | waited 300 ms",
+    "STORED SNAPSHOT | not used",
+    "RECONNECT REBUILDS | 0",
+    "TOOL CATALOG | 64 KB | from 221 KB · 249 dropped · nova_sonic",
+    "ERRORS | 1 | watchdog_fired",
+    "FIRST SPEECH | 2.9 s | session open → first model audio",
+    "REPLY SPEED | t1 12.7 s · t2 16.7 s | first model audio after each user turn",
+    "ENDED | stopped | no reason recorded · 3 turn(s) · 163 s",
+    "FINALIZED | no"
+   ],
+   "warn": 4,
+   "horizontalOverflow": false
+  }
+ ],
+ "errors": []
+}

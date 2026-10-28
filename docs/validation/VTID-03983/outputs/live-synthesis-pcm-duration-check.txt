@@ -1,0 +1,5 @@
+pcm bytes: 57862
+implied duration at 16kHz 16-bit mono: 1.81s
+implied duration at 44.1kHz 16-bit mono: 0.66s
+mp3 duration (128kbps, 29256 bytes): 1.83s
+conclusion: PCM at 16kHz (1.81s) matches mp3 duration (1.83s) far more closely than 44.1kHz would (0.66s) -- Fish honors the requested sample_rate=16000.

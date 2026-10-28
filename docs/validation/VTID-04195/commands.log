@@ -1,0 +1,32 @@
+VTID-04195 — commands log
+
+1. Investigated live failures via read-only Supabase queries (vtid_ledger,
+   oasis_events) for VTID-04138/04139/04140/04141 — the batch's real
+   terminal failures reported by the platform owner. Found VTID-04141
+   (120-turn cap, all-search_text exhaustion) and VTID-04139 (3x
+   text-only completion at the 8000-token cap, large input context) both
+   consistent with unindexed navigation of command-hub/*.js.
+
+2. grep -rln "command-hub-symbol-index" services/gateway/src
+   -> zero hits. The generator (VTID-04085/PR #3440) exists but nothing
+   in the agent's prompt tells it to use it.
+
+3. cat services/gateway/src/services/autopilot-agent/agent-prompt.ts
+   -> confirmed `conventions` is injected verbatim into every agent
+   system prompt, sourced from context-loader.ts's loadAutopilotContext().
+
+4. Edited services/gateway/src/services/dev-autopilot/context-loader.ts:
+   added a "## Command Hub navigation" section to CONVENTIONS, between
+   the antipattern table and "## When in doubt".
+
+5. Edited services/gateway/test/services/dev-autopilot/context-loader.test.ts:
+   added 2 new tests (section present + correct ordering).
+
+6. cd services/gateway && npx jest test/services/dev-autopilot/context-loader.test.ts --silent
+   -> 12/12 passing (10 pre-existing unmodified + 2 new).
+
+7. cd services/gateway && npx tsc --noEmit
+   -> clean, no output, exit 0.
+
+8. grep -rln "loadAutopilotContext|CONVENTIONS" test/ --include="*.ts" | grep -v context-loader.test.ts
+   -> no other test depends on this string's exact content/length.

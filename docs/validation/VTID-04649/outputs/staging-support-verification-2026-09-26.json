@@ -1,0 +1,266 @@
+{
+  "build": "12135be2d063272119db29731c27a8c0b7ab4666",
+  "app_version": "b76efab3d283",
+  "pass": 43,
+  "fail": 0,
+  "results": [
+    {
+      "vtid": "-",
+      "name": "gateway staging env + commit",
+      "ok": true,
+      "detail": "env=staging commit=12135be2d063"
+    },
+    {
+      "vtid": "VTID-04359",
+      "name": "GET /feedback/tickets/mine requires login",
+      "ok": true,
+      "detail": "401 application/json"
+    },
+    {
+      "vtid": "VTID-04306",
+      "name": "POST /feedback/tickets requires login",
+      "ok": true,
+      "detail": "401 application/json"
+    },
+    {
+      "vtid": "VTID-04312",
+      "name": "POST /feedback/tickets/:id/confirm requires login",
+      "ok": true,
+      "detail": "401 application/json"
+    },
+    {
+      "vtid": "VTID-04312",
+      "name": "POST /feedback/tickets/:id/reopen requires login",
+      "ok": true,
+      "detail": "401 application/json"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/tickets refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/tickets refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/tickets/:id refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/tickets/:id refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/handoffs/recent refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/handoffs/recent refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/kpis refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "GET /api/v1/admin/feedback/kpis refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/approve refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/approve refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/draft-spec refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/draft-spec refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/resolve refuses no token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04307",
+      "name": "POST /api/v1/admin/feedback/tickets/:id/resolve refuses forged admin token",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04309",
+      "name": "GET /operator/threads requires login",
+      "ok": true,
+      "detail": "401"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "ORB health 200 JSON",
+      "ok": true,
+      "detail": "{\"ok\":true,\"service\":\"orb-live\",\"vtid\":[\"DEV-COMHU-2025-0014\",\"VTID-0135\",\"VTID-01039\",\"VTID-01106\",\"VTID-01107\",\"VTID-01113\",\"VTID-01118\",\"VTID-01155\",\"VTID-01"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for en is female",
+      "ok": true,
+      "detail": "status=200 voice=Joanna bytes=5723"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for de is female",
+      "ok": true,
+      "detail": "status=200 voice=Vicki bytes=5914"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for fr is female",
+      "ok": true,
+      "detail": "status=200 voice=Lea bytes=4952"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for es is female",
+      "ok": true,
+      "detail": "status=200 voice=Lucia bytes=5338"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for pt is female",
+      "ok": true,
+      "detail": "status=200 voice=Camila bytes=6491"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for pl is female",
+      "ok": true,
+      "detail": "status=200 voice=Ola bytes=6488"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for ru is female",
+      "ok": true,
+      "detail": "status=200 voice=Tatyana bytes=3612"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for zh is female",
+      "ok": true,
+      "detail": "status=200 voice=Zhiyu bytes=5914"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for ar is female",
+      "ok": true,
+      "detail": "status=200 voice=Hala bytes=6297"
+    },
+    {
+      "vtid": "VTID-04445",
+      "name": "Vitana TTS voice for tr is female",
+      "ok": true,
+      "detail": "status=200 voice=Burcu bytes=6106"
+    },
+    {
+      "vtid": "VTID-04334",
+      "name": "Command Hub app.js renders the FB → VTID chain (inbox VTID column)",
+      "ok": true,
+      "detail": "app.js?v=20261014-vtid-04626"
+    },
+    {
+      "vtid": "VTID-04334",
+      "name": "Command Hub app.js links Autopilot rows back to the member ticket",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04385",
+      "name": "ORB widget handles support_ticket_filed frame",
+      "ok": true,
+      "detail": "orb-widget.js?v=20260925-vtid-04587-thinking"
+    },
+    {
+      "vtid": "VTID-04430",
+      "name": "ORB widget reads the vitana-app-version meta",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04430",
+      "name": "community app stamps its build commit",
+      "ok": true,
+      "detail": "app_version=b76efab3d283"
+    },
+    {
+      "vtid": "-",
+      "name": "community app bundle fetched",
+      "ok": true,
+      "detail": "607 chunks"
+    },
+    {
+      "vtid": "VTID-04335",
+      "name": "member ticket list reads /feedback/tickets/mine",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04385",
+      "name": "app listens for the spoken-report ticket event",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04395",
+      "name": "Support \"report by voice\" opens the ORB in support mode",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04398",
+      "name": "no dead GCP gateway host in the bundle",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04398",
+      "name": "bundle points at the staging gateway",
+      "ok": true,
+      "detail": ""
+    },
+    {
+      "vtid": "VTID-04360",
+      "name": "retired NewTicketPopup is gone",
+      "ok": true,
+      "detail": ""
+    }
+  ]
+}

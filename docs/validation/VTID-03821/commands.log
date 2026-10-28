@@ -1,0 +1,93 @@
+VTID-03821 — commands.log
+==========================
+
+## Research (background agent) before writing any code
+
+Traced every existing execution-observability surface to avoid duplicating
+any of it:
+- services/gateway/src/frontend/command-hub/app.js:15277
+  renderAgentsPipelinesView (VTID-01174 "Agents Control Plane v2 -
+  Pipelines") — ALREADY reads vtid_ledger + oasis_events
+  (routes/oasis-vtid-ledger.ts) and renders a per-VTID stage ribbon +
+  expandable OASIS event trace timeline (renderPipelineTraceView,
+  app.js:15173-15271). No dev_autopilot_executions read anywhere, no
+  provider/model concept — but a real, working execution trace UI already
+  exists. Do not rebuild it.
+- app.js:9169 getEventsForVtid(vtid) + app.js:9190 renderTaskEventHistory —
+  the Tasks board drawer ALREADY renders a live "OASIS Event Tracking"
+  panel (last 5 events) filtered by the task's own vtid, fed from
+  fetchOasisEvents() polling /api/v1/oasis/events. Confirmed: this is
+  populated purely from state.events, i.e. whatever OASIS events carry
+  that vtid — no separate query needed for a new event type to show up.
+- routes/tasks.ts:322-402 (execution-status route the board polls) and
+  routes/oasis-vtid-ledger.ts both read vtid_ledger + oasis_events ONLY —
+  neither ever queries dev_autopilot_executions or autopilot_recommendations.
+  Confirmed via grep: zero references to either table in app.js.
+
+## The actual gap found (not assumed — read the real code)
+
+services/gateway/src/services/llm-telemetry-service.ts's startLLMCall()
+emits `llm.call.started/completed/failed` OASIS events carrying
+{vtid, service, stage, provider, model, latency_ms} — exactly "which LLM
+served this run", already queryable via queryLLMTelemetry(). This is the
+existing mechanism VTID-03820's own DeepSeek override already flows
+through (callViaRouter -> runProviderCall -> startLLMCall).
+
+But dev-autopilot-execute.ts's runExecutionSession() tagged EVERY such
+call — self-healing-triggered executions too, not just VTID-03820's
+on-ramp — with a SYNTHETIC per-execution id, `VTID-DA-${executionId.slice(0,8)}`
+(confirmed at the callMessagesApi call site and the runWorkerTask
+vtid_like field), never `autopilot_recommendations.activated_vtid` (the
+REAL task vtid a human sees on the board/drawer, and the one
+getEventsForVtid()/the Pipelines trace view actually filter by).
+Result: this telemetry has been invisible on every dev-autopilot
+execution's own task, for as long as this code has existed — not a defect
+introduced by VTID-03820, but the exact synthetic-id trap VTID-03820's own
+metadata plumbing made newly worth fixing (its DeepSeek override is only
+observable if the telemetry carrying provider=deepseek is actually
+visible where a human looks).
+
+## Fix
+
+dev-autopilot-execute.ts: the existing, UNCONDITIONAL findingMetaR query
+(already fetches spec_snapshot for scanner-based lesson lookup — no new
+round trip) now also selects `activated_vtid`. New `telemetryVtid` =
+activated_vtid if present, else the synthetic id (never blank — a finding
+missing activated_vtid, e.g. very old rows, still gets tagged with
+something). Both LLM-invocation call sites (the direct callMessagesApi
+path and the worker-queue runWorkerTask path's vtid_like field) now use
+telemetryVtid instead of the always-synthetic id.
+
+No new UI, no new backend route, no new table/column — the fix is purely
+"tag the existing telemetry event with the vtid the existing UI already
+filters by." Provider/model already show 'deepseek'/'deepseek-flash' for
+on-ramp-triggered calls (set by VTID-03820's override) vs. the self-healing
+pipeline's own bedrock/anthropic values — no separate on-ramp flag needed,
+the existing fields already distinguish them once actually visible.
+
+## Verification
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit.txt: clean
+
+$ npx jest test/vtid-03821-execution-telemetry-vtid.test.ts test/vtid-03820-execution-onramp-metadata.test.ts --silent=false
+-> outputs/jest-vtid-03821-filter.txt: 2/2 suites, 15/15 tests passing
+   (the VTID-03820 sibling suite is included because one of its own
+   assertions had to be updated — it pinned the exact old call-site
+   literal this VTID's fix intentionally changes)
+
+$ npx jest --silent=false   # full suite
+-> outputs/jest-full-suite.txt (tail): 749/750 suites (1 pre-existing skip),
+   13,758/13,793 tests passing, 0 failures, exit code 0
+   (baseline was 748/749 after VTID-03820; the +1 net suite is the new
+   vtid-03821 test file)
+
+## Deliberately not run
+
+No live dev-autopilot execution was run against the real repo to observe
+the fixed telemetry landing under a real VTID's OASIS event stream — doing
+so would require actually triggering a Dev Autopilot execution (self-heal
+or on-ramp), which this session has no standing approval to do outside the
+already-shipped, default-OFF on-ramp. The fix is a source-level identifier
+change verified by direct code reading + the regression tests above, not
+by a live observation.

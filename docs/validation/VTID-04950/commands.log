@@ -1,0 +1,6 @@
+$ (services/gateway) npm run build            -> exit 0
+$ (services/gateway) npx tsc --noEmit         -> exit 0, 0 errors
+$ (services/gateway) npx eslint 'src/**/*.ts' -> exit 2 "ESLint couldn't find a configuration file" (why the lint step is removed)
+$ node --test scripts/ci/pr-gate/__tests__/*.test.mjs -> 15 pass, 0 fail
+$ mutation: sed 's/id: roll$/id: rollx/' AWS-PROD-DEPLOY-ORB-AGENT.yml; npx jest test/vtid-04950-... -> 1 failed, 13 passed; restored -> 14 passed
+$ red->green proof (throwaway branch, kind fix, Jest): "13 test(s) fail on the base commit and the full suite passes on head (2 file(s))"

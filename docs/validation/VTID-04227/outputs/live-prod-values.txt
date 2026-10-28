@@ -1,0 +1,37 @@
+# live values 2026-09-21 (read-only)
+== vitana-gateway-awsdr
+{
+    "rev": 114,
+    "vals": [
+        {
+            "name": "DEV_AUTOPILOT_JOB_CLOUD",
+            "value": "aws"
+        },
+        {
+            "name": "DEV_AUTOPILOT_EXECUTOR_ENABLED",
+            "value": "false"
+        }
+    ]
+}
+== vitana-gateway
+{
+    "rev": 489,
+    "vals": [
+        {
+            "name": "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+            "value": "true"
+        },
+        {
+            "name": "DEV_AUTOPILOT_JOB_CLOUD",
+            "value": "aws"
+        },
+        {
+            "name": "DEV_AUTOPILOT_WATCHER_LIVE",
+            "value": "true"
+        },
+        {
+            "name": "DEV_AUTOPILOT_USE_JOB",
+            "value": "true"
+        }
+    ]
+}

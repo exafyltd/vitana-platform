@@ -1,0 +1,29 @@
+# VTID-04444 — commands run (2026-09-23)
+
+# Allocation (gateway) + ledger row (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"conversation-brain"}'
+  -> {"ok":true,"vtid":"VTID-04444"}
+UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-04444'
+
+# Read-only checks against the live project
+select count(*) ... from memory_diary_entries  -> total 1, last 14 d 0, users 1
+select count(*) ... from diary_entries         -> total 273, last 14 d 2, users 22
+select ... from consolidator_runs              -> 2 runs, both admin, 2026-04-29; consolidator_enabled = true
+information_schema.columns for user_assistant_state -> count default 0, source nullable
+
+# Build / tests (services/gateway)
+npx tsc --noEmit -p .                                         -> clean
+CI=true node node_modules/.bin/jest --ci test/services/memory/diary-theme-rollup.test.ts test/vtid-04444-consolidator-diary-loop.test.ts test/services/user-model-synthesis.test.ts test/vtid-04352-eventbridge-only-filter.test.ts test/vtid-04226-eventbridge-test-contract-schedules.test.ts test/vtid-04349-automation-shadow.test.ts
+  -> all green after updating the pinned job counts (29 -> 30 jobs, 20 -> 21 AP jobs) and the shadow-unsafe list (+ runDiaryThemeRollup)
+node scripts/generate-command-hub-symbol-index.mjs            -> regenerated
+node --check src/frontend/command-hub/app.js                  -> ok
+
+# Repo root
+node scripts/ci/validator-path-guard.cjs --csp-added-lines    -> no CSP pattern hits in added lines
+node scripts/ci/dev-autopilot-impact-scan.mjs                 -> 0 blockers; 1 warning (HARNESS_URL in the docs harness, defaulted); findings file deleted
+
+# Visual check (harness, synthetic stamps only, nothing live)
+PORT=18531 node docs/validation/VTID-04444/outputs/harness-server.js
+HARNESS_URL=http://127.0.0.1:18531 node docs/validation/VTID-04444/outputs/harness-shoot.js
+  -> desktop 1400x900 + mobile 390x844, horizontalOverflow=false, errors=[]
+full suite: Test Suites 1182 passed (1 skipped); Tests 19000 passed, 0 failed; Snapshots 51 passed

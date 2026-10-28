@@ -1,0 +1,25 @@
+# VTID-04147 — commands run by the Dev Autopilot executor (agent executor, VTID-04006)
+
+# 2026-09-20T20:56:22.462Z
+# execution_id=23fb6c21-0e1c-436d-87d7-49a6a595205c finding_id=2be9cc9b-b5ca-4837-9cc6-dd58a30586d6 plan_version=1
+# branch=dev-autopilot/23fb6c21 base=main
+# llm provider=deepseek model=deepseek-flash
+
+# agent turns=117 fix_rounds=0 checks_refused_by_guard=0 fallback_used=false
+
+$ git clone --depth 1 --branch main <repo> && git checkout -b dev-autopilot/23fb6c21
+$ ln -s /app/node_modules services/gateway/node_modules   # image toolchain, no npm ci
+$ autopilot-agent: tool loop on callViaRouter('worker') — read_file / search_text / find_files / edit_file / write_file / run_check(tsc|jest|node_check|git_diff|git_status) / finish
+$ autopilot-agent: run_check refuses a check that already failed since the last edit (VTID-04016)
+$ autopilot-agent: git status --porcelain → changed files; scope check against dev_autopilot_config allow/deny globs; test-coverage rule
+$ node --max-old-space-size=<AGENT_CHECK_HEAP_MB> node_modules/.bin/tsc --noEmit -p tsconfig.json --preserveSymlinks   # runner, services/gateway
+$ npx jest <test file(s) paired to the changed files>   # runner, per project
+# a failing runner check is fed back into the same transcript for at most AGENT_MAX_FIX_ROUNDS rounds
+$ git add services/gateway/src/frontend/command-hub/app.js   # modify
+$ git add services/gateway/src/frontend/command-hub/index.html   # modify
+$ git add services/gateway/test/command-hub/vtid-04147-service-health-aria-live.test.ts   # create
+$ dev-autopilot: write docs/validation/VTID-04147/ evidence pack (this file)
+$ git commit && git push origin dev-autopilot/23fb6c21
+$ gh pr create --base main --head dev-autopilot/23fb6c21
+
+# The runner re-ran tsc and the paired jest suites before this PR was opened; the full suite, lint and build run in CI (VALIDATOR-CHECK + Gateway CI).

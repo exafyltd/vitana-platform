@@ -1,0 +1,3 @@
+PASS vtid-04915 community event calendar
+(mutation 1) ERROR:  host, attendee and legacy row all moved (got 0)
+(mutation 2) ERROR:  all entries cancelled on delete

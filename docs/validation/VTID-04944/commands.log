@@ -1,0 +1,13 @@
+$ node scripts/conversation/generate-flag-pins.mjs
+wrote services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
+
+$ cd services/gateway && npx jest test/vtid-04896-prod-reward-sweep-pin.test.ts test/vtid-04897-prod-commerce-mcp-pin.test.ts test/vtid-04899-autopilot-reward-switch.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/vtid-04878-reward-routes.test.ts test/vtid-04878-reward-earning.test.ts
+Test Suites: 6 passed, 6 total
+Tests:       78 passed, 78 total
+
+# mutation: sweep pin reverted to "false"
+$ sed -i 's/{name:"REWARD_SWEEP_ENABLED", value:"true"}/{name:"REWARD_SWEEP_ENABLED", value:"false"}/' .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+$ npx jest test/vtid-04896-prod-reward-sweep-pin.test.ts
+    ✕ pins REWARD_SWEEP_ENABLED to "true" before the task definition is registered
+Tests:       1 failed, 5 passed, 6 total
+# workflow restored

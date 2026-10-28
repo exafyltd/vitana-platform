@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04186",
+  "execution_id": "c7296570-f1d7-4c28-8a58-32783f980e82",
+  "finding_id": "ed8739f9-c415-4f32-87d8-58dd130bb529",
+  "plan_version": 1,
+  "branch": "dev-autopilot/c7296570",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/test/console-task-22-extractfilepaths-empty-heading.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:29:49.412Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

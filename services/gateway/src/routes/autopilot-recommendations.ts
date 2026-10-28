@@ -1,0 +1,2798 @@
+/**
+ * Autopilot Recommendations Routes - VTID-01180 + VTID-01185
+ *
+ * API endpoints for the Autopilot Recommendation popup in Command Hub.
+ * Users can view AI-generated recommendations and activate them to create
+ * VTID task cards with spec snapshots.
+ *
+ * VTID-01180 Endpoints:
+ * - GET /recommendations - List recommendations (filtered by status)
+ * - GET /recommendations/count - Get count for badge
+ * - POST /recommendations/:id/activate - Activate recommendation (creates VTID)
+ * - POST /recommendations/:id/reject - Reject/dismiss recommendation
+ * - POST /recommendations/:id/snooze - Snooze for later
+ *
+ * VTID-01185 Endpoints (Recommendation Engine):
+ * - POST /recommendations/generate - Trigger recommendation generation
+ * - GET /recommendations/sources - Get analyzer source status
+ * - GET /recommendations/history - Get generation run history
+ *
+ * Mounted at: /api/v1/autopilot/recommendations
+ */
+
+import { Router, Request, Response } from 'express';
+import { createHash } from 'crypto';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { claimCappedReward } from '../services/rewards/capped-reward';
+import { generateRecommendations, generatePersonalRecommendations, regenerateCommunityRecommendations, SourceType } from '../services/recommendation-engine';
+import { notifyUserAsync } from '../services/notification-service';
+import { DEFAULT_WAVE_CONFIG, buildTemplateToWaveMap } from '../services/wave-defaults';
+import { derivePillarImpact } from '../services/recommendation-engine/pillar-impact';
+import { evaluateRecAlignment } from '../services/recommendation-engine/alignment-evaluator';
+import { tt, GATEWAY_DEFAULT_LOCALE, type GatewayLocale } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
+import { optionalAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './autopilot-recommendations-repository';
+// VTID-04108: widened from a hardcoded dev_autopilot/dev_autopilot_impact
+// check to the shared manual-activation allowlist (adds community/health)
+// - kept in sync with what bridgeActivationToExecution() itself accepts.
+import { isManuallyBridgeableSourceType } from '../services/autopilot-executable-source-types';
+import { completeCalendarEntriesForSource } from '../services/calendar-producers';
+import { resolveLineupRole } from '../services/community-autopilot/lineup-role';
+import {
+  parseAction,
+  checkActionPolicy,
+  defaultActionForTemplate,
+  executeRecommendationAction,
+  type ActionChannel,
+  type ActionOutcome,
+  type RecommendationAction,
+} from '../services/community-autopilot/action-registry';
+import { capOpenLineup } from '../services/community-autopilot/lineup-cap';
+import { applyDeveloperQualityListing } from '../services/recommendation-quality/listing';
+import {
+  buildDismissRecord,
+  DISMISS_REASON_CODES,
+  isDismissReasonCode,
+  type DismissReasonCode,
+  type DismissRecord,
+} from '../services/recommendation-quality/acceptance';
+import { MAX_OPEN_PER_ROLE } from '../services/community-autopilot/ranker';
+import {
+  DRAFTABLE_KINDS,
+  currentDraft,
+  generateDraft,
+  sanitizeDraft,
+  withDraft,
+} from '../services/community-autopilot/drafts';
+
+// VTID-03972: this route backs the badge-count poll fired on every AppLayout
+// mount + every 60s (GET /count) and the popup list (GET /), including from
+// the MAXINA mobile app (role=community). None of its direct PostgREST
+// fetch() calls had any AbortController/timeout, so a slow Supabase moment
+// hung the whole request with no bound. Matches the abortAfter()/timeout
+// pattern already established in vtid-ledger-reader.ts.
+const REC_FETCH_TIMEOUT_MS = 3000;
+
+function abortAfter(ms: number): { signal: AbortSignal; clear: () => void } {
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), ms);
+  return {
+    signal: controller.signal,
+    clear: () => clearTimeout(timeoutId),
+  };
+}
+
+/**
+ * Recommendation-identity work: resolve the requesting user's locale for the
+ * "Vitana empfiehlt" header (see annotateWithPillarImpact below). Best-effort —
+ * anonymous/Command-Hub callers (no userId) fall back to GATEWAY_DEFAULT_LOCALE,
+ * and any Supabase error also falls back rather than failing the request.
+ */
+async function resolveRecommendationLocale(userId: string | null | undefined): Promise<GatewayLocale> {
+  if (!userId) return GATEWAY_DEFAULT_LOCALE;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return GATEWAY_DEFAULT_LOCALE;
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(supabaseUrl, svcKey);
+    return await getUserLocale(supa, userId);
+  } catch {
+    return GATEWAY_DEFAULT_LOCALE;
+  }
+}
+
+/**
+ * Phase 5 of the Ultimate Goal hardening (VTID-02935): when a recommendation
+ * graduates to a VTID, emit an OASIS event reporting whether the rec advances
+ * any mission dimension. The rec is "aligned" if it has a primary pillar OR a
+ * non-'none' economic_axis. Pillar impact is derived from contribution_vector.
+ *
+ * NOT a hard block — visibility only. Future: graduation to a block once ≥80%
+ * of activations in a 14-day window carry alignment fields. See
+ * docs/GOVERNANCE/ULTIMATE-GOAL.md.
+ */
+async function emitAlignmentEventForActivation(params: {
+  vtid: string;
+  recId: string;
+  recTitle: string;
+  userId: string | null;
+  supabaseUrl: string;
+  svcKey: string;
+}): Promise<void> {
+  try {
+    const recResp = await fetch(
+      `${params.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${params.recId}&select=economic_axis,autonomy_level,contribution_vector,source_type,source_ref,domain&limit=1`,
+      { headers: { apikey: params.svcKey, Authorization: `Bearer ${params.svcKey}` } },
+    );
+    if (!recResp.ok) return;
+    const rows = await recResp.json() as any[];
+    const rec = rows[0];
+    if (!rec) return;
+
+    const evaluation = evaluateRecAlignment(rec);
+
+    await emitOasisEvent({
+      vtid: params.vtid,
+      type: evaluation.topic,
+      source: 'autopilot-recommendations',
+      status: evaluation.status,
+      message: evaluation.message,
+      payload: {
+        recommendation_id: params.recId,
+        recommendation_title: params.recTitle,
+        user_id: params.userId,
+        pillar_impact: evaluation.pillar_impact,
+        economic_axis: evaluation.economic_axis,
+        autonomy_level: evaluation.autonomy_level,
+        source_type: rec.source_type || null,
+        source_ref: rec.source_ref || null,
+        domain: rec.domain || null,
+      },
+    });
+  } catch (err: any) {
+    // Never let alignment telemetry break the activation path.
+    console.warn(`[VTID-02935] emitAlignmentEventForActivation failed (non-fatal): ${err?.message || err}`);
+  }
+}
+
+/**
+ * Annotate an array of recommendation rows from get_autopilot_recommendations
+ * with derived pillar_impact ({primary_pillar, magnitude}). Read-time derivation
+ * from contribution_vector JSONB — see services/.../pillar-impact.ts.
+ * Mutates each row in place (cheap and unambiguous for response payload use).
+ *
+ * Also stamps the Vitana recommendation-identity UI metadata (see CLAUDE.md
+ * "recommendation-identity" work) so the frontend never renders a bare "AI"
+ * label: `recommended_by`/`visual_identity` are locale-independent identifiers
+ * the UI uses to pick the ORB avatar; `recommendation_label` is the localized
+ * "Vitana empfiehlt" copy, resolved via the gateway i18n catalog.
+ */
+function annotateWithPillarImpact<T extends { contribution_vector?: unknown }>(
+  rows: T[],
+  locale: GatewayLocale = GATEWAY_DEFAULT_LOCALE,
+): Array<T & {
+  pillar_impact: ReturnType<typeof derivePillarImpact>;
+  recommended_by: 'vitana';
+  recommendation_label: string;
+  visual_identity: 'orb';
+}> {
+  const recommendation_label = tt('recommendation.vitana_label', locale);
+  return rows.map((row) => ({
+    ...row,
+    pillar_impact: derivePillarImpact(row.contribution_vector as Record<string, unknown> | null | undefined),
+    recommended_by: 'vitana' as const,
+    recommendation_label,
+    visual_identity: 'orb' as const,
+  }));
+}
+
+const router = Router();
+
+const LOG_PREFIX = '[VTID-01180]';
+
+// SECURITY (post-audit hardening): this router had NO auth middleware at
+// all. getUserId() below checked `req.user` (a property nothing in this
+// codebase ever sets — auth-supabase-jwt.ts attaches `req.identity`, not
+// `req.user`) so it always fell through to a bare X-User-ID/X-Vitana-User
+// header or ?user_id= query param, with zero verification. Any caller could
+// read, activate, reject, snooze, or complete another user's autopilot
+// recommendations by just setting that header. Now requires a verified JWT
+// on every route except /health.
+router.use(optionalAuth);
+const OPEN_PATHS = new Set(['/health']);
+// VTID-04505: the scheduled community scan is called by the EventBridge
+// dispatcher with the internal service token, not a member JWT.
+function hasGatewayInternalToken(req: Request): boolean {
+  const token = process.env.GATEWAY_INTERNAL_TOKEN;
+  return !!token && req.get('X-Gateway-Internal') === token;
+}
+router.use((req: Request, res: Response, next) => {
+  if (OPEN_PATHS.has(req.path)) return next();
+  if (req.path === '/community-scan' && hasGatewayInternalToken(req)) return next();
+  if (!(req as AuthenticatedRequest).identity?.user_id) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+  return next();
+});
+
+/**
+ * Build the full community recommendation rows for an API response body
+ * (dedup → retired-action filter → wave/horizon enrichment → pillar_impact).
+ * Mirrors the GET / handler's community enrichment. The GET / handler remains
+ * the canonical "which recs does this user see" surface and the FE refetches it
+ * after a forced /generate, so this is a convenience projection for the
+ * /generate response (VTID-03301). Defined after COMMUNITY_ACTIONS so the
+ * retired-action filter can reference it.
+ */
+async function buildCommunityRecsResponse(
+  userId: string,
+  statuses: string[],
+  limit: number,
+): Promise<Array<Record<string, any>>> {
+  const fetchLimit = Math.max((limit + 1) * 4, 80);
+  const result = await queryRecommendationsByRole('community', userId, statuses, fetchLimit, 0);
+  let recommendations = result.ok ? (result.data || []) : [];
+
+  // Dedup by source_ref then title, preferring 'new' status (same rules as GET /).
+  const seen = new Map<string, any>();
+  for (const rec of recommendations) {
+    const k = rec.source_ref || rec.title;
+    const ex = seen.get(k);
+    if (!ex) seen.set(k, rec);
+    else if (rec.status === 'new' && ex.status !== 'new') seen.set(k, rec);
+  }
+  const seenTitles = new Set<string>();
+  recommendations = [];
+  for (const rec of seen.values()) {
+    if (seenTitles.has(rec.title)) continue;
+    seenTitles.add(rec.title);
+    recommendations.push(rec);
+  }
+
+  // Retired-action filter: only keep refs that map to a real community action.
+  // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+  recommendations = recommendations.filter((rec) => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
+
+  // Wave/horizon enrichment (mirrors GET /).
+  const templateToWave = buildTemplateToWaveMap();
+  for (const rec of recommendations) {
+    if (rec.source_ref) {
+      const waveId = templateToWave.get(rec.source_ref);
+      if (waveId) {
+        rec.wave_id = waveId;
+        rec.wave_order = DEFAULT_WAVE_CONFIG.find((w) => w.id === waveId)?.order ?? 99;
+      }
+    }
+    if (!rec.wave_id) {
+      rec.wave_id = 'wave-1';
+      rec.wave_order = 1;
+    }
+    const waveDef = DEFAULT_WAVE_CONFIG.find((w) => w.id === rec.wave_id);
+    const startDay = waveDef?.timeline.start_day ?? 0;
+    rec.horizon =
+      startDay <= 0  ? 'today'    :
+      startDay <= 3  ? 'next3'    :
+      startDay <= 7  ? 'thisWeek' :
+      startDay <= 30 ? 'month'    : 'future';
+  }
+
+  // VTID-04523: at most MAX_OPEN_PER_ROLE open suggestions (owner decision 3).
+  recommendations = capOpenLineup(recommendations).kept;
+
+  const locale = await resolveRecommendationLocale(userId);
+  return annotateWithPillarImpact(recommendations, locale).slice(0, limit);
+}
+
+// =============================================================================
+// Community Action Map — signal_type → action for community user activation
+// =============================================================================
+interface CommunityAction {
+  action_type: 'navigate' | 'notify';
+  target?: string;
+  completion_message: string;
+  /** Intelligent Calendar: optional calendar event metadata for schedulable actions */
+  calendar_event?: {
+    title_template: string;
+    duration_minutes: number;
+    event_type: string;
+    wellness_tags: string[];
+  };
+}
+
+export const COMMUNITY_ACTIONS: Record<string, CommunityAction> = {
+  // Onboarding
+  onboarding_profile:           { action_type: 'navigate', target: '/profile/edit', completion_message: 'Let\'s complete your profile!' },
+  onboarding_avatar:            { action_type: 'navigate', target: '/profile/edit', completion_message: 'Add a photo so others can recognize you!' },
+  onboarding_explore:           { action_type: 'navigate', target: '/community', completion_message: 'Discover your community!' },
+  onboarding_interests:         { action_type: 'navigate', target: '/profile/edit', completion_message: 'Tell us what you\'re into!' },
+  onboarding_maxina:            { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is ready to chat!' },
+  onboarding_diary:             { action_type: 'navigate', target: '/diary', completion_message: 'Time to write your first entry!' },
+  onboarding_diary_day0:        { action_type: 'navigate', target: '/diary', completion_message: 'Start your well-being journal!' },
+  onboarding_health:            { action_type: 'navigate', target: '/health', completion_message: 'See your health overview!' },
+  onboarding_matches:           { action_type: 'navigate', target: '/matches', completion_message: 'Check out your matches!' },
+  onboarding_discover_matches:  { action_type: 'navigate', target: '/matches', completion_message: 'See who you\'ve been matched with!' },
+  onboarding_group:             { action_type: 'navigate', target: '/groups', completion_message: 'Find a group that fits you!' },
+  // Engagement
+  engage_matches:       { action_type: 'navigate', target: '/matches', completion_message: 'Your matches are waiting!' },
+  engage_meetup:        { action_type: 'navigate', target: '/events', completion_message: 'Find a meetup near you!', calendar_event: { title_template: 'Attend a meetup', duration_minutes: 60, event_type: 'community', wellness_tags: ['social'] } },
+  engage_health:        { action_type: 'navigate', target: '/health', completion_message: 'Check your health scores!', calendar_event: { title_template: 'Check health scores', duration_minutes: 15, event_type: 'health', wellness_tags: ['health-check'] } },
+  deepen_connection:    { action_type: 'navigate', target: '/connections', completion_message: 'Reach out to a connection!', calendar_event: { title_template: 'Deepen a connection', duration_minutes: 30, event_type: 'personal', wellness_tags: ['social'] } },
+  set_goal:             { action_type: 'navigate', target: '/?open=life_compass', completion_message: "Pick a direction — your goal will steer Vitana's recommendations.", calendar_event: { title_template: 'Open your Life Compass', duration_minutes: 10, event_type: 'personal', wellness_tags: ['mindfulness', 'mental'] } },
+  invite_friend:        { action_type: 'navigate', target: '/invite', completion_message: 'Share Vitana with a friend!' },
+  // Advanced
+  share_expertise:      { action_type: 'navigate', target: '/groups', completion_message: 'Share your knowledge in a group!' },
+  start_streak:         { action_type: 'navigate', target: '/diary', completion_message: 'Start your wellness streak!', calendar_event: { title_template: 'Start a wellness streak', duration_minutes: 15, event_type: 'health', wellness_tags: ['wellness'] } },
+  try_live_room:        { action_type: 'navigate', target: '/events', completion_message: 'Drop into a live room!', calendar_event: { title_template: 'Try a live room', duration_minutes: 15, event_type: 'community', wellness_tags: ['social', 'mental'] } },
+  // Index-gap pillar templates (index-gap-analyzer fallback) — schedulable wellness blocks.
+  // source_ref === `pillar_template_${pillar}`; MUST stay in sync with index-gap-analyzer.ts.
+  pillar_template_nutrition: { action_type: 'navigate', target: '/health', completion_message: 'Plan a balanced meal block.', calendar_event: { title_template: 'Meal planning block', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
+  pillar_template_hydration: { action_type: 'navigate', target: '/health', completion_message: 'Time for a hydration check-in.', calendar_event: { title_template: 'Hydration check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['hydration'] } },
+  pillar_template_exercise:  { action_type: 'navigate', target: '/health', completion_message: 'Time to move.', calendar_event: { title_template: '30-minute movement block', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
+  pillar_template_sleep:     { action_type: 'navigate', target: '/health', completion_message: 'Set up your wind-down.', calendar_event: { title_template: 'Wind-down block', duration_minutes: 30, event_type: 'health', wellness_tags: ['sleep'] } },
+  pillar_template_mental:    { action_type: 'navigate', target: '/chat', completion_message: 'A few minutes for your mind.', calendar_event: { title_template: 'Meditation / breathwork', duration_minutes: 10, event_type: 'health', wellness_tags: ['mindfulness', 'mental'] } },
+  // mentor_new and organize_meetup removed — not automatable by autopilot
+  // Weakness-driven
+  weakness_movement:    { action_type: 'navigate', target: '/health', completion_message: 'Let\'s get moving!', calendar_event: { title_template: 'Exercise session', duration_minutes: 30, event_type: 'workout', wellness_tags: ['movement'] } },
+  weakness_stress:      { action_type: 'navigate', target: '/health', completion_message: 'Try a breathing exercise!', calendar_event: { title_template: 'Breathing exercise', duration_minutes: 15, event_type: 'health', wellness_tags: ['mindfulness', 'stress'] } },
+  weakness_social:      { action_type: 'navigate', target: '/connections', completion_message: 'Say hello to someone!', calendar_event: { title_template: 'Social connection', duration_minutes: 15, event_type: 'personal', wellness_tags: ['social', 'community'] } },
+  weakness_nutrition:   { action_type: 'navigate', target: '/health', completion_message: 'Track what you eat today!', calendar_event: { title_template: 'Track your meals', duration_minutes: 15, event_type: 'nutrition', wellness_tags: ['nutrition'] } },
+  weakness_sleep:       { action_type: 'navigate', target: '/health', completion_message: 'Set up your evening routine!', calendar_event: { title_template: 'Evening routine', duration_minutes: 15, event_type: 'health', wellness_tags: ['sleep'] } },
+  weakness_hydration:   { action_type: 'navigate', target: '/health', completion_message: 'Track your water intake today!', calendar_event: { title_template: 'Hydration check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['hydration'] } },
+  weakness_mental:      { action_type: 'navigate', target: '/health', completion_message: 'A brief mindfulness moment.', calendar_event: { title_template: 'Mindfulness check-in', duration_minutes: 10, event_type: 'health', wellness_tags: ['mindfulness', 'mental'] } },
+  // Mood-driven
+  mood_support:         { action_type: 'navigate', target: '/chat', completion_message: 'Maxina is here to listen.' },
+  mood_energy:          { action_type: 'navigate', target: '/events', completion_message: 'Use your energy on an activity!' },
+  // Streak celebrations
+  streak_celebration:   { action_type: 'notify', completion_message: 'Amazing streak! Keep it up!' },
+  streak_continue:      { action_type: 'notify', completion_message: 'Great streak! Keep going!' },
+};
+
+// =============================================================================
+// Helper: Supabase RPC call
+// =============================================================================
+async function callRpc<T>(
+  functionName: string,
+  params: Record<string, unknown>,
+  authToken?: string
+): Promise<{ ok: boolean; data?: T; error?: string; message?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        'apikey': supabaseKey,
+        'Authorization': authToken ? `Bearer ${authToken}` : `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify(params),
+      signal: timeout.signal,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+
+    const data = await response.json() as T;
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
+// Helper: Extract user ID from request
+// =============================================================================
+function getUserId(req: Request): string | null {
+  return (req as AuthenticatedRequest).identity?.user_id ?? null;
+}
+
+// =============================================================================
+// Helper: Extract active role from request
+// =============================================================================
+function getActiveRole(req: Request): string | null {
+  return (req.query.role as string)
+    || req.get('X-Vitana-Active-Role')
+    || null;
+}
+
+// =============================================================================
+// VTID-04500 (Community Autopilot CA-2): the server decides the lineup.
+// The requested role (?role= / X-Vitana-Active-Role) is only a hint: a system
+// role needs exafy_admin or check_role_permitted, anything unrecognised narrows
+// to the member's own community lineup, and with no hint the member's effective
+// role is used. Returns null ONLY for an exafy admin with no hint (the Command
+// Hub's legacy RPC view).
+// =============================================================================
+async function resolveRequestRole(req: Request): Promise<string | null> {
+  const identity = (req as AuthenticatedRequest).identity;
+  const requested = getActiveRole(req);
+  if (!identity?.user_id) return requested ? 'none' : null;
+  if (!requested && identity.exafy_admin) return null;
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return 'community';
+  const { createClient } = await import('@supabase/supabase-js');
+  const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+  const decision = await resolveLineupRole(sb, {
+    userId: identity.user_id,
+    tenantId: identity.tenant_id ?? (req.get('X-Vitana-Tenant') || null),
+    exafyAdmin: identity.exafy_admin === true,
+    requested,
+  });
+  if (decision.narrowed) {
+    console.warn(`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} — community lineup`);
+  }
+  return decision.lineup;
+}
+
+// =============================================================================
+// Helper: Direct PostgREST query for role-filtered recommendations
+//
+// VTID-02969: Exported so other voice / proactive surfaces (e.g.
+// tool_send_chat_message → next_actions) can reuse the EXACT same query
+// the Autopilot popup hits. There must be only one canonical "which
+// recommendations does this user see" source.
+// =============================================================================
+export interface RoleQueryOptions {
+  /** VTID-04668: include open developer rows below the quality floor. */
+  includeBelowFloor?: boolean;
+}
+
+export async function queryRecommendationsByRole(
+  role: string,
+  userId: string | null,
+  statuses: string[],
+  limit: number,
+  offset: number,
+  opts: RoleQueryOptions = {},
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string; below_floor_count?: number; awaiting_review_count?: number }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  // VTID-04667: source_type lets the Command Hub show "Create task" instead of
+  // "Activate" for recommendation types that have no executor.
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,economic_axis,autonomy_level,contribution_vector,action';
+  const params = new URLSearchParams();
+  params.set('select', select);
+  params.set('status', `in.(${statuses.join(',')})`);
+  params.set('order', 'impact_score.desc,created_at.desc');
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+
+  // Exclude snoozed recs
+  params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  // Exclude expired recs (VTID-03201): stale rows must not surface in the
+  // popup/count. Repeated `or` params are ANDed by PostgREST.
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
+
+  // VTID-04668: the developer lineup is ordered by priority and filtered by
+  // the quality floor in JS, so it reads a window and pages after that.
+  let developerLineup = false;
+
+  if (role === 'community' || role === 'patient') {
+    // Community role: only personal recs from community analyzer
+    if (!userId) return { ok: true, data: [], count: 0 };
+    params.set('user_id', `eq.${userId}`);
+    params.set('source_type', 'eq.community');
+  } else if (role === 'developer' || role === 'admin' || role === 'infra') {
+    // System roles: system-wide recs (user_id IS NULL), non-community source types.
+    // Callers must have authorized the role first (resolveLineupRole).
+    params.set('user_id', 'is.null');
+    params.set('source_type', 'neq.community');
+    // VTID-04666: an operator_onramp row is an operator request that was
+    // already executed, not a recommendation. Repeated column filters are
+    // ANDed by PostgREST.
+    params.append('source_type', 'neq.operator_onramp');
+    developerLineup = true;
+    params.set('select', `${select},priority_score,quality`);
+    params.set('order', 'priority_score.desc.nullslast,impact_score.desc,created_at.desc');
+    params.set('limit', String(DEVELOPER_LINEUP_WINDOW));
+    params.set('offset', '0');
+  } else {
+    // VTID-04500: unknown / not-yet-served roles see nothing. This used to apply
+    // NO filter, returning every user's personal suggestions.
+    return { ok: true, data: [], count: 0 };
+  }
+
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const queryUrl = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
+    console.log(`${LOG_PREFIX} queryRecommendationsByRole PostgREST query:`, queryUrl.replace(supabaseKey!, '***'));
+    const response = await fetch(
+      queryUrl,
+      {
+        headers: {
+          'apikey': supabaseKey,
+          'Authorization': `Bearer ${supabaseKey}`,
+          'Prefer': 'count=exact',
+        },
+        signal: timeout.signal,
+      },
+    );
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+    const data = await response.json() as any[];
+    if (developerLineup) {
+      const listed = applyDeveloperQualityListing(data, {
+        includeBelowFloor: opts.includeBelowFloor === true,
+        tiebreak: compareDeveloperLineup,
+      });
+      return {
+        ok: true,
+        data: listed.rows.slice(offset, offset + Math.max(0, limit)),
+        count: listed.rows.length,
+        below_floor_count: listed.below_floor_count,
+        awaiting_review_count: listed.awaiting_review_count,
+      };
+    }
+    const contentRange = response.headers.get('content-range');
+    const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
+    return { ok: true, data, count: totalCount };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
+  }
+}
+
+/** VTID-04668: rows read for the developer lineup before filter/sort/paging. */
+export const DEVELOPER_LINEUP_WINDOW = 1000;
+
+/** Lineup tie-break after priority: impact desc, then newest. */
+function compareDeveloperLineup(a: Record<string, unknown>, b: Record<string, unknown>): number {
+  const ia = typeof a.impact_score === 'number' ? a.impact_score : -1;
+  const ib = typeof b.impact_score === 'number' ? b.impact_score : -1;
+  if (ia !== ib) return ib - ia;
+  return (Date.parse(String(b.created_at || '')) || 0) - (Date.parse(String(a.created_at || '')) || 0);
+}
+
+// =============================================================================
+// Helper: Fallback query — fetch by user_id only (no source_type filter)
+// =============================================================================
+async function queryRecommendationsFallback(
+  userId: string,
+  statuses: string[],
+  limit: number,
+  offset: number,
+): Promise<{ ok: boolean; data?: any[]; count?: number; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  const select = 'id,title,summary,domain,risk_level,impact_score,effort_score,status,activated_vtid,created_at,activated_at,time_estimate_seconds,source_ref,source_type,user_id,economic_axis,autonomy_level,contribution_vector';
+  const params = new URLSearchParams();
+  params.set('select', select);
+  params.set('status', `in.(${statuses.join(',')})`);
+  params.set('order', 'impact_score.desc,created_at.desc');
+  params.set('limit', String(limit));
+  params.set('offset', String(offset));
+  params.append('or', '(snoozed_until.is.null,snoozed_until.lt.now())');
+  params.append('or', '(expires_at.is.null,expires_at.gt.now())');
+  params.set('user_id', `eq.${userId}`);
+
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const url = `${supabaseUrl}/rest/v1/autopilot_recommendations?${params.toString()}`;
+    console.log(`${LOG_PREFIX} Fallback query URL: ${url.replace(supabaseKey, '***')}`);
+    const response = await fetch(url, {
+      headers: {
+        'apikey': supabaseKey,
+        'Authorization': `Bearer ${supabaseKey}`,
+        'Prefer': 'count=exact',
+      },
+      signal: timeout.signal,
+    });
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+    const data = await response.json() as any[];
+    const contentRange = response.headers.get('content-range');
+    const totalCount = contentRange ? parseInt(contentRange.split('/')[1]) || data.length : data.length;
+    return { ok: true, data, count: totalCount };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
+// GET /recommendations - List recommendations
+// =============================================================================
+/**
+ * GET /recommendations
+ *
+ * Query params:
+ * - status: comma-separated status filter (default: 'new')
+ * - limit: max items (default: 20, max: 100)
+ * - offset: pagination offset (default: 0)
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   recommendations: [...],
+ *   count: number,
+ *   has_more: boolean
+ * }
+ */
+router.get('/', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const role = await resolveRequestRole(req);
+
+    // Parse query params
+    const statusParam = req.query.status as string || 'new';
+    const statuses = statusParam.split(',').map(s => s.trim());
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+
+    console.log(`${LOG_PREFIX} Recommendations requested`, {
+      status: statuses.join(','),
+      limit,
+      role: role || 'none',
+      userId: userId || 'null',
+      headers: {
+        'X-Vitana-Active-Role': req.get('X-Vitana-Active-Role') || 'missing',
+        'X-Vitana-User': req.get('X-Vitana-User') || 'missing',
+        'X-User-ID': req.get('X-User-ID') || 'missing',
+        'Authorization': req.get('Authorization') ? 'present' : 'missing',
+      },
+      reqUser: (req as any).user ? { id: (req as any).user?.id, sub: (req as any).user?.sub } : 'no req.user',
+    });
+
+    // Role-based filtering: query table directly (RPC lacks source_type/user_id columns)
+    if (role) {
+      // Fetch extra rows to account for duplicates that will be collapsed by dedup
+      const fetchLimit = role === 'community' ? Math.max((limit + 1) * 4, 80) : limit + 1;
+      const includeBelowFloor = String(req.query.include_below_floor || '') === '1';
+      const result = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset, { includeBelowFloor });
+      console.log(`${LOG_PREFIX} queryRecommendationsByRole result`, {
+        ok: result.ok,
+        count: result.data?.length ?? 0,
+        totalCount: result.count ?? 0,
+        error: result.error || 'none',
+        role,
+        userId: userId || 'null',
+        statuses,
+      });
+
+      if (!result.ok) {
+        return res.status(400).json({ ok: false, error: result.error });
+      }
+
+      let recommendations = result.data || [];
+
+      // Fallback: if community role returns empty but userId exists, try without source_type filter
+      if (recommendations.length === 0 && role === 'community' && userId) {
+        console.log(`${LOG_PREFIX} Community query returned 0 results, trying fallback without source_type filter`);
+        const fallbackResult = await queryRecommendationsFallback(userId, statuses, limit + 1, offset);
+        console.log(`${LOG_PREFIX} Fallback result`, {
+          ok: fallbackResult.ok,
+          count: fallbackResult.data?.length ?? 0,
+          error: fallbackResult.error || 'none',
+        });
+        if (fallbackResult.ok && (fallbackResult.data?.length ?? 0) > 0) {
+          recommendations = fallbackResult.data!;
+        }
+      }
+
+      // Auto-generate: if community user still has 0 recommendations, generate them inline.
+      // This handles first-time users (race condition with fire-and-forget in auth.ts),
+      // existing users who never had recs generated, and day30+ users after old recs expired.
+      // Also triggers when ALL returned recs are activated/completed (none are 'new') —
+      // this is the case for the Lovable app which fetches status=new,activated.
+      const hasNewRecs = recommendations.some((r: any) => r.status === 'new');
+      if (!hasNewRecs && role === 'community' && userId) {
+        console.log(`${LOG_PREFIX} No NEW recommendations for community user ${userId.slice(0, 8)} (total=${recommendations.length}, all activated/completed), auto-generating...`);
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+            const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              console.log(`${LOG_PREFIX} Auto-replenishment result: generated=${genResult.generated}, dupes=${genResult.duplicates_skipped}`);
+              // Re-fetch after generation
+              if (genResult.generated > 0) {
+                const freshResult = await queryRecommendationsByRole(role, userId, statuses, fetchLimit, offset);
+                if (freshResult.ok && (freshResult.data?.length ?? 0) > 0) {
+                  recommendations = freshResult.data!;
+                }
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} Auto-generation failed (non-fatal): ${genErr.message}`);
+        }
+      }
+
+      // Deduplicate by source_ref (signal_type) first, then by title as fallback.
+      // Keep only one per key, preferring 'new' status over others.
+      const beforeDedup = recommendations.length;
+      const seen = new Map<string, any>();
+      for (const rec of recommendations) {
+        const key = rec.source_ref || rec.title;
+        const existing = seen.get(key);
+        if (!existing) {
+          seen.set(key, rec);
+        } else if (rec.status === 'new' && existing.status !== 'new') {
+          seen.set(key, rec);
+        }
+      }
+      // Also deduplicate by title (different source_ref but same display title)
+      const seenTitles = new Set<string>();
+      const deduped: any[] = [];
+      for (const rec of seen.values()) {
+        if (seenTitles.has(rec.title)) continue;
+        seenTitles.add(rec.title);
+        deduped.push(rec);
+      }
+      recommendations = deduped;
+      if (recommendations.length < beforeDedup) {
+        console.log(`${LOG_PREFIX} Deduplication: ${beforeDedup} → ${recommendations.length} (${beforeDedup - recommendations.length} duplicates removed)`);
+      }
+
+      // Filter out retired action types: only keep recs whose source_ref maps to
+      // a valid COMMUNITY_ACTIONS entry (or has no source_ref at all).
+      // This hides old DB rows like organize_meetup / mentor_new without needing a DB migration.
+      if (role === 'community') {
+        const beforeFilter = recommendations.length;
+        // VTID-04504: a row carrying a typed action is never retired by its source_ref.
+        recommendations = recommendations.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
+        if (recommendations.length < beforeFilter) {
+          console.log(`${LOG_PREFIX} Retired-action filter: ${beforeFilter} → ${recommendations.length} (${beforeFilter - recommendations.length} retired recs hidden)`);
+        }
+      }
+
+      const hasMore = recommendations.length > limit;
+      if (hasMore) recommendations.pop();
+
+      // G4: Index-weighted re-rank for community surfaces. Applies pillar
+      // gap + compass boost + journey-mode decay + G6 per-pillar quota.
+      // Read path mirrors the /generate pipeline so the AutopilotPopup and
+      // the voice ORB tool always see the same top pick.
+      if (role === 'community' && userId && recommendations.length > 0) {
+        try {
+          const { buildRankerContext, rankBatch } = await import('../services/recommendation-engine/ranking/index-pillar-weighter');
+          const { createClient } = await import('@supabase/supabase-js');
+          const svc = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE
+            ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE)
+            : null;
+          if (svc) {
+            const ctx = await buildRankerContext(svc, userId);
+            const ranked = rankBatch(recommendations as any, ctx);
+            recommendations = ranked.map(r => r.rec as any);
+            // Attach rank metadata for the UI ("why this now" tooltip).
+            for (const r of ranked) {
+              const target = (r.rec as any);
+              if (target) {
+                target.rank_score = r.rank_score;
+                target.pillar_boost = r.pillar_boost;
+                target.compass_boost = r.compass_boost;
+                target.economic_boost = r.economic_boost;
+                target.journey_mode = r.journey_mode;
+              }
+            }
+          }
+        } catch (rankErr: any) {
+          console.warn(`${LOG_PREFIX} community re-rank failed (non-fatal):`, rankErr?.message);
+        }
+      }
+
+      // VTID-04523: the member sees at most MAX_OPEN_PER_ROLE open suggestions
+      // (owner decision 3). Applied after ranking, so these are the top ones;
+      // activated/completed rows are unaffected.
+      let lineupCapped = 0;
+      if (role === 'community') {
+        const cap = capOpenLineup(recommendations);
+        recommendations = cap.kept;
+        lineupCapped = cap.capped;
+      }
+
+      // Enrich community recommendations with wave metadata
+      let waves: any[] | undefined;
+      if (role === 'community') {
+        const templateToWave = buildTemplateToWaveMap();
+        for (const rec of recommendations) {
+          if (rec.source_ref) {
+            const waveId = templateToWave.get(rec.source_ref);
+            if (waveId) {
+              rec.wave_id = waveId;
+              const waveDef = DEFAULT_WAVE_CONFIG.find(w => w.id === waveId);
+              rec.wave_order = waveDef?.order ?? 99;
+            }
+          }
+          if (!rec.wave_id) {
+            rec.wave_id = 'wave-1';
+            rec.wave_order = 1;
+          }
+          // Derive a stable `horizon` field for frontend bucketing on the My
+          // Journey path. Source: wave timeline.start_day. Buckets the
+          // frontend renders are: today / next3 / thisWeek / month / future.
+          const waveDef = DEFAULT_WAVE_CONFIG.find(w => w.id === rec.wave_id);
+          const startDay = waveDef?.timeline.start_day ?? 0;
+          rec.horizon =
+            startDay <= 0  ? 'today'    :
+            startDay <= 3  ? 'next3'    :
+            startDay <= 7  ? 'thisWeek' :
+            startDay <= 30 ? 'month'    : 'future';
+        }
+        // Include enabled waves in response
+        waves = DEFAULT_WAVE_CONFIG
+          .filter(w => w.enabled)
+          .map(w => ({
+            id: w.id,
+            name: w.name,
+            description: w.description,
+            icon: w.icon,
+            order: w.order,
+            is_initiative: w.is_initiative,
+            timeline: w.timeline,
+          }));
+      }
+
+      const roleLocale = await resolveRecommendationLocale(userId);
+      return res.status(200).json({
+        ok: true,
+        recommendations: annotateWithPillarImpact(recommendations, roleLocale),
+        count: recommendations.length,
+        // Capped open rows are not a next page: paging must not re-reveal them.
+        has_more: hasMore && lineupCapped === 0,
+        ...(waves ? { waves } : {}),
+        // VTID-04668: open developer rows left out because they are below the quality floor.
+        ...(typeof result.below_floor_count === 'number' ? { below_floor_count: result.below_floor_count } : {}),
+        // VTID-04669: open developer rows waiting for their quality review.
+        ...(typeof result.awaiting_review_count === 'number' ? { awaiting_review_count: result.awaiting_review_count } : {}),
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+        _debug: {
+          role,
+          userId: userId || null,
+          queryPath: 'role-based',
+          fallbackUsed: result.data?.length === 0 && recommendations.length > 0,
+        },
+      });
+    }
+
+    // No role specified: backward-compatible RPC path (Command Hub default)
+    console.log(`${LOG_PREFIX} Using RPC fallback path (no role)`, { userId: userId || 'null', statuses });
+    const result = await callRpc<any[]>('get_autopilot_recommendations', {
+      p_status: statuses,
+      p_limit: limit + 1,
+      p_offset: offset,
+      p_user_id: userId,
+    });
+    console.log(`${LOG_PREFIX} RPC result`, { ok: result.ok, count: (result.data as any[])?.length ?? 0, error: result.error || 'none' });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const recommendations = result.data || [];
+    const hasMore = recommendations.length > limit;
+    if (hasMore) {
+      recommendations.pop();
+    }
+
+    const rpcLocale = await resolveRecommendationLocale(userId);
+    return res.status(200).json({
+      ok: true,
+      recommendations: annotateWithPillarImpact(recommendations, rpcLocale),
+      count: recommendations.length,
+      has_more: hasMore,
+      vtid: 'VTID-01180',
+      timestamp: new Date().toISOString(),
+      _debug: {
+        role: null,
+        userId: userId || null,
+        queryPath: 'rpc',
+      },
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} List recommendations error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// GET /recommendations/count - Get count for badge
+// =============================================================================
+/**
+ * GET /recommendations/count
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   count: number
+ * }
+ */
+router.get('/count', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const role = await resolveRequestRole(req);
+
+    console.log(`${LOG_PREFIX} Recommendations count requested`, { role: role || 'none', userId: userId || 'null' });
+
+    // Role-based count: query table directly with same filters
+    if (role) {
+      const result = await queryRecommendationsByRole(role, userId, ['new'], 0, 0);
+      const rawCount = result.ok ? (result.count || 0) : 0;
+      // VTID-04523: the badge matches the lineup, which shows at most MAX_OPEN_PER_ROLE.
+      const count = role === 'community' ? Math.min(rawCount, MAX_OPEN_PER_ROLE) : rawCount;
+      console.log(`${LOG_PREFIX} Count result (role-based)`, { role, userId: userId || 'null', count, ok: result.ok, error: result.error || 'none' });
+      return res.status(200).json({
+        ok: true,
+        count,
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+        _debug: { role, userId: userId || null, queryPath: 'role-based' },
+      });
+    }
+
+    // No role: backward-compatible RPC path
+    const result = await callRpc<number>('get_autopilot_recommendations_count', {
+      p_user_id: userId,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    return res.status(200).json({
+      ok: true,
+      count: result.data || 0,
+      vtid: 'VTID-01180',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Count error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// POST /recommendations/generate-personal - Generate per-user personalized recs
+// =============================================================================
+/**
+ * POST /recommendations/generate-personal
+ *
+ * Generates personalized community recommendations for the authenticated user.
+ * Uses the Community User Analyzer to assess onboarding stage, health scores,
+ * diary mood, connections, and more.
+ *
+ * Body:
+ * {
+ *   force?: boolean // Force regeneration even if recently run
+ * }
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   generated: 5,
+ *   duplicates_skipped: 2,
+ *   run_id: "rec-gen-...",
+ *   duration_ms: 1200
+ * }
+ */
+router.post('/generate-personal', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'User ID required' });
+    }
+
+    console.log(`${LOG_PREFIX} Personal generation requested for ${userId.slice(0, 8)}`);
+
+    // Get tenant ID for the user
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) {
+      return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(supabaseUrl, svcKey);
+    const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+
+    const tenantId = tenantRow?.tenant_id || process.env.DEFAULT_TENANT_ID;
+    if (!tenantId) {
+      return res.status(400).json({ ok: false, error: 'No tenant found for user' });
+    }
+
+    const result = await generatePersonalRecommendations(userId, tenantId, {
+      trigger_type: 'manual',
+    });
+
+    return res.status(result.ok ? 200 : 500).json({
+      ...result,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Personal generation error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// Shared community Autopilot service (VTID-03201)
+//
+// Single source of truth for LISTING and ACTIVATING community Autopilot
+// recommendations, so the REST popup (this router) and the ORB voice tools
+// behave identically. Voice previously had its own minimal activation path in
+// orb-tools-shared.ts that only flipped status — it skipped activated_at, the
+// calendar event, the OASIS event, the push notification, and replenishment.
+// Both surfaces now call activateCommunityAutopilotRecommendation().
+// =============================================================================
+
+/** A community recommendation projected for the popup AND for voice. */
+export interface CommunityRecommendationView {
+  id: string;
+  title: string;
+  summary: string | null;
+  source_ref: string | null;
+  domain: string | null;
+  impact_score: number | null;
+  time_estimate_seconds: number | null;
+  status: string;
+}
+
+/**
+ * List the community recommendations a user currently sees in the Autopilot
+ * popup. Uses the SAME canonical query (queryRecommendationsByRole), the SAME
+ * COMMUNITY_ACTIONS filter, and the SAME G4 index-pillar re-rank as the GET
+ * handler, so the spoken list and the visual list always agree on order and
+ * membership. Never throws — returns [] on any internal failure.
+ */
+export async function listCommunityAutopilotRecommendations(
+  userId: string,
+  limit = 5,
+  opts: { autoGenerate?: boolean } = {},
+): Promise<CommunityRecommendationView[]> {
+  try {
+    if (!userId) return [];
+    const clamped = Math.min(Math.max(limit, 1), 20);
+    // Over-fetch to survive dedup + retired-action filtering, mirroring the
+    // GET handler's fetchLimit heuristic.
+    const fetchLimit = Math.max((clamped + 1) * 4, 40);
+    const result = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+    if (!result.ok) return [];
+    let rows: any[] = result.data || [];
+
+    // Parity with the popup's list handler: when the canonical query yields
+    // no NEW recs, the popup does NOT return empty — it falls back to the
+    // no-source_type query and then auto-generates + refetches. The voice READ
+    // tool opts into this (autoGenerate) so "what's in my Autopilot?" matches
+    // exactly what opening the popup would show, including for first-time users,
+    // expired queues, and users whose recs were all activated. The proactive
+    // OFFER deliberately does NOT opt in — it must stay latency-cheap at session
+    // bootstrap and simply not offer when the queue is genuinely empty.
+    if (rows.length === 0 && opts.autoGenerate) {
+      const fb = await queryRecommendationsFallback(userId, ['new'], fetchLimit, 0);
+      if (fb.ok && (fb.data?.length ?? 0) > 0) {
+        rows = fb.data!;
+      } else {
+        try {
+          const supabaseUrl = process.env.SUPABASE_URL;
+          const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+          if (supabaseUrl && svcKey) {
+            const { createClient } = await import('@supabase/supabase-js');
+            const supa = createClient(supabaseUrl, svcKey);
+            const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+            // Community users always have a primary tenant; if none, skip
+            // generation rather than depend on a DEFAULT_TENANT_ID fallback.
+            const tenantId = tenantRow?.tenant_id;
+            if (tenantId) {
+              const genResult = await generatePersonalRecommendations(userId, tenantId, { trigger_type: 'auto_replenish' });
+              if (genResult.generated > 0) {
+                const fresh = await queryRecommendationsByRole('community', userId, ['new'], fetchLimit, 0);
+                if (fresh.ok && (fresh.data?.length ?? 0) > 0) rows = fresh.data!;
+              }
+            }
+          }
+        } catch (genErr: any) {
+          console.warn(`${LOG_PREFIX} listCommunity auto-generation failed (non-fatal): ${genErr?.message}`);
+        }
+      }
+    }
+
+    if (rows.length === 0) return [];
+
+    // Dedup by source_ref then title (same rules as the popup).
+    const seen = new Map<string, any>();
+    for (const rec of rows) {
+      const key = rec.source_ref || rec.title;
+      if (!seen.has(key)) seen.set(key, rec);
+    }
+    const seenTitles = new Set<string>();
+    let recs: any[] = [];
+    for (const rec of seen.values()) {
+      if (seenTitles.has(rec.title)) continue;
+      seenTitles.add(rec.title);
+      recs.push(rec);
+    }
+
+    // Retired-action filter: only refs that map to a real community action.
+    // A row carrying a typed action is never retired by its source_ref (VTID-04504/04523).
+    recs = recs.filter(rec => !rec.source_ref || COMMUNITY_ACTIONS[rec.source_ref] || parseAction(rec.action));
+
+    // G4 index-weighted re-rank (same module the popup uses).
+    try {
+      const { buildRankerContext, rankBatch } = await import('../services/recommendation-engine/ranking/index-pillar-weighter');
+      const { createClient } = await import('@supabase/supabase-js');
+      const svc = process.env.SUPABASE_URL && process.env.SUPABASE_SERVICE_ROLE
+        ? createClient(process.env.SUPABASE_URL, process.env.SUPABASE_SERVICE_ROLE)
+        : null;
+      if (svc && recs.length > 0) {
+        const ctx = await buildRankerContext(svc, userId);
+        recs = rankBatch(recs as any, ctx).map(r => r.rec as any);
+      }
+    } catch (rankErr: any) {
+      console.warn(`${LOG_PREFIX} listCommunity re-rank failed (non-fatal):`, rankErr?.message);
+    }
+
+    // VTID-04523: voice lists the same top MAX_OPEN_PER_ROLE the popup shows.
+    recs = capOpenLineup(recs).kept;
+
+    return recs.slice(0, clamped).map(rec => ({
+      id: rec.id,
+      title: rec.title,
+      summary: rec.summary ?? null,
+      source_ref: rec.source_ref ?? null,
+      domain: rec.domain ?? null,
+      impact_score: rec.impact_score ?? null,
+      time_estimate_seconds: rec.time_estimate_seconds ?? null,
+      status: rec.status,
+    }));
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} listCommunityAutopilotRecommendations failed (non-fatal):`, err?.message);
+    return [];
+  }
+}
+
+/**
+ * Project a list of community recommendations into a short, voice-friendly
+ * summary string Gemini can read aloud, plus the ordered ids so a follow-up
+ * "activate these" resolves to exactly what was read.
+ */
+export function summarizeAutopilotForVoice(
+  recs: CommunityRecommendationView[],
+): { spoken: string; ids: string[]; count: number } {
+  const ids = recs.map(r => r.id);
+  if (recs.length === 0) {
+    // VTID-03245 (offer-integrity): don't dead-end on "no recommendations" —
+    // be honest AND pivot to a real next step the assistant can actually do.
+    // (Autopilot actions are generated by the platform over time; there is no
+    // voice tool to mint one on the spot, so do NOT offer to "set one up".)
+    return {
+      spoken:
+        "You don't have any Autopilot actions prepared yet — those build up as you keep using Vitana. "
+        + 'Is there something specific I can help you with right now?',
+      ids,
+      count: 0,
+    };
+  }
+  const titles = recs.map((r, i) => `${i + 1}. ${r.title}`);
+  const lead = recs.length === 1
+    ? 'You have one Autopilot action prepared:'
+    : `You have ${recs.length} Autopilot actions prepared:`;
+  return { spoken: `${lead} ${titles.join('; ')}.`, ids, count: recs.length };
+}
+
+/**
+ * Render the system-instruction block that tells the voice assistant (Vitana)
+ * to PROACTIVELY offer to read the user's Autopilot. Pure function over an
+ * already-fetched list. Returns '' for an empty queue, so the caller can append
+ * unconditionally without gating on count. VTID-03201.
+ *
+ * This is the "Vitana says: you have Autopilot recommendations, want me to look?"
+ * half of the feature — the read (`get_autopilot_recommendations`) and the
+ * activation (`activate_autopilot_recommendations`) tools already exist; this
+ * block is what makes Vitana raise it unprompted instead of waiting to be asked.
+ *
+ * Instruction text is intentionally English: it is read by the model, which
+ * responds in the user's language per the "Respond ONLY in {language}" rule.
+ */
+export function renderAutopilotOfferBlock(recs: CommunityRecommendationView[]): string {
+  if (recs.length === 0) return '';
+
+  const count = recs.length;
+  const teaser = recs.slice(0, 2).map(r => r.title).join('; ');
+  const countPhrase = count === 1 ? 'one action' : `${count} actions`;
+
+  return [
+    '## AUTOPILOT — PROACTIVE OFFER (this session)',
+    `The user has ${countPhrase} prepared and waiting in their Autopilot${teaser ? ` (for example: ${teaser})` : ''}.`,
+    '',
+    'EARLY in the conversation — right after your greeting, or at the first',
+    'natural pause — proactively offer ONCE, in one short warm sentence, to go',
+    'through them. For example: "By the way, your Autopilot has a few things',
+    'ready for you — want me to run through them?"',
+    '',
+    'Rules for this proactive offer:',
+    '- Offer FIRST. Do NOT read the list unprompted.',
+    '- If the user agrees ("yes", "go ahead", "what\'s in there?", "was hat der',
+    '  Autopilot?"), call the tool get_autopilot_recommendations and then read',
+    '  its `spoken` summary verbatim.',
+    '- If the user then agrees to act ("activate them", "do the first one",',
+    '  "los geht\'s", "yes do it"), call activate_autopilot_recommendations.',
+    '- Make this proactive offer AT MOST ONCE per conversation. If the user',
+    '  declines or changes the subject, drop it gracefully and never raise it again.',
+    '- This is an offer, not a script — phrase it naturally in the user\'s language.',
+  ].join('\n');
+}
+
+/** Async wrapper: fetch the user's queue, then render the offer block. Never throws. */
+export async function buildAutopilotOfferBlock(userId: string): Promise<string> {
+  try {
+    if (!userId) return '';
+    // Same canonical list the popup + get_autopilot_recommendations use, so the
+    // offer's count matches what Vitana will actually read aloud.
+    const recs = await listCommunityAutopilotRecommendations(userId, 5);
+    return renderAutopilotOfferBlock(recs);
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} buildAutopilotOfferBlock failed (non-fatal): ${err?.message}`);
+    return '';
+  }
+}
+
+/** Structured result for community activation, mapped to HTTP by the route and to speech by voice. */
+export interface ActivateCommunityResult {
+  ok: boolean;
+  httpStatus: number;
+  error?: string;
+  already_activated?: boolean;
+  recommendation_id?: string;
+  title?: string;
+  action_type?: 'navigate' | 'notify';
+  target?: string | null;
+  completion_message?: string;
+  calendar_event_id?: string | null;
+  replenished?: number;
+  /** VTID-04503: the typed action needs a voice read-back before it may run. */
+  needs_confirmation?: boolean;
+  readback?: string;
+  /** VTID-04503: what the suggestion's typed action did, when it has one. */
+  action_result?: ActionOutcome | null;
+  /** VTID-04504: this suggestion is finished in the app (e.g. a public post). */
+  needs_app?: boolean;
+}
+
+/**
+ * VTID-04504: make sure a drafted action has its text. An override (the
+ * member's edit) is sanitized and stored; a missing draft is generated once and
+ * stored. A failed generation leaves the action as it was — the app preview
+ * then shows an empty editor rather than blocking the member.
+ */
+export async function ensureRecommendationDraft(a: {
+  supabaseUrl: string;
+  svcKey: string;
+  userId: string;
+  recId: string;
+  title: string;
+  summary: string | null;
+  action: RecommendationAction;
+  override?: string;
+  regenerate?: boolean;
+}): Promise<{ action: RecommendationAction; generated: boolean; error?: string }> {
+  let text = typeof a.override === 'string' ? sanitizeDraft(a.action.kind, a.override) : '';
+  let generated = false;
+  let error: string | undefined;
+  if (!text && (a.regenerate || !currentDraft(a.action))) {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(a.supabaseUrl, a.svcKey, { auth: { persistSession: false } });
+    const g = await generateDraft(sb, a.userId, { title: a.title, summary: a.summary, action: a.action });
+    if (g.ok && g.text) { text = g.text; generated = true; } else { error = g.error; }
+  }
+  if (!text) return { action: a.action, generated: false, error };
+  const next = withDraft(a.action, text);
+  const patch = await fetch(
+    `${a.supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${a.recId}&user_id=eq.${a.userId}&status=in.(new,snoozed)`,
+    {
+      method: 'PATCH',
+      headers: { 'Content-Type': 'application/json', apikey: a.svcKey, Authorization: `Bearer ${a.svcKey}` },
+      body: JSON.stringify({ action: next, updated_at: new Date().toISOString() }),
+    },
+  ).catch(() => null);
+  if (!patch || !patch.ok) console.warn(`${LOG_PREFIX} draft store failed for ${a.recId.slice(0, 8)} (non-fatal)`);
+  return { action: next, generated };
+}
+
+/**
+ * Canonical community Autopilot activation. Performs ALL side effects:
+ * status → activated + activated_at, calendar event (for schedulable actions),
+ * OASIS event, push notification, and last-rec auto-replenishment. Used by both
+ * the REST popup and the ORB voice tool. VTID-03201.
+ */
+export async function activateCommunityAutopilotRecommendation(
+  userId: string | null,
+  id: string,
+  opts: {
+    tenantId?: string;
+    skipReplenish?: boolean;
+    channel?: ActionChannel;
+    confirmed?: boolean;
+    /** VTID-04504: the member's edited draft from the app preview. */
+    draftText?: string;
+  } = {},
+): Promise<ActivateCommunityResult> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) {
+    return { ok: false, httpStatus: 503, error: 'Supabase not configured' };
+  }
+
+  // Fetch the recommendation to get source_type, source_ref, user_id, status
+  const recResp = await fetch(
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=id,title,summary,source_type,source_ref,user_id,status,domain,action&limit=1`,
+    { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+  );
+  if (!recResp.ok) {
+    return { ok: false, httpStatus: 400, error: 'Failed to fetch recommendation' };
+  }
+  const recRows = await recResp.json() as any[];
+  const rec = recRows[0];
+  if (!rec) {
+    return { ok: false, httpStatus: 404, error: 'Recommendation not found' };
+  }
+
+  // Verify this is a community recommendation belonging to this user
+  if (rec.source_type !== 'community') {
+    return { ok: false, httpStatus: 403, error: 'Not a community recommendation' };
+  }
+  // VTID-04464 (CA-0): a community recommendation is only ever activated by
+  // its owner. The previous check (`rec.user_id && userId && …`) passed when
+  // either side was null, so an ownerless row — or an anonymous caller — got
+  // through. Both must be present and equal.
+  if (!userId) {
+    return { ok: false, httpStatus: 401, error: 'Authentication required' };
+  }
+  if (!rec.user_id || rec.user_id !== userId) {
+    return { ok: false, httpStatus: 403, error: 'Recommendation belongs to another user' };
+  }
+
+  // Already activated? Return idempotent response
+  if (rec.status === 'activated') {
+    const action = COMMUNITY_ACTIONS[rec.source_ref] || null;
+    return {
+      ok: true,
+      httpStatus: 200,
+      already_activated: true,
+      recommendation_id: id,
+      title: rec.title,
+      action_type: action?.action_type || 'notify',
+      target: action?.target || null,
+      completion_message: action?.completion_message || 'Already done!',
+    };
+  }
+
+  // Must be in activatable state
+  if (rec.status !== 'new' && rec.status !== 'snoozed') {
+    return { ok: false, httpStatus: 400, error: `Cannot activate recommendation in status: ${rec.status}` };
+  }
+
+  // VTID-04503: a typed action is checked BEFORE anything changes, so a voice
+  // "yes" to a medium-risk action gets a read-back and the row stays as it was.
+  const templateAction = COMMUNITY_ACTIONS[rec.source_ref];
+  let typedAction = parseAction(rec.action) ?? defaultActionForTemplate(!!templateAction?.calendar_event);
+  const channel: ActionChannel = opts.channel ?? 'app';
+  // VTID-04504: a drafted kind carries the member's words. An edit from the app
+  // preview wins; otherwise a missing draft is written now, so the voice
+  // read-back and the execution use the same text. Stored on the row.
+  if (typedAction && DRAFTABLE_KINDS.has(typedAction.kind)) {
+    const drafted = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action: typedAction, override: opts.draftText,
+    });
+    typedAction = drafted.action;
+  }
+  if (typedAction) {
+    const blocked = checkActionPolicy(typedAction, {
+      userId, tenantId: opts.tenantId || null, recommendationId: id,
+      recommendationTitle: rec.title, channel, confirmed: opts.confirmed,
+    });
+    if (blocked && blocked.status === 'needs_confirmation') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_confirmation: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
+    if (blocked && blocked.status === 'needs_app') {
+      return {
+        ok: true, httpStatus: 200, recommendation_id: id, title: rec.title,
+        needs_app: true, readback: blocked.readback, action_result: blocked,
+      };
+    }
+  }
+
+  // Look up the community action
+  const action = COMMUNITY_ACTIONS[rec.source_ref] || {
+    action_type: 'notify' as const,
+    completion_message: 'Done!',
+  };
+
+  // Update recommendation status to 'activated' via PostgREST — NO VTID
+  const patchResp = await fetch(
+    // VTID-04464: scoped to the owner and the activatable states, so a row
+    // that changed between the read above and this write is never flipped.
+    `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&user_id=eq.${userId}&status=in.(new,snoozed)`,
+    {
+      method: 'PATCH',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: svcKey,
+        Authorization: `Bearer ${svcKey}`,
+      },
+      body: JSON.stringify({
+        status: 'activated',
+        activated_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      }),
+    }
+  );
+  if (!patchResp.ok) {
+    console.error(`${LOG_PREFIX} Community activate PATCH failed:`, await patchResp.text());
+    return { ok: false, httpStatus: 500, error: 'Failed to update recommendation status' };
+  }
+
+  // Intelligent Calendar: create calendar event for schedulable actions
+  let calendarEvent = null;
+  if (action.calendar_event && userId) {
+    try {
+      const { computeNextAvailableSlot } = await import('../services/calendar-service');
+      const { upsertCalendarEntryFromSource } = await import('../services/calendar-producers');
+      const slot = await computeNextAvailableSlot(userId, 'community', action.calendar_event.duration_minutes);
+      const endSlot = new Date(slot.getTime() + action.calendar_event.duration_minutes * 60 * 1000);
+      // VTID-04356: through the producer contract, keyed on the recommendation,
+      // so activating again after a snooze moves the one entry instead of
+      // adding a second, and a completed entry is never reopened.
+      const upserted = await upsertCalendarEntryFromSource(
+        userId,
+        { source_type: 'autopilot', source_ref_type: 'autopilot_recommendation', source_ref_id: id },
+        {
+          title: action.calendar_event.title_template || rec.title,
+          description: rec.summary || action.completion_message,
+          start_time: slot.toISOString(),
+          end_time: endSlot.toISOString(),
+          event_type: action.calendar_event.event_type,
+          priority: 'medium',
+          role_context: 'community',
+          priority_score: 60,
+          wellness_tags: action.calendar_event.wellness_tags,
+          metadata: { recommendation_title: rec.title, source_ref: rec.source_ref },
+        } as any,
+      );
+      calendarEvent = upserted.event;
+      if (calendarEvent) {
+        console.log(`${LOG_PREFIX} Calendar event created for recommendation ${id.slice(0, 8)}... → ${calendarEvent.id.slice(0, 8)}...`);
+      }
+    } catch (calErr: any) {
+      console.warn(`${LOG_PREFIX} Calendar event creation failed (non-fatal): ${calErr.message}`);
+    }
+  }
+
+  // VTID-04503: run the suggestion's typed action, once (agent_runs idempotency).
+  let actionResult: ActionOutcome | null = null;
+  if (typedAction) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+      let tenantId = opts.tenantId || null;
+      if (!tenantId) {
+        const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+        tenantId = tenantRow?.tenant_id ?? null;
+      }
+      actionResult = await executeRecommendationAction(supa, typedAction, {
+        userId,
+        tenantId,
+        recommendationId: id,
+        recommendationTitle: rec.title,
+        channel,
+        confirmed: opts.confirmed,
+        slotStartIso: (calendarEvent as any)?.start_time ?? null,
+        calendarEventId: (calendarEvent as any)?.id ?? null,
+      });
+    } catch (actErr: any) {
+      actionResult = { status: 'failed', kind: typedAction.kind, run_id: null, error: actErr?.message ?? String(actErr) };
+    }
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: (actionResult.status === 'executed' || actionResult.status === 'navigate' || actionResult.status === 'already_executed'
+        ? 'community_autopilot.action.executed'
+        : 'community_autopilot.action.failed') as any,
+      source: 'community-autopilot',
+      status: actionResult.status === 'failed' || actionResult.status === 'invalid' ? 'warning' : 'info',
+      message: `Autopilot action ${typedAction.kind}: ${actionResult.status}`,
+      payload: {
+        recommendation_id: id,
+        user_id: userId,
+        channel,
+        kind: typedAction.kind,
+        outcome: actionResult.status,
+        run_id: (actionResult as any).run_id ?? null,
+      },
+    }).catch(() => {});
+  }
+
+  // Emit OASIS event
+  await emitOasisEvent({
+    vtid: 'SYSTEM',
+    type: 'autopilot.recommendation.activated' as any,
+    source: 'autopilot-recommendations',
+    status: 'info',
+    message: `Community recommendation activated: ${rec.title}`,
+    payload: {
+      recommendation_id: id,
+      user_id: userId,
+      role: 'community',
+      action_type: action.action_type,
+      target: action.target || null,
+      source_ref: rec.source_ref,
+      calendar_event_id: calendarEvent?.id || null,
+    },
+  });
+
+  // Send push notification
+  if (userId) {
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supa = createClient(supabaseUrl, svcKey);
+      const { data: tenantRow } = await repo.fetchPrimaryTenantId(supa, userId);
+      if (tenantRow?.tenant_id) {
+        notifyUserAsync(userId, tenantRow.tenant_id, 'recommendation_activated', {
+          title: rec.title,
+          body: action.completion_message,
+          data: { url: action.target || '/', recommendation_id: id },
+        }, supa);
+      }
+    } catch (notifErr: any) {
+      console.warn(`${LOG_PREFIX} Notification error (non-fatal): ${notifErr.message}`);
+    }
+  }
+
+  console.log(`${LOG_PREFIX} Community activation: ${rec.source_ref} → ${action.action_type}:${action.target || 'none'}`);
+
+  // Auto-replenishment: if this was the user's last 'new' rec, generate fresh ones.
+  // Voice skips this inline (it runs analyzers and can be slow) — the popup/list
+  // auto-generates on next open, so the queue still refills.
+  let replenished = 0;
+  if (userId && !opts.skipReplenish) {
+    try {
+      const remainingResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&status=eq.new&select=id&limit=1`,
+        { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+      );
+      const remainingRows = remainingResp.ok ? await remainingResp.json() as any[] : [];
+      if (remainingRows.length === 0) {
+        console.log(`${LOG_PREFIX} Last community rec activated for user ${userId.slice(0, 8)} — triggering auto-replenishment`);
+        const genResult = await generatePersonalRecommendations(userId, opts.tenantId || '', { trigger_type: 'auto_replenish' });
+        replenished = genResult?.generated || 0;
+        console.log(`${LOG_PREFIX} Auto-replenishment generated ${replenished} new recommendations`);
+      }
+    } catch (replenishErr: any) {
+      console.warn(`${LOG_PREFIX} Auto-replenishment failed (non-fatal): ${replenishErr.message}`);
+    }
+  }
+
+  return {
+    ok: true,
+    httpStatus: 200,
+    recommendation_id: id,
+    title: rec.title,
+    action_type: action.action_type,
+    target: action.target || null,
+    completion_message: action.completion_message,
+    calendar_event_id: calendarEvent?.id || null,
+    replenished,
+    action_result: actionResult,
+  };
+}
+
+// =============================================================================
+// POST /recommendations/:id/draft - VTID-04504 (CA-4)
+// =============================================================================
+/**
+ * The app preview sheet asks for the suggestion's draft before the member
+ * agrees. Body: `{ regenerate?: boolean, text?: string }` — `text` saves the
+ * member's own edit, `regenerate` asks for a fresh draft. Community only, owner
+ * only, drafted kinds only. Nothing is published or sent here.
+ */
+router.post('/:id/draft', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+    if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+    const { id } = req.params;
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,title,summary,source_type,user_id,status,action&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const rec = r.ok ? ((await r.json()) as any[])[0] : null;
+    if (!rec) return res.status(404).json({ ok: false, error: 'Recommendation not found' });
+    if (rec.source_type !== 'community') return res.status(403).json({ ok: false, error: 'Not a community recommendation' });
+    if (!rec.user_id || rec.user_id !== userId) return res.status(403).json({ ok: false, error: 'Recommendation belongs to another user' });
+    if (rec.status !== 'new' && rec.status !== 'snoozed') {
+      return res.status(400).json({ ok: false, error: `Cannot draft recommendation in status: ${rec.status}` });
+    }
+    const action = parseAction(rec.action);
+    if (!action || !DRAFTABLE_KINDS.has(action.kind)) {
+      return res.status(400).json({ ok: false, error: 'This suggestion has nothing to draft' });
+    }
+    const text = typeof req.body?.text === 'string' ? req.body.text : undefined;
+    const out = await ensureRecommendationDraft({
+      supabaseUrl, svcKey, userId, recId: id, title: rec.title, summary: rec.summary ?? null,
+      action, override: text, regenerate: req.body?.regenerate === true,
+    });
+    return res.json({
+      ok: true,
+      recommendation_id: id,
+      kind: out.action.kind,
+      draft: currentDraft(out.action),
+      generated: out.generated,
+      action: out.action,
+      error: out.error ?? null,
+    });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} draft failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'draft failed' });
+  }
+});
+
+// =============================================================================
+// VTID-04657: bounded, reported bridge from Activate into Dev Autopilot
+// =============================================================================
+
+export type ActivationExecutionReport =
+  | { state: 'queued'; execution_id: string; note?: string }
+  | { state: 'pending'; note: string }
+  | { state: 'failed'; error: string; violations?: string[] }
+  | { state: 'not_executable'; source_type: string | null; note: string };
+
+/** How long Activate waits for the bridge before answering `pending`. Plan
+ *  generation is an LLM call, so a finding with no plan can take longer. */
+export const ACTIVATION_BRIDGE_BUDGET_MS = Number(process.env.AUTOPILOT_ACTIVATION_BRIDGE_BUDGET_MS) || 8000;
+
+export async function bridgeActivationWithBudget(
+  recommendationId: string,
+  approvedBy: string | null,
+  vtid: string,
+  budgetMs: number = ACTIVATION_BRIDGE_BUDGET_MS,
+): Promise<ActivationExecutionReport> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) {
+    return { state: 'failed', error: 'Supabase not configured' };
+  }
+
+  let srcType: string | null = null;
+  try {
+    const srcResp = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${recommendationId}&select=source_type&limit=1`,
+      { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } },
+    );
+    const srcRows = srcResp.ok ? await srcResp.json() as Array<{ source_type: string }> : [];
+    srcType = srcRows[0]?.source_type ?? null;
+  } catch (err: any) {
+    return { state: 'failed', error: `source_type lookup failed: ${err?.message ?? 'unknown'}` };
+  }
+
+  if (!isManuallyBridgeableSourceType(srcType)) {
+    return {
+      state: 'not_executable',
+      source_type: srcType,
+      note: 'This recommendation type has no automated executor — a VTID and a draft spec were created for a person to pick up.',
+    };
+  }
+
+  const { bridgeActivationToExecution } = await import('../services/dev-autopilot-execute');
+  const bridge = bridgeActivationToExecution(recommendationId, approvedBy)
+    .then((br): ActivationExecutionReport => {
+      if (br.ok && br.execution_id) {
+        return { state: 'queued', execution_id: br.execution_id, ...(br.skipped ? { note: br.skipped } : {}) };
+      }
+      if (br.ok) return { state: 'failed', error: br.skipped || 'bridge returned no execution' };
+      const violations = ((br.decision as { violations?: Array<{ rule?: string; message?: string }> } | undefined)?.violations || [])
+        .map((v) => v.rule || v.message || '')
+        .filter(Boolean);
+      return { state: 'failed', error: br.error || 'bridge failed', ...(violations.length ? { violations } : {}) };
+    })
+    .catch((err: any): ActivationExecutionReport => ({ state: 'failed', error: err?.message ?? 'bridge threw' }));
+
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<ActivationExecutionReport>((resolve) => {
+    timer = setTimeout(() => resolve({
+      state: 'pending',
+      note: 'Still preparing the execution plan — it continues in the background.',
+    }), budgetMs);
+  });
+  const report = await Promise.race([bridge, timeout]);
+  if (timer) clearTimeout(timer);
+
+  // A late result is still logged and, on failure, recorded in OASIS.
+  const record = async (r: ActivationExecutionReport) => {
+    if (r.state === 'queued') {
+      console.log(`${LOG_PREFIX} Bridged ${recommendationId.slice(0, 8)} → execution ${r.execution_id.slice(0, 8)}`);
+      return;
+    }
+    if (r.state !== 'failed') return;
+    console.warn(`${LOG_PREFIX} Bridge failed for ${recommendationId.slice(0, 8)}: ${r.error}`);
+    await emitOasisEvent({
+      vtid,
+      type: 'autopilot.recommendation.activation_bridge_failed',
+      source: 'autopilot-recommendations',
+      status: 'error',
+      message: `Activation of ${recommendationId.slice(0, 8)} did not reach execution: ${r.error}`,
+      payload: { recommendation_id: recommendationId, vtid, source_type: srcType, error: r.error, violations: r.violations ?? [] },
+    }).catch(() => undefined);
+  };
+  if (report.state === 'pending') {
+    bridge.then(record).catch(() => undefined);
+  } else {
+    await record(report);
+  }
+  return report;
+}
+
+// =============================================================================
+// POST /recommendations/:id/activate - Activate recommendation (creates VTID)
+// =============================================================================
+/**
+ * POST /recommendations/:id/activate
+ *
+ * Creates a VTID task card with spec snapshot from the recommendation.
+ * Idempotent: If already activated, returns existing VTID.
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   vtid: "VTID-XXXXX",
+ *   recommendation_id: "...",
+ *   title: "...",
+ *   status: "activated",
+ *   activated_at: "...",
+ *   spec_checksum: "...",
+ *   already_activated?: boolean
+ * }
+ */
+router.post('/:id/activate', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    const role = await resolveRequestRole(req);
+    const { id } = req.params;
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
+    }
+
+    console.log(`${LOG_PREFIX} Activating recommendation ${id.slice(0, 8)}... (role: ${role || 'none'})`);
+
+    // =========================================================================
+    // Community activation path — NO VTIDs, returns action for frontend
+    // =========================================================================
+    if (role === 'community') {
+      // Single source: REST and ORB voice share this activation flow.
+      const tenantId = req.get('X-Vitana-Tenant') || '';
+      const draftText = typeof req.body?.draft_text === 'string' ? req.body.draft_text : undefined;
+      const result = await activateCommunityAutopilotRecommendation(userId, id, { tenantId, draftText });
+      if (!result.ok) {
+        return res.status(result.httpStatus).json({ ok: false, error: result.error });
+      }
+      return res.status(result.httpStatus).json({
+        ok: true,
+        already_activated: result.already_activated,
+        recommendation_id: result.recommendation_id,
+        title: result.title,
+        status: 'activated',
+        activated_at: new Date().toISOString(),
+        action_type: result.action_type,
+        target: result.target ?? null,
+        completion_message: result.completion_message,
+        calendar_event_id: result.calendar_event_id ?? null,
+        replenished: result.replenished ?? 0,
+        // VTID-04503: a typed action's outcome (null when the row has none).
+        action_result: result.action_result ?? null,
+        needs_app: result.needs_app === true,
+        vtid: 'VTID-01180',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    // =========================================================================
+    // Developer/Admin activation path — creates VTID (existing behavior)
+    // =========================================================================
+    const result = await callRpc<any>('activate_autopilot_recommendation', {
+      p_recommendation_id: id,
+      p_user_id: userId,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const response = result.data;
+    if (!response?.ok) {
+      return res.status(400).json({ ok: false, error: response?.error || 'Failed to activate' });
+    }
+
+    // Emit OASIS event for tracking
+    await emitOasisEvent({
+      vtid: response.vtid || 'SYSTEM',
+      type: 'autopilot.recommendation.activated',
+      source: 'autopilot-recommendations',
+      status: 'info',
+      message: `Recommendation activated: ${response.title}`,
+      payload: {
+        recommendation_id: id,
+        vtid: response.vtid,
+        user_id: userId,
+        already_activated: response.already_activated,
+      },
+    });
+
+    // VTID-02935 Phase 5: emit alignment telemetry for fresh activations only.
+    // Skip already-activated calls (idempotent re-tries don't change alignment
+    // state). Pillar impact is derived from contribution_vector at read time.
+    if (!response.already_activated && response.vtid) {
+      const supabaseUrlForAlign = process.env.SUPABASE_URL;
+      const svcKeyForAlign = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrlForAlign && svcKeyForAlign) {
+        await emitAlignmentEventForActivation({
+          vtid: response.vtid,
+          recId: id,
+          recTitle: response.title || '',
+          userId: userId || null,
+          supabaseUrl: supabaseUrlForAlign,
+          svcKey: svcKeyForAlign,
+        });
+      }
+    }
+
+    // Create draft spec in oasis_specs from recommendation data so the task
+    // enters the spec pipeline with content ready for validate → approve flow
+    if (!response.already_activated && response.vtid) {
+      try {
+        const supabaseUrl = process.env.SUPABASE_URL;
+        const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+        if (supabaseUrl && svcKey) {
+          // Fetch recommendation to get full data (summary, domain, risk_level)
+          const recResp = await fetch(
+            `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${id}&select=title,summary,domain,risk_level,impact_score,effort_score,spec_snapshot&limit=1`,
+            { headers: { apikey: svcKey, Authorization: `Bearer ${svcKey}` } }
+          );
+          const recRows = recResp.ok ? await recResp.json() as any[] : [];
+          const rec = recRows[0];
+
+          if (rec) {
+            const vtid = response.vtid;
+            const snapshot = rec.spec_snapshot || {};
+
+            // Build markdown spec from recommendation data
+            const specMarkdown = [
+              `# ${rec.title}`,
+              '',
+              `**VTID:** ${vtid}`,
+              '',
+              '---',
+              '',
+              '## 1. Goal',
+              '',
+              rec.summary || 'TBD',
+              '',
+              '---',
+              '',
+              '## 2. Non-negotiable Governance Rules Touched',
+              '',
+              (snapshot.non_negotiables || ['Safety check required', 'User consent required'])
+                .map((r: string) => `- ${r}`).join('\n'),
+              '',
+              '---',
+              '',
+              '## 3. Scope',
+              '',
+              '### IN SCOPE',
+              (snapshot.scope_in || [rec.domain]).map((s: string) => `- ${s}`).join('\n'),
+              '',
+              '### OUT OF SCOPE',
+              (snapshot.scope_out || []).length > 0
+                ? snapshot.scope_out.map((s: string) => `- ${s}`).join('\n')
+                : '- TBD',
+              '',
+              '---',
+              '',
+              '## 4. Changes',
+              '',
+              '### 4.1 Database Migrations (SQL)',
+              'TBD — to be detailed during implementation',
+              '',
+              '### 4.2 APIs (Routes, Request/Response)',
+              'TBD — to be detailed during implementation',
+              '',
+              '### 4.3 UI Changes (Screens, States)',
+              'TBD — to be detailed during implementation',
+              '',
+              '---',
+              '',
+              '## 5. Files to Modify',
+              '',
+              (snapshot.files_expected || []).length > 0
+                ? snapshot.files_expected.map((f: string) => `- \`${f}\``).join('\n')
+                : 'TBD — to be identified during implementation',
+              '',
+              '---',
+              '',
+              '## 6. Acceptance Criteria',
+              '',
+              (snapshot.definition_of_done || ['Implementation complete', 'Tests passing'])
+                .map((c: string, i: number) => `${i + 1}. ${c}`).join('\n'),
+              '',
+              '---',
+              '',
+              '## 7. Verification Steps',
+              '',
+              '### 7.1 curl Calls',
+              'TBD — to be defined during implementation',
+              '',
+              '### 7.2 UI Checks',
+              'TBD — to be defined during implementation',
+              '',
+              '---',
+              '',
+              '## 8. Rollback Plan',
+              '',
+              'Revert the commit and redeploy. No data migration required.',
+              '',
+              '---',
+              '',
+              '## 9. Risk Level',
+              '',
+              `**${(rec.risk_level || 'low').toUpperCase()}** (Impact: ${rec.impact_score || '?'}/10, Effort: ${rec.effort_score || '?'}/10)`,
+              '',
+              `> Source: Autopilot recommendation (domain: ${rec.domain || 'general'})`,
+            ].join('\n');
+
+            const specHash = createHash('sha256').update(specMarkdown).digest('hex');
+
+            // Insert into oasis_specs
+            const insertResp = await fetch(`${supabaseUrl}/rest/v1/oasis_specs`, {
+              method: 'POST',
+              headers: {
+                'Content-Type': 'application/json',
+                apikey: svcKey,
+                Authorization: `Bearer ${svcKey}`,
+                Prefer: 'return=representation',
+              },
+              body: JSON.stringify({
+                vtid,
+                version: 1,
+                title: rec.title,
+                spec_markdown: specMarkdown,
+                spec_hash: specHash,
+                status: 'draft',
+                created_by: 'autopilot',
+              }),
+            });
+
+            if (insertResp.ok) {
+              const specData = await insertResp.json() as any[];
+              const newSpec = specData[0];
+
+              // Update vtid_ledger with spec reference
+              await fetch(`${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${vtid}`, {
+                method: 'PATCH',
+                headers: {
+                  'Content-Type': 'application/json',
+                  apikey: svcKey,
+                  Authorization: `Bearer ${svcKey}`,
+                },
+                body: JSON.stringify({
+                  spec_status: 'draft',
+                  spec_current_id: newSpec.id,
+                  spec_current_hash: specHash,
+                  spec_last_error: null,
+                  updated_at: new Date().toISOString(),
+                }),
+              });
+
+              console.log(`${LOG_PREFIX} Spec created for ${vtid}: hash=${specHash.substring(0, 8)}...`);
+            } else {
+              console.error(`${LOG_PREFIX} Failed to create spec for ${vtid}:`, await insertResp.text());
+            }
+          }
+        }
+      } catch (specErr: any) {
+        // Non-fatal: VTID was created, spec can be generated manually
+        console.error(`${LOG_PREFIX} Spec creation failed (non-fatal):`, specErr.message);
+      }
+    }
+
+    // Bridge activations into the executor (cooldown skipped) for every
+    // manually-bridgeable source_type (VTID-04108: dev_autopilot* plus
+    // community/health). Without this, "Activate" only writes the
+    // vtid_ledger row and the card sits in IN PROGRESS forever.
+    //
+    // VTID-04657: this used to be fire-and-forget and the route answered
+    // ok:true whatever happened, so every refusal (status guard, safety gate,
+    // plan generation) stayed in the gateway log while the Command Hub said
+    // "Activated!". The route now waits a bounded time for the bridge and
+    // reports the real outcome as `execution`; a bridge still running when
+    // the budget expires keeps going and is reported as `pending`, and the
+    // activation reaper retries anything that never got an execution row.
+    let execution: ActivationExecutionReport | undefined;
+    if (!response.already_activated && response.vtid) {
+      execution = await bridgeActivationWithBudget(id, userId || null, response.vtid);
+    }
+
+    return res.status(200).json({
+      ...response,
+      ...(execution ? { execution } : {}),
+      vtid_ref: 'VTID-01180',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Activate error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-04670: store a dismiss reason on a developer recommendation
+// =============================================================================
+/**
+ * Reads the row, and only when it is a developer row (user_id NULL, not
+ * community) merges `dismiss` into its quality JSON. The PATCH repeats
+ * user_id=is.null so a community row can never be written by this path.
+ * Never throws.
+ */
+async function recordDeveloperDismiss(id: string, dismiss: DismissRecord): Promise<boolean> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !supabaseKey) return false;
+  const headers = { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}`, 'Content-Type': 'application/json' };
+  const timeout = abortAfter(REC_FETCH_TIMEOUT_MS);
+  try {
+    const r = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&select=id,user_id,source_type,quality&limit=1`,
+      { headers, signal: timeout.signal },
+    );
+    if (!r.ok) return false;
+    const rows = (await r.json()) as Array<{ user_id: string | null; source_type: string | null; quality: unknown }>;
+    const row = Array.isArray(rows) ? rows[0] : null;
+    if (!row || row.user_id || row.source_type === 'community') return false;
+    const prior = row.quality && typeof row.quality === 'object' && !Array.isArray(row.quality)
+      ? (row.quality as Record<string, unknown>) : {};
+    const p = await fetch(
+      `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${encodeURIComponent(id)}&user_id=is.null`,
+      {
+        method: 'PATCH',
+        headers: { ...headers, Prefer: 'return=minimal' },
+        body: JSON.stringify({ quality: { ...prior, dismiss } }),
+        signal: timeout.signal,
+      },
+    );
+    if (!p.ok) {
+      console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${p.status}`);
+      return false;
+    }
+    return true;
+  } catch (err: any) {
+    console.warn(`${LOG_PREFIX} dismiss reason not stored for ${id.slice(0, 8)}: ${err?.message || err}`);
+    return false;
+  } finally {
+    timeout.clear();
+  }
+}
+
+// =============================================================================
+// POST /recommendations/:id/reject - Reject/dismiss recommendation
+// =============================================================================
+/**
+ * POST /recommendations/:id/reject
+ *
+ * Body:
+ * {
+ *   reason?: string       // Optional reason for rejection (free text, passed to the RPC)
+ *   reason_code?: string  // VTID-04670: one of DISMISS_REASON_CODES; unknown → 400
+ *   note?: string         // VTID-04670: optional, ≤ 300 chars
+ * }
+ *
+ * VTID-04670: the RPC stores no reason, so for a DEVELOPER row (user_id
+ * NULL, not community) with a reason code the route PATCHes
+ * quality.dismiss = {reason_code, note, by, at} after the RPC succeeded.
+ * Community rows are never touched. The PATCH is best-effort: the reject
+ * itself already happened, so a failure is logged and reported as
+ * dismiss_recorded:false, never as a failed reject.
+ */
+router.post('/:id/reject', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const { reason } = req.body || {};
+    const userId = getUserId(req);
+    const role = await resolveRequestRole(req);
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
+    }
+
+    // VTID-04670: validate the structured reason before anything is written.
+    const rawCode = (req.body || {}).reason_code;
+    let reasonCode: DismissReasonCode | null = null;
+    if (rawCode !== undefined && rawCode !== null && rawCode !== '') {
+      if (!isDismissReasonCode(rawCode)) {
+        return res.status(400).json({
+          ok: false,
+          error: `Unknown reason_code; expected one of ${DISMISS_REASON_CODES.join(', ')}`,
+        });
+      }
+      reasonCode = rawCode;
+    } else if (isDismissReasonCode(reason)) {
+      reasonCode = reason;
+    }
+
+    console.log(`${LOG_PREFIX} Rejecting recommendation ${id.slice(0, 8)}...`);
+
+    const result = await callRpc<any>('reject_autopilot_recommendation', {
+      p_recommendation_id: id,
+      p_reason: reason || null,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const response = result.data;
+    if (!response?.ok) {
+      return res.status(400).json({ ok: false, error: response?.error || 'Failed to reject' });
+    }
+
+    // VTID-04670: record the structured dismiss reason on developer rows.
+    const dismissRecorded = reasonCode
+      ? await recordDeveloperDismiss(id, buildDismissRecord(reasonCode, (req.body || {}).note, userId))
+      : false;
+
+    // VTID-03301: dismissing the last rec also empties the queue — kick the
+    // same guarded regeneration the /complete path uses. Community only;
+    // fire-and-forget so reject stays fast.
+    if (role === 'community' && userId) {
+      regenerateCommunityRecommendations(userId, {
+        requireEmptyQueue: true,
+        trigger_type: 'auto_replenish',
+      }).catch((e: any) => console.warn(`${LOG_PREFIX} post-reject regen error (non-fatal): ${e?.message}`));
+    }
+
+    return res.status(200).json({
+      ...response,
+      ...(reasonCode ? { reason_code: reasonCode, dismiss_recorded: dismissRecorded } : {}),
+      vtid: 'VTID-01180',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Reject error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// POST /recommendations/:id/snooze - Snooze for later
+// =============================================================================
+/**
+ * POST /recommendations/:id/snooze
+ *
+ * Body:
+ * {
+ *   hours?: number // Hours to snooze (default: 24)
+ * }
+ */
+router.post('/:id/snooze', async (req: Request, res: Response) => {
+  try {
+    const { id } = req.params;
+    const hours = Math.min(Math.max(parseInt(req.body.hours) || 24, 1), 168); // 1-168 hours (1 week max)
+
+    if (!id) {
+      return res.status(400).json({ ok: false, error: 'Recommendation ID required' });
+    }
+
+    console.log(`${LOG_PREFIX} Snoozing recommendation ${id.slice(0, 8)}... for ${hours} hours`);
+
+    const result = await callRpc<any>('snooze_autopilot_recommendation', {
+      p_recommendation_id: id,
+      p_hours: hours,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const response = result.data;
+    if (!response?.ok) {
+      return res.status(400).json({ ok: false, error: response?.error || 'Failed to snooze' });
+    }
+
+    return res.status(200).json({
+      ...response,
+      vtid: 'VTID-01180',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG_PREFIX} Snooze error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-01185: POST /recommendations/generate - Trigger recommendation generation
+// =============================================================================
+/**
+ * POST /recommendations/generate
+ *
+ * Triggers recommendation generation from analyzers.
+ * Admin-only endpoint.
+ *
+ * Body:
+ * {
+ *   sources?: string[] // ['codebase', 'oasis', 'health', 'roadmap'] - default all
+ *   limit?: number     // Max recommendations to generate (default 20)
+ *   force?: boolean    // Regenerate even if recently run
+ * }
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   generated: 15,
+ *   duplicates_skipped: 3,
+ *   run_id: "rec-gen-2026-01-17-001",
+ *   duration_ms: 45000
+ * }
+ */
+// =============================================================================
+// POST /recommendations/community-scan - VTID-04505 (CA-5)
+// =============================================================================
+/**
+ * The twice-daily member scan (hourly tick; members at local 07:00 / 17:00).
+ * Caller: the EventBridge dispatcher (X-Gateway-Internal) or an exafy admin.
+ * Writes nothing unless COMMUNITY_AUTOPILOT_SCAN_ENABLED=true and not
+ * `dry_run`. Never notifies anyone: rows only appear in the member's own
+ * Autopilot. Body: `{ dry_run?, user_id?, max_members? }`.
+ */
+router.post('/community-scan', async (req: Request, res: Response) => {
+  const identity = (req as AuthenticatedRequest).identity;
+  if (!hasGatewayInternalToken(req) && identity?.exafy_admin !== true) {
+    return res.status(403).json({ ok: false, error: 'FORBIDDEN' });
+  }
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const svcKey = process.env.SUPABASE_SERVICE_ROLE;
+  if (!supabaseUrl || !svcKey) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const { createClient } = await import('@supabase/supabase-js');
+    const sb = createClient(supabaseUrl, svcKey, { auth: { persistSession: false } });
+    const { runCommunityScan } = await import('../services/community-autopilot/scan-runner');
+    const body = req.body ?? {};
+    const summary = await runCommunityScan(sb, {
+      dryRun: body.dry_run === true,
+      onlyUserId: typeof body.user_id === 'string' ? body.user_id : undefined,
+      maxMembers: typeof body.max_members === 'number' ? body.max_members : undefined,
+    });
+    await emitOasisEvent({
+      vtid: 'SYSTEM',
+      type: 'community_autopilot.scan.completed' as any,
+      source: 'community-autopilot',
+      status: 'info',
+      message: `Community scan: ${summary.members_scanned} members, ${summary.rows_inserted} suggestions${summary.dry_run ? ' (dry run)' : ''}`,
+      payload: {
+        enabled: summary.enabled, dry_run: summary.dry_run, members_considered: summary.members_considered,
+        members_due: summary.members_due, members_scanned: summary.members_scanned, rows_inserted: summary.rows_inserted,
+      },
+    }).catch(() => {});
+    return res.json({ ok: true, ...summary });
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} community-scan failed:`, err?.message);
+    return res.status(500).json({ ok: false, error: err?.message ?? 'scan failed' });
+  }
+});
+
+router.post('/generate', async (req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    const userId = getUserId(req);
+    const role = await resolveRequestRole(req);
+
+    // =========================================================================
+    // VTID-03301: Community on-demand regeneration.
+    // POST /recommendations/generate?role=community
+    //   → 200 { ok, generated, recommendations }            (fresh batch)
+    //   → 200 { ok, generated: 0, reason }                  (guard fired)
+    // Same guards as the queue-empty auto-trigger; the cooldown makes a
+    // double-tap idempotent so a force-refresh can't double-generate.
+    // =========================================================================
+    if (role === 'community') {
+      if (!userId) {
+        return res.status(401).json({ ok: false, error: 'User ID required' });
+      }
+      const tenantId = req.get('X-Vitana-Tenant') || undefined;
+      const regen = await regenerateCommunityRecommendations(userId, {
+        trigger_type: 'manual',
+        tenantId,
+      });
+      if (!regen.ok) {
+        return res.status(500).json({ ok: false, error: regen.error || 'Generation failed' });
+      }
+      if (regen.generated === 0) {
+        return res.status(200).json({
+          ok: true,
+          generated: 0,
+          reason: regen.reason || 'no_signals',
+          recommendations: [],
+          vtid: 'VTID-03301',
+          timestamp: new Date().toISOString(),
+        });
+      }
+      const recommendations = await buildCommunityRecsResponse(userId, ['new', 'activated'], 20);
+      return res.status(200).json({
+        ok: true,
+        generated: regen.generated,
+        recommendations,
+        run_id: regen.run_id,
+        vtid: 'VTID-03301',
+        timestamp: new Date().toISOString(),
+      });
+    }
+
+    const {
+      sources = ['codebase', 'oasis', 'health', 'roadmap'],
+      limit = 20,
+      force = false,
+    } = req.body;
+
+    // Validate sources
+    const validSources: SourceType[] = ['codebase', 'oasis', 'health', 'roadmap', 'llm', 'behavior'];
+    const requestedSources = (Array.isArray(sources) ? sources : [sources]).filter(
+      (s: string) => validSources.includes(s as SourceType)
+    ) as SourceType[];
+
+    if (requestedSources.length === 0) {
+      return res.status(400).json({
+        ok: false,
+        error: 'No valid sources specified',
+        valid_sources: validSources,
+      });
+    }
+
+    console.log(`${LOG} Generation requested by ${userId || 'anonymous'} - sources: ${requestedSources.join(', ')}`);
+
+    // Emit start event
+    await emitOasisEvent({
+      vtid: 'VTID-01185',
+      type: 'autopilot.recommendation.generation.started' as any,
+      source: 'recommendation-engine',
+      status: 'info',
+      message: `Recommendation generation started (sources: ${requestedSources.join(', ')})`,
+      payload: {
+        sources: requestedSources,
+        limit,
+        force,
+        triggered_by: userId,
+      },
+    });
+
+    // Get base path from environment or use default
+    const basePath = process.env.VITANA_BASE_PATH || '/home/user/vitana-platform';
+
+    // Run generation
+    const result = await generateRecommendations(basePath, {
+      sources: requestedSources,
+      limit: Math.min(Math.max(limit, 1), 50),
+      force,
+      triggered_by: userId || 'api',
+      trigger_type: 'manual',
+    });
+
+    // Emit completion event
+    await emitOasisEvent({
+      vtid: 'VTID-01185',
+      type: result.ok
+        ? ('autopilot.recommendation.generation.completed' as any)
+        : ('autopilot.recommendation.generation.failed' as any),
+      source: 'recommendation-engine',
+      status: result.ok ? 'success' : 'error',
+      message: result.ok
+        ? `Generated ${result.generated} recommendations (${result.duplicates_skipped} duplicates skipped)`
+        : `Generation failed: ${result.errors[0]?.error || 'Unknown error'}`,
+      payload: {
+        run_id: result.run_id,
+        generated: result.generated,
+        duplicates_skipped: result.duplicates_skipped,
+        duration_ms: result.duration_ms,
+        errors: result.errors,
+      },
+    });
+
+    // Notify user about new recommendations
+    if (result.ok && result.generated > 0 && userId) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        const { data: tenantRow } = await repo.fetchPrimaryTenantIdStrict(supa, userId);
+        if (tenantRow?.tenant_id) {
+          notifyUserAsync(userId, tenantRow.tenant_id, 'new_recommendation', {
+            title: `${result.generated} new recommendation${result.generated > 1 ? 's' : ''}`,
+            body: 'Autopilot found new actions to improve your wellbeing.',
+            data: { url: '/autopilot', count: String(result.generated) },
+          }, supa);
+
+          // BOOTSTRAP-NOTIF-SYSTEM-EVENTS: surface the highest-impact rec
+          // from this run as a P0 push so users see critical
+          // recommendations even outside the in-app inbox. Threshold of 8+
+          // matches the engine's reserved tier (see recommendation-
+          // generator impact_score mapping where 8 is "strong signal").
+          const { data: highImpact } = await repo.fetchHighImpactRecentRecommendation(supa, userId, tenantRow.tenant_id);
+          const topRec = highImpact?.[0];
+          if (topRec) {
+            notifyUserAsync(userId, tenantRow.tenant_id, 'high_impact_recommendation', {
+              title: topRec.title || 'High-impact recommendation',
+              body: topRec.summary || 'Autopilot flagged a high-impact action for you.',
+              data: {
+                url: `/autopilot?rec=${topRec.id}`,
+                entity_id: topRec.id,
+                recommendation_id: topRec.id,
+                impact_score: String(topRec.impact_score ?? ''),
+              },
+            }, supa);
+          }
+        }
+      } catch (notifErr: any) {
+        console.warn(`[Notifications] new_recommendation dispatch error: ${notifErr.message}`);
+      }
+    }
+
+    return res.status(result.ok ? 200 : 500).json({
+      ...result,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} Generation error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-01185: GET /recommendations/sources - Get analyzer source status
+// =============================================================================
+/**
+ * GET /recommendations/sources
+ *
+ * Returns available analysis sources and their status.
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   sources: [
+ *     { type: 'codebase', status: 'ready', last_scan: '2026-01-17T10:00:00Z', files_scanned: 1523 },
+ *     { type: 'oasis', status: 'ready', last_scan: '2026-01-17T12:00:00Z', events_analyzed: 50000 },
+ *     { type: 'health', status: 'ready', last_scan: '2026-01-17T11:00:00Z', checks_run: 45 },
+ *     { type: 'roadmap', status: 'ready', last_scan: '2026-01-17T09:00:00Z', specs_found: 23 }
+ *   ]
+ * }
+ */
+router.get('/sources', async (_req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    console.log(`${LOG} Sources status requested`);
+
+    const result = await callRpc<any[]>('get_autopilot_analyzer_sources', {});
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const sources = (result.data || []).map((s: any) => ({
+      type: s.source_type,
+      status: s.status,
+      enabled: s.enabled,
+      last_scan: s.last_scan_at,
+      last_scan_duration_ms: s.last_scan_duration_ms,
+      items_scanned: s.items_scanned,
+      items_found: s.items_found,
+      recommendations_generated: s.recommendations_generated,
+      last_error: s.last_error,
+      config: s.config,
+    }));
+
+    return res.status(200).json({
+      ok: true,
+      sources,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} Sources error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// VTID-01185: GET /recommendations/history - Get generation run history
+// =============================================================================
+/**
+ * GET /recommendations/history
+ *
+ * Returns generation history.
+ *
+ * Query params:
+ * - limit: max items (default: 20, max: 100)
+ * - offset: pagination offset (default: 0)
+ * - trigger_type: filter by trigger type (manual, scheduled, pr_merge, webhook)
+ *
+ * Response:
+ * {
+ *   ok: true,
+ *   runs: [
+ *     { run_id: "rec-gen-2026-01-17-001", timestamp: "...", generated: 15, duration_ms: 45000 },
+ *     { run_id: "rec-gen-2026-01-16-001", timestamp: "...", generated: 8, duration_ms: 32000 }
+ *   ]
+ * }
+ */
+router.get('/history', async (req: Request, res: Response) => {
+  const LOG = '[VTID-01185]';
+
+  try {
+    const limit = Math.min(Math.max(parseInt(req.query.limit as string) || 20, 1), 100);
+    const offset = Math.max(parseInt(req.query.offset as string) || 0, 0);
+    const triggerType = req.query.trigger_type as string || null;
+
+    console.log(`${LOG} History requested (limit: ${limit}, offset: ${offset})`);
+
+    const result = await callRpc<any[]>('get_autopilot_recommendation_history', {
+      p_limit: limit + 1,
+      p_offset: offset,
+      p_trigger_type: triggerType,
+    });
+
+    if (!result.ok) {
+      return res.status(400).json({ ok: false, error: result.error });
+    }
+
+    const runs = result.data || [];
+    const hasMore = runs.length > limit;
+    if (hasMore) {
+      runs.pop();
+    }
+
+    return res.status(200).json({
+      ok: true,
+      runs: runs.map((r: any) => ({
+        run_id: r.run_id,
+        status: r.status,
+        trigger_type: r.trigger_type,
+        triggered_by: r.triggered_by,
+        sources: r.sources,
+        recommendations_generated: r.recommendations_generated,
+        duplicates_skipped: r.duplicates_skipped,
+        errors_count: r.errors_count,
+        duration_ms: r.duration_ms,
+        started_at: r.started_at,
+        completed_at: r.completed_at,
+        analysis_summary: r.analysis_summary,
+      })),
+      count: runs.length,
+      has_more: hasMore,
+      vtid: 'VTID-01185',
+      timestamp: new Date().toISOString(),
+    });
+  } catch (error: any) {
+    console.error(`${LOG} History error:`, error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+});
+
+// =============================================================================
+// GET /recommendations/health - Health check
+// =============================================================================
+// =============================================================================
+// POST /recommendations/:id/complete - Mark recommendation as fully completed
+// =============================================================================
+/**
+ * POST /recommendations/:id/complete
+ *
+ * Called by the frontend when a user has actually completed the recommended action
+ * (e.g., finished editing profile, wrote first diary entry, joined a group).
+ * This differs from "activate" which just means the user clicked to start the action.
+ *
+ * Community users only. Updates status from 'activated' to a completed marker,
+ * emits an OASIS event for tracking, and optionally rewards the user.
+ */
+router.post('/:id/complete', async (req: Request, res: Response) => {
+  try {
+    const userId = getUserId(req);
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'User ID required' });
+    }
+
+    const recId = req.params.id;
+    const role = await resolveRequestRole(req);
+    console.log(`${LOG_PREFIX} Completing recommendation ${recId.slice(0, 8)}... (role: ${role || 'none'})`);
+
+    // VTID-03180: route delegates to the canonical RPC so the state transition
+    // (status, completed_at) and the reward credit happen in a single
+    // transaction. Previously this route PATCHed a `metadata` column that
+    // doesn't exist on autopilot_recommendations, so every POST returned 400
+    // and the row stayed 'activated' forever.
+    const result = await callRpc<any>('complete_autopilot_recommendation', {
+      p_recommendation_id: recId,
+      p_user_id: userId,
+    });
+
+    if (!result.ok) {
+      console.error(`${LOG_PREFIX} complete RPC transport error:`, result.error);
+      return res.status(500).json({ ok: false, error: result.error });
+    }
+
+    const response = result.data;
+    if (!response?.ok) {
+      const errStr = String(response?.error || '');
+      const statusCode =
+        errStr.includes('not found') ? 404 :
+        errStr.includes('belongs to another user') ? 403 :
+        errStr.includes('system-wide') ? 403 :
+        400;
+      return res.status(statusCode).json({ ok: false, error: errStr || 'Failed to complete' });
+    }
+
+    const sourceRef: string | null = response.source_ref || null;
+    const alreadyCompleted: boolean = response.already_completed === true;
+
+    // VTID-04331: completing the recommendation ticks its calendar entry off
+    // too, so the calendar never shows an open task for finished work.
+    if (!alreadyCompleted) {
+      completeCalendarEntriesForSource(userId, 'autopilot_recommendation', recId).catch(() => 0);
+    }
+
+    // Look up tenant once; reused by the milestone fan-out and the
+    // post-complete regenerate call below. The pre-rebase milestone block
+    // scoped `tenantRow` inside its own try, which broke the VTID-03301
+    // regenerate call that was merged in afterwards (TS2304).
+    let tenantId: string | undefined;
+    try {
+      const { createClient } = await import('@supabase/supabase-js');
+      const supabase = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+      const { data: tenantRow } = await repo.fetchPrimaryTenantId(supabase, userId);
+      tenantId = tenantRow?.tenant_id || undefined;
+
+      // Milestone fan-out: only on first-time completion of an onboarding rec.
+      if (!alreadyCompleted && sourceRef?.startsWith?.('onboarding_')) {
+        const { data: remaining } = await repo.fetchRemainingOnboardingRecommendations(supabase, userId);
+
+        if ((!remaining || remaining.length === 0) && tenantId) {
+          await emitOasisEvent({
+            vtid: 'VTID-01180',
+            type: 'user.milestone.reached' as any,
+            source: 'autopilot-recommendations',
+            status: 'info',
+            message: 'User completed all onboarding recommendations',
+            payload: {
+              user_id: userId,
+              milestone: 'onboarding_complete',
+              tenant_id: tenantId,
+            },
+          });
+        }
+      }
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Tenant lookup / milestone check failed (non-fatal):`, e);
+    }
+
+    // VTID-04878 (owner decision 2026-10-05): a first-time completion earns
+    // autopilot_action_done — 5 VTNA, at most 2 per UTC day — paid by the
+    // gateway through claim_capped_reward(), never by the RPC (which pays 0
+    // since VTID-04864). A failed claim never fails the completion.
+    let credited = 0;
+    if (!alreadyCompleted) {
+      try {
+        const { createClient } = await import('@supabase/supabase-js');
+        const sb = createClient(process.env.SUPABASE_URL!, process.env.SUPABASE_SERVICE_ROLE!);
+        const claim = await claimCappedReward(sb, {
+          tenantId, userId, ruleId: 'autopilot_action_done', ref: recId,
+        });
+        credited = claim.credited;
+      } catch (e: any) {
+        console.warn(`${LOG_PREFIX} autopilot_action_done claim failed (non-fatal): ${e?.message ?? e}`);
+      }
+    }
+
+    // OASIS event — visibility only, never block the response on this.
+    try {
+      await emitOasisEvent({
+        vtid: 'VTID-01180',
+        type: 'autopilot.recommendation.completed' as any,
+        source: 'autopilot-recommendations',
+        status: 'info',
+        message: `Community recommendation completed: ${response.title}`,
+        payload: {
+          recommendation_id: recId,
+          user_id: userId,
+          source_ref: sourceRef,
+          title: response.title,
+          reward: credited,
+          already_completed: alreadyCompleted,
+        },
+      });
+    } catch (e) {
+      console.warn(`${LOG_PREFIX} Failed to emit completion event:`, e);
+    }
+
+
+    // VTID-03301: queue-empty → regenerate immediately. Fire-and-forget so
+    // Complete returns fast; the guard re-checks the active (new + activated)
+    // count and only generates when it has actually hit 0 (and honors the
+    // daily cap / cooldown / consent / enabled gates). The FE's poll/refetch
+    // surfaces the fresh batch.
+    regenerateCommunityRecommendations(userId, {
+      requireEmptyQueue: true,
+      tenantId,
+      trigger_type: 'auto_replenish',
+    }).catch((e: any) => console.warn(`${LOG_PREFIX} post-complete regen error (non-fatal): ${e?.message}`));
+
+    return res.status(200).json({
+      ok: true,
+      recommendation_id: recId,
+      title: response.title,
+      status: 'completed',
+      completed_at: response.completed_at,
+      reward: credited,
+      already_completed: alreadyCompleted,
+    });
+
+  } catch (err: any) {
+    console.error(`${LOG_PREFIX} Error completing recommendation:`, err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+router.get('/health', (_req: Request, res: Response) => {
+  return res.status(200).json({
+    ok: true,
+    service: 'autopilot-recommendations',
+    vtid: 'VTID-01180',
+    version: '2.1.0',
+    timestamp: new Date().toISOString(),
+    endpoints: [
+      'GET /recommendations',
+      'GET /recommendations/count',
+      'POST /recommendations/:id/activate',
+      'POST /recommendations/:id/complete',
+      'POST /recommendations/:id/reject',
+      'POST /recommendations/:id/snooze',
+      'POST /recommendations/generate',
+      'GET /recommendations/sources',
+      'GET /recommendations/history',
+    ],
+  });
+});
+
+export default router;

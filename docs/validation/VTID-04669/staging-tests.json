@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04669",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "pending approvals (now reviewed-keep only, awaiting_review_count) exists and requires a login", "path": "/api/v1/dev-autopilot/pending-approvals", "expect_status": 401 },
+    { "kind": "http", "name": "recommendations health answers JSON", "path": "/api/v1/autopilot/recommendations/health", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04669-quality-review.test.ts test/vtid-04668-scoring-service-and-listing.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "The review calls the planner model and PATCHes / auto-archives recommendation rows; staging writes to the production database, so the review is proven by the suites (model and database mocked), not by a staging write" }
+  ]
+}

@@ -1,0 +1,41 @@
+# VTID-03697 — commands actually run.
+
+# Discovery: the dispatch was REJECTED by GitHub, not merely failed.
+#   POST /repos/exafyltd/vitana-platform/actions/workflows/AWS-PROD-DEPLOY-GATEWAY.yml/dispatches
+#   -> failed to parse workflow: you may only define up to 25 `inputs`
+#      for a `workflow_dispatch` event
+
+python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'));print(len(d[True]['workflow_dispatch']['inputs']))"
+#   -> 26
+
+# When did it cross the line?
+git log --oneline -1 -S narration_audio_cache -- .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+#   -> 3d8cb429 fix(ci): bind the three narration-cache env vars in a diffable file
+git show 5811ea82~1:.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml | python3 -c "import sys,yaml;print(len(yaml.safe_load(sys.stdin)[True]['workflow_dispatch']['inputs']))"
+#   -> 24   (so 24 -> 26; my own commit crossed it)
+
+# Which inputs do callers actually pass? Read, not assumed.
+grep -oE '"[a-z_]+":' scripts/deploy/publish-to-prod.sh | sort -u
+#   -> canary, environment, health_path, initiator, inputs, ref, service, vtid
+sed -n '1430,1470p' services/gateway/src/routes/operator.ts
+#   -> reason, deploy_mode, expected_commit  (Command Hub PUBLISH)
+#   -> neither caller passes a narration input
+
+# After removing the two inputs:
+python3 -c "import yaml;d=yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'));print(len(d[True]['workflow_dispatch']['inputs']))"
+#   -> 24
+
+cd services/gateway && npx jest test/scripts/workflow-dispatch-input-limit.test.ts
+#   -> 4/4 passing
+#   -> console.warn: [workflow-inputs] within 2 of the 25 limit:
+#                    AWS-PROD-DEPLOY-GATEWAY.yml=24
+
+# Mutation check on the guard: add two probe inputs, confirm it goes red.
+#   -> 3 failed, 1 passed; reported "AWS-PROD-DEPLOY-GATEWAY.yml: 26 inputs"
+#   -> restored; count back to 24
+
+# --- NOT done from this session ---
+# A live dispatch of the fixed workflow. It cannot be dispatched until this
+# change is on main, because workflow_dispatch resolves the workflow file and
+# GitHub rejects the parse before any ref selection matters. That is the first
+# real confirmation and is deliberately listed as pending, not as verified.

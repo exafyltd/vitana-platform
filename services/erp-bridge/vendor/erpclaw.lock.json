@@ -1,0 +1,24 @@
+{
+  "$comment": "VTID-03840 — the ONLY place the ERPClaw pin lives. vendor.sh refuses any other commit. Bumping = new VTID + rehearsal per docs/validation/VTID-03840/outputs/10-upgrade-rehearsal.txt.",
+  "foundation": {
+    "repo": "https://github.com/avansaber/erpclaw.git",
+    "commit": "4d32db6585297a1d05a7b5927168de8c75bb7708",
+    "label": "v4.15.0 (registry v91) — not a git tag upstream; pinned by commit",
+    "license": "GPL-3.0 — hosted only, never shipped to a customer device or on-prem"
+  },
+  "addons": {
+    "repo": "https://github.com/avansaber/erpclaw-addons.git",
+    "commit": "7c1b5ae5701980e97f34cf25fa5943066140f6a3",
+    "modules": [
+      {"name": "erpclaw-growth", "subdir": "erpclaw-growth", "version": "2.10.0",
+       "allowlisted_domains": ["erpclaw-crm"],
+       "note": "bundles CRM + CRM Advanced + Analytics + AI Engine; only the CRM domain is catalogued (decision 10 / GOLDEN-WORKFLOWS §4). Every further module needs the owner's approval."}
+    ]
+  },
+  "patches": [
+    "patches/0001-0002-erpclaw-lib-db-postgres.patch",
+    "patches/0003-router-module-lookup-postgres.patch",
+    "patches/0004-decimal-sum-numeric-postgres.patch"
+  ],
+  "overlay": {"charts/uae_ifrs.json": "scripts/erpclaw-gl/assets/charts/uae_ifrs.json"}
+}

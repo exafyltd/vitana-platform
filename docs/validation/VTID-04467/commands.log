@@ -1,0 +1,4 @@
+cd services/gateway
+node node_modules/.bin/tsc --noEmit -p .                                  # exit 0 (outputs/tsc.txt)
+node node_modules/.bin/jest test/vtid-04467-dispatch-fallback.test.ts     # 18/18 (outputs/jest.txt)
+node node_modules/.bin/jest test/vtid-04368-retry-storm-outage-gate.test.ts   # green: outage regex widened, no regression

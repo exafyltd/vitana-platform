@@ -1,0 +1,154 @@
+# VTID-03961 — commands run during this change
+
+## Why (context confirmed live before writing any code)
+
+Immediately after merging VTID-03958 (PR #3346, env_overrides input), checked
+what dispatching AWS-PROD-DEPLOY-GATEWAY.yml with env_overrides would
+actually ship, per CLAUDE.md's Part 1 IF-THEN rule 26 ("pin/scope a
+session-approved prod deploy to this session's own change, not whatever else
+is on staging/main"):
+
+$ aws ecs describe-task-definition --task-definition vitana-gateway-awsdr:103 \
+    --region eu-central-1 \
+    --query 'taskDefinition.containerDefinitions[0].environment[?name==`GIT_COMMIT_SHA`||name==`BUILD_INFO_MARKER`]'
+  GIT_COMMIT_SHA=dc2d17d210678522e973a1bc94453f153eb39e5b
+
+$ curl -s https://gateway.vitanaland.com/api/v1/admin/build-info
+  {"env":"production","git_commit":"dc2d17d2...","booted_at":"2026-09-15T14:53:00Z"}
+$ curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+  {"env":"staging","git_commit":"7b9ca15b...","booted_at":"2026-09-16T12:19:22Z"}
+
+$ git log --oneline dc2d17d210678522e973a1bc94453f153eb39e5b..7b9ca15b41c8dbb89d1ec41ac68b2d5da0ae59f6
+  30 commits, including VTID-03932 (Commerce Partner Onboarding), VTID-03894
+  (supplier self-service catalogue), an Aurora/Cognito cutover merge, and
+  more — none discussed or approved as part of enabling the on-ramp flag.
+
+Both existing `deploy_mode`s (promote-staging, rebuild-main) always
+re-derive the shipped image from staging's or main's current HEAD — neither
+can express "ship literally nothing code-wise, just a task-def env var".
+Presented this finding to the platform owner with two options (build a
+narrow env-only mode vs. accept a full staging promotion); owner chose the
+narrow mode.
+
+## Fix
+
+.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:
+  1. Header comment: "Two modes" -> "Three modes", documents env-only and
+     why it exists (references this VTID and CLAUDE.md IF-THEN rule 26).
+  2. `deploy_mode` input: added `env-only` to the existing `options` list
+     (a CHOICE VALUE on the already-existing input — does NOT add a new
+     workflow_dispatch input; count stays 24, confirmed below).
+  3. "Resolve deploy source" step: new FIRST branch, `if [ "$DEPLOY_MODE" =
+     "env-only" ]`. Reads the CURRENT `ECS_SERVICE` task definition's own
+     image and GIT_COMMIT_SHA (aws ecs describe-services ->
+     describe-task-definition) and echoes them back as this run's
+     `mode`/`image`/`sha`/`short` outputs, then `exit 0` BEFORE the
+     promote-staging section's staging build-info curl or the
+     rebuild-main branch — env-only never touches staging or main at all.
+     Fails loudly (::error::, non-zero exit) if the current image can't be
+     resolved; falls back to sha="unknown" (not a crash) if
+     GIT_COMMIT_SHA is absent from the current task def.
+  4. Because "Build task-definition (1/2)" always rewrites
+     `.containerDefinitions[0].image` and the GIT_COMMIT_SHA/COMMIT_SHA/
+     BUILD_INFO_MARKER env vars from `steps.source.outputs.*`, and env-only
+     mode sets those outputs to the CURRENT live values, that rewrite is a
+     byte-for-byte no-op under env-only — no code change needed there. Only
+     step "(2/2)"'s env_overrides (or another dispatch-input override)
+     block can change anything under this mode.
+
+## New tests
+
+services/gateway/test/vtid-03961-env-only-deploy-mode.test.ts (7 tests):
+  - deploy_mode still has exactly the expected 3 options; input COUNT
+    unchanged at 24 (a choice value, not a new input)
+  - extracts the REAL "Resolve deploy source" step script (not a
+    reimplementation), confirms bash -n passes on it standalone
+  - env-only's branch calls describe-services/describe-task-definition and
+    returns before the promote-staging section's STAGING_URL curl is ever
+    reached (string-position assertion on the real script)
+  - executes the real extracted script under a stub `aws` on PATH:
+    echoes back the current image/commit unchanged; falls back to
+    sha="unknown" when GIT_COMMIT_SHA is absent; fails loudly
+    (non-zero exit + ::error::) when the current image can't be resolved
+  - rebuild-main mode's branch is unaffected (still selects mode=rebuild-main)
+
+Iteration note: the first draft of the harness ran the extracted script
+without sanitizing GitHub's `${{ ... }}` template syntax, which is not
+valid bash on its own ("bad substitution") — fixed by blanking those
+expressions before execution (the stub `aws` only pattern-matches on
+subcommand text, not flag values, so this is a safe stand-in for GitHub's
+real interpolation). A second early failure (checking `result.stderr` for
+the `::error::` line) was fixed by also checking stdout — the script's
+`::error::` lines are plain `echo` (matching every other override block's
+convention in this file), not `>&2`.
+
+## Targeted test run
+
+$ cd services/gateway && npx jest test/vtid-03961-env-only-deploy-mode.test.ts \
+    test/vtid-03958-env-overrides-input.test.ts \
+    test/vtid-03820-onramp-staging-flag-pinned.test.ts \
+    test/scripts/workflow-dispatch-input-limit.test.ts \
+    test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts --silent
+Test Suites: 5 passed, 5 total
+Tests:       37 passed, 37 total
+(full output: outputs/tests-and-tsc.txt)
+
+## TypeScript
+
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output)
+
+## Full gateway suite (regression check)
+
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 925 passed, 926 total
+Tests:       29 skipped, 6 todo, 15200 passed, 15235 total
+0 failures
+
+## YAML validation
+
+$ python3 -c "
+import yaml
+d = yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))
+on = d.get('on', d.get(True))
+inputs = on['workflow_dispatch']['inputs']
+print('input count:', len(inputs))
+print('deploy_mode options:', inputs['deploy_mode']['options'])
+"
+input count: 24
+deploy_mode options: ['promote-staging', 'rebuild-main', 'env-only']
+
+## VTID allocation
+
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"cicd","module":"prod-deploy-env-only-mode"}'
+{"ok":true,"vtid":"VTID-03961","num":3961,"id":"1adbb789-2685-42ca-b884-396dd103f4e1"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb, via the
+Supabase MCP connection) to set title/summary, status='in_progress',
+spec_status='approved' — the user directly instructed this work in
+conversation (chose "build a narrow env-only deploy mode" from the two
+options presented), which is the standing approval per CLAUDE.md §4.1/Part 1
+rule 2b.
+
+## Branch hygiene
+
+Branched fresh as `vtid-03961-env-only-deploy-mode` from `origin/main` at
+`4d423536` (the VTID-03958 squash-merge commit), per this session's
+established per-VTID pattern.
+
+## Acceptance-mapping self-check
+
+Ran the same check VALIDATOR-CHECK's Acceptance Mapping Gate uses: every
+AC-N line in acceptance.md has a line starting literally with "TEST:" within
+the next 12 lines. Confirmed before commit.
+
+## Not done here (explicitly out of scope for this PR)
+
+No AWS mutation of any kind (only read-only `describe-services`/
+`describe-task-definition` calls, for investigation and inside the test
+harness's stub). No workflow dispatched. PR left open for review, not
+merged by this change itself. Actually applying `env_overrides` to
+production (the original ask) is the next, separate action once this PR is
+reviewed/merged and staging picks it up.

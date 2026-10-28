@@ -1,0 +1,58 @@
+# VTID-04986: commands run in /home/user/vitana-platform, branch claude/command-hub-overview-redesign-saty3w
+# (reset to origin/main 9c92455e). vitana-v1 is a read-only checkout at /home/user/vitana-v1 (main 42d42b16).
+# No live endpoint, database or AWS API was called. Jest runs used `env -u AWS_ACCESS_KEY_ID -u
+# AWS_SECRET_ACCESS_KEY` so no test could reach AWS with real credentials; every test uses mocks.
+
+# 0. Reproduce the generator failure. The default V1_ROOT (services/gateway/../../../vitana-v1)
+#    resolves to /home/user/vitana-v1, which mirrors REGEN-SCREENS-CATALOG.yml
+#    (VITANA_V1_ROOT=$GITHUB_WORKSPACE/vitana-v1).
+node services/gateway/scripts/regen-screens-catalog.mjs --check
+                                                           # before: ReferenceError: Inbox is not defined
+                                                           # after the stub fix: duplicate screen_ids: DEV-OVERVIEW, DEV-SESSIONS, ... ADM-DASHBOARD
+                                                           # after idOverrides: completes (315 entries: DEV 133 · ADM 66 · others 116)
+
+# 1. Regen run, reviewed, NOT committed (drift too large, see acceptance.md "Stopped and reported")
+node services/gateway/scripts/regen-screens-catalog.mjs   # output copied aside, then `git checkout` of both files
+node services/gateway/scripts/validate-dev-frontend-spec.mjs   # on the regenerated spec: 25 modules, 133 screens, canonical order
+npx jest --ci test/command-hub                             # on the regenerated files: 35 suites, 519 passed
+                                                           # summary: outputs/06-regen-drift-summary.txt, diff: outputs/06b-regen-proposed.diff
+
+# 2. Caller search, both repos, before deleting the route
+grep -rn "overview-timeseries\|overview_timeseries\|overviewTimeseries\|ops-overview-timeseries" \
+  /home/user/vitana-platform /home/user/vitana-v1 --exclude-dir=node_modules --exclude-dir=.git \
+  --exclude-dir=graphify-out --exclude-dir=.repowise --exclude-dir=dist
+grep -rln "DEV-COMHU-03404" /home/user/vitana-platform --exclude-dir=node_modules --exclude-dir=.git
+                                                           # no caller: route file, mount, its unit test, .env.example, a VTID-04887
+                                                           # "state is gone" assertion, generated snapshots, old evidence packs
+
+# 3. What an unmounted /api/v1 path answers: static review of every router mounted at '/' or
+#    '/api/v1' (all router.use() calls are path-scoped) and delegatedTokenGuard (passes requests
+#    without a bearer), then proven in-process against the real app (step 5).
+
+# 4. Route deletion and generated manifest
+git rm services/gateway/src/routes/ops-overview-timeseries.ts services/gateway/test/ops-overview-timeseries.test.ts
+node scripts/aws-staging-validation/generate-route-manifest.mjs   # 209 route prefixes (was 174)
+
+# 5. Type check and tests (cwd services/gateway)
+npx tsc --noEmit                                           # exit 0 (outputs/01-tsc.txt)
+npx jest --ci test/scripts/vtid-04986-regen-screens-catalog.test.ts test/vtid-04986-overview-timeseries-retired.test.ts
+                                                           # 9 passed (outputs/02-vtid-04986-tests.txt)
+                                                           # mutation: old generator -> 4/4 regen cases fail;
+                                                           # route restored -> 2/5 retirement cases fail
+npm run test:roles -- --ci                                 # rule 42h incl. atlas drift guard: 105 passed (outputs/03-test-roles.txt)
+npx jest --ci test/command-hub test/vtid-04696-staging-checks-follow-asset-bumps.test.ts
+                                                           # 36 suites, 520 passed (outputs/04-command-hub-tests.txt)
+npx jest --ci test/scripts                                 # 17 suites, 204 passed (outputs/05-script-tests.txt)
+git checkout services/gateway/src/frontend/command-hub/styles.css
+                                                           # find-dead-css-classes.test.ts runs --fix on the real styles.css
+                                                           # (pre-existing); restored after every run that includes it
+npx jest --ci                                              # full gateway suite (outputs/09-full-suite.summary.txt)
+
+# 6. Gates run locally (cwd repo root)
+node <scratchpad>/asset-check.mjs .                        # every served-asset expect_body_contains in docs/validation/*/staging-tests.json
+                                                           # against the local Command Hub files: 89 checked, 0 failed (outputs/07-staging-asset-assertions.txt)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)"
+                                                           # staging-tests.json valid; evaluateHttp of the 404 case against Express's
+                                                           # default 404 response passes (outputs/08-staging-manifest.txt)
+node -e "require('./scripts/ci/validate-pr-locally.cjs').checkAcceptanceMapping('docs/validation/VTID-04986/acceptance.md')"
+                                                           # Acceptance mapping OK (outputs/10-acceptance-mapping.txt)

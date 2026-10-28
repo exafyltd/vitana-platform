@@ -1,0 +1,31 @@
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+  VTID-03683: cascade language eligibility
+    ✓ REFUSES every language Nova speaks natively (4 ms)
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (3 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified
+    ✓ derives coverage from Polly rather than restating it (1 ms)
+    ✓ normalises locale tags and refuses unknown languages (1 ms)
+  VTID-03683: activation gate is off by default
+    ✓ is off unless the value is exactly "true" (1 ms)
+  VTID-03683: selector routes Nova-blocked languages to the cascade
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path (1 ms)
+    ✓ with the flag on and the language covered, it routes to the cascade
+    ✓ with the flag on but the language NOT covered (sr), it does not divert
+    ✓ does not claim a session that a LIVE Vertex would still have taken (1 ms)
+    ✓ never diverts a session whose language Nova DOES support
+PASS test/orb/live/upstream/provider-name.test.ts
+  VOICE_PROVIDER_NAMES
+    ✓ contains exactly vertex, livekit, nova_sonic, cascaded (1 ms)
+  parseVoiceProviderName
+    ✓ accepts every canonical provider name (1 ms)
+    ✓ trims whitespace and lowercases before matching
+    ✓ rejects aliases and near-misses (no silent coercion) (1 ms)
+    ✓ rejects non-strings and empties (1 ms)
+  isVoiceProviderName
+    ✓ guards exact members only (no normalization) (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        0.668 s, estimated 1 s
+Ran all test suites matching /test\/orb\/live\/upstream\/cascaded-voice.test.ts|test\/orb\/live\/upstream\/provider-name.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

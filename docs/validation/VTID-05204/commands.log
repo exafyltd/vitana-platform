@@ -1,0 +1,5 @@
+$ git diff --stat origin/main...HEAD   (both repos)
+vitana-platform: .claude/rules/backend.md +8, docs/validation/VTID-05204/** only
+vitana-v1: CLAUDE.md +20, docs/validation/VTID-05204/** only
+$ PR_TITLE="VTID-05204: …" node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base origin/main --head HEAD   (both repos)
+see outputs/local-checks.txt

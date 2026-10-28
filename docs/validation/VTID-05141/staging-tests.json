@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05141",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "welcome-greeting ops health route answers JSON with a status", "path": "/api/v1/ops/health/welcome-greeting", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "orb-bootstrap-latency ops health route answers JSON with a status", "path": "/api/v1/ops/health/orb-bootstrap-latency", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "newday-briefing-loop ops health route answers JSON with a status", "path": "/api/v1/ops/health/newday-briefing-loop", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "routine runner status still refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/routines/runner/status", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/routine-runner test/ops-health test/ops-runtime test/services/orchestrator/vtid-05141-agent-kill-switch.test.ts test/loop-catalog.test.ts", "cwd": "services/gateway", "reason": "voice-lab-triage / llm-spend-budget / llm-fallback-watch thresholds, the voice_session_facts loader, the stagnation stop and breach damping, the three new ops health routes and the Step A workflows, SCHEDULED_WORKFLOWS from the catalog with fallback, and the agent kill switch. The runner never starts on staging (shared database), so its writes are proven here, not there" }
+  ]
+}

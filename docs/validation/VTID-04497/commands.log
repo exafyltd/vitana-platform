@@ -1,0 +1,4 @@
+npx jest test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04368-retry-storm-outage-gate.test.ts test/dev-autopilot-env-ownership.test.ts  -> 3 suites, 41 passed
+(mutation) executorClaimsHere -> return true; jest -t "does not claim"  -> 1 failed (as intended); restored
+npx jest dev-autopilot operator vtid-04  -> 249 suites; 1 failed (VTID-04308 source pin) -> pin updated -> 8/8 passed
+npx tsc --noEmit -p services/gateway  -> clean

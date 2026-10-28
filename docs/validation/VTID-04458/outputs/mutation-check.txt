@@ -1,0 +1,6 @@
+Deliberate breaks, each reverted after the run (npx jest test/calendar --silent):
+1 default reminder 10->15            Tests: 4 failed, 106 passed, 110 total
+2 monthly no longer skips the 31st   Tests: 1 failed, 109 passed, 110 total
+3 busy block carries a title         Tests: 1 failed, 109 passed, 110 total
+4 window max 62->90 days             Tests: 1 failed, 109 passed, 110 total
+Unmodified tree:                     Tests: 110 passed, 110 total

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04974",
+  "kind": "chore",
+  "paths": [
+    "docs/validation/VTID-04665/staging-tests.json",
+    "docs/validation/VTID-04698/staging-tests.json",
+    "docs/validation/VTID-04836/staging-tests.json",
+    "docs/validation/VTID-04974/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

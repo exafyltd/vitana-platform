@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04057",
+  "execution_id": "e18a9d0c-70d2-4519-81b3-91101061e84a",
+  "finding_id": "f3d9a4f0-57d5-43fc-83a1-af265ba0f7d1",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e18a9d0c",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/command-hub/stale-provider-defaults-fixed.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-18T11:28:56.243Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

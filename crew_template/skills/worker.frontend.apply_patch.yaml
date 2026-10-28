@@ -1,0 +1,178 @@
+# =============================================================================
+# Skill: Worker Frontend Apply Patch - VTID-01163
+# =============================================================================
+# Applies code changes for frontend domain with CSP compliance checks.
+# =============================================================================
+
+skill_id: worker.frontend.apply_patch
+name: Apply Frontend Patch
+description: |
+  Applies code changes for frontend domain work orders. Enforces path
+  restrictions (frontend-only) and CSP compliance (no inline scripts/styles,
+  no external CDNs).
+version: 1.0.0
+category: worker
+domain: frontend
+vtid: VTID-01163
+
+provider:
+  type: internal
+  module: services/agents/workforce/subagents/worker-frontend
+  function: applyPatch
+  timeout_ms: 120000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  changes:
+    type: array
+    required: true
+    description: List of file changes to apply
+    items:
+      type: object
+      properties:
+        file_path:
+          type: string
+          required: true
+        action:
+          type: string
+          required: true
+          enum:
+            - create
+            - edit
+            - delete
+        content:
+          type: string
+          required: false
+        old_content:
+          type: string
+          required: false
+        new_content:
+          type: string
+          required: false
+
+  change_budget:
+    type: object
+    required: false
+    description: Maximum allowed changes
+    properties:
+      max_files:
+        type: integer
+        default: 10
+      max_directories:
+        type: integer
+        default: 5
+
+  skip_csp_check:
+    type: boolean
+    required: false
+    default: false
+    description: Skip CSP validation (NOT RECOMMENDED, requires explicit approval)
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether patch was applied successfully
+
+  files_changed:
+    type: array
+    description: List of files that were modified
+    items:
+      type: string
+
+  files_created:
+    type: array
+    description: List of new files created
+    items:
+      type: string
+
+  csp_violations:
+    type: array
+    description: CSP violations found (should be empty for success)
+    items:
+      type: object
+      properties:
+        file:
+          type: string
+        violation:
+          type: string
+        line:
+          type: integer
+
+  budget_used:
+    type: object
+    properties:
+      files:
+        type: integer
+      directories:
+        type: integer
+
+  error:
+    type: string
+    description: Error message if patch failed
+
+# ==========================================================================
+# HARD GUARDRAILS (from agent.yaml)
+# ==========================================================================
+guardrails:
+  # Path restrictions
+  allowed_paths:
+    - "services/gateway/src/frontend/**"
+    - "services/gateway/dist/frontend/**"
+
+  # Paths always forbidden
+  forbidden_paths:
+    - "services/gateway/src/routes/**"
+    - "services/gateway/src/services/**"
+    - "supabase/**"
+
+  # CSP rules
+  csp_compliance:
+    no_inline_scripts: true
+    no_inline_styles: true
+    no_external_cdn: true
+    no_eval: true
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_frontend.patch_started
+    - vtid.stage.worker_frontend.patch_applied
+    - vtid.stage.worker_frontend.csp_violation
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+
+usage:
+  roles:
+    - worker
+  primary_role: worker
+  use_cases:
+    - Create new UI components
+    - Modify existing frontend files
+    - Update CSS/styles
+    - Add Tailwind classes
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 2000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    PATH_FORBIDDEN:
+      description: Target path is outside allowed frontend paths
+      recoverable: false
+
+    CSP_VIOLATION:
+      description: Changes violate CSP rules
+      recoverable: false
+
+    BUDGET_EXCEEDED:
+      description: Changes exceed file/directory budget
+      recoverable: false
+
+    FILE_CONFLICT:
+      description: File was modified by another process
+      recoverable: true

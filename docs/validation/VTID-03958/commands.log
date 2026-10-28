@@ -1,0 +1,206 @@
+# VTID-03958 — commands run during this change
+
+## Investigation
+
+Read the full AWS-PROD-DEPLOY-GATEWAY.yml end to end (Read tool, whole file,
+907 lines) before touching anything, and confirmed the ceiling situation the
+task described was accurate:
+
+$ python3 -c "
+import yaml
+doc = yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))
+inputs = doc['on']['workflow_dispatch']['inputs'] if 'on' in doc else doc[True]['workflow_dispatch']['inputs']
+print('count:', len(inputs))
+"
+  count: 25   # exactly at GitHub's hard ceiling, confirmed before any edit
+
+Studied the "Build task-definition (2/2 — optional overrides) + register +
+roll the service" step's existing per-flag pattern (nova_sonic_global_enabled,
+dev_autopilot_executor_enabled blocks) as the upsert idiom to follow:
+  env: NAME_INPUT: ${{ inputs.name }}
+  if [ -n "$NAME_INPUT" ]; then
+    NEW_DEF=$(echo "$NEW_DEF" | jq --arg V "$NAME_INPUT" '
+      .containerDefinitions[0].environment |=
+        ( [ .[] | select(.name != "ENV_VAR_NAME") ] + [ {name:"ENV_VAR_NAME", value:$V} ] )')
+  fi
+
+Read the guard test first:
+$ cat services/gateway/test/scripts/workflow-dispatch-input-limit.test.ts
+  Confirmed it parses every *.yml in .github/workflows with js-yaml, extracts
+  on.workflow_dispatch.inputs, and fails if any file has >25. Also has a
+  "near the ceiling" warning-only check (>=23) and two sanity checks (some
+  files get counted; AWS-PROD-DEPLOY-GATEWAY.yml specifically stays <=25).
+  Confirmed it does NOT hardcode 25 permanently for this file at a lower
+  number, so a 24-input result after this change passes cleanly.
+
+## Caller verification (before removing any input)
+
+Grepped every dispatcher of this workflow, per the task's explicit
+instruction not to remove an input a real caller depends on:
+
+$ grep -rn "AWS-PROD-DEPLOY-GATEWAY" --include="*.ts" --include="*.sh" --include="*.js" services scripts
+
+Found two real dispatchers:
+  1. services/gateway/src/routes/operator.ts:1564 — Command Hub PUBLISH
+     button. `triggerWorkflow(..., 'AWS-PROD-DEPLOY-GATEWAY.yml', 'main', {
+     reason, deploy_mode: 'promote-staging', expected_commit })` — only
+     those three inputs, confirmed by reading lines 1540-1590 directly.
+  2. services/gateway/src/routes/operator.ts:~1936 — the AWS_DUAL_PUBLISH_ENABLED
+     legacy dual-publish leg (default off). Passes only `reason`.
+  scripts/deploy/publish-to-prod.sh does NOT dispatch this workflow at all —
+  it dispatches EXEC-DEPLOY.yml (the dead GCP-era workflow), confirmed by
+  reading the script in full (WORKFLOW="EXEC-DEPLOY.yml").
+
+Neither caller passes nova_canary_user_ids or nova_canary_tenant_ids (or any
+other input this change touches). Confirmed safe to remove.
+
+$ grep -rln "nova_canary_user_ids\|nova_canary_tenant_ids" . 2>/dev/null | grep -v node_modules
+  docs/NOVA-SONIC-PRODUCTION-CUTOVER-PROPOSAL.md   (historical prose, not fixed — see report)
+  .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml    (staging workflow, separate file, out of scope, untouched)
+  .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml     (this file — being edited)
+
+## Fix
+
+.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml:
+  1. Removed the `nova_canary_user_ids` / `nova_canary_tenant_ids`
+     workflow_dispatch inputs (2 inputs removed).
+  2. Removed `NOVA_USERS_INPUT` / `NOVA_TENANTS_INPUT` env wiring on the
+     "Build task-definition (2/2)" step, and removed the
+     NOVA_SONIC_CANARY_USER_IDS / NOVA_SONIC_CANARY_TENANT_IDS upsert from
+     inside the nova_sonic_enabled override block (that block now only
+     touches NOVA_SONIC_ENABLED / NOVA_SONIC_REGION / NOVA_SONIC_MODEL_ID).
+  3. Added ONE new `env_overrides` workflow_dispatch input (JSON object
+     string; EMPTY = no-op) — 1 input added. Net: 25 -> 24.
+  4. Wired `ENV_OVERRIDES_INPUT: ${{ inputs.env_overrides }}` on the same
+     step's `env:` block.
+  5. Added a new override block at the END of the optional-overrides chain
+     (after every named-input block, so it can override anything they set):
+       - validates env_overrides is well-formed JSON via `jq -e . >/dev/null`
+         and fails the step loudly (::error::, exit 1) if not
+       - validates it is a JSON OBJECT (not an array/string/number) and
+         fails loudly if not
+       - generically upserts every key via `to_entries` (no hardcoded key
+         names — works for OPERATOR_EXECUTION_ONRAMP_ENABLED today and any
+         future flag with zero further code change)
+       - logs the applied key list, matching every other block's log-line
+         convention
+  6. Updated the file's header comment (the block describing the original
+     26-input parse-failure incident) to note env_overrides now exists as
+     the escape hatch, and where it lives in this file.
+  7. Deliberately did NOT put the literal string "OPERATOR_EXECUTION_ONRAMP_ENABLED"
+     anywhere in this file's text (see "Test conflict found and resolved"
+     below) — the description uses a generic {"SOME_ENV_VAR":"value"}
+     example instead.
+
+## Test conflict found and resolved (worth recording)
+
+First draft used the task's own suggested example
+`{"OPERATOR_EXECUTION_ONRAMP_ENABLED":"true", ...}` verbatim inside the new
+input's `description:` field. Running the existing test suite surfaced a
+real, intentional regression guard this tripped:
+
+$ cd services/gateway && npx jest test/vtid-03820-onramp-staging-flag-pinned.test.ts --silent
+  FAIL — "is deliberately NOT pinned on the prod deploy workflow yet"
+  expect(prodYml).not.toContain('OPERATOR_EXECUTION_ONRAMP_ENABLED')
+
+That test (VTID-03820) exists specifically so that promoting the on-ramp
+flag to prod stays a deliberate, later, separately-reviewed decision, not a
+silent byproduct of an unrelated change landing text in this file. Per this
+session's instruction to never weaken a guard test, reworded the
+env_overrides description/comments to use a generic placeholder
+(`{"SOME_ENV_VAR":"value"}`) instead of the literal flag name. This does
+NOT reduce the actual capability being built — the mechanism still lets an
+operator apply `OPERATOR_EXECUTION_ONRAMP_ENABLED=true` (or anything else)
+at DISPATCH time via `-f env_overrides='{"OPERATOR_EXECUTION_ONRAMP_ENABLED":"true"}'`,
+which never adds that string to this file at all, so VTID-03820's guard
+stays meaningful and green, and the actual promotion of that specific flag
+to prod remains the separate, deliberate, later action its own test says
+it should be. Re-ran after the fix — all green (see below).
+
+## New tests
+
+services/gateway/test/vtid-03958-env-overrides-input.test.ts (15 tests):
+  - the two retired inputs are gone; env_overrides exists; net count is 24
+  - the nova_sonic_enabled override block no longer references the removed
+    env wiring
+  - ENV_OVERRIDES_INPUT is wired from inputs.env_overrides
+  - extracts the REAL env_overrides jq block from the workflow file (not a
+    reimplementation) and executes it with the real `jq` binary against
+    sample task-definition JSON:
+      - EMPTY input is a true no-op (byte-for-byte passthrough)
+      - adds a brand-new key generically
+      - upserts (replaces) an existing key, exactly one survives
+      - applies multiple keys in one call (to_entries, no fixed arity)
+      - coerces a non-string JSON value (bool/number) to a string
+      - malformed JSON fails loudly (non-zero exit, ::error::, never a
+        silent no-op)
+      - non-object JSON (array/string) fails loudly
+      - a validation failure never reaches (or prints) a mutated NEW_DEF
+
+## Targeted test run
+
+$ cd services/gateway && npx jest test/vtid-03958-env-overrides-input.test.ts test/vtid-03820-onramp-staging-flag-pinned.test.ts test/scripts/workflow-dispatch-input-limit.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/orb/live/upstream/staging-fast-start-brain-cache-flags-pinned.test.ts test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts test/specs-gen-system-prompt-accuracy.test.ts test/scripts/validator-path-guard.test.ts --silent
+Test Suites: 12 passed, 12 total
+Tests:       115 passed, 115 total
+
+## TypeScript
+
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output)
+
+## Full gateway suite (regression check)
+
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 924 passed, 925 total
+Tests:       29 skipped, 6 todo, 15189 passed, 15224 total
+0 failures
+
+## YAML / bash validation
+
+$ python3 -c "
+import yaml
+d = yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))
+on = d.get('on', d.get(True))
+print('workflow_dispatch inputs:', len(on['workflow_dispatch']['inputs']))
+"
+workflow_dispatch inputs: 24
+
+bash -n on every run: step is covered by the pre-existing
+test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts (VTID-03788),
+which already includes this file — re-ran above, all green, including the
+20,000-char-per-step size cap (this change's edits stayed well under it).
+
+## VTID allocation
+
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"cicd","module":"prod-deploy-env-overrides-input"}'
+{"ok":true,"vtid":"VTID-03958","num":3958,"id":"001c5af7-2cac-47dc-85eb-5f8728f32ec9"}
+
+Followed with a direct Supabase execute_sql UPDATE (project inmkhvwdcuyhnxkgfvsb,
+via the Supabase MCP connection available in this session) to set
+title/summary, status='in_progress', spec_status='approved' — the user
+directly instructed this work in conversation, which is the standing
+approval per CLAUDE.md §4.1/Part 1 rule 2b.
+
+## Branch hygiene
+
+Branched fresh as `vtid-03958-env-overrides-input` from `origin/main`
+(6ef2abaf, "VTID-03952: parallelize sequential auth reads in /auth/login
+and /auth/me (#3343)"), per the task's explicit instruction to branch off
+latest origin/main.
+
+## Out of scope, noted but not fixed (per task instruction 3e)
+
+docs/NOVA-SONIC-PRODUCTION-CUTOVER-PROPOSAL.md:51 still describes
+AWS-PROD-DEPLOY-GATEWAY.yml as having "nova_canary_user_ids /
+nova_canary_tenant_ids workflow_dispatch inputs... built in anticipation,
+never dispatched." That prose is now stale (those inputs are retired) but
+it is historical build-log narrative, not a live reference anything reads
+programmatically, and the task said not to fix unrelated docs unless
+trivial — left as-is and flagged here instead.
+
+AWS-STAGE-DEPLOY-GATEWAY.yml (the staging workflow, a separate file) still
+has its own nova_canary_user_ids / nova_canary_tenant_ids inputs and
+NOVA_SONIC_CANARY_USER_IDS/TENANT_IDS upsert logic — entirely untouched, as
+the task scoped this change to the PROD workflow only.

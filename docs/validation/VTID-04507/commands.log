@@ -1,0 +1,12 @@
+# read-only checks (test account, GET only)
+GET https://preview-aws-gateway.vitanaland.com/api/v1/connected-apps     -> 9/10 not_configured, android-contacts ready
+GET https://preview-aws-gateway.vitanaland.com/api/v1/social-accounts/providers -> google:false microsoft:false
+GET https://gateway.vitanaland.com/api/v1/social-accounts/providers              -> google:false
+grep GATEWAY_PUBLIC_URL|APP_URL .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml   -> none (before)
+
+# local
+jq merge on a sample task definition                  -> stale APP_URL replaced, plain AI_CREDENTIALS_ENC_KEY env stripped, unrelated kept
+scripts/aws/setup-connected-apps-oauth-secrets.sh against a fake aws CLI -> dry-run, --apply, skip-existing, --env guard all as expected
+register step run-block size: 18999 -> 19332 chars (limit 20000)
+jest test/vtid-04507-… staging-deploy-workflow-bash-syntax vtid-04262-…  -> 26/26 pass
+jest (39 suites reading AWS-STAGE-DEPLOY-GATEWAY.yml)                     -> 410/410 pass (one timing flake in vtid-04465 under parallel load, 21/21 on rerun x2)

@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05079",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/middleware/cors.ts",
+    "services/gateway/test/commerce-mcp-cors.test.ts",
+    "docs/validation/VTID-05079/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

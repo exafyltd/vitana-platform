@@ -1,0 +1,40 @@
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04272-jest-transform-ignore-nested-node-modules.test.ts
+  VTID-04272: jest transformIgnorePatterns matches nested node_modules packages
+    ✓ does not match (i.e. WILL transform) a top-level allow-listed package under node_modules/ (1 ms)
+    ✓ does not match (i.e. WILL transform) an allow-listed package nested under another package
+    ✓ does not match (i.e. WILL transform) a pnpm-nested allow-listed package
+    ✓ still matches (i.e. Jest will IGNORE) an unrelated package, top-level or nested
+    ✓ the raw pattern source requires a trailing slash after the alternation (anchors on the package boundary)
+
+PASS test/orb/live/session/conversation-state-machine.test.ts
+  VTID-03273 Pillar C: ConversationStateMachine
+    ✓ starts in PREWARM with no opening delivered (1 ms)
+    ✓ PREWARM → OPENING enables the single opener exactly once (1 ms)
+    ✓ markOpeningDelivered() outside OPENING is a no-op (cannot consume the opener early) (7 ms)
+    ✓ runs the live loop LISTENING ⇄ THINKING ⇄ SPEAKING (1 ms)
+    ✓ a reconnect from an active state RESUMES to that SAME state, never OPENING (1 ms)
+    ✓ reconnect mid-OPENING resumes to LISTENING, NOT back to OPENING (opener not replayed)
+    ✓ RESUMED can never transition to OPENING
+    ✓ rejects illegal transitions and stays put (fail loud, no silent corruption) (1 ms)
+    ✓ records a transition history for the Command Hub inspector (1 ms)
+    ✓ isActiveState classifies the primary-axis states
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1100 passed, 1100 of 1101 total
+Tests:       29 skipped, 6 todo, 17843 passed, 17878 total
+Snapshots:   42 passed, 42 total
+Time:        94.285 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

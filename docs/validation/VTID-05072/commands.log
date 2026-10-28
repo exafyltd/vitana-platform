@@ -1,0 +1,41 @@
+# VTID-05072 Phase 0 — commands run (real). Windows/PowerShell, Node v24.11.1.
+# CI runs these gates on Linux / Node 20.x. Full captured output is in outputs/.
+
+## Environment fix (blocker 2 — CRLF; owner-authorized)
+git -C <worktree> stash push -u -m vtid-05072-phase0
+git -C <worktree> config core.autocrlf input
+git -C <worktree> rm -r --cached -q .
+git -C <worktree> reset --hard
+git -C <worktree> stash pop
+
+## Dependency add + lockfiles
+# (edited services/gateway/package.json: added "acorn": "8.15.0" to devDependencies)
+cd services/gateway && npm install                     # regenerated package-lock.json
+corepack pnpm@9.0.0 install --lockfile-only            # synced pnpm-lock.yaml -> outputs/pnpm-lock-update.log
+
+## Symbol index regeneration
+cd services/gateway && node scripts/generate-command-hub-symbol-index.mjs    # 1106 fns / 15 files
+
+## STEP 5 local checks (from services/gateway) — logs in outputs/
+npx tsc --noEmit                                         # PASS            -> outputs/tsc.log
+npx jest test/command-hub                                # 43 suites / 636 -> outputs/jest-command-hub.log
+npx jest test/command-hub/vtid-05072-bundle-manifest.test.ts  # 16 tests   -> outputs/jest-vtid05072-only.log
+npm run test:operator                                    # 63 pass, 1 pre-existing Windows-only fail -> outputs/test-operator.log
+npm run test:roles                                       # 105 PASS        -> outputs/test-roles.log
+npm run test:support                                     # 87 PASS         -> outputs/test-support.log
+node scripts/generate-command-hub-symbol-index.mjs --check  # in sync       -> outputs/symbol-index-check.log
+
+## Build + root CI gates
+# (npm run build uses POSIX rm/mkdir -p/cp -r; on Windows done as tsc + robocopy to dist/)
+cd services/gateway && npx tsc                           # PASS            -> outputs/build-tsc.log
+robocopy src/frontend/command-hub dist/frontend/command-hub /E   # populate dist for the fingerprint
+# from repo root:
+node scripts/ci/command-hub-golden-fingerprint.js        # PASS, 8 bundle files, all markers -> outputs/golden-fingerprint.log
+node scripts/ci/command-hub-ownership-guard.js           # PASS, VTID-05072 allowlisted       -> outputs/ownership-guard.log
+
+## Pre-existing-failure verification (stash all changes, re-run on clean base)
+git stash push -u && npm run test:operator && git stash pop   # identical 63/1 fail on base -> confirms Windows-only artifact
+
+## Ledger (STEP 3)
+# Attempted gateway PATCH https://gateway.vitanaland.com/api/v1/vtid/VTID-05072 (Authorization: Bearer $env:GATEWAY_SERVICE_TOKEN) -> 404 (no such status-update endpoint).
+# No gateway endpoint performs a plain in_progress/spec_status/title update; no Supabase MCP tool in this environment. Ledger update SKIPPED (best-effort, no loop, no other row touched).

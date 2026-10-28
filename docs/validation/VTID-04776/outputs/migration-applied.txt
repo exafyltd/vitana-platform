@@ -1,0 +1,24 @@
+# VTID-04776 — migration 20261001120000_vtid_04776_voice_session_facts.sql applied to the VITANA project
+# (inmkhvwdcuyhnxkgfvsb) on 2026-10-01 via the Supabase MCP, statement by statement (the single-call
+# apply timed out at the MCP layer and rolled back cleanly; nothing partial was left behind). Additive only.
+
+-- verification query
+select to_regclass('public.voice_session_facts')::text tbl, to_regclass('public.voice_session_facts_hourly')::text vw,
+ relrowsecurity rls, #indexes, #triggers, #functions,
+ has_table_privilege('anon',…,'SELECT'), has_table_privilege('authenticated',…,'SELECT'),
+ has_table_privilege('service_role',…,'INSERT'), has_function_privilege('authenticated', backfill, 'EXECUTE');
+
+-- result
+tbl=voice_session_facts vw=voice_session_facts_hourly rls=true idx=7 trg=1 fns=2
+anon_sel=false auth_sel=false svc_ins=true auth_exec=false rows=0
+
+-- backfill (operator step, bounded, ON CONFLICT DO NOTHING; writes only this telemetry table)
+select public.voice_session_facts_backfill(now() - interval '1 day');   -- 112
+select public.voice_session_facts_backfill(now() - interval '7 days');  -- 944 (1,056 rows total)
+
+-- what the backfill showed (drove a code change in this PR)
+-- * last 24h: 117 vtid.live.session.start events, 34 vtid.live.session.stop, 0 orb.upstream.provider.selected
+-- * ~70% of historical sessions have a start and no stop; counting them as 'abandoned' put ok_rate near 30%.
+--   voice-supervisor-analysis.ts now classifies a no-end row past the live window as 'no_end' (telemetry gap),
+--   excludes it from every quality rate and reports end_recorded_rate on its own.
+-- * historical provider is 'unknown' (no provider.selected events); new sessions record provider directly.

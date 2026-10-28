@@ -1,0 +1,6 @@
+# 05 — subprocess latency distribution (router -> os.execvp module -> psycopg2 over unix socket, local PG16, this container)
+bare `python3 -c pass`           n= 20 min=   13.5 p50=   14.1 p90=   19.3 p95=   20.4 max=   24.7 ms
+list-companies (read)            n= 40 min=  198.5 p50=  205.9 p90=  213.9 p95=  216.7 max=  225.5 ms
+add-journal-entry (draft write)  n= 20 min=  171.2 p50=  176.3 p90=  185.0 p95=  186.4 max=  187.1 ms
+submit-journal-entry (GL post)   n= 20 min=  175.0 p50=  184.8 p90=  188.6 p95=  188.7 max=  189.2 ms
+note: container-local numbers. On ECS the DB hop adds one network RTT per statement. Interpreter start + module import dominates reads; the bridge must run modules as subprocesses (GPL boundary + ERPClaw's own os.execvp design), so a warm-pool/pre-fork is the lever if p95 matters.

@@ -1,0 +1,13 @@
+# Reproduce (staging, read-only)
+for p in /command-hub/command-hub/events/ /command-hub/oasis/events/ /command-hub/oasis/streams/ /command-hub/oasis/; do
+  curl -s -o /dev/null -w "$p %{http_code} %{content_type}\n" https://preview-aws-gateway.vitanaland.com$p
+done
+
+# New tests fail without the fix
+git stash push services/gateway/src/middleware/cors.ts
+cd services/gateway && npx jest test/middleware/cors.test.ts   # Tests: 4 failed, 28 passed, 32 total
+git stash pop
+
+# With the fix
+npx jest test/middleware/cors.test.ts                          # Tests: 32 passed, 32 total
+npx tsc --noEmit                                               # exit 0

@@ -1,0 +1,18 @@
+src/connectors/health/doctorbox.ts(37,45): error TS2591: Cannot find name 'crypto'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/connectors/health/doctorbox.ts(52,18): error TS2591: Cannot find name 'process'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/connectors/health/doctorbox.ts(54,5): error TS2584: Cannot find name 'console'. Do you need to change your target library? Try changing the 'lib' compiler option to include 'dom'.
+src/connectors/health/doctorbox.ts(60,26): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/connectors/health/doctorbox.ts(60,49): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/connectors/health/doctorbox.ts(89,5): error TS2584: Cannot find name 'console'. Do you need to change your target library? Try changing the 'lib' compiler option to include 'dom'.
+src/connectors/health/doctorbox.ts(95,9): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/connectors/health/doctorbox.ts(107,49): error TS2591: Cannot find name 'Buffer'. Do you need to install type definitions for node? Try `npm i --save-dev @types/node` and then add 'node' to the types field in your tsconfig.
+src/routes/admin-partner-health.ts(17,43): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/routes/partner-health-consent.ts(13,43): error TS2307: Cannot find module 'express' or its corresponding type declarations.
+src/services/assistant-continuation/providers/partner-health-result-ready.ts(31,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/orb-tools/partner-health-test-tools.ts(16,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/consent.ts(15,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/consent.ts(46,5): error TS2584: Cannot find name 'console'. Do you need to change your target library? Try changing the 'lib' compiler option to include 'dom'.
+src/services/partner-health/id-matching.ts(21,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.
+src/services/partner-health/id-matching.ts(61,14): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/services/partner-health/id-matching.ts(62,11): error TS7006: Parameter 'row' implicitly has an 'any' type.
+src/services/partner-health/ingestion.ts(19,37): error TS2307: Cannot find module '@supabase/supabase-js' or its corresponding type declarations.

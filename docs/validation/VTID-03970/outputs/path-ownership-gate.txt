@@ -1,0 +1,8 @@
+NOT JUDGED — 4 file(s) outside this gate's remit:
+  CLAUDE.md
+  scripts/aws/setup-fish-audio-secret.sh
+  scripts/tts/verify-fish-voice.ts
+  services/gateway/.env.example
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 23 in-remit file(s) match the gateway_backend allowlist

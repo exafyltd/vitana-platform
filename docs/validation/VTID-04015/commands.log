@@ -1,0 +1,47 @@
+# VTID-04015 — commands log
+
+## Repro (live, against staging, after VTID-04014's ecfc0df deployed)
+
+  cd /tmp/.../scratchpad
+  node serbian-orb-api-test-auth.cjs        # 3 trials
+  TRIALS=8 node serbian-orb-api-test-auth.cjs   # 8 more trials
+
+Combined: 2/11 trials succeeded (turnCompleted:true, genuine fluent
+Serbian transcript). The other 9 hit:
+
+  orb.live.diag stage=upstream_ws_close code=1007
+    reason="Request contains an invalid argument."
+
+(same query pattern as VTID-04014's commands.log, against the new session
+IDs — confirmed via mcp__Supabase__execute_sql, read-only).
+
+One success transcript (verbatim, genuinely fluent Serbian, not
+machine-translated-sounding):
+
+  "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je
+  Vitanaland". Hoćemo li da objavimo brzinsku novost za zajednicu? Ti
+  diktiraš, ja objavljujem."
+
+## Root cause identification
+
+Compared the still-failing directive (VTID-04014's own text, explicitly
+naming the language: "Speak entirely in ${langName} — use no English
+words ... compose the wording yourself in ${langName}") against
+`override_v2`'s proven-reliable wording in the same file
+(compute-greeting-decision.ts, rung 8) — override_v2 never names a
+specific language at all.
+
+## Fix + verification
+
+  cd services/gateway
+  # Edit: src/services/conversation/compute-greeting-decision.ts
+  #   (drop LOCALE_ENGLISH_NAME import + langName; rewrite directive)
+  # Edit: test/services/conversation/compute-greeting-decision.golden.test.ts
+
+  npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u
+  # 61/61 passed, 1 snapshot updated
+
+  npx tsc --noEmit
+  # clean, no output
+
+  npx jest   # full gateway suite, see outputs/test-results.txt

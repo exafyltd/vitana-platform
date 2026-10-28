@@ -1,0 +1,9 @@
+# live, read-only (session AWS identity)
+ecs describe-task-definition <family> -> logConfiguration.options.awslogs-group  => /vitana/<svc> for all 10 families
+logs filter-log-events /vitana/autopilot-executor -> "[autopilot-job] EXEC_ID env var required" every 20-40 s
+ecs list/describe-tasks family vitana-autopilot-executor STOPPED -> startedBy chronos-schedule/* (26/22/1/1), :2, exit 2
+logs /aws/lambda/vitana-push-dispatch -> 200 "no pending pushes" each minute
+# staging console (before this change): dev_cloudwatch_logs gateway -> "The specified log group does not exist."
+# tests
+cd services/gateway && npx jest test/vtid-04020 test/vtid-04232 test/vtid-04229 test/vtid-04116 test/vtid-04465 test/vtid-04560
+npx tsc --noEmit -p .

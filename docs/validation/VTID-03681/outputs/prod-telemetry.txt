@@ -1,0 +1,27 @@
+Production `vtid.live.session.start`, last 3 days, BEFORE the fix
+(oasis_events, metadata->>'lang' / metadata->>'voice'), 2026-08-19:
+
+ lang | voice        | sessions | latest
+------+--------------+----------+------------------------
+ de   | Achernar     |       66 | 2026-08-19 12:05:30+00
+ en   | Callirrhoe   |       63 | 2026-08-19 12:07:25+00
+ sr   | Vindemiatrix |        4 | 2026-08-19 12:10:36+00
+ es   | Aoede        |        3 | 2026-08-19 12:11:02+00
+ fr   | Leda         |        3 | 2026-08-19 12:11:20+00
+ ru   | Gacrux       |        3 | 2026-08-19 12:07:07+00
+
+pt: 0 rows.  pl: 0 rows.
+
+Not "few users" — structurally unreachable. Every pt/pl attempt was recorded
+as `en`, because normalizeLang() coerced the value BEFORE the event was
+emitted. The telemetry and the user-visible symptom agree only if you already
+know the coercion exists.
+
+ru evidence (session 2026-08-19 11:33:06, lang=ru, voice=Gacrux):
+  orb.session.identity.resolved
+  vtid.live.session.start
+  orb.live.diag stage=greeting_sent
+  orb.live.diag stage=model_start_speaking   <- 11:33:09
+  orb.live.upstream.usage (repeating)
+=> ru connects and the model speaks. Its reported failure is NOT this defect.
+   No transcript was bridged to chat_messages, so what it said is unknown.

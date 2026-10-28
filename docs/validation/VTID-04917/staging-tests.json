@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04917",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "invite answer route is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/calendar/invites/00000000-0000-4000-8000-000000000000/respond", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "invite state route is mounted and requires auth", "path": "/api/v1/calendar/invites/00000000-0000-4000-8000-000000000000", "expect_status": 401 },
+    { "kind": "http", "name": "invite preview route is mounted and requires auth", "path": "/api/v1/calendar/events/00000000-0000-4000-8000-000000000000/invite-preview", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04917-calendar-invite-audiobook.test.ts test/vtid-04917-invite-routes.test.ts", "cwd": "services/gateway",
+      "reason": "sending an invite writes a chat message to real people, answering one joins events, and the audiobook entry is written when a member sets a reminder; staging shares the production Supabase project, so none of it is exercised there. These suites prove it with the real services over a fake PostgREST: what can be invited to, the card built on the server from the sender's own entry (forged fields ignored), who may answer, what Accept does (free event joined, paid/full event or room opens its page, own plan copied, No removes the copy), and the audiobook entry (one daily row, DST-correct start, no calendar push, a calendar failure never fails the reminder)." }
+  ]
+}

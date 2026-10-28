@@ -1,0 +1,4 @@
+$ npx jest test/services/testing/publish-gate.test.ts            -> 15 passed
+$ npx jest test/vtid-04646-publish-gate-wiring.test.ts test/command-hub/t6-dead-cloudflare-redirect-removed.test.ts -> 15 passed
+$ npx jest test/orb-tools/deployment-release-tools.test.ts test/journey-checklist.test.ts -> 64 passed (unchanged)
+$ curl -X POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/publish -> 401 application/json

@@ -1,0 +1,6 @@
+$ npx tsc --noEmit -p .
+(clean)
+$ npx jest <every test that reads command-hub/app.js> test/command-hub test/vtid-04984-kiro-model-selection.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-04465-operator-pipeline-regression.test.ts
+Tests: 1610 passed
+$ node scratchpad/kiro-model-shots.js  # real app.js block + styles.css in Chromium
+desktop+mobile: no horizontal overflow; selecting a model sends POST /api/v1/operator/kiro/sessions/T1/model

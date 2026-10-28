@@ -1,0 +1,88 @@
+name: Alert — Welcome Greeting Production Health
+
+# VTID-03089: independent daily heartbeat. Compares actual signups vs actual
+# welcome greetings fired in the last 24 hours. If signups happened but the
+# trigger produced zero greetings, fail the run so the alarm lights up.
+#
+# This is the second layer on top of SMOKE-WELCOME-GREETING.yml: smoke test
+# proves the trigger CODE works on synthetic data; this alert proves the
+# trigger is firing on REAL traffic.
+#
+# VTID-03492 — TRANSPORT CHANGED, deliberately NOT psql.
+# This workflow had failed EVERY scheduled run since at least 2026-07-29 with:
+#
+#   psql: error: ... FATAL: (EADDRNOTALLOWED)
+#   address not in tenant allow_list: {52, 225, 29, 98}
+#
+# The Supabase project has a network allow-list and GitHub runner IPs are not
+# on it (they differ per run, so allow-listing them is not practical). It was
+# not flaky — it was structurally unable to connect, and had been silently
+# dead for weeks while sitting on the "known chronic failure, don't chase" list.
+#
+# PostgREST is a separate edge service, NOT subject to the DB allow-list, so
+# the query now runs as an RPC over HTTPS with secrets that already exist.
+# See supabase/migrations/20260804100000_vtid_03492_ci_health_rpcs_v2.sql.
+
+#
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green). The transport notes above describe the old inline
+# query and are kept as history.
+#
+# Route: /api/v1/ops/health/welcome-greeting (ci_welcome_greeting_health() RPC over the
+# last 24 h: signups with zero trigger-fired greetings is down, any recent user
+# still unflagged is degraded).
+
+on:
+  schedule:
+    - cron: '0 7 * * *'   # 09:00 CET daily
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check welcome-greeting health
+        env:
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/welcome-greeting
+        run: |
+          set -euo pipefail
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
+            exit 1
+          fi
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
+            exit 1
+          fi
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::welcome greeting is not healthy (signups not greeted by the trigger, or recent users still have welcome_chat_sent=false — VTID-03089 / VTID-03492): status=$STATUS reason=$REASON (see the JSON above)."
+            exit 1
+          fi
+          echo "OK: status=$STATUS"
+
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-welcome-greeting-health" "alert-workflow://ALERT-WELCOME-GREETING-HEALTH" "recent signups not greeted by the welcome trigger"

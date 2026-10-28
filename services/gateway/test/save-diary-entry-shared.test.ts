@@ -1,0 +1,484 @@
+/**
+ * VTID-03042: save_diary_entry lifted to shared dispatcher.
+ *
+ * Closes the L2.2b.7 parity gap reported during the German real-mic test
+ * (check #5): LiveKit's agent tool was calling /memory/diary/sync-index,
+ * which ONLY runs the health-feature extractor + Vitana Index recompute
+ * — it does NOT write the user-visible `diary_entries` row. So Vitana
+ * announced "I logged your diary" while the user saw no entry in their
+ * daily diary. This handler ports Vertex's inline flow into the shared
+ * dispatcher so both pipelines:
+ *   1) insert diary_entries (the row the user actually sees),
+ *   2) extract health features + persist,
+ *   3) recompute the Vitana Index,
+ *   4) celebrate any streak.
+ *
+ * These tests pin the contract:
+ *   1. Happy path: diary_entries insert called, RPC called, OK returned.
+ *   2. Insert failure is non-fatal — the extractor + RPC still run.
+ *   3. Empty raw_text returns ok:false without touching the DB.
+ *   4. Missing user_id returns ok:false.
+ *   5. Result text is voice-friendly and mentions the entry_date.
+ *   6. Index delta calculation uses pre-row vs post-RPC pillars.
+ *   7. Registered in ORB_TOOL_REGISTRY so dispatchOrbTool routes to it.
+ */
+
+process.env.NODE_ENV = 'test';
+process.env.SUPABASE_URL = 'http://supabase.test';
+process.env.SUPABASE_SERVICE_ROLE = 'test-service-role';
+
+// Mock the diary-health-extractor + streak-celebrator BEFORE the import so
+// the dynamic `await import('./diary-health-extractor')` inside the handler
+// picks up the stubs.
+jest.mock('../src/services/diary-health-extractor', () => ({
+  extractHealthFeaturesFromDiary: jest.fn(() => []),
+  persistDiaryHealthFeatures: jest.fn(async () => ({ written: 0 })),
+}));
+jest.mock('../src/services/diary-streak-celebrator', () => ({
+  celebrateDiaryStreak: jest.fn(async () => null),
+}));
+
+import {
+  ORB_TOOL_REGISTRY,
+  dispatchOrbTool,
+  tool_save_diary_entry,
+} from '../src/services/orb-tools-shared';
+
+const USER_UUID = '11111111-1111-4111-8111-111111111111';
+const TENANT_UUID = '22222222-2222-4222-8222-222222222222';
+
+interface DbCall {
+  table: string;
+  op: 'insert' | 'select' | 'rpc' | 'update';
+  payload?: unknown;
+}
+
+function makeStubSupabase(opts: {
+  diaryInsertError?: { message: string } | null;
+  diaryUpdateError?: { message: string } | null;
+  recentDiaryEntry?: { id: string; text: string; created_at: string } | null;
+  preIndexRow?: Record<string, number> | null;
+  preIndexError?: { message: string } | null;
+  rpcReturn?: { data: unknown; error?: { message: string } | null };
+}) {
+  const calls: DbCall[] = [];
+  return {
+    from(table: string) {
+      if (table === 'diary_entries') {
+        return {
+          // VTID-04884: supabase-js shape — insert() is awaitable and also
+          // chains .select().single() to return the new row.
+          insert: (row: Record<string, unknown>) => {
+            calls.push({ table, op: 'insert', payload: row });
+            const result = opts.diaryInsertError
+              ? { data: null, error: opts.diaryInsertError }
+              : { data: { id: 'diary-stub', created_at: '2026-10-05T00:00:00Z' }, error: null };
+            return Object.assign(Promise.resolve({ error: result.error }), {
+              select: (_cols: string) => ({ single: async () => result }),
+            });
+          },
+          select: (_cols: string) => ({
+            eq: (_c1: string, _v1: unknown) => ({
+              eq: (_c2: string, _v2: unknown) => ({
+                order: (_col: string, _order: unknown) => ({
+                  limit: (_n: number) => ({
+                    maybeSingle: async () => {
+                      calls.push({ table, op: 'select' });
+                      return { data: opts.recentDiaryEntry ?? null, error: null };
+                    },
+                  }),
+                }),
+              }),
+            }),
+          }),
+          update: (patch: Record<string, unknown>) => ({
+            eq: async (_col: string, _val: unknown) => {
+              calls.push({ table, op: 'update', payload: patch });
+              return { error: opts.diaryUpdateError ?? null };
+            },
+          }),
+        };
+      }
+      if (table === 'vitana_index_scores') {
+        return {
+          select: () => ({
+            eq: () => ({
+              eq: () => ({
+                maybeSingle: async () => {
+                  calls.push({ table, op: 'select' });
+                  return { data: opts.preIndexRow ?? null, error: opts.preIndexError ?? null };
+                },
+              }),
+            }),
+          }),
+        };
+      }
+      return {} as never;
+    },
+    async rpc(name: string, args: unknown) {
+      calls.push({ table: 'rpc', op: 'rpc', payload: { name, args } });
+      return opts.rpcReturn ?? { data: null, error: null };
+    },
+    _calls: calls,
+  };
+}
+
+const identity = {
+  user_id: USER_UUID,
+  tenant_id: TENANT_UUID,
+  role: 'community',
+  vitana_id: null,
+};
+
+describe('VTID-03042 — save_diary_entry lifted to shared dispatcher', () => {
+  test('1. happy path: inserts diary_entries + calls index RPC + returns ok', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: {
+        score_total: 100,
+        score_nutrition: 20,
+        score_hydration: 20,
+        score_exercise: 20,
+        score_sleep: 20,
+        score_mental: 20,
+      },
+      rpcReturn: {
+        data: {
+          ok: true,
+          score_total: 120,
+          score_nutrition: 24,
+          score_hydration: 24,
+          score_exercise: 24,
+          score_sleep: 24,
+          score_mental: 24,
+        },
+      },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'I meditated for twenty minutes and drank two liters of water.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+    expect(sb._calls.some((c) => c.op === 'rpc')).toBe(true);
+    const r = result.result as { entry_date: string; diary_entry_written: boolean; index_delta: { total: number } | null };
+    expect(r.diary_entry_written).toBe(true);
+    expect(r.index_delta?.total).toBe(20); // 120 - 100
+    // YYYY-MM-DD pattern, computed from today.
+    expect(r.entry_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+  });
+
+  test('2. diary_entries insert failure is non-fatal — RPC still runs, result still ok', async () => {
+    const sb = makeStubSupabase({
+      diaryInsertError: { message: 'RLS denied' },
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 100 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Walked for thirty minutes this afternoon, felt great.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { diary_entry_written: boolean };
+    expect(r.diary_entry_written).toBe(false);
+    expect(sb._calls.some((c) => c.op === 'rpc')).toBe(true); // still called
+  });
+
+  test('3. empty raw_text returns ok:false without touching the DB', async () => {
+    const sb = makeStubSupabase({});
+    const result = await tool_save_diary_entry({ raw_text: '   ' }, identity, sb as never);
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.error).toMatch(/raw_text/i);
+    expect(sb._calls).toHaveLength(0);
+  });
+
+  test('4. missing user_id returns ok:false without touching the DB', async () => {
+    const sb = makeStubSupabase({});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'A reasonable diary entry of the right length.' },
+      { ...identity, user_id: '' },
+      sb as never,
+    );
+    expect(result.ok).toBe(false);
+    if (result.ok !== false) return;
+    expect(result.error).toMatch(/user_id/i);
+    expect(sb._calls).toHaveLength(0);
+  });
+
+  // REGRESSION: a bare "yes/help me" reply to Vitana's own "want help
+  // logging today?" nudge is consent, not diary content. It must never be
+  // persisted as a fabricated entry (see live-system-instruction.ts Section
+  // M "bare consent" exception for the prompt-side half of this fix).
+  test('10. bare consent phrases ("ja", "hilf mir", "yes", "help me") are rejected, DB untouched', async () => {
+    const phrases = ['ja', 'Ja.', 'hilf mir', 'Ja, hilf mir!', 'yes', 'help me', 'okay', 'sure'];
+    for (const raw_text of phrases) {
+      const sb = makeStubSupabase({});
+      const result = await tool_save_diary_entry({ raw_text }, identity, sb as never);
+      expect(result.ok).toBe(true); // ok:true — it's a "needs content" signal, not a hard error
+      if (result.ok !== true) continue;
+      expect((result.result as { needs_content?: boolean }).needs_content).toBe(true);
+      expect(sb._calls).toHaveLength(0); // never touched diary_entries / RPC
+    }
+  });
+
+  test('11. real content that happens to start with "ja"/"yes" is NOT treated as bare consent', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Ja, ich habe heute zwei Liter Wasser getrunken und bin joggen gewesen.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+  });
+
+  test('5. text is voice-friendly and mentions the entry_date', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Slept seven hours, well rested.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    expect(typeof result.text).toBe('string');
+    expect(result.text).toMatch(/Diary entry logged for \d{4}-\d{2}-\d{2}/);
+  });
+
+  test('6. entry_date arg passes through when valid; otherwise defaults to today', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'A solid entry for yesterday.', entry_date: '2026-04-01' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { entry_date: string };
+    expect(r.entry_date).toBe('2026-04-01');
+
+    // Invalid format falls back to today.
+    const sb2 = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result2 = await tool_save_diary_entry(
+      { raw_text: 'Another entry.', entry_date: 'not-a-date' },
+      identity,
+      sb2 as never,
+    );
+    if (result2.ok !== true) return;
+    const r2 = result2.result as { entry_date: string };
+    expect(r2.entry_date).toMatch(/^\d{4}-\d{2}-\d{2}$/);
+    expect(r2.entry_date).not.toBe('not-a-date');
+  });
+
+  // REGRESSION (offer/honesty): on the FIRST entry of the day there is no
+  // same-day baseline row, so we must NOT fabricate a delta. The old code did
+  // `after.total - (before ?? 0)` and announced the user's ENTIRE index as an
+  // increase (e.g. "your Vitana Index moved up 230"). No baseline → no delta,
+  // and the spoken text must not claim any increase.
+  test('8. no same-day baseline → index_delta is null and text claims NO increase', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null, // first entry today — nothing to diff against
+      rpcReturn: { data: { ok: true, score_total: 230, score_nutrition: 46 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'No breakfast, pasta for lunch, big dessert with greek yogurt and three coffees.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { index_delta: { total: number } | null };
+    expect(r.index_delta).toBeNull();                 // no fabricated delta
+    expect(result.text).toMatch(/Diary entry logged for \d{4}-\d{2}-\d{2}/);
+    expect(result.text).not.toMatch(/moved up/i);     // never "your Index moved up 230"
+    expect(result.text).not.toMatch(/230/);
+  });
+
+  test('9. WITH a same-day baseline → honest positive delta is still announced', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: { score_total: 200 },               // earlier-today snapshot
+      rpcReturn: { data: { ok: true, score_total: 212 } },
+    });
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Added a 2km walk and a litre of water after lunch.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { index_delta: { total: number } | null };
+    expect(r.index_delta?.total).toBe(12);            // 212 - 200, real change
+    expect(result.text).toMatch(/moved up 12/);
+  });
+
+  // VTID-03793 — one continuous voice dictation must land as ONE diary
+  // entry even when Nova Sonic calls save_diary_entry multiple times for
+  // it (one per clause/fact). This is the deterministic server-side
+  // backstop for that model-compliance gap.
+  describe('VTID-03793 — coalesce rapid-fire voice diary fragments', () => {
+    test('12. a second voice call within the coalesce window UPDATES the recent row instead of inserting a new one', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-1',
+          text: 'und ich habe kartoffelpüree mit zwei eiern gegessen',
+          created_at: new Date(Date.now() - 5_000).toISOString(), // 5s ago
+        },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'was natürlich zu wenig ist' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok !== true) return;
+      // Never a fresh insert — the fragment must be merged into entry-1.
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(false);
+      const updateCall = sb._calls.find((c) => c.table === 'diary_entries' && c.op === 'update');
+      expect(updateCall).toBeDefined();
+      const patch = updateCall?.payload as { text: string };
+      expect(patch.text).toBe(
+        'und ich habe kartoffelpüree mit zwei eiern gegessen was natürlich zu wenig ist',
+      );
+      const r = result.result as { diary_entry_written: boolean };
+      expect(r.diary_entry_written).toBe(true);
+    });
+
+    test('13. a voice call OUTSIDE the coalesce window inserts a new row instead of merging', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-old',
+          text: 'yesterday-ish fragment',
+          created_at: new Date(Date.now() - 5 * 60_000).toISOString(), // 5 min ago
+        },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'a brand new unrelated diary thought' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'update')).toBe(false);
+    });
+
+    test('14. no prior voice entry at all inserts a fresh row (no crash on null recent entry)', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: null,
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'the very first diary entry ever for this user' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      expect(sb._calls.some((c) => c.table === 'diary_entries' && c.op === 'insert')).toBe(true);
+    });
+
+    test('15. a coalesce-update failure is non-fatal — RPC still runs, result still ok', async () => {
+      const sb = makeStubSupabase({
+        recentDiaryEntry: {
+          id: 'entry-1',
+          text: 'first fragment',
+          created_at: new Date(Date.now() - 1_000).toISOString(),
+        },
+        diaryUpdateError: { message: 'RLS denied' },
+        preIndexRow: null,
+        rpcReturn: { data: { ok: true, score_total: 50 } },
+      });
+      const result = await tool_save_diary_entry(
+        { raw_text: 'second fragment' },
+        identity,
+        sb as never,
+      );
+      expect(result.ok).toBe(true);
+      if (result.ok !== true) return;
+      const r = result.result as { diary_entry_written: boolean };
+      expect(r.diary_entry_written).toBe(false);
+      expect(sb._calls.some((c) => c.op === 'rpc')).toBe(true); // still called
+    });
+  });
+
+  test('7. registered in ORB_TOOL_REGISTRY and routes via dispatchOrbTool', async () => {
+    expect(ORB_TOOL_REGISTRY.save_diary_entry).toBe(tool_save_diary_entry);
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const result = await dispatchOrbTool(
+      'save_diary_entry',
+      { raw_text: 'Did some yoga and meditation today, twenty minutes total.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+  });
+
+  test('10. pre-recompute Index lookup error is logged, not silently treated as no-baseline', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      preIndexError: { message: 'connection reset' },
+      rpcReturn: { data: { ok: true, score_total: 50 } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Slept eight hours and had a big salad for lunch.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    // Still degrades gracefully — no baseline means no delta is reported,
+    // never a fabricated one — but the failure must not be silent.
+    const r = result.result as { index_delta: unknown };
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('pre-recompute Index lookup failed'),
+    );
+    warnSpy.mockRestore();
+  });
+
+  test('11. Index recompute RPC error is logged, not silently indistinguishable from a no-op recompute', async () => {
+    const sb = makeStubSupabase({
+      preIndexRow: null,
+      rpcReturn: { data: null, error: { message: 'function health_compute_vitana_index_for_user does not exist' } },
+    });
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    const result = await tool_save_diary_entry(
+      { raw_text: 'Went for a run and had a healthy breakfast.' },
+      identity,
+      sb as never,
+    );
+    expect(result.ok).toBe(true);
+    if (result.ok !== true) return;
+    const r = result.result as { pillars_after: unknown; index_delta: unknown };
+    expect(r.pillars_after).toBeNull();
+    expect(r.index_delta).toBeNull();
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('Index recompute RPC failed'),
+    );
+    warnSpy.mockRestore();
+  });
+});

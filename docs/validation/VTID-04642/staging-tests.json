@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04642",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "Testing & QA overview page is served", "path": "/command-hub/testing-qa/overview/",
+      "expect_status": 200, "expect_content_type": "text/html" },
+    { "kind": "http", "name": "old unit-tests link is still served (redirects client-side to the catalog)", "path": "/command-hub/testing-qa/unit-tests/",
+      "expect_status": 200, "expect_content_type": "text/html" },
+    { "kind": "http", "name": "results summary the Overview reads requires an admin", "path": "/api/v1/testing/results/summary", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/command-hub/vtid-04642-testing-qa-screens.test.ts test/command-hub/vtid-04635-testing-qa-tabs-honest.test.ts", "cwd": "services/gateway",
+      "reason": "pins the four tabs in both navigation sources and the inventory, the old-URL redirects, the APIs each screen reads, and the CSP rule" }
+  ]
+}

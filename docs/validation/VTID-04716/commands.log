@@ -1,0 +1,11 @@
+# live, read-only
+SQL: to_regclass / pg_proc for every table and function the five services use -> none existed (user_preferences exists as the settings table)
+SQL: tenants/app_users keys -> tenants PK is tenant_id; capacity_state columns
+# local Postgres 16
+initdb; psql -f outputs/supabase-stub.sql
+for f in supabase/migrations/20260928200*; do psql -v ON_ERROR_STOP=1 -1 -f $f; done   # twice -> outputs/apply-twice.txt
+psql -f outputs/member-smoke.sql -> outputs/member-smoke.out
+# gateway
+npx tsc --noEmit -p .
+npx jest test/vtid-04716-feature-data-layers.test.ts test/vtid-04665-dependency-probe.test.ts test/d39-taste-alignment.test.ts test/routes/autopilot-prompts.test.ts
+# live apply (before merge; Migration Drift Check): RUN-MIGRATION.yml per file, from this branch

@@ -1,0 +1,15 @@
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:53: NOTICE:  constraint "user_wallets_earned_balance_check" of relation "user_wallets" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:69: NOTICE:  constraint "wallet_transactions_credit_source_check" of relation "wallet_transactions" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:51: NOTICE:  column "earned_balance" of relation "user_wallets" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:67: NOTICE:  column "idempotency_key" of relation "wallet_transactions" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:67: NOTICE:  column "credit_source" of relation "wallet_transactions" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:75: NOTICE:  relation "wallet_transactions_user_idempotency_key" already exists, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:209: NOTICE:  policy "Users can update their own wallets" for relation "public.user_wallets" does not exist, skipping
+psql:/home/user/vitana-platform/supabase/migrations/20261001180000_vtid_04809_vtna_reward_ledger.sql:210: NOTICE:  policy "Users can create transactions from their account" for relation "public.wallet_transactions" does not exist, skipping
+              set_config              
+--------------------------------------
+ 11111111-1111-1111-1111-111111111111
+(1 row)
+
+VTID-04809: all assertions passed
+sql exit 0

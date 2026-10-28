@@ -1,0 +1,236 @@
+name: Auto Deploy (Canonical → EXEC-DEPLOY)
+
+# ============================================================================
+# STAGING-FIRST CUTOVER (effective Mon 8 Jun 2026, 10:00 Europe/Berlin).
+# ----------------------------------------------------------------------------
+# BEFORE the cutover instant: a push to `main` dispatches EXEC-DEPLOY.yml to
+# PRODUCTION (gateway + worker-runner), exactly as before — deploy-to-live
+# keeps working on every path until the deadline.
+#
+# AT/AFTER the cutover instant: the automatic (push) path is FROZEN. Code that
+# lands on `main` deploys to STAGING only (gateway via STAGE-DEPLOY.yml).
+# Production is then reached only via:
+#   1. the single PUBLISH button in the Command Hub, or
+#   2. a deliberate manual run — either this workflow's `workflow_dispatch`
+#      (with a recorded reason) or scripts/deploy/publish-to-prod.sh.
+#
+# Manual `workflow_dispatch` is NEVER frozen — it is the documented exception.
+# The switch is purely time-based (see the `cutover_gate` job); no redeploy is
+# needed to flip it.
+# ============================================================================
+#
+# VTID-01082-FIX: Robust VTID extraction from truncated merge commit messages.
+
+on:
+  push:
+    branches: [ "main" ]
+    paths:
+      - "services/gateway/**"
+      - "services/worker-runner/**"
+      - ".github/workflows/**"
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Why are you deploying to PROD manually (the documented exception)?'
+        required: true
+
+permissions:
+  contents: read
+  actions: write
+
+concurrency:
+  group: auto-deploy-main
+  cancel-in-progress: true
+
+jobs:
+  # --------------------------------------------------------------------------
+  # Staging-first cutover gate. Freezes the AUTOMATIC (push) deploy-to-prod path
+  # at/after Mon 8 Jun 2026, 10:00 Europe/Berlin. Manual dispatch is exempt.
+  # --------------------------------------------------------------------------
+  cutover_gate:
+    runs-on: ubuntu-latest
+    outputs:
+      frozen: ${{ steps.gate.outputs.frozen }}
+    steps:
+      - name: Evaluate staging-first cutover
+        id: gate
+        shell: bash
+        run: |
+          CUTOVER_EPOCH="$(date -d 'TZ="Europe/Berlin" 2026-06-08 10:00:00' +%s)"
+          NOW_EPOCH="$(date -u +%s)"
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            echo "Manual dispatch (reason: ${{ github.event.inputs.reason }}) → not frozen (deliberate prod exception)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          elif [ "$NOW_EPOCH" -ge "$CUTOVER_EPOCH" ]; then
+            echo "::warning::Staging-first cutover ACTIVE (since $(date -u -d @${CUTOVER_EPOCH})) — auto deploy to LIVE is frozen. Promote via the Command Hub PUBLISH button or a manual dispatch."
+            echo "frozen=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "Pre-cutover — auto deploy to live proceeds normally (cutover at $(date -u -d @${CUTOVER_EPOCH}) UTC)."
+            echo "frozen=false" >> "$GITHUB_OUTPUT"
+          fi
+
+  dispatch_exec_deploy:
+    needs: cutover_gate
+    if: needs.cutover_gate.outputs.frozen != 'true'
+    runs-on: ubuntu-latest
+    steps:
+      # VTID-01082-FIX: Checkout repo to get full commit message via git
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 2  # Need parent commit for merge commit analysis
+
+      - name: Extract VTID from commit (robust)
+        id: vtid
+        shell: bash
+        run: |
+          echo "==========================================================================="
+          echo "VTID Extraction (VTID-01082-FIX: Robust extraction for merge commits)"
+          echo "==========================================================================="
+
+          # Method 1: Get FULL commit message via git (not truncated like github.event)
+          FULL_MSG="$(git log -1 --format='%B' HEAD)"
+          echo "Full commit message:"
+          echo "$FULL_MSG"
+          echo ""
+
+          # Accept: DEV-XXXX-YYYY-NNNN, VTID-NNNNN (5-digit only), BOOTSTRAP-...
+          # VTID-01841: Only match 5-digit VTIDs (task VTIDs >= 01000).
+          # 4-digit VTIDs (e.g., VTID-0542) are governance rule references, not task VTIDs,
+          # and must NOT be extracted — they don't exist in the OASIS ledger.
+          VTID="$(echo "$FULL_MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+
+          # Method 2: If not found in commit message, try the branch name from merge commit
+          if [ -z "$VTID" ]; then
+            echo "No VTID in commit message. Trying branch name extraction..."
+
+            # Extract branch name from merge commit message (e.g., "Merge pull request #123 from org/branch-name")
+            BRANCH_NAME="$(echo "$FULL_MSG" | grep -oP 'from [^/]+/\K[^\s]+' | head -n 1 || true)"
+            echo "Extracted branch name: $BRANCH_NAME"
+
+            # Look for VTID pattern in branch name (5-digit task VTIDs only)
+            if [ -n "$BRANCH_NAME" ]; then
+              VTID="$(echo "$BRANCH_NAME" | grep -Eo '(VTID-[0-9]{5})' | head -n 1 || true)"
+            fi
+          fi
+
+          # Method 3: If still not found, check the parent commit (the actual feature commit)
+          if [ -z "$VTID" ]; then
+            echo "No VTID in branch name. Checking parent commit..."
+
+            # For merge commits, get the second parent (the feature branch commit)
+            PARENT_MSG="$(git log -1 --format='%B' HEAD^2 2>/dev/null || true)"
+            if [ -n "$PARENT_MSG" ]; then
+              echo "Parent commit message:"
+              echo "$PARENT_MSG"
+              VTID="$(echo "$PARENT_MSG" | grep -Eo '(DEV-[A-Z0-9]+-[0-9]{4}-[0-9]{4}|VTID-[0-9]{5}|BOOTSTRAP-[A-Z0-9\-]+)' | head -n 1 || true)"
+            fi
+          fi
+
+          echo ""
+          echo "==========================================================================="
+
+          if [ -z "$VTID" ]; then
+            # VTID-01841: Instead of skipping deploy, use BOOTSTRAP-AUTO fallback.
+            # Code merged to main should always deploy. The commit SHA provides traceability.
+            SHORT_SHA="$(git rev-parse --short HEAD)"
+            VTID="BOOTSTRAP-AUTO-${SHORT_SHA}"
+            echo "No task VTID found — using BOOTSTRAP fallback: $VTID"
+            echo "   (Commit may reference a governance rule VTID or have no VTID at all)"
+          fi
+
+          # DEV-* VTIDs are CI/CD task identifiers (not registered in OASIS).
+          # Prepend BOOTSTRAP- to skip VTID existence check in EXEC-DEPLOY.
+          if [[ "$VTID" == DEV-* ]]; then
+            VTID="BOOTSTRAP-$VTID"
+            echo "CI/CD task ID detected → using BOOTSTRAP prefix: $VTID"
+          fi
+
+          echo "✅ Found VTID=$VTID"
+          echo "found=true" >> "$GITHUB_OUTPUT"
+          echo "vtid=$VTID" >> "$GITHUB_OUTPUT"
+
+      - name: Detect changed services
+        id: detect_services
+        run: |
+          # Check which services had files changed in this push
+          CHANGED_FILES=$(git diff --name-only HEAD~1 HEAD 2>/dev/null || echo "")
+          DEPLOY_GATEWAY=false
+          DEPLOY_WORKER_RUNNER=false
+
+          if echo "$CHANGED_FILES" | grep -q "^services/gateway/"; then
+            DEPLOY_GATEWAY=true
+          fi
+          if echo "$CHANGED_FILES" | grep -q "^services/worker-runner/"; then
+            DEPLOY_WORKER_RUNNER=true
+          fi
+
+          # If neither matched (e.g., workflow changes), default to gateway
+          if [ "$DEPLOY_GATEWAY" = "false" ] && [ "$DEPLOY_WORKER_RUNNER" = "false" ]; then
+            DEPLOY_GATEWAY=true
+          fi
+
+          echo "deploy_gateway=$DEPLOY_GATEWAY" >> "$GITHUB_OUTPUT"
+          echo "deploy_worker_runner=$DEPLOY_WORKER_RUNNER" >> "$GITHUB_OUTPUT"
+          echo "Gateway: $DEPLOY_GATEWAY, Worker-Runner: $DEPLOY_WORKER_RUNNER"
+
+      - name: Dispatch governed deploy (EXEC-DEPLOY)
+        if: steps.vtid.outputs.found == 'true'
+        uses: actions/github-script@v7
+        with:
+          script: |
+            const vtid = "${{ steps.vtid.outputs.vtid }}";
+            const environment = "dev";
+            const deployGateway = "${{ steps.detect_services.outputs.deploy_gateway }}" === "true";
+            const deployWorkerRunner = "${{ steps.detect_services.outputs.deploy_worker_runner }}" === "true";
+
+            // Deploy gateway if changed (or default)
+            if (deployGateway) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "EXEC-DEPLOY.yml",
+                ref: "main",
+                inputs: {
+                  vtid,
+                  service: "gateway",
+                  environment,
+                  health_path: "/alive",
+                  initiator: "agent"
+                }
+              });
+              core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=gateway`);
+            }
+
+            // Deploy worker-runner if changed
+            if (deployWorkerRunner) {
+              await github.rest.actions.createWorkflowDispatch({
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                workflow_id: "EXEC-DEPLOY.yml",
+                ref: "main",
+                inputs: {
+                  vtid,
+                  service: "worker-runner",
+                  environment,
+                  health_path: "/alive",
+                  initiator: "agent"
+                }
+              });
+              core.info(`✅ Dispatched EXEC-DEPLOY.yml for VTID=${vtid} service=worker-runner`);
+            }
+
+  # Emitted only when the cutover has frozen the automatic path, so the run
+  # surfaces a clear "went to staging, not prod" signal instead of a silent skip.
+  cutover_notice:
+    needs: cutover_gate
+    if: needs.cutover_gate.outputs.frozen == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - name: Explain the freeze
+        run: |
+          echo "🛑 Staging-first cutover is ACTIVE — this push did NOT deploy to production."
+          echo "    Gateway changes auto-deploy to STAGING via STAGE-DEPLOY.yml (gateway-staging)."
+          echo "    worker-runner has no staging twin — it is freeze-only on the auto path."
+          echo "    To ship to LIVE: use the Command Hub PUBLISH button, or run"
+          echo "    scripts/deploy/publish-to-prod.sh (the documented manual exception)."

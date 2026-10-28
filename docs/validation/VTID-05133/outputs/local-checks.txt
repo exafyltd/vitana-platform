@@ -1,0 +1,5 @@
+tsc --noEmit: no errors in changed files (3 pre-existing: libphonenumber-js, libphonenumber-js/max, @aws-sdk/client-pinpoint-sms-voice-v2 not installed in the session sandbox).
+vtid-05133-community-mcp-tools.test.ts: 15 passed.
+community-mcp.test.ts: 17 passed.
+Commerce MCP / delegation guard / CORS / plugin package suites: 10 suites, 169 tests passed (unchanged).
+All suites pinning AWS-STAGE-DEPLOY-GATEWAY.yml + flag registry: 100 suites, 1318 tests passed.

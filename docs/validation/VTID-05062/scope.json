@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-05062",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/rum-beacon.ts",
+    "services/gateway/src/routes/screen-load-health.ts",
+    "services/gateway/src/routes/screen-load-health-repository.ts",
+    "services/gateway/src/services/screen-load-daily-report.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/vtid-05062-rum-nav-beacon.test.ts",
+    "services/gateway/test/vtid-05062-screen-load-daily-report.test.ts",
+    "services/gateway/test/vtid-05062-daily-report-route.test.ts",
+    ".github/workflows/SCREEN-LOAD-DAILY.yml",
+    "scripts/ci/staging-verify/smoke/community-app.json",
+    "docs/validation/VTID-05062/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05062/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

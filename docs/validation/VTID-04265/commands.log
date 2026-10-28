@@ -1,0 +1,53 @@
+# VTID-04265 — commands run by this Claude Code session (interactive),
+# continuing the take-over task list started with VTID-04264.
+
+$ git checkout -B claude/vtid-04265-live-steps-transcript origin/main
+# fresh branch from origin/main (independent of the still-open VTID-04264
+# PR, to avoid stacking two unmerged Command Hub PRs on the same files)
+
+$ grep -n "Autopilot Live view uses (GET /executions/:id/stream" \
+    services/gateway/src/frontend/command-hub/app.js
+# found the exact reusable machinery: followOperatorExecution,
+# state.operatorExecFollow, renderOperatorExecutionFollow,
+# describeFollowedStep (VTID-04033, built for the Operator Console panel)
+
+$ grep -n "function renderAutopilotLiveView" services/gateway/src/frontend/command-hub/app.js
+# read the Dev Autopilot execution card rendering loop (devApSection) to
+# find where to add a Steps toggle alongside the existing Diff toggle
+
+# Added: renderAutopilotLiveStepsPanel() (reuses state.operatorExecFollow +
+# describeFollowedStep + the pre-existing chat-exec-follow/chat-tool-
+# activity-line CSS classes), devAutopilotToggleSteps() (opens/closes the
+# same SSE stream via followOperatorExecution/closeOperatorExecutionFollow),
+# a "▸ Steps"/"▾ Steps" button on every card (not gated to
+# awaiting_approval, unlike Diff), and the panel wrap at the end of each
+# card when expanded.
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+# SYNTAX OK
+
+$ cd services/gateway && npx tsc --noEmit
+# clean
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff2.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff2.txt
+# No CSP pattern hits in added lines.
+# (No .style.cssText added — the panel reuses pre-existing CSS classes only.)
+
+# Added scripts/ci/command-hub-ownership-guard.js allowlist entry for
+# VTID-04265 (own branch, own comment block).
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+# OK
+
+# New test file added: services/gateway/test/vtid-04265-live-steps-transcript.test.ts
+$ cd services/gateway && node_modules/.bin/jest test/vtid-04265-live-steps-transcript.test.ts \
+    test/command-hub/ \
+    test/scripts/command-hub-ownership-guard.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts \
+    test/console-task-17-cost-badge-tooltip.test.ts \
+    test/vtid-04033-operator-execution-follow.test.ts
+# 23/23 suites, 312/312 tests passing, 0 regressions
+
+$ cd services/gateway && npx tsc --noEmit
+# clean (re-run after the test file was added)

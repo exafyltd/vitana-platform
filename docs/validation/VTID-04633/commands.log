@@ -1,0 +1,3 @@
+$ npx jest test/vtid-04633-github-api-error-message.test.ts   # 5 passed
+$ npx tsc --noEmit                                             # exit 0
+$ npx jest <29 suites importing github-service>                # 29 passed, 422 passed / 2 skipped

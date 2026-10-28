@@ -1,0 +1,489 @@
+/**
+ * VTID-01208 + BOOTSTRAP-LLM-ROUTER: LLM Safe Defaults Constants
+ *
+ * Hardcoded safe defaults for LLM routing. Used when:
+ * - "Reset to Recommended" is clicked
+ * - Database is unavailable
+ * - Policy validation fails
+ *
+ * BOOTSTRAP-LLM-ROUTER (2026-04-26): defaults are now flagship-only — every
+ * primary and every fallback is its provider's strongest available model.
+ * Operator can step down via the Command Hub dropdown but the system never
+ * silently picks a weaker option.
+ *
+ * Stages extended from {planner|worker|validator|operator|memory} to also
+ * include {triage|vision|classifier} so per-call-site routing maps cleanly
+ * onto the JSONB policy doc. Providers extended from {anthropic|vertex|openai}
+ * to also include {deepseek|claude_subscription}.
+ */
+
+/**
+ * LLM Stage types
+ */
+export type LLMStage =
+  | 'planner'
+  | 'worker'
+  | 'validator'
+  | 'operator'
+  | 'memory'
+  | 'triage'
+  | 'vision'
+  | 'classifier'
+  // VTID-04868: Plan Sparring Gate partner. Bedrock only, NO fallback — a
+  // failed partner call escalates the sparring session to a human
+  // (model_unavailable) instead of being served by a different model.
+  | 'plan_sparring';
+
+/**
+ * LLM Provider types
+ *
+ * `claude_subscription` is the free pseudo-provider that delegates to the
+ * local autopilot-worker daemon (`runWorkerTask`) which executes via the
+ * user's Claude Pro/Max plan. It only makes sense for the `worker` and
+ * `planner` stages — the dropdown should hide it elsewhere.
+ */
+export type LLMProvider =
+  | 'anthropic'
+  | 'vertex'
+  | 'openai'
+  | 'deepseek'
+  | 'claude_subscription'
+  | 'bedrock';
+
+/**
+ * Stage routing configuration
+ */
+export interface StageRoutingConfig {
+  primary_provider: LLMProvider;
+  primary_model: string;
+  fallback_provider: LLMProvider | null;
+  fallback_model: string | null;
+}
+
+/**
+ * Complete LLM routing policy
+ */
+export interface LLMRoutingPolicy {
+  planner: StageRoutingConfig;
+  worker: StageRoutingConfig;
+  validator: StageRoutingConfig;
+  operator: StageRoutingConfig;
+  memory: StageRoutingConfig;
+  triage: StageRoutingConfig;
+  /**
+   * VTID-03565: optional because they genuinely are absent in production.
+   * The ACTIVE policy (v10, 2026-05-02) predates these two stages and stores
+   * only the original six, and `loadPolicy()` takes the stored row WHOLESALE
+   * — it does not merge missing stages with LLM_SAFE_DEFAULTS. Typing them as
+   * required asserted a shape the live data does not have, which is how
+   * `callViaRouter('vision', ...)` came to fail at runtime with
+   * "No policy configured for stage 'vision'" against a type that said it
+   * could not happen. `callViaRouter` already guards on `!stageConfig`; the
+   * type now admits the case instead of hiding it.
+   */
+  vision?: StageRoutingConfig;
+  classifier?: StageRoutingConfig;
+  /**
+   * VTID-04868: optional for the same reason as vision/classifier — no stored
+   * policy row carries it yet. `callViaRouter` resolves a missing
+   * `plan_sparring` entry to `LLM_SAFE_DEFAULTS.plan_sparring` (and never
+   * falls back), see NO_FALLBACK_STAGES.
+   */
+  plan_sparring?: StageRoutingConfig;
+}
+
+/**
+ * VTID-04868 — Plan Sparring partner model (owner decision 2026-10-04:
+ * Claude Opus 4.6 on AWS Bedrock, every producer, "for now").
+ *
+ * !!! UNVERIFIED PLACEHOLDER — DO NOT TRUST UNTIL THE IF-THEN 31 INVOKE TEST
+ * !!! HAS PASSED. The exact eu.* inference-profile id for Opus 4.6 in
+ * !!! eu-central-1 has NOT been resolved (`aws bedrock list-inference-profiles`)
+ * !!! and has NOT been invoked for real. The 2026-08-10 sweep found every Opus
+ * !!! profile except opus-4-5 unsubscribed (AccessDenied). Before any producer
+ * !!! relies on the gate: resolve the real id, invoke it for real including one
+ * !!! tool round-trip with thinking {type:'adaptive'} + output_config.effort,
+ * !!! then set PLAN_SPARRING_MODEL (or replace this constant) with the verified
+ * !!! id. If AccessDenied → Marketplace subscription first; if Bedrock rejects
+ * !!! output_config.effort → escalate to the owner, never drop it silently.
+ *
+ * Because the stage has NO fallback, a wrong id fails LOUDLY (every session
+ * escalates with model_unavailable) — it can never be silently served by
+ * another model, which is the failure mode the subscribed-models guard tests
+ * exist for.
+ */
+export const PLAN_SPARRING_DEFAULT_MODEL = 'eu.anthropic.claude-opus-4-6-v1';
+
+/**
+ * VTID (sparring-model-fallback): explicit throttle fallback for the partner.
+ * Opus 4.6 is the primary (above); when a round's invoke fails with a RETRYABLE
+ * throttle (`Too many tokens per day` / rate limit) the partner pass retries
+ * ONCE on this model. It is NOT a router-level fallback (plan_sparring stays in
+ * NO_FALLBACK_STAGES below): the retry lives inside runPartnerPass, is logged
+ * loudly, and is Bedrock-only. Sonnet 4.6 is one of the 3 Anthropic profiles
+ * verified to actually invoke in eu-central-1 (backend §2b) and has no
+ * fresh-subscription daily cap, which is exactly the Opus 4.6 limit this works
+ * around. Owner decision 2026-10-18.
+ */
+export const PLAN_SPARRING_FALLBACK_MODEL = 'eu.anthropic.claude-sonnet-4-6';
+
+/** Resolved partner model: PLAN_SPARRING_MODEL env, else the placeholder above. */
+export function resolvePlanSparringModel(): string {
+  return process.env.PLAN_SPARRING_MODEL || PLAN_SPARRING_DEFAULT_MODEL;
+}
+
+/** Resolved throttle-fallback partner model: PLAN_SPARRING_FALLBACK_MODEL env, else the constant above. */
+export function resolvePlanSparringFallbackModel(): string {
+  return process.env.PLAN_SPARRING_FALLBACK_MODEL || PLAN_SPARRING_FALLBACK_MODEL;
+}
+
+/**
+ * Plan-sparring LAST-RESORT tier (owner decision 2026-10-19, supersedes the
+ * "no DeepSeek" part of rule 53): when Opus 4.6 and then Sonnet 4.6 both fail
+ * (burned Bedrock quota), the partner pass continues on DeepSeek instead of
+ * escalating `model_unavailable`. `deepseek-v4-pro` verified live 2026-10-19
+ * (chat + forced tool call). Logged loudly and recorded in model_log with
+ * `fallback_tier: 'deepseek'`; never silent. Kill switch:
+ * PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false.
+ */
+export const PLAN_SPARRING_LAST_RESORT_MODEL = 'deepseek-v4-pro';
+
+/** Resolved last-resort partner model: PLAN_SPARRING_LAST_RESORT_MODEL env, else the constant above. */
+export function resolvePlanSparringLastResortModel(): string {
+  return process.env.PLAN_SPARRING_LAST_RESORT_MODEL || PLAN_SPARRING_LAST_RESORT_MODEL;
+}
+
+/** On unless PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED is exactly 'false'. */
+export function isPlanSparringDeepseekFallbackEnabled(): boolean {
+  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED !== 'false';
+}
+
+/**
+ * Models verified to accept Anthropic `output_config.effort` / adaptive
+ * `thinking` on Bedrock. Opus 4.6 accepts both; Opus 4.5 rejected
+ * `output_config.effort` ("Extra inputs are not permitted"). The partner pass
+ * and buildBedrockRequestBody consult this so a model never receives a field it
+ * rejects. Unknown models default conservative (no effort). Sonnet 4.6's entry
+ * is set from a real invoke before the fallback is relied on in production.
+ */
+export function modelAcceptsEffort(modelId: string): boolean {
+  const id = (modelId || '').toLowerCase();
+  // Opus 4.6 is the specced sparring partner with effort 'high'.
+  if (id.includes('opus-4-6')) return true;
+  // Everything else: conservative — do not send output_config.effort.
+  return false;
+}
+
+/**
+ * VTID-04868: stages that must never be served by a fallback provider/model,
+ * whatever the stored policy or the caller's `allowFallback` says. Enforced in
+ * `callViaRouter` and in policy validation (a non-null fallback is rejected).
+ */
+export const NO_FALLBACK_STAGES: LLMStage[] = ['plan_sparring'];
+
+/**
+ * Flagship-only safe defaults per the BOOTSTRAP-LLM-ROUTER plan.
+ *
+ * Every primary AND every fallback is the strongest model the provider
+ * exposes. No mid-tier defaults seeded anywhere.
+ */
+// VTID-03565: `Required<>` — the DEFAULTS are complete by construction even
+// though a STORED policy need not be (see LLMRoutingPolicy). That asymmetry is
+// the invariant every `?? LLM_SAFE_DEFAULTS[stage]` call site already relies
+// on, so it is stated here once rather than re-asserted at each of them.
+// VTID-03579: these defaults used to route 7 of 8 stages to vertex/Gemini as
+// PRIMARY, with `anthropic` as the usual fallback. Both were actively harmful.
+//
+// `loadPolicy()` returns these whenever the policy read fails OR the active row
+// is missing — so a Supabase hiccup silently moved the entire platform back onto
+// Google, logging one console.warn and nothing else. That is not hypothetical:
+// on 2026-08-11 the planner served real traffic on `vertex/gemini-3.1-pro-preview`
+// with `fallback_used: false` while `llm_routing_policy` v14 said bedrock, during
+// a window when Supabase was returning "remaining connection slots are reserved".
+// A safety net that fails toward the provider the platform is deliberately
+// leaving is the exact silent-fallback shape ALWAYS 10c forbids.
+//
+// `anthropic` was equally wrong as a fallback: that account has no credit
+// balance, so every such call 400s (see §2b).
+//
+// Models here are restricted to the two profiles VERIFIED invokable by real
+// InvokeModel against eu-central-1 on 2026-08-10. Every Haiku and Opus profile
+// returns AccessDenied — the account is not subscribed — so naming one here
+// would reintroduce the same silent-fallback bug one layer down.
+// BOOTSTRAP-DEEPSEEK-V4.1-FLASH (2026-09-11): DeepSeek retired the two-tier
+// deepseek-chat (V3) / deepseek-reasoner (R1) naming. Both legacy names are
+// still accepted for now but already alias to the non-thinking/thinking mode
+// of the same underlying model, and DeepSeek's own announcement (2026-07-24)
+// put them on a ~3-month discontinuation clock — so every DeepSeek call site
+// here now targets the single current model directly: 'deepseek-flash'
+// (marketing name "DeepSeek-V4.1-Flash"), rather than waiting for the alias
+// to break. There is no separate reasoning-mode model id to preserve the old
+// chat/reasoner cost split with — see MODEL_COSTS below for the one rate.
+export const LLM_SAFE_DEFAULTS: Required<LLMRoutingPolicy> = {
+  planner: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  worker: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  validator: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  operator: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  memory: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  triage: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  vision: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    // DeepSeek has no image input, so a text-only fallback would fail every
+    // frame call rather than degrade. Second Bedrock model instead.
+    fallback_provider: 'bedrock',
+    fallback_model: 'eu.anthropic.claude-sonnet-4-5-20250929-v1:0',
+  },
+  classifier: {
+    primary_provider: 'bedrock',
+    primary_model: 'eu.anthropic.claude-sonnet-4-6',
+    fallback_provider: 'deepseek',
+    fallback_model: 'deepseek-flash',
+  },
+  // VTID-04868: Bedrock Opus 4.6 partner, NO fallback (owner decision
+  // 2026-10-04 — never Sonnet/DeepSeek/Google). Model id is an UNVERIFIED
+  // placeholder unless PLAN_SPARRING_MODEL is set — see PLAN_SPARRING_DEFAULT_MODEL.
+  plan_sparring: {
+    primary_provider: 'bedrock',
+    primary_model: resolvePlanSparringModel(),
+    fallback_provider: null,
+    fallback_model: null,
+  },
+};
+
+/**
+ * Model cost information (USD per 1M tokens)
+ * Used for cost estimation in telemetry
+ */
+export const MODEL_COSTS: Record<string, { input: number; output: number }> = {
+  // Anthropic — flagship + mid + light
+  'claude-opus-4-7': { input: 15.00, output: 75.00 },
+  'claude-sonnet-4-6': { input: 3.00, output: 15.00 },
+  'claude-haiku-4-5': { input: 0.80, output: 4.00 },
+  // VTID-04370: the two Bedrock profiles the routing policy actually serves
+  // (eu.anthropic.claude-opus-4-5-20251101-v1:0 / -sonnet-4-5-20250929-v1:0)
+  // had no row, so every Bedrock call on them was reported as $0.
+  'claude-opus-4-5': { input: 5.00, output: 25.00 },
+  'claude-sonnet-4-5': { input: 3.00, output: 15.00 },
+  // VTID-04868: Plan Sparring partner (Opus 4.6 on Bedrock).
+  'claude-opus-4-6': { input: 5.00, output: 25.00 },
+  'claude-3-5-sonnet-20241022': { input: 3.00, output: 15.00 },
+  'claude-3-opus-20240229': { input: 15.00, output: 75.00 },
+  'claude-3-haiku-20240307': { input: 0.25, output: 1.25 },
+
+  // Google Vertex AI — flagship + mid + light
+  'gemini-3.1-pro-preview': { input: 1.25, output: 5.00 },
+  'gemini-3-pro-preview': { input: 1.25, output: 5.00 },  // legacy alias retained for back-compat
+  'gemini-2.5-pro': { input: 1.25, output: 5.00 },        // legacy alias — old policy rows may still reference
+  'gemini-2.5-flash': { input: 0.075, output: 0.30 },
+  'gemini-1.5-pro': { input: 1.25, output: 5.00 },
+  'gemini-1.5-flash': { input: 0.075, output: 0.30 },
+
+  // OpenAI — flagship + mid + light
+  'gpt-5': { input: 5.00, output: 15.00 },                // pricing TBD by OpenAI; using gpt-4o rate as best estimate
+  'gpt-4o': { input: 5.00, output: 15.00 },
+  'gpt-4o-mini': { input: 0.15, output: 0.60 },
+
+  // DeepSeek — current model + retired legacy aliases (kept so a stray
+  // stored policy row still on the old names doesn't silently cost-estimate
+  // to $0 — see the BOOTSTRAP-DEEPSEEK-V4.1-FLASH note above LLM_SAFE_DEFAULTS).
+  // Rates are off-peak, cache-miss input (matches this table's existing
+  // convention for deepseek-chat/deepseek-reasoner below); DeepSeek doubles
+  // these at peak hours and offers a cheaper cache-hit input tier not
+  // modeled here.
+  'deepseek-flash': { input: 0.15, output: 0.60 },        // DeepSeek-V4.1-Flash published rates (2026-09)
+  // VTID-04473: Jev (TypeSafe System One) typed decisions. Input only; output
+  // is free. Never a router provider — priced here for the jev.decision.* cost.
+  'jev-1.13.0': { input: 0.042, output: 0 },
+  'deepseek-reasoner': { input: 0.55, output: 2.19 },     // retired R1 alias — published rates
+  'deepseek-chat': { input: 0.14, output: 0.28 },         // retired V3 alias — published rates
+
+  // claude_subscription pseudo-provider — billed via Claude Pro/Max plan, not per-token
+  'claude-subscription': { input: 0, output: 0 },
+};
+
+/**
+ * Calculate estimated cost for an LLM call
+ */
+/**
+ * VTID-04370: the key MODEL_COSTS prices a router model id under — the exact
+ * id when present, else a Bedrock inference-profile id reduced to its bare
+ * Anthropic model name (region prefix and date/version suffix removed).
+ * Before this lived here, only the Operator Console (VTID-04031) reduced
+ * profile ids; router telemetry priced every Bedrock call at $0.
+ */
+export function modelCostKey(model: string | undefined | null): string | null {
+  const m = (model || '').trim();
+  if (!m) return null;
+  if (MODEL_COSTS[m]) return m;
+  const bare = m
+    .replace(/^(?:eu|us|apac|global|jp|au|ca)\.anthropic\./, '')
+    .replace(/^anthropic\./, '')
+    .replace(/-\d{8}-v\d+:\d+$/, '')
+    .replace(/-v\d+:\d+$/, '')
+    // VTID-04868: profile ids shaped `…-v1` (no `:0`), e.g. the Opus 4.6 placeholder.
+    .replace(/-v\d+$/, '');
+  return MODEL_COSTS[bare] ? bare : null;
+}
+
+export function estimateCost(
+  model: string,
+  inputTokens: number,
+  outputTokens: number
+): number {
+  const key = modelCostKey(model);
+  const costs = key ? MODEL_COSTS[key] : undefined;
+  if (!costs) {
+    return 0;
+  }
+
+  const inputCost = (inputTokens / 1_000_000) * costs.input;
+  const outputCost = (outputTokens / 1_000_000) * costs.output;
+
+  return Math.round((inputCost + outputCost) * 1_000_000) / 1_000_000; // Round to 6 decimal places
+}
+
+/**
+ * Valid stages for routing
+ */
+export const VALID_STAGES: LLMStage[] = [
+  'planner',
+  'worker',
+  'validator',
+  'operator',
+  'memory',
+  'triage',
+  'vision',
+  'classifier',
+  'plan_sparring',
+];
+
+/**
+ * Stages a stored policy may legitimately omit (VTID-03565).
+ *
+ * The ACTIVE production policy (v10, 2026-05-02) predates these two and stores
+ * only the original six. Both the route's `PolicySchema` and the service's
+ * `validatePolicy()` must agree on this set — they are two gates on the SAME
+ * write, and the first version of this fix relaxed only the zod schema, so a
+ * six-stage round-trip passed validation at the route and was then rejected by
+ * the service with "Missing configuration for stage: vision". Caught in review
+ * on #3073. The list lives here so neither gate can drift from the other.
+ */
+export const OPTIONAL_STAGES: LLMStage[] = ['vision', 'classifier', 'plan_sparring'];
+
+/**
+ * Valid providers
+ */
+export const VALID_PROVIDERS: LLMProvider[] = [
+  'anthropic',
+  'vertex',
+  'openai',
+  'deepseek',
+  'claude_subscription',
+  'bedrock',
+];
+
+/**
+ * Per-provider flagship — looked up by the Command Hub dropdown so flipping
+ * providers always lands on the strongest model from the new provider, never
+ * on a mid-tier or light option.
+ *
+ * `bedrock`'s value is NOT a plain model ID — Bedrock cross-region inference
+ * requires the resolved inference profile ID. Confirmed via
+ * `aws bedrock list-inference-profiles` (VTID-03403): the Claude Sonnet 4.6
+ * cross-region profile in `eu-central-1` is `eu.anthropic.claude-sonnet-4-6`
+ * (no `-v1:0` suffix — that was an earlier unconfirmed guess). Read from
+ * BEDROCK_MODEL_ID if set; the literal below is only the dropdown's
+ * convenience default — it does not affect `ADAPTERS.bedrock.call()`, which
+ * always uses the per-stage DB policy's configured model string, never this
+ * constant.
+ */
+export const PROVIDER_FLAGSHIPS: Record<LLMProvider, string> = {
+  anthropic: 'claude-opus-4-7',
+  vertex: 'gemini-3.1-pro-preview',
+  openai: 'gpt-5',
+  deepseek: 'deepseek-flash',
+  claude_subscription: 'claude-opus-4-7',
+  bedrock: process.env.BEDROCK_MODEL_ID || 'eu.anthropic.claude-sonnet-4-6',
+};
+
+/**
+ * Recommended models per stage (for UI warnings)
+ *
+ * VTID-04469: Bedrock inference profiles and DeepSeek Flash only. This list
+ * used to lead with gemini-3.1-pro-preview (Google, decommissioned — §1) and
+ * name bare claude-opus-4-7 / gpt-5, which are the direct Anthropic API (no
+ * credit balance, VTID-03563) and an unprovisioned OpenAI key. Every id here
+ * must be one the router can actually serve; the guard test
+ * vtid-04469-recommended-models-no-google enforces that.
+ */
+const BEDROCK_SONNET = 'eu.anthropic.claude-sonnet-4-6';
+const BEDROCK_OPUS = 'eu.anthropic.claude-opus-4-5-20251101-v1:0';
+
+export const RECOMMENDED_MODELS: Record<LLMStage, string[]> = {
+  planner: [BEDROCK_OPUS, BEDROCK_SONNET],
+  worker: ['deepseek-flash', BEDROCK_OPUS, BEDROCK_SONNET],
+  validator: [BEDROCK_OPUS, BEDROCK_SONNET],
+  operator: ['deepseek-flash', BEDROCK_SONNET],
+  memory: [BEDROCK_SONNET, 'deepseek-flash'],
+  triage: [BEDROCK_SONNET, 'deepseek-flash'],
+  vision: [BEDROCK_SONNET],
+  classifier: [BEDROCK_SONNET, 'deepseek-flash'],
+  // VTID-04868: only the partner model itself — unverified placeholder until
+  // the IF-THEN 31 invoke test passes (see PLAN_SPARRING_DEFAULT_MODEL).
+  plan_sparring: [resolvePlanSparringModel()],
+};
+
+/**
+ * Check if a model is recommended for a stage
+ */
+export function isRecommendedModel(stage: LLMStage, model: string): boolean {
+  return RECOMMENDED_MODELS[stage]?.includes(model) ?? false;
+}
+
+/**
+ * Get the default policy for a specific stage
+ */
+export function getStageDefaults(stage: LLMStage): StageRoutingConfig {
+  return LLM_SAFE_DEFAULTS[stage];
+}
+
+/**
+ * Get the flagship model id for a provider (used by Command Hub dropdown
+ * auto-select when the operator switches providers).
+ */
+export function getProviderFlagship(provider: LLMProvider): string {
+  return PROVIDER_FLAGSHIPS[provider];
+}
+
+export default LLM_SAFE_DEFAULTS;

@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04881",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "orb tool dispatcher is mounted and still requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/orb/tool", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/routes/vtid-04881-orb-tool-lang.test.ts", "cwd": "services/gateway",
+      "reason": "the dispatcher takes a validated language into the tool identity, ignores an invalid one, never takes a session id from the body, and keeps user, tenant and role from the JWT" },
+    { "kind": "existing", "ref": "npm run test:support", "cwd": "services/gateway",
+      "reason": "report_to_specialist reads id.lang; the customer support pipeline regression suite (rule 42c) stays green" }
+  ]
+}

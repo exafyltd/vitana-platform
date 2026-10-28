@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04840",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons",
+      "expect_status": 200,
+      "expect_body_contains": ["startCommerceSetup", "vitana:commerce-setup-draft", "startPayload.commerce_setup = true"],
+      "reason": "the deployed widget carries the commerce setup entry point and forwards the draft to the host page"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04840-commerce-setup-opening.test.ts test/orb/live/commerce-surface.test.ts test/vtid-04838-commerce-ai-setup.test.ts test/commerce-ai-setup.test.ts test/vtid-04560-role-separation-regression.test.ts test/orb/latency/vtid-04542-voice-payload-identity.test.ts",
+      "cwd": "services/gateway",
+      "reason": "a real voice session that drafts a business needs a microphone and calls the model, and its review card leads to a write in the shared production database; the tool, opener and catalog are proven with fakes here, and the owner runs the one real end-to-end setup by voice on staging (owner decision 2026-10-02)"
+    }
+  ]
+}

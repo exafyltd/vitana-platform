@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-04668",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "pending approvals (now priority-ordered, below_floor_count) exists and requires a login", "path": "/api/v1/dev-autopilot/pending-approvals", "expect_status": 401 },
+    { "kind": "http", "name": "pending approvals badge count exists and requires a login", "path": "/api/v1/dev-autopilot/pending-approvals/count", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04668-priority-score.test.ts test/vtid-04668-scoring-service-and-listing.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "Scoring PATCHes recommendation rows; staging writes to the production database, so the scoring and the listing filter are proven by the suites, not by a staging write" }
+  ]
+}

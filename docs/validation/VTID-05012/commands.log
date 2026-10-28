@@ -1,0 +1,14 @@
+# VTID-05012 commands (2026-10-09)
+
+$ cd services/gateway && npx jest test/vtid-05012-jev-gate-observability.test.ts      Tests: 19 passed, 19 total
+$ npx jest <every suite touching the changed gates, jev-shadow, routes/jev-decisions>   Tests: 249 passed, 249 total
+$ node_modules/.bin/tsc --noEmit -p .                                                (clean)
+$ npm run test:operator                                                              Tests: 30 passed
+$ npm run test:roles                                                                 Tests: 105 passed
+$ npm run test:support                                                               Tests: 85 passed
+$ bash scripts/ci/test-vtid-05012-jev-gate-observability.sh                          SQL assertions passed; rollback restores the VTID-04754 shape
+$ node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05012/staging-tests.json'))"
+{"ok":true,"errors":[]}
+# Read-only, before apply: constraint names and the live jev_shadow_gate_stats body match the VTID-04754 migration
+# (md5 of pg_get_functiondef eabeef4bc5a8ed4e945361e0c300efbb) — outputs/live-before.txt
+$ cd services/gateway && npx jest                                                    Test Suites: 1 skipped, 1579 passed; Tests: 25 skipped, 6 todo, 25176 passed

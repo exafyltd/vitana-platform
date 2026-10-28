@@ -1,0 +1,2 @@
+cd services/gateway
+npx jest test/services/memory   # 493 passed

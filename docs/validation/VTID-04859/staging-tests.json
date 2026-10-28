@@ -1,0 +1,7 @@
+{"vtid":"VTID-04859","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"founding seat endpoint mounted and auth-gated (JSON 401)","path":"/api/v1/billing/founding/me","expect_status":401},
+{"kind":"http","name":"founding-status reports seats of 1,000 and no code","path":"/api/v1/billing/founding-status","expect_status":200,"expect_content_type":"json","expect_body_contains":"\"max_uses\":1000"},
+{"kind":"http","name":"marking the celebration refuses an unauthenticated write","method":"POST","path":"/api/v1/billing/founding/celebrated","rejected_probe":true,"expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04859-founding-1000.test.ts test/routes/billing-founding.test.ts test/routes/billing-repository.test.ts","cwd":"services/gateway","reason":"Seating a member and granting the year are writes; staging writes reach production data, so the seat logic is proven by applying the migration twice to a local Postgres replica of the live tables (scripts/ci/test-vtid-04859-founding.sh, run inside the first suite) and by the route suites. The signed-in read is proven by the community-app staging spec (the registered test account gets founding:false)."}
+]}

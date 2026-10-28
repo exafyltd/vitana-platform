@@ -1,0 +1,1255 @@
+/**
+ * VTID-02026 — Phase 6a — Memory Broker (Layer 1 semantic API).
+ *
+ * The unified read API for memory. Every consumer (orb-live, conversation,
+ * autopilot, brain prompt assembly, …) eventually calls
+ * `getMemoryContext(input)` and gets back a typed `MemoryPack`. No consumer
+ * touches the underlying tables directly.
+ *
+ * Phase 6a scope (this file): IDENTITY, EPISODIC, SEMANTIC blocks routed
+ * by 3 intents (recall_recent, recall_history, identity). Six additional
+ * blocks (DIARY, BIOMETRICS, LOCATION, DEVICE, NETWORK + extra intents)
+ * land in 6b. Wiring into context-pack-builder + retrieval-router lands
+ * in 6c.
+ *
+ * Plan reference:
+ *   /home/dstev/.claude/plans/the-vitana-system-has-wild-puffin.md
+ *   Part 6 — Layer 1 Semantic API
+ */
+
+import { getSupabase } from '../lib/supabase';
+import { getSystemControl } from './system-controls-service';
+import * as repo from './memory-broker-repository';
+import { memoryRoleForRead, memoryRoleOrFilter } from './memory/scope';
+
+/** VTID-04367: the role a read is scoped to — `lens.active_role` wins over `role`. */
+function readRole(input: MemoryReadInput): string | undefined {
+  return input.lens?.active_role || input.role || undefined;
+}
+
+const VTID = 'VTID-02026';
+const POLICY_VERSION = 'mem-2026.04';
+
+// =============================================================================
+// Public types — match Part 6 of the plan
+// =============================================================================
+
+export type MemoryIntent =
+  | 'recall_recent'        // "what did I just ask?" — Tier 0 + last 24h episodic
+  | 'recall_history'       // "you said last week..." — episodic + bi-temporal facts
+  | 'identity'             // who is this user — semantic + governance
+  | 'plan_next_action'     // for autopilot ranker — full multi-stream
+  | 'open_session'         // ORB cold-start — agent profile + recent + Index + goal
+  | 'health_query'         // pillar-specific — trajectory + pillar agent outputs + KB
+  | 'index_status'         // "what's my Index?" — trajectory current view
+  | 'goal_check'           // "am I on track?" — Life Compass + projection
+  | 'social_query'         // "who do I know who…" — relationship graph
+  | 'community_intent'     // RSVP, group join — community + dismissals
+  | 'system_introspect';   // dev/admin "why did Vitana do X?" — OASIS + audit
+
+export type MemoryBlockKind =
+  | 'WORKING'
+  | 'EPISODIC'
+  | 'SEMANTIC'
+  | 'PROCEDURAL'
+  | 'TRAJECTORY'
+  | 'GOVERNANCE'
+  | 'PROGRESSION'
+  | 'SOCIAL'
+  | 'SYSTEM'
+  | 'DIARY'
+  | 'BIOMETRICS'
+  | 'LOCATION'
+  | 'DEVICE'
+  | 'NETWORK'
+  | 'IDENTITY';
+
+export type ChannelKind =
+  | 'orb-live'
+  | 'conversation'
+  | 'autopilot'
+  | 'guide'
+  | 'calendar'
+  | 'compass'
+  | 'brief'
+  | 'admin';
+
+// VTID-04367: any session role. Personal roles read personal memory only;
+// a work role also reads memory written in that role (services/memory/scope.ts).
+export type RoleKind = 'community' | 'developer' | 'admin' | string;
+
+export interface ContextLens {
+  tenant_id: string;
+  user_id: string;
+  workspace_scope?: 'product' | 'dev';
+  active_role?: string;
+  visibility_scope?: 'private' | 'shared' | 'public';
+  max_age_hours?: number;
+}
+
+export interface MemoryReadInput {
+  tenant_id: string;
+  user_id: string;
+  intent: MemoryIntent;
+  channel?: ChannelKind;
+  role?: RoleKind;
+  latency_budget_ms?: number;
+  required_blocks?: MemoryBlockKind[];
+  // Lens overrides — most callers leave this empty
+  lens?: Partial<ContextLens>;
+  ui_context?: { surface?: string; weakest_pillar?: string; active_goal_category?: string };
+  // When present, EPISODIC first semantic-ranks memory_items via
+  // memory_semantic_search (Titan V2, VTID-04342). Empty/short query
+  // falls back to recency.
+  query?: string;
+}
+
+export interface IdentityBlock {
+  kind: 'IDENTITY';
+  user_id: string;
+  tenant_id: string;
+  // canonical fields read from app_users (NEVER from memory_facts — Identity
+  // Lock invariant per VTID-01952)
+  first_name: string | null;
+  last_name: string | null;
+  full_name: string | null;
+  preferred_name: string | null;
+  email: string | null;
+  date_of_birth: string | null;
+  gender: string | null;
+  pronouns: string | null;
+  locale: string | null;
+  vitana_id: string | null;
+  source: 'app_users';
+  asserted_at: string;
+}
+
+export interface EpisodicHit {
+  id: string;
+  kind: string;
+  content: string;
+  category_key: string | null;
+  source: string | null;
+  importance: number;
+  occurred_at: string;
+  actor_id: string;
+  conversation_id: string | null;
+}
+
+// VTID-03156 (CPB-1/2): the broker now owns the legacy episodic
+// memory fallbacks too. `source` widens to include the legacy
+// memory_items origins so consumers can audit which path produced
+// the hits in this block.
+export interface EpisodicBlock {
+  kind: 'EPISODIC';
+  hits: EpisodicHit[];
+  source:
+    | 'memory_items_semantic'
+    | 'memory_items_rest';
+  fetched_at: string;
+}
+
+export interface SemanticFact {
+  id: string;
+  fact_key: string;
+  fact_value: string;
+  fact_value_type: string;
+  entity: string;
+  confidence: number;
+  actor_id: string;
+  asserted_at: string;
+}
+
+export interface SemanticBlock {
+  kind: 'SEMANTIC';
+  facts: SemanticFact[];
+  source: 'memory_facts';
+  fetched_at: string;
+}
+
+// Phase 6b — Five additional first-class blocks. Each is a thin read view
+// over a Phase 5a/5c-populated table. All gracefully empty out when the
+// underlying table has no rows for this user.
+
+export interface TrajectoryDay {
+  date: string;
+  score_total: number | null;
+  score_sleep: number | null;
+  score_nutrition: number | null;
+  score_exercise: number | null;
+  score_hydration: number | null;
+  score_mental: number | null;
+}
+
+export interface TrajectoryBlock {
+  kind: 'TRAJECTORY';
+  days: TrajectoryDay[];          // most recent 30, oldest first
+  latest_total: number | null;
+  source: 'vitana_index_scores';
+  fetched_at: string;
+}
+
+export interface NetworkPerson {
+  node_id: string;
+  display_name: string | null;
+  node_type: string;
+  edge_type: string | null;
+  strength: number | null;
+  last_interaction_at: string | null;
+}
+
+export interface NetworkBlock {
+  kind: 'NETWORK';
+  people: NetworkPerson[];
+  source: 'relationship_edges';
+  fetched_at: string;
+}
+
+export interface LocationCurrent {
+  location_type: string;
+  locality: string | null;
+  country: string | null;
+  timezone: string;
+  source: string;
+  valid_from: string;
+}
+
+export interface LocationBlock {
+  kind: 'LOCATION';
+  current: LocationCurrent | null;
+  named_places: Array<{ name: string; locality: string | null; country: string | null; timezone: string | null; user_confirmed: boolean }>;
+  source: 'user_location_history+user_location_settings';
+  fetched_at: string;
+}
+
+export interface BiometricsTrend {
+  feature_key: string;
+  pillar: string;
+  trend_class: string;
+  latest: number | null;
+  mean_30d: number | null;
+  anomaly_flag: boolean;
+}
+
+export interface BiometricsEvent {
+  event_type: string;
+  feature_key: string;
+  pillar: string;
+  observed_at: string;
+  detail: Record<string, unknown>;
+}
+
+export interface BiometricsBlock {
+  kind: 'BIOMETRICS';
+  trends: BiometricsTrend[];
+  events: BiometricsEvent[];
+  source: 'biometric_trends+biometric_events';
+  fetched_at: string;
+}
+
+export interface DiaryEntry {
+  id: string;
+  occurred_at: string;
+  category_key: string | null;
+  content: string;
+}
+
+export interface DiaryBlock {
+  kind: 'DIARY';
+  entries: DiaryEntry[];
+  // VTID-04343: merged from both diary tables, newest first.
+  source: 'memory_diary_entries';
+  fetched_at: string;
+}
+
+// Phase 7a — GOVERNANCE block. Tells the brain what NOT to pitch.
+// Sources:
+//   - autopilot_recommendations rows the user already rejected, archived,
+//     or snoozed (don't re-pitch within the cooldown window).
+//   - user_proactive_pause rows (user said "stop suggesting X").
+
+export interface GovernanceDismissal {
+  recommendation_id: string;
+  title: string;
+  domain: string | null;
+  status: string;          // rejected | auto_archived | etc.
+  // Window in which the recommendation should NOT be re-pitched
+  cooldown_until: string | null;
+  reason: 'rejected' | 'auto_archived' | 'snoozed' | 'expired';
+  source_signal: string | null;
+}
+
+export interface GovernancePause {
+  scope: string;            // 'orb_proactive' | 'autopilot' | … (free-form)
+  reason: string | null;
+  pause_until: string | null;
+  created_at: string;
+}
+
+export interface GovernanceBlock {
+  kind: 'GOVERNANCE';
+  dismissals: GovernanceDismissal[];
+  pauses: GovernancePause[];
+  source: 'autopilot_recommendations+user_proactive_pause';
+  fetched_at: string;
+}
+
+// Phase 8 — PROGRESSION block. Tells the brain which platform features the
+// user has already had introduced, so it never re-explains them.
+// Source: user_feature_introductions (VTID-01932).
+
+export interface FeatureIntroduction {
+  feature_key: string;
+  introduced_at: string;
+  channel: string;
+}
+
+export interface ProgressionBlock {
+  kind: 'PROGRESSION';
+  introduced_features: FeatureIntroduction[];
+  source: 'user_feature_introductions';
+  fetched_at: string;
+}
+
+export type MemoryBlock =
+  | IdentityBlock
+  | EpisodicBlock
+  | SemanticBlock
+  | TrajectoryBlock
+  | NetworkBlock
+  | LocationBlock
+  | BiometricsBlock
+  | DiaryBlock
+  | GovernanceBlock
+  | ProgressionBlock;
+
+export interface MemoryPack {
+  ok: boolean;
+  intent: MemoryIntent;
+  blocks: Partial<Record<MemoryBlockKind, MemoryBlock>>;
+  meta: {
+    streams_hit: string[];
+    latency_ms_per_stream: Record<string, number>;
+    total_latency_ms: number;
+    degraded: boolean;
+    pack_size_bytes: number;
+    block_count: number;
+    /** VTID-04877: time spent on the broker flag check before any stream started. */
+    gate_ms?: number;
+  };
+  error?: string;
+}
+
+// =============================================================================
+// Default block selection per intent (Phase 6a covers a subset; rest in 6b)
+// =============================================================================
+
+// Phase 6b + 7a: full per-intent default block selection from the plan
+// (Part 6, Layer 1 Semantic API). IDENTITY is implicitly added to every
+// intent except system_introspect — modeled here as an explicit entry.
+// GOVERNANCE is added to intents where the brain might pitch something
+// (open_session, plan_next_action, community_intent), so it has the
+// "don't re-pitch this" list inline.
+const DEFAULT_BLOCKS_BY_INTENT: Record<MemoryIntent, MemoryBlockKind[]> = {
+  recall_recent:     ['IDENTITY', 'EPISODIC', 'DIARY', 'GOVERNANCE'],
+  recall_history:    ['IDENTITY', 'EPISODIC', 'DIARY', 'NETWORK', 'SEMANTIC', 'TRAJECTORY', 'GOVERNANCE'],
+  identity:          ['IDENTITY', 'SEMANTIC'],
+  plan_next_action:  ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'LOCATION', 'SEMANTIC', 'NETWORK', 'GOVERNANCE'],
+  open_session:      ['IDENTITY', 'EPISODIC', 'TRAJECTORY', 'BIOMETRICS', 'LOCATION', 'NETWORK', 'GOVERNANCE', 'PROGRESSION'],
+  health_query:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS', 'DIARY', 'SEMANTIC'],
+  index_status:      ['IDENTITY', 'TRAJECTORY', 'BIOMETRICS'],
+  goal_check:        ['IDENTITY', 'SEMANTIC', 'TRAJECTORY', 'DIARY'],
+  social_query:      ['IDENTITY', 'NETWORK', 'EPISODIC', 'DIARY'],
+  community_intent:  ['IDENTITY', 'NETWORK', 'LOCATION', 'GOVERNANCE'],
+  system_introspect: ['IDENTITY', 'EPISODIC'],
+};
+
+// =============================================================================
+// Flag check
+// =============================================================================
+
+let cachedFlag: boolean | null = null;
+let cachedFlagAt = 0;
+const FLAG_TTL_MS = 30_000;
+
+let flagRefresh: Promise<boolean> | null = null;
+let flagGeneration = 0;
+
+function refreshBrokerFlag(): Promise<boolean> {
+  if (!flagRefresh) {
+    const generation = flagGeneration;
+    const refresh: Promise<boolean> = (async () => {
+      let enabled: boolean;
+      try {
+        const c = await getSystemControl('memory_broker_enabled');
+        enabled = !!(c && c.enabled);
+      } catch {
+        enabled = false;
+      }
+      // An invalidate while this was in flight wins: never write over it.
+      if (generation === flagGeneration) {
+        cachedFlag = enabled;
+        cachedFlagAt = Date.now();
+      }
+      return enabled;
+    })().finally(() => {
+      if (flagRefresh === refresh) flagRefresh = null;
+    });
+    flagRefresh = refresh;
+  }
+  return flagRefresh;
+}
+
+/**
+ * VTID-04877: only the first read of a process waits for the flag. Once a
+ * value is known, an expired cache serves it and refreshes in the background:
+ * voice sessions are minutes apart, so a 30 s cache was cold on almost every
+ * session and put a database round trip in front of every memory read. After
+ * a flip, each gateway task serves one more read on the old value; a failed
+ * refresh caches false (fail closed), as before.
+ */
+async function isBrokerEnabled(): Promise<boolean> {
+  if (cachedFlag === null) return refreshBrokerFlag();
+  if (Date.now() - cachedFlagAt >= FLAG_TTL_MS) void refreshBrokerFlag();
+  return cachedFlag;
+}
+
+export function invalidateBrokerFlagCache(): void {
+  cachedFlag = null;
+  cachedFlagAt = 0;
+  flagRefresh = null;
+  flagGeneration++;
+}
+
+// =============================================================================
+// Per-block fetchers
+// =============================================================================
+
+async function fetchIdentityBlock(input: MemoryReadInput): Promise<{
+  block: IdentityBlock | null;
+  latency_ms: number;
+}> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // Canonical identity comes from app_users — NEVER memory_facts (Identity
+  // Lock invariant, VTID-01952).
+  //
+  // The actual app_users schema stores name/dob/etc inside the `profile`
+  // JSONB blob plus a few flat columns (display_name, email, locale,
+  // vitana_id). We unpack profile into the IdentityBlock shape so callers
+  // get a stable contract regardless of the backing layout.
+  const { data, error } = await repo.fetchAppUserIdentity(supabase, input.user_id, input.tenant_id);
+
+  if (error || !data) {
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const profile = ((data as any).profile ?? {}) as Record<string, any>;
+  const fullName: string | null = (data as any).display_name
+    ?? profile.full_name ?? profile.display_name ?? null;
+
+  const block: IdentityBlock = {
+    kind: 'IDENTITY',
+    user_id: data.user_id,
+    tenant_id: input.tenant_id,
+    first_name: profile.first_name ?? null,
+    last_name: profile.last_name ?? null,
+    full_name: fullName,
+    preferred_name: profile.preferred_name ?? profile.preferred_first_name ?? null,
+    email: (data as any).email ?? profile.email ?? null,
+    date_of_birth: profile.date_of_birth ?? profile.dob ?? null,
+    gender: profile.gender ?? null,
+    pronouns: profile.pronouns ?? null,
+    locale: (data as any).locale ?? profile.locale ?? null,
+    vitana_id: (data as any).vitana_id ?? null,
+    source: 'app_users',
+    asserted_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+async function fetchEpisodicBlock(
+  input: MemoryReadInput,
+  limit: number,
+  maxAgeHours: number | null
+): Promise<{ block: EpisodicBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // VTID-03156 (CPB-1/2): the broker owns the full episodic ladder.
+  //
+  // VTID-04366: memory_items is the only episodic store the broker reads.
+  // The tier-2 mem_episodes mirror (a dual-write copy whose embeddings froze
+  // on 2026-04-28) is gone from this path. Two steps:
+  //   1. memory_semantic_search on memory_items (Titan V2 1024-dim)
+  //   2. memory_items REST, importance- then recency-ordered
+  // Step 2 runs only when step 1 produced 0 hits or had no query.
+  //
+  // VTID-04367: both steps are role-scoped. Personal memory
+  // (active_role NULL) is visible in every role; memory written in a work
+  // role only in that role (services/memory/scope.ts).
+  const trimmedQuery = (input.query ?? '').trim();
+
+  if (trimmedQuery.length > 5) {
+    const semantic = await fetchEpisodicLegacySemantic(input, trimmedQuery, limit, maxAgeHours);
+    if (semantic.ok && semantic.block && semantic.block.hits.length > 0) {
+      return { block: semantic.block, latency_ms: Date.now() - t0 };
+    }
+  }
+
+  const rest = await fetchEpisodicLegacyRest(input, limit, maxAgeHours);
+  return { block: rest.block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// EPISODIC legacy fallbacks (VTID-03156 — owns CPB-1/2)
+//
+// These two helpers absorb the legacy memory_items reads that used
+// to live in context-pack-builder.ts. They only fire when the
+// mem_episodes ladder above produces 0 hits. Both return an
+// `EpisodicBlock` keyed by their own `source` so consumers can tell
+// which path produced the hits.
+// -----------------------------------------------------------------------------
+
+async function fetchEpisodicLegacySemantic(
+  input: MemoryReadInput,
+  query: string,
+  limit: number,
+  maxAgeHours: number | null = null,
+): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
+  // VTID-04342: query in the same Titan V2 space as memory_items.embedding.
+  const { embedMemoryText } = await import('./memory-embedding');
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, block: null };
+
+  const emb = await embedMemoryText(query);
+  if (!emb.ok || !emb.embedding) return { ok: false, block: null };
+
+  const { data, error } = await repo.rpcMemorySemanticSearch(supabase, {
+    p_query_embedding: '[' + emb.embedding.join(',') + ']',
+    p_top_k: limit * 2,
+    p_tenant_id: input.tenant_id,
+    p_user_id: input.user_id,
+    p_workspace_scope: null,
+    p_active_role: memoryRoleForRead(readRole(input)),
+    p_categories: null,
+    p_visibility_scope: 'private',
+    p_max_age_hours: maxAgeHours && maxAgeHours > 0 ? maxAgeHours : null,
+    p_recency_boost: true,
+  });
+  if (error) {
+    // 404 (RPC missing) is non-fatal — caller falls through to REST.
+    console.warn(`[${VTID}] memory_semantic_search RPC failed: ${error.message}`);
+    return { ok: false, block: null };
+  }
+
+  const block: EpisodicBlock = {
+    kind: 'EPISODIC',
+    hits: (data ?? []).slice(0, limit).map((r: any) => ({
+      id: r.id,
+      kind: 'utterance',
+      content: (r.content ?? '').slice(0, 400),
+      category_key: r.category_key,
+      source: r.source,
+      importance: r.importance ?? 30,
+      occurred_at: r.occurred_at || r.created_at,
+      // Legacy memory_items rows have no actor/conversation columns;
+      // surface a stable provenance label rather than widening the
+      // EpisodicHit interface.
+      actor_id: 'memory_items',
+      conversation_id: null,
+    })),
+    source: 'memory_items_semantic',
+    fetched_at: new Date().toISOString(),
+  };
+  return { ok: true, block };
+}
+
+async function fetchEpisodicLegacyRest(
+  input: MemoryReadInput,
+  limit: number,
+  maxAgeHours: number | null = null,
+): Promise<{ ok: boolean; block: EpisodicBlock | null }> {
+  const supabase = getSupabase();
+  if (!supabase) return { ok: false, block: null };
+
+  // Pre-VTID-03156 CPB overfetched 3× to give its blended ranker a
+  // pool to re-sort over. The broker now serves the ladder directly
+  // and the importance+occurred_at order already matches what the
+  // blender produced as the top-N for the no-query / no-keyword-hit
+  // case (the keyword boost was bounded to 0.2 and only fired on
+  // term overlap — when no overlap, the blender ordering collapsed
+  // to importance+recency anyway).
+  // VTID-04870: the 3x overfetch fed a ranker that no longer exists; the rows
+  // are already ordered importance, then recency, and only `limit` are kept.
+  const fetchLimit = limit;
+  const cutoff = maxAgeHours && maxAgeHours > 0
+    ? new Date(Date.now() - maxAgeHours * 3600 * 1000).toISOString()
+    : null;
+  const { data, error } = await repo.fetchMemoryItemsLegacyRest(
+    supabase, input.tenant_id, input.user_id, fetchLimit, memoryRoleOrFilter(readRole(input)), cutoff,
+  );
+
+  if (error) {
+    console.warn(`[${VTID}] memory_items REST query failed: ${error.message}`);
+    return { ok: false, block: null };
+  }
+
+  const block: EpisodicBlock = {
+    kind: 'EPISODIC',
+    hits: (data ?? []).slice(0, limit).map((r: any) => ({
+      id: r.id,
+      kind: 'utterance',
+      content: (r.content ?? '').slice(0, 400),
+      category_key: r.category_key,
+      source: r.source,
+      importance: r.importance ?? 30,
+      occurred_at: r.occurred_at,
+      // Legacy memory_items rows have no actor/conversation columns;
+      // surface a stable provenance label rather than widening the
+      // EpisodicHit interface.
+      actor_id: 'memory_items',
+      conversation_id: null,
+    })),
+    source: 'memory_items_rest',
+    fetched_at: new Date().toISOString(),
+  };
+  return { ok: true, block };
+}
+
+async function fetchSemanticBlock(
+  input: MemoryReadInput,
+  limit: number
+): Promise<{ block: SemanticBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // VTID-04366: current facts from the canonical memory_facts table, most
+  // confident first. mem_facts (the tier-2 mirror) was written by only two
+  // callers, so this block was near-empty for most users.
+  const { data, error } = await repo.fetchCurrentMemoryFacts(supabase, input.tenant_id, input.user_id, limit);
+
+  if (error) {
+    console.warn(`[${VTID}] memory_facts query failed: ${error.message}`);
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const block: SemanticBlock = {
+    kind: 'SEMANTIC',
+    facts: (data ?? []).map((r: any) => ({
+      id: r.id,
+      fact_key: r.fact_key,
+      fact_value: r.fact_value,
+      fact_value_type: r.fact_value_type,
+      entity: r.entity,
+      confidence: r.provenance_confidence != null ? Number(r.provenance_confidence) : 1.0,
+      actor_id: r.provenance_source,
+      asserted_at: r.extracted_at,
+    })),
+    source: 'memory_facts',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// TRAJECTORY — vitana_index_scores last 30 days
+// -----------------------------------------------------------------------------
+
+async function fetchTrajectoryBlock(
+  input: MemoryReadInput
+): Promise<{ block: TrajectoryBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const cutoff = new Date(Date.now() - 30 * 24 * 3600 * 1000).toISOString().slice(0, 10);
+  const { data, error } = await repo.fetchTrajectoryScores(supabase, input.tenant_id, input.user_id, cutoff, 40);
+
+  if (error) {
+    console.warn(`[${VTID}] vitana_index_scores query failed: ${error.message}`);
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const days = (data ?? []).map(r => ({
+    date: r.date,
+    score_total: r.score_total,
+    score_sleep: r.score_sleep,
+    score_nutrition: r.score_nutrition,
+    score_exercise: r.score_exercise,
+    score_hydration: r.score_hydration,
+    score_mental: r.score_mental,
+  }));
+  const latest = days.length ? days[days.length - 1].score_total : null;
+
+  const block: TrajectoryBlock = {
+    kind: 'TRAJECTORY',
+    days,
+    latest_total: latest,
+    source: 'vitana_index_scores',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// NETWORK — relationship_edges + relationship_nodes (closest people)
+//
+// BOOTSTRAP-MEMORY-DAILY-LEARNING: this previously read `mem_graph_edges`,
+// a table with a real schema but ZERO writers anywhere in the codebase
+// (its only writer, mem-tier2-writer.ts's mirrorGraphEdge, is never called
+// and is additionally gated behind a disabled flag) — so this block was
+// structurally always empty. The real, AP-0909-populated graph lives in
+// `relationship_edges` (polymorphic source/target, no `user_id` or
+// `valid_to` columns — different shape from mem_graph_edges) joined to
+// `relationship_nodes` (whose display column is `title`, not
+// `display_name`). Verified against the live schema 2026-07-07.
+// -----------------------------------------------------------------------------
+
+async function fetchNetworkBlock(
+  input: MemoryReadInput,
+  limit: number
+): Promise<{ block: NetworkBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // AP-0909 always writes the user as source_type='person', source_id=userId
+  // (mutual-follow edges are written in BOTH directions as separate rows, so
+  // this single-sided filter still covers them). Ordered by strength then
+  // recent interaction, mirroring the original intent.
+  const { data: edges, error } = await repo.fetchRelationshipEdgesForPerson(supabase, input.tenant_id, input.user_id, limit);
+
+  if (error) {
+    console.warn(`[${VTID}] relationship_edges query failed: ${error.message}`);
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  // Resolve the target side of each edge into relationship_nodes for a name.
+  // target_type is always 'person' for both AP-0909 edge kinds ('suggested'
+  // for disclosed facts, 'connected' for mutual follows), but a 'connected'
+  // target may be a real app user (no relationship_nodes row exists for
+  // those — target_id IS the user_id directly) rather than a projected node.
+  const nodeIds = Array.from(new Set((edges ?? []).map((e) => e.target_id)));
+
+  let nodesById: Record<string, { title: string | null; node_type: string }> = {};
+  if (nodeIds.length > 0) {
+    const { data: nodes } = await repo.fetchRelationshipNodesByIds(supabase, nodeIds);
+    nodesById = Object.fromEntries(
+      (nodes ?? []).map((n) => [n.id, { title: n.title, node_type: n.node_type }])
+    );
+  }
+
+  const people: NetworkPerson[] = (edges ?? []).map((e) => {
+    const node = nodesById[e.target_id];
+    return {
+      node_id: e.target_id,
+      display_name: node?.title ?? null,
+      node_type: node?.node_type ?? e.target_type,
+      edge_type: e.edge_type,
+      strength: e.strength,
+      last_interaction_at: e.last_interaction_at,
+    };
+  });
+
+  const block: NetworkBlock = {
+    kind: 'NETWORK',
+    people,
+    source: 'relationship_edges',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// LOCATION — current location + named places
+// -----------------------------------------------------------------------------
+
+async function fetchLocationBlock(
+  input: MemoryReadInput
+): Promise<{ block: LocationBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const [historyRes, settingsRes] = await Promise.all([
+    repo.fetchCurrentLocationHistory(supabase, input.tenant_id, input.user_id),
+    repo.fetchNamedLocationSettings(supabase, input.tenant_id, input.user_id),
+  ]);
+
+  const current = (historyRes.data?.[0] ?? null) as LocationCurrent | null;
+  const named = (settingsRes.data ?? []).map(p => ({
+    name: p.name,
+    locality: p.locality,
+    country: p.country,
+    timezone: p.timezone,
+    user_confirmed: p.user_confirmed,
+  }));
+
+  const block: LocationBlock = {
+    kind: 'LOCATION',
+    current,
+    named_places: named,
+    source: 'user_location_history+user_location_settings',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// BIOMETRICS — current trends + active anomaly events
+// -----------------------------------------------------------------------------
+
+async function fetchBiometricsBlock(
+  input: MemoryReadInput
+): Promise<{ block: BiometricsBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const [trendsRes, eventsRes] = await Promise.all([
+    repo.fetchBiometricTrends(supabase, input.tenant_id, input.user_id),
+    repo.fetchActiveBiometricEvents(supabase, input.tenant_id, input.user_id),
+  ]);
+
+  const block: BiometricsBlock = {
+    kind: 'BIOMETRICS',
+    trends: (trendsRes.data ?? []).map(t => ({
+      feature_key: t.feature_key,
+      pillar: t.pillar,
+      trend_class: t.trend_class,
+      latest: t.latest,
+      mean_30d: t.mean_30d,
+      anomaly_flag: t.anomaly_flag,
+    })),
+    events: (eventsRes.data ?? []).map(e => ({
+      event_type: e.event_type,
+      feature_key: e.feature_key,
+      pillar: e.pillar,
+      observed_at: e.observed_at,
+      detail: e.detail ?? {},
+    })),
+    source: 'biometric_trends+biometric_events',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// DIARY — diary_entries (the app's Daily Diary) + memory_diary_entries, merged (VTID-04343)
+// -----------------------------------------------------------------------------
+
+async function fetchDiaryBlock(
+  input: MemoryReadInput,
+  daysBack: number,
+  limit: number
+): Promise<{ block: DiaryBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const cutoff = new Date(Date.now() - daysBack * 24 * 3600 * 1000).toISOString();
+
+  // VTID-04343: read BOTH diary stores and merge newest-first. The app's
+  // Daily Diary writes diary_entries (273 rows); memory_diary_entries holds
+  // almost nothing (1 row), so reading only it left the diary out of every
+  // prompt (memory.orchestrator.context_built reported diary_loaded=0).
+  const [legacy, app] = await Promise.all([
+    repo.fetchDiaryEntriesSince(supabase, input.tenant_id, input.user_id, cutoff, limit),
+    repo.fetchAppDiaryEntriesSince(supabase, input.user_id, cutoff, limit),
+  ]);
+
+  // Either table may be missing in an environment — each fails independently.
+  if (legacy.error && app.error) {
+    return { block: null, latency_ms: Date.now() - t0 };
+  }
+
+  const entries: DiaryEntry[] = [
+    ...(legacy.error ? [] : (legacy.data ?? [])).map(e => ({
+      id: e.id,
+      occurred_at: e.occurred_at,
+      category_key: e.category_key,
+      content: (e.content ?? '').slice(0, 400),
+    })),
+    ...(app.error ? [] : (app.data ?? [])).map((e: any) => ({
+      id: e.id,
+      occurred_at: e.created_at,
+      category_key: Array.isArray(e.tags) && e.tags.length > 0 ? String(e.tags[0]) : 'diary',
+      content: (e.text ?? '').slice(0, 400),
+    })),
+  ]
+    .filter(e => e.content.trim().length > 0)
+    .sort((a, b) => String(b.occurred_at).localeCompare(String(a.occurred_at)))
+    .slice(0, limit);
+
+  const block: DiaryBlock = {
+    kind: 'DIARY',
+    entries,
+    source: 'memory_diary_entries',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// GOVERNANCE — autopilot dismissals + user_proactive_pause
+// -----------------------------------------------------------------------------
+
+async function fetchGovernanceBlock(
+  input: MemoryReadInput
+): Promise<{ block: GovernanceBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  // Cooldown window: the brain should NOT re-pitch a recommendation that
+  // was rejected/archived/snoozed within the last 14 days.
+  const cooldownStart = new Date(Date.now() - 14 * 24 * 3600 * 1000).toISOString();
+
+  const [recsRes, pausesRes] = await Promise.all([
+    repo.fetchDismissedAutopilotRecommendations(supabase, input.user_id, ['rejected', 'auto_archived'], cooldownStart),
+    repo.fetchUserProactivePauses(supabase, input.user_id),
+  ]);
+
+  const dismissals: GovernanceDismissal[] = (recsRes.data ?? []).map(r => ({
+    recommendation_id: r.id,
+    title: r.title,
+    domain: r.domain,
+    status: r.status,
+    cooldown_until: r.snoozed_until ?? r.expires_at ?? null,
+    reason: (r.status === 'rejected'
+      ? 'rejected'
+      : r.status === 'auto_archived'
+        ? 'auto_archived'
+        : (r.snoozed_until ? 'snoozed' : 'expired')) as GovernanceDismissal['reason'],
+    source_signal: r.signal_fingerprint,
+  }));
+
+  // user_proactive_pause schema is unknown at compile time (the table is
+  // empty and the plan doesn't fully spec it). Read everything and pick
+  // out plausible field names.
+  const pauses: GovernancePause[] = (pausesRes.data ?? []).map((p: any) => ({
+    scope: p.scope ?? p.kind ?? p.area ?? 'unknown',
+    reason: p.reason ?? p.note ?? null,
+    pause_until: p.pause_until ?? p.until ?? p.expires_at ?? null,
+    created_at: p.created_at ?? new Date().toISOString(),
+  }));
+
+  const block: GovernanceBlock = {
+    kind: 'GOVERNANCE',
+    dismissals,
+    pauses,
+    source: 'autopilot_recommendations+user_proactive_pause',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// -----------------------------------------------------------------------------
+// PROGRESSION — features Vitana has already introduced (VTID-02632)
+// -----------------------------------------------------------------------------
+
+async function fetchProgressionBlock(
+  input: MemoryReadInput
+): Promise<{ block: ProgressionBlock | null; latency_ms: number }> {
+  const t0 = Date.now();
+  const supabase = getSupabase();
+  if (!supabase) return { block: null, latency_ms: Date.now() - t0 };
+
+  const { data, error } = await repo.fetchUserFeatureIntroductions(supabase, input.user_id);
+  if (error) return { block: null, latency_ms: Date.now() - t0 };
+
+  const block: ProgressionBlock = {
+    kind: 'PROGRESSION',
+    introduced_features: ((data ?? []) as any[]).map(r => ({
+      feature_key: r.feature_key,
+      introduced_at: r.introduced_at,
+      channel: r.channel,
+    })),
+    source: 'user_feature_introductions',
+    fetched_at: new Date().toISOString(),
+  };
+  return { block, latency_ms: Date.now() - t0 };
+}
+
+// =============================================================================
+// Public API
+// =============================================================================
+
+/**
+ * Unified read entry point. Returns a MemoryPack with the blocks selected
+ * by the intent (or by `required_blocks` override). Always returns within
+ * `latency_budget_ms` (default 1500ms) — slow blocks are dropped, the pack
+ * is marked `degraded=true`, and the consumer sees what was ready.
+ */
+export async function getMemoryContext(input: MemoryReadInput): Promise<MemoryPack> {
+  const t0 = Date.now();
+  const intent = input.intent;
+  const blocksWanted = input.required_blocks ?? DEFAULT_BLOCKS_BY_INTENT[intent] ?? ['IDENTITY'];
+  const budgetMs = input.latency_budget_ms ?? 1500;
+
+  // Hard contract: caller must supply tenant_id and user_id. Anonymous
+  // memory reads are not a thing in this system.
+  if (!input.tenant_id || !input.user_id) {
+    return {
+      ok: false,
+      intent,
+      blocks: {},
+      meta: {
+        streams_hit: [],
+        latency_ms_per_stream: {},
+        total_latency_ms: Date.now() - t0,
+        degraded: true,
+        pack_size_bytes: 0,
+        block_count: 0,
+        gate_ms: 0,
+      },
+      error: 'tenant_id and user_id are required',
+    };
+  }
+
+  // If broker is disabled by flag, return an empty pack. Callers with a
+  // legacy fallback path will use it; the broker becoming a hard dep
+  // happens in Phase 6c after the canary period.
+  const gateT0 = Date.now();
+  const brokerEnabled = await isBrokerEnabled();
+  const gateMs = Date.now() - gateT0;
+  if (!brokerEnabled) {
+    return {
+      ok: false,
+      intent,
+      blocks: {},
+      meta: {
+        streams_hit: [],
+        latency_ms_per_stream: {},
+        total_latency_ms: Date.now() - t0,
+        degraded: true,
+        pack_size_bytes: 0,
+        block_count: 0,
+        gate_ms: gateMs,
+      },
+      error: 'memory_broker_disabled',
+    };
+  }
+
+  const blocks: Partial<Record<MemoryBlockKind, MemoryBlock>> = {};
+  const streamsHit: string[] = [];
+  const latencyPerStream: Record<string, number> = {};
+  let degraded = false;
+
+  // Per-block fetch with budget guard. Each block is fetched in parallel;
+  // any block that exceeds the budget is dropped and the pack is marked
+  // degraded.
+  const fetchers: Array<Promise<void>> = [];
+
+  if (blocksWanted.includes('IDENTITY')) {
+    fetchers.push(
+      withBudget(fetchIdentityBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['app_users'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['IDENTITY'] = r.value.block;
+          streamsHit.push('app_users');
+          latencyPerStream['app_users'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('EPISODIC')) {
+    const limit = intent === 'recall_recent' ? 20 : 50;
+    const maxAge = intent === 'recall_recent' ? 24 : null;
+    fetchers.push(
+      withBudget(fetchEpisodicBlock(input, limit, maxAge), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['memory_items'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['EPISODIC'] = r.value.block;
+          streamsHit.push('memory_items');
+          latencyPerStream['memory_items'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('SEMANTIC')) {
+    fetchers.push(
+      withBudget(fetchSemanticBlock(input, 50), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['memory_facts'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['SEMANTIC'] = r.value.block;
+          streamsHit.push('memory_facts');
+          latencyPerStream['memory_facts'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  // Phase 6b — five new blocks. Each follows the same withBudget pattern;
+  // any block whose source table is empty just returns a block with empty
+  // arrays (fetched_at populated), which is fine — consumers see "no data
+  // yet" rather than a missing block.
+
+  if (blocksWanted.includes('TRAJECTORY')) {
+    fetchers.push(
+      withBudget(fetchTrajectoryBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['vitana_index_scores'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['TRAJECTORY'] = r.value.block;
+          streamsHit.push('vitana_index_scores');
+          latencyPerStream['vitana_index_scores'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('NETWORK')) {
+    fetchers.push(
+      withBudget(fetchNetworkBlock(input, 20), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['relationship_edges'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['NETWORK'] = r.value.block;
+          streamsHit.push('relationship_edges');
+          latencyPerStream['relationship_edges'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('LOCATION')) {
+    fetchers.push(
+      withBudget(fetchLocationBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['user_location_history'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['LOCATION'] = r.value.block;
+          streamsHit.push('user_location_history');
+          latencyPerStream['user_location_history'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('BIOMETRICS')) {
+    fetchers.push(
+      withBudget(fetchBiometricsBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['biometric_trends'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['BIOMETRICS'] = r.value.block;
+          streamsHit.push('biometric_trends');
+          latencyPerStream['biometric_trends'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('DIARY')) {
+    // Last 14 days of diary highlights (per Part 6 plan default).
+    fetchers.push(
+      withBudget(fetchDiaryBlock(input, 14, 30), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['memory_diary_entries'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['DIARY'] = r.value.block;
+          streamsHit.push('memory_diary_entries');
+          latencyPerStream['memory_diary_entries'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('GOVERNANCE')) {
+    fetchers.push(
+      withBudget(fetchGovernanceBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['autopilot_recommendations'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['GOVERNANCE'] = r.value.block;
+          streamsHit.push('autopilot_recommendations');
+          latencyPerStream['autopilot_recommendations'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  if (blocksWanted.includes('PROGRESSION')) {
+    fetchers.push(
+      withBudget(fetchProgressionBlock(input), budgetMs).then(r => {
+        if (r.timedOut) {
+          degraded = true;
+          latencyPerStream['user_feature_introductions'] = budgetMs;
+        } else if (r.value?.block) {
+          blocks['PROGRESSION'] = r.value.block;
+          streamsHit.push('user_feature_introductions');
+          latencyPerStream['user_feature_introductions'] = r.value.latency_ms;
+        }
+      })
+    );
+  }
+
+  await Promise.all(fetchers);
+
+  const packSizeBytes = JSON.stringify(blocks).length;
+
+  return {
+    ok: true,
+    intent,
+    blocks,
+    meta: {
+      streams_hit: streamsHit,
+      latency_ms_per_stream: latencyPerStream,
+      total_latency_ms: Date.now() - t0,
+      degraded,
+      pack_size_bytes: packSizeBytes,
+      block_count: Object.keys(blocks).length,
+      gate_ms: gateMs,
+    },
+  };
+}
+
+/**
+ * Race a per-block fetch against the latency budget. If the budget elapses
+ * first, return `{ timedOut: true }` and let the broker mark the pack
+ * degraded. The fetch itself is not cancelled — Postgres has its own
+ * timeout — but the caller has already moved on.
+ */
+async function withBudget<T>(
+  fetchPromise: Promise<T>,
+  budgetMs: number
+): Promise<{ timedOut: boolean; value?: T }> {
+  let timer: NodeJS.Timeout | undefined;
+  const timeout = new Promise<{ timedOut: true }>(resolve => {
+    timer = setTimeout(() => resolve({ timedOut: true }), budgetMs);
+  });
+  const result = await Promise.race([
+    fetchPromise.then(value => ({ timedOut: false as const, value })),
+    timeout,
+  ]);
+  if (timer) clearTimeout(timer);
+  return result as { timedOut: boolean; value?: T };
+}
+
+/**
+ * Phase 6a does not implement writes through the broker yet — existing
+ * writers still call writeMemoryItemWithIdentity / writeFact directly,
+ * with the Phase 5b dual-writer fanning out to mem_*. Phase 6c will
+ * gate writes behind a `writeMemoryUnified` API that enforces provenance
+ * and Identity Lock at a single chokepoint.
+ */

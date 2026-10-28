@@ -1,0 +1,129 @@
+VTID-04224 — commands run this session (single-shot session, not the Dev Autopilot executor)
+
+1. VTID self-allocation
+   $ select allocate_global_vtid('claude-code', null, 'dev-agent-memory');
+   -> (VTID-04224, 4224, c4c87a40-c318-492a-8185-faad60f52a9f)
+   $ update vtid_ledger set title=..., summary=..., status='in_progress',
+     spec_status='approved', metadata=... where vtid='VTID-04224';
+   -> 1 row updated
+
+2. Typecheck (services/gateway)
+   $ npx tsc --noEmit -p .
+   -> exit 0, no output
+
+3. Targeted tests (before migration was applied)
+   $ npx jest test/services/dev-agent-memory.test.ts test/vtid-04025-operator-turn-memory.test.ts --silent
+   -> 2 suites passed, 25 tests passed, 0 failed
+
+4. First migration attempt (CREATE OR REPLACE) — failed, transaction rolled back
+   $ supabase apply_migration vtid_04224_dev_agent_memory_file_scope (CREATE OR REPLACE variant)
+   -> ERROR 42725: function name "write_dev_memory" is not unique
+   Confirmed no partial state landed:
+   $ select proname, pg_get_function_identity_arguments(oid) from pg_proc
+     where proname in ('write_dev_memory','recall_dev_memory_by_files');
+   -> only the original 10-arg write_dev_memory; no new columns; no recall_dev_memory_by_files
+
+5. Second migration attempt (DROP + CREATE) — applied
+   $ supabase apply_migration vtid_04224_dev_agent_memory_file_scope (drop-then-create variant)
+   -> {"success": true}
+
+6. Live round-trip verification (real DB, real functions, placeholder embedding)
+   $ select write_dev_memory('vitana-platform','gotcha',
+       'VTID-04224 live verification row (delete me)', '...',
+       ('['||array_to_string(array_fill(0.001::float8, ARRAY[1024]),',')||']')::vector(1024),
+       'VTID-04224', 10::smallint, 'manual', ARRAY['vtid-04224-verification'], null,
+       ARRAY['services/gateway/src/services/dev-agent-memory.ts'], 'worker');
+   -> new_id: cc6a911e-3df4-489f-a474-d2f364d2f88b
+
+   $ select id, vtid, category, title, file_paths, stage
+     from recall_dev_memory_by_files('vitana-platform',
+       ARRAY['services/gateway/src/services/dev-agent-memory.ts'], null, 5);
+   -> 1 row: exactly the row just written, file_paths/stage round-tripped correctly
+
+   $ delete from dev_agent_memory where id = 'cc6a911e-3df4-489f-a474-d2f364d2f88b'::uuid returning id;
+   -> 1 row deleted (test row cleaned up; nothing left behind)
+
+7. Local migration file rewritten to match what actually ran live (drop-then-create,
+   not the first, broken create-or-replace attempt) — no drift between the committed
+   file and the live schema.
+
+8. Build gate rehearsal
+   $ npm run build   (services/gateway: tsc && copy-frontend && copy-data)
+   -> exit 0
+
+9. Full targeted re-run after all edits
+   $ npx tsc --noEmit -p .
+   -> exit 0
+   $ npx jest test/services/dev-agent-memory.test.ts test/vtid-04025-operator-turn-memory.test.ts --silent
+   -> 2 suites passed, 25 tests passed, 0 failed
+
+Not run: the full gateway test suite (thousands of tests across many
+unrelated services) — this PR's own tsc/build/targeted-test results above
+are the direct evidence for its own diff; CI's own build gate re-runs
+`npm run build` independently.
+
+---
+
+Phase 2-5 — read-side wiring into Worker/Validator/Planner + guardrails
+(same VTID-04224, same PR, continued in the same session)
+
+10. New module: services/gateway/src/services/dev-agent-memory-file-recall.ts
+    — three kill switches (isWorkerMemoryRecallEnabled,
+    isValidatorMemoryRecallEnabled, isPlannerMemoryRecallEnabled),
+    renderDevMemoryFileBlock, buildFileScopedMemoryBlock (fetch+render,
+    fail-open to '').
+
+11. Wired into four call sites, each: gate check -> try { await
+    buildFileScopedMemoryBlock(...) } catch { '' } -> spliced into the
+    prompt only if non-empty:
+    - dev-autopilot-execute.ts: buildExecutionPrompt (single-shot Worker)
+    - autopilot-agent/run-agent-execution.ts + agent-prompt.ts:
+      buildAgentTaskPrompt / buildFixModeTaskPrompt (agentic Worker)
+    - dev-autopilot-llm-review.ts: buildReviewPrompt / runLlmMergeReview
+      (Validator)
+    - dev-autopilot-planning.ts: buildPlanningPrompt (Planner)
+
+12. Typecheck (services/gateway)
+    $ npx tsc --noEmit -p .
+    -> exit 0, no output
+
+13. Build
+    $ npm run build
+    -> exit 0 (tsc + copy-frontend + copy-data all succeeded)
+
+14. New targeted tests
+    $ npx jest test/vtid-04224-phase2-4-prompt-memory-wiring.test.ts \
+        test/vtid-04224-phase3-validator-memory-wiring.test.ts \
+        test/services/dev-agent-memory-file-recall.test.ts \
+        test/services/dev-agent-memory.test.ts \
+        test/vtid-04025-operator-turn-memory.test.ts \
+        test/dev-autopilot-execute.test.ts \
+        test/dev-autopilot-planning.test.ts \
+        test/vtid-03853-llm-merge-review.test.ts --silent
+    -> 8 suites passed, 102 tests passed, 0 failed
+
+15. Regression sweep — every pre-existing dev-autopilot suite
+    $ npx jest --testPathPattern "dev-autopilot" --silent
+    -> 24 suites passed, 559 tests passed, 0 failed
+
+16. Regression sweep — every pre-existing operator-memory-adjacent suite
+    $ npx jest --testPathPattern "dev-agent-memory|dev-memory-ranking|vtid-04027|vtid-0402[2-9]|vtid-04224" --silent
+    -> 11 suites passed, 131 tests passed, 0 failed
+
+17. Regression sweep — agentic executor suites (agent-prompt.ts,
+    run-agent-execution.ts touched)
+    $ npx jest test/autopilot-agent-scope-validate.test.ts \
+        test/autopilot-agent-tools.test.ts \
+        test/autopilot-agent-loop.test.ts \
+        test/vtid-04046-agent-prompt-date.test.ts \
+        test/vtid-04016-agent-check-guard.test.ts --silent
+    -> 5 suites passed, tests passed, 0 failed
+
+18. DATABASE_SCHEMA.md updated (dev_agent_memory section) with the
+    Phase 2-4 wiring, the three flag names, and the explicit follow-ups
+    list — no schema change in this phase, documentation only.
+
+Not run: a live round trip through any of the four call sites (Planner/
+Worker/Validator runs need a real finding/execution/PR and live Supabase
+state this session cannot safely drive end to end); all three flags ship
+OFF by default and are not pinned on any deploy workflow in this PR.

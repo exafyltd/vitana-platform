@@ -1,0 +1,361 @@
+/**
+ * Automations API Routes — VTID-01250
+ *
+ * Endpoints:
+ *   GET  /api/v1/automations/registry         — List all automations with status
+ *   GET  /api/v1/automations/registry/summary  — Summary dashboard
+ *   GET  /api/v1/automations/registry/:id      — Get single automation details
+ *   POST /api/v1/automations/execute/:id       — Execute a single automation manually
+ *   POST /api/v1/automations/heartbeat         — Run one heartbeat cycle
+ *   POST /api/v1/automations/dispatch          — Dispatch an OASIS event to automations
+ *   POST /api/v1/automations/cron/:id          — Cron trigger for a specific automation
+ *   GET  /api/v1/automations/runs              — Get run history
+ *   GET  /api/v1/automations/runs/active       — Get currently running automations
+ *   GET  /api/v1/automations/health            — Health check
+ *
+ * Wallet endpoints:
+ *   GET  /api/v1/automations/wallet/balance     — Get user wallet balance
+ *   GET  /api/v1/automations/wallet/transactions — Get user wallet transactions
+ *
+ * Sharing endpoints:
+ *   POST /api/v1/automations/sharing/generate-link — Generate a sharing link
+ *   GET  /api/v1/automations/sharing/links        — Get user's sharing links
+ *   GET  /api/v1/automations/referrals             — Get user's referrals
+ */
+
+import { Router, Request, Response, NextFunction } from 'express';
+import { requireAuth, AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import {
+  AUTOMATION_REGISTRY,
+  getAutomation,
+  getAutomationsByDomain,
+  getAutomationsByRole,
+  getRegistrySummary,
+} from '../services/automation-registry';
+import {
+  executeAutomation,
+  runHeartbeatCycle,
+  dispatchEvent,
+  getRunHistory,
+  getActiveRuns,
+} from '../services/automation-executor';
+import { randomUUID } from 'crypto';
+import * as repo from './automations-repository';
+import { withJobTenants } from '../services/jobs/job-tenant-loop';
+
+const router = Router();
+const VTID = 'VTID-01250';
+
+// ── VTID-04349: auth for the trigger routes ─────────────────
+// execute / heartbeat / dispatch / cron start runs that notify real members.
+// They were mounted with no auth at all. Accept either the scheduler's
+// X-Gateway-Internal token (same contract as test-contracts-scheduled.ts) or a
+// signed-in exafy_admin (the Command Hub's Run / Dispatch buttons).
+function isInternalCaller(req: Request): boolean {
+  const token = process.env.GATEWAY_INTERNAL_TOKEN;
+  return Boolean(token && req.get('X-Gateway-Internal') === token);
+}
+
+export async function requireInternalOrAdmin(req: Request, res: Response, next: NextFunction): Promise<void> {
+  if (isInternalCaller(req)) return next();
+  await requireAuth(req as AuthenticatedRequest, res, () => {
+    if ((req as AuthenticatedRequest).identity?.exafy_admin === true) return next();
+    res.status(403).json({ ok: false, error: 'automation triggers require X-Gateway-Internal token or exafy_admin' });
+  });
+}
+
+// ── Helper: get tenant_id (VTID-05048: split by caller kind) ─
+// Trigger/admin routes (requireInternalOrAdmin) may name the tenant to act on:
+// the scheduler sends it in the body, an exafy_admin picks it.
+function getAdminTargetTenantId(req: Request): string | null {
+  return (req as any).identity?.tenant_id || req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// Member routes (wallet / sharing / referrals) act on the caller's own data in
+// the caller's own tenant — only the verified identity counts, never a body
+// tenant_id or DEFAULT_TENANT_ID.
+function getMemberTenantId(req: Request): string | null {
+  return (req as AuthenticatedRequest).identity?.tenant_id || null;
+}
+
+function getUserId(req: Request): string | null {
+  return (req as any).identity?.user_id || null;
+}
+
+// ── Helper: service-role Supabase client ────────────────────
+async function getServiceClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(url, key);
+}
+
+// =============================================================================
+// Registry endpoints
+// =============================================================================
+
+router.get('/registry', (_req: Request, res: Response) => {
+  const domain = _req.query.domain as string | undefined;
+  const status = _req.query.status as string | undefined;
+  const role = _req.query.role as string | undefined;
+
+  let automations = domain ? getAutomationsByDomain(domain) : [...AUTOMATION_REGISTRY];
+  if (status) automations = automations.filter(a => a.status === status);
+  if (role) automations = automations.filter(a => a.targetRoles === 'all' || a.targetRoles.includes(role as any));
+
+  return res.json({ ok: true, total: automations.length, automations });
+});
+
+router.get('/registry/summary', (_req: Request, res: Response) => {
+  return res.json({ ok: true, ...getRegistrySummary() });
+});
+
+router.get('/registry/:id', (req: Request, res: Response) => {
+  const def = getAutomation(req.params.id);
+  if (!def) return res.status(404).json({ ok: false, error: `Unknown automation: ${req.params.id}` });
+  return res.json({ ok: true, automation: def });
+});
+
+// =============================================================================
+// Execution endpoints
+// =============================================================================
+
+router.post('/execute/:id', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
+  const tenantId = getAdminTargetTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const result = await executeAutomation(
+    req.params.id,
+    tenantId,
+    'manual',
+    getUserId(req) || 'api',
+    req.body?.payload
+  );
+
+  return res.status(result.ok ? 200 : 500).json(result);
+});
+
+router.post('/heartbeat', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
+  const tenantId = getAdminTargetTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const result = await runHeartbeatCycle(tenantId);
+
+  console.log(`[${VTID}] Heartbeat: executed=${result.executed.length} skipped=${result.skipped.length} failed=${result.failed.length}`);
+  return res.json({ ok: true, ...result });
+});
+
+router.post('/dispatch', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
+  const tenantId = getAdminTargetTenantId(req);
+  const { event_topic, event_payload } = req.body || {};
+  if (!tenantId || !event_topic) {
+    return res.status(400).json({ ok: false, error: 'tenant_id and event_topic required' });
+  }
+
+  const result = await dispatchEvent(tenantId, event_topic, event_payload || {});
+  return res.json({ ok: true, ...result });
+});
+
+// VTID-05270 (mt-jobs): an explicit tenant (identity, then body) runs once; a
+// tenant-less EventBridge call fans out over the active tenants when
+// MT_RESOLUTION_V2=true (one executeAutomation per tenant, so a nested call
+// such as AP-0501 → /morning-briefing carries its tenant and never re-fans
+// out). Master off ⇒ today's getAdminTargetTenantId pass.
+const cronJob = withJobTenants(async (req: Request, res: Response, tenantId: string | null) => {
+  // impact-allow-no-oasis: executeAutomation()/runHeartbeatCycle()/dispatchEvent() already emit autopilot.automation.completed / .failed per run (automation-executor.ts).
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const result = await executeAutomation(req.params.id, tenantId, 'cron', 'cloud-scheduler');
+  return res.status(result.ok ? 200 : 500).json(result);
+}, getAdminTargetTenantId, { getClient: getServiceClient as any });
+
+router.post('/cron/:id', requireInternalOrAdmin, async (req: Request, res: Response) => cronJob(req, res));
+
+// =============================================================================
+// Run history
+// =============================================================================
+
+// VTID-04510: run history carries member ids and counts — admin or scheduler only.
+router.get('/runs', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  const tenantId = getAdminTargetTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const automationId = req.query.automation_id as string | undefined;
+  const limit = parseInt(req.query.limit as string) || 50;
+
+  const runs = await getRunHistory(tenantId, automationId, limit);
+  return res.json({ ok: true, total: runs.length, runs });
+});
+
+router.get('/runs/active', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  const tenantId = getAdminTargetTenantId(req);
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const runs = await getActiveRuns(tenantId);
+  return res.json({ ok: true, total: runs.length, runs });
+});
+
+// =============================================================================
+// Wallet endpoints
+// =============================================================================
+// VTID-05048: member routes carry explicit requireAuth. They already answered
+// 401 to anonymous callers (nothing populated req.identity on this router), but
+// now by design; the tenant comes from getMemberTenantId only.
+
+router.get('/wallet/balance', requireAuth, async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const tenantId = getMemberTenantId(req);
+  if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // wallet_balances does not exist in live Supabase (confirmed via
+  // AURORA-B2-DEAD-CALLSITE-AUDIT.md's addendum). supabase-js resolves
+  // normally with an {error} field on a "relation does not exist" failure
+  // rather than throwing, so this previously silently returned undefined
+  // and rendered every user's balance as all-zero with no trace anywhere.
+  // Logging the error makes the failure loud instead of indistinguishable
+  // from a genuinely empty wallet; the response shape is unchanged — which
+  // substitute table/column mapping is canonical is a product/eng decision
+  // this fix does not make.
+  const { data, error: walletErr } = await repo.fetchWalletBalance(supa, tenantId, userId);
+  if (walletErr) {
+    console.error(`[automations] fetchWalletBalance error (balance will render as all-zero): ${walletErr.message}`);
+  }
+
+  return res.json({
+    ok: true,
+    balance: data?.balance || 0,
+    total_earned: data?.total_earned || 0,
+    total_spent: data?.total_spent || 0,
+    updated_at: data?.updated_at || null,
+  });
+});
+
+router.get('/wallet/transactions', requireAuth, async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const tenantId = getMemberTenantId(req);
+  if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const limit = parseInt(req.query.limit as string) || 50;
+  const { data } = await repo.fetchWalletTransactions(supa, tenantId, userId, limit);
+
+  return res.json({ ok: true, transactions: data || [] });
+});
+
+// =============================================================================
+// Sharing endpoints
+// =============================================================================
+
+router.post('/sharing/generate-link', requireAuth, async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const tenantId = getMemberTenantId(req);
+  if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const { target_type, target_id, utm_campaign } = req.body || {};
+  if (!target_type || !target_id) {
+    return res.status(400).json({ ok: false, error: 'target_type and target_id required' });
+  }
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const shortCode = randomUUID().replace(/-/g, '').substring(0, 8);
+  const appUrl = process.env.APP_URL || 'https://vitana.app';
+
+  const { data, error } = await repo.insertSharingLink(supa, {
+    tenant_id: tenantId,
+    user_id: userId,
+    target_type,
+    target_id,
+    short_code: shortCode,
+    utm_campaign: utm_campaign || `${target_type}_share`,
+  });
+
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  const shareUrl = `${appUrl}/s/${shortCode}`;
+  const whatsappUrl = `whatsapp://send?text=${encodeURIComponent(shareUrl)}`;
+
+  return res.json({
+    ok: true,
+    link: {
+      id: data.id,
+      short_code: shortCode,
+      url: shareUrl,
+      whatsapp_url: whatsappUrl,
+    },
+  });
+});
+
+router.get('/sharing/links', requireAuth, async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const tenantId = getMemberTenantId(req);
+  if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { data } = await repo.fetchSharingLinks(supa, tenantId, userId);
+
+  return res.json({ ok: true, links: data || [] });
+});
+
+router.get('/referrals', requireAuth, async (req: Request, res: Response) => {
+  const userId = getUserId(req);
+  const tenantId = getMemberTenantId(req);
+  if (!userId || !tenantId) return res.status(401).json({ ok: false, error: 'Authentication required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { data } = await repo.fetchReferralsForUser(supa, tenantId, userId);
+
+  return res.json({ ok: true, referrals: data || [] });
+});
+
+// =============================================================================
+// Supervisor (VTID-04510, Community Autopilot CA-8)
+// =============================================================================
+
+// Read-only: delivery mode, runs and member suggestions per automation in the
+// window, and which automations still act without a suggestion.
+router.get('/supervisor', requireInternalOrAdmin, async (req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const { loadSupervisor, clampWindowDays } = await import('../services/community-autopilot/automation-supervisor');
+    const tenantId = typeof req.query.tenant_id === 'string' && req.query.tenant_id ? req.query.tenant_id : null;
+    const data = await loadSupervisor(supa as any, { windowDays: clampWindowDays(req.query.days), tenantId });
+    return res.json({ ok: true, ...data });
+  } catch (err: any) {
+    console.error('[automations] /supervisor failed:', err?.message);
+    return res.status(500).json({ ok: false, error: 'supervisor_failed' });
+  }
+});
+
+// =============================================================================
+// Health check
+// =============================================================================
+
+router.get('/health', (_req: Request, res: Response) => {
+  const summary = getRegistrySummary();
+  return res.json({
+    ok: true,
+    service: 'automations-engine',
+    vtid: VTID,
+    total_automations: summary.total,
+    executable: summary.executable,
+    planned: summary.planned,
+  });
+});
+
+export default router;

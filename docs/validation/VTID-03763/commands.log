@@ -1,0 +1,112 @@
+# VTID-03763 — commands run during investigation and verification
+
+## Investigation (read-only, live oasis_events tracing)
+
+Queried live `oasis_events` for the reporting user's session (via Supabase
+MCP, read-only SELECT) to confirm the guided-topic candidate's
+wake-brief-ranking outcome. Two independent signals agreed the field was
+absent server-side:
+  - `orb.livekit.next_action.*` topic rows showed `all_sources_skipped` —
+    `guided_topic_narration` was never even attempted for the failing tap.
+  - `live-session-controller.ts`'s `isGuidedTopicSession` fast-bootstrap
+    check (requires `typeof body.guided_topic_id === 'string' && !!...`)
+    was false for that session — it took the slow bootstrap path
+    (context_pack.built / memory.social.context_built /
+    memory.orchestrator.context_built / llm.call.started:memory all fired),
+    which only happens when guided_topic_id is genuinely absent from the
+    raw request body.
+
+Ruled out via static code reading + grep before landing on the real root
+cause:
+  - Rapid re-tap race — user explicitly confirmed "I waited" between taps.
+  - `updateContext()`'s `guided_topic_id` clobber path — confirmed dead via
+    `grep -n "guided_topic_id" src/hooks/useOrbVoiceWidget.ts`; the sole
+    `orb.updateContext(...)` call site never passes that field.
+
+Root cause confirmed by reading `orb-widget.js`'s `_waitForAudioEnd` IIFE
+(the `case 'turn_complete':` handler) end-to-end, and grepping for every
+other `setTimeout`-chained self-recursive poll using the same
+`if (!_s.active) return;` staleness pattern:
+  grep -n "function _waitForGoodbyeEnd\|function _waitForNavReady\|_s\.active = true\|_sessionGeneration" services/gateway/src/frontend/command-hub/orb-widget.js
+
+## Implementation
+
+Edits to `services/gateway/src/frontend/command-hub/orb-widget.js`:
+  - Added `_sessionGeneration: 0` to the initial `_s` state object.
+  - Added `_s._sessionGeneration++;` immediately after both
+    `_s.active = true;` assignments (SSE session-start success handler,
+    WS session-start success handler).
+  - Wrapped `_waitForAudioEnd`, `_waitForGoodbyeEnd`, and `_waitForNavReady`
+    each in an outer `(function (myGen) { ... })(_s._sessionGeneration);`
+    IIFE, and added `if (_s._sessionGeneration !== myGen) return;` as the
+    first statement of every `setTimeout` callback inside them (including
+    the second, nested grace-period `setTimeout` in the latter two).
+  - Added `var myGen = _s._sessionGeneration;` at the top of
+    `_endGuidedTopicTeaching(topicId, reason)` and the same guard as the
+    first statement of both its `setTimeout` callbacks.
+
+Edits to `exafyltd/vitana-v1`:
+  - `src/hooks/useOrbVoiceWidget.ts`: added `onGuidedTopicTeachingEnd` to
+    both `navOpts` object literals (main init effect, auth-change reinit
+    effect), dispatching `window.dispatchEvent(new CustomEvent(
+    "vitana:guided-topic-teaching-complete", {detail:{topicId, reason}}))`.
+  - `src/components/journey/GuidedJourneyCatalog.tsx`: added a `useEffect`
+    (before the component's loading/error early returns, so hook order
+    stays stable) that listens for `vitana:guided-topic-teaching-complete`
+    on `window` and calls `completePractice(topicId)` on receipt, mirroring
+    `markPracticeDone`'s invalidate + toast pattern.
+
+## Verification
+
+### Gateway (services/gateway/, run from that directory)
+
+  node --check src/frontend/command-hub/orb-widget.js
+    → exit 0 (outputs/node-check.txt)
+
+  npx jest test/frontend/orb-widget-stale-poll-generation-guard.test.ts \
+    test/orb/live/guided-topic-teaching-complete-signal.test.ts --silent
+    → 2 suites, 32 tests, 0 failures (outputs/jest-vtid-03763-suite.txt)
+
+  npx jest --silent
+    → 712/713 suites (1 pre-existing skip), 13,421/13,456 tests, 0 failures
+      (outputs/jest-full-suite.txt)
+
+  npx tsc --noEmit
+    → exit 0, no output (outputs/tsc-noemit.txt)
+
+### Mutation testing (gateway, orb-widget.js)
+
+Backed up the file, then for each of 5 regions: removed exactly that
+region's generation guard, re-ran the target test file, confirmed exactly
+the expected subset of tests failed and nothing else did, restored the
+backup, re-verified `node --check` clean, moved to the next region. Full
+per-mutation pass/fail breakdown: outputs/mutation-testing-log.txt.
+
+### vitana-v1 (repo root)
+
+  npx tsc --noEmit
+    → exit 0 (outputs/vitana-v1-tsc-noemit.txt)
+
+  npx vitest run \
+    src/components/journey/GuidedJourneyCatalog.teaching-complete.test.tsx \
+    src/components/journey/GuidedJourneyCatalog.test.tsx \
+    src/hooks/useOrbVoiceWidget.teaching-complete.test.ts
+    → 3 files, 11 tests, 0 failures (outputs/vitest-vtid-03763-suite.txt)
+
+  npx vitest run
+    → 26/26 test files, 174/174 tests, 0 failures
+      (outputs/vitest-full-suite.txt)
+
+## Branch note
+
+The designated branch for this session (`claude/my-journey-catalog-multilingual-qrwxng`,
+both repos) was found to contain only already-merged history in each repo
+(its own single "ahead" commit's content was confirmed present on `main`
+under a different SHA — a squash-merge artifact) — 1 ahead / 60 behind in
+vitana-platform, 1 ahead / 7611 behind in vitana-v1. Per this session's
+standing instructions for that situation, both branches were reset to their
+respective `origin/main` (`git reset --hard origin/main`, safe since no
+unmerged content was lost — verified via `git merge-base --is-ancestor` and
+matching commit content by title/diff before resetting) and this VTID's
+changes were reapplied on top of the fresh base. Both repos' diffs applied
+cleanly (`git apply --check`) with no conflicts.

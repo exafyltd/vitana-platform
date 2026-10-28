@@ -1,0 +1,344 @@
+/**
+ * VTID-03070 (B0d-real slice Xm) — Match / activity-plan NextActionSource.
+ *
+ * Closes acceptance #3 from the B0d-real spec ("match/activity plan
+ * opportunity can win"). Surfaces the user's most-actionable
+ * intent_matches row as a next-action candidate so the orb can offer:
+ *
+ *   - "Someone matched you on <kind>. Want to open the conversation?"
+ *     when state === 'mutual_interest' (both sides engaged).
+ *   - "Your match on <kind> is waiting for your response."
+ *     when the other side has responded and this user has not.
+ *   - "You have a fresh match on <kind>. Want me to walk you through it?"
+ *     when state === 'new'.
+ *
+ * Priority bands (mapped from state, parallel to other sources):
+ *   - pending_user_decision (other side responded, our turn) → 85
+ *   - mutual_interest                                        → 78
+ *   - new (fresh, not yet acted on)                          → 65
+ *
+ * Confidence:
+ *   - pending_user_decision / mutual_interest → high
+ *   - new                                     → medium
+ *
+ * Privacy contract (B0d-real Xm — hard rules):
+ *   - NEVER include raw chat text, profile payloads, intent titles, or
+ *     match-row JSON. Only kind_pairing (a category enum) + state +
+ *     match_id leave this file.
+ *   - Counterparty vitana_id is NOT exposed in the spoken line — the
+ *     redact-on-pre-reveal logic in intent-mutual-reveal.ts is the
+ *     authoritative gate; the wake-brief surface stays vitana-id-free.
+ *   - If the table is missing or the read fails, suppress with
+ *     skippedReason: 'source_unavailable' so a DB outage cannot leak.
+ *
+ * Schema contract this source assumes (from intent-matcher.ts +
+ * intent-mutual-reveal.ts):
+ *   intent_matches(match_id, intent_a_id, intent_b_id, kind_pairing,
+ *                  state, mutual_reveal_unlocked_at, score, ...)
+ *   user_intents(intent_id, requester_user_id)
+ *
+ * State enum used in this source (mirroring orb-tools-shared.ts
+ * respond_to_match):
+ *   'new' | 'responded_by_a' | 'responded_by_b' | 'mutual_interest' |
+ *   'declined'
+ */
+
+import type {
+  NextActionSource,
+  NextActionSourceContext,
+  NextActionSourceResult,
+  ScoredCandidate,
+} from '../types';
+import * as repo from './match-activity-plan-repository';
+
+const KEY = 'match_activity_plan' as const;
+
+/** Max user_intents to fan out across when discovering matches. The
+ *  orb only ever surfaces one candidate; this cap exists so a user
+ *  with a long intent history doesn't pull a giant batch. */
+const MAX_INTENTS_PER_USER = 20;
+
+/** Max intent_matches rows to consider once we have intent ids. The
+ *  ranker only picks the top stage; we never read more than this. */
+const MAX_MATCHES_PER_SOURCE = 20;
+
+/** State buckets in priority order. 'mutual_interest' beats fresh, but
+ *  is itself beaten by "pending response from this user" — because a
+ *  decision waiting on the user is more time-sensitive than an open
+ *  conversation. */
+type MatchStage = 'pending_user_decision' | 'mutual_interest' | 'new';
+
+export function makeMatchActivityPlanSource(): NextActionSource {
+  return {
+    key: KEY,
+    serves: () => true,
+    produce: produceMatchActivityPlan,
+  };
+}
+
+export async function produceMatchActivityPlan(
+  ctx: NextActionSourceContext,
+): Promise<NextActionSourceResult> {
+  let userIntentIds: string[];
+  try {
+    const { data, error } = await repo.fetchUserIntentIds(ctx.supabase, ctx.userId, MAX_INTENTS_PER_USER);
+    if (error) {
+      return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
+    }
+    userIntentIds = (data || [])
+      .map((r) => (r as { intent_id: string }).intent_id)
+      .filter(Boolean);
+  } catch {
+    return { source: KEY, candidate: null, skippedReason: 'errored' };
+  }
+
+  if (userIntentIds.length === 0) {
+    return { source: KEY, candidate: null, skippedReason: 'no_eligible_record' };
+  }
+
+  let matches: MatchRow[];
+  try {
+    // We have to query "intent_a_id in (ids) OR intent_b_id in (ids)".
+    // Supabase REST does that via .or('intent_a_id.in.(...),intent_b_id.in.(...)').
+    const idList = userIntentIds.map((s) => `"${s}"`).join(',');
+    const { data, error } = await repo.fetchIntentMatchesForIntentIds(
+      ctx.supabase,
+      `intent_a_id.in.(${idList}),intent_b_id.in.(${idList})`,
+      MAX_MATCHES_PER_SOURCE,
+    );
+    if (error) {
+      return { source: KEY, candidate: null, skippedReason: 'source_unavailable' };
+    }
+    matches = (data || []) as MatchRow[];
+  } catch {
+    return { source: KEY, candidate: null, skippedReason: 'errored' };
+  }
+
+  if (matches.length === 0) {
+    return { source: KEY, candidate: null, skippedReason: 'no_eligible_record' };
+  }
+
+  const intentIdSet = new Set(userIntentIds);
+  const ranked = rankMatches(matches, intentIdSet);
+  const top = ranked[0];
+  if (!top) {
+    return { source: KEY, candidate: null, skippedReason: 'no_eligible_record' };
+  }
+
+  const { priority, confidence } = bandForStage(top.stage);
+  const kindLabel = renderKindLabel(top.row.kind_pairing);
+  // Advice #3 — a mutual match on a real-world activity is schedulable: the
+  // line proposes a time + calendar entry instead of stopping at "open chat".
+  const schedulable = top.stage === 'mutual_interest' && isSchedulableActivity(top.row.kind_pairing);
+  const userFacingLine = renderLine(top.stage, kindLabel, ctx.lang, schedulable);
+
+  const candidate: ScoredCandidate = {
+    source: KEY,
+    priority,
+    confidence,
+    userFacingLine,
+    reasons: [
+      {
+        kind: reasonKindFor(top.stage),
+        detail: `match=${top.row.match_id} kind=${top.row.kind_pairing} state=${top.row.state}${schedulable ? ' schedulable=1' : ''}`,
+      },
+    ],
+    dedupeKey: `match_activity_plan:${top.row.match_id}:${top.stage}`,
+    cta: {
+      type: 'ask_permission',
+      payload: { match_id: top.row.match_id, stage: top.stage, propose_schedule: schedulable },
+    },
+  };
+  return { source: KEY, candidate };
+}
+
+// ---------------------------------------------------------------------------
+// Pure helpers — exported for tests
+// ---------------------------------------------------------------------------
+
+export interface MatchRow {
+  match_id: string;
+  intent_a_id: string;
+  intent_b_id: string | null;
+  kind_pairing: string | null;
+  state: string;
+  mutual_reveal_unlocked_at: string | null;
+}
+
+interface RankedMatch {
+  row: MatchRow;
+  stage: MatchStage;
+}
+
+export function rankMatches(
+  rows: MatchRow[],
+  userIntentIdSet: Set<string>,
+): RankedMatch[] {
+  const stages: RankedMatch[] = [];
+  for (const row of rows) {
+    const stage = classifyStage(row, userIntentIdSet);
+    if (stage) stages.push({ row, stage });
+  }
+  // Sort by stage priority (pending > mutual > new) then by match_id for
+  // deterministic tie-break.
+  stages.sort((a, b) => {
+    const pa = stageRank(a.stage);
+    const pb = stageRank(b.stage);
+    if (pa !== pb) return pb - pa;
+    return a.row.match_id.localeCompare(b.row.match_id);
+  });
+  return stages;
+}
+
+export function classifyStage(
+  row: MatchRow,
+  userIntentIdSet: Set<string>,
+): MatchStage | null {
+  if (row.state === 'mutual_interest') return 'mutual_interest';
+  if (row.state === 'new') return 'new';
+  const userOwnsA = userIntentIdSet.has(row.intent_a_id);
+  const userOwnsB = row.intent_b_id ? userIntentIdSet.has(row.intent_b_id) : false;
+  // The other side responded. If the user owns A and B responded, the
+  // user (A) owes the decision. Same mirrored for the B side.
+  if (row.state === 'responded_by_b' && userOwnsA) return 'pending_user_decision';
+  if (row.state === 'responded_by_a' && userOwnsB) return 'pending_user_decision';
+  return null;
+}
+
+function stageRank(stage: MatchStage): number {
+  switch (stage) {
+    case 'pending_user_decision':
+      return 3;
+    case 'mutual_interest':
+      return 2;
+    case 'new':
+      return 1;
+  }
+}
+
+export function bandForStage(
+  stage: MatchStage,
+): { priority: number; confidence: ScoredCandidate['confidence'] } {
+  switch (stage) {
+    case 'pending_user_decision':
+      return { priority: 85, confidence: 'high' };
+    case 'mutual_interest':
+      return { priority: 78, confidence: 'high' };
+    case 'new':
+      return { priority: 65, confidence: 'medium' };
+  }
+}
+
+function reasonKindFor(stage: MatchStage): string {
+  switch (stage) {
+    case 'pending_user_decision':
+      return 'match_awaiting_user_response';
+    case 'mutual_interest':
+      return 'match_mutual_interest_open_conversation';
+    case 'new':
+      return 'match_new_unseen';
+  }
+}
+
+/**
+ * Map a kind_pairing string ("buddy_seek::buddy_seek", "hike::hike",
+ * "commercial_buy::product") to a short user-facing label, or null when
+ * the kind is unknown / absent. NULL signals "no friendly label" — the
+ * renderer then picks a generic sentence template instead of trying to
+ * inject the word "match" into a sentence that already contains
+ * "match" (the original Xm bug: "You have a fresh match match.").
+ */
+export function renderKindLabel(kindPairing: string | null): string | null {
+  if (!kindPairing) return null;
+  const left = String(kindPairing).split('::')[0] || '';
+  const known: Record<string, string> = {
+    hike: 'hike',
+    run: 'run',
+    chess: 'chess',
+    language_exchange: 'language exchange',
+    coffee: 'coffee',
+    buddy_seek: 'buddy',
+    partner_seek: 'partner',
+    activity_seek: 'activity',
+    commercial_buy: 'purchase',
+    commercial_sell: 'offer',
+  };
+  return known[left] ?? null;
+}
+
+/**
+ * Activity kinds that map to a real-world meet-up worth putting on a calendar
+ * (advice #3 — make community proactive, add the real-life dimension). A
+ * mutual match on one of these is the moment to propose a TIME, not just a
+ * chat. Keyed on the left token of `kind_pairing` ("hike::hike" → "hike").
+ */
+const SCHEDULABLE_ACTIVITY_KINDS = new Set<string>([
+  'hike',
+  'run',
+  'chess',
+  'language_exchange',
+  'coffee',
+  'activity_seek',
+]);
+
+/** Whether a kind_pairing represents a schedulable real-world activity. */
+export function isSchedulableActivity(kindPairing: string | null): boolean {
+  if (!kindPairing) return false;
+  const left = String(kindPairing).split('::')[0] || '';
+  return SCHEDULABLE_ACTIVITY_KINDS.has(left);
+}
+
+/**
+ * RULE 0 (VTID-03307): every line is a PROPOSAL + lead, never a passive
+ * preference question. (This file previously shipped "Willst du entscheiden,
+ * wie es weitergeht?" / "Want to decide what's next?" — both banned.)
+ *
+ * Advice #3: when a MUTUAL match is on a schedulable real-world activity,
+ * Vitana does not stop at "open the conversation" — it offers to lock in a time
+ * and put it straight in the calendar (the LLM fires create_calendar_event on
+ * the user's yes). `schedulable` is derived from the kind via
+ * isSchedulableActivity in the producer.
+ */
+export function renderLine(
+  stage: MatchStage,
+  kindLabel: string | null,
+  lang: string,
+  schedulable = false,
+): string {
+  const isDe = (lang || 'en').toLowerCase().startsWith('de');
+  if (stage === 'pending_user_decision') {
+    if (kindLabel) {
+      return isDe
+        ? `Es gibt eine Antwort auf deine ${kindLabel}-Anfrage — lass uns gemeinsam den nächsten Schritt entscheiden. Ich führe dich hin.`
+        : `Someone has responded to your ${kindLabel} request — let's decide the next step together. I'll take you there.`;
+    }
+    return isDe
+      ? `Jemand hat auf deine Anfrage geantwortet — lass uns gemeinsam den nächsten Schritt entscheiden. Ich führe dich hin.`
+      : `Someone has responded to your request — let's decide the next step together. I'll take you there.`;
+  }
+  if (stage === 'mutual_interest') {
+    // Advice #3 — schedulable activity → propose a time + calendar entry.
+    if (schedulable && kindLabel) {
+      return isDe
+        ? `Du hast ein gegenseitiges ${kindLabel}-Match — lass uns gleich einen Termin festmachen, ich trage ihn dir direkt in den Kalender ein.`
+        : `You have a mutual ${kindLabel} match — let's lock in a time, and I'll put it straight in your calendar.`;
+    }
+    if (kindLabel) {
+      return isDe
+        ? `Du hast ein neues gegenseitiges ${kindLabel}-Match — lass uns das Gespräch eröffnen, ich bringe dich hin.`
+        : `You have a new mutual ${kindLabel} match — let's open the conversation, I'll take you there.`;
+    }
+    return isDe
+      ? `Du hast ein neues gegenseitiges Match — lass uns das Gespräch eröffnen, ich bringe dich hin.`
+      : `You have a new mutual match — let's open the conversation, I'll take you there.`;
+  }
+  // stage === 'new'
+  if (kindLabel) {
+    return isDe
+      ? `Es gibt ein frisches ${kindLabel}-Match für dich — lass es mich dir kurz vorstellen.`
+      : `You have a fresh ${kindLabel} match — let me walk you through it.`;
+  }
+  return isDe
+    ? `Es gibt ein frisches Match für dich — lass es mich dir kurz vorstellen.`
+    : `You have a fresh match — let me walk you through it.`;
+}

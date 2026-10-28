@@ -1,0 +1,12 @@
+    mutator hygiene
+      ✓ does not mutate session state (handleGetCurrentScreen is pure read) (1 ms)
+    handler receives no raw GeminiLiveSession
+      ✓ signature is (args, ctx: SessionContext, mutator: SessionMutator) only
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 171 passed, 171 total
+Tests:       6 todo, 3235 passed, 3241 total
+Snapshots:   10 passed, 10 total
+Time:        14.165 s
+Ran all test suites matching /test\/orb/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,16 @@
+PASS test/vtid-04510-community-autopilot-automation-proposals.test.ts
+PASS test/routes/autopilot-recommendations.test.ts
+PASS test/vtid-04530-autopilot-recommendations-not-behind-service-token.test.ts
+PASS test/vtid-04506-wake-autopilot-slot-due.test.ts
+PASS test/vtid-04504-community-autopilot-drafts.test.ts
+PASS test/vtid-04493-community-autopilot-voice-tools.test.ts
+PASS test/routes/autopilot-recommendations-complete.test.ts
+PASS test/vtid-04508-community-invites.test.ts
+PASS test/vtid-04505-community-autopilot-scan.test.ts
+PASS test/vtid-04650-community-autopilot-template-retirement.test.ts
+PASS test/vtid-04500-opening-role-scopes.test.ts
+PASS test/vtid-04503-community-autopilot-actions.test.ts
+PASS test/vtid-04500-lineup-role.test.ts
+PASS test/vtid-04523-community-autopilot-lineup-cap.test.ts
+Test Suites: 14 passed, 14 total
+Tests:       242 passed, 242 total

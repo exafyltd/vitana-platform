@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04718",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Overload Detection (D51) health reads ok:true (its data layer exists)",
+      "path": "/api/v1/overload/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Overload Detection (D51) health probes overload_detect",
+      "path": "/api/v1/overload/health",
+      "expect_body_contains": "overload_detect"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04716-feature-data-layers.test.ts",
+      "cwd": "services/gateway",
+      "reason": "shipped in the VTID-04716 PR; migration contracts for Overload Detection (D51) live there"
+    }
+  ]
+}

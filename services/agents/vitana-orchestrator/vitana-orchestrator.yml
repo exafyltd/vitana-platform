@@ -1,0 +1,179 @@
+# =============================================================================
+# Vitana Orchestrator Configuration - VTID-01175
+# =============================================================================
+# Production-grade orchestrator with guaranteed task completion.
+# The verification loop ensures tasks are truly complete before confirmation.
+# =============================================================================
+
+vtid: VTID-01175
+name: vitana-orchestrator
+version: 1.0.0
+
+# =============================================================================
+# Execution Settings
+# =============================================================================
+execution:
+  max_concurrent_tasks: 5
+  default_task_timeout_ms: 1800000  # 30 minutes
+  polling_interval_ms: 5000          # 5 seconds
+
+# =============================================================================
+# VERIFICATION SETTINGS (THE KEY TO PREVENTING FALSE COMPLETIONS)
+# =============================================================================
+# The verification system is what guarantees task completion.
+# Without verification, sub-agents may claim "done" when work is incomplete.
+# =============================================================================
+verification:
+  # ALWAYS require verification in production
+  required: true
+
+  # Maximum verification attempts before failing
+  max_attempts: 3
+
+  # Timeout for verification process
+  timeout_ms: 60000  # 1 minute
+
+  # Automatically retry when verification fails
+  auto_retry_on_failure: true
+
+  # Verification checks to run
+  checks:
+    files_exist: true        # Verify claimed files exist
+    files_modified: true     # Verify files were actually modified
+    domain_validation: true  # Run domain-specific validators
+    run_tests: true          # Execute related tests
+    verify_artifacts: true   # Check expected outputs
+
+# =============================================================================
+# Retry Settings
+# =============================================================================
+retry:
+  max_retries: 3
+  delay_ms: 10000           # 10 seconds initial delay
+  backoff_multiplier: 2.0   # Exponential backoff
+
+# =============================================================================
+# Safety Limits
+# =============================================================================
+# Prevents runaway execution and scope creep
+safety:
+  max_files_per_task: 20
+  max_directories_per_task: 10
+  rate_limit:
+    max_tasks_per_minute: 10
+    max_api_calls_per_minute: 60
+
+  # Forbidden paths (never allow modification)
+  forbidden_paths:
+    - .git
+    - .env
+    - .env.local
+    - .env.production
+    - credentials.json
+    - serviceAccountKey.json
+    - secrets/
+    - node_modules/
+
+# =============================================================================
+# Provider Settings
+# =============================================================================
+providers:
+  primary: claude
+  fallback: gemini
+  model_preference: claude-3-5-sonnet-20241022
+
+  claude:
+    model: claude-3-5-sonnet-20241022
+    max_tokens: 4096
+    temperature: 0.7
+
+  gemini:
+    model: gemini-1.5-pro
+    max_tokens: 4096
+    temperature: 0.7
+
+# =============================================================================
+# Domain Configuration
+# =============================================================================
+domains:
+  frontend:
+    adapter: claude
+    preflight_checks:
+      - accessibility
+    postflight_checks:
+      - accessibility
+    default_paths:
+      - services/gateway/src/frontend/**
+    change_budget:
+      max_files: 10
+      max_directories: 5
+
+  backend:
+    adapter: claude
+    preflight_checks:
+      - security
+      - analyze_service
+    postflight_checks:
+      - security
+    default_paths:
+      - services/gateway/src/**
+      - "!services/gateway/src/frontend/**"
+    change_budget:
+      max_files: 15
+      max_directories: 8
+
+  memory:
+    adapter: claude
+    preflight_checks:
+      - rls_policy
+      - migration_preview
+    postflight_checks:
+      - rls_policy
+    default_paths:
+      - supabase/migrations/**
+      - services/agents/memory-indexer/**
+    change_budget:
+      max_files: 5
+      max_directories: 3
+
+# =============================================================================
+# Integration Settings
+# =============================================================================
+integrations:
+  oasis:
+    enabled: true
+    gateway_url: ${OASIS_GATEWAY_URL:-http://localhost:8080}
+    events:
+      emit:
+        - vtid.stage.orchestrator.start
+        - vtid.stage.orchestrator.dispatch
+        - vtid.stage.orchestrator.verify
+        - vtid.stage.orchestrator.complete
+        - vtid.stage.orchestrator.fail
+      listen:
+        - vtid.workorder.dispatched
+
+  memory:
+    enabled: true
+    service_url: ${MEMORY_SERVICE_URL:-http://localhost:8081}
+    check_duplicates: true
+
+# =============================================================================
+# Feature Flags
+# =============================================================================
+features:
+  enable_preflight_checks: true
+  enable_postflight_validation: true
+  enable_oasis_events: true
+  enable_memory_integration: true
+  enable_metrics: true
+  enable_checkpointing: true
+
+# =============================================================================
+# Paths
+# =============================================================================
+paths:
+  workspace: ${WORKSPACE_PATH:-/mnt/project}
+  checkpoints: .vitana/checkpoints
+  metrics: .vitana/metrics
+  logs: .vitana/logs

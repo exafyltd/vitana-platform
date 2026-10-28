@@ -1,0 +1,4 @@
+jest test/orb-tools/vtid-04533-search-events-no-auto-open.test.ts -> 5 pass (3 fail against the previous tool code)
+jest -u characterization + vtid-04443 replay -> 8 snapshots updated deliberately (tool description and budget-edge tool)
+jest full gateway suite -> 1252 passed, 1 skipped; 19998 passed, 0 failed
+tsc --noEmit -> clean

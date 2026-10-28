@@ -1,0 +1,11 @@
+# VTID-04962 — commands run in the Claude Code session (2026-10-07)
+cd services/gateway && npx tsc --noEmit -p .                     # exit 0
+npx jest test/vtid-04962-push-outcome.test.ts                    # 17 passed
+npx jest test/vtid-04962-push-dispatch-outcome.test.ts           # 10 passed
+npx jest test/vtid-04962-push-health.test.ts test/vtid-04663-ops-health-checks.test.ts   # 23 passed
+npm run test:support                                             # 4 suites, 85 passed
+npx jest <notification/push/appilix/reminder/celebration suites> # 20 suites, 267 passed
+node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening        # pass
+node scripts/ci/pr-gate/gate.mjs red-green                       # pass, 35 tests fail on base
+libpg-query parseSync(20261007190000_vtid_04962_...sql)          # parses OK
+RUN-MIGRATION.yml dispatched for 20261007190000 (run 37670912663)

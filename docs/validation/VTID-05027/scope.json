@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05027",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/routes/ops-health-checks.ts",
+    "services/gateway/test/vtid-05027-*.test.ts",
+    "supabase/migrations/20261010120000_vtid_05027_push_reach_active.sql",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-05027/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05075",
+  "service": "gateway",
+  "note": "A CI-script change that deploys nothing (scripts/ci is outside the gateway deploy paths). The planner itself is proven by node --test scripts/ci/staging-verify/lib.test.cjs (STAGING-TESTS-REQUIRED); this read-only probe only confirms the gateway is up.",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 }
+  ]
+}

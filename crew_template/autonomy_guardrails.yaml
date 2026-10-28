@@ -1,0 +1,17 @@
+autonomy:
+  enabled_flag: OASIS.AUTONOMY_ENABLED
+  kill_switch_flag: OASIS.KILL_SWITCH
+  caps:
+    max_iterations_per_rid: OASIS.MAX_ITER
+    daily_budget_ai: OASIS.MAX_BUDGET_PER_DAY
+  on_loop_start:
+    - assert tenant_claim_present
+    - check kill_switch
+    - decrement_budget_or_abort
+    - emit_heartbeat
+  planner_contract:
+    must_include: [rollback_plan, idempotency_key, risk_level, approvals_needed?]
+  worker_contract:
+    must_include: [commands, dry_run, pr_required, rollback_commands]
+  validator_contract:
+    must_include: [policy_checks, schema_conformance, risk_gate, approvals_found]

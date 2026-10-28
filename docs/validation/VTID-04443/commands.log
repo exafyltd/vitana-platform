@@ -1,0 +1,15 @@
+# VTID-04443 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04443; vtid_ledger in_progress / approved.
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+Replayed the nine synthetic cases once and reviewed every decision before pinning expectations. Two adjustments:
+  - first-time-member: the first-time rungs live on the safe-fast path (context not ready, flag live), so the case
+    uses that path, as on staging; on the normal ladder a first-time session falls to legacy_default.
+  - the runner applied personal weights to the live leads unconditionally; live code does so only with
+    BRAIN_PERSONAL_WEIGHTS=true, so cases opt in via personal_weights_live.
+npx jest test/services/conversation/vtid-04443-conversation-replay.test.ts --ci=false -> 34 passed, 9 snapshots written
+Mutation check (the gate bites): candidate-scoring.ts screen feature "same screen" 0.2 -> 0.9, then
+  CI=true npx jest vtid-04443 --ci -> 2 failed (screen-change-leads expectation + snapshot), 1 snapshot failed;
+  restored from backup (git diff empty) -> 34 passed, 9 snapshots passed
+CI=true npx jest --ci (full gateway suite) -> 1163 suites passed (1 skipped), 18813 tests passed, 51 snapshots passed
+Not run: a recorded case from a real session (needs a member's consent reference; none requested here).

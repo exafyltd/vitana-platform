@@ -1,0 +1,40 @@
+    ✓ calls Polly directly — never routes through the TTS_PROVIDER-gated seam (1 ms)
+    ✓ chunks long text into multiple Polly calls and concatenates PCM in order (10 ms)
+    ✓ fails the WHOLE narration when any one chunk fails — no partial lesson (1 ms)
+    ✓ returns null when Polly cannot serve the language at all
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/tts/narration-audio-cache.test.ts
+  buildNarrationCacheKey
+    ✓ is stable for identical inputs (1 ms)
+    ✓ CHANGES when the engine changes — this is what makes the neural→generative flip safe
+    ✓ changes when the voice changes (1 ms)
+    ✓ changes when the lesson text changes, so a curriculum edit self-invalidates
+    ✓ changes when the language changes
+    ✓ changes when the topic changes (1 ms)
+    ✓ namespaces by schema version, language and topic so keys stay browsable
+  MemoryNarrationStore
+    ✓ returns null on a miss and the entry on a hit (1 ms)
+    ✓ evicts least-recently-used entries once the BYTE budget is exceeded
+    ✓ refuses an entry larger than the whole budget instead of evicting everything for it (1 ms)
+    ✓ does not double-count bytes when the same key is overwritten
+  resolveNarrationCacheMode
+    ✓ defaults to memory when unset (1 ms)
+    ✓ honours the three recognised values (1 ms)
+    ✓ treats an UNRECOGNISED value as memory, not off — a typo must not silently restore per-tap billing (1 ms)
+  getNarrationAudioStore
+    ✓ returns null when caching is off (1 ms)
+    ✓ returns the memory store by default
+    ✓ falls back to memory AND logs an error when s3 is selected with no bucket (1 ms)
+    ✓ returns the s3 store when a bucket is named
+
+Test Suites: 2 passed, 2 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        0.547 s, estimated 1 s
+Ran all test suites matching /test\/services\/tts\/narration-audio-cache.test.ts|test\/services\/tts\/guided-topic-narration-audio.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

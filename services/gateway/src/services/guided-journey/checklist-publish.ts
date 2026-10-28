@@ -1,0 +1,147 @@
+/**
+ * VTID-03277 — Guided Journey checklist publish + rollback (P2).
+ *
+ * publish: validate the working draft → if ok, snapshot it into an immutable
+ *   journey_checklist_versions row marked is_current=true (the single version
+ *   My Journey serves), unsetting the previous current. Blocked if invalid.
+ * rollback: flip is_current to a prior published version (non-destructive — the
+ *   working draft is untouched; My Journey simply serves the older snapshot).
+ *
+ * Both write an audit row.
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import type { ChecklistValidationResult, ChecklistVersion } from '../../types/journey-checklist';
+import { listTopics, toSnapshotTopic } from './checklist-service';
+import { validateChecklist } from './checklist-validator';
+import { notifyDbI18nSourceChanged } from '../db-i18n/notify-source-changed';
+import * as repo from './checklist-publish-repository';
+
+export class ChecklistValidationError extends Error {
+  result: ChecklistValidationResult;
+  constructor(result: ChecklistValidationResult) {
+    super('checklist validation failed');
+    this.name = 'ChecklistValidationError';
+    this.result = result;
+  }
+}
+
+function rowToVersion(r: any): ChecklistVersion {
+  return {
+    id: r.id,
+    versionLabel: r.version_label,
+    curriculumVersion: r.curriculum_version,
+    status: r.status,
+    sessionCount: r.session_count,
+    topicCount: r.topic_count,
+    isCurrent: r.is_current,
+    note: r.note ?? null,
+    publishedBy: r.published_by ?? null,
+    publishedAt: r.published_at,
+  };
+}
+
+export async function listVersions(
+  client: SupabaseClient,
+  curriculumVersion = 'v2',
+): Promise<ChecklistVersion[]> {
+  const { data, error } = await repo.fetchVersionsByCurriculum(client, curriculumVersion);
+  if (error) throw error;
+  return (data as any[]).map(rowToVersion);
+}
+
+/**
+ * Validate + publish the working draft as a new current version.
+ * @throws ChecklistValidationError when the draft is not publishable.
+ */
+export async function publishChecklist(
+  client: SupabaseClient,
+  adminId: string,
+  opts: { curriculumVersion?: string; note?: string; now?: string } = {},
+): Promise<{ version: ChecklistVersion; validation: ChecklistValidationResult }> {
+  const curriculumVersion = opts.curriculumVersion ?? 'v2';
+  const now = opts.now ?? new Date().toISOString();
+
+  const topics = await listTopics(client, { curriculumVersion });
+  const validation = validateChecklist(topics);
+  if (!validation.ok) throw new ChecklistValidationError(validation);
+
+  const active = topics.filter((t) => t.enabled && t.status !== 'disabled');
+  // VTID-03289: snapshot the voice-inclusive shape so the ORB seam can narrate
+  // the published topic. The public HTTP read re-strips vitanaVoiceScript.
+  const snapshot = active.map(toSnapshotTopic);
+  const versionLabel = `${curriculumVersion}-${now}`;
+
+  // Unset previous current for this curriculum line, then insert the new one.
+  const unset = await repo.unsetCurrentVersion(client, curriculumVersion);
+  if (unset.error) throw unset.error;
+
+  const inserted = await repo.insertPublishedVersion(client, {
+    version_label: versionLabel,
+    curriculum_version: curriculumVersion,
+    status: 'published',
+    session_count: validation.summary.sessionCount,
+    topic_count: validation.summary.topicCount,
+    snapshot,
+    validation,
+    is_current: true,
+    note: opts.note ?? null,
+    published_by: adminId,
+    published_at: now,
+  });
+  if (inserted.error) throw inserted.error;
+
+  const version = rowToVersion(inserted.data);
+  await repo.insertChecklistAudit(client, {
+    actor_admin_id: adminId,
+    action: 'publish',
+    version_id: version.id,
+    detail: `Published ${version.topicCount} topics across ${version.sessionCount} sessions`,
+  });
+
+  // VTID-03522: a publish changes the German source every other language is
+  // translated FROM, and nothing about it produces a git push, so CI would
+  // otherwise not learn of it until the nightly cron. Deliberately not awaited
+  // and deliberately unable to throw — the admin's publish has already
+  // succeeded at this point, and a GitHub outage must not turn that into an
+  // error response for work that is durably committed.
+  void notifyDbI18nSourceChanged('journey-checklist', `publish:${version.versionLabel}`);
+
+  return { version, validation };
+}
+
+/** Make a prior published version current again (non-destructive). */
+export async function rollbackChecklist(
+  client: SupabaseClient,
+  adminId: string,
+  versionId: string,
+  opts: { curriculumVersion?: string } = {},
+): Promise<ChecklistVersion> {
+  const curriculumVersion = opts.curriculumVersion ?? 'v2';
+
+  const target = await repo.fetchVersionForRollback(client, versionId);
+  if (target.error) throw target.error;
+  if (!target.data) throw new Error('version_not_found');
+
+  const unset = await repo.unsetCurrentVersion(client, curriculumVersion);
+  if (unset.error) throw unset.error;
+
+  const updated = await repo.setVersionCurrent(client, versionId);
+  if (updated.error) throw updated.error;
+
+  await repo.insertChecklistAudit(client, {
+    actor_admin_id: adminId,
+    action: 'rollback',
+    version_id: versionId,
+    detail: `Rolled current pointer back to version ${versionId}`,
+  });
+
+  // VTID-03522: a rollback is a source change too, and an easy one to miss.
+  // The German text users see reverts to the older snapshot, so every stored
+  // translation is now derived from text that is no longer current — the same
+  // staleness as a forward publish, in the opposite direction. source_sha
+  // catches it either way, but only if something tells the seeder to look.
+  void notifyDbI18nSourceChanged('journey-checklist', `rollback:${versionId}`);
+
+  return rowToVersion(updated.data);
+}

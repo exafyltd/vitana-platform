@@ -1,0 +1,5 @@
+SQL (read-only): automation_runs last run per AP-09xx -> AP-0910 2026-07-06; heartbeat-loop jobs run every minute
+SQL (read-only): memory_facts 40/861, memory_items 165/3737 embedded; last inline Titan embed 2026-10-01
+SQL (read-only): ci_memory_health reads max(started_at) from automation_runs for AP-0910
+curl GET /api/v1/automations/registry?domain=memory-intelligence (staging) -> AP-0910 cron before
+cd services/gateway && npx tsc --noEmit -p . && npx jest (see outputs/jest.txt)

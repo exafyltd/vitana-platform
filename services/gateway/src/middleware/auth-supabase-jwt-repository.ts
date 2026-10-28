@@ -1,0 +1,44 @@
+// Coverage note: test/middleware/auth-supabase-jwt.test.ts exercises this
+// middleware against a real per-table thenable query-chain fake client
+// (mocks '../../src/lib/supabase' to return it — not a wholesale mock of
+// this repository module), so these wrappers get genuine coverage, not a
+// documented zero.
+/**
+ * middleware/auth-supabase-jwt.ts — Aurora migration B1 data-access seam
+ * (VTID-03702, Supabase→Aurora migration workstream — see
+ * docs/SUPABASE-TO-AURORA-MIGRATION-PLAN.md Phase 3b/B1).
+ *
+ * Every Supabase `.from(...)` call in auth-supabase-jwt.ts now goes
+ * through here instead of being written inline. PURE MOVE, not a
+ * rewrite: same queries, same columns, same filter logic, same return
+ * shapes — no behavior change today. Client-agnostic (takes `sb` as a
+ * param).
+ *
+ * `fetchPrimaryTenantForUser` was the primary-tenant query of requireTenant
+ * and requireAuthWithTenant. VTID-05149 moved both to the shared resolver
+ * (services/tenancy/tenant-context.ts); it stays only for
+ * routes/autopilot-prompts.ts, which moves with the other is_primary readers
+ * in the tenantDb slice.
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+
+// VTID-03972: both calls take a required AbortSignal (see abortAfter() in
+// auth-supabase-jwt.ts) — this middleware runs on every authenticated
+// request, so an unbounded Supabase call here stalls every screen the app
+// makes, not just one route. A slow/unreachable Supabase now fails fast
+// instead of hanging the request indefinitely.
+export async function fetchVitanaIdForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
+  return sb.from('app_users').select('vitana_id').eq('user_id', userId).abortSignal(signal).maybeSingle();
+}
+
+export async function fetchPrimaryTenantForUser(sb: SupabaseClient, userId: string, signal: AbortSignal) {
+  return sb.from('user_tenants').select('tenant_id').eq('user_id', userId).eq('is_primary', true).abortSignal(signal).single();
+}
+
+// VTID-05043: is the user a member of the tenant named in their token claim?
+// maybeSingle(): zero rows is "not a member", not an error.
+// VTID-05149: also returns active_role (cached with the positive result for req.tenant.role).
+export async function fetchMembershipForUserTenant(sb: SupabaseClient, userId: string, tenantId: string, signal: AbortSignal) {
+  return sb.from('user_tenants').select('tenant_id, active_role').eq('user_id', userId).eq('tenant_id', tenantId).abortSignal(signal).maybeSingle();
+}

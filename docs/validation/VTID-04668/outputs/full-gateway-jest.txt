@@ -1,0 +1,4 @@
+Test Suites: 1 skipped, 1350 passed, 1350 of 1351 total
+Tests:       29 skipped, 6 todo, 21684 passed, 21719 total
+Snapshots:   109 passed, 109 total
+Time:        187.272 s

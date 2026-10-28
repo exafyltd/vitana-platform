@@ -1,0 +1,10 @@
+$ node node_modules/.bin/jest test/vtid-04314-staging-rollout-diagnostics.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+Test Suites: 2 passed, 2 total
+Tests:       12 passed, 12 total
+
+$ node node_modules/.bin/jest $(grep -rl AWS-STAGE-DEPLOY-GATEWAY test)
+Test Suites: 23 passed, 23 total
+Tests:       212 passed, 212 total
+
+$ bash -n <extracted "Diagnose failed rollout" run block>
+BASH_OK

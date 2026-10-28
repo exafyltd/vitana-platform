@@ -1,0 +1,73 @@
+# VTID-03940 — commands run during this change
+
+## Investigation (via Explore subagent, then independently verified)
+Confirmed via grep that buildContextSignalFromMemory() is a real, live call
+site (routes/orb-live.ts imports and invokes it, `context_bundle:
+memoryContext?.ok ? buildContextSignalFromMemory({...`), not dead code.
+Confirmed zero pre-existing test files for this module:
+$ find services/gateway/test -iname "intent-detection-engine*"
+(no results, before this VTID)
+
+Found the sibling precedent in services/navigator-consult.ts's
+buildMemoryHints(): `cat === 'conversation' || cat === 'notes'` →
+push content, capped at 3. Followed the same category convention here,
+capped at 5 to match this function's own personal_facts.slice(0, 5).
+
+## Fix
+Extended buildContextSignalFromMemory()'s existing item loop
+(services/gateway/src/services/intent-detection-engine.ts) to also
+collect conversation/notes items into recentTopics, truncated to 100
+chars, capped at 5. Removed the `recent_topics: []` TODO stub.
+
+## New test file (written from scratch — no existing coverage to extend)
+services/gateway/test/intent-detection-engine.test.ts — 8 tests: the two
+existing no-op guards (ok:false, empty items), personal_facts unchanged,
+the actual recent_topics fix, no-regression when no conversation/notes
+items exist, the 5-item cap, the 100-char truncation, and
+memory_categories/memory_item_count unaffected.
+
+Initially wrote the file referencing a provisional VTID-03939 before
+actually allocating — the allocator returned VTID-03940 instead (another
+session claimed 03939 in this active shared repo in the interim).
+Corrected via sed across the test file before committing; no VTID-03939
+references remain.
+
+## Targeted test run
+$ cd services/gateway && npx jest test/intent-detection-engine.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+(full output: outputs/jest-new-suite.txt)
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 915 passed, 915 of 916 total
+Tests:       29 skipped, 6 todo, 15076 passed, 15111 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"intent-recent-topics-fix"}'
+{"ok":true,"vtid":"VTID-03940","num":3940,"id":"7274da7e-1103-490b-81de-ccf2e429bd4f"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb) to
+set title/summary, status='in_progress', spec_status='approved'.
+
+## Branch hygiene note
+This session's local checkout was left on `main` after fast-forwarding it
+to origin/main during Rung 1's cleanup, and the fix was initially edited
+directly on that local `main` by mistake. Caught before committing —
+`git checkout -b rung2-vtid-03940` moved the uncommitted working-tree
+changes onto a dedicated branch cleanly (no reset/discard needed) before
+any commit was made on `main`.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/services/intent-detection-engine.ts,
+services/gateway/test/intent-detection-engine.test.ts,
+docs/validation/VTID-03940/** — all within the gateway_backend profile's
+allowed paths.

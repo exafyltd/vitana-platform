@@ -1,0 +1,71 @@
+VTID-03828 — commands.log
+==========================
+
+## VTID self-allocation (governed gateway endpoint, real staging)
+
+$ curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"DEV","module":"operator-onramp-staging-enable"}'
+-> {"ok":true,"vtid":"VTID-03828","num":3828,"id":"5efc1aa3-4cd2-41f2-92a9-11ad56ae4dae"}
+
+$ curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03828 \
+    -H "Content-Type: application/json" \
+    -d '{"title":"Operator: enable DeepSeek execution on-ramp on staging","status":"in_progress","summary":"..."}'
+-> {"id":"VTID-03828","vtid":"VTID-03828","title":"Operator: enable DeepSeek execution on-ramp on staging","status":"in_progress"}
+   (title validation required a "<System Area>: " prefix and <=60 chars —
+   both errors surfaced live and were corrected before this succeeded)
+
+## Config change
+
+Edited .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml:
+  - Added a comment block explaining the flag, its real-world consequence,
+    why staging-only, and rollback (matching this file's own established
+    convention for every other staging-pinned flag).
+  - Added "OPERATOR_EXECUTION_ONRAMP_ENABLED" to the environment strip-list
+    (so a stale inherited value can't survive alongside the re-added one).
+  - Added {name:"OPERATOR_EXECUTION_ONRAMP_ENABLED", value:"true"} to the
+    re-add list.
+
+## jq program validated for real (this file has broken this exact block
+## twice before via untested edits — VTID-03505, VTID-03549)
+
+$ python3 - <<'PY'
+# extracted the jq program text between the known start/end markers
+PY
+$ jq --arg IMG "img" --arg SHA "sha" --arg SHORT "short" \
+     --arg NOVA_ENABLED "true" --arg NOVA_USERS "u" --arg NOVA_TENANTS "t" \
+     --arg SEC_JWT "j" --arg SEC_ANON "a" --arg SEC_GEMINI "g" --arg SEC_OPENAI "o" \
+     --arg SEC_DEEPSEEK "d" --arg SEC_AURORA "au" --arg TASK_ROLE "role" \
+     -f /tmp/extracted.jq fake-taskdef.json
+-> ran cleanly against a synthetic task-definition JSON; output confirmed
+   {"name":"OPERATOR_EXECUTION_ONRAMP_ENABLED","value":"true"} present
+   exactly once in containerDefinitions[0].environment, in the right
+   place, with every other existing flag/secret untouched.
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+-> YAML: valid
+
+## Tests
+
+$ cd services/gateway && npx jest test/vtid-03820-onramp-staging-flag-pinned.test.ts --silent=false
+-> outputs/jest-vtid-03828-filter.txt: 1/1 suite, 4/4 tests passing
+
+$ npx tsc --noEmit
+-> exit 0, no output (clean)
+
+$ npx jest --silent=false
+-> outputs/jest-full-suite-tail.txt (tail): 754/755 suites (1 pre-existing
+   skip), 13,815/13,850 tests passing, 0 failures
+
+## Acceptance-mapping self-check (this exact gate rejected VTID-03823's
+## first push earlier this session — checked locally before pushing this time)
+
+$ VTID=VTID-03828 python3 -c "<replicate the gate's own 12-line-window check>"
+-> Acceptance mapping OK
+
+## Not run
+
+No live on-ramp invocation (no target VTID chosen, no plan/files supplied)
+— see acceptance.md "Deliberately NOT attempted". No AWS CLI access from
+this session to independently confirm the live ECS task definition beyond
+what the deploy workflow's own post-deploy smoke check reports.

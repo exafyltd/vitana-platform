@@ -1,0 +1,5 @@
+Mutation 1 (route): cap disabled in GET /, /count and the voice list; typed-action filter removed from the voice list
+  -> 3 of the 6 VTID-04523 route tests fail (lineup, badge, voice list).
+Mutation 2 (lineup-cap.ts): selectExcessOpenRows always returns []
+  -> 3 of 9 tests in vtid-04523-community-autopilot-lineup-cap.test.ts fail.
+Both restored; all green.

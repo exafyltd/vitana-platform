@@ -1,0 +1,24 @@
+{
+  "vtid": "VTID-04175",
+  "execution_id": "e39f056a-2fdc-448d-93a5-579cd6e06dd9",
+  "finding_id": "79c8a5c6-9c6f-4959-8152-0a766b4b89e4",
+  "plan_version": 1,
+  "branch": "dev-autopilot/e39f056a",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "services/gateway/src/services/operator-bootstrap-pack.ts",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/console-task-12-bootstrap-flag-visibility.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T22:06:59.256Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

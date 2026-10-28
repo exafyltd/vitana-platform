@@ -1,0 +1,248 @@
+/**
+ * VTID-04364: the single write path for memory facts.
+ *
+ * Before this module, six call sites each built their own `write_fact` RPC
+ * call. Two of them ran the Identity Lock check, one embedded the new row,
+ * one mirrored it to the tier-2 `mem_facts` table, and none did all three.
+ * That is how the two fact tables drifted apart and how most facts ended up
+ * with no embedding (docs/MEMORY-SYSTEM-PLAN.md, defect D8).
+ *
+ * `rememberFact()` does the same steps for every caller:
+ *   1. the Identity Lock check (VTID-01952). The DB trigger enforces it
+ *      too; this check runs first so a blocked write is logged with its actor;
+ *   2. the forgotten-marker check (VTID-04441): an inferred value the user
+ *      deleted in the Memory Garden is not written again, and an explicit
+ *      user statement clears the marker;
+ *   3. the `write_fact` RPC. The database decides whether to insert,
+ *      supersede, or keep the existing row (VTID-04341);
+ *   4. a Titan embedding for the written row, fire-and-forget.
+ *      AP-0910 re-embeds any row this step misses;
+ *   5. every other current row of the key is retired (VTID-04686), so one
+ *      key never holds two current values.
+ *
+ * The transport is the caller's choice: pass `client` to use a supplied
+ * Supabase client (the automation handlers do), or leave it out to use a
+ * service-role REST call. Both send the identical payload.
+ */
+
+import type { SupabaseClient } from '@supabase/supabase-js';
+import { assertWriteFact } from '../memory-audit';
+import { checkForgottenGate, clientForgottenStore, restForgottenStore, type ForgottenStore } from './forgotten';
+
+export type FactProvenance =
+  | 'user_stated'
+  | 'user_stated_via_settings'
+  | 'user_edited'
+  | 'assistant_inferred'
+  | 'system_observed'
+  | 'behavior_inferred'
+  | string;
+
+export interface RememberFactInput {
+  tenant_id: string;
+  user_id: string;
+  fact_key: string;
+  fact_value: string;
+  entity?: 'self' | 'disclosed' | string;
+  fact_value_type?: string;
+  provenance_source: FactProvenance;
+  provenance_confidence?: number;
+  provenance_utterance_id?: string | null;
+  thread_id?: string | null;
+  /** Who is writing, e.g. 'inline-fact-extractor'. Recorded by the Identity Lock audit. */
+  actor: string;
+}
+
+export interface RememberFactOptions {
+  /** Use this client's `.rpc()` instead of a REST call. */
+  client?: SupabaseClient | null;
+  /** Embed the written row. Defaults to true. */
+  embed?: boolean;
+  /** Override the forgotten-marker store (tests). Defaults to `client`, else REST. */
+  forgottenStore?: ForgottenStore | null;
+  /**
+   * VTID-04686: after the write, retire every other current row of the key
+   * (other entities included). Defaults to true.
+   */
+  retireOthers?: boolean;
+}
+
+export interface RememberFactResult {
+  ok: boolean;
+  fact_id?: string;
+  error?: string;
+  /**
+   * Set when the write was refused and no RPC was sent: the Identity Lock, or
+   * a value the user forgot in the Memory Garden (VTID-04441).
+   */
+  blocked?: 'identity_lock' | 'forgotten';
+}
+
+const DEFAULT_CONFIDENCE = 0.9;
+
+export function buildWriteFactPayload(input: RememberFactInput): Record<string, unknown> {
+  const payload: Record<string, unknown> = {
+    p_tenant_id: input.tenant_id,
+    p_user_id: input.user_id,
+    p_fact_key: input.fact_key,
+    p_fact_value: input.fact_value,
+    p_entity: input.entity || 'self',
+    p_fact_value_type: input.fact_value_type || 'text',
+    p_provenance_source: input.provenance_source || 'user_stated',
+    p_provenance_confidence: input.provenance_confidence ?? DEFAULT_CONFIDENCE,
+  };
+  // The RPC defaults both to NULL; send them only when set so the payload
+  // stays identical to what the pre-VTID-04364 callers sent.
+  if (input.provenance_utterance_id) payload.p_provenance_utterance_id = input.provenance_utterance_id;
+  if (input.thread_id) payload.p_thread_id = input.thread_id;
+  return payload;
+}
+
+async function writeViaRest(payload: Record<string, unknown>): Promise<{ id: string | null; error: string | null }> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return { id: null, error: 'Supabase not configured' };
+  const response = await fetch(`${url}/rest/v1/rpc/write_fact`, {
+    method: 'POST',
+    headers: {
+      'Content-Type': 'application/json',
+      apikey: key,
+      Authorization: `Bearer ${key}`,
+    },
+    body: JSON.stringify(payload),
+  });
+  if (!response.ok) {
+    const body = await response.text().catch(() => '');
+    return { id: null, error: `${response.status} ${body.slice(0, 200)}`.trim() };
+  }
+  const id = await response.json().catch(() => null);
+  return { id: typeof id === 'string' ? id : null, error: null };
+}
+
+async function writeViaClient(
+  client: SupabaseClient,
+  payload: Record<string, unknown>,
+): Promise<{ id: string | null; error: string | null }> {
+  const { data, error } = await client.rpc('write_fact', payload);
+  if (error) return { id: null, error: error.message || String(error) };
+  return { id: typeof data === 'string' ? data : null, error: null };
+}
+
+function embedAsync(factId: string, key: string, value: string): void {
+  void import('../memory-facts-service')
+    .then((m) => m.generateFactEmbeddingAsync(factId, key, value))
+    .catch(() => {
+      /* best-effort; AP-0910 re-embeds rows with a NULL embedding */
+    });
+}
+
+export async function rememberFact(
+  input: RememberFactInput,
+  options: RememberFactOptions = {},
+): Promise<RememberFactResult> {
+  if (!input.tenant_id || !input.user_id) return { ok: false, error: 'tenant_id and user_id are required' };
+  if (!input.fact_key || typeof input.fact_value !== 'string' || !input.fact_value.trim()) {
+    return { ok: false, error: 'fact_key and a non-empty fact_value are required' };
+  }
+
+  const lock = await assertWriteFact({
+    fact_key: input.fact_key,
+    provenance_source: input.provenance_source,
+    provenance_confidence: input.provenance_confidence ?? DEFAULT_CONFIDENCE,
+    actor_id: input.actor,
+    source_engine: input.actor,
+    tenant_id: input.tenant_id,
+    user_id: input.user_id,
+  });
+  if (!lock.ok) {
+    return {
+      ok: false,
+      blocked: 'identity_lock',
+      error: `identity_locked: ${input.fact_key} cannot be written from this source`,
+    };
+  }
+
+  // VTID-04441: a value the user forgot is not re-learned from inference.
+  const store =
+    options.forgottenStore !== undefined
+      ? options.forgottenStore
+      : options.client
+        ? clientForgottenStore(options.client)
+        : restForgottenStore();
+  const gate = await checkForgottenGate(
+    store,
+    { tenant_id: input.tenant_id, user_id: input.user_id, fact_key: input.fact_key },
+    input.fact_value,
+    input.provenance_source,
+  );
+  if (!gate.allow) {
+    return { ok: false, blocked: 'forgotten', error: `forgotten: ${input.fact_key} was forgotten by the user` };
+  }
+
+  const payload = buildWriteFactPayload(input);
+  let result: { id: string | null; error: string | null };
+  try {
+    result = options.client ? await writeViaClient(options.client, payload) : await writeViaRest(payload);
+  } catch (err: any) {
+    return { ok: false, error: err?.message || String(err) };
+  }
+  if (result.error) return { ok: false, error: result.error };
+
+  if (result.id && options.embed !== false) embedAsync(result.id, input.fact_key, input.fact_value);
+  if (result.id && options.retireOthers !== false) {
+    // VTID-04686: a key names one thing, whoever wrote it. write_fact keeps
+    // one current row per (key, entity), so a value added in the Memory
+    // Garden (self) and the same fact inferred from speech (disclosed) both
+    // stayed current — live suite B-CONF-04 read "May 5th" and "May 5".
+    try {
+      const retire = options.client ? retireViaClient : retireViaRest;
+      await retire(options.client as SupabaseClient, input.tenant_id, input.user_id, input.fact_key, result.id);
+    } catch (err: any) {
+      console.warn(`[VTID-04686] retiring other rows of ${input.fact_key} failed: ${err?.message || String(err)}`);
+    }
+  }
+  return { ok: true, fact_id: result.id ?? undefined };
+}
+
+async function retireViaClient(
+  client: SupabaseClient,
+  tenantId: string,
+  userId: string,
+  factKey: string,
+  keepId: string,
+): Promise<void> {
+  const { error } = await client
+    .from('memory_facts')
+    .update({ superseded_at: new Date().toISOString(), superseded_by: keepId })
+    .eq('tenant_id', tenantId)
+    .eq('user_id', userId)
+    .eq('fact_key', factKey)
+    .is('superseded_at', null)
+    .neq('id', keepId);
+  if (error) throw new Error(error.message || String(error));
+}
+
+async function retireViaRest(
+  _client: SupabaseClient,
+  tenantId: string,
+  userId: string,
+  factKey: string,
+  keepId: string,
+): Promise<void> {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return;
+  const q = new URLSearchParams({
+    tenant_id: `eq.${tenantId}`,
+    user_id: `eq.${userId}`,
+    fact_key: `eq.${factKey}`,
+    superseded_at: 'is.null',
+    id: `neq.${keepId}`,
+  });
+  const response = await fetch(`${url}/rest/v1/memory_facts?${q.toString()}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json', apikey: key, Authorization: `Bearer ${key}`, Prefer: 'return=minimal' },
+    body: JSON.stringify({ superseded_at: new Date().toISOString(), superseded_by: keepId }),
+  });
+  if (!response.ok) throw new Error(`${response.status} ${(await response.text().catch(() => '')).slice(0, 200)}`);
+}

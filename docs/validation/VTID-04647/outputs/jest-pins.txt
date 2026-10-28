@@ -1,0 +1,6 @@
+    ✓ captures the rollback target before the service is rolled (6 ms)
+    ✓ checks after the smoke gate, with GET requests only (2 ms)
+    ✓ rolls back to the captured task definition when a later step fails (3 ms)
+    ✓ records a rollback as prod.deploy.rolled_back (1 ms)
+    ✓ stays dispatch-only (2 ms)
+Tests:       5 passed, 5 total

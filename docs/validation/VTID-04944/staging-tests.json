@@ -1,0 +1,5 @@
+{"vtid":"VTID-04944","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"build-info answers JSON","path":"/api/v1/admin/build-info","expect_status":200,"expect_content_type":"json"},
+{"kind":"existing","ref":"npx jest test/vtid-04896-prod-reward-sweep-pin.test.ts test/vtid-04899-autopilot-reward-switch.test.ts test/vtid-04897-prod-commerce-mcp-pin.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts","cwd":"services/gateway","reason":"The change is to the production deploy workflow only; staging behaviour is unchanged (the sweep is excluded by VITANA_ENV=staging, the autopilot reward was already pinned true there). The pins and the verify step are proven by these tests (mutation-checked); the production proof is the next publish's verify step printing REWARD_SWEEP_ENABLED=true (expected true) without overrides."}
+]}

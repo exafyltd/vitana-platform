@@ -1,0 +1,28 @@
+{
+  "vtid": "VTID-04719",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Taste Alignment (D39) health reads ok:true (its data layer exists)",
+      "path": "/api/v1/taste-alignment/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Taste Alignment (D39) health probes taste_profile_get",
+      "path": "/api/v1/taste-alignment/health",
+      "expect_body_contains": "taste_profile_get"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04716-feature-data-layers.test.ts",
+      "cwd": "services/gateway",
+      "reason": "shipped in the VTID-04716 PR; migration contracts for Taste Alignment (D39) live there"
+    }
+  ]
+}

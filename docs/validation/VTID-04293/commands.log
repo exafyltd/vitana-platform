@@ -1,0 +1,9 @@
+# Evidence gathering (read-only, Supabase MCP, staging data)
+select ... from dev_autopilot_executions where finding_id like 'b560c306%'  -> 257ba366 (21:03, awaiting_approval), 1164a32d (21:09, awaiting_approval), e4bcee32 (21:24, running)
+select indexdef from pg_indexes where indexname='dev_autopilot_executions_finding_inflight_uniq' -> WHERE status IN (cooling,running,ci,merging,deploying,verifying)
+
+# Verification
+cd services/gateway && npx tsc --noEmit -p .                         -> exit 0
+npx jest test/vtid-04293-approve-inflight-guard.test.ts             -> 5 passed
+npx jest <approveAutoExecute + dev-autopilot suites, 32 suites>     -> 547 passed after the fetch-sequence update
+mutation: guard disabled -> vtid-04293 suite 1 failed / 4 passed; restored -> 5 passed

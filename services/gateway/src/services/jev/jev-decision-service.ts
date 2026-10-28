@@ -1,0 +1,267 @@
+/**
+ * VTID-04473: the one entry point every Jev caller goes through.
+ *
+ *   gate (role → plane) → decision lookup → input validation
+ *   → plane × data policy + tenant flag + monthly budget (VTID-04754)
+ *   → state build → PII policy → size bound → callJev → answer interpretation
+ *   → confidence threshold → telemetry → persisted spend (VTID-04754)
+ *
+ * Never throws. A decision that cannot be made returns outcome 'fallback'
+ * with a named reason, so the caller keeps its existing path — never a
+ * silent default (CLAUDE.md NEVER 35). An answer under the decision's
+ * threshold returns 'abstained' with the answers attached for display, and
+ * the caller must treat it like a fallback.
+ */
+
+import { callJev, jevModel, JevCallResult } from './jev-client';
+import {
+  choiceProbability,
+  scoreLevel,
+  JevAnswer,
+  JevAnswers,
+  JevChoiceAnswer,
+  JevNoulAnswer,
+  JevQuestion,
+  JevScoreAnswer,
+} from './jev-types';
+import { resolveJevAccess, roleMayUseDecision, JevCaller, JevPlane } from './jev-access';
+import { applyPiiPolicy } from './jev-pii';
+import { getJevDecision, JevDecisionDef } from './jev-decisions';
+import { emitJevDecisionEvent, jevCostUsd, JevOutcome } from './jev-telemetry';
+import { evaluateJevPolicy, isTenantScoped, isJevBudgetedPlane, jevSpendPlane, JEV_BUDGETED_PLANES, JEV_DEFAULT_TENANT_FLAG, JEV_PLATFORM_TENANT } from './jev-policy';
+import { maybeRaiseBudgetAlerts } from './jev-budget-alerts';
+import { CommunityRateLimiter, getDefaultCommunityRateLimiter } from './jev-community-rate';
+import { checkMemberQuota, getDefaultMemberQuotaStore, isQuotaLimited, MemberQuotaStore } from './jev-member-quota';
+import { getDefaultJevControl, JevControl } from './jev-tenant-control';
+
+/** Jev allows 64k tokens per request; stay far below it without a tokenizer. */
+export const JEV_MAX_STATE_CHARS = 60_000;
+export const JEV_MAX_BATCH = 500;
+export const JEV_DEFAULT_CONCURRENCY = 8;
+
+export interface InterpretedAnswer {
+  type: JevQuestion['type'];
+  /** noul: probability of yes; choice: the chosen option; score: 0-based level. */
+  value: boolean | string | number;
+  label?: string;
+  probability?: number;
+  confidence: number;
+}
+
+export type JevDecisionResult =
+  | {
+      ok: true;
+      decision: string;
+      outcome: 'decided' | 'abstained';
+      verdict: InterpretedAnswer;
+      answers: Record<string, InterpretedAnswer>;
+      plane: JevPlane;
+      model: string;
+      input_tokens: number;
+      cost_usd: number;
+      latency_ms: number;
+      redactions: number;
+    }
+  | {
+      ok: false;
+      decision: string;
+      outcome: 'fallback' | 'denied' | 'invalid';
+      reason: string;
+      detail?: string;
+      status?: number;
+      plane?: JevPlane | null;
+    };
+
+export interface DecideOptions {
+  source: string;
+  /** Test seam. */
+  call?: (args: Parameters<typeof callJev>[0]) => Promise<JevCallResult>;
+  env?: NodeJS.ProcessEnv;
+  /** Tenant flag + spend store. Defaults to the Supabase-backed control. */
+  control?: JevControl;
+  /**
+   * VTID-04872: the member a community decision is for. A system caller
+   * ranking for a member names them here; on the member plane the caller is
+   * the member. Without one, a quota-limited call is not counted.
+   */
+  member_id?: string;
+  /** VTID-04872: per-member daily counter. Defaults to the Supabase-backed store. */
+  quota?: MemberQuotaStore;
+  /** VTID-04874: community share of the Jev rate limit. Defaults to the per-task bucket. */
+  communityRate?: CommunityRateLimiter;
+}
+
+export function interpretAnswer(q: JevQuestion, a: JevAnswer): InterpretedAnswer {
+  if (q.type === 'noul') {
+    const p = (a as JevNoulAnswer).noul;
+    return { type: 'noul', value: p >= 0.5, probability: p, confidence: Math.max(p, 1 - p) };
+  }
+  if (q.type === 'choice') {
+    const c = a as JevChoiceAnswer;
+    return { type: 'choice', value: c.choice, label: q.criteria[c.choice], probability: choiceProbability(c), confidence: c.confidence };
+  }
+  const s = a as JevScoreAnswer;
+  const level = scoreLevel(s, q.criteria.length);
+  return { type: 'score', value: level, label: q.criteria[level], confidence: s.confidence };
+}
+
+export function interpretAnswers(def: JevDecisionDef, answers: JevAnswers): Record<string, InterpretedAnswer> {
+  const out: Record<string, InterpretedAnswer> = {};
+  for (const [name, q] of Object.entries(def.questions)) out[name] = interpretAnswer(q, answers[name]);
+  return out;
+}
+
+export async function decide(name: string, input: unknown, caller: JevCaller, opts: DecideOptions): Promise<JevDecisionResult> {
+  const env = opts.env ?? process.env;
+  const def = getJevDecision(name);
+  if (!def) return { ok: false, decision: name, outcome: 'invalid', reason: 'unknown_decision', status: 404 };
+
+  const access = resolveJevAccess(caller, env);
+  if (!access.allowed) {
+    return { ok: false, decision: name, outcome: 'denied', reason: access.reason, plane: access.plane, status: 403 };
+  }
+  if (!roleMayUseDecision(access.role, def.roles)) {
+    return { ok: false, decision: name, outcome: 'denied', reason: 'decision_not_permitted_for_role', plane: access.plane, status: 403 };
+  }
+
+  const parsed = def.input.safeParse(input);
+  if (!parsed.success) {
+    return {
+      ok: false,
+      decision: name,
+      outcome: 'invalid',
+      reason: 'invalid_input',
+      detail: parsed.error.issues.slice(0, 5).map((i) => `${i.path.join('.') || 'input'}: ${i.message}`).join('; '),
+      status: 400,
+    };
+  }
+
+  const base = {
+    decision: name,
+    plane: access.plane,
+    role: access.role,
+    data: def.data,
+    actor_id: caller.actor_id,
+    tenant_id: caller.tenant_id ?? null,
+    source: opts.source,
+    ...(caller.cross_tenant ? { cross_tenant: true } : {}),
+    ...(caller.identity_gaps?.length ? { identity_gaps: caller.identity_gaps } : {}),
+  };
+  const fallback = (reason: string, extra: Partial<{ latency_ms: number; detail: string; status: number; outcome: JevOutcome; model: string }> = {}): JevDecisionResult => {
+    emitJevDecisionEvent({
+      ...base,
+      outcome: extra.outcome ?? 'fallback',
+      reason,
+      model: extra.model,
+      latency_ms: extra.latency_ms ?? 0,
+      input_tokens: 0,
+      cost_usd: 0,
+    });
+    return { ok: false, decision: name, outcome: 'fallback', reason, detail: extra.detail, status: extra.status ?? 503, plane: access.plane };
+  };
+
+  // VTID-04754: plane × data policy, tenant flag and budget — before any token is spent.
+  const denied = (reason: string, status = 403): JevDecisionResult => ({ ok: false, decision: name, outcome: 'denied', reason, status, plane: access.plane });
+  if (isTenantScoped(def.data) && !caller.tenant_id) {
+    return denied(caller.exafy_admin ? 'target_tenant_required' : 'tenant_required', 400);
+  }
+  const control = opts.control ?? getDefaultJevControl();
+  const tenantKey = caller.tenant_id || JEV_PLATFORM_TENANT;
+  const flag = caller.tenant_id ? await control.getTenantFlag(caller.tenant_id) : JEV_DEFAULT_TENANT_FLAG;
+  if (!flag) return fallback('tenant_config_unavailable', { status: 503 });
+  const policy = evaluateJevPolicy({ plane: access.plane, data: def.data, decisionPlanes: def.planes, flag, env });
+  if (!policy.allowed) return denied(policy.reason);
+  // VTID-04857: the budget caps community/customer spend only; internal and
+  // system_autopilot calls are never throttled by it (internal is unlimited).
+  const spendPlane = jevSpendPlane(access.plane, def.data);
+  const budget = isJevBudgetedPlane(spendPlane) ? flag.monthly_budget_usd : null;
+  let budgetedSpent = 0;
+  if (budget !== null) {
+    const spent = await control.getMonthSpend(tenantKey, JEV_BUDGETED_PLANES);
+    if (spent === null) return fallback('budget_check_failed', { status: 503 });
+    if (spent >= budget) return fallback('tenant_budget_exhausted', { status: 429 });
+    budgetedSpent = spent;
+  }
+
+  // VTID-04872: Class C is off on the member plane; Class B is quota-limited per member per day.
+  if (spendPlane === 'member' && def.community_class === 'C') return denied('community_class_c_off');
+  const memberId = opts.member_id ?? (access.plane === 'member' ? caller.actor_id : undefined);
+  if (memberId && isQuotaLimited(def, spendPlane)) {
+    const q = await checkMemberQuota({ decision: name, tenantId: tenantKey, memberId, store: opts.quota ?? getDefaultMemberQuotaStore(), env });
+    if (!q.allowed) return fallback(q.reason, { status: q.reason === 'member_daily_quota_exhausted' ? 429 : 503 });
+  }
+  // VTID-04874: member spend takes a token from the community share of the account rate limit.
+  if (spendPlane === 'member' && !(opts.communityRate ?? getDefaultCommunityRateLimiter()).admit(name)) {
+    return fallback('community_rate_limited', { status: 429 });
+  }
+
+  const pii = applyPiiPolicy(def.buildState(parsed.data), def.pii);
+  if (!pii.ok) return fallback('pii_forbidden', { detail: `contains ${pii.kinds.join(', ')}`, status: 422 });
+
+  if (JSON.stringify(pii.value).length > JEV_MAX_STATE_CHARS) {
+    return fallback('state_too_large', { status: 413 });
+  }
+
+  const call = opts.call ?? callJev;
+  const res = await call({ state: pii.value, questions: def.questions, env });
+  if (!res.ok) {
+    // not_configured is the expected inert state, not an error.
+    const outcome: JevOutcome = res.reason === 'not_configured' ? 'fallback' : 'failed';
+    return fallback(res.reason, { latency_ms: res.latency_ms, detail: res.error, outcome, model: jevModel(env) });
+  }
+
+  const answers = interpretAnswers(def, res.answers);
+  const verdict = answers[def.primary];
+  const outcome: 'decided' | 'abstained' = verdict.confidence >= def.threshold ? 'decided' : 'abstained';
+  const cost = jevCostUsd(res.model, res.usage.input_tokens);
+  void control.recordSpend(tenantKey, spendPlane, res.usage.input_tokens, cost);
+  if (budget !== null) void maybeRaiseBudgetAlerts({ tenantId: tenantKey, budgetUsd: budget, spentBeforeUsd: budgetedSpent, costUsd: cost });
+  emitJevDecisionEvent({
+    ...base,
+    outcome,
+    model: res.model,
+    latency_ms: res.latency_ms,
+    input_tokens: res.usage.input_tokens,
+    cost_usd: cost,
+    confidence: verdict.confidence,
+    reason: outcome === 'abstained' ? 'low_confidence' : undefined,
+    redactions: pii.redactions,
+  });
+  return {
+    ok: true,
+    decision: name,
+    outcome,
+    verdict,
+    answers,
+    plane: access.plane,
+    model: res.model,
+    input_tokens: res.usage.input_tokens,
+    cost_usd: cost,
+    latency_ms: res.latency_ms,
+    redactions: pii.redactions,
+  };
+}
+
+/**
+ * Runs one decision over many inputs with bounded concurrency (Jev allows
+ * 1,200 requests/minute; 8 in flight at ~1s each stays well under it).
+ * Results keep input order.
+ */
+export async function decideMany(
+  name: string,
+  inputs: unknown[],
+  caller: JevCaller,
+  opts: DecideOptions & { concurrency?: number },
+): Promise<JevDecisionResult[]> {
+  const limit = Math.max(1, Math.min(opts.concurrency ?? JEV_DEFAULT_CONCURRENCY, 32));
+  const results: JevDecisionResult[] = new Array(inputs.length);
+  let next = 0;
+  const worker = async () => {
+    while (next < inputs.length) {
+      const i = next++;
+      results[i] = await decide(name, inputs[i], caller, opts);
+    }
+  };
+  await Promise.all(Array.from({ length: Math.min(limit, inputs.length) }, worker));
+  return results;
+}

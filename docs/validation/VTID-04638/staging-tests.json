@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04638",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "http", "name": "Memory Garden route answers and requires auth", "path": "/api/v1/memory/garden/entries", "expect_status": 401 },
+    { "kind": "existing", "ref": "npm run test:memory", "cwd": "services/gateway",
+      "reason": "the memory conformance suite runs the real remember_fact, extractor and write_fact paths over an in-memory database; this change is pinned there (A-CONF-11, A-DUP-07, A-DUP-08, A-DUP-03, A-CONF-09) and a read-only staging suite cannot write facts" }
+  ]
+}

@@ -1,0 +1,243 @@
+{
+  "$schema": "VTID-01164 Skill Pack v1 Example Payloads",
+  "description": "Example invocation payloads for each skill in the Sub-Agent Skill Pack v1",
+
+  "worker.common.check_memory_first": {
+    "description": "Enforces memory-first governance before any apply_patch",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "query": "Add new endpoint for user authentication with JWT tokens",
+      "target_paths": [
+        "services/gateway/src/routes/auth.ts",
+        "services/gateway/src/services/auth-service.ts"
+      ],
+      "include_oasis_history": true,
+      "include_kb": true
+    },
+    "expected_output": {
+      "ok": true,
+      "memory_hit": true,
+      "confidence": 0.75,
+      "relevant_refs": [
+        {
+          "type": "vtid",
+          "id": "VTID-00542",
+          "title": "Implement JWT authentication",
+          "relevance_score": 0.8,
+          "summary": "Added JWT-based authentication with refresh tokens"
+        }
+      ],
+      "recommendation": "consult_prior_vtid",
+      "prior_vtids": ["VTID-00542", "VTID-00601"]
+    }
+  },
+
+  "worker.backend.security_scan": {
+    "description": "Static security scan for OWASP vulnerabilities",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "target_paths": [
+        "services/gateway/src/routes/user.ts",
+        "services/gateway/src/services/user-service.ts"
+      ],
+      "scan_depth": "standard",
+      "categories": ["injection", "auth_bypass", "input_validation"]
+    },
+    "expected_output": {
+      "ok": true,
+      "findings": [
+        {
+          "id": "SQL_INJECTION_TEMPLATE-user.ts-45",
+          "severity": "critical",
+          "category": "injection",
+          "file_path": "services/gateway/src/routes/user.ts",
+          "line_number": 45,
+          "code_snippet": "const query = `SELECT * FROM users WHERE id = ${userId}`",
+          "description": "SQL query using template literals with variables",
+          "recommendation": "Use parameterized queries instead of template literals for SQL"
+        }
+      ],
+      "summary": {
+        "total_findings": 1,
+        "critical": 1,
+        "high": 0,
+        "medium": 0,
+        "low": 0,
+        "files_scanned": 2
+      },
+      "passed": false
+    }
+  },
+
+  "worker.memory.validate_rls_policy": {
+    "description": "Validates RLS policies for tenant isolation",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "policy_content": "CREATE POLICY \"user_tenant_access\" ON users FOR ALL USING (tenant_id = current_tenant_id()) WITH CHECK (tenant_id = current_tenant_id());",
+      "strict_mode": true
+    },
+    "expected_output": {
+      "ok": true,
+      "valid": true,
+      "policies_checked": [
+        {
+          "table": "users",
+          "policy_name": "user_tenant_access",
+          "policy_type": "ALL",
+          "valid": true,
+          "issues": []
+        }
+      ],
+      "violations": [],
+      "tenant_helpers_used": ["current_tenant_id()"],
+      "summary": {
+        "total_policies": 1,
+        "valid_policies": 1,
+        "violations_count": 0,
+        "tables_affected": ["users"]
+      }
+    }
+  },
+
+  "worker.memory.preview_migration": {
+    "description": "Dry-run migration sanity checks",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "migration_content": "BEGIN;\nCREATE TABLE IF NOT EXISTS user_preferences (\n  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),\n  user_id UUID NOT NULL,\n  preferences JSONB DEFAULT '{}'\n);\nCOMMIT;",
+      "file_path": "supabase/migrations/20260104150000_vtid_01165_user_preferences.sql",
+      "check_naming": true,
+      "check_transactions": true
+    },
+    "expected_output": {
+      "ok": true,
+      "safe_to_apply": true,
+      "warnings": [],
+      "blockers": [],
+      "operations_detected": [
+        {
+          "type": "CREATE_TABLE",
+          "target": "user_preferences",
+          "line_number": 2,
+          "is_destructive": false
+        }
+      ],
+      "naming_check": {
+        "valid": true,
+        "expected_pattern": "YYYYMMDDHHMMSS_vtid_XXXXX_description.sql",
+        "actual_filename": "20260104150000_vtid_01165_user_preferences.sql",
+        "issues": []
+      },
+      "transaction_check": {
+        "has_begin": true,
+        "has_commit": true,
+        "has_rollback_handler": false,
+        "recommendation": "Transaction guards present"
+      },
+      "summary": {
+        "total_operations": 1,
+        "destructive_operations": 0,
+        "warnings_count": 0,
+        "blockers_count": 0
+      }
+    }
+  },
+
+  "worker.backend.analyze_service": {
+    "description": "Analyzes existing services to prevent duplication",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "service_name": "user-service",
+      "keywords": ["authentication", "jwt", "login"],
+      "feature_description": "Add user profile update endpoint",
+      "file_patterns": [
+        "services/gateway/src/routes/**/*.ts",
+        "services/gateway/src/services/**/*.ts"
+      ]
+    },
+    "expected_output": {
+      "ok": true,
+      "existing_services": [
+        {
+          "name": "auth",
+          "file_path": "services/gateway/src/routes/auth.ts",
+          "type": "route",
+          "endpoints": [
+            {"method": "POST", "path": "/login", "handler": "auth"},
+            {"method": "POST", "path": "/refresh", "handler": "auth"}
+          ],
+          "relevance_score": 0.85
+        }
+      ],
+      "similar_patterns": [
+        {
+          "pattern_name": "Zod Validation",
+          "file_path": "services/gateway/src/routes/auth.ts",
+          "description": "Uses Zod for request body validation",
+          "code_example": "const schema = z.object({ ... })",
+          "applicable_to": "API endpoints with request bodies"
+        }
+      ],
+      "implementation_recommendation": {
+        "location": "services/gateway/src/routes/user.ts",
+        "pattern_to_follow": "Express Router pattern",
+        "existing_service_to_extend": "services/gateway/src/routes/auth.ts",
+        "notes": [
+          "Found highly relevant existing service: auth",
+          "Use Zod for request validation",
+          "Emit OASIS events for observability"
+        ]
+      },
+      "potential_duplicates": [],
+      "summary": {
+        "services_found": 5,
+        "patterns_found": 3,
+        "files_analyzed": 25,
+        "duplicate_risk": "low"
+      }
+    }
+  },
+
+  "worker.frontend.validate_accessibility": {
+    "description": "Static accessibility checks for HTML/JS templates",
+    "example_payload": {
+      "vtid": "VTID-01165",
+      "target_paths": [
+        "services/gateway/src/frontend/command-hub/app.js"
+      ],
+      "severity_threshold": "warning",
+      "checks": ["aria_labels", "keyboard_nav", "semantic_elements", "alt_text"]
+    },
+    "expected_output": {
+      "ok": true,
+      "passed": false,
+      "issues": [
+        {
+          "id": "ICON_BUTTON_NO_LABEL-app.js-125",
+          "severity": "error",
+          "category": "aria_labels",
+          "file_path": "services/gateway/src/frontend/command-hub/app.js",
+          "line_number": 125,
+          "element": "<button><i class=\"fa-trash\"></i></button>",
+          "issue": "Icon-only button missing accessible label",
+          "recommendation": "Add aria-label attribute describing the button action",
+          "wcag_ref": "WCAG 2.1 - 1.1.1 Non-text Content"
+        }
+      ],
+      "summary": {
+        "total_issues": 3,
+        "errors": 1,
+        "warnings": 2,
+        "info": 0,
+        "files_checked": 1,
+        "elements_analyzed": 45
+      },
+      "checks_performed": ["aria_labels", "keyboard_nav", "semantic_elements", "alt_text"]
+    }
+  },
+
+  "run_command": {
+    "description": "Local run command to test skills",
+    "command": "cd services/agents/workforce && npx vitest run skills/__tests__/skills.test.ts",
+    "alternative": "npx ts-node -e \"import { executeSkill } from './skills'; executeSkill('worker.backend.security_scan', { vtid: 'VTID-TEST', target_paths: ['test.ts'], diff_content: 'const x = 1;' }, 'VTID-TEST').then(console.log)\""
+  }
+}

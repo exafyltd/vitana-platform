@@ -1,0 +1,60 @@
+$ curl -sS -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"frontend","module":"command-hub"}'
+{"ok":true,"vtid":"VTID-03917","num":3917,"id":"1e26b388-d063-4b47-beee-62471bc38b96"}
+
+$ cd services/gateway && node --check src/frontend/command-hub/app.js && echo "SYNTAX OK"
+SYNTAX OK
+
+$ npx jest test/vtid-03917-overview-poll-no-full-rerender.test.ts test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+PASS test/vtid-03917-overview-poll-no-full-rerender.test.ts
+  VTID-03917: fetchActionRequired() silent refresh no longer forces a full renderApp()
+    ✓ the silentRefresh branch calls refreshActionRequiredPanel(), not renderApp()
+    ✓ refreshActionRequiredPanel() replaces the existing .action-required-panel node in place
+    ✓ the 30s _actionRequiredTimer still calls fetchActionRequired with silentRefresh=true
+    ✓ a non-silent call (initial load) still does a full renderApp()
+  VTID-03917: fetchOverviewTimeseries() parity fix (defensive — no live silentRefresh caller today)
+    ✓ does not call renderApp() when silentRefresh is true
+  VTID-03917: sibling fetchServiceHealth() pattern this fix now matches
+    ✓ fetchServiceHealth() already branches silentRefresh away from a full renderApp() (unchanged reference behavior)
+PASS test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+  (24 tests, all passing — confirms this fix did not touch the sibling
+   Operator popup regression suite)
+Test Suites: 2 passed, 2 total
+Tests:       30 passed, 30 total
+
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npm run build
+> tsc && npm run copy-frontend && npm run copy-data
+(clean build, dist/frontend/command-hub/app.js regenerated)
+
+$ node --check dist/frontend/command-hub/app.js && echo "SYNTAX OK"
+SYNTAX OK
+
+$ node ../../scripts/ci/command-hub-golden-fingerprint.js
+==========================================
+VTID-0302: Command Hub Golden Fingerprint
+==========================================
+Bundle size: 2485.5 KB
+  FOUND: Golden VTID marker
+  FOUND: Task Board class
+  FOUND: Task Column class
+  FOUND: Task Card class
+  FOUND: ORB idle element
+  FOUND: Header toolbar
+All golden markers verified.
+Fingerprint check PASSED.
+
+$ cd ../.. && GITHUB_HEAD_REF=claude/clever-carson-64d3k5 GITHUB_BASE_REF=main \
+    PR_TITLE="VTID-03917: Command Hub Overview flicker/freeze + sidebar scroll-reset fix" \
+    node scripts/ci/command-hub-ownership-guard.js
+======================================
+VTID-0302: Command Hub Ownership Guard
+======================================
+Branch: claude/clever-carson-64d3k5
+PR Title: VTID-03917: Command Hub Overview flicker/freeze + sidebar scroll-reset fix
+[after commit: changed files under services/gateway/src/frontend/command-hub/
+ matched against ALLOWED_VTID_PATTERN, which now includes VTID-03917]
+Guard check PASSED.

@@ -1,0 +1,973 @@
+/**
+ * Group Chat API Routes — VTID-03089
+ *
+ * Endpoints (mounted at /api/v1/chat/groups):
+ *   GET    /                       — List groups the caller belongs to
+ *   GET    /:id                    — Group info + member list
+ *   GET    /:id/messages           — Paginated group message history
+ *   POST   /:id/send               — Send a message to the group.
+ *                                    Body: { content?, message_type?: 'text'|'attachment'|'voice',
+ *                                    content_data? } — content_data persists in chat_messages.metadata
+ *                                    (e.g. { attachments: [{url, path, mime, filename, size}] }).
+ *                                    @vitana mentions in text trigger Vitana reply.
+ *                                    content_data.mentions ([{user_id, display_name}]) tags
+ *                                    members (VTID-04926): sanitized server-side, stored in
+ *                                    metadata.mentions, and those members get a chat_mention
+ *                                    push instead of the generic new_chat_message one.
+ *                                    Reactions are written client-side via Supabase RLS on
+ *                                    message_reactions (polymorphic on chat_messages.id).
+ *   POST   /:id/read               — Mark all group messages read up to "now"
+ *   PATCH  /:id/messages/:messageId — Edit a message (sender only)
+ *   DELETE /:id/messages/:messageId — Delete a message (sender only)
+ *
+ * Data access for the tables this route owns (chat_groups,
+ * chat_group_members, chat_messages) goes through
+ * ./chat-groups-repository.ts (VTID-03702, Aurora migration B1
+ * data-access seam) instead of calling supabase.from(...) directly.
+ * Reads against the generic profiles/app_users/user_notifications
+ * tables stay inline here, same as other B1 seams leave shared/general
+ * tables alone.
+ */
+
+import { Router, Request, Response } from 'express';
+import {
+  requireAuth,
+  requireTenant,
+  requireExafyAdmin,
+  AuthenticatedRequest,
+} from '../middleware/auth-supabase-jwt';
+import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-invite';
+import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
+import { SHARED_CONTENT_TYPE } from '../services/chat-shared-content';
+import { createClient, SupabaseClient } from '@supabase/supabase-js';
+import { notifyUser } from '../services/notification-service';
+import { coalesceChatPushes, chatConversationKey, type ChatPushItem, type PreparedChatPush } from '../services/chat-push-coalescer';
+import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
+import { processConversationTurn } from '../services/conversation-client';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './chat-groups-repository';
+import * as chatRepo from './chat-repository';
+import { isUuidParam, NO_SEND_IDENTITY, annotateReplies, checkSharedContentSend } from './chat';
+import { tt } from '../i18n/catalog';
+import { bulkGetUserLocales } from '../i18n/server-locale';
+import { fetchUnmentionableIds, sanitizeMentions, type ChatMention } from '../lib/chat-mentions';
+
+const router = Router();
+
+// Chat groups feature VTID (VTID-03089) — reused for OASIS events emitted by
+// this route file, matching the @vitana mention handler below.
+const VTID = 'VTID-03089';
+
+// Named (non-arrow) catch handler for fire-and-forget emitOasisEvent calls.
+// Keeping this out of the route handler bodies avoids a second `=>` inside
+// those bodies, which the impact-scan `new-mutation-without-oasis-emit`
+// static parser's lastIndexOf('=>') handler-body extraction mis-locates.
+function warnOasisEmitFailed(err: any): void {
+  console.warn(`[${VTID}] OASIS emit failed:`, err?.message);
+}
+
+function getSupabase(): SupabaseClient {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE!,
+  );
+}
+
+const VITANA_MENTION_RE = /(^|\s)@vitana\b/i;
+
+// ── GET / — Groups the caller belongs to ──────────────────────
+
+router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+  const { data: memberships, error } = await repo.listChatGroupMemberships(supabase, identity.user_id, identity.tenant_id!);
+
+  if (error) {
+    console.error('[ChatGroups] List memberships error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  if (!memberships || memberships.length === 0) {
+    return res.json({ ok: true, data: [] });
+  }
+
+  const groupIds = memberships.map(m => m.group_id);
+
+  const { data: groups, error: groupsErr } = await repo.listChatGroupsByIds(supabase, groupIds);
+
+  if (groupsErr) {
+    console.error('[ChatGroups] Fetch groups error:', groupsErr);
+    return res.status(500).json({ ok: false, error: groupsErr.message });
+  }
+
+  const { data: lastMessages, error: lastErr } = await repo.listLatestChatMessagesForGroups(supabase, groupIds);
+
+  if (lastErr) {
+    console.warn('[ChatGroups] Fetch last messages failed:', lastErr.message);
+  }
+
+  const lastByGroup = new Map<string, any>();
+  for (const msg of lastMessages || []) {
+    if (!lastByGroup.has(msg.group_id)) {
+      lastByGroup.set(msg.group_id, msg);
+    }
+  }
+
+  const membershipByGroup = new Map(memberships.map(m => [m.group_id, m]));
+
+  const unreadCounts = await Promise.all(groupIds.map(async gid => {
+    const m = membershipByGroup.get(gid);
+    const since = m?.last_read_at;
+    const { count } = await repo.countUnreadChatMessagesForGroup(supabase, { groupId: gid, userId: identity.user_id, since });
+    return { group_id: gid, count: count || 0 };
+  }));
+  const unreadByGroup = new Map(unreadCounts.map(u => [u.group_id, u.count]));
+
+  const data = (groups || []).map(g => ({
+    id: g.id,
+    name: g.name,
+    description: g.description,
+    is_system: g.is_system,
+    metadata: g.metadata,
+    created_at: g.created_at,
+    role: membershipByGroup.get(g.id)?.role || 'member',
+    joined_at: membershipByGroup.get(g.id)?.joined_at,
+    last_read_at: membershipByGroup.get(g.id)?.last_read_at,
+    last_message: lastByGroup.get(g.id) || null,
+    unread_count: unreadByGroup.get(g.id) || 0,
+  }));
+
+  data.sort((a, b) => {
+    const ta = a.last_message?.created_at || a.created_at;
+    const tb = b.last_message?.created_at || b.created_at;
+    return tb.localeCompare(ta);
+  });
+
+  return res.json({ ok: true, data });
+});
+
+// ── GET /:id — Group info + members ───────────────────────────
+
+router.get('/:id', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const [{ data: group, error: groupErr }, { data: members, error: membersErr }] = await repo.fetchChatGroupWithMembers(supabase, groupId);
+
+  if (groupErr || !group) {
+    return res.status(404).json({ ok: false, error: 'group_not_found' });
+  }
+  if (membersErr) {
+    console.error('[ChatGroups] Members fetch error:', membersErr);
+    return res.status(500).json({ ok: false, error: membersErr.message });
+  }
+
+  const memberIds = (members || []).map(m => m.user_id);
+  let profileRows: Array<{ user_id: string; display_name: string | null; full_name: string | null; avatar_url: string | null }> = [];
+  let appUserRows: Array<{ user_id: string; display_name: string | null; email: string | null }> = [];
+  if (memberIds.length > 0) {
+    const [profilesResp, appUsersResp] = await Promise.all([
+      supabase
+        .from('profiles')
+        .select('user_id, display_name, full_name, avatar_url')
+        .in('user_id', memberIds),
+      supabase
+        .from('app_users')
+        .select('user_id, display_name, email')
+        .in('user_id', memberIds),
+    ]);
+    profileRows = (profilesResp.data as typeof profileRows) || [];
+    appUserRows = (appUsersResp.data as typeof appUserRows) || [];
+  }
+  const profileById = new Map(profileRows.map(p => [p.user_id, p]));
+  const appUserById = new Map(appUserRows.map(u => [u.user_id, u]));
+
+  // VTID-04926: service and test accounts are never offered as @mentions.
+  // Fails closed — if the lookup errors, nobody is offered (the composer just
+  // shows no suggestions) rather than risking a test account surfacing.
+  let unmentionable: Set<string> | null = null;
+  try {
+    unmentionable = await fetchUnmentionableIds(supabase, memberIds);
+  } catch (err: any) {
+    console.warn('[ChatGroups] mentionable lookup failed:', err?.message || err);
+  }
+
+  const enrichedMembers = (members || []).map(m => {
+    const profile = profileById.get(m.user_id);
+    const appUser = appUserById.get(m.user_id);
+    const displayName =
+      profile?.display_name ||
+      profile?.full_name ||
+      appUser?.display_name ||
+      (appUser?.email ? appUser.email.split('@')[0] : null);
+    return {
+      user_id: m.user_id,
+      role: m.role,
+      joined_at: m.joined_at,
+      display_name: displayName,
+      avatar_url: profile?.avatar_url || null,
+      is_bot: isVitanaBot(m.user_id),
+      mentionable: unmentionable !== null && !unmentionable.has(m.user_id) && !isVitanaBot(m.user_id),
+    };
+  });
+
+  return res.json({
+    ok: true,
+    data: {
+      ...group,
+      member_count: enrichedMembers.length,
+      members: enrichedMembers,
+    },
+  });
+});
+
+// ── GET /:id/messages — Paginated history ─────────────────────
+
+router.get('/:id/messages', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const limit = Math.min(Number(req.query.limit) || 50, 100);
+  const before = req.query.before as string | undefined;
+  const after = req.query.after as string | undefined; // VTID-05310: forward paging
+  const around = req.query.around as string | undefined; // VTID-05310: context window
+  if (around !== undefined && !isUuidParam(around)) {
+    return res.status(400).json({ ok: false, error: 'invalid_around' });
+  }
+
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const scope = { kind: 'group' as const, groupId };
+  if (around) {
+    const win = await chatRepo.fetchWindowAround(supabase, repo.groupScopeQuery(supabase, groupId), around, limit);
+    if ('error' in win) {
+      console.error('[ChatGroups] Messages window error:', win.error);
+      return res.status(500).json({ ok: false, error: win.error.message });
+    }
+    if ('notFound' in win) return res.status(404).json({ ok: false, error: 'message_not_found' });
+    const rows = await annotateReplies(supabase, win.data, scope);
+    return res.json({ ok: true, data: rows, has_older: win.has_older, has_newer: win.has_newer });
+  }
+
+  const { data, error } = await repo.listChatGroupMessages(supabase, { groupId, limit, before, after });
+  if (error) {
+    console.error('[ChatGroups] Messages fetch error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  return res.json({ ok: true, data: await annotateReplies(supabase, data, scope) });
+});
+
+// ── POST /:id/send — Send group message ───────────────────────
+
+router.post('/:id/send', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const { content, message_type, content_data, client_message_id, reply_to_message_id } = req.body as {
+    content?: unknown;
+    message_type?: unknown;
+    content_data?: unknown;
+    client_message_id?: unknown;
+    reply_to_message_id?: unknown;
+  };
+
+  const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE, SHARED_CONTENT_TYPE]);
+  if (!allowedTypes.has(msgType)) {
+    return res.status(400).json({ ok: false, error: 'invalid_message_type' });
+  }
+
+  const rawContent = typeof content === 'string' ? content : '';
+  let trimmed = rawContent.trim();
+  // VTID-05310: a reply target is never taken from client content_data.
+  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object'
+    ? chatRepo.stripClientReplyTo(content_data as Record<string, unknown>)
+    : {};
+
+  // VTID-04917: an invite card is built on the server from the sender's own
+  // calendar entry; the client sends only { entry_id }.
+  if (msgType === CALENDAR_INVITE_TYPE) {
+    const invite = await buildInviteForChat(identity.user_id, content_data);
+    if (!invite.ok) {
+      return res.status(invite.status).json({ ok: false, error: invite.error, ...(invite.reason ? { reason: invite.reason } : {}) });
+    }
+    metadata = { ...invite.metadata };
+    trimmed = invite.content;
+  }
+  const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
+
+  if (msgType === 'text') {
+    if (trimmed.length === 0) {
+      return res.status(400).json({ ok: false, error: 'content is required' });
+    }
+  } else if (msgType !== SHARED_CONTENT_TYPE && trimmed.length === 0 && attachments.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
+  }
+
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  // VTID-05310: a retry of a send that already went through is answered with
+  // the stored row before any check that could refuse it (e.g. invite limits).
+  if (isUuidParam(client_message_id)) {
+    const prior = await chatRepo.findPriorSend(supabase, identity.user_id, client_message_id.toLowerCase(), { kind: 'group', groupId });
+    if (prior.kind === 'conflict') return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
+    if (prior.kind === 'duplicate') {
+      const storedReply = isUuidParam(prior.row?.metadata?.reply_to?.message_id) ? prior.row.metadata.reply_to.message_id : null;
+      return res.status(200).json({ ok: true, data: { ...prior.row, reply_to_message_id: storedReply }, duplicate: true });
+    }
+  }
+
+  // VTID-05104: sender is a member, the group is within the invite cap, and the
+  // sender is within the send limits. One generic refusal for every case.
+  if (msgType === CALENDAR_INVITE_TYPE) {
+    const allowed = await checkInviteSend({
+      sb: supabase,
+      senderId: identity.user_id,
+      tenantId: identity.tenant_id,
+      groupId,
+    });
+    if (!allowed.ok) return res.status(INVITE_REFUSED_STATUS).json(inviteRefusedBody());
+  }
+
+  // VTID-05311: after membership and the retry lookup (a retried share gets its
+  // stored row): the sender must see the item; it is stored as { kind, id },
+  // plus the mentions list, which is sanitized right below like any other.
+  if (msgType === SHARED_CONTENT_TYPE) {
+    const shared = await checkSharedContentSend(req, content_data, trimmed);
+    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
+    const clientMentions = (metadata as any).mentions;
+    metadata = { ...shared.metadata, ...(clientMentions !== undefined ? { mentions: clientMentions } : {}) };
+  }
+
+  // VTID-04926: never store what the client claims about mentions — only the
+  // sanitized list, and only when someone is actually tagged.
+  let mentions: ChatMention[] = [];
+  if ('mentions' in metadata) {
+    mentions = await resolveGroupMentions(supabase, groupId, identity.user_id, trimmed, (metadata as any).mentions);
+    delete (metadata as any).mentions;
+    if (mentions.length > 0) (metadata as any).mentions = mentions;
+  }
+
+  // VTID-05310: idempotent send + reply target inside this group.
+  const sendIdentity = client_message_id != null || reply_to_message_id != null
+    ? await chatRepo.resolveSendIdentity(supabase, { client_message_id, reply_to_message_id }, { kind: 'group', groupId })
+    : NO_SEND_IDENTITY;
+  if (!sendIdentity.ok) return res.status(400).json({ ok: false, error: sendIdentity.error });
+  if (sendIdentity.replyTo) metadata = { ...metadata, reply_to: { message_id: sendIdentity.replyTo } };
+
+  const row = {
+    tenant_id: identity.tenant_id,
+    sender_id: identity.user_id,
+    receiver_id: null,
+    group_id: groupId,
+    content: trimmed,
+    message_type: msgType,
+    metadata,
+  };
+  const { data, error, duplicate, conflict } = sendIdentity.clientMessageId
+    ? await chatRepo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatGroupMessage, { kind: 'group', groupId })
+    : { ...(await repo.insertChatGroupMessage(supabase, row)), duplicate: false };
+
+  if (conflict) return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
+  if (error) {
+    console.error('[ChatGroups] Send error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // The stored row is the truth (a duplicate keeps its original reply target).
+  const replyId = isUuidParam(data?.metadata?.reply_to?.message_id) ? data.metadata.reply_to.message_id : null;
+  // VTID-05310: a repeat of an already stored send — same row back, no fan-out, no @vitana reply.
+  if (duplicate) {
+    return res.status(200).json({ ok: true, data: { ...data, reply_to_message_id: replyId }, duplicate: true });
+  }
+
+  const firstAttachmentName: string | null = attachments.length > 0
+    ? (attachments[0] as any)?.filename || (attachments[0] as any)?.name || null
+    : null;
+  let fanoutBody = trimmed;
+  if (trimmed.length === 0) {
+    if (msgType === 'attachment') {
+      fanoutBody = firstAttachmentName ? `📎 ${firstAttachmentName}` : '📎 Attachment';
+    } else if (msgType === 'voice' || msgType === 'voice_transcript') {
+      fanoutBody = '🎤 Voice message';
+    }
+  }
+
+  // Awaited (not fire-and-forget) — Cloud Run can freeze/recycle the
+  // container the instant res.status(201) flushes, silently dropping any
+  // still-in-flight background promise (same failure mode confirmed live
+  // and fixed for daily-feature-tip; see scheduled-notifications.ts
+  // BOOTSTRAP-DAILY-FEATURE-TIP and notifyUser's caller in chat.ts /send).
+  try {
+    await fanoutGroupNotifications(
+      supabase,
+      groupId,
+      identity.user_id,
+      identity.tenant_id!,
+      fanoutBody,
+      data.id,
+      new Set(mentions.map(m => m.user_id)),
+      msgType === CALENDAR_INVITE_TYPE ? 'calendar_invite' : msgType === SHARED_CONTENT_TYPE ? 'shared_content' : null,
+    );
+  } catch (err: any) {
+    console.warn('[ChatGroups] Fanout failed:', err?.message || err);
+  }
+
+  if (trimmed.length > 0 && VITANA_MENTION_RE.test(trimmed) && !isVitanaBot(identity.user_id)) {
+    handleVitanaGroupMention(
+      supabase,
+      groupId,
+      identity.user_id,
+      identity.tenant_id!,
+      trimmed,
+    ).catch(err => console.warn('[ChatGroups] @vitana reply failed:', err.message));
+  }
+
+  return res.status(201).json({ ok: true, data: { ...data, reply_to_message_id: replyId } });
+});
+
+// ── POST /:id/read — Mark group read up to now ────────────────
+
+router.post('/:id/read', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const { error } = await repo.markChatGroupRead(supabase, groupId, identity.user_id);
+
+  if (error) {
+    console.error('[ChatGroups] Mark read error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // VTID-05137: best effort — a failure here never fails the read itself.
+  try {
+    const { error: notifErr } = await repo.markGroupChatNotificationsRead(supabase, groupId, identity.user_id);
+    if (notifErr) console.warn('[ChatGroups] Clearing group chat notifications failed:', notifErr.message);
+  } catch (err: any) {
+    console.warn('[ChatGroups] Clearing group chat notifications failed:', err?.message || err);
+  }
+
+  return res.json({ ok: true });
+});
+
+// ── PATCH /:id/messages/:messageId — Edit a message (sender only) ─────
+
+router.patch('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const { content } = req.body as { content?: unknown };
+  const trimmed = typeof content === 'string' ? content.trim() : '';
+  if (trimmed.length === 0) {
+    return res.status(400).json({ ok: false, error: 'content is required' });
+  }
+
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const owned = await requireOwnMessage(supabase, groupId, messageId, identity.user_id);
+  if (owned === 'not_found') {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+  if (owned === 'forbidden') {
+    return res.status(403).json({ ok: false, error: 'not_the_sender' });
+  }
+
+  const { data, error } = await repo.updateChatGroupMessageContent(supabase, messageId, trimmed);
+
+  if (error) {
+    console.error('[ChatGroups] Update message error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.edited' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} edited`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(warnOasisEmitFailed);
+
+  return res.json({ ok: true, data });
+});
+
+// ── DELETE /:id/messages/:messageId — Delete a message (sender only) ──
+
+router.delete('/:id/messages/:messageId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId, messageId } = req.params;
+  const supabase = getSupabase();
+
+  const membership = await requireMembership(supabase, groupId, identity.user_id);
+  if (!membership) {
+    return res.status(403).json({ ok: false, error: 'not_a_member' });
+  }
+
+  const owned = await requireOwnMessage(supabase, groupId, messageId, identity.user_id);
+  if (owned === 'not_found') {
+    return res.status(404).json({ ok: false, error: 'message_not_found' });
+  }
+  if (owned === 'forbidden') {
+    return res.status(403).json({ ok: false, error: 'not_the_sender' });
+  }
+
+  const { error } = await repo.deleteChatGroupMessage(supabase, messageId);
+
+  if (error) {
+    console.error('[ChatGroups] Delete message error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // Fire-and-forget OASIS event; failure here must not block the response.
+  emitOasisEvent({
+    vtid: VTID,
+    type: 'chat_group.message.deleted' as any,
+    source: 'chat-groups-gateway',
+    status: 'info',
+    message: `Group message ${messageId} deleted`,
+    payload: { group_id: groupId, message_id: messageId },
+    actor_id: identity.user_id,
+    actor_role: 'user',
+    surface: 'api',
+  }).catch(warnOasisEmitFailed);
+
+  return res.json({ ok: true });
+});
+
+// ── helpers ───────────────────────────────────────────────────
+
+async function requireOwnMessage(
+  supabase: SupabaseClient,
+  groupId: string,
+  messageId: string,
+  userId: string,
+): Promise<'ok' | 'not_found' | 'forbidden'> {
+  const { data, error } = await repo.fetchChatMessageOwnership(supabase, messageId);
+  if (error || !data || (data as any).group_id !== groupId) return 'not_found';
+  if ((data as any).sender_id !== userId) return 'forbidden';
+  return 'ok';
+}
+
+async function requireMembership(
+  supabase: SupabaseClient,
+  groupId: string,
+  userId: string,
+): Promise<{ role: string } | null> {
+  const { data, error } = await repo.fetchChatGroupMembership(supabase, groupId, userId);
+  if (error || !data) return null;
+  return { role: (data as any).role };
+}
+
+/**
+ * VTID-04926: turn the client's `content_data.mentions` into the list that is
+ * stored and notified — members of this group only, never the sender, the
+ * Vitana bot or a service/test account, and only names that appear in the
+ * text. Fails closed: if the account lookup errors, nobody is tagged (the
+ * message itself still sends).
+ */
+async function resolveGroupMentions(
+  supabase: SupabaseClient,
+  groupId: string,
+  senderId: string,
+  content: string,
+  raw: unknown,
+): Promise<ChatMention[]> {
+  if (!Array.isArray(raw) || raw.length === 0 || !content) return [];
+  try {
+    const { data: members, error } = await repo.listChatGroupMemberIds(supabase, groupId);
+    if (error) throw new Error(error.message);
+    const memberIds = new Set(((members || []) as Array<{ user_id: string }>).map((m) => m.user_id));
+    const claimed = raw
+      .map((e) => (e && typeof e === 'object' ? (e as { user_id?: unknown }).user_id : null))
+      .filter((id): id is string => typeof id === 'string' && memberIds.has(id));
+    const excludedIds = await fetchUnmentionableIds(supabase, [...new Set(claimed)]);
+    return sanitizeMentions({ raw, content, senderId, memberIds, excludedIds });
+  } catch (err: any) {
+    console.warn('[ChatGroups] mention resolution failed, sending untagged:', err?.message || err);
+    return [];
+  }
+}
+
+async function fanoutGroupNotifications(
+  supabase: SupabaseClient,
+  groupId: string,
+  senderId: string,
+  tenantId: string,
+  content: string,
+  messageId: string,
+  mentionedIds: ReadonlySet<string> = new Set(),
+  // A calendar invite / shared item gets a generic line in each member's language
+  // (never the item's content) and always pushes on its own.
+  genericKind: 'calendar_invite' | 'shared_content' | null = null,
+): Promise<void> {
+  const isCalendarInvite = genericKind === 'calendar_invite';
+  const isGeneric = genericKind !== null;
+  const [{ data: group }, { data: members }, { data: senderAppUser }, { data: senderProfile }] = await Promise.all([
+    repo.fetchChatGroupName(supabase, groupId),
+    repo.listChatGroupMemberIds(supabase, groupId),
+    supabase.from('app_users').select('display_name, email').eq('user_id', senderId).maybeSingle(),
+    supabase.from('profiles').select('display_name, full_name').eq('user_id', senderId).maybeSingle(),
+  ]);
+
+  const groupName = (group as any)?.name || 'Group chat';
+  const senderName =
+    (senderProfile as any)?.display_name
+    || (senderProfile as any)?.full_name
+    || (senderAppUser as any)?.display_name
+    || ((senderAppUser as any)?.email ? (senderAppUser as any).email.split('@')[0] : 'Someone');
+
+  const body = content.length > 100 ? content.slice(0, 97) + '...' : content;
+
+  const recipients = (members || []).filter(
+    (m: { user_id: string }) => m.user_id !== senderId && !isVitanaBot(m.user_id),
+  ) as Array<{ user_id: string }>;
+
+  // VTID-04926: members tagged in this message get ONE push — chat_mention,
+  // titled in their own language and opening the message itself — instead of
+  // the generic new_chat_message one everybody else gets.
+  const mentionedRecipientIds = recipients.map((m) => m.user_id).filter((id) => mentionedIds.has(id));
+  const mentionLocales = mentionedRecipientIds.length > 0
+    ? await bulkGetUserLocales(supabase, mentionedRecipientIds).catch(() => new Map())
+    : new Map();
+
+  // VTID-05104: an invite push is generic, in each member's own language.
+  const inviteLocales = isGeneric
+    ? await bulkGetUserLocales(supabase, recipients.map((m) => m.user_id)).catch(() => new Map())
+    : new Map();
+  const genericBody = (_userId: string, locale: unknown) => (isCalendarInvite
+    ? tt('notif.calendar_invite.body', locale as string, { name: senderName })
+    : tt('notif.chat_shared_content.body', locale as string, { name: senderName }));
+
+  const items: ChatPushItem[] = recipients.map((m): ChatPushItem => {
+    const userId = m.user_id;
+    if (mentionedIds.has(userId)) {
+      return {
+        userId,
+        kind: 'mention',
+        payload: {
+          title: tt('notif.chat_mention.title', mentionLocales.get(userId), { sender: senderName, group: groupName }),
+          body: genericKind === 'shared_content' ? genericBody(userId, mentionLocales.get(userId)) : body,
+          data: {
+            type: 'chat_mention',
+            group_id: groupId,
+            sender_id: senderId,
+            sender_name: senderName,
+            message_id: messageId,
+            url: `/inbox/g/${groupId}/msg/${messageId}`,
+          },
+        },
+      };
+    }
+    return {
+      userId,
+      kind: 'message',
+      payload: {
+        title: groupName,
+        body: isGeneric ? genericBody(userId, inviteLocales.get(userId)) : `${senderName}: ${body}`,
+        data: {
+          type: 'new_group_message',
+          group_id: groupId,
+          sender_id: senderId,
+          sender_name: senderName,
+          message_id: messageId,
+          // VTID-04928: open the message that was received, not the group's top.
+          url: `/inbox/g/${groupId}/msg/${messageId}`,
+        },
+      },
+    };
+  });
+
+  // VTID-05137: one batched read decides, per member, whether this message
+  // pushes or joins the burst already in their tray. A calendar invite is an
+  // event of its own and always pushes unchanged.
+  const prepared = isGeneric
+    ? items.map((i): PreparedChatPush => ({ userId: i.userId, payload: i.payload }))
+    : await coalesceChatPushes(supabase, chatConversationKey({ groupId, senderId }), items);
+  const typeFor = new Map(items.map((i) => [i.userId, i.kind === 'mention' ? 'chat_mention' : 'new_chat_message']));
+
+  // Promise.allSettled so one bad member can't block the rest, and so the
+  // caller's await actually finishes before Cloud Run can freeze the
+  // container (see call site's comment for why fire-and-forget silently
+  // drops pushes here).
+  const results = await Promise.allSettled(
+    prepared.map((p) => (p.opts
+      ? notifyUser(p.userId, tenantId, typeFor.get(p.userId)!, p.payload, supabase, p.opts)
+      : notifyUser(p.userId, tenantId, typeFor.get(p.userId)!, p.payload, supabase))),
+  );
+  const failed = results.filter((r) => r.status === 'rejected').length;
+  if (failed > 0) {
+    console.warn(`[ChatGroups] fanout: ${failed}/${results.length} notifyUser calls rejected`);
+  }
+}
+
+/**
+ * VTID-03620: mirrors fetchVitanaDmHistory in routes/chat.ts — see that
+ * function's header comment for the full root-cause writeup. This handler
+ * had the identical gap: no thread_id, no conversation_history, so every
+ * @vitana mention in a group was processed as a context-free first turn.
+ * Scoped to the GROUP (not the individual asker) since a group mention is a
+ * shared conversation multiple members can contribute to; any human sender
+ * maps to 'user', Vitana's own prior replies map to 'assistant'.
+ */
+async function fetchVitanaGroupHistory(
+  supabase: SupabaseClient,
+  groupId: string,
+  currentMessage: string,
+  limit = 12,
+): Promise<Array<{ role: 'user' | 'assistant'; content: string }>> {
+  try {
+    const { data, error } = await repo.listRecentChatGroupMessagesForHistory(supabase, groupId, limit + 1);
+    if (error || !data) return [];
+
+    const rows = [...data].reverse() as Array<{ sender_id: string; content: string | null }>;
+    const last = rows[rows.length - 1];
+    if (last && last.sender_id !== VITANA_BOT_USER_ID && last.content === currentMessage) {
+      rows.pop();
+    }
+
+    return rows
+      .filter((r): r is { sender_id: string; content: string } => !!r.content && r.content.trim().length > 0)
+      .slice(-limit)
+      .map((r) => ({
+        role: r.sender_id === VITANA_BOT_USER_ID ? ('assistant' as const) : ('user' as const),
+        content: r.content,
+      }));
+  } catch {
+    return [];
+  }
+}
+
+async function handleVitanaGroupMention(
+  supabase: SupabaseClient,
+  groupId: string,
+  askerUserId: string,
+  tenantId: string,
+  content: string,
+): Promise<void> {
+  const startTime = Date.now();
+  const question = content.replace(VITANA_MENTION_RE, ' ').trim() || content;
+
+  try {
+    const { isVitanaBrainEnabled } = await import('../services/system-controls-service');
+    const useBrain = await isVitanaBrainEnabled();
+
+    // VTID-03620: stable per-group thread id + reconstructed recent history.
+    const threadId = `vitana-group:${groupId}`;
+    const conversationHistory = await fetchVitanaGroupHistory(supabase, groupId, content);
+
+    let result: { ok: boolean; reply: string; error?: string; thread_id: string; turn_number: number; meta: { model_used: string; latency_ms: number } };
+
+    if (useBrain) {
+      const { processBrainTurn } = await import('../services/vitana-brain');
+      result = await processBrainTurn({
+        channel: 'orb',
+        tenant_id: tenantId,
+        user_id: askerUserId,
+        role: 'user',
+        message: question,
+        message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
+        vtid: 'VTID-03089',
+      });
+    } else {
+      result = await processConversationTurn({
+        channel: 'orb',
+        tenant_id: tenantId,
+        user_id: askerUserId,
+        role: 'user',
+        message: question,
+        message_type: 'text',
+        thread_id: threadId,
+        conversation_history: conversationHistory,
+        vtid: 'VTID-03089',
+      });
+    }
+
+    if (!result.ok || !result.reply) {
+      console.warn(`[ChatGroups] @vitana reply failed: ${result.error || 'empty reply'}`);
+      return;
+    }
+
+    const { error } = await repo.insertChatGroupMessageNoReturn(supabase, {
+      tenant_id: tenantId,
+      sender_id: VITANA_BOT_USER_ID,
+      receiver_id: null,
+      group_id: groupId,
+      content: result.reply,
+      message_type: 'text',
+      metadata: {
+        source: useBrain ? 'brain_group_mention' : 'group_mention',
+        model_used: result.meta.model_used,
+        latency_ms: result.meta.latency_ms,
+        thread_id: result.thread_id,
+        turn_number: result.turn_number,
+        brain_enabled: useBrain,
+        asked_by: askerUserId,
+      },
+    });
+
+    if (error) {
+      console.warn(`[ChatGroups] Vitana group reply write failed: ${error.message}`);
+    } else {
+      console.log(`[ChatGroups] @vitana reply written for group ${groupId} (${Date.now() - startTime}ms)`);
+    }
+  } catch (err: any) {
+    console.error(`[ChatGroups] @vitana handler error: ${err.message}`);
+  }
+}
+
+// ── POST /:id/refanout-welcome — admin only, idempotent push fanout ───
+//
+// VTID-03089: when the system group's welcome message was seeded via direct
+// SQL the gateway notification fanout never fired, so no one got a push.
+// This endpoint re-fires the per-member notifyUserAsync exactly once per
+// user — idempotency key = group_welcome:<message_id>:<user_id>, checked
+// against user_notifications.data->>'idempotency_key' before sending.
+
+router.post('/:id/refanout-welcome', requireAuth, requireExafyAdmin, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { id: groupId } = req.params;
+  const dryRun = !!req.body?.dry_run;
+  const supabase = getSupabase();
+
+  const { data: group, error: groupErr } = await repo.fetchChatGroupForRefanout(supabase, groupId);
+  if (groupErr || !group) {
+    return res.status(404).json({ ok: false, error: 'group_not_found' });
+  }
+
+  const { data: welcomeRows, error: welcomeErr } = await repo.fetchChatGroupWelcomeMessage(supabase, groupId);
+  if (welcomeErr || !welcomeRows || welcomeRows.length === 0) {
+    return res.status(404).json({ ok: false, error: 'welcome_message_not_found' });
+  }
+  const welcome = welcomeRows[0] as { id: string; content: string; sender_id: string; created_at: string };
+
+  const { data: members, error: membersErr } = await repo.listChatGroupMemberIds(supabase, groupId);
+  if (membersErr) {
+    return res.status(500).json({ ok: false, error: membersErr.message });
+  }
+
+  const tenantId = (group as any).tenant_id as string;
+  const groupName = (group as any).name as string;
+  const bodyPreview = welcome.content.length > 100
+    ? welcome.content.slice(0, 97) + '...'
+    : welcome.content;
+
+  let fired = 0;
+  let skipped = 0;
+  const skippedDetails: Array<{ user_id: string; reason: string }> = [];
+
+  for (const m of (members || []) as Array<{ user_id: string }>) {
+    if (m.user_id === welcome.sender_id) { skipped++; skippedDetails.push({ user_id: m.user_id, reason: 'sender' }); continue; }
+    if (isVitanaBot(m.user_id))         { skipped++; skippedDetails.push({ user_id: m.user_id, reason: 'bot' }); continue; }
+
+    const idemKey = `group_welcome:${welcome.id}:${m.user_id}`;
+
+    const { count: alreadyCount } = await supabase
+      .from('user_notifications')
+      .select('id', { count: 'exact', head: true })
+      .eq('user_id', m.user_id)
+      .filter('data->>idempotency_key', 'eq', idemKey);
+
+    if ((alreadyCount || 0) > 0) {
+      skipped++;
+      skippedDetails.push({ user_id: m.user_id, reason: 'already_notified' });
+      continue;
+    }
+
+    if (dryRun) {
+      fired++;
+      continue;
+    }
+
+    // Awaited (not fire-and-forget) — this loop already awaits a DB query
+    // per member above, so awaiting the push here doesn't change the
+    // endpoint's shape, and avoids the same Cloud Run freeze-after-response
+    // risk as the other notifyUserAsync call sites in this file.
+    try {
+      await notifyUser(
+        m.user_id,
+        tenantId,
+        'new_chat_message',
+        {
+          title: groupName,
+          body: `Vitana: ${bodyPreview}`,
+          data: {
+            type: 'new_group_message',
+            group_id: groupId,
+            sender_id: welcome.sender_id,
+            sender_name: 'Vitana',
+            message_id: welcome.id,
+            idempotency_key: idemKey,
+            url: `/inbox/g/${groupId}/msg/${welcome.id}`, // VTID-04928
+          },
+        },
+        supabase,
+      );
+    } catch (err: any) {
+      console.warn(`[ChatGroups] refanout-welcome notifyUser failed for ${m.user_id}:`, err?.message || err);
+    }
+    fired++;
+  }
+
+  return res.json({
+    ok: true,
+    dry_run: dryRun,
+    group_id: groupId,
+    welcome_message_id: welcome.id,
+    members_total: (members || []).length,
+    fired,
+    skipped,
+    skipped_breakdown: skippedDetails.reduce((acc, s) => {
+      acc[s.reason] = (acc[s.reason] || 0) + 1;
+      return acc;
+    }, {} as Record<string, number>),
+  });
+});
+
+export default router;

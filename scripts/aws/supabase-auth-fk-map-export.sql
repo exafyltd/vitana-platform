@@ -1,0 +1,18 @@
+-- VTID-05023 part 4: export Supabase's public -> auth.users foreign keys as
+-- one-line INSERTs into Aurora's public.auth_user_fk_map (created by
+-- scripts/aws/aurora-cutover-auth-bridge.sql).
+--
+-- READ-ONLY on Supabase. Run it right before the window (after the schema
+-- freeze), never earlier than needed, so the map matches the live schema:
+--
+--   psql "$SUPABASE_DB_URL" -X -A -t -f scripts/aws/supabase-auth-fk-map-export.sql > /tmp/aurora-auth-fk-map.sql
+--   scripts/aws/aurora-run-sql.sh /tmp/aurora-auth-fk-map.sql
+--
+-- The first output line empties the map, so a re-export replaces it whole.
+-- Aurora's public.auth_bridge_handle_deleted_user() applies each FK's
+-- ON DELETE action (confdeltype: a = NO ACTION, r = RESTRICT, c = CASCADE,
+-- n = SET NULL, d = SET DEFAULT) when the auth user is deleted on Supabase,
+-- which is what Postgres did on Supabase while `public` lived there. Only
+-- single-column FKs exist against auth.users(id); a multi-column one fails the
+-- export loudly instead of being skipped.
+SELECT 'DELETE FROM public.auth_user_fk_map;' UNION ALL (SELECT CASE WHEN array_length(c.conkey, 1) = 1 THEN format('INSERT INTO public.auth_user_fk_map (table_name, column_name, on_delete) VALUES (%L, %L, %L) ON CONFLICT (table_name, column_name) DO UPDATE SET on_delete = EXCLUDED.on_delete, loaded_at = now();', cl.relname, a.attname, c.confdeltype) ELSE 'SELECT 1/0 AS multi_column_fk_to_auth_users_' || c.conname || ';' END FROM pg_constraint c JOIN pg_class cl ON cl.oid = c.conrelid JOIN pg_attribute a ON a.attrelid = c.conrelid AND a.attnum = c.conkey[1] WHERE c.contype = 'f' AND c.confrelid = 'auth.users'::regclass AND cl.relnamespace = 'public'::regnamespace AND NOT cl.relispartition ORDER BY cl.relname, a.attname);

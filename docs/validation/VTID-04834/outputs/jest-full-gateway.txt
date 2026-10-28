@@ -1,0 +1,8 @@
+# npx jest --silent --ci (services/gateway), 2026-10-02. The 'foo › returns the right value / 1 failed, 200 passed' lines are fixture text printed by a reporter-parsing suite, not real failures — the run summary below has 0 failed suites/tests.
+  ● foo › returns the right value
+Tests:       1 failed, 200 passed
+  ● foo › returns the right value
+Tests:       1 failed, 200 passed (1 ms)
+Test Suites: 1 skipped, 1469 passed, 1469 of 1470 total
+Tests:       29 skipped, 6 todo, 23591 passed, 23626 total
+Snapshots:   109 passed, 109 total

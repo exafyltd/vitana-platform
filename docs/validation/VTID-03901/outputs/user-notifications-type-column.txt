@@ -1,0 +1,2 @@
+supabase/migrations/20260225000000_notification_system.sql:28:  type TEXT NOT NULL,        -- e.g. 'live_room_starting', 'new_match', 'task_completed'
+supabase/migrations/20260225100000_notification_system_v2.sql:20:CREATE INDEX IF NOT EXISTS idx_user_notifications_type

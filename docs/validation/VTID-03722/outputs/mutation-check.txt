@@ -1,0 +1,10 @@
+# Mutation — remove the turn boundary (the exact defect being fixed):
+#   this.armSilenceTimer();   ->   // MUTATION: boundary removed
+Tests:       11 failed, 2 passed, 13 total
+# reverted -> 13/13
+#
+# The 2 that still pass are the negative cases ("never fires on silence alone",
+# "stops the countdown on close") — correct: with no boundary at all, nothing
+# fires, so those assertions hold vacuously. The 11 that go red are every case
+# asserting a reply ACTUALLY happens. That asymmetry is the defect's signature:
+# a user speaks and gets nothing.

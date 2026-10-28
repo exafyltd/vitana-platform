@@ -1,0 +1,421 @@
+{
+  "version": 1,
+  "vtid": "VTID-04565",
+  "note": "Developer-assistant evaluation set: each question names the domain its answer lives in and the tool a good answer starts with. The deterministic check runs in the role-separation suite; scripts/orb/eval-developer-assistant.mjs runs the live check against staging.",
+  "questions": [
+    {
+      "id": "DEV-001",
+      "question": "Why does the Nova Sonic session drop at open with premature close?",
+      "domain": "voice",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-002",
+      "question": "Which voice does Vitana use in Serbian and where is that decided?",
+      "domain": "voice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-003",
+      "question": "Is full duplex barge-in enabled on staging?",
+      "domain": "voice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-004",
+      "question": "How does the greeting brain pick the first sentence on the Command Hub?",
+      "domain": "voice",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-005",
+      "question": "What is the Polly fallback for languages Nova cannot speak?",
+      "domain": "voice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-006",
+      "question": "How many voice sessions started in the last hour?",
+      "domain": "voice",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-007",
+      "question": "Where is the Fish Audio voice table for the cascade?",
+      "domain": "voice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-008",
+      "question": "Why did the ORB greet me as the community assistant on the Command Hub?",
+      "domain": "voice",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-009",
+      "question": "What does the Vertex Serbian bridge do and which flag turns it on?",
+      "domain": "voice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-010",
+      "question": "Trace a voice turn from the widget to the upstream client",
+      "domain": "voice",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-011",
+      "question": "Why did the executor revert PR 3543?",
+      "domain": "autopilot",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-012",
+      "question": "How many Dev Autopilot executions are waiting for my approval?",
+      "domain": "autopilot",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-013",
+      "question": "Is the Dev Autopilot kill switch on?",
+      "domain": "autopilot",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-014",
+      "question": "What is the 7-day success rate of the autopilot executor?",
+      "domain": "autopilot",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-015",
+      "question": "Where does fix mode continue a failed PR?",
+      "domain": "autopilot",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-016",
+      "question": "Which scanners produce findings for auto-approve?",
+      "domain": "autopilot",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-017",
+      "question": "Why is the planner planning the same finding twice?",
+      "domain": "autopilot",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-018",
+      "question": "Explain the self-healing flow after a red CI run",
+      "domain": "autopilot",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-019",
+      "question": "Which watcher merges a green autopilot PR?",
+      "domain": "autopilot",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-020",
+      "question": "What is the top failure reason of executions this week?",
+      "domain": "autopilot",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-021",
+      "question": "How does the Operator Console turn call its tools?",
+      "domain": "agents",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-022",
+      "question": "Which specialists can the orchestrator delegate to?",
+      "domain": "agents",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-023",
+      "question": "Where is dev_agent_memory written after an operator turn?",
+      "domain": "agents",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-024",
+      "question": "What does the worker-runner claim allowlist check?",
+      "domain": "agents",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-025",
+      "question": "How do operator threads get their rolling summary?",
+      "domain": "agents",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-026",
+      "question": "Which agents are registered in the agent registry?",
+      "domain": "agents",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-027",
+      "question": "What happened to VTID-04221 in the ledger?",
+      "domain": "oasis",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-028",
+      "question": "Which OASIS topics errored most in the last hour?",
+      "domain": "oasis",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-029",
+      "question": "How is a VTID allocated and registered?",
+      "domain": "oasis",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-030",
+      "question": "Where are oasis events written for a state transition?",
+      "domain": "oasis",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-031",
+      "question": "What does the governance evaluate endpoint check?",
+      "domain": "oasis",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-032",
+      "question": "Which commit does staging serve right now?",
+      "domain": "deploy",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-033",
+      "question": "Is production behind staging?",
+      "domain": "deploy",
+      "first_tool": "dev_system_status"
+    },
+    {
+      "id": "DEV-034",
+      "question": "How does the PUBLISH button promote staging to production?",
+      "domain": "deploy",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-035",
+      "question": "Which workflow deploys the gateway to staging?",
+      "domain": "deploy",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-036",
+      "question": "Why did the last staging deploy fail?",
+      "domain": "deploy",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-037",
+      "question": "What does the Command Hub ownership guard enforce?",
+      "domain": "deploy",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-038",
+      "question": "Which model serves the planner stage and what is its fallback?",
+      "domain": "llm",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-039",
+      "question": "Did any LLM call fall back to another provider today?",
+      "domain": "llm",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-040",
+      "question": "Is bedrock configured on the gateway task?",
+      "domain": "llm",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-041",
+      "question": "Which DeepSeek model does the executor use?",
+      "domain": "llm",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-042",
+      "question": "How does the knowledge graph get written after a session?",
+      "domain": "memory",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-043",
+      "question": "Where are memory facts superseded?",
+      "domain": "memory",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-044",
+      "question": "Which categories does the memory garden have?",
+      "domain": "memory",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-045",
+      "question": "How does the retrieval router choose a source?",
+      "domain": "memory",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-046",
+      "question": "Why did Cognee extraction drop relationships?",
+      "domain": "memory",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-047",
+      "question": "Which members see the welcome chat when someone joins?",
+      "domain": "community",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-048",
+      "question": "How are test accounts excluded from the member directory?",
+      "domain": "community",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-049",
+      "question": "Where do chat group messages get stored?",
+      "domain": "community",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-050",
+      "question": "How does matchmaking pick daily matches?",
+      "domain": "community",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-051",
+      "question": "How does a bug reported to Vitana by voice become a ticket?",
+      "domain": "support",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-052",
+      "question": "When does Devon join the call?",
+      "domain": "support",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-053",
+      "question": "Where is auto-dispatch of support tickets switched on?",
+      "domain": "support",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-054",
+      "question": "How is the Vitana Index computed?",
+      "domain": "health",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-055",
+      "question": "Why is the My Journey checklist missing Turkish rows?",
+      "domain": "health",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-056",
+      "question": "Where are lab reports stored?",
+      "domain": "health",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-057",
+      "question": "How does a merchant connect through Shopify?",
+      "domain": "commerce",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-058",
+      "question": "Where are affiliate clicks attributed?",
+      "domain": "commerce",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-059",
+      "question": "What does partner onboarding require before submit?",
+      "domain": "commerce",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-060",
+      "question": "How does the Stripe webhook update the wallet?",
+      "domain": "payments",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-061",
+      "question": "Where are wallet transactions stored?",
+      "domain": "payments",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-062",
+      "question": "How does the role switch write role preferences?",
+      "domain": "admin",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-063",
+      "question": "Which tenants exist and how are they administered?",
+      "domain": "admin",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-064",
+      "question": "Where is the navigator catalog translated?",
+      "domain": "admin",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-065",
+      "question": "How does a BackOffice commit command get approved?",
+      "domain": "backoffice",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-066",
+      "question": "Is the ERP bridge reachable on staging?",
+      "domain": "backoffice",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-067",
+      "question": "How far is the Aurora migration?",
+      "domain": "infra",
+      "first_tool": "dev_domain_atlas"
+    },
+    {
+      "id": "DEV-068",
+      "question": "Which ECS tasks are running for the gateway?",
+      "domain": "infra",
+      "first_tool": "dev_deep_dive"
+    },
+    {
+      "id": "DEV-069",
+      "question": "Is the code index in S3 current?",
+      "domain": "infra",
+      "first_tool": "dev_domain_atlas"
+    }
+  ]
+}

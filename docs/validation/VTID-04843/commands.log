@@ -1,0 +1,2 @@
+$ curl -sS -D - "https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js?v=20261002-vtid-04840-commerce-setup"  → age: 1244, last-modified 10:50:23, grep -c startCommerceSetup = 0
+$ curl -sS "https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js?v=probe-<ts>" | grep -c startCommerceSetup  → 1

@@ -1,0 +1,11 @@
+# VTID-04226 — commands run (2026-09-21)
+grep -n "test-contracts\|scheduled-run\|missing" scripts/setup-cloud-scheduler.sh        # 0 hits — no GCP cadence ever existed in git
+grep -n "isInternalCaller\|X-Gateway-Internal" services/gateway/src/routes/test-contracts-scheduled.ts services/gateway/src/routes/test-contracts-missing.ts
+aws secretsmanager list-secrets --query 'SecretList[].Name'                               # no internal-token secret
+python3 (edit) scripts/aws/setup-eventbridge-cron-migration.sh                            # 2 JOBS, Lambda auth/method/gateway_url, exec-role policy
+cat > scripts/aws/setup-gateway-internal-token.sh
+bash -n scripts/aws/setup-eventbridge-cron-migration.sh scripts/aws/setup-gateway-internal-token.sh
+DEFAULT_TENANT_ID=... bash scripts/aws/setup-eventbridge-cron-migration.sh --dry-run     # outputs/dry-run.txt (27 jobs)
+bash scripts/aws/setup-gateway-internal-token.sh                                           # outputs/internal-token-dry-run.txt
+aws iam get-role / aws lambda get-function / aws scheduler get-schedule|list-schedules     # all AccessDenied — outputs/iam-probe-apply-blocked.txt; --apply NOT run
+cd services/gateway && npx jest test/vtid-04226-eventbridge-test-contract-schedules.test.ts   # 12/12 green

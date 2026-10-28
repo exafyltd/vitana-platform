@@ -1,0 +1,21 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+(node:6363) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/services/memory/vtid-04701-forget-reaches-summaries.test.ts
+  VTID-04701 textNamesForgottenValue
+    ✓ finds the live summary (9 ms)
+    ✓ finds a multi-word value and ignores punctuation and case (1 ms)
+    ✓ a summary without the value is kept (6 ms)
+  VTID-04701 forget deletes everywhere the value is stored
+    ✓ memory_items, transcript turns and session summaries that carry the value (6 ms)
+  VTID-04701 summary writer
+    ✓ does not store a summary that names a forgotten value (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        1.862 s, estimated 4 s
+Ran all test suites matching /test\/services\/memory\/vtid-04701-forget-reaches-summaries.test.ts/i.

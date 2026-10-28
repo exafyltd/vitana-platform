@@ -1,0 +1,4 @@
+# VTID-04658 — read-only checks against staging, no writes
+node -e "validateManifest(docs/validation/VTID-04644/staging-tests.json)"   # ok
+curl -s -D - https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js?v=20260926-vtid-04658-after-turn   # 200, after_turn present
+curl -s -D - https://preview-aws-gateway.vitanaland.com/command-hub/orb-widget.js   # cf HIT, old widget

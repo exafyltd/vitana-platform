@@ -1,0 +1,29 @@
+# Local Postgres 16.13, schema = live memory_facts columns + FK superseded_by -> id
+
+## Reproduce with the live function (VTID-04341 body)
+# session A: begin; write_fact(key, 'A', user_stated); pg_sleep(2); commit
+# session B (0.5 s later): write_fact(key, 'B', user_stated)
+OLD fn, existing row, concurrent: current rows = 2
+OLD fn, no row, concurrent:       current rows = 2
+
+## Apply 20260924150000_vtid_04494_write_fact_one_current_fact.sql
+before repair: city=3 k_old_none=2 k_old_seed=2
+after repair:  city=1 k_old_none=1 k_old_seed=1
+city kept: Munich            # newest of Berlin (-3d), Hamburg (-2d), Munich (-1d)
+rows kept (none deleted): 8
+NEW fn, existing row, concurrent: current rows = 1, value = B
+NEW fn, no row, concurrent:       current rows = 1, value = B
+same-value skip returns same id: yes; lang rows total=1
+stronger source supersedes: yes; current=1
+fold on skip: current lang rows=1, kept original id: yes
+entities independent: self=1 partner=1
+global invariant (groups with >1 current): 0
+
+## Live (project inmkhvwdcuyhnxkgfvsb), read-only preview then apply_migration
+rows_to_supersede=80 current_before=918
+after: dup_groups=0 current_now=838 has_lock=true has_skip_locked=false
+grantees unchanged: authenticated, migrate, postgres, service_role
+
+## Jest
+npx jest test/vtid-04494-write-fact-one-current-fact.test.ts -> 7 passed
+mutation (re-add FOR UPDATE SKIP LOCKED) -> 1 failed, 6 passed

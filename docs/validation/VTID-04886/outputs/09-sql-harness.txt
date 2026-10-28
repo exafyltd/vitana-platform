@@ -1,0 +1,4 @@
+psql:../../../supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql:33: NOTICE:  relation "ops_attention_acks" already exists, skipping
+psql:../../../supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql:36: NOTICE:  relation "ops_attention_acks_active_idx" already exists, skipping
+psql:../../../supabase/migrations/20261005100000_vtid_04886_ops_attention_acks.sql:38: NOTICE:  relation "ops_attention_acks_fingerprint_idx" already exists, skipping
+VTID-04886 ops_attention_acks: all assertions passed

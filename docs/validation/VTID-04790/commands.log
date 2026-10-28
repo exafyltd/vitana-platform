@@ -1,0 +1,15 @@
+# Live diagnosis (read-only, Supabase MCP, 2026-10-01)
+select ... from oasis_events where topic like 'feedback.%' ...   -> auto_dispatch_blocked x2, violation_codes ["tests_missing"]
+select spec_snapshot->'proposed_files' from autopilot_recommendations ... -> 5 source files, test missing
+# Reproduced locally: matchGlob('services/gateway/test/get-current-screen-auth-transition.test.ts', '**/auth*') === true
+
+# Live config migration (applied before the code deploys)
+apply_migration vtid_04790_deny_scope_name_contains
+select deny_scope from dev_autopilot_config where id=1
+  -> ["supabase/migrations/**","**/*auth*",".github/workflows/**","services/gateway/src/lib/supabase.ts","**/*.env*","**/*credentials*"]
+
+# Checks
+npx tsc --noEmit --preserveSymlinks -p services/gateway        -> exit 0
+npx jest vtid-04790 + 04456 + 04333 + 04308 + 04649              -> 5 suites, 72 tests passed
+npx jest safety, agent-scope, scanner traps, 04132, console-20, 03839, 04465 operator suite, agent-tools -> 8 suites, 121 passed
+mutation: old matcher -> 2 failed; exemption removed -> 4 failed

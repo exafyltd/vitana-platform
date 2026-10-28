@@ -1,0 +1,20 @@
+# VTID-03844 — commands run (2026-09-13)
+
+## Live read (read-only)
+SQL: select conname, pg_get_constraintdef(oid) from pg_constraint where conrelid='public.dev_autopilot_outcomes'::regclass and contype='c'
+  -> dev_autopilot_outcomes_source_type_check: CHECK (source_type = ANY ('dev_autopilot','dev_autopilot_impact'))
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"outcomes-record-operator-onramp-findings"}'
+  -> {"ok":true,"vtid":"VTID-03844"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03844 -d '{"title":"Pipeline: outcomes ledger records operator_onramp findings","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03844'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                                                 -> outputs/tsc-noemit.txt
+cd services/gateway && npx jest test/vtid-03844-outcomes-record-operator-onramp.test.ts test/vtid-03839-onramp-approved-by-uuid.test.ts test/autopilot-executable-source-types.test.ts
+                                                                                                        -> outputs/jest-scoped-outcomes.txt
+cd services/gateway && npx jest                                                                         -> outputs/jest-full-suite-tail.txt
+
+## Not run
+RUN-MIGRATION.yml (migration_file=supabase/migrations/20260913100000_vtid_03844_outcomes_source_type_allowlist.sql) — after merge, separate step.

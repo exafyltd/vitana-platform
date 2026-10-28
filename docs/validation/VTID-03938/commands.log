@@ -1,0 +1,57 @@
+# VTID-03938 — commands run during this change
+
+## Investigation (via Explore subagent, then independently verified)
+Found the bug: fetchExistingPendingInvitation() checks only
+accepted_at/revoked_at, never expires_at. Confirmed directly by reading
+services/gateway/src/services/tenant-invitations/tenant-invitations-repository.ts
+lines 23-32 and services/gateway/test/routes/tenant-admin/invitations.test.ts
+(no existing test covers the expired-and-unrevoked scenario).
+
+## Fix
+Added `.gt('expires_at', new Date().toISOString())` to the query in
+fetchExistingPendingInvitation().
+
+## Test infrastructure fix (required, not optional)
+The mock chain in invitations.test.ts's createChain() had no `.gt()`
+method — added `gt: jest.fn(() => chain)` alongside the existing
+eq/gte/is/not mocks. Without this, every test hitting POST / would throw
+TypeError: chain.gt is not a function once the real code called it.
+
+## New regression test
+Added "POST / allows re-inviting once the previous invitation has expired
+(VTID-03938)" — asserts both the 201 outcome and that chain.gt was called
+with ('expires_at', <ISO string>), since the outcome alone can't
+distinguish "filtered correctly" from "filter never added" under this
+mock's architecture (it resolves purely from queued values).
+
+## Targeted test run
+$ cd services/gateway && npx jest test/routes/tenant-admin/invitations.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total (18 pre-existing + 1 new)
+(full output: outputs/jest-new-suite.txt)
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 906 passed, 906 of 907 total
+Tests:       29 skipped, 6 todo, 14983 passed, 15018 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"tenant-invitations-expiry-fix"}'
+{"ok":true,"vtid":"VTID-03938","num":3938,"id":"1026a810-1a7b-4987-836c-e73f1b0ce8e8"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb) to
+set title/summary, status='in_progress', spec_status='approved'.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/services/tenant-invitations/tenant-invitations-repository.ts,
+services/gateway/test/routes/tenant-admin/invitations.test.ts,
+docs/validation/VTID-03938/** — all within the gateway_backend profile's
+allowed paths.

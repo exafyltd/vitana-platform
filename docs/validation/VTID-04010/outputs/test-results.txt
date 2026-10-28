@@ -1,0 +1,31 @@
+VTID-04010 — test run outputs
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest test/services/assistant-continuation/providers/login-briefing.test.ts \
+    test/services/conversation/compute-greeting-decision.golden.test.ts --silent
+Test Suites: 2 passed, 2 total
+Tests:       102 passed, 102 total
+Snapshots:   1 updated, 33 passed, 34 total
+
+$ npx jest test/services/assistant-continuation test/services/conversation test/orb/live/upstream --silent
+Test Suites: 81 passed, 81 total
+Tests:       1318 passed, 1318 total
+
+$ npx jest test/orb/conversation-flow.contract.test.ts -u --silent
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+
+$ npx jest --silent   (full gateway suite, on the rebased branch)
+Test Suites: 1 skipped, 949 passed, 949 of 950 total
+Tests:       29 skipped, 6 todo, 15424 passed, 15459 total
+Snapshots:   44 passed, 44 total
+
+--- live repro against staging, BEFORE this fix (authenticated, lang=sr) ---
+3 trials, all: sessionStartHttpStatus=200, sseHttpStatus=200,
+provider selected = vertex/gemini-live-2.5-flash-native-audio, lang="sr"
+Transcript (all 3, English despite lang=sr):
+  "Good afternoon, E2E. Last time we worked on \"What is Vitanaland\".
+   Want me to find you an activity partner? I'll take care of it."
+Latency (session/start response -> first audio_out): 2076ms, 1319ms, 1319ms

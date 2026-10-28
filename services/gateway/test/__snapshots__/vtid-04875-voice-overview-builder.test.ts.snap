@@ -1,0 +1,299 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: data layer SupervisorDataError → 502 1`] = `
+{
+  "body_text": "{"ok":false,"error":"voice_session_facts read failed: 500","vtid":"VTID-04776"}",
+  "console_error": [
+    "[VTID-04776] voice supervisor overview failed: voice_session_facts read failed: 500",
+  ],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-08-05T12:00:00.000Z",
+          "surface": null,
+          "tenant_id": null,
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": null,
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [],
+  },
+  "status": 502,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: platform admin, bogus window + non-uuid tenant_id fall back 1`] = `
+{
+  "body_text": "{"ok":true,"window":"24h","generated_at":"2026-10-04T12:00:00.000Z","scope":{"is_platform_admin":true,"tenant_id":null},"live":{"active_sessions":0,"by_surface":{},"by_provider":{},"source":"voice_session_facts"},"kpis":{"sessions":0,"no_end":0,"end_recorded_rate":null,"ok_rate":null,"silent_rate":null,"one_way_rate":null,"drop_rate":null,"error_rate":null,"p50_ttfa_ms":null,"p95_ttfa_ms":null,"p50_turn_ms":null,"avg_duration_ms":null},"previous_kpis":{"sessions":0,"no_end":0,"end_recorded_rate":null,"ok_rate":null,"silent_rate":null,"one_way_rate":null,"drop_rate":null,"error_rate":null,"p50_ttfa_ms":null,"p95_ttfa_ms":null,"p50_turn_ms":null,"avg_duration_ms":null},"verdicts":[],"verdict_summary":"insufficient_data","truncated":false,"row_cap":50000}",
+  "console_error": [],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-10-02T12:00:00.000Z",
+          "surface": null,
+          "tenant_id": null,
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": null,
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [],
+  },
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: platform admin, default window, no filters 1`] = `
+{
+  "body_text": "{"ok":true,"window":"24h","generated_at":"2026-10-04T12:00:00.000Z","scope":{"is_platform_admin":true,"tenant_id":null},"live":{"active_sessions":3,"by_surface":{"vitanaland":1,"command-hub":1,"unknown":1},"by_provider":{"nova_sonic":1,"vertex":1,"unknown":1},"source":"voice_session_facts"},"kpis":{"sessions":21,"no_end":0,"end_recorded_rate":1,"ok_rate":0.7142857142857143,"silent_rate":0.23809523809523808,"one_way_rate":0,"drop_rate":0,"error_rate":0.047619047619047616,"p50_ttfa_ms":1000,"p95_ttfa_ms":2500,"p50_turn_ms":null,"avg_duration_ms":null},"previous_kpis":{"sessions":6,"no_end":0,"end_recorded_rate":1,"ok_rate":1,"silent_rate":0,"one_way_rate":0,"drop_rate":0,"error_rate":0,"p50_ttfa_ms":1000,"p95_ttfa_ms":1000,"p50_turn_ms":null,"avg_duration_ms":null},"verdicts":[{"scope":"system","key":"silent","label":"All voice sessions","metric":"silent","segment_rate":0.23809523809523808,"baseline_rate":null,"sessions":21,"severity":"critical","message":"silent sessions at 23.8% across all voice sessions (threshold 10%, 21 sessions)"}],"verdict_summary":"system_wide","truncated":false,"row_cap":50000}",
+  "console_error": [],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-10-02T12:00:00.000Z",
+          "surface": null,
+          "tenant_id": null,
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": null,
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [
+      [
+        [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ],
+      ],
+    ],
+  },
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: platform admin, window=7d, tenant_id + filters, truncated 1`] = `
+{
+  "body_text": "{"ok":true,"window":"7d","generated_at":"2026-10-04T12:00:00.000Z","scope":{"is_platform_admin":true,"tenant_id":"bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"},"live":{"active_sessions":0,"by_surface":{},"by_provider":{},"source":"voice_session_facts"},"kpis":{"sessions":8,"no_end":0,"end_recorded_rate":1,"ok_rate":0.375,"silent_rate":0.625,"one_way_rate":0,"drop_rate":0,"error_rate":0,"p50_ttfa_ms":2500,"p95_ttfa_ms":2500,"p50_turn_ms":null,"avg_duration_ms":null},"previous_kpis":{"sessions":0,"no_end":0,"end_recorded_rate":null,"ok_rate":null,"silent_rate":null,"one_way_rate":null,"drop_rate":null,"error_rate":null,"p50_ttfa_ms":null,"p95_ttfa_ms":null,"p50_turn_ms":null,"avg_duration_ms":null},"verdicts":[],"verdict_summary":"insufficient_data","truncated":true,"row_cap":50000}",
+  "console_error": [],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": "vitana",
+          "lang": "ru",
+          "provider": "cascade",
+          "role": "community",
+          "since_iso": "2026-09-20T12:00:00.000Z",
+          "surface": "vitanaland",
+          "tenant_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": "vitana",
+          "lang": "ru",
+          "provider": "cascade",
+          "role": "community",
+          "surface": "vitanaland",
+          "tenant_id": "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [
+      [
+        [
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ],
+      ],
+    ],
+  },
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: tenant admin is forced to own tenant whatever tenant_id says 1`] = `
+{
+  "body_text": "{"ok":true,"window":"1h","generated_at":"2026-10-04T12:00:00.000Z","scope":{"is_platform_admin":false,"tenant_id":"aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa"},"live":{"active_sessions":3,"by_surface":{"vitanaland":1,"command-hub":1,"unknown":1},"by_provider":{"nova_sonic":1,"vertex":1,"unknown":1},"source":"voice_session_facts"},"kpis":{"sessions":12,"no_end":0,"end_recorded_rate":1,"ok_rate":1,"silent_rate":0,"one_way_rate":0,"drop_rate":0,"error_rate":0,"p50_ttfa_ms":1000,"p95_ttfa_ms":1000,"p50_turn_ms":null,"avg_duration_ms":null},"previous_kpis":{"sessions":7,"no_end":0,"end_recorded_rate":1,"ok_rate":0.8571428571428571,"silent_rate":0,"one_way_rate":0,"drop_rate":0,"error_rate":0.14285714285714285,"p50_ttfa_ms":1000,"p95_ttfa_ms":1000,"p50_turn_ms":null,"avg_duration_ms":null},"verdicts":[],"verdict_summary":"insufficient_data","truncated":false,"row_cap":50000}",
+  "console_error": [],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-10-04T10:00:00.000Z",
+          "surface": null,
+          "tenant_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [
+      [
+        [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+        ],
+      ],
+    ],
+  },
+  "status": 200,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: tenant name lookup fails → 502 1`] = `
+{
+  "body_text": "{"ok":false,"error":"tenants read failed","vtid":"VTID-04776"}",
+  "console_error": [
+    "[VTID-04776] voice supervisor overview failed: tenants read failed",
+  ],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-10-02T12:00:00.000Z",
+          "surface": null,
+          "tenant_id": null,
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": null,
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [
+      [
+        [
+          "aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa",
+          "bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb",
+        ],
+      ],
+    ],
+  },
+  "status": 502,
+}
+`;
+
+exports[`VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper) route: unexpected Error → 500 1`] = `
+{
+  "body_text": "{"ok":false,"error":"boom","vtid":"VTID-04776"}",
+  "console_error": [
+    "[VTID-04776] voice supervisor overview failed: boom",
+  ],
+  "content_type": "application/json; charset=utf-8",
+  "data_calls": {
+    "fetchFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "since_iso": "2026-10-02T12:00:00.000Z",
+          "surface": null,
+          "tenant_id": null,
+        },
+      ],
+    ],
+    "fetchOpenFactRows": [
+      [
+        {
+          "assistant": null,
+          "lang": null,
+          "provider": null,
+          "role": null,
+          "surface": null,
+          "tenant_id": null,
+        },
+        1791115200000,
+      ],
+    ],
+    "fetchTenants": [],
+  },
+  "status": 500,
+}
+`;

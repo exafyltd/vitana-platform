@@ -1,0 +1,139 @@
+/**
+ * conversation-flow-change-needs-test
+ *
+ * THE RULE (operator request, 2026-06-28): the conversation flow is the product.
+ * Every change to how Vitana decides what to say / which session to surface /
+ * what context she carries MUST ship with a test in the SAME PR — so flow
+ * behaviour can never silently regress again (e.g. "offer session 1 while the
+ * user is on session 10", "I cannot execute").
+ *
+ * Heuristic: if this PR adds/modifies any CONVERSATION-FLOW source file, it must
+ * also add/modify at least one conversation-flow TEST file. If it doesn't, the
+ * check fails (blocker) — mirroring `new-route-needs-test`, but for the flow
+ * surface, and as a hard gate rather than a warning.
+ *
+ * Escape hatch (rare — genuinely behaviour-free edits: a comment, a log line, a
+ * rename): put `flow-test-exempt: <reason>` in a changed flow file (a code
+ * comment is fine). A flow file carrying that marker is excluded from the gate.
+ *
+ * The flow surface and the flow-test set are kept deliberately broad so new flow
+ * modules are covered by default; extend the regexes when a new flow area lands.
+ */
+
+import { readFileAtRepo } from './_shared.mjs';
+
+export const meta = {
+  rule: 'conversation-flow-change-needs-test',
+  category: 'companion',
+  severity: 'blocker',
+};
+
+// Source files that define conversation-flow BEHAVIOUR (what Vitana says / picks
+// / remembers). Test + .d.ts files are excluded below.
+const FLOW_SOURCE_RE = [
+  /^services\/gateway\/src\/services\/conversation\/.+\.(ts|tsx)$/,        // next-best-action, decide-opening, screen-surface, compute-greeting-decision
+  /^services\/gateway\/src\/services\/assistant-continuation\/.+\.(ts|tsx)$/, // briefing / continuation providers
+  /^services\/gateway\/src\/services\/guide\/.+\.(ts|tsx)$/,               // temporal bucket / recency
+  /^services\/gateway\/src\/services\/guided-journey\/.+\.(ts|tsx)$/,      // journey state
+  /^services\/gateway\/src\/orb\/live\/instruction\/.+\.(ts|tsx)$/,        // system-instruction builder
+  /^services\/gateway\/src\/orb\/live\/session\/live-session-controller\.ts$/, // bootstrap-context assembly
+  /^services\/gateway\/src\/services\/orb-tools-shared\.ts$/,              // the ORB action/flow tools (narrate, NBA, …)
+  // Transport integration files. `routes/orb-live.ts` owns the Vertex greeting
+  // ladder (the 9 `wake_opener` branches + its own recency/register logic) and
+  // is the single most-churned conversation-flow file, yet the guard was blind
+  // to it. `routes/orb-livekit.ts` is the LiveKit transport. (VTID roadmap §1a.)
+  /^services\/gateway\/src\/routes\/orb-live\.ts$/,                        // Vertex transport: greeting ladder integration
+  /^services\/gateway\/src\/routes\/orb-livekit\.ts$/,                     // LiveKit transport: opening integration
+];
+
+// A changed test file that counts as covering the flow change. Broad on purpose:
+// the flow suites live under many names (conversation-flow, narrate-guided-session,
+// guided-journey-*, journey-*, greeting-*, wake-*, continuity-*, system-instruction…).
+//
+// VTID-03721 — `orb-live` added, which also covers `orb-livekit`. The two
+// transport files were added to FLOW_SOURCE_RE above, but their OWN canonical
+// test files — `test/routes/orb-live.test.ts` and `test/routes/orb-livekit.test.ts`,
+// where those routes are actually tested — matched none of the keywords. So the
+// gate flagged a source file and then refused to accept a real test of that same
+// file, in the place it is already tested. Measured: extending
+// `test/routes/orb-livekit.test.ts` with four supertest cases pinning new
+// endpoint behaviour still reported the blocker.
+//
+// VTID-03885 — same defect, a new provider this time. A genuinely new
+// `orb_wake`-surface continuation provider (partner-health-result-ready.ts,
+// the "your result is ready" proactive opener) shipped with a real test at
+// test/services/assistant-continuation/providers/partner-health-result-ready.test.ts
+// — same directory, same naming convention as every sibling provider test in
+// that folder — and the gate still flagged it, because no existing keyword
+// happened to appear in "partner-health-result-ready". Per this rule's own
+// stated maintenance model ("extend the regexes when a new flow area lands"),
+// added "partner-health" below rather than renaming the test file to chase an
+// unrelated keyword.
+//
+// An unsatisfiable gate does not get satisfied honestly — it gets satisfied by
+// renaming a file until it hits a keyword, or by claiming the behaviour-free
+// exemption for a change that is not behaviour-free. Both launder a guess into a
+// green check. Same defect family as the Route Mount Evidence Gate (VTID-03696):
+// the rule keyed off a proxy for the thing it meant to check.
+//
+// VTID-04521 — voice navigation ("where is X → offer → yes → open") is flow
+// behaviour, and its suites live in test/navigation/ and test/nav-golden/
+// (the golden set and leave-one-out ratchets). Same fix as VTID-03885: extend
+// the keywords instead of renaming real tests to chase one.
+//
+// VTID-04586 — the work-surface greeting rung and instruction are pinned by
+// test/vtid-04560-role-separation-regression.test.ts (standing rule 42h,
+// `npm run test:roles`), the canonical suite for the ORB profile and the
+// greeting ladder per surface. Its name matched no keyword, so extending it for
+// a work-surface opener change still reported the blocker. Same fix again.
+//
+// VTID-05026 — the Audiobook (guided-journey listening mode) suites are named
+// `vtid-04761-audiobook-audio*.test.ts` / `vtid-05026-audiobook-voices.test.ts`
+// and pin the guided-journey narration renderer, yet matched no keyword. Same
+// fix again: "audiobook" added.
+const FLOW_TEST_RE =
+  /^services\/gateway\/test\/.*(conversation|narrate|guided|journey|greeting|wake|continuity|screen|opening|next-best|decide|instruction|session|nba|recency|temporal|diary|match|intent|index|capability|tool|orb-live|partner-health|navigation|nav-golden|role-separation|audiobook).*\.(test|spec)\.(ts|tsx)$/i;
+
+const TEST_OR_DTS_RE = /\.(test|spec)\.(ts|tsx)$|\.d\.ts$/;
+const EXEMPT_RE = /flow-test-exempt/;
+
+export async function check({ changedFiles, repoRoot }) {
+  const flowSource = changedFiles.filter(
+    (f) =>
+      (f.status === 'A' || f.status === 'M') &&
+      !TEST_OR_DTS_RE.test(f.path) &&
+      FLOW_SOURCE_RE.some((re) => re.test(f.path)),
+  );
+  if (flowSource.length === 0) return [];
+
+  // Escape hatch: drop flow files that carry the `flow-test-exempt` marker.
+  const gated = flowSource.filter((f) => {
+    const src = readFileAtRepo(repoRoot, f.path);
+    return !(src && EXEMPT_RE.test(src));
+  });
+  if (gated.length === 0) return [];
+
+  // Did the PR touch a conversation-flow test?
+  const hasFlowTest = changedFiles.some(
+    (f) => (f.status === 'A' || f.status === 'M') && FLOW_TEST_RE.test(f.path),
+  );
+  if (hasFlowTest) return [];
+
+  return [
+    {
+      rule: meta.rule,
+      severity: meta.severity,
+      file_path: gated[0].path,
+      line_number: null,
+      message:
+        `This PR changes conversation-flow code (${gated.length} file(s), e.g. ${gated[0].path}) ` +
+        `but adds/updates no conversation-flow test. Flow behaviour must ship with a test in the same PR.`,
+      suggested_action:
+        `Add or extend a test under services/gateway/test/ that pins the new flow behaviour ` +
+        `(e.g. narrate-guided-session-shared.test.ts, conversation-flow.test.ts, ` +
+        `guided-journey-standing-instruction.test.ts). For a genuinely behaviour-free edit ` +
+        `(comment / log / rename), add \`flow-test-exempt: <reason>\` in a changed flow file.`,
+      raw: { flow_files: gated.map((f) => f.path) },
+    },
+  ];
+}

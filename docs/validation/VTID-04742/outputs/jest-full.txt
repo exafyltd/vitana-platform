@@ -1,0 +1,2 @@
+Test Suites: 1 skipped, 1400 passed, 1400 of 1401 total
+Tests:       29 skipped, 6 todo, 22526 passed, 22561 total

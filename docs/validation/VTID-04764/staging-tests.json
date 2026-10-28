@@ -1,0 +1,5 @@
+{"vtid":"VTID-04764","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04764-agent-progress-gate.test.ts test/autopilot-agent-loop.test.ts test/vtid-04466-exploration-budget.test.ts test/vtid-04394-progress-ledger.test.ts test/vtid-04465-operator-pipeline-regression.test.ts","cwd":"services/gateway","reason":"The check runs inside a Dev Autopilot coding run, which a read-only staging probe cannot start. The gate (every-N cadence, activity window, shadow rows, agreement from the run outcome, failure isolation), the observe-only loop hook and the runner wiring are proven by these suites; the operator suite proves the pipeline is unchanged with the gate off."}
+]}

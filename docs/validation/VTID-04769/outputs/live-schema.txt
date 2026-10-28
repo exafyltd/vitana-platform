@@ -1,0 +1,12 @@
+# Production (inmkhvwdcuyhnxkgfvsb), read-only, 2026-10-01 after the owner applied the migration
+new_columns (products.first_listed_at, products.listing_hold): 2
+triggers: merchants.trg_merchant_link_owner_org, merchants.trg_merchant_refresh_listings,
+          partner_organizations.trg_partner_org_adopt_owner_merchants, partner_organizations.trg_partner_org_refresh_listings,
+          products.trg_products_supplier_gate, service_bot_accounts.trg_service_bot_refresh_listings,
+          notification_test_actors.trg_test_actor_refresh_listings
+functions: 9
+active products: 511 (unchanged; all network products)
+products touched by the backfill (listing_hold or first_listed_at set): 0
+authenticated can execute refresh_supplier_listings: false
+anon can execute supplier_listing_block: false
+trg_products_supplier_gate carries the vitana.supplier_gate_refresh flag: true

@@ -1,0 +1,68 @@
+{
+  "vtid": "VTID-04716",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Autopilot Prompts health reads ok:true, not down (its data layer now exists)",
+      "path": "/api/v1/autopilot/prompts/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Risk Mitigation health reads ok:true, not down (its data layer now exists)",
+      "path": "/api/v1/mitigation/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Overload Detection health reads ok:true, not down (its data layer now exists)",
+      "path": "/api/v1/overload/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "Taste Alignment health reads ok:true, not down (its data layer now exists)",
+      "path": "/api/v1/taste-alignment/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "User Preferences health reads ok:true, not down (its data layer now exists)",
+      "path": "/api/v1/user-preferences/health",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true
+      }
+    },
+    {
+      "kind": "http",
+      "name": "User Preferences declares the renamed table",
+      "path": "/api/v1/user-preferences/health",
+      "expect_body_contains": "user_explicit_preferences"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04716-feature-data-layers.test.ts",
+      "cwd": "services/gateway",
+      "reason": "migration contracts; function behaviour as a member was run on Postgres 16 (outputs/member-smoke.out) because staging tests are read-only"
+    }
+  ]
+}

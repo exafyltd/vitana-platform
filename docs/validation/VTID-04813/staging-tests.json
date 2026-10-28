@@ -1,0 +1,27 @@
+{
+  "vtid": "VTID-04813",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the Russian bridge wiring",
+      "path": "/alive"
+    },
+    {
+      "kind": "http",
+      "name": "staging reports env=staging and the deployed commit",
+      "path": "/api/v1/admin/build-info"
+    },
+    {
+      "kind": "http",
+      "name": "ORB health still reports a healthy voice stack",
+      "path": "/api/v1/orb/health"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/live/upstream",
+      "cwd": "services/gateway",
+      "reason": "This VTID adds a second narrow Vertex bridge gate and wires it into the selector. The behaviour lives entirely in pure predicates plus one selector branch, so the upstream suite is where it is actually pinned: the mutation-verified vtid-04813 suite (both halves - reverting the selector wiring fails 2, widening the ru predicate into a list fails 2), the new workflow pin test, the untouched Serbian bridge suite, and the VTID-03723 vertex-unavailable invariant matrix that must keep refusing every non-bridged language. No write probe - a real ru voice session cannot be driven from CI and staging writes reach production data (rule 48)."
+    }
+  ]
+}

@@ -1,0 +1,37 @@
+{
+  "fixture_id": "synthetic-009-intents-marketplace",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Intent post + match review lifecycle (task kind).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Post that I'm looking for a hiking buddy this weekend",
+      "expected_tool": "post_intent",
+      "expected_intent": "task.create"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Show me who matched my hiking post",
+      "expected_tool": "view_intent_matches",
+      "expected_intent": "task.matches"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "List my open intents",
+      "expected_tool": "list_my_intents",
+      "expected_intent": "task.list"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "Mark the hiking intent as fulfilled",
+      "expected_tool": "mark_intent_fulfilled",
+      "expected_intent": "task.fulfill"
+    }
+  ]
+}

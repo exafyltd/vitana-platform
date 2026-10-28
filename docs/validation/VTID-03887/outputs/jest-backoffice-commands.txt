@@ -1,0 +1,39 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+PASS test/routes/backoffice-commands.test.ts
+  POST /commands — read/draft/commit
+    ✓ 401 without identity, JSON body (mount proof) (38 ms)
+    ✓ unknown type → 400; bad key → 400 (21 ms)
+    ✓ read executes on the bridge with tenant + actor + channel; receipt stored; audit + OASIS emitted (8 ms)
+    ✓ capability missing → 403, rejected row, nothing sent to the bridge (5 ms)
+    ✓ commit without confirm → rejected confirmation_required; with confirm → bridge gets granted:true (6 ms)
+    ✓ idempotency: replay returns the stored command, different payload → 409 (11 ms)
+    ✓ ERPClaw failure → 502, failed row, command.failed audit (3 ms)
+    ✓ voice: draft ok, commit rejected voice_not_permitted (4 ms)
+    ✓ developer holds the capability but is capped at Read (5 ms)
+    ✓ bridge not configured → 503 on a ref lookup; failed row on execute (never a silent success) (5 ms)
+  POST /commands — entity resolution
+    ✓ customer_ref resolves exactly via the bridge Read action and is replaced by customer_id (3 ms)
+    ✓ ambiguous / missing → rejected with candidates, nothing written (2 ms)
+  High-risk → approvals (maker-checker)
+    ✓ queues with no_eligible_approver when the tenant has no second approver, still queued (3 ms)
+    ✓ requester cannot approve own request (even as tenant admin); a second admin with MFA can; then the bridge runs with the approval chain (15 ms)
+    ✓ approver needs the approve capability, not just any capability; reject path records the note (8 ms)
+    ✓ exafy super-admin queues like everyone and cannot self-approve (4 ms)
+    ✓ §4.3: payment kind=pay escalates to High-risk with finance.pay; amount over the tenant threshold escalates too (5 ms)
+  GET /commands, /approvals, /audit, policy
+    ✓ audit.view sees all rows; others only their own; audit needs audit.view; policy needs approvals.policy (22 ms)
+    ✓ approvals list is denied to a user with no capabilities and carries can_decide (8 ms)
+  VTID-03887 — the approver sees WHAT they approve (payload exposure)
+    ✓ GET /commands/:id — requester and audit.view see payload + resolved_payload (6 ms)
+    ✓ GET /commands/:id — a holder of the approve capability sees the queued command; anyone else still gets 404 (7 ms)
+    ✓ GET /commands (list) never carries a payload — the list stays a summary (4 ms)
+    ✓ GET /approvals attaches the command with payload for the approver and the requester, null for a bystander (7 ms)
+    ✓ the approver still sees the payload after deciding (audit trail of what was approved) (7 ms)
+Test Suites: 1 passed, 1 total
+Tests:       24 passed, 24 total
+Snapshots:   0 total
+Time:        1.071 s
+Ran all test suites matching /test\/routes\/backoffice-commands.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

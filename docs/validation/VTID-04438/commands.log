@@ -1,0 +1,20 @@
+# VTID-04438 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04438; vtid_ledger in_progress / approved.
+Read-only: information_schema columns of user_session_summaries, diary_entries, user_assistant_state (shape check, no rows read).
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+npx jest test/services/user-model-synthesis.test.ts -> 7 passed (prose answers keep working through the fallback)
+npx jest test/services/conversation/vtid-04438-structured-profile.test.ts -> 22 passed
+npx jest test/orb test/services -> first run: 1 failure in vtid-04340 (the reader returned structured:null on prose rows) —
+  fixed so the field is added only for v2 rows; the VTID-04340 suite passes unchanged (20 passed)
+npx jest (full gateway suite) -> first run: 2 failures in vtid-04371, both deliberate shape changes (the freshness summary
+  gained quality fields; the stamps select gained count columns). Assertions updated to pin the real invariant — the select
+  reads stamps and counts only, never the narrative text — 11 passed.
+node scripts/generate-command-hub-symbol-index.mjs -> regenerated
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of app.js> -> see below
+docs/validation/VTID-04438/outputs: PORT=18529 node harness-server.js & node harness-shoot.js
+  -> Assistant → Metrics at 1400x900 + 390x844: "STRUCTURED PROFILES | 18 | 3.8 of 6 parts filled on average",
+     "INPUTS SEEN | 12 · 5 · 9"; no overflow, no page errors
+Not run: a real AP-0911 synthesis or a live brain session (staging ECS cannot place tasks; nightly jobs are an owner action).
+No CSP pattern hits in added lines.
+npx jest (full gateway suite, after the fixes) -> 1162 suites passed (1 skipped), 18778 tests passed, 0 failures

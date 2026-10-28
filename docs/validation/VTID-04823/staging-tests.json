@@ -1,0 +1,3 @@
+{"vtid":"VTID-04823","service":"gateway","tests":[
+{"kind":"existing","ref":"npx jest test/orb/live/session/vtid-04545-session-start-characterization.test.ts","cwd":"services/gateway","reason":"Test-only change; nothing deploys differently. The suite itself is the proof."}
+]}

@@ -1,0 +1,62 @@
+PASS test/pillar-impact.test.ts
+  derivePillarImpact
+    ✓ returns none for null vector (1 ms)
+    ✓ returns none for undefined vector (1 ms)
+    ✓ returns none for empty object (1 ms)
+    ✓ returns none for all-zero vector
+    ✓ returns none for max weight below low band (< 0.05) (1 ms)
+    ✓ classifies low band correctly (0.05 ≤ w < 0.2)
+    ✓ classifies medium band correctly (0.2 ≤ w < 0.5) (1 ms)
+    ✓ classifies high band correctly (w ≥ 0.5)
+    ✓ picks the pillar with the highest weight
+    ✓ ignores non-numeric / NaN values (1 ms)
+    ✓ handles string numbers via Number coercion
+    ✓ ignores unknown keys outside PILLAR_KEYS
+    ✓ tie-breaks by PILLAR_KEYS iteration order (nutrition wins over hydration on tie)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/characterization/reconnect-announcement-silent-before-first-audio.characterization.test.ts
+  VTID-03685 — reconnecting announcement silenced when nothing has been heard yet
+    ✓ computes a turn_count===0 signal alongside the existing persona-swap/rotation gates (1 ms)
+    ✓ the reconnecting message is gated on all three suppression signals (1 ms)
+    ✓ does not touch MAX_RECONNECTS / _reconnectCount bookkeeping
+    ✓ resendGreetingIfStuckAtZeroTurns (the actual recovery) still gates on turn_count===0 (1 ms)
+
+PASS test/orb/context/b0c-user-assistant-state-migration.test.ts
+  B0c — user_assistant_state migration
+    ✓ creates the user_assistant_state table (1 ms)
+    ✓ uses the documented composite primary key (1 ms)
+    ✓ enables RLS for tenant isolation (21 ms)
+    ✓ documents the forbidden ephemeral signals
+    ✓ has a touch trigger so updated_at advances on mutation (1 ms)
+    ✓ indexes expires_at for time-based sweeps
+
+PASS test/orb/orb-widget-fab-size-cross-repo-parity.test.ts
+  BOOTSTRAP-ORB-WIDGET-CONSISTENCY-AUDIT — FAB size literals vitana-v1 depends on
+    ✓ desktop FAB is 64px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match. (1 ms)
+    ✓ the sub-600px breakpoint sets the FAB to 56px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match. (1 ms)
+    ✓ the mobile breakpoint itself is 600px — if this changes, update exafyltd/vitana-v1: src/pages/IntroExperience.orb-placement.test.ts (WIDGET_BASE_DESKTOP / WIDGET_BASE_MOBILE) must be updated to match.
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 719 passed, 719 of 720 total
+Tests:       29 skipped, 6 todo, 13502 passed, 13537 total
+Snapshots:   44 passed, 44 total
+Time:        74.91 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+(full log truncated to tail; full run: 719/720 suites passing (1 pre-existing skip), 13502/13537 tests passing (29 skipped, 6 todo), 0 failures)

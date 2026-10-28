@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04909",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/partner-onboarding/00000000-0000-0000-0000-000000000000/terms?locale=pt-BR",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the supplier terms view (now with a BCP-47 locale) is mounted and needs the supplier's session; nothing is read or written"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/admin/partner-terms",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the publishing API is still mounted and refuses an unsigned caller"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/admin-partner-terms.test.ts test/partner-onboarding.test.ts test/vtid-04910-partner-terms-draft-text.test.ts",
+      "cwd": "services/gateway",
+      "reason": "German binding, required English, exact 11 codes, German fallback, hash independent of the shown language, shown_locale validation, assistant refusal and idempotent acceptance are proven here; staging shares the production Supabase project, so nothing is created, published or accepted during verification. The database rules and the migration's empty-table guard are proven on a throwaway Postgres (CI SQL-PARTNER-TERMS)."
+    }
+  ]
+}

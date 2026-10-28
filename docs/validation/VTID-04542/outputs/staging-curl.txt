@@ -1,0 +1,7 @@
+# Staging, after merge of #3701 (preview-aws-gateway serving 1a8087470c2d on 10/10 build-info samples)
+POST https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/client-latency  (valid body)
+  -> 204
+POST .../client-latency  {"nope":1}
+  -> 400 application/json {"ok":false,"error":"INVALID_BODY","details":["session_id: Required","entry: Required","transport: Required","marks: Required"]}
+POST /api/v1/orb/live/session/start (anonymous, de) -> 200, "playback_lead_first_only":true   (staging flag pin live)
+GET /alive -> {"status":"ok","service":"gateway"}

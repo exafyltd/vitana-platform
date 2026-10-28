@@ -1,0 +1,76 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+  console.warn
+    [jev] JEV_CLAIM_FEASIBILITY_MODE="on" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isClaimFeasibilityOn (src/services/jev/gates/claim-feasibility-gate.ts:57:21)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:80:34)
+  console.warn
+    [jev] claim_feasibility: no plan/finding for e — not asked
+      66 |     const ctx = await a.load();
+      67 |     if (!ctx) {
+    > 68 |       console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE}: no plan/finding for ${a.executionId} — not asked`);
+         |               ^
+      69 |       return null;
+      70 |     }
+      71 |     const r = await decide(
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:68:15)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:105:12)
+  console.warn
+    [jev] claim_feasibility check failed for e: db
+      103 |     );
+      104 |   } catch (err: any) {
+    > 105 |     console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      106 |     return null;
+      107 |   }
+      108 | }
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:105:13)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:106:12)
+  console.warn
+    [jev] claim_feasibility check failed for e: net
+      103 |     );
+      104 |   } catch (err: any) {
+    > 105 |     console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      106 |     return null;
+      107 |   }
+      108 | }
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:105:13)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:110:12)
+PASS test/vtid-04774-claim-feasibility-gate.test.ts
+  VTID-04774 decision
+    ✓ execution_feasibility: telemetry, internal planes, five verdicts
+  VTID-04774 check
+    ✓ off (default, typo): nothing loaded, asked or written
+    ✓ shadow: one row per execution with the verdict next to the dispatch
+    ✓ a missing plan, a throwing loader or a failing Jev call never throws
+  VTID-04774 outcome write-back
+    ✓ predicted feasible, result {"ok":true} → run_pr_opened, agreed true
+    ✓ predicted feasible, result {"ok":true,"awaiting_approval":true} → run_awaiting_approval, agreed true
+    ✓ predicted feasible, result {"ok":false,"error":"agent hit the 120-turn cap"} → run_failed, agreed false
+    ✓ predicted needs_infra, result {"ok":false,"error":"secret missing"} → run_failed, agreed true
+    ✓ predicted too_large, result {"ok":true} → run_pr_opened, agreed false
+    ✓ predicted unclear, result {"ok":false,"cancelled":true} → run_cancelled, agreed null
+    ✓ an abstained verdict records the outcome with agreed = null
+    ✓ no row (gate was off) → nothing written, nothing thrown
+  VTID-04774 wiring and pins
+    ✓ checked after the claim and the running event, before dispatch, never awaited
+    ✓ every applied result writes the outcome first, fire-and-forget
+    ✓ both gateways pin shadow, never enforce
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        0.545 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04774/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,48 @@
+# AC-7 — live verification on staging AFTER the merge (d58b4ce), default community surface
+# Rollout gated on 12/12 consecutive build-info samples reporting d58b4ce before the first trial.
+
+##### rollout consistent: 12/12 samples on d58b4ce at 2026-09-17T22:57:06Z #####
+##### AC-7: default (community) surface, post-deploy d58b4ce #####
+--- trial 1/8 ---
+  "sessionId": "live-3c30104f-f809-426e-90f0-098390908dc1",
+  "transcriptText": "Spremni smo da nastavimo. Mogu da ti pokažem tvoje najnovije mečeve.",
+  "turnCompleted": true,
+--- trial 2/8 ---
+  "sessionId": "live-bcbabfbd-8e53-49b3-83cc-8ab05de3b30a",
+  "transcriptText": "Razumem, nastavljamo tamo gde smo stali. Želim da ti pokažem tvoj napredak u Vitana Indeksu.",
+  "turnCompleted": true,
+--- trial 3/8 ---
+  "sessionId": "live-97227157-4131-4359-9326-510116ed8376",
+  "transcriptText": "Dobar dan, E2E. Prošli put smo radili na temi \"Šta je Vitanaland\". Hoćemo li objaviti brzo ažuriranje za zajednicu? Vi diktirate, ja ću objaviti.",
+  "turnCompleted": true,
+--- trial 4/8 ---
+  "sessionId": "live-908a5992-83de-43e8-9c42-b6a353481d88",
+  "transcriptText": "Razumem, nastavljamo. Želim da ti pokažem tvoje najnovije preporuke za zajednicu.",
+  "turnCompleted": true,
+--- trial 5/8 ---
+  "sessionId": "live-34922958-9827-4206-9b02-3d036ea9782f",
+  "transcriptText": "**Initiating Communication Sequence**\n\nI've translated the initial prompt into Serbian, aiming for a natural flow. It starts with \"Dobar dan, E2E.\" and references our previous work on \"Šta je Vitanaland?\". I've proposed finding an activity partner (\"pronaći partnera za aktivnost\") and offered to handle the logistics (\"Ja ću se pobrinuti za to\"). I'm ready to begin the conversation now.\n\n\n**Crafting The Serbian Greeting**\n\nI've refined the Serbian translation, focusing on a friendly tone. I've rephrased \"I'll take care of it\" to ensure clarity, emphasizing my commitment. Now, I will begin the conversation, incorporating the extracted key facts in Serbian.\n\n\n**Formulating A Complete Approach**\n\nI've finalized the complete Serbian lead. My translation aims for natural flow and incorporates a revised commitment, choosing \"Prepuštam to meni\" for a stronger, more direct \"I'll take care of it\". I'm now certain of the message. I have the facts in order, and will not add more text. I'm ready to begin the conversation, using the lead I have composed.\n\n\n**Formulating Response Now**\n\nI'm composing the final Serbian lead, ensuring it remains concise and friendly. I've re-integrated the key details: greeting, Vitana ID, the last session topic, the activity partner proposal, and the commitment to handle logistics. \"Prepuštam to meni\" feels appropriate for a strong \"I'll take care of it\". I'm ready to send the message.\n\n\nDobar dan, e2etest33. Prošli put smo radili na \"Šta je Vitanaland\". Želite da vam pronađem partnera za aktivnost? Prepuštam to meni.",
+  "turnCompleted": true,
+--- trial 6/8 ---
+  "sessionId": "live-39d2eb35-07b3-4c7f-9918-575023da01e3",
+  "transcriptText": "Odlično, nastavljamo dalje. Hajde da pogledamo šta je sledeće za tebe.",
+  "turnCompleted": true,
+--- trial 7/8 ---
+  "sessionId": "live-f775641a-355b-470c-bc3f-6f7c814a3c52",
+  "transcriptText": "Dobar dan, e2etest33. Prošli put smo radili na temi „Šta je Vitanaland?“. Želiš li da podelimo kratko obaveštenje sa zajednicom? Ti izdiktiraj, a ja ću objaviti.",
+  "turnCompleted": true,
+--- trial 8/8 ---
+  "sessionId": "live-1bf57b6f-1402-4221-a6ed-d3c684daff3e",
+  "transcriptText": "Zdravo, E2E. Prošli put smo radili na temi „Šta je Vitanaland“. Želiš da ti pronađem partnera za aktivnost? Preuzeću to.",
+  "turnCompleted": true,
+==================== SUMMARY (authenticated) ====================
+Trials: 8, session/start OK: 8, SSE 200: 8, Got audio: 8, turn_complete: 8
+Latency ms: 1643, 1314, 1075, 1459, 940, 1523, 1064, 1178
+##### DONE #####
+
+# oasis_events cross-check (read-only), all 8 session_ids above:
+#   stage=vertex_tool_catalog_trimmed on every session: 290 -> 28 declarations, 226,316 -> 49,139 bytes
+#   upstream_ws_close code=1007: none (all 8 closed 1000 after turn_complete)
+#   surface: vitanaland (community) on all 8
+# Baseline on the same surface before the fix (same day, same account): 2/8 turn_complete, 6 x 1007.
+# Trial 5's transcript shows the pre-existing thinking-text leak (handoff §5) — separate, untouched.

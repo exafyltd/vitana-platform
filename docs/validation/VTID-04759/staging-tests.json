@@ -1,0 +1,5 @@
+{"vtid":"VTID-04759","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04759-selfheal-jev-gates.test.ts test/vtid-04754-jev-foundation.test.ts test/vtid-04465-operator-pipeline-regression.test.ts","cwd":"services/gateway","reason":"The gates run inside self-healing triage, which only a real failure reaches; staging probes are read-only and cannot cause one. The gate behaviour (classification on production strings, shadow/enforce/off, dedupe window, agreement write-back, the deploy pins) is proven by these suites; on staging the shadow rows appear in jev_shadow_decisions / GET /api/v1/jev/admin/stats once a triage runs."}
+]}

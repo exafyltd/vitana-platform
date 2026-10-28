@@ -1,0 +1,100 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03958-env-overrides-input.test.ts
+  VTID-03958: AWS-PROD-DEPLOY-GATEWAY.yml stays under the 25-input ceiling via env_overrides
+    ✓ removes nova_canary_user_ids and nova_canary_tenant_ids as named inputs (7 ms)
+    ✓ adds env_overrides as a named input (3 ms)
+    ✓ net input count is 24 (was 25, at the ceiling, before this change) (3 ms)
+    ✓ the nova_sonic_enabled override block no longer references the removed env wiring (2 ms)
+    ✓ wires ENV_OVERRIDES_INPUT from inputs.env_overrides on the register step (4 ms)
+    the real extracted jq block, executed against real jq
+      ✓ is a non-empty, well-formed bash if/fi block (1 ms)
+      ✓ passes bash -n on its own (7 ms)
+      ✓ EMPTY input is a true no-op — NEW_DEF passes through byte-for-byte (7 ms)
+      ✓ adds a brand-new key with no code change needed (generic, not hardcoded) (23 ms)
+      ✓ upserts (replaces) a key that already exists on the task def (20 ms)
+      ✓ applies multiple keys in one call, generically (to_entries, no fixed arity) (19 ms)
+      ✓ coerces a non-string JSON value to a string (ECS env vars are always strings) (19 ms)
+      ✓ fails loudly (non-zero exit, ::error::) on malformed JSON — never a silent no-op (7 ms)
+      ✓ fails loudly on valid JSON that is not an object (e.g. an array or a string) (33 ms)
+      ✓ never partially mutates NEW_DEF on a validation failure — original env is intact on the error path (8 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (6 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (50 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (56 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (2 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03961-env-only-deploy-mode.test.ts
+  VTID-03961: AWS-PROD-DEPLOY-GATEWAY.yml env-only deploy mode
+    ✓ deploy_mode input lists env-only as a third choice, not a new named input (5 ms)
+    ✓ is a well-formed bash script that passes bash -n on its own (6 ms)
+    ✓ env-only mode calls describe-services/describe-task-definition, never a staging build-info curl
+    ✓ echoes back the CURRENT service image/commit unchanged (mode=env-only, no rebuild) (16 ms)
+    ✓ falls back to sha=unknown, not a crash, when the current task def has no GIT_COMMIT_SHA (17 ms)
+    ✓ fails loudly (non-zero exit) rather than proceeding when the current image cannot be resolved (13 ms)
+    ✓ rebuild-main mode is unaffected by the new env-only branch (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/vtid-04100-prod-greeting-bridge-flag-pinned.test.ts
+  VTID-04128: production no longer force-pins FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+    ✓ does NOT unconditionally upsert the flag to "staging+prod" any more
+    ✓ does NOT strip the flag out of the current task def either — a deploy must leave it alone (1 ms)
+    ✓ records WHY the always-pin was reversed, not just that it was
+    ✓ the other four VTID-04098/04100 flags remain pinned — this reversal is scoped to one flag only (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [workflow-inputs] within 2 of the 25 limit: AWS-PROD-DEPLOY-GATEWAY.yml=24
+
+      86 |     if (near.length > 0) {
+      87 |       // eslint-disable-next-line no-console
+    > 88 |       console.warn(
+         |               ^
+      89 |         `[workflow-inputs] within 2 of the ${MAX_DISPATCH_INPUTS} limit: ` +
+      90 |           near.map((w) => `${w.file}=${w.count}`).join(', '),
+      91 |       );
+
+      at Object.<anonymous> (test/scripts/workflow-dispatch-input-limit.test.ts:88:15)
+
+PASS test/scripts/workflow-dispatch-input-limit.test.ts
+  workflow_dispatch input limit
+    ✓ no workflow exceeds GitHub’s 25-input maximum (55 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml specifically stays dispatchable (21 ms)
+    ✓ actually parsed some dispatch workflows — a guard that scans nothing passes forever (21 ms)
+    ✓ flags a workflow that is near the ceiling, so the next addition is a decision (26 ms)
+
+Test Suites: 5 passed, 5 total
+Tests:       37 passed, 37 total
+Snapshots:   0 total
+Time:        1.063 s, estimated 2 s
+Ran all test suites matching /test\/orb\/live\/upstream\/vtid-04100-prod-greeting-bridge-flag-pinned.test.ts|test\/vtid-03961-env-only-deploy-mode.test.ts|test\/vtid-03958-env-overrides-input.test.ts|test\/scripts\/workflow-dispatch-input-limit.test.ts|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,36 @@
+VTID-03763 mutation testing — one region reverted at a time, target test
+file rerun, then restored from a pre-edit backup and re-verified via
+`node --check` before moving to the next mutation.
+
+Mutation 1 — remove both `_s._sessionGeneration++;` increments:
+  Result: 2 failed, 8 passed, 10 total
+  Failures: exactly "is incremented at the SSE session-start success site"
+            and "is incremented at the WS session-start success site"
+
+Mutation 2 — remove the generation guard from _waitForAudioEnd only:
+  Result: 2 failed, 8 passed, 10 total
+  Failures: exactly "checks the generation guard as the FIRST statement..."
+            and "the generation guard precedes the guidedAutoClose/
+            guidedTopic clobber this bug actually caused"
+
+Mutation 3 — remove the generation guard(s) from _waitForGoodbyeEnd only:
+  Result: 1 failed, 9 passed, 10 total
+  Failure: exactly "captures myGen and checks it before either scheduled
+           _hide()/redirect"
+
+Mutation 4 — remove the generation guard(s) from _waitForNavReady only:
+  Result: 1 failed, 9 passed, 10 total
+  Failure: exactly "captures myGen and checks it before tearing down
+           audio/navigating/hiding"
+
+Mutation 5 — remove the generation guard from _endGuidedTopicTeaching only:
+  Result: 1 failed, 9 passed, 10 total
+  Failure: exactly "checks the generation guard before _hide() / the
+           onGuidedTopicTeachingEnd callback"
+
+After every mutation, orb-widget.js was restored from a pre-edit backup and
+re-verified with `node --check` (clean each time) before the next mutation
+and before continuing with the real fix. Each mutation's failure set is
+disjoint and isolated to exactly the tests written for that region — no
+mutation caused an unrelated test to fail, and no mutation left more than
+its own tests red.

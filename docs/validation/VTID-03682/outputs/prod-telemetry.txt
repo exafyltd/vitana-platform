@@ -1,0 +1,92 @@
+VTID-03682 — production telemetry, measured 2026-08-19 against
+project inmkhvwdcuyhnxkgfvsb (read-only).
+
+===============================================================================
+Q1. Which languages actually run live ORB sessions? (7 days)
+===============================================================================
+
+SELECT metadata->>'lang' AS lang,
+       COUNT(*) AS sessions,
+       COUNT(DISTINCT metadata->>'user_id') AS users,
+       array_agg(DISTINCT metadata->>'voice') AS voice_recorded_in_telemetry,
+       MAX(created_at) AS most_recent
+FROM oasis_events
+WHERE topic = 'vtid.live.session.start'
+  AND created_at > now() - interval '7 days'
+GROUP BY 1 ORDER BY 2 DESC;
+
+ lang | sessions | users | voice_recorded_in_telemetry | most_recent
+------+----------+-------+-----------------------------+-------------------------
+ de   |      213 |    26 | {Achernar,Kore}             | 2026-08-19 13:49:08+00
+ en   |      101 |     9 | {Callirrhoe}                | 2026-08-19 13:35:23+00
+ ru   |        9 |     2 | {Gacrux}                    | 2026-08-19 13:07:29+00
+ sr   |        7 |     2 | {Vindemiatrix}              | 2026-08-19 13:05:31+00
+ es   |        5 |     2 | {Aoede}                     | 2026-08-19 13:06:53+00
+ fr   |        4 |     2 | {Leda}                      | 2026-08-19 13:05:44+00
+ pl   |        4 |     1 | {Despina}                   | 2026-08-19 13:45:03+00
+
+ru, sr and pl are REAL TRAFFIC from real accounts, not a hypothetical. None of
+them has a row in NOVA_VOICES, so every one of those 20 sessions was spoken by
+`tina` — Nova's German voice — and nothing anywhere recorded that.
+
+===============================================================================
+Q2. Did those sessions really run on Nova? (joined, not assumed)
+===============================================================================
+
+The claim "every ORB session is on Nova now" comes from CLAUDE.md §2e, which
+explicitly warns not to trust it without checking the live task definition. So
+it is verified here by joining each ru/pl/sr session to its own provider events
+rather than inferred:
+
+WITH s AS (
+  SELECT metadata->>'session_id' AS sid, metadata->>'lang' AS lang,
+         metadata->>'voice' AS voice_in_start_event
+  FROM oasis_events
+  WHERE topic = 'vtid.live.session.start'
+    AND metadata->>'lang' IN ('ru','pl','sr')
+    AND created_at > now() - interval '7 days'
+)
+SELECT s.lang, s.voice_in_start_event,
+       e.metadata->>'provider' AS actual_provider,
+       COUNT(*) AS events, COUNT(DISTINCT s.sid) AS sessions
+FROM s JOIN oasis_events e ON e.metadata->>'session_id' = s.sid
+WHERE e.metadata ? 'provider'
+GROUP BY 1,2,3 ORDER BY 1;
+
+ lang | voice_in_start_event | actual_provider | events | sessions
+------+----------------------+-----------------+--------+----------
+ pl   | Despina              | nova_sonic      |     72 |        3
+ ru   | Gacrux               | nova_sonic      |    142 |        7
+ sr   | Vindemiatrix         | nova_sonic      |    105 |        5
+
+===============================================================================
+The finding that makes this worse than "unlogged"
+===============================================================================
+
+`Gacrux`, `Despina` and `Vindemiatrix` are GEMINI-lineage voice ids. Nova Sonic
+cannot speak any of them — its catalog is tina/lennart/ambre/florian/lupe/
+carlos/carolina/leo. Yet those are the values `vtid.live.session.start` records,
+on sessions this query proves ran on `nova_sonic`.
+
+So the telemetry does not merely OMIT the substitution. It records a voice that
+was never used. Anyone querying "what voice did our Polish users hear?" gets
+`Despina` — a confident, specific, wrong answer. That is strictly worse than a
+null, because a null invites a question and a wrong value closes it.
+
+This is the same failure family as §2b's routing table reading `anthropic` while
+Google served every call: a stated intent mistaken for a record of what
+happened. Only the completion path tells you who actually served the request.
+
+===============================================================================
+NOT FIXED HERE — stated rather than quietly widened
+===============================================================================
+
+This VTID makes the SUBSTITUTION observable (`nova_voice_fallback` diag +
+one-shot log). It does NOT correct the `voice` field on `vtid.live.session.start`,
+which stays Gemini-lineage for every Nova session — including en/de/fr/es/pt,
+where a real native Nova voice IS resolved and the recorded name is still wrong.
+That is a broader telemetry defect in the session-start emit, not something the
+`?? 'tina'` operator caused, and correcting it means deciding what that field is
+FOR when two voice systems exist. Folding it into this change would have altered
+a field every existing ORB dashboard reads, under a VTID whose entire premise is
+that the audible behaviour must not move. It needs its own VTID.

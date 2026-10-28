@@ -1,0 +1,14 @@
+# VTID-04246 (+ VTID-04243, VTID-04244, VTID-04247) — 2026-09-21
+# read-only trace of the six approvals (Supabase MCP, oasis_events / dev_autopilot_executions)
+# GitHub: actions_list VALIDATOR-CHECK.yml branch=dev-autopilot/2a9edcb4 → run 35644492399; get_job_logs failed_only → exit 10 (outputs/)
+cd services/gateway
+npx tsc --noEmit -p tsconfig.json                                    # clean
+npx jest test/vtid-04246-auto-approve-vtid-allocation.test.ts \
+         test/vtid-04243-turn-cap-breaker.test.ts \
+         test/vtid-04244-fix-round-turn-floor.test.ts \
+         test/vtid-04247-claim-executor-stamp.test.ts \
+         test/vtid-04017-fix-mode.test.ts \
+         test/dev-autopilot-runexec-pr-flood-guard.test.ts \
+         test/autopilot-agent-loop.test.ts \
+         test/vtid-04237-executor-agent-hold-pinned.test.ts         # 8 suites, 71 tests green
+npx jest --testPathPattern 'autopilot|dev-autopilot|self-heal|executor|agent'   # see outputs/sweep.txt

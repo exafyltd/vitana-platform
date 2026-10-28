@@ -1,0 +1,42 @@
+# Auto-Logger Message Templates
+templates:
+  vtid.created:
+    priority: medium
+    message: |
+      📝 New VTID Created
+      **VTID:** {vtid}
+      **Title:** {metadata.title}
+
+  vtid.state_changed:
+    priority: high
+    message: |
+      🔄 VTID State Change
+      **VTID:** {vtid}
+      **From:** {metadata.from_state} → **To:** {metadata.to_state}
+
+  vtid.completed:
+    priority: high
+    message: |
+      🎉 VTID Completed
+      **VTID:** {vtid}
+      **Impact:** {metadata.impact}
+
+  github.pr_merged:
+    priority: high
+    message: |
+      ✅ Pull Request Merged
+      **PR:** #{metadata.pr_number}
+      **VTID:** {vtid}
+
+  cd.deployment_completed:
+    priority: high
+    message: |
+      ✅ Deployment Successful
+      **Service:** {metadata.service}
+      **Environment:** {environment}
+
+  default:
+    priority: medium
+    message: |
+      📢 Event: {event_type}
+      **VTID:** {vtid}

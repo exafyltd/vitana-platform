@@ -1,0 +1,1769 @@
+{
+ "started_at": "2026-09-26T09:15:15.737Z",
+ "registry_url": "http://127.0.0.1:8765/nav-registry.json",
+ "nav_service": {
+  "registry": {
+   "source": "remote",
+   "signature": "c246686816d906f0",
+   "screens": 185,
+   "commit": null
+  },
+  "index": {
+   "signature": "c246686816d906f0",
+   "texts": 9157,
+   "current": true
+  },
+  "building": null,
+  "last_error": null
+ },
+ "voice": {
+  "summary": {
+   "total": 50,
+   "open": 39,
+   "wrong": 0,
+   "no_open": 9,
+   "not_covered": 1,
+   "error": 1
+  },
+  "results": [
+   {
+    "id": "R01",
+    "lang": "en",
+    "say": "Take me to my wallet",
+    "expect": [
+     "WALLET.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "WALLET.OVERVIEW",
+    "heard": "take me to my wallet",
+    "said": "Okay, I'm taking you to your Wallet now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "take me to my wallet",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "WALLET.OVERVIEW"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "WALLET.OVERVIEW"
+      },
+      "ok": true,
+      "directive": "WALLET.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 13016
+   },
+   {
+    "id": "R02",
+    "lang": "en",
+    "say": "Show me my rewards",
+    "expect": [
+     "WALLET.REWARDS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "WALLET.REWARDS",
+    "heard": "show me my rewards.",
+    "said": "Great, I'm taking you to your Rewards & Commissions page now.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "show me my rewards",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "WALLET.REWARDS"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "WALLET.REWARDS"
+      },
+      "ok": true,
+      "directive": "WALLET.REWARDS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9934
+   },
+   {
+    "id": "R03",
+    "lang": "en",
+    "say": "Open my subscriptions",
+    "expect": [
+     "WALLET.SUBSCRIPTIONS"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "open my subscriptions.",
+    "said": "I can guide you through the app to get there.",
+    "steps": [
+     {
+      "name": "get_my_subscription",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 15336
+   },
+   {
+    "id": "R04",
+    "lang": "en",
+    "say": "Pop up my wallet quickly, I just want a quick look",
+    "expect": [
+     "OVERLAY.WALLET_POPUP"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "OVERLAY.WALLET_POPUP",
+    "heard": "pop up my wallet quickly i just want a quick look.",
+    "said": "You can see a snapshot of your balance and recent transactions right there.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "pop up my wallet quickly i just want a quick look",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "OVERLAY.WALLET_POPUP",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "WALLET.QUICK_VIEW"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 11740
+   },
+   {
+    "id": "R05",
+    "lang": "en",
+    "say": "Open my billing settings",
+    "expect": [
+     "SETTINGS.BILLING"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.BILLING",
+    "heard": "open my billing settings.",
+    "said": "I'm taking you to your billing settings now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my billing settings",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.BILLING",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "BILLING"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 9104
+   },
+   {
+    "id": "R06",
+    "lang": "en",
+    "say": "Open my inbox",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "INBOX.OVERVIEW",
+    "heard": "open my inbox.",
+    "said": "I'm taking you to your inbox now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my inbox",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "INBOX.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "INBOX.MAIN"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 8986
+   },
+   {
+    "id": "R07",
+    "lang": "en",
+    "say": "Show me my messages",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "show me my messages.",
+    "said": "I can open the messages screen for you to see your inbox.",
+    "steps": [
+     {
+      "name": "view_messages",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 11643
+   },
+   {
+    "id": "R08",
+    "lang": "en",
+    "say": "Open my calendar",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "CALENDAR.OVERVIEW",
+    "heard": "open my calendar",
+    "said": "What would you like to do with your calendar?",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my calendar",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "CALENDAR.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 14374
+   },
+   {
+    "id": "R09",
+    "lang": "en",
+    "say": "Open my reminders",
+    "expect": [
+     "REMINDERS.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "REMINDERS.OVERVIEW",
+    "heard": "open my reminders.",
+    "said": "Okay, the user asked to open their reminders. I first checked the current screen, which was \"Longevity News\" on the home page.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my reminders",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "REMINDERS.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "REMINDERS.OVERVIEW"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 19928
+   },
+   {
+    "id": "R10",
+    "lang": "en",
+    "say": "Go to my profile",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "PROFILE.ME",
+    "heard": "go to my profile.",
+    "said": "I'm taking you to your profile now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "go to my profile",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "PROFILE.ME",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "PROFILE.ME"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 10109
+   },
+   {
+    "id": "R11",
+    "lang": "en",
+    "say": "Show me my diary",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "MEMORY.DIARY",
+    "heard": "show me my diary.",
+    "said": "Okay, the user asked to see their diary. I first checked the current screen, which was \"Longevity News\".",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "show me my diary",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "MEMORY.DIARY"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "MEMORY.DIARY"
+      },
+      "ok": true,
+      "directive": "MEMORY.DIARY",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 17613
+   },
+   {
+    "id": "R12",
+    "lang": "en",
+    "say": "Open my diary",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "MEMORY.DIARY",
+    "heard": "open my diary.",
+    "said": "Opening your Daily Diary now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my diary",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "MEMORY.DIARY",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8519
+   },
+   {
+    "id": "R13",
+    "lang": "en",
+    "say": "Take me to my memory garden",
+    "expect": [
+     "MEMORY.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "MEMORY.OVERVIEW",
+    "heard": "take me to my memory garden.",
+    "said": "I'm taking you to your Memory Garden now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "memory garden",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "MEMORY.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8719
+   },
+   {
+    "id": "R14",
+    "lang": "en",
+    "say": "Open settings",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.OVERVIEW",
+    "heard": "open settings",
+    "said": "I'm taking you to the Settings screen now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open settings",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SETTINGS"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 9457
+   },
+   {
+    "id": "R15",
+    "lang": "en",
+    "say": "Take me to the notification settings",
+    "expect": [
+     "SETTINGS.NOTIFICATIONS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.NOTIFICATIONS",
+    "heard": "take me to the notification settings.",
+    "said": "I'm taking you to the notification settings now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "notification settings",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.NOTIFICATIONS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9674
+   },
+   {
+    "id": "R16",
+    "lang": "en",
+    "say": "Open the settings where I change the app language",
+    "expect": [
+     "SETTINGS.PREFERENCES_LANGUAGE"
+    ],
+    "path": "nova",
+    "outcome": "error",
+    "opened": null,
+    "heard": null,
+    "said": "",
+    "steps": [],
+    "ms": 0,
+    "note": "nova_connect_failed: nova_stream_error"
+   },
+   {
+    "id": "R17",
+    "lang": "en",
+    "say": "Open the settings for dark mode",
+    "expect": [
+     "SETTINGS.PREFERENCES_APPEARANCE"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.PREFERENCES_APPEARANCE",
+    "heard": "open the settings for dark mode.",
+    "said": "I'm taking you to the Appearance Theme settings where you can adjust dark mode.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open the settings for dark mode",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "SETTINGS.PREFERENCES_APPEARANCE"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SETTINGS.PREFERENCES_APPEARANCE"
+      },
+      "ok": true,
+      "directive": "SETTINGS.PREFERENCES_APPEARANCE",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10465
+   },
+   {
+    "id": "R18",
+    "lang": "en",
+    "say": "Open my privacy settings",
+    "expect": [
+     "SETTINGS.PRIVACY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.PRIVACY",
+    "heard": "open my privacy settings.",
+    "said": "I'm taking you to your privacy settings right now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my privacy settings",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.PRIVACY",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SETTINGS.PRIVACY"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 9465
+   },
+   {
+    "id": "R19",
+    "lang": "en",
+    "say": "Show me my connected apps",
+    "expect": [
+     "SETTINGS.CONNECTED_APPS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.CONNECTED_APPS",
+    "heard": "show me my connected apps",
+    "said": "I'm taking you to the Connectors & Connected Apps screen where you can see all your connected apps and services.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "connected apps",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.CONNECTED_APPS",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SETTINGS.CONNECTORS"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 10561
+   },
+   {
+    "id": "R20",
+    "lang": "en",
+    "say": "I need help, take me to support",
+    "expect": [
+     "SETTINGS.SUPPORT",
+     "SETTINGS.SUPPORT_CONTACT"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "i need help take me to support",
+    "said": "Please hold on while I connect you. \n\nDevon will be with you shortly to help resolve your concerns.",
+    "steps": [
+     {
+      "name": "switch_persona",
+      "args": {
+       "reason": "user wants to go to support",
+       "to": "devon"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "report_to_specialist",
+      "args": {
+       "summary": "User needs help and wants to be taken to support",
+       "kind": "support_question"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 12130
+   },
+   {
+    "id": "R21",
+    "lang": "en",
+    "say": "Show me today's events",
+    "expect": [
+     "COMM.EVENTS_TODAY"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "show me today's events.",
+    "said": "What would you prefer?",
+    "steps": [
+     {
+      "name": "get_schedule",
+      "args": {
+       "days_ahead": 1
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "search_events",
+      "args": {
+       "date_to": "2026-04-15",
+       "date_from": "2026-04-15"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 12385
+   },
+   {
+    "id": "R22",
+    "lang": "en",
+    "say": "Take me to the live rooms",
+    "expect": [
+     "COMM.LIVE_ROOMS",
+     "COMM.LIVE_ROOMS_ALL"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "COMM.LIVE_ROOMS",
+    "heard": "take me to the live rooms.",
+    "said": "Okay, I'm taking you to the Live Rooms now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "live rooms",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "COMM.LIVE_ROOMS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9181
+   },
+   {
+    "id": "R23",
+    "lang": "en",
+    "say": "Show me the groups",
+    "expect": [
+     "COMM.GROUPS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "COMM.GROUPS",
+    "heard": "show me the groups",
+    "said": "I'm taking you to the Groups page where you can explore all available community groups and find ones that match your interests.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "search_community",
+      "args": {
+       "query": "groups"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "get_recommendations",
+      "args": {
+       "type": "community"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "groups",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "COMM.GROUPS",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "COMM.GROUPS"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 11094
+   },
+   {
+    "id": "R24",
+    "lang": "en",
+    "say": "Open the podcasts",
+    "expect": [
+     "COMM.MEDIA_PODCASTS",
+     "HEALTH.EDUCATION_PODCASTS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "COMM.MEDIA_PODCASTS",
+    "heard": "open the podcasts",
+    "said": "I'm taking you to the Podcasts screen now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open the podcasts",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "COMM.MEDIA_PODCASTS"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "COMM.MEDIA_PODCASTS"
+      },
+      "ok": true,
+      "directive": "COMM.MEDIA_PODCASTS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10186
+   },
+   {
+    "id": "R25",
+    "lang": "en",
+    "say": "I want to invite a friend to the app",
+    "expect": [
+     "COMM.INVITE"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "i want to invite a friend to the app.",
+    "said": "I understand you want to invite a friend to the app!",
+    "steps": [
+     {
+      "name": "resolve_recipient",
+      "args": {
+       "spoken_name": "friend"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 12355
+   },
+   {
+    "id": "R26",
+    "lang": "en",
+    "say": "Show me my Vitana Index",
+    "expect": [
+     "HEALTH.VITANA_INDEX",
+     "OVERLAY.VITANA_INDEX"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "show me my vitana index.",
+    "said": "Would you like me to help you navigate to where you can find your Vitana Index in the app, or would you prefer to try retrieving it another way?",
+    "steps": [
+     {
+      "name": "get_vitana_index",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "search_knowledge",
+      "args": {
+       "query": "What is the Vitana Index?"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 20245
+   },
+   {
+    "id": "R27",
+    "lang": "en",
+    "say": "Open my sleep plan",
+    "expect": [
+     "HEALTH.PLANS_SLEEP"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HEALTH.PLANS_SLEEP",
+    "heard": "open my sleep plan.",
+    "said": "Okay, the user asked to open their sleep plan. I first called the navigate function with the intent \"open\" to find the correct screen.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my sleep plan",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "HEALTH.PLANS_SLEEP",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SLEEP.PLAN"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 19228
+   },
+   {
+    "id": "R28",
+    "lang": "en",
+    "say": "Show me my workout plans",
+    "expect": [
+     "HEALTH.PLANS_EXERCISE"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HEALTH.PLANS_EXERCISE",
+    "heard": "show me my workout plans.",
+    "said": "I'm taking you to your workout plans now.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "workout plans",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "HEALTH.PLANS_EXERCISE",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "FITNESS.PLANS"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 10169
+   },
+   {
+    "id": "R29",
+    "lang": "en",
+    "say": "Open my life compass",
+    "expect": [
+     "LIFE_COMPASS.OVERLAY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "LIFE_COMPASS.OVERLAY",
+    "heard": "open my life compass.",
+    "said": "Would you like me to explain how to use it or make any adjustments to your Life Compass?",
+    "steps": [
+     {
+      "name": "get_life_compass",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open my life compass",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "LIFE_COMPASS.OVERLAY",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10953
+   },
+   {
+    "id": "R30",
+    "lang": "en",
+    "say": "Open the marketplace",
+    "expect": [
+     "DISCOVER.MARKETPLACE"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "DISCOVER.MARKETPLACE",
+    "heard": "open the marketplace.",
+    "said": "Taking you to the marketplace now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open the marketplace",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "DISCOVER.MARKETPLACE",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "MARKETPLACE"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 9113
+   },
+   {
+    "id": "R31",
+    "lang": "en",
+    "say": "Show me my shopping cart",
+    "expect": [
+     "DISCOVER.CART"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "DISCOVER.CART",
+    "heard": "show me my shopping cart.",
+    "said": "I'm taking you to your Shopping Cart now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "show me my shopping cart",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "DISCOVER.CART"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "DISCOVER.CART"
+      },
+      "ok": true,
+      "directive": "DISCOVER.CART",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10224
+   },
+   {
+    "id": "R32",
+    "lang": "en",
+    "say": "Show me my orders",
+    "expect": [
+     "DISCOVER.ORDERS",
+     "DISCOVER.ORDERS_ACTIVE"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "show me my orders.",
+    "said": "Would you like me to open this page for you now?",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "orders",
+       "intent": "where"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "offer",
+      "first_candidate": "DISCOVER.ORDERS"
+     }
+    ],
+    "ms": 9947
+   },
+   {
+    "id": "R33",
+    "lang": "en",
+    "say": "Take me to the supplements",
+    "expect": [
+     "DISCOVER.SUPPLEMENTS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "DISCOVER.SUPPLEMENTS",
+    "heard": "take me to the supplements.",
+    "said": "I'm taking you to the Supplements page now.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "supplements",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "DISCOVER.SUPPLEMENTS"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "DISCOVER.SUPPLEMENTS"
+      },
+      "ok": true,
+      "directive": "DISCOVER.SUPPLEMENTS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9039
+   },
+   {
+    "id": "R34",
+    "lang": "en",
+    "say": "Find me doctors and coaches",
+    "expect": [
+     "DISCOVER.DOCTORS_COACHES"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "find me doctors and coaches.",
+    "said": "I understand you're looking for doctors and coaches, but I'm currently unable to access the practitioner recommendation tool.",
+    "steps": [
+     {
+      "name": "find_perfect_practitioner",
+      "args": {
+       "specialty": "doctor"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "find_perfect_practitioner",
+      "args": {
+       "specialty": "coach"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     },
+     {
+      "name": "find_perfect_practitioner",
+      "args": {
+       "specialty": "coach"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 18262
+   },
+   {
+    "id": "R35",
+    "lang": "en",
+    "say": "Open the business hub",
+    "expect": [
+     "BUSINESS.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "BUSINESS.OVERVIEW",
+    "heard": "open the business hub",
+    "said": "Okay, the user asked to open the business hub. I first called the navigate function with the intent \"open\" to find the correct screen.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "open the business hub",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "BUSINESS.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "BUSINESS.HUB"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "blocked: already navigating this turn",
+      "first_candidate": null
+     }
+    ],
+    "ms": 19649
+   },
+   {
+    "id": "R36",
+    "lang": "de",
+    "say": "Öffne meinen Kalender",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "CALENDAR.OVERVIEW",
+    "heard": "öffne meinen kalender",
+    "said": "Ich öffne jetzt deinen Kalender für dich. Du kannst hier deine Termine und Erinnerungen einsehen und bearbeiten.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "öffne meinen kalender",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "CALENDAR.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 11455
+   },
+   {
+    "id": "R37",
+    "lang": "de",
+    "say": "Zeig mir mein Profil",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "PROFILE.ME",
+    "heard": "zeig mir mein profil",
+    "said": "Ich öffne jetzt dein Profil für dich.",
+    "steps": [
+     {
+      "name": "get_current_screen",
+      "args": {},
+      "ok": true,
+      "directive": null,
+      "decision": null,
+      "first_candidate": null
+     },
+     {
+      "name": "navigate",
+      "args": {
+       "question": "zeig mir mein profil",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "PROFILE.ME"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "PROFILE.ME"
+      },
+      "ok": true,
+      "directive": "PROFILE.ME",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10616
+   },
+   {
+    "id": "R38",
+    "lang": "de",
+    "say": "Bring mich zu meinen Nachrichten",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "INBOX.OVERVIEW",
+    "heard": "bring mich zu meinen nachrichten",
+    "said": "Ich bringe dich jetzt zum Posteingang, wo du deine Nachrichten und Chats mit Community-Mitgliedern finden kannst.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "nachrichten",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "INBOX.OVERVIEW"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "INBOX.OVERVIEW"
+      },
+      "ok": true,
+      "directive": "INBOX.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 11048
+   },
+   {
+    "id": "R39",
+    "lang": "de",
+    "say": "Öffne mein Tagebuch",
+    "expect": [
+     "MEMORY.DIARY",
+     "MEMORY.DAILY_DIARY"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "MEMORY.DIARY",
+    "heard": "öffne mein tagebuch",
+    "said": "Ich öffne jetzt dein Tagebuch für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "öffne mein tagebuch",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "MEMORY.DIARY",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 10308
+   },
+   {
+    "id": "R40",
+    "lang": "de",
+    "say": "Zeig mir meine Wallet",
+    "expect": [
+     "WALLET.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "WALLET.OVERVIEW",
+    "heard": "zeig mir meine wallet",
+    "said": "Ich öffne jetzt deine Wallet für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "zeig mir meine wallet",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "WALLET.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8628
+   },
+   {
+    "id": "R41",
+    "lang": "de",
+    "say": "Öffne die Einstellungen",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.OVERVIEW",
+    "heard": "öffne die einstellungen",
+    "said": "Ich öffne die Einstellungen für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "öffne die einstellungen",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 9179
+   },
+   {
+    "id": "R42",
+    "lang": "de",
+    "say": "Zeig mir die Veranstaltungen von heute",
+    "expect": [
+     "COMM.EVENTS_TODAY"
+    ],
+    "path": "nova",
+    "outcome": "no_open",
+    "opened": null,
+    "heard": "zeig mir die veranstaltungen von heute",
+    "said": "Möchtest du, dass ich dir stattdessen etwas anderes zeige, wie zum Beispiel deine Nachrichten oder deine geplanten Termine?",
+    "steps": [
+     {
+      "name": "search_events",
+      "args": {
+       "date_to": "2026-04-15",
+       "date_from": "2026-04-15"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "not a navigation tool (stubbed)",
+      "first_candidate": null
+     }
+    ],
+    "ms": 11377
+   },
+   {
+    "id": "R43",
+    "lang": "de",
+    "say": "Öffne meinen Schlafplan",
+    "expect": [
+     "HEALTH.PLANS_SLEEP"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "HEALTH.PLANS_SLEEP",
+    "heard": "öffne meinen schlafplan",
+    "said": "Ich öffne jetzt deinen Schlafplan für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "öffne meinen schlafplan",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "HEALTH.PLANS_SLEEP",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8840
+   },
+   {
+    "id": "R44",
+    "lang": "de",
+    "say": "Bring mich zum Marktplatz",
+    "expect": [
+     "DISCOVER.MARKETPLACE"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "DISCOVER.MARKETPLACE",
+    "heard": "bring mich zum marktplatz",
+    "said": "Ich bringe dich jetzt zum Marktplatz.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "marktplatz",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "DISCOVER.MARKETPLACE",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 8590
+   },
+   {
+    "id": "R45",
+    "lang": "de",
+    "say": "Ich möchte meine Benachrichtigungen einstellen, öffne das bitte",
+    "expect": [
+     "SETTINGS.NOTIFICATIONS"
+    ],
+    "path": "nova",
+    "outcome": "open",
+    "opened": "SETTINGS.NOTIFICATIONS",
+    "heard": "ich möchte meine benachrichtigungen einstellen öffne das bitte",
+    "said": "Ich öffne jetzt deine Benachrichtigungseinstellungen für dich.",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "benachrichtigungen einstellen",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "SETTINGS.NOTIFICATIONS"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "SETTINGS.NOTIFICATIONS"
+      },
+      "ok": true,
+      "directive": "SETTINGS.NOTIFICATIONS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 11668
+   },
+   {
+    "id": "R46",
+    "lang": "es",
+    "say": "Abre mi calendario",
+    "expect": [
+     "CALENDAR.OVERVIEW"
+    ],
+    "path": "cascade",
+    "outcome": "open",
+    "opened": "CALENDAR.OVERVIEW",
+    "heard": "Abre mi calendario",
+    "said": "¡Aquí tienes tu calendario! ¿Quieres que revisemos algún evento o cita en particular?",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "Abre mi calendario",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "CALENDAR.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 3674,
+    "note": "text turn on bedrock/eu.anthropic.claude-sonnet-4-6; speech-to-text not exercised"
+   },
+   {
+    "id": "R47",
+    "lang": "fr",
+    "say": "Ouvre mes messages",
+    "expect": [
+     "INBOX.OVERVIEW"
+    ],
+    "path": "cascade",
+    "outcome": "open",
+    "opened": "INBOX.OVERVIEW",
+    "heard": "Ouvre mes messages",
+    "said": "Voilà, votre boîte de réception est ouverte !",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "Ouvre mes messages",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": null,
+      "decision": "ambiguous",
+      "first_candidate": "INBOX.OVERVIEW"
+     },
+     {
+      "name": "navigate_to_screen",
+      "args": {
+       "screen_id": "INBOX.OVERVIEW",
+       "reason": "L'utilisateur souhaite ouvrir ses messages."
+      },
+      "ok": true,
+      "directive": "INBOX.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 5588,
+    "note": "text turn on bedrock/eu.anthropic.claude-sonnet-4-6; speech-to-text not exercised"
+   },
+   {
+    "id": "R48",
+    "lang": "sr",
+    "say": "Otvori moj profil",
+    "expect": [
+     "PROFILE.ME"
+    ],
+    "path": "not_covered",
+    "outcome": "not_covered",
+    "opened": null,
+    "heard": null,
+    "said": "",
+    "steps": [],
+    "ms": 0,
+    "note": "Serbian runs on the Vertex bridge; this runner never calls Google"
+   },
+   {
+    "id": "R49",
+    "lang": "pt",
+    "say": "Abre as minhas recompensas",
+    "expect": [
+     "WALLET.REWARDS"
+    ],
+    "path": "cascade",
+    "outcome": "open",
+    "opened": "WALLET.REWARDS",
+    "heard": "Abre as minhas recompensas",
+    "said": "Estou abrindo as suas recompensas agora!",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "Abre as minhas recompensas",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "WALLET.REWARDS",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 3571,
+    "note": "text turn on bedrock/eu.anthropic.claude-sonnet-4-6; speech-to-text not exercised"
+   },
+   {
+    "id": "R50",
+    "lang": "ar",
+    "say": "افتح الإعدادات",
+    "expect": [
+     "SETTINGS.OVERVIEW"
+    ],
+    "path": "cascade",
+    "outcome": "open",
+    "opened": "SETTINGS.OVERVIEW",
+    "heard": "افتح الإعدادات",
+    "said": "خذني إلى الإعدادات الآن!",
+    "steps": [
+     {
+      "name": "navigate",
+      "args": {
+       "question": "افتح الإعدادات",
+       "intent": "open"
+      },
+      "ok": true,
+      "directive": "SETTINGS.OVERVIEW",
+      "decision": null,
+      "first_candidate": null
+     }
+    ],
+    "ms": 3502,
+    "note": "text turn on bedrock/eu.anthropic.claude-sonnet-4-6; speech-to-text not exercised"
+   }
+  ]
+ },
+ "finished_at": "2026-09-26T09:24:07.985Z"
+}

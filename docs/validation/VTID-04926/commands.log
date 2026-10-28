@@ -1,0 +1,7 @@
+# commands run locally (session, no live services, nothing written remotely)
+cd services/gateway && npx jest test/vtid-04926-chat-group-mentions.test.ts          # 9 passed
+cd services/gateway && npx jest test/i18n test/vtid-04674-notification-controls.test.ts test/routes/chat-groups-repository.test.ts test/chat-vitana-reply.test.ts   # 126 passed
+cd services/gateway && npx jest test/d50-positive-trajectory-reinforcement.test.ts test/celebrations.test.ts test/daily-pace-service.test.ts test/scheduled-notifications-daily-feature-tip.test.ts test/scheduled-notifications-whats-new.test.ts test/scheduled-notifications-night-push.test.ts test/routes/positive-trajectory-reinforcement.test.ts   # 159 passed
+cd services/gateway && npx tsc --noEmit   # clean
+# throwaway local Postgres 16 (initdb in /var/lib/postgresql, deleted afterwards)
+psql -d p04926 -f supabase/migrations/20261006150000_vtid_04926_mention_notification_types.sql   # twice

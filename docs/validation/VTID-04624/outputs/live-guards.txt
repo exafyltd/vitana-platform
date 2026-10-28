@@ -1,0 +1,12 @@
+Live database, one transaction, rolled back (probe table + writer function created and discarded inside it),
+calls made as service_role through a wrapper that catches the error:
+
+read              OK: [{"n": 2484}]                         (select count(*) from public.vtid_ledger)
+auth_users        BLOCKED: permission denied for table users
+write             BLOCKED: cannot execute INSERT in a read-only transaction
+rw_back           BLOCKED: cannot set transaction read-write mode inside a read-only transaction
+multi             BLOCKED: column "_operator_ro_row" does not exist   (stacked-statement injection attempt)
+probe_rows_after  0
+
+After the transaction: probe table null, probe functions 0,
+EXECUTE: anon=false, authenticated=false, service_role=true.

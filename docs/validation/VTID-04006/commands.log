@@ -1,0 +1,10 @@
+# VTID-04006 — commands run (Claude Code session, 2026-09-17)
+npx tsc --noEmit -p tsconfig.json                     -> exit 0 (autopilot-agent/* + delegation in runExecutionSession)
+npx jest test/autopilot-agent-tools.test.ts test/autopilot-agent-loop.test.ts test/autopilot-agent-scope-validate.test.ts
+                                                     -> 3 suites, 25 tests passing (loop test fixed: callLlm receives a history snapshot)
+npx jest test/dev-autopilot-execute.test.ts test/dev-autopilot-runexec-pr-flood-guard.test.ts \
+         test/vtid-03820-operator-execution-onramp.test.ts test/vtid-03820-execution-onramp-metadata.test.ts \
+         test/vtid-04005-onramp-vtid-self-allocate.test.ts test/dev-autopilot-pr-contract.test.ts
+                                                     -> all passing (single-shot path unchanged)
+NOT run here: a real agent execution — needs the rebuilt executor image on ECS (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml, owner dispatch)
+             and OPERATOR_ONRAMP_EXECUTOR=agent on the staging gateway task def. That is Test Run #4 in the plan.

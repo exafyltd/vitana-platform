@@ -1,0 +1,9 @@
+# VTID-04238 — commands run (2026-09-21, read-only)
+# gateway (staging, op-token): POST /api/v1/vtid/allocate {"source":"claude-code","layer":"DEV","module":"AGENTS"} -> VTID-04238
+# Supabase MCP execute_sql (read-only):
+#   select … from llm_routing_policy where is_active = true
+#   select provider_key, is_active, count(*), string_agg(model_id …) from llm_allowed_models group by 1,2
+#   select provider_key, is_active, display_name from llm_allowed_providers
+#   select topic, metadata->>'stage', metadata->>'provider', metadata->>'model', metadata->>'fallback_used', count(*) from oasis_events
+#     where topic in ('llm.call.completed','llm.call.failed','llm.call.fallback') and created_at > now() - interval '24 hours' group by 1,2,3,4,5
+# -> outputs/*.json

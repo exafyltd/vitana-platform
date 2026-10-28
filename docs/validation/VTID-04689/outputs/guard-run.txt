@@ -1,0 +1,3 @@
+  ✓  1 _guardcheck/guard.spec.ts:24:5 › with the guard: role saves blocked, reads and other writes pass (310ms)
+  ✓  2 _guardcheck/guard.spec.ts:27:5 › without the guard (control): every request reaches the stub (232ms)
+  2 passed (2.1s)

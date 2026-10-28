@@ -1,0 +1,14 @@
+# VTID-04809 — commands run in this session (services/gateway unless noted)
+(root) read-only SQL against the VITANA project: live shape of user_wallets / wallet_transactions / exchange_rates
+       (columns, constraints, triggers, RLS policies, table + function grants), balances (all 251 wallets at 0),
+       confirmed credit_wallet() absent and update_user_balance executable by anon/authenticated
+(root) scripts/ci/test-vtid-04809-vtna-ledger.sh        # migration applied twice to a local PG16 replica; 14 assertions pass
+(root) mutation: disable update_user_balance's 'add' refusal -> harness exits 3; restored -> passes
+npx jest test/vtid-04809-vtna-reward-ledger.test.ts test/vtid-04508-community-invites.test.ts \
+  test/services/automation-handlers-onboarding-growth.test.ts test/services/automation-handlers-sharing-growth.test.ts \
+  test/vtid-04349-automation-shadow.test.ts test/diary-streak-celebrator.test.ts test/milestone-service.test.ts \
+  test/services/automation-handlers-wallet-payments.test.ts test/routes/billing-repository.test.ts \
+  test/vtid-04456-customer-support-pipeline-regression.test.ts test/vtid-04465-operator-pipeline-regression.test.ts \
+  test/vtid-04560-role-separation-regression.test.ts                         # 12 suites, 281 tests, all pass
+npx tsc --noEmit -p .                                                          # clean
+(root) node scripts/ci/validate-pr-locally.cjs --title-file ... --body-file ... --base origin/main

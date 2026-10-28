@@ -1,0 +1,13 @@
+    ✓ ignores transcript content entirely — output tracks primaryTool, not any tool name mentioned in the transcript (1 ms)
+    ✓ does not alter case, whitespace, or otherwise transform the tool name
+    ✓ handles an empty transcript
+    ✓ handles an empty primaryTool string without substituting a default (1 ms)
+    ✓ returns a Promise that resolves (not a bare synchronous value)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 775 passed, 775 of 776 total
+Tests:       29 skipped, 6 todo, 14027 passed, 14062 total
+Snapshots:   44 passed, 44 total
+Time:        74.493 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

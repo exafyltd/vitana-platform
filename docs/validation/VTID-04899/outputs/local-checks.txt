@@ -1,0 +1,17 @@
+$ node scripts/conversation/generate-flag-pins.mjs
++  AUTOPILOT_ACTION_REWARD_ENABLED: { staging: "true", prod: "false" },
+$ python3 (yaml.safe_load + bash -n on every run step of both gateway deploy workflows)
+ok — staging "Register task-definition" step 19,978 → 19,872 chars (pin added; indentation trimmed on 7 jq name-list lines, whitespace only: git diff -w shows just the two additions)
+$ node check-switch.js   # real vtna-reward-rules / capped-reward / reward-overview-service via a TS require hook
+ok   unset → hidden
+ok   TRUE → hidden
+ok   true → listed
+ok   sweep false → both hidden
+ok   sweep unset → listed
+ok   prod pins: three hidden, others listed
+ok   invite switch only invites
+ok   off → rule_off, no rpc
+ok   on → claimed 5
+ok   on + cap reached → capped 0
+ok   overview on → listed with count
+# jest runs in CI (the npm registry is unreachable from this session)

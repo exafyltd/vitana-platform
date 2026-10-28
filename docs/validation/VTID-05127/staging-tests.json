@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05127",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "phone status still mounted after the task-definition change and needs a signed-in member (invalid bearer rejected)", "method": "GET", "path": "/api/v1/me/phone", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-05127-phone-verify-switch-wiring.test.ts", "cwd": "services/gateway",
+      "reason": "The change is deploy wiring and an operator script. Whether the staging task definition carries PHONE_VERIFY_ENABLED=false (secret absent) is in the staging deploy log; the six prod wiring cases, the ARN guard and the setup script's dry-run are proven by Jest. Sending an SMS is a real outward write and never runs on staging (rule 48)." }
+  ]
+}

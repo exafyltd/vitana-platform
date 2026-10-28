@@ -1,0 +1,35 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-04591] remember backstop s1: paul_birthday->conflict
+
+      at src/orb/live/session/remember-backstop-hook.ts:126:13
+
+PASS test/services/memory/vtid-04697-remember-claim-backstop.test.ts
+  VTID-04697 detectRememberClaim
+    ✓ a save claim: Danke für die Info! Ich merke mir den Geburtstag deines Bruders Paul am siebten Mai. Möchtest du, dass ich dich daran erinnere? (11 ms)
+    ✓ a save claim: Alles klar, das habe ich notiert. (1 ms)
+    ✓ a save claim: Okay, ist gespeichert. (2 ms)
+    ✓ a save claim: Got it, I'll remember that. (1 ms)
+    ✓ a save claim: I've noted that your brother's birthday is May 7. (1 ms)
+    ✓ not a save claim: Das kann ich leider nicht speichern. (1 ms)
+    ✓ not a save claim: I can't save that, it belongs in your profile. (1 ms)
+    ✓ not a save claim: Wann hat Paul Geburtstag? (1 ms)
+    ✓ not a save claim: Möchtest du, dass ich dich daran erinnere? (1 ms)
+    ✓ not a save claim:  (1 ms)
+  VTID-04697 live hook
+    ✓ runs the rules on the live B-CONF-02 turn: conflict, nothing written, marked note (26 ms)
+    ✓ stands down when remember_fact ran, when the reply claims nothing, or off Nova (3 ms)
+    ✓ is wired at turn_complete with the reply transcript (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       13 passed, 13 total
+Snapshots:   0 total
+Time:        0.822 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04697-remember-claim-backstop.test.ts/i.

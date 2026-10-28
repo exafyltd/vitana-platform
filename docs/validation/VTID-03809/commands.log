@@ -1,0 +1,79 @@
+# VTID-03809 — commands actually run.
+
+# User reported: "I don't like Vitana's voice during general Orb
+# communication, when English is selected." Confirmed there is no
+# end-user-facing setting for this (VoiceSettingsPanel.tsx in vitana-v1
+# only controls the browser-fallback voice + speed/pitch/volume, not the
+# live Nova voice) — the ORB voice is hardcoded per-language server-side.
+
+grep -n "tiffany|matthew|amy" services/gateway/src/orb/live/voice/nova-sonic-voice.ts
+#   -> confirmed en's current voice is 'tina' (Nova's DE voice, reused for
+#      EN after `tiffany` was rejected on a live listen 2026-07-28).
+
+# Looked up the real Nova 2 Sonic English voice catalog (AWS docs, not
+# memory) rather than guessing:
+#   https://docs.aws.amazon.com/nova/latest/nova2-userguide/sonic-language-support.html
+#   en-US: tiffany (F, already tried+rejected), matthew (M, excluded —
+#          VTID-03704 female-only rule)
+#   en-GB: amy (F, untried)
+#   en-AU: olivia (F, untried)
+#   en-IN: kiara (F, untried), arjun (M, excluded)
+# Presented the untried feminine options (amy/olivia/kiara) to the user;
+# user picked amy.
+
+# --- Fix ---------------------------------------------------------------
+
+# services/gateway/src/orb/live/voice/nova-sonic-voice.ts
+#   NOVA_VOICES.en: 'tina' -> 'amy'
+#   Header comment + NOVA_SONIC_FALLBACK_VOICE comment updated — the old
+#   text said tina was "already the house voice for English", no longer
+#   true; de is unaffected and still uses tina.
+
+# services/gateway/test/orb/live/voice/nova-sonic-voice.test.ts
+#   Every `resolveNovaSonicVoice({ language: 'en', ... })` assertion:
+#   'tina' -> 'amy'. de/fr/es/pt assertions unchanged.
+
+# --- Verification (round 1) -----------------------------------------------
+
+npx jest test/orb/live/voice/nova-sonic-voice.test.ts \
+         test/orb/live/voice/nova-sonic-voice-fallback.test.ts \
+         test/orb/live/voice/voice-routing-policy.test.ts \
+         test/orb/routes/session-start-voice-telemetry.test.ts
+#   -> 4 suites, 32 tests passing.
+
+npx tsc --noEmit
+#   -> clean.
+
+npx jest
+#   -> 1 FAILURE: test/services/voice-lab/nova-sonic-test-runner.test.ts
+#      "offline tier passes on a clean environment" — summary.failed
+#      expected 0, got 1. This is a REAL diagnostic health-check in
+#      services/voice-lab/nova-sonic-test-runner.ts (the source behind
+#      /api/v1/voice-lab/nova/tests/run), not a stale test assertion: its
+#      own `voice_mapping` check hardcoded
+#      `resolveNovaSonicVoice({ language: 'en', persona: 'atlas' }) ===
+#      'tina'`, which is now false.
+
+# --- Fix (round 2) ---------------------------------------------------------
+
+# services/gateway/src/services/voice-lab/nova-sonic-test-runner.ts
+#   voice_mapping check: en assertion 'tina' -> 'amy', detail string updated
+#   (de/en→tina -> de→tina, en→amy).
+
+# --- Verification (round 2) -------------------------------------------------
+
+npx jest test/services/voice-lab/nova-sonic-test-runner.test.ts
+#   -> 9/9 passing.
+
+npx tsc --noEmit
+#   -> clean. (outputs/tsc.txt)
+
+npx jest test/orb/live/voice/nova-sonic-voice.test.ts \
+         test/orb/live/voice/nova-sonic-voice-fallback.test.ts \
+         test/orb/live/voice/voice-routing-policy.test.ts \
+         test/orb/routes/session-start-voice-telemetry.test.ts \
+         test/services/voice-lab/nova-sonic-test-runner.test.ts
+#   -> 5 suites, 41 tests passing. (outputs/targeted-tests.txt)
+
+npx jest
+#   -> full suite, re-run clean. (outputs/full-suite.txt)

@@ -1,0 +1,25 @@
+name: unit
+on: { pull_request: {} }
+# VTID-05353 (plan pm-ci-load): a newer push of the same PR cancels the superseded run (PR-GATE.yml pattern);
+# every PR head still runs this required check.
+concurrency:
+  group: unit-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+# VTID-04950 (plan E1): this required check used to print the pnpm version and
+# pass on every PR. It now runs every dependency-free script test in the repo
+# (STAGING-VERIFY, vtid-auto-close, memory verification, PR-GATE), which need
+# no install and finish in seconds, so it can never fail for infra reasons.
+jobs:
+  unit:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Script unit tests (node:test, no install)
+        run: |
+          FILES=$(find scripts -path '*/node_modules' -prune -o \( -name '*.test.cjs' -o -name '*.test.mjs' \) -print | sort)
+          echo "$FILES"
+          node --test $FILES

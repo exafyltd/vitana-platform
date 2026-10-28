@@ -1,0 +1,12 @@
+# Multilingual QA (python mirror of the jest test), 2026-10-06T10:39:08Z
+de: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+en: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+es: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+sr: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+fr: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+pt-BR: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+ru: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+pl: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+ar: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+zh-CN: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0
+tr: sections=21 clauses=63 letters=31 same_as_de=True markers=0 placeholders=0 email_count=1 email_in_21_1=True bidi_controls=0

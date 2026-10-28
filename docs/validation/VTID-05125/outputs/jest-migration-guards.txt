@@ -1,0 +1,22 @@
+# npx jest <163 suites that read supabase/migrations or .github/workflows> (with this change)
+Test Suites: 11 failed, 152 passed, 163 total
+Tests:       11 failed, 2239 passed, 2250 total
+# failing suites (local-Postgres harnesses + 4 others):
+FAIL test/vtid-04402-connected-apps.test.ts
+FAIL test/vtid-04449-outlook-contacts.test.ts
+FAIL test/vtid-04809-vtna-reward-ledger.test.ts
+FAIL test/vtid-04859-founding-1000.test.ts
+FAIL test/vtid-04868-plan-sparring-migration.test.ts
+FAIL test/vtid-04878-capped-reward-migration.test.ts
+FAIL test/vtid-04981-consume-credits-lockdown.test.ts
+FAIL test/vtid-04982-rewards-shop.test.ts (5.002 s)
+FAIL test/vtid-04988-earned-vtna-rewards-only.test.ts
+FAIL test/vtid-05057-contacts-phone-matching.test.ts
+FAIL test/vtid-05095-phone-verification.test.ts
+
+# the same 11 suites on origin/main 02a41f019 WITHOUT this change (git stash -u):
+Test Suites: 11 failed, 11 total
+Tests:       11 failed, 72 passed, 83 total
+# => identical 11 failures pre-exist; environmental/unrelated, not caused by this change.
+# vtid-05041-definer-lockdown.test.ts (scans every later migration, incl. this one): PASS
+PASS test/vtid-05041-definer-lockdown.test.ts (5.535 s)

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04842",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "playwright",
+      "name": "the staging gateway reports Commerce AI setup switched on",
+      "spec": "e2e/staging/vtid-04842-commerce-ai-setup-on.staging.spec.ts",
+      "cwd": "e2e"
+    }
+  ]
+}

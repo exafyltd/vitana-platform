@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-04265",
+  "title": "Autopilot Live step/tool-call transcript",
+  "executor": "claude-code-session",
+  "origin": "operator-console-onramp-took-over-on-failure",
+  "part_of": "VTID-04262 CHANGE LOG task list (kill-switch button VTID-04264, this transcript, Autonomy Pulse visibility VTID-04266, spend surfacing VTID-04267, writable config VTID-04268, CRON tables VTID-04269)",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/vtid-04265-live-steps-transcript.test.ts",
+    "docs/validation/VTID-04265/acceptance.md",
+    "docs/validation/VTID-04265/commands.log",
+    "docs/validation/VTID-04265/outputs/execution.json"
+  ],
+  "backend_changed": false,
+  "new_routes": false,
+  "test_suites_run": [
+    "services/gateway/test/vtid-04265-live-steps-transcript.test.ts",
+    "services/gateway/test/command-hub/",
+    "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts",
+    "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts",
+    "services/gateway/test/vtid-04033-operator-execution-follow.test.ts"
+  ],
+  "test_result": "23 suites passed, 312 tests passed, 0 regressions",
+  "tsc_noemit": "clean",
+  "csp_gate": "No CSP pattern hits in added lines.",
+  "deployed": false,
+  "not_verified_live": "The next Autopilot Live page load on staging after this deploys, with a running or recently-run Dev Autopilot execution, is the exercise — click Steps and confirm the transcript matches the Operator Console's own follow panel for the same execution."
+}

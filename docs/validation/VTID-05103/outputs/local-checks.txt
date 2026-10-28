@@ -1,0 +1,11 @@
+VTID-05103 local checks, 2026-10-12
+- npx jest test/routine-runner: 4 suites, 65 tests passed
+- npx jest test/routine-audits.test.ts test/loop-catalog.test.ts test/command-hub/vtid-05098-simplify.test.ts: passed
+- npx tsc --noEmit -p services/gateway: exit 0
+- npm run build (services/gateway): exit 0
+- full gateway suite: 1654 suites passed, 2 skipped; 26683 tests passed. The one failure was the stale generated
+  workflow-pins file (new ROUTINE_RUNNER_ENABLED pin); regenerated with scripts/conversation/generate-flag-pins.mjs,
+  test/services/conversation green after.
+- migration-test.sql on throwaway Postgres 16: all assertions passed (outputs/migration-test.txt)
+- staging-tests.json: validateManifest ok
+- ALERT-*.yml: all 7 parse (yaml.safe_load)

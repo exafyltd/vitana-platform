@@ -1,0 +1,5 @@
+✓ 2002 classes referenced in styles.css
+✓ 267 dead candidates (zero JS/HTML occurrence, not a dynamic-affix match)
+✓ 0 rule(s) removable (entire selector list is simple + all-dead)
+  (remaining candidates share a rule with a live class, or have a compound/complex selector — left untouched, needs a human read)
+✓ in sync (no removable dead rules found)

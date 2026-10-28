@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04965",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04965-live-room-calendar-migration.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the platform part of VTID-04965 is a database migration (Erinnern on a Live Room writes a calendar entry, un-notify cancels it) with no gateway code. Its behaviour is proven on a throwaway Postgres (CI SQL-LIVE-ROOM-CALENDAR, mutation-checked); this suite pins the safety properties. Staging shares the production Supabase project, so verification never subscribes to a room."
+    }
+  ]
+}

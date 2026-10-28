@@ -1,0 +1,16 @@
+$ bash services/postgrest-aurora-proxy/test/routing.sh
+PASS auth passthrough
+PASS storage passthrough
+PASS functions passthrough
+PASS realtime websocket
+PASS storage 30MB upload
+PASS functions 50MB cap
+PASS rest goes to PostgREST
+PASS unknown path 501
+PASS public: /alive
+PASS public: rest to PostgREST
+PASS public: /auth/v1/token blocked
+PASS public: /storage/v1/object/public/a/b.png blocked
+PASS public: /functions/v1/ai-chat blocked
+PASS public: /realtime/v1/websocket blocked
+PASS public host never reached Supabase

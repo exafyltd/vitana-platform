@@ -1,0 +1,7 @@
+# live evidence: pass 1 forgotten-marker purge listed key pairs for the same facts
+#   lieblingsessen/user_favorite_food, allergie/user_allergy, hund_name/user_pet_name,
+#   upcoming_event_dentist_appointment/zahnarzttermin
+npx tsc --noEmit -p services/gateway                         -> clean
+npx jest conformance + memory + remember_fact/extractor/backstop suites -> 33 suites, 568 tests passed
+mutation: extractor related lookup disabled -> A-DUP-03, A-DUP-08, A-CONF-09 fail
+mutation: synonym split disabled            -> A-DUP-07 fails

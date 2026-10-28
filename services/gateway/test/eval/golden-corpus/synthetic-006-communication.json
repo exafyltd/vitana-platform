@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-006-communication",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Resolve a recipient then send — the two-step communication routing path.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Find Maria's contact",
+      "expected_tool": "find_contact",
+      "expected_intent": "communication.find_contact"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Send a message to Maria saying I'll be late",
+      "expected_tool": "send_chat_message",
+      "expected_intent": "communication.send_message"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Message the running club that practice is moved to seven",
+      "expected_tool": "send_chat_message",
+      "expected_intent": "communication.send_message"
+    }
+  ]
+}

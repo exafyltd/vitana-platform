@@ -1,0 +1,151 @@
+{
+ "ok": true,
+ "vtid": "VTID-03831",
+ "spec_status": "quality_checked",
+ "report": {
+  "vtid": "VTID-03831",
+  "spec_hash": "1738f1f870581432f0db0a96390d152cb7009aa5d6613490b6762ca9ea3abe30",
+  "overall_result": "pass",
+  "overall_score": 100,
+  "risk_level": "CRITICAL",
+  "risk_reasons": [
+   "Touches Auth system",
+   "Includes DB migrations on sensitive area",
+   "Modifies middleware",
+   "Modifies main entry point",
+   "11 files modified (>10)"
+  ],
+  "checks": [
+   {
+    "check_id": "CQ-01",
+    "category": "content",
+    "name": "Goal section",
+    "result": "pass",
+    "severity": "blocker",
+    "message": "Goal is well-defined"
+   },
+   {
+    "check_id": "CQ-02",
+    "category": "content",
+    "name": "Scope IN",
+    "result": "pass",
+    "severity": "blocker",
+    "message": "IN SCOPE has 11 items"
+   },
+   {
+    "check_id": "CQ-03",
+    "category": "content",
+    "name": "Scope OUT",
+    "result": "pass",
+    "severity": "warning",
+    "message": "OUT OF SCOPE defined"
+   },
+   {
+    "check_id": "CQ-04",
+    "category": "content",
+    "name": "Changes section",
+    "result": "pass",
+    "severity": "blocker",
+    "message": "Changes filled: DB=true, API=true, UI=true"
+   },
+   {
+    "check_id": "CQ-05",
+    "category": "content",
+    "name": "Files to Modify",
+    "result": "pass",
+    "severity": "blocker",
+    "message": "4 file(s) listed",
+    "details": {
+     "files": [
+      "BACKOFFICE.md",
+      "CLAUDE.md",
+      "services/gateway/src/index.ts",
+      "services/gateway/src/services/oasis-event-service.ts"
+     ]
+    }
+   },
+   {
+    "check_id": "CQ-06",
+    "category": "content",
+    "name": "Acceptance Criteria",
+    "result": "pass",
+    "severity": "blocker",
+    "message": "10 criteria defined"
+   },
+   {
+    "check_id": "CQ-07",
+    "category": "content",
+    "name": "Verification Steps",
+    "result": "pass",
+    "severity": "critical",
+    "message": "Verification: curl=true, UI=true"
+   },
+   {
+    "check_id": "CQ-08",
+    "category": "content",
+    "name": "Rollback Plan",
+    "result": "pass",
+    "severity": "critical",
+    "message": "Rollback plan is concrete"
+   },
+   {
+    "check_id": "CQ-09",
+    "category": "risk",
+    "name": "Risk Level",
+    "result": "pass",
+    "severity": "critical",
+    "message": "Risk level present"
+   },
+   {
+    "check_id": "CQ-10",
+    "category": "governance",
+    "name": "Governance Rules",
+    "result": "pass",
+    "severity": "warning",
+    "message": "Governance rules specified"
+   }
+  ],
+  "impact_analysis": {
+   "system_areas_touched": [
+    "Gateway",
+    "OASIS",
+    "Auth",
+    "Infra",
+    "Command Hub"
+   ],
+   "files_mentioned": [
+    "BACKOFFICE.md",
+    "CLAUDE.md",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/services/oasis-event-service.ts",
+    "services/gateway/src/middleware/auth-supabase-jwt.ts",
+    "EXEC-DEPLOY.yml",
+    "auth-supabase-jwt.ts",
+    "spec-quality-agent.ts",
+    "oasis-event-service.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "index.ts"
+   ],
+   "api_changes_detected": true,
+   "db_migration_detected": true,
+   "ui_changes_detected": true,
+   "risk_multipliers": [
+    "Modifies middleware",
+    "Modifies main entry point",
+    "11 files modified (>10)"
+   ]
+  },
+  "conflict_analysis": {
+   "has_conflicts": false,
+   "conflicts": [],
+   "overlap_count": 0
+  },
+  "governance_analysis": {
+   "rules_mentioned_in_spec": [],
+   "rules_actually_applicable": [],
+   "unmentioned_rules": [],
+   "governance_gap": false
+  },
+  "timestamp": "2026-09-12T23:20:38.646Z"
+ }
+}

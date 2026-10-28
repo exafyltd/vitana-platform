@@ -1,0 +1,56 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Intent Engine KPI · Vitana Command Hub</title>
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20260502-1" />
+  <link rel="stylesheet" href="/command-hub/intent-engine.css?v=20260502-1" />
+</head>
+<body class="ch-body">
+  <header class="ch-header">
+    <a href="/command-hub/" class="ch-back">← Command Hub</a>
+    <h1>Vitana Intent Engine</h1>
+    <span id="ie-snapshot-at" class="ch-muted"></span>
+  </header>
+
+  <main class="ie-main">
+    <section id="ie-kpi" class="ie-grid" aria-label="KPI snapshot">
+      <!-- KPI cards rendered here by intent-engine.js -->
+      <div class="ie-loading">Loading KPI…</div>
+    </section>
+
+    <section class="ie-section">
+      <h2>Stuck open intents (24h, 0 matches)</h2>
+      <p class="ch-muted">
+        Intents posted &gt; 24h ago that still have zero matches. Review for
+        category coverage gaps or supply-side seeding opportunities.
+      </p>
+      <div id="ie-stuck"></div>
+    </section>
+
+    <section class="ie-section">
+      <h2>Open disputes</h2>
+      <p class="ch-muted">
+        Disputes raised by either party of a match. Resolve via
+        <code>POST /api/v1/admin/intent-engine/disputes/:id/resolve</code>.
+      </p>
+      <div id="ie-disputes"></div>
+    </section>
+
+    <section class="ie-section">
+      <h2>Operations</h2>
+      <p class="ch-muted">
+        Manual triggers. In production these are scheduled via Cloud Scheduler.
+      </p>
+      <div class="ie-actions">
+        <button id="ie-recompute-daily" class="ch-btn">Run daily recompute</button>
+        <button id="ie-archive" class="ch-btn">Archive matches &gt; 90d</button>
+      </div>
+      <pre id="ie-action-output" class="ie-output"></pre>
+    </section>
+  </main>
+
+  <script src="/command-hub/intent-engine.js?v=20260502-1"></script>
+</body>
+</html>

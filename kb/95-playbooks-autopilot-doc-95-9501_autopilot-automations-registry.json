@@ -1,0 +1,40 @@
+{
+  "doc_id": "95-playbooks-autopilot-doc-95-9501_autopilot-automations-registry",
+  "title": "Autopilot Automations Registry",
+  "family_id": "playbooks-autopilot",
+  "family_name": "Playbooks Autopilot",
+  "status": "canonical",
+  "version": "1.0.0",
+  "tags": [
+    "autopilot",
+    "automations",
+    "registry",
+    "community",
+    "matchmaking",
+    "sharing",
+    "growth",
+    "openclaw"
+  ],
+  "last_updated": "2026-03-18T00:00:00.000Z",
+  "word_count": 0,
+  "sections": [
+    {
+      "section_id": "registry-purpose",
+      "id": "registry-purpose",
+      "level": 1,
+      "title": "Autopilot Automations Registry",
+      "content": "This document is the single source of truth for all Vitana Autopilot automations. Every automation has a permanent ID (AP-XXXX) that never changes, even if the automation is rewritten, moved, or deprecated. This registry is designed for continuous development over multiple years.",
+      "content_markdown": "This document is the single source of truth for all Vitana Autopilot automations. Every automation has a permanent ID (AP-XXXX) that never changes, even if the automation is rewritten, moved, or deprecated. This registry is designed for continuous development over multiple years.",
+      "word_count": 52
+    },
+    {
+      "section_id": "id-scheme",
+      "id": "id-scheme",
+      "level": 2,
+      "title": "ID Scheme",
+      "content": "Format: AP-XXXX\n\nRanges:\n- AP-0100 to AP-0199: Connect People (matchmaking, introductions, icebreakers)\n- AP-0200 to AP-0299: Community & Groups (groups, invites, meetups)\n- AP-0300 to AP-0399: Events & Live Rooms (scheduling, reminders, follow-ups)\n- AP-0400 to AP-0499: Sharing & Growth (WhatsApp, social media, referrals, viral loops)\n- AP-0500 to AP-0599: Engagement Loops (briefings, re-engagement, milestones)\n- AP-0600 to AP-0699: Health & Wellness (reports, PHI, consent, local LLM)\n- AP-0700 to AP-0799: Payments & Subscriptions (Stripe, retries, upgrades)\n- AP-0800 to AP-0899: Personalization Engines (D28-D51 integrations)\n- AP-0900 to AP-0999: Memory & Intelligence (facts, retrieval, knowledge graph)\n- AP-1000 to AP-1099: Platform Operations (VTID lifecycle, governance, deploy)\n- AP-1100+: Reserved for future domains\n\nStatuses:\n- PLANNED: Defined but not implemented\n- IN_PROGRESS: Currently being built\n- IMPLEMENTED: Code exists, not yet deployed\n- LIVE: Running in production\n- DEPRECATED: Superseded or removed",
+      "content_markdown": "**Format:** `AP-XXXX`\n\n**Ranges:**\n| Range | Domain |\n|-------|--------|\n| AP-0100 – AP-0199 | Connect People (matchmaking, introductions, icebreakers) |\n| AP-0200 – AP-0299 | Community & Groups (groups, invites, meetups) |\n| AP-0300 – AP-0399 | Events & Live Rooms (scheduling, reminders, follow-ups) |\n| AP-0400 – AP-0499 | Sharing & Growth (WhatsApp, social media, referrals, viral loops) |\n| AP-0500 – AP-0599 | Engagement Loops (briefings, re-engagement, milestones) |\n| AP-0600 – AP-0699 | Health & Wellness (reports, PHI, consent, local LLM) |\n| AP-0700 – AP-0799 | Payments & Subscriptions (Stripe, retries, upgrades) |\n| AP-0800 – AP-0899 | Personalization Engines (D28–D51 integrations) |\n| AP-0900 – AP-0999 | Memory & Intelligence (facts, retrieval, knowledge graph) |\n| AP-1000 – AP-1099 | Platform Operations (VTID lifecycle, governance, deploy) |\n| AP-1100+ | Reserved for future domains |\n\n**Statuses:** `PLANNED` → `IN_PROGRESS` → `IMPLEMENTED` → `LIVE` → `DEPRECATED`",
+      "word_count": 120
+    }
+  ]
+}

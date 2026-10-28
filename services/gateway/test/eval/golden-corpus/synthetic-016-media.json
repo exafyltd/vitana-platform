@@ -1,0 +1,23 @@
+{
+  "fixture_id": "synthetic-016-media",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 2,
+  "notes": "Media control.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Play some focus music",
+      "expected_tool": "play_music",
+      "expected_intent": "preference.play_music"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Play my morning playlist",
+      "expected_tool": "play_music",
+      "expected_intent": "preference.play_music"
+    }
+  ]
+}

@@ -1,0 +1,147 @@
+# PLAN-SPAR — CI sparring for plan PRs (VTID-05214, Project Manager plan v2 §3–§4).
+#
+# Kiro has no gateway credential, so a plan's sparring runs here. On a same-repository PR titled `plan(<slug>): …` that
+# changes `.kiro/specs/<slug>/plan.md` or a `sparring/[s<k>-]responses-<n>.md`, this workflow calls the gateway sparring
+# API (service token) and commits the partner's round into the PR branch (`Collab-Session: ci-plan-spar`). The planner
+# answers in the next responses file; that push starts the next round. A converged session is approved by policy
+# (converged-auto-v1, in the gateway); with PLAN_SPAR_ALLOCATE=true the lanes then get their VTIDs here.
+#
+# Security: `pull_request_target` runs THIS file from the base branch, and scripts/collab/plan-spar.mjs is run from the
+# base checkout. The PR head is checked out only as data (read files, write the round files, push them back) — nothing
+# from the PR is executed while the token is in the environment. Fork PRs never run (same-repository condition).
+# Loop guard: the job exits when the head commit is its own (`Collab-Session: ci-plan-spar`), and one run per PR at a
+# time (concurrency, not cancelled).
+#
+# Switches (repository variables): PLAN_SPAR_ENABLED=true turns the workflow on; PLAN_SPAR_ALLOCATE=true allocates VTIDs
+# after policy approval (set only once migration 20261015180000 is applied); PLAN_SPAR_GATEWAY_URL overrides the
+# gateway (default: staging, which shares the database). Secret PLAN_SPAR_PUSH_TOKEN (optional): a token whose pushes
+# start the PR's checks; without it the round commit is pushed with GITHUB_TOKEN and the PR's checks run again on the
+# planner's next push.
+
+name: PLAN-SPAR
+
+on:
+  pull_request_target:
+    types: [opened, synchronize, reopened]
+    paths:
+      - '.kiro/specs/*/plan.md'
+      - '.kiro/specs/*/sparring/*responses-*.md'
+
+permissions:
+  contents: write
+  pull-requests: write
+  actions: read # VTID-05272: the slot step lists PLAN-SPAR runs (read-only)
+  statuses: write # lane plan-spar-checks: post plan-spar/needs-rebase on the GITHUB_TOKEN bot-head push (an explicit permissions block sets every unlisted scope to none)
+
+concurrency:
+  group: plan-spar-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  spar:
+    if: >-
+      vars.PLAN_SPAR_ENABLED == 'true' &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.title, 'plan(')
+    runs-on: ubuntu-latest
+    timeout-minutes: 120
+    env:
+      # The `secrets` context is not allowed in a step `if:` (the file would not parse), so expose only whether the
+      # optional push token is set — 'true' or 'false', never the value. Read by the needs-rebase step below.
+      PLAN_SPAR_HAS_PUSH_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN != '' }}
+    steps:
+      - name: Base checkout (trusted code)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.base.sha }}
+          path: base
+          persist-credentials: false
+
+      - name: PR head checkout (data only)
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.ref }}
+          path: head
+          fetch-depth: 0
+          token: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Skip our own commit
+        id: guard
+        run: |
+          who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
+          if [ "$who" = "ci-plan-spar" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; echo "➖ head commit is PLAN-SPAR's own" >> "$GITHUB_STEP_SUMMARY"; fi
+
+      # VTID-05272 (plan kiro-autonomy-fallback §7 rule 2): at most 2 sparring sessions in flight repo-wide (the
+      # Bedrock quota is shared with production). FIFO by run id; read-only; stops waiting after 90 min.
+      - name: Wait for a sparring slot
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f base/scripts/ci/plan-spar-slot/slot.mjs ]; then echo "no slot script at the base commit — not waiting"; exit 0; fi
+          node base/scripts/ci/plan-spar-slot/slot.mjs --repo "${{ github.repository }}" --run-id "$GITHUB_RUN_ID" \
+            --cap 2 --poll-s 20 --max-wait-min 90 --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Spar
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GATEWAY_URL: ${{ vars.PLAN_SPAR_GATEWAY_URL || 'https://preview-aws-gateway.vitanaland.com' }}
+          GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
+          BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}   # resolveRef reads a declared spar_refs companion (e.g. vitana-v1); unused when none is declared
+        run: |
+          git -C head diff --name-only "$BASE_SHA"...HEAD > "$RUNNER_TEMP/changed.txt"
+          node base/scripts/collab/plan-spar.mjs --dir head --base-sha "$BASE_SHA" --repo "${{ github.repository }}" \
+            --changed "$RUNNER_TEMP/changed.txt" --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Commit the round
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          HEAD_REF: ${{ github.event.pull_request.head.ref }}
+        run: |
+          cd head
+          git add .kiro/specs
+          if git diff --cached --quiet; then echo "nothing to commit"; exit 0; fi
+          slug=$(git diff --cached --name-only | sed -n 's#^\.kiro/specs/\([^/]*\)/.*#\1#p' | head -1)
+          git -c user.name='plan-spar[bot]' -c user.email='ci-plan-spar@collab.invalid' commit -q \
+            -m "plan(${slug}): sparring round (PLAN-SPAR)" \
+            -m "Collab-Session: ci-plan-spar
+          Collab-Lane: ${slug}/_plan"
+          git push origin "HEAD:${HEAD_REF}"
+
+      # lane plan-spar-checks (VTID-05306, R3-F2 option B): producer-only needs-rebase signal.
+      # When PLAN_SPAR_PUSH_TOKEN is empty the round above was pushed with GITHUB_TOKEN, which starts no
+      # pull_request checks on the new bot head — so mark that head with a `plan-spar/needs-rebase` commit
+      # status. The consumer (a PM/land step that reads this status and runs `gh pr update-branch` so checks
+      # start under a re-push) is a gateway change needing a staging deploy and is deferred to a separate lane;
+      # until it exists this status is posted but never read, so today's behaviour is unchanged. Re-dispatch,
+      # re-run and the Checks API are not usable here (plan R2-F1). When the PAT secret is present the push
+      # already starts checks and this step is skipped.
+      - name: Signal needs-rebase on the bot head (GITHUB_TOKEN push)
+        if: steps.guard.outputs.skip != 'true' && env.PLAN_SPAR_HAS_PUSH_TOKEN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          sha=$(git -C head rev-parse HEAD)
+          who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
+          if [ "$who" != "ci-plan-spar" ]; then echo "head $sha is not a PLAN-SPAR round commit — no status posted"; exit 0; fi
+          gh api -X POST "repos/${{ github.repository }}/statuses/${sha}" \
+            -f context='plan-spar/needs-rebase' \
+            -f state='pending' \
+            -f target_url="$RUN_URL" \
+            -f description='GITHUB_TOKEN push started no checks — update the branch to re-run them'
+          echo "➖ posted plan-spar/needs-rebase on $sha" >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Comment
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh pr comment "${{ github.event.pull_request.number }}" --repo "${{ github.repository }}" \
+            --body "PLAN-SPAR ran: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }} — the partner's round is in \`.kiro/specs/*/sparring/\` on this branch."

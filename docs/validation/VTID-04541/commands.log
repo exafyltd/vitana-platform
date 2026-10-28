@@ -1,0 +1,5 @@
+# VTID-04541 — commands run
+# live prod task def (read-only): vitana-gateway-awsdr:117 → NAV_V2_ENABLED unset, NAV_CONTINUATION_BIND=true
+# live prod: gateway git_commit ec9d5ee (booted 2026-09-25T09:08Z); https://vitanaland.com/nav-registry.json → 200 application/json, 185 screens
+cd services/gateway
+npx jest $(grep -rl "AWS-PROD-DEPLOY-GATEWAY" test)   # 43 suites, 480 tests passed

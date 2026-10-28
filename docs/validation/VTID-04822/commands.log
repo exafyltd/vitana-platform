@@ -1,0 +1,7 @@
+# VTID-04822 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_DOCUMENT_TYPE_ROUTING_MODE "VTID-04822 E2"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+# prod task-definition steps after the pin: 19,951 (1/2), 19,964 (2/2) of 20,000 — the last Jev pin that fits
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04822 test/vtid-04821 test/vtid-04816 test/vtid-04465-operator-pipeline-regression test/vtid-04560-role-separation-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # 203 passed (outputs/jest-e2.txt)
+npx jest (full gateway suite, on main 8128c11)                          # 1464 suites passed, 23522 tests, 0 failed (outputs/jest-full.txt)

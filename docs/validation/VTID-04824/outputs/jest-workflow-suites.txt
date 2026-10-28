@@ -1,0 +1,2953 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [CalendarRescheduler] rescheduled=1 cancelled=0 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+  console.log
+    [CalendarRescheduler] rescheduled=0 cancelled=1 errors=0
+
+      at Object.rescheduleUnactivatedTasks (src/services/calendar-rescheduler.ts:205:13)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (c71e2e4f-10c3-4546-8907-32a7f9b48f99)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.log
+    [OASIS Event] Emitted: calendar.maintenance.manual_run for VTID-04374 (83137537-a3ad-4537-a2f7-deb78933e1ec)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+PASS test/vtid-04374-calendar-maintenance.test.ts
+  isDayOver
+    ✓ false while the entry is still running or later today (27 ms)
+    ✓ true once the local day it ended on is over (1 ms)
+    ✓ uses the local day, not UTC: 23:30 Berlin yesterday is 21:30 UTC (2 ms)
+  nextSlot
+    ✓ tomorrow at the same local time, duration kept (2 ms)
+    ✓ keeps the local wall-clock time across the DST change (09:00 stays 09:00) (1 ms)
+    ✓ never lands in the past after a missed run (1 ms)
+  rescheduleUnactivatedTasks
+    ✓ reads one-off, uncompleted, unactivated Autopilot/journey entries only (8 ms)
+    ✓ moves an entry whose day is over; leaves today's alone (47 ms)
+    ✓ drops an entry after 3 moves instead of moving it again (16 ms)
+    ✓ a row completed in the meantime is not counted (11 ms)
+  flags and routes
+    ✓ the loop runs only on exactly "true" (1 ms)
+    ✓ a signed-in member cannot run the global jobs (96 ms)
+    ✓ Exafy staff can (73 ms)
+    ✓ the loop is wired at boot and pinned on staging only (2 ms)
+  /meetup-reminders is retired
+    ✓ the route is a no-op and nothing reads the missing attendance table (2 ms)
+  moving your own entry
+    ✓ your own entries and Vitana suggestions move (1 ms)
+    ✓ anything a source owns does not (1 ms)
+    ✓ done, cancelled and series entries do not
+    ✓ keeps the entry length when only a new start is given (62 ms)
+    ✓ refuses a booked appointment with a reason the app can show (50 ms)
+    ✓ rejects bad input and work items before reading anything (55 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: vitanaland_calendar_missing
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:195:15)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: google POST /freeBusy 403: nope
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:202:15)
+
+  console.warn
+    [CalendarGoogleSync] user u1 failed: google POST /freeBusy 403: nope
+
+      355 |     const message = String(err?.message ?? err).slice(0, 500);
+      356 |     result.error = message;
+    > 357 |     console.warn(`${LOG_PREFIX} user ${state.user_id.slice(0, 8)} failed: ${message}`);
+          |             ^
+      358 |     try {
+      359 |       await patchState(state.user_id, { last_error: message });
+      360 |     } catch { /* state write failed too; logged above */ }
+
+      at Object.syncUser (src/services/calendar-google-sync.ts:357:13)
+      at Object.<anonymous> (test/vtid-04372-calendar-google-sync.test.ts:206:5)
+
+PASS test/vtid-04372-calendar-google-sync.test.ts
+  pure parts
+    ✓ is off unless the flag is exactly "true" and the Google client is configured (2 ms)
+    ✓ an entry becomes a Google event with no Google reminders and a link back (1 ms)
+    ✓ only the member’s own community / personal entries are pushed (7 ms)
+    ✓ plans create, update, no-op and delete; an entry outside the read keeps its Google copy (1 ms)
+    ✓ merges overlapping busy intervals and drops broken ones
+  one sync run
+    ✓ creates the Vitanaland calendar, pushes the entry, replaces busy times, records success (15 ms)
+    ✓ an event the member already deleted in Google just loses its link (10 ms)
+    ✓ a deleted Vitanaland calendar is forgotten so the next run recreates it (15 ms)
+    ✓ a failure is recorded on the state row and emitted once, not on every repeat (15 ms)
+    ✓ the tick does nothing at all while switched off (1 ms)
+  routes
+    ✓ status reports not_configured while switched off (42 ms)
+    ✓ enable: 503 while switched off, 409 with the connect link when Google is not connected, 200 when it is (147 ms)
+    ✓ disable turns it off (35 ms)
+  wiring
+    ✓ the window read adds external busy times only when busy blocks are wanted (1 ms)
+    ✓ the loop is wired at boot and pinned on no environment yet (2 ms)
+    ✓ asks Google only for the app-created calendar and free/busy (6 ms)
+    ✓ the migration keeps all three tables service-role only and stores no tokens (1 ms)
+
+PASS test/orb/live/tools/vtid-04426-session-tool-selection.test.ts
+  the flag
+    ✓ is on only for the exact string true (8 ms)
+  routeToolGroups
+    ✓ maps the screen to tool groups by its first segments (2 ms)
+  selection against the real signed-in catalog and the Nova budget
+    ✓ keeps the meta tools, every base priority tool and get_next_best_action, within the same budget (18 ms)
+    ✓ puts the current screen's tools in (17 ms)
+    ✓ every dropped tool stays reachable, and declared + deferred cover the whole catalog (48 ms)
+    ✓ also fits the Vertex bridge budget with the meta tools declared (6 ms)
+  find_tool
+    ✓ finds the right tool for plain English queries (34 ms)
+    ✓ returns names, bounded descriptions and parameters; handles no match and nothing deferred (12 ms)
+  use_tool
+    ✓ resolves a deferred tool with parsed arguments (1 ms)
+    ✓ refuses directly declared tools, unknown tools, itself, and bad arguments (2 ms)
+  wiring
+    ✓ selection runs only when the budget trims and the flag is on, and never loses the meta tools (1 ms)
+    ✓ find_tool and use_tool are handled first, and use_tool re-enters the normal dispatcher (1 ms)
+    ✓ is pinned on staging only (2 ms)
+  the brain inspector
+    ✓ shows the selection and the tools reached through find_tool / use_tool (2 ms)
+    ✓ without selection the tools summary is unchanged
+  find_tool relevance
+    ✓ one incidental word is not a match (17 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-03958-env-overrides-input.test.ts
+  VTID-03958: AWS-PROD-DEPLOY-GATEWAY.yml stays under the 25-input ceiling via env_overrides
+    ✓ removes nova_canary_user_ids and nova_canary_tenant_ids as named inputs (6 ms)
+    ✓ adds env_overrides as a named input (3 ms)
+    ✓ net input count is 24 (was 25, at the ceiling, before this change) (5 ms)
+    ✓ the nova_sonic_enabled override block no longer references the removed env wiring (2 ms)
+    ✓ wires ENV_OVERRIDES_INPUT from inputs.env_overrides on the register step (7 ms)
+    the real extracted jq block, executed against real jq
+      ✓ is a non-empty, well-formed bash if/fi block (1 ms)
+      ✓ passes bash -n on its own (11 ms)
+      ✓ EMPTY input is a true no-op — NEW_DEF passes through byte-for-byte (5 ms)
+      ✓ adds a brand-new key with no code change needed (generic, not hardcoded) (21 ms)
+      ✓ upserts (replaces) a key that already exists on the task def (35 ms)
+      ✓ applies multiple keys in one call, generically (to_entries, no fixed arity) (27 ms)
+      ✓ coerces a non-string JSON value to a string (ECS env vars are always strings) (26 ms)
+      ✓ fails loudly (non-zero exit, ::error::) on malformed JSON — never a silent no-op (9 ms)
+      ✓ fails loudly on valid JSON that is not an object (e.g. an array or a string) (33 ms)
+      ✓ never partially mutates NEW_DEF on a validation failure — original env is intact on the error path (8 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_tool_calls" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getMaxConsecutiveToolCalls (src/orb/upstream/constants.ts:169:30)
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2045:155)
+      at Object.tool (src/orb/live/session/upstream-message-handler.ts:3047:36)
+      at Object.<anonymous> (test/orb/live/session/vtid-04418-teardown-dedupe.test.ts:130:14)
+
+  console.log
+    [VTID-01224] Tool call received for session s (consecutive: 1/5): get_current_screen
+
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2045:11)
+
+  console.log
+    [VTID-01224] Executing tool: get_current_screen with args: {}
+
+      at handleToolCall (src/orb/live/session/upstream-message-handler.ts:2152:13)
+
+  console.log
+    [VTID-01224] Tool get_current_screen completed in 0ms, success=true, resultLen=20
+
+      at src/orb/live/session/upstream-message-handler.ts:2158:17
+
+  console.log
+    [OASIS Event] Emitted: orb.live.tool.executed for VTID-01224 (e3ed699f-75e6-4d05-8e78-ea1520e35e35)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:144:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.post_turn.cooldown_ms" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getPostTurnCooldownMs (src/orb/upstream/constants.ts:120:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2373:143)
+      at Object.turn (src/orb/live/session/upstream-message-handler.ts:3048:40)
+      at Object.<anonymous> (test/orb/live/session/vtid-04418-teardown-dedupe.test.ts:133:14)
+
+  console.log
+    [VTID-VOICE-INIT] Model stopped speaking for session s — mic audio ungated (cooldown 300ms)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2373:11)
+
+  console.log
+    [VTID-01219] Turn complete for session s (turn 1, isGreeting=false, consecutiveModelTurns=1)
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2447:11)
+
+  console.log
+    [VTID-04418] Turn complete for s — cleared 1 consumed tool result(s).
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2457:13)
+
+  console.warn
+    [PolicyResolver][decision_contract.policy.miss] no cached rows for policy_key="voice.loop_guard.max_consecutive_model_turns" tenant_id="GLOBAL" — using defaultValue
+
+      135 |   if (loggedMisses.has(tag)) return;
+      136 |   loggedMisses.add(tag);
+    > 137 |   console.warn(`${TELEMETRY_PREFIX} ${message}`);
+          |           ^
+      138 | }
+      139 |
+      140 | function getValueImpl<T>(
+
+      at logMissOnce (src/services/decision-contract/policy-resolver.ts:137:11)
+      at getValueImpl (src/services/decision-contract/policy-resolver.ts:149:5)
+      at Object.getValue (src/services/decision-contract/policy-resolver.ts:284:12)
+      at getMaxConsecutiveModelTurns (src/orb/upstream/constants.ts:162:30)
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:2529:94)
+      at Object.turn (src/orb/live/session/upstream-message-handler.ts:3048:40)
+      at Object.<anonymous> (test/orb/live/session/vtid-04418-teardown-dedupe.test.ts:133:14)
+
+  console.log
+    [VTID-NAV-DIAG] turn_complete for session s: NO pendingNavigation (navigationDispatched=false, consecutiveToolCalls=1) — widget will transition to listening
+
+      at handleTurnComplete (src/orb/live/session/upstream-message-handler.ts:3003:13)
+
+PASS test/orb/live/session/vtid-04418-teardown-dedupe.test.ts
+  VTID-04418: superseded sessions are finalized
+    ✓ terminateExistingSessionsForUser finalizes each superseded session before marking it inactive (2 ms)
+  VTID-04418: one keepalive teardown
+    ✓ no hand-copied keepalive clearing remains in orb-live.ts or the controller (3 ms)
+    ✓ the helper clears both intervals and is idempotent (3 ms)
+  VTID-04418: shared upstream handlers
+    ✓ the Vertex switch is an exact-string opt-in (1 ms)
+    ✓ a completed turn clears the tool results the model consumed (38 ms)
+    ✓ bindConnectionEvents:false leaves error/close to the route (1 ms)
+    ✓ VertexLiveClient stops at an interruption and does not emit audio from the same frame
+    ✓ orb-live.ts binds the shared handlers before connect and skips the raw handler when enabled (2 ms)
+  VTID-04418: the Vertex switch is pinned on staging only
+    ✓ staging strips and re-adds ORB_VERTEX_SHARED_HANDLERS=true (1 ms)
+    ✓ production does not set it (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/conversation/vtid-04454-scored-opening.test.ts
+  VTID-04454 scored-opening: flag and bound
+    ✓ is on only for exact "true" (2 ms)
+    ✓ clamps the time bound to 100-1500 ms, garbage to the default (1 ms)
+    ✓ withinBound resolves the value, null on timeout, null on rejection (20 ms)
+  VTID-04454 applyScoredOpening
+    ✓ serves the scored winner when it differs, without mutating the fixed decision (1 ms)
+    ✓ returns the same decision when both rankings agree
+    ✓ keeps the fixed decision when a pinned provider returned a candidate (1 ms)
+    ✓ falls back to the fixed decision without a ranking, a candidate, or a returned scored winner
+  VTID-04454 decideWakeBriefForSession with the scored opening
+    ✓ flag off: the fixed winner is served (4 ms)
+    ✓ flag on: the scored winner is served and the ranking records both winners (2 ms)
+    ✓ flag on: an explicit selection keeps the fixed decision and is not scored (1 ms)
+    ✓ flag on: a pinned provider keeps the fixed decision (1 ms)
+    ✓ flag on: when scoring cannot finish in time, the fixed winner is served (102 ms)
+  VTID-04454 deploy pins
+    ✓ is pinned on staging (strip-then-add) and not on production (1 ms)
+  VTID-04454 comparison summary
+    ✓ counts the openings the score chose and the ones it changed (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (11 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (91 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (5 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (94 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (4 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] rollup applied: 1 cluster(s) collapsed (6 signals → 1 rollup findings, threshold=5)
+
+      at ingestScanBody (src/services/dev-autopilot-synthesis.ts:539:13)
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+  console.log
+    [dev-autopilot-synthesis] eager plan: 0 planned, 0 errors
+
+      at src/services/dev-autopilot-synthesis.ts:719:17
+
+PASS test/dev-autopilot-synthesis.test.ts
+  fingerprintSignal
+    ✓ produces stable 16-char hex fingerprints (1 ms)
+    ✓ is stable for identical inputs (1 ms)
+    ✓ changes when any keying field changes (1 ms)
+    ✓ treats missing line_number as 0 consistently
+  scoreSignal
+    ✓ scales impact with severity (1 ms)
+    ✓ marks dead_code as low risk + auto-exec eligible
+    ✓ marks large_file as high risk + auto-exec ineligible (1 ms)
+    ✓ marks medium-risk types ineligible for auto-exec (human review required)
+    ✓ marks low-risk but trivial-impact signals ineligible for auto-exec
+  titleForSignal
+    ✓ uses the basename of the file
+    ✓ varies title by signal type
+  domainForPath
+    ✓ buckets known prefixes (2 ms)
+    ✓ falls back to general
+  TYPE_RISK_CLASS invariant
+    ✓ covers every SignalType with a risk_class (2 ms)
+  ingestScan — run finalization
+    ✓ finalizes the run row with status=done on success (16 ms)
+    ✓ finalizes the run row with status=failed (not stuck at ingesting) when ingestion throws after the run row is created (40 ms)
+    ✓ still reports ok:true when only the finalize PATCH itself fails (findings were already written) (7 ms)
+    ✓ returns ok:false without attempting any writes when the initial run-row insert fails (2 ms)
+  ingestScan — dedup lookup covers activated findings (VTID-04274)
+    ✓ the dedup GET query includes activated alongside new/snoozed (3 ms)
+    ✓ bumps seen_count on an existing ACTIVATED finding instead of inserting a duplicate (1 ms)
+    ✓ still inserts a new finding when no live (new/snoozed/activated) match exists (3 ms)
+  ingestScan — safety_gap rollup exemption (VTID-04277)
+    ✓ never collapses safety_gap signals into a rollup, even at/above ROLLUP_THRESHOLD (14 ms)
+    ✓ still collapses a non-exempt type (dead_code) at/above ROLLUP_THRESHOLD — the exemption is scoped to safety_gap only (12 ms)
+    ✓ a small safety_gap cluster (below threshold) already passed through unchanged before this fix — still does (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [workflow-inputs] within 2 of the 25 limit: AWS-PROD-DEPLOY-GATEWAY.yml=24
+
+      86 |     if (near.length > 0) {
+      87 |       // eslint-disable-next-line no-console
+    > 88 |       console.warn(
+         |               ^
+      89 |         `[workflow-inputs] within 2 of the ${MAX_DISPATCH_INPUTS} limit: ` +
+      90 |           near.map((w) => `${w.file}=${w.count}`).join(', '),
+      91 |       );
+
+      at Object.<anonymous> (test/scripts/workflow-dispatch-input-limit.test.ts:88:15)
+
+PASS test/scripts/workflow-dispatch-input-limit.test.ts
+  workflow_dispatch input limit
+    ✓ no workflow exceeds GitHub’s 25-input maximum (65 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml specifically stays dispatchable (28 ms)
+    ✓ actually parsed some dispatch workflows — a guard that scans nothing passes forever (23 ms)
+    ✓ flags a workflow that is near the ceiling, so the next addition is a decision (21 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=0 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+PASS test/specs-gen-system-prompt-accuracy.test.ts
+  SPEC_GEN_SYSTEM_PROMPT — accuracy fixes (VTID-03934)
+    ✓ no longer describes EXEC-DEPLOY.yml/Cloud Run as the live deploy mechanism (2 ms)
+    ✓ describes the real AWS ECS staging-first deploy path instead (1 ms)
+    ✓ explicitly flags GCP/Cloud Run as decommissioned rather than silently omitting it
+    ✓ no longer states the stale "~30k lines" app.js line count (1 ms)
+    ✓ does not replace the stale figure with another hardcoded line count that will just go stale again
+    ✓ describes the gateway as running on AWS ECS, not "on Cloud Run" (1 ms)
+    ✓ adds an explicit output rule forbidding a fabricated VTID coordination-risk citation (1 ms)
+    ✓ the new VTID-citation rule is appended to (not replacing) the existing 7 output rules (1 ms)
+    ✓ still contains the required spec structure section headings, unaffected by the fact corrections (1 ms)
+
+  console.log
+    [CalendarReminders] created=1 cancelled=1 refreshed=0 entries=1 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+  console.log
+    [CalendarReminders] created=0 cancelled=1 refreshed=0 entries=0 skipped_no_tenant=0
+
+      at reconcileCalendarReminders (src/services/calendar-reminders.ts:486:15)
+
+PASS test/vtid-04338-calendar-default-reminders.test.ts
+  rules (owner-approved defaults)
+    ✓ meeting / event 10 min, workout 30 min, habit at time, lab evening before + 1 h (2 ms)
+    ✓ the entry’s own offsets win; {} means no reminders (1 ms)
+    ✓ emoji: own, lab, per type, fallback
+  computeDesiredReminders
+    ✓ one 10-min reminder for an event later today (1 ms)
+    ✓ lab tomorrow 08:00 Berlin: 19:00 local the evening before, and 07:00 local (2 ms)
+    ✓ skips cancelled, completed, beyond-horizon; keeps recently due ones for sync (1 ms)
+    ✓ a daily habit gets one reminder per occurrence inside the 36 h horizon, at 07:30 local (8 ms)
+    ✓ an offset longer than the time until the event still fires if inside the horizon (1 ms)
+  reminderText
+    ✓ renders every variant with the emoji and local time (1 ms)
+  catalog
+    ✓ every new key exists in DE and EN (tsc enforces), and in each translated locale (5 ms)
+  reconcile
+    ✓ creates the missing reminder with localized text, tenant and link columns (22 ms)
+    ✓ is a no-op when the reminder already exists (2 ms)
+    ✓ a moved entry: old reminder cancelled, new one created (4 ms)
+    ✓ a deleted / cancelled entry loses its pending reminders (2 ms)
+    ✓ a user without a tenant is skipped, not failed (2 ms)
+    ✓ keys normalise the occurrence timestamp
+  flag and wiring
+    ✓ needs the exact string "true" and does not start without it (1 ms)
+    ✓ startup starts the loop; staging pins it; prod does not (7 ms)
+  window read carries the same reminders the loop writes (VTID-04351)
+    ✓ the /events/window route decorates entries with reminderRules + entryEmoji, never busy blocks (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [VTID-04018] bootstrap pack failed open: deps.readRepoFile is not a function
+
+      437 |     return assembleBootstrapPack([...entry.sections, flags, catalog], entry.builtAtIso);
+      438 |   } catch (err) {
+    > 439 |     console.warn(`[VTID-04018] bootstrap pack failed open: ${err instanceof Error ? err.message : String(err)}`);
+          |             ^
+      440 |     return '';
+      441 |   }
+      442 | }
+
+      at getOperatorBootstrapPack (src/services/operator-bootstrap-pack.ts:439:13)
+      at Object.<anonymous> (test/vtid-04018-operator-bootstrap-pack.test.ts:172:18)
+
+PASS test/vtid-04018-operator-bootstrap-pack.test.ts
+  VTID-04018 pure renderers
+    ✓ extracts CLAUDE.md Part 1 (the rules), bounded, and never the change log (8 ms)
+    ✓ compresses the newest change-log rows to one line each with date + VTID (4 ms)
+    ✓ indexes DATABASE_SCHEMA.md table headings and the service path map (3 ms)
+    ✓ renders the tool catalog from declarations (first sentence only), PRs, events and build-info (2 ms)
+    ✓ parses build-info targets and the flag (2 ms)
+    ✓ assembles sections with a header, renders failures inline, and clips at the size budget (1 ms)
+    ✓ withTimeout rejects late promises (42 ms)
+  VTID-04018 sections, fail-open and cache
+    ✓ builds every section from the injected sources (4 ms)
+    ✓ a failing or hanging source renders as unavailable and does not block the others (1504 ms)
+    ✓ a missing build-info target is one unavailable line, not a failed section (6 ms)
+    ✓ is empty when disabled and never calls a source (1 ms)
+    ✓ caches the fetched sections for 5 minutes, coalesces concurrent builds, and renders the catalog per call (27 ms)
+    ✓ never throws — a broken deps set fails open to an empty pack (31 ms)
+  VTID-04018 wiring
+    ✓ the main operator turn appends the pack after the VTID-03930 orientation block and passes the same tool defs it renders (5 ms)
+    ✓ the tool-result turn carries the same pack (§4.1)
+    ✓ staging pins the flag and the two build-info targets; prod declares the same (VTID-04230) (1 ms)
+
+PASS test/vtid-04624-operator-sql-live-db.test.ts
+  sqlReadonlyBackend
+    ✓ prefers the dedicated URL, then the supabase backend, else none (2 ms)
+  runReadonlySql on the supabase backend
+    ✓ posts the bounded statement to operator_readonly_query with the service role and returns bounded rows (5 ms)
+    ✓ validates before any request: a write never reaches the database (26 ms)
+    ✓ refuses EXPLAIN on this backend with a clear reason (2 ms)
+    ✓ passes the database error through verbatim (1 ms)
+    ✓ the dedicated URL still takes the pool path (1 ms)
+  the migration and the staging wiring
+    ✓ the function is service_role-only and switches the transaction to read-only before executing (1 ms)
+    ✓ staging enables the supabase backend when the URL secret is absent; prod declares nothing (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/scripts/test-catalog-lib.test.ts
+  classifyTestFile
+    ✓ groups gateway Jest files by area (1 ms)
+    ✓ marks gateway tests outside the Jest roots as their own (never run) suite (1 ms)
+    ✓ recognises Playwright, sibling services, Python and frontend files (1 ms)
+    ✓ ignores non-test files and node_modules (1 ms)
+  countCases
+    ✓ counts it/test calls including .each and .skip, not method calls
+    ✓ counts python test functions (1 ms)
+  workflow parsing
+    ✓ reads triggers and crons from the on: block only (1 ms)
+    ✓ labels environments by the hosts a workflow targets (1 ms)
+    ✓ puts database monitors on production (one shared Supabase project) (1 ms)
+    ✓ flags a Playwright workflow that touches a production host
+    ✓ does not flag production curl checks when the Playwright step runs on staging (VTID-04648) (1 ms)
+    ✓ resolves env references in the Playwright step (VTID-04648)
+    ✓ ignores production hosts in a refusal glob (VTID-04648)
+    ✓ flags dead GCP hosts and ignores commented-out steps (3 ms)
+    ✓ labels deploy workflows by what they deploy and treats scheduled data jobs as jobs (2 ms)
+  describeCron / runsPerDay
+    ✓ */15 * * * * (1 ms)
+    ✓ 35 * * * *
+    ✓ 7,37 * * * *
+    ✓ 0 7,19 * * *
+    ✓ 0 2 * * 0 (1 ms)
+  buildCatalog
+    ✓ attaches suites to the workflows that run them
+    ✓ marks a suite no workflow runs as never_run
+    ✓ resolves named npm test suites to their files (1 ms)
+  this repository, scanned for real
+    ✓ classifies every gateway Jest file into a suite (3 ms)
+    ✓ only wires suites to workflows that exist (1 ms)
+    ✓ puts every test/monitor/gate workflow in at least one environment, unless it is flagged (19 ms)
+    ✓ runs no browser suite against production (VTID-04648) (12 ms)
+    ✓ catalogues TEST-CATALOG.yml itself as a job, not a test
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_CRM_DUPLICATE_ACCOUNT_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isDuplicateAccountOn (src/services/jev/gates/duplicate-account-gate.ts:139:21)
+      at Object.<anonymous> (test/vtid-04810-duplicate-account.test.ts:98:34)
+
+  console.warn
+    [jev] crm_duplicate_account failed for command cmd-crm.company.create: boom
+
+      219 |     );
+      220 |   } catch (err: any) {
+    > 221 |     console.warn(`[jev] ${DUPLICATE_ACCOUNT_GATE} failed for command ${row.id}: ${err?.message || err}`);
+          |             ^
+      222 |     return null;
+      223 |   }
+      224 | }
+
+      at runDuplicateAccountCheck (src/services/jev/gates/duplicate-account-gate.ts:221:13)
+      at Object.<anonymous> (test/vtid-04810-duplicate-account.test.ts:148:5)
+
+PASS test/vtid-04810-duplicate-account.test.ts
+  VTID-04810 decision and names
+    ✓ account_duplicate: business data, internal plane, redacted (2 ms)
+    ✓ names compare without case, punctuation, accents or legal forms (2 ms)
+    ✓ only company creates count; a person customer is never read (1 ms)
+    ✓ similar accounts: never the record just created, never a person, exact-after-normalising first, at most 3 (1 ms)
+  VTID-04810 gate
+    ✓ off (default, typo), not executed, or no bridge: nothing read, asked or written (5 ms)
+    ✓ shadow: reads through the bridge as the requester, asks per candidate, one row; agreement against the name rule (4 ms)
+    ✓ a customer create reads list-customers; Jev disagreeing with an exact name match is recorded (1 ms)
+    ✓ only similar-but-not-equal names: agreed null; nothing similar: no call, no row (2 ms)
+    ✓ search refused → one unfiltered retry; bridge down → nothing; Jev down → fallback row; never throws (3 ms)
+  VTID-04810 wiring and pins
+    ✓ both command paths run the check after the command, never awaited
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_PR_CLASH_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isPrClashOn (src/services/jev/gates/pr-clash-gate.ts:49:21)
+      at Object.<anonymous> (test/vtid-04808-pr-clash.test.ts:73:25)
+
+  console.warn
+    [jev] pr_clash check failed for m1: db
+
+      134 |     );
+      135 |   } catch (err: any) {
+    > 136 |     console.warn(`[jev] ${PR_CLASH_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      137 |     return null;
+      138 |   }
+      139 | }
+
+      at runPrClashCheck (src/services/jev/gates/pr-clash-gate.ts:136:13)
+      at Object.<anonymous> (test/vtid-04808-pr-clash.test.ts:109:5)
+
+  console.warn
+    [jev] pr_clash outcome not recorded for zz: db
+
+      165 |     return n;
+      166 |   } catch (err: any) {
+    > 167 |     console.warn(`[jev] ${PR_CLASH_GATE} outcome not recorded for ${executionId}: ${err?.message || err}`);
+          |             ^
+      168 |     return 0;
+      169 |   }
+      170 | }
+
+      at recordPrClashOutcome (src/services/jev/gates/pr-clash-gate.ts:167:13)
+      at Object.<anonymous> (test/vtid-04808-pr-clash.test.ts:133:5)
+
+PASS test/vtid-04808-pr-clash.test.ts
+  VTID-04808 decision and overlap
+    ✓ pr_clash: internal planes, redacted, one question (2 ms)
+    ✓ others sharing a file come first, then a directory; unrelated and itself are left out; at most 3 (1 ms)
+  VTID-04808 gate
+    ✓ off (default, typo): nothing loaded, asked or written (10 ms)
+    ✓ shadow: one call per overlapping open change, one row per merge (2 ms)
+    ✓ nothing open that overlaps, no plan files, or no finding → no call, no row (1 ms)
+    ✓ Jev unavailable → a fallback row; a throwing loader → null; never throws (3 ms)
+  VTID-04808 outcome
+    ✓ other o1aaaaaaaa conflicted=true → other_conflicted:o1aaaaaa, agreed true (1 ms)
+    ✓ other o1aaaaaaaa conflicted=false → other_merged_clean:o1aaaaaa, agreed false (1 ms)
+    ✓ other o2bbbbbbbb conflicted=true → other_conflicted:o2bbbbbb, agreed false (1 ms)
+    ✓ other o2bbbbbbbb conflicted=false → other_merged_clean:o2bbbbbb, agreed true (1 ms)
+    ✓ other o3cccccccc conflicted=true → other_conflicted:o3cccccc, agreed null
+    ✓ no open row, a read error or no database → nothing; never throws (1 ms)
+  VTID-04808 wiring and pins
+    ✓ asked right before the merge, never awaited; the merge is unchanged (1 ms)
+    ✓ outcomes: a dirty CI failure (both checks) and a CI pass; other failures say nothing (1 ms)
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_COMPANY_DOC_RELEVANCE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isCompanyDocRelevanceOn (src/services/jev/gates/company-doc-relevance-gate.ts:32:21)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:175:37)
+
+  console.warn
+    [jev] company_doc_relevance failed: Cannot read properties of null (reading 'name')
+
+      106 |     );
+      107 |   } catch (err: any) {
+    > 108 |     console.warn(`[jev] ${COMPANY_DOC_RELEVANCE_GATE} failed: ${err?.message || err}`);
+          |             ^
+      109 |     return null;
+      110 |   }
+      111 | }
+
+      at runCompanyDocRelevance (src/services/jev/gates/company-doc-relevance-gate.ts:108:13)
+      at Object.<anonymous> (test/vtid-04821-company-doc-search.test.ts:195:40)
+
+PASS test/routes/testing-launcher.test.ts
+  auth
+    ✓ get /api/v1/testing/launchable: 401 anonymous, 403 non-admin, nothing dispatched (24 ms)
+    ✓ post /api/v1/testing/launch: 401 anonymous, 403 non-admin, nothing dispatched (9 ms)
+    ✓ get /api/v1/testing/launches: 401 anonymous, 403 non-admin, nothing dispatched (21 ms)
+  POST /launch
+    ✓ refuses a deploy workflow and dispatches nothing (12 ms)
+    ✓ requires a reason (4 ms)
+    ✓ dispatches a listed workflow on main and records who started it and why (5 ms)
+    ✓ sends staging E2E read-only against the staging app, whatever the body says (8 ms)
+    ✓ pins STAGING-VERIFY to the commit staging serves, and refuses when it cannot read one (7 ms)
+    ✓ starts vitana-v1 workflows only with the frontend token (5 ms)
+    ✓ reports a GitHub failure as 502 and records no launch (2 ms)
+  GET /launchable and /launches
+    ✓ lists the launch list with the E2E projects (4 ms)
+    ✓ lists recent launches from OASIS (2 ms)
+
+  console.warn
+    [jev] JEV_VOICE_SLOW_SESSION_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isSlowSessionOn (src/services/jev/gates/slow-session-gate.ts:102:21)
+      at Object.<anonymous> (test/vtid-04805-voice-slow-session.test.ts:119:29)
+
+PASS test/vtid-04821-company-doc-search.test.ts
+  VTID-04821 company accounts only
+    ✓ default domain is exafy.io; COMPANY_DOCS_DOMAINS overrides (2 ms)
+    ✓ d.stevanovic@exafy.io → true
+    ✓ J.Tadic@EXAFY.IO → true
+    ✓ someone@gmail.com → false
+    ✓ x@mail.exafy.io → false
+    ✓ x@exafy.io.evil.com → false
+    ✓ exafy.io → false
+    ✓ null → false
+    ✓ read-only files scopes; the granted list must cover them (1 ms)
+    ✓ search terms are escaped for Drive and Graph (1 ms)
+  VTID-04821 search
+    ✓ searches the Exafy Drive and OneDrive; names, kinds, dates and links only (2 ms)
+    ✓ a private account, a missing scope or no connection is never searched (1 ms)
+    ✓ one provider failing never hides the other (1 ms)
+    ✓ connect keeps the scopes the connection already has (2 ms)
+  VTID-04821 Jev relevance gate
+    ✓ company_doc_relevance: business data, internal plane, redacted, one choice question (2 ms)
+    ✓ input: numbered in provider order, short kinds, dates; never ids or links (2 ms)
+    ✓ off (default, typo), no tenant or no results: nothing asked or written (8 ms)
+    ✓ Jev picks d1 → agreed with provider rank 1: true (6 ms)
+    ✓ Jev picks d2 → agreed with provider rank 1: false (1 ms)
+    ✓ Jev picks none → agreed with provider rank 1: false (1 ms)
+    ✓ Jev down → fallback row; never throws (2 ms)
+  VTID-04821 wiring and pins
+    ✓ both tools are declared, dispatched, staff-only and in a router lane (1 ms)
+    ✓ never on the member Connected Apps screen (1 ms)
+    ✓ both gateways pin shadow, never enforce (11 ms)
+
+  console.warn
+    [jev] voice_slow_session day 2026-09-30 failed: db
+
+      165 |     return written;
+      166 |   } catch (err: any) {
+    > 167 |     console.warn(`[jev] ${SLOW_SESSION_GATE} day ${day} failed: ${err?.message || err}`);
+          |             ^
+      168 |     return 0;
+      169 |   }
+      170 | }
+
+      at runSlowSessionDay (src/services/jev/gates/slow-session-gate.ts:167:13)
+      at Object.<anonymous> (test/vtid-04805-voice-slow-session.test.ts:159:5)
+
+PASS test/vtid-04805-voice-slow-session.test.ts
+  VTID-04805 decision
+    ✓ slow_session_cause: telemetry, no PII, internal planes, cause + fixable (2 ms)
+  VTID-04805 signals and rules
+    ✓ counters and timings by allow-list; never ids, transcripts or contact data (1 ms)
+    ✓ rules {"tool_failures":1} → tool_call (1 ms)
+    ✓ rules {"stall_reason":"response_timeout","tool_calls":2} → tool_call
+    ✓ rules {"stall_reason":"forwarding_no_ack","prewarm_missed":true} → upstream_connection
+    ✓ rules {"context_build_ms":3744} → context_build
+    ✓ rules {"stall_reason":"greeting_timeout"} → upstream_model (1 ms)
+    ✓ rules {} → null
+  VTID-04805 gate
+    ✓ off (default, typo): nothing read, asked or written; scheduler does not start (9 ms)
+    ✓ one row per stalled session of this environment, Jev next to the rules (2 ms)
+    ✓ a session already judged is skipped; no rule → agreed null (1 ms)
+    ✓ Jev unavailable → a fallback row; read errors → 0; never throws (2 ms)
+  VTID-04805 wiring and pins
+    ✓ the scheduler starts from index.ts, guarded, non-fatal (1 ms)
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_SELFHEAL_DEPLOY_CAUSE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isDeployCauseOn (src/services/jev/gates/deploy-cause-gate.ts:53:21)
+      at Object.<anonymous> (test/vtid-04802-selfheal-deploy-cause.test.ts:70:29)
+
+  console.warn
+    [jev] selfheal_deploy_cause check failed for VTID-09100: db
+
+      157 |     return { shadow_id: id, top: topScored ? { sha: topScored.sha, files: topScored.files, level: topScored.level as number } : null };
+      158 |   } catch (err: any) {
+    > 159 |     console.warn(`[jev] ${DEPLOY_CAUSE_GATE} check failed for ${input.vtid}: ${err?.message || err}`);
+          |             ^
+      160 |     return none;
+      161 |   }
+      162 | }
+
+      at runDeployCauseCheck (src/services/jev/gates/deploy-cause-gate.ts:159:13)
+      at Object.<anonymous> (test/vtid-04802-selfheal-deploy-cause.test.ts:119:5)
+
+  console.warn
+    [jev] JEV_VOICE_OPENER_OUTCOMES_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isOpenerOutcomesOn (src/services/jev/gates/opener-outcome-gate.ts:118:21)
+      at Object.<anonymous> (test/vtid-04817-voice-opener-outcomes.test.ts:103:32)
+
+PASS test/vtid-04802-selfheal-deploy-cause.test.ts
+  VTID-04802 decision
+    ✓ commit_cause_score: telemetry, internal planes, four levels (1 ms)
+  VTID-04802 gate
+    ✓ off (default, typo): nothing read, asked or written (9 ms)
+    ✓ B5: no deploy in the last 24 h → a rules row, no Jev call, no GitHub call
+    ✓ B5: no deploy at all → no deploy seen
+    ✓ B4: a deploy in the window → each commit scored from subject + paths, the top recorded (4 ms)
+    ✓ a deploy with no previous deploy or no commits → a rules row
+    ✓ Jev unavailable for every commit → a fallback row; a throwing dep → nothing; never throws (3 ms)
+  VTID-04802 outcome
+    ✓ component match against the top commit paths (1 ms)
+    ✓ B4 agrees when triage names a component the top commit touched (1 ms)
+    ✓ a weak top score or B5 leaves agreement null; no report → outcome only (1 ms)
+  VTID-04802 wiring and pins
+    ✓ started before triage, never awaited before it; outcome after the report or on a failed triage (2 ms)
+    ✓ deploys are this environment's own completed-deploy events
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.warn
+    [jev] voice_opener_outcomes day 2026-09-30 failed: db
+
+      186 |     return written;
+      187 |   } catch (err: any) {
+    > 188 |     console.warn(`[jev] ${OPENER_GATE} day ${day} failed: ${err?.message || err}`);
+          |             ^
+      189 |     return 0;
+      190 |   }
+      191 | }
+
+      at runOpenerOutcomesDay (src/services/jev/gates/opener-outcome-gate.ts:188:13)
+      at Object.<anonymous> (test/vtid-04817-voice-opener-outcomes.test.ts:134:5)
+
+PASS test/vtid-04817-voice-opener-outcomes.test.ts
+  VTID-04817 decision and grouping
+    ✓ opener_effectiveness: telemetry, no PII, working + next step (10 ms)
+    ✓ openers joined to finalized sessions, this environment only, one per session, biggest first (1 ms)
+    ✓ the rule: below 70% of overall engagement is under-performing; too few finalized → null (2 ms)
+  VTID-04817 gate
+    ✓ off (default, typo): nothing read, asked or written; scheduler does not start (7 ms)
+    ✓ groups with ≥ 10 sessions over the 7 days to the day's end are judged, agreement against the rule (3 ms)
+    ✓ a group already judged that day is skipped; Jev down → fallback row; read errors → 0; never throws (4 ms)
+  VTID-04817 wiring and pins
+    ✓ the scheduler starts from index.ts, guarded, non-fatal (2 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/services/conversation/vtid-04435-personal-weights.test.ts
+  the flag
+    ✓ the live re-ranking uses personal weights only for the exact string true (1 ms)
+    ✓ is pinned on staging only (2 ms)
+  personalAdjustment
+    ✓ changes nothing below the minimum evidence (1 ms)
+    ✓ raises the outcome weight when acceptance differs a lot between providers (1 ms)
+    ✓ lowers the outcome weight when acceptance is flat
+    ✓ leaves the outcome weight alone with only one measurable provider (1 ms)
+    ✓ raises freshness for a user who ignores most offers, within its band
+    ✓ grows with evidence and never leaves its limits (47 ms)
+  personalizeWeights
+    ✓ changes only the outcome and freshness weights and never mutates the shared weights
+    ✓ returns the shared object itself when nothing applies
+    ✓ can change the shadow pick for a user whose history favours a lower-priority provider (1 ms)
+  where it is used
+    ✓ the shadow ranking records the personal adjustment and the shared-weights winner (1 ms)
+    ✓ the live turn re-ranking uses the personal copy only behind the flag
+    ✓ loadUserOutcomes keeps declined and ignored counts (1 ms)
+  Monitor and inspector
+    ✓ the shadow summary counts personalised openings and changed picks (1 ms)
+    ✓ the inspector shows a session's adjustment (3 ms)
+    ✓ the Command Hub shows both (58 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_DOCUMENT_TYPE_ROUTING_MODE="yes" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isDocumentTypeRoutingOn (src/services/jev/gates/document-type-gate.ts:78:21)
+      at Object.<anonymous> (test/vtid-04822-document-type-routing.test.ts:86:37)
+
+  console.warn
+    [jev] JEV_FINDING_DEDUPE_MODE="true" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isFindingDedupeOn (src/services/jev/gates/finding-dedupe-gate.ts:59:21)
+      at Object.<anonymous> (test/vtid-04797-finding-dedupe-gate.test.ts:54:31)
+
+PASS test/vtid-04822-document-type-routing.test.ts
+  VTID-04822 decision and rule
+    ✓ document_type: business data, internal plane, redacted, every type has a route (3 ms)
+    ✓ Partner_Agreement_2026.pdf (pdf) → contract (2 ms)
+    ✓ Mietvertrag Büro Wien (document) → contract (1 ms)
+    ✓ Ugovor o saradnji (document) → contract (1 ms)
+    ✓ NDA - Acme (pdf) → contract (1 ms)
+    ✓ Rechnung zum Vertrag 0042 (pdf) → invoice
+    ✓ Račun 12-2026 (pdf) → invoice (1 ms)
+    ✓ Eingangsrechnung September (spreadsheet) → invoice
+    ✓ Angebot Website Relaunch (pdf) → quote_or_order
+    ✓ Purchase order 77 (pdf) → quote_or_order
+    ✓ Datenschutz-Richtlinie (document) → policy (1 ms)
+    ✓ Lastenheft ORB (document) → specification (1 ms)
+    ✓ PRD - voice v2 (document) → specification (1 ms)
+    ✓ Handelsregisterauszug Exafy (pdf) → legal_corporate
+    ✓ Lebenslauf (pdf) → hr (1 ms)
+    ✓ Q3 Bericht (document) → report (2 ms)
+    ✓ Investor deck (other) → presentation (1 ms)
+    ✓ Untitled (presentation) → presentation
+    ✓ Notes from Tuesday (document) → null
+    ✓  (pdf) → null
+  VTID-04822 gate
+    ✓ off (default, typo), no tenant or no documents: nothing asked or written (8 ms)
+    ✓ top three non-folder documents; agreement where the rule names a type, open where it does not (3 ms)
+    ✓ a document typed in the last month is not asked again (1 ms)
+    ✓ Jev down → fallback row; never throws (1 ms)
+  VTID-04822 wiring and pins
+    ✓ runs after a company document search with results, never awaited (20 ms)
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.warn
+    [jev] finding_dedupe check failed for fp: db
+
+      114 |     );
+      115 |   } catch (err: any) {
+    > 116 |     console.warn(`[jev] ${FINDING_DEDUPE_GATE} check failed for ${a.fingerprint}: ${err?.message || err}`);
+          |             ^
+      117 |     return null;
+      118 |   }
+      119 | }
+
+      at runFindingDedupeCheck (src/services/jev/gates/finding-dedupe-gate.ts:116:13)
+      at Object.<anonymous> (test/vtid-04797-finding-dedupe-gate.test.ts:103:5)
+
+PASS test/vtid-04797-finding-dedupe-gate.test.ts
+  VTID-04797 A8 finding dedupe
+    ✓ what Jev sees: title, signal, file path, summary — capped (2 ms)
+    ✓ off (default, typo): nothing loaded, asked or written (5 ms)
+    ✓ no other live finding on the file: nothing asked (1 ms)
+    ✓ shadow: compares with each candidate, records the closest one on the new finding (3 ms)
+    ✓ no candidate close enough: duplicate false (1 ms)
+    ✓ never more than MAX_CANDIDATES calls (1 ms)
+    ✓ Jev unavailable: a fallback row; a throwing loader: nothing; never throws (3 ms)
+  VTID-04797 wiring and pins
+    ✓ runs only after a new finding was inserted, never awaited
+    ✓ candidates are live dev findings on the same file, never the new row (1 ms)
+    ✓ both gateways pin shadow, never enforce (7 ms)
+
+PASS test/vtid-03961-env-only-deploy-mode.test.ts
+  VTID-03961: AWS-PROD-DEPLOY-GATEWAY.yml env-only deploy mode
+    ✓ deploy_mode input lists env-only as a third choice, not a new named input (14 ms)
+    ✓ is a well-formed bash script that passes bash -n on its own (8 ms)
+    ✓ env-only mode calls describe-services/describe-task-definition, never a staging build-info curl (1 ms)
+    ✓ echoes back the CURRENT service image/commit unchanged (mode=env-only, no rebuild) (25 ms)
+    ✓ falls back to sha=unknown, not a crash, when the current task def has no GIT_COMMIT_SHA (23 ms)
+    ✓ fails loudly (non-zero exit) rather than proceeding when the current image cannot be resolved (17 ms)
+    ✓ rebuild-main mode is unaffected by the new env-only branch (17 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [reminders-tick] closed 2 stale reminder(s) older than 60 min without pushing
+
+      71 |   const rows: Array<{ id: string; user_id: string; next_fire_at: string }> = data || [];
+      72 |   if (rows.length) {
+    > 73 |     console.warn(`[reminders-tick] closed ${rows.length} stale reminder(s) older than ${resolveStaleAfterMinutes()} min without pushing`);
+         |             ^
+      74 |     try {
+      75 |       const { emitOasisEvent } = await import('./oasis-event-service');
+      76 |       for (const r of rows) {
+
+      at skipStaleReminders (src/services/reminders-dispatch.ts:73:13)
+      at Object.<anonymous> (test/vtid-04320-reminders-dispatch.test.ts:84:15)
+
+  console.error
+    [reminders-tick] stale guard failed: boom
+
+      66 |   const { data, error } = await repo.closeStalePendingReminders(supa, { cutoff });
+      67 |   if (error) {
+    > 68 |     console.error('[reminders-tick] stale guard failed:', error.message);
+         |             ^
+      69 |     return 0;
+      70 |   }
+      71 |   const rows: Array<{ id: string; user_id: string; next_fire_at: string }> = data || [];
+
+      at skipStaleReminders (src/services/reminders-dispatch.ts:68:13)
+      at runRemindersTick (src/services/reminders-dispatch.ts:92:24)
+      at Object.<anonymous> (test/vtid-04320-reminders-dispatch.test.ts:95:17)
+
+  console.log
+    [reminders-tick] fired=2 failed=0 total=2
+
+      at runRemindersTick (src/services/reminders-dispatch.ts:159:28)
+
+  console.error
+    [reminders-tick] mark fired failed for r1: nope
+
+      122 |       const { error: fireErr } = await repo.markReminderFired(supa, { reminderId: row.id, firedAt: new Date().toISOString() });
+      123 |       if (fireErr) {
+    > 124 |         console.error(`[reminders-tick] mark fired failed for ${row.id}:`, fireErr.message);
+          |                 ^
+      125 |         failed++;
+      126 |         continue;
+      127 |       }
+
+      at runRemindersTick (src/services/reminders-dispatch.ts:124:17)
+      at Object.<anonymous> (test/vtid-04320-reminders-dispatch.test.ts:145:17)
+
+  console.log
+    [reminders-tick] fired=0 failed=1 total=1
+
+      at runRemindersTick (src/services/reminders-dispatch.ts:159:28)
+
+  console.error
+    [reminders-tick] claim fallback failed: db down
+
+      108 |     });
+      109 |     if (fallbackErr) {
+    > 110 |       console.error('[reminders-tick] claim fallback failed:', fallbackErr.message);
+          |               ^
+      111 |       return { ok: false, fired: 0, failed: 0, total: 0, stale_skipped: staleSkipped, error: fallbackErr.message };
+      112 |     }
+      113 |     rows = fallback || [];
+
+      at runRemindersTick (src/services/reminders-dispatch.ts:110:15)
+      at Object.<anonymous> (test/vtid-04320-reminders-dispatch.test.ts:160:17)
+
+  console.log
+    [reminders-sweeper] recovered=1 exhausted=1 total=2
+
+      at runRemindersSweeper (src/services/reminders-dispatch.ts:190:11)
+
+  console.warn
+    [jev] JEV_SELFHEAL_PROVIDER_FAILURE_MODE="Enforce" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:170:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+
+PASS test/vtid-04320-reminders-dispatch.test.ts
+  flags
+    ✓ stale threshold defaults to 60 minutes and ignores garbage (1 ms)
+    ✓ in-process dispatch needs the exact string "true"
+    ✓ startRemindersDispatchLoop does nothing while the flag is off (1 ms)
+  stale guard
+    ✓ closes pending reminders older than the threshold and records each one (6 ms)
+    ✓ a failing guard never blocks the tick (2 ms)
+    ✓ the repository closes stale rows as failed/stale_skipped, only from pending (1 ms)
+  tick
+    ✓ guards stale rows BEFORE claiming, then fires every claimed row (4 ms)
+    ✓ counts a row whose fire update fails as failed, not fired (2 ms)
+    ✓ uses the non-atomic fallback only when the claim RPC errors (1 ms)
+    ✓ reports the fallback error instead of throwing (3 ms)
+  sweeper
+    ✓ returns stuck rows to pending and fails them at the 5th attempt (1 ms)
+  wiring
+    ✓ the routes delegate to the shared service (2 ms)
+    ✓ gateway startup starts the loop (6 ms)
+    ✓ staging pins the flag to exact "true" (strip-then-add); prod is untouched (1 ms)
+
+  console.warn
+    [jev] JEV_SELFHEAL_INCIDENT_DEDUPE_MODE="true" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:171:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+
+  console.warn
+    [jev] JEV_APPROVAL_RISK_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isApprovalRiskOn (src/services/jev/gates/approval-risk-gate.ts:75:21)
+      at Object.<anonymous> (test/vtid-04811-approval-risk.test.ts:91:30)
+
+  console.warn
+    [jev] self-heal gates failed, triage proceeds: db down
+
+      295 |   } catch (err: any) {
+      296 |     // A gate must never break triage: on any error, triage runs as before.
+    > 297 |     console.warn(`[jev] self-heal gates failed, triage proceeds: ${err?.message || err}`);
+          |             ^
+      298 |     result.skip = null;
+      299 |   }
+      300 |   return result;
+
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:297:13)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:192:15)
+
+PASS test/vtid-04759-selfheal-jev-gates.test.ts
+  VTID-04759 B2 provider-failure classifier (production strings)
+    ✓ bedrockDenied → permission / stop_and_alert (2 ms)
+    ✓ deepseek402 → credit / stop_and_alert (1 ms)
+    ✓ bothFailed → credit / stop_and_alert
+    ✓ dailyTokens → quota / stop_and_alert (1 ms)
+    ✓ promptTooLong → input_too_large / triage
+    ✓ badGateway → transient / retry_once
+    ✓ timeout → transient / retry_once
+    ✓ throttled → throttle / back_off (1 ms)
+    ✓ both providers are named on a two-provider failure
+    ✓ every message the retry breaker calls an outage is a stop class here too (1 ms)
+    ✓ our own endpoint failing with 403/502 is not a provider failure — triage it (15 ms)
+    ✓ an unrecognised provider failure is unknown (Jev is asked), empty text is none (1 ms)
+    ✓ failure text is read from whichever field the caller used (1 ms)
+  VTID-04759 B1 incident key
+    ✓ one outage is one incident whatever execution hit it (1 ms)
+    ✓ anything else keys on the endpoint, else the vtid (never deduped)
+  VTID-04759 gate modes
+    ✓ off (default): no row, no skip (1 ms)
+    ✓ shadow: rows recorded for both gates, triage never skipped — even on a duplicate outage (1 ms)
+    ✓ enforce: a provider outage skips triage
+    ✓ enforce: a transient or code failure still triages (1 ms)
+    ✓ enforce dedupe: the second triage of the same outage within 30 min is skipped; after 30 min it runs (1 ms)
+    ✓ a typo in the mode is off, never enforce (9 ms)
+    ✓ an unrecognised provider failure asks Jev (ops_error_triage) and records its verdict (1 ms)
+    ✓ a known class never calls Jev
+    ✓ a failing gate store never blocks triage (2 ms)
+  VTID-04759 outcome write-back (agreement)
+    ✓ predicted stop + triage then died on the outage → agreed (1 ms)
+    ✓ predicted stop but triage succeeded → disagreed
+    ✓ predicted proceed (transient) and triage succeeded → agreed (1 ms)
+  VTID-04759 deploy pins: both gates run in shadow, never enforce
+    ✓ staging pins shadow for both gates (1 ms)
+    ✓ prod pins shadow for both gates
+    ✓ the generated pin registry agrees (1 ms)
+
+PASS test/vtid-04811-approval-risk.test.ts
+  VTID-04811 decision and input
+    ✓ approval_risk: business data, internal plane, redacted, four levels (2 ms)
+    ✓ business values by allow-list, other fields by name only; never a counterparty name, remark or the requester (1 ms)
+    ✓ payroll is never sent (1 ms)
+  VTID-04811 gate
+    ✓ off (default, typo), not queued, or payroll: nothing asked or written (4 ms)
+    ✓ shadow: one row per approval with the level (3 ms)
+    ✓ level 3, approver rejected → agreed true (1 ms)
+    ✓ level 2, approver rejected → agreed true
+    ✓ level 1, approver rejected → agreed false (1 ms)
+    ✓ level 0, approver approved → agreed true (1 ms)
+    ✓ level 2, approver approved → agreed false
+    ✓ abstained or unavailable → agreed null; no row → nothing; never throws (1 ms)
+  VTID-04811 wiring and pins
+    ✓ scored when queued, after the approval exists; outcome on both verdicts; never awaited (2 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_CHANGE_RISK_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isChangeRiskOn (src/services/jev/gates/change-risk-gate.ts:48:21)
+      at Object.<anonymous> (test/vtid-04815-change-risk.test.ts:79:28)
+
+PASS test/vtid-04815-change-risk.test.ts
+  VTID-04815 decision and input
+    ✓ change_risk: telemetry, internal planes, redacted, four levels (2 ms)
+    ✓ built from the runner's own diff; tests counted; patch bounded (1 ms)
+  VTID-04815 gate
+    ✓ off (default, typo): nothing asked or written (5 ms)
+    ✓ shadow: one row per pushed change with the level (2 ms)
+    ✓ level 3, landed ci_failed → agreed true (2 ms)
+    ✓ level 2, landed verification_failed → agreed true (1 ms)
+    ✓ level 0, landed verification_failed → agreed false (1 ms)
+    ✓ level 0, landed verification_passed → agreed true (11 ms)
+    ✓ level 2, landed verification_passed → agreed false (1 ms)
+    ✓ the first landing wins; abstained → null; no row or no database → nothing; never throws (2 ms)
+  VTID-04815 wiring and pins
+    ✓ runner: new changes only (after the fix-mode return), before the PR opens, never awaited
+    ✓ watcher: a CI failure that is not a dirty merge, and every verification verdict
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.warn
+    [jev] JEV_AGENT_PROGRESS_MODE="Shadow" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at createAgentProgressGate (src/services/jev/gates/agent-progress-gate.ts:83:27)
+      at Object.<anonymous> (test/vtid-04764-agent-progress-gate.test.ts:79:40)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] agent_progress check failed at turn 10: boom
+
+      132 |       checks.push({ id, turn: s.turn, next_step: r.ok && r.outcome === 'decided' ? nextStep : null, outcome: r.outcome });
+      133 |     } catch (err: any) {
+    > 134 |       console.warn(`[jev] ${AGENT_PROGRESS_GATE} check failed at turn ${s.turn}: ${err?.message || err}`);
+          |               ^
+      135 |     }
+      136 |   };
+      137 |
+
+      at runCheck (src/services/jev/gates/agent-progress-gate.ts:134:15)
+      at Object.finish (src/services/jev/gates/agent-progress-gate.ts:164:9)
+      at Object.<anonymous> (test/vtid-04764-agent-progress-gate.test.ts:152:5)
+
+PASS test/vtid-04764-agent-progress-gate.test.ts
+  VTID-04764 decision
+    ✓ agent_progress_check is telemetry on the internal planes with a 4-way choice (3 ms)
+  VTID-04764 gate
+    ✓ off (default, or a typo): a no-op, nothing asked or written (7 ms)
+    ✓ shadow: asks every 10th turn, in order, with the activity window and check counts (4 ms)
+    ✓ the window keeps the last 30 calls only (1 ms)
+    ✓ agreement: predicted continue, run pr_opened → true (1 ms)
+    ✓ agreement: predicted commit, run awaiting_approval → true (1 ms)
+    ✓ agreement: predicted continue, run failed → false (1 ms)
+    ✓ agreement: predicted stop, run failed → true (4 ms)
+    ✓ agreement: predicted handoff, run failed → true (1 ms)
+    ✓ agreement: predicted stop, run pr_opened → false (1 ms)
+    ✓ a cancelled run, an abstention or a failed Jev call carries agreed = null (3 ms)
+    ✓ a throwing Jev client never reaches the loop (2 ms)
+  VTID-04764 loop hook (observe-only)
+    ✓ one snapshot per completed tool turn, with the loop action and the calls (4 ms)
+    ✓ a throwing hook changes nothing (2 ms)
+  VTID-04764 wiring and pins
+    ✓ the runner feeds every loop round to the gate and closes it in finally with the run outcome (1 ms)
+    ✓ both gateways pin shadow; the ECS executor is not wired yet (its role must be able to read the key first) (4 ms)
+
+PASS test/vtid-04215-deploy-event-contract.test.ts
+  VTID-04215: workflow topic strings match the consumer contract (drift pin)
+    ✓ staging workflow emits exactly the success/failure topics this module names (3 ms)
+    ✓ production workflow emits exactly the success/failure topics this module names (2 ms)
+  VTID-04215: deployTopicsForEnv
+    ✓ staging queries its own AWS topics plus legacy, never the prod topics (1 ms)
+    ✓ production (or unset) queries the prod topics, never staging (1 ms)
+  VTID-04215: normalizeDeployEvent
+    ✓ maps staging.deploy.completed onto deploy.gateway.success with branch main and git_commit kept (5 ms)
+    ✓ maps staging.deploy.failed onto deploy.gateway.failed (1 ms)
+    ✓ maps the prod topics the same way (1 ms)
+    ✓ passes a legacy topic through unchanged, payload = metadata
+    ✓ tolerates a null metadata column
+  VTID-04215: the watcher recognises a normalized staging deploy
+    ✓ the exact reverted case: staging deploy of the merge SHA after the merge → success (1 ms)
+    ✓ queued-merge fallback: a later main deploy of a different SHA → success
+    ✓ a failed staging deploy after the merge → failed
+    ✓ a deploy from before the merge does not count (1 ms)
+    ✓ the raw (un-normalized) staging row would still be ignored — normalization is load-bearing
+  VTID-04215: resolveDeployOutcome (the reconciler decision)
+    ✓ exact merge_sha match wins and is reported as such
+    ✓ falls back to a later successful main deploy when the exact SHA never deployed (concurrency-cancelled run)
+    ✓ a failed main deploy after the merge beats a success (conservative) (1 ms)
+    ✓ events before the watermark are ignored → pending
+    ✓ no events at all → pending (the reconciler then fails the row as before)
+    ✓ a row without merge_sha keeps the original recency behaviour (1 ms)
+
+  console.warn
+    [jev] JEV_CLAIM_FEASIBILITY_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isClaimFeasibilityOn (src/services/jev/gates/claim-feasibility-gate.ts:57:21)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:80:34)
+
+  console.warn
+    [jev] claim_feasibility: no plan/finding for e — not asked
+
+      66 |     const ctx = await a.load();
+      67 |     if (!ctx) {
+    > 68 |       console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE}: no plan/finding for ${a.executionId} — not asked`);
+         |               ^
+      69 |       return null;
+      70 |     }
+      71 |     const r = await decide(
+
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:68:15)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:105:12)
+
+  console.warn
+    [jev] claim_feasibility check failed for e: db
+
+      103 |     );
+      104 |   } catch (err: any) {
+    > 105 |     console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      106 |     return null;
+      107 |   }
+      108 | }
+
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:105:13)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:106:12)
+
+  console.warn
+    [jev] claim_feasibility check failed for e: net
+
+      103 |     );
+      104 |   } catch (err: any) {
+    > 105 |     console.warn(`[jev] ${CLAIM_FEASIBILITY_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      106 |     return null;
+      107 |   }
+      108 | }
+
+      at runClaimFeasibilityCheck (src/services/jev/gates/claim-feasibility-gate.ts:105:13)
+      at Object.<anonymous> (test/vtid-04774-claim-feasibility-gate.test.ts:110:12)
+
+PASS test/vtid-04774-claim-feasibility-gate.test.ts
+  VTID-04774 decision
+    ✓ execution_feasibility: telemetry, internal planes, five verdicts (2 ms)
+  VTID-04774 check
+    ✓ off (default, typo): nothing loaded, asked or written (4 ms)
+    ✓ shadow: one row per execution with the verdict next to the dispatch (2 ms)
+    ✓ a missing plan, a throwing loader or a failing Jev call never throws (4 ms)
+  VTID-04774 outcome write-back
+    ✓ predicted feasible, result {"ok":true} → run_pr_opened, agreed true (1 ms)
+    ✓ predicted feasible, result {"ok":true,"awaiting_approval":true} → run_awaiting_approval, agreed true (1 ms)
+    ✓ predicted feasible, result {"ok":false,"error":"agent hit the 120-turn cap"} → run_failed, agreed false
+    ✓ predicted needs_infra, result {"ok":false,"error":"secret missing"} → run_failed, agreed true
+    ✓ predicted too_large, result {"ok":true} → run_pr_opened, agreed false (1 ms)
+    ✓ predicted unclear, result {"ok":false,"cancelled":true} → run_cancelled, agreed null (1 ms)
+    ✓ an abstained verdict records the outcome with agreed = null (1 ms)
+    ✓ no row (gate was off) → nothing written, nothing thrown
+  VTID-04774 wiring and pins
+    ✓ checked after the claim and the running event, before dispatch, never awaited (1 ms)
+    ✓ every applied result writes the outcome first, fire-and-forget
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_SELFHEAL_PRETRIAGE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:172:28)
+      at Object.<anonymous> (test/vtid-04799-selfheal-pretriage.test.ts:53:39)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_VOICE_SESSION_OUTCOME_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isVoiceOutcomeOn (src/services/jev/gates/voice-outcome-gate.ts:101:21)
+      at Object.<anonymous> (test/vtid-04775-voice-outcome-gate.test.ts:103:30)
+
+PASS test/vtid-04799-selfheal-pretriage.test.ts
+  VTID-04799 B3 pre-triage
+    ✓ off (default, typo): nothing asked or written; B1/B2 unaffected (5 ms)
+    ✓ shadow: a non-provider incident gets one row with the cause and needs-human (2 ms)
+    ✓ a provider failure is B2’s, never B3’s (1 ms)
+    ✓ no failure text: nothing asked (1 ms)
+    ✓ enforce skips triage only for a decided transient (12 ms)
+    ✓ Jev unavailable: a fallback row, triage runs
+    ✓ agreement: Jev transient vs triage report info → true (1 ms)
+    ✓ agreement: Jev transient vs triage report critical → false (1 ms)
+    ✓ agreement: Jev code_defect vs triage report warning → true (1 ms)
+    ✓ agreement: Jev configuration vs triage report info → false
+    ✓ a triage that failed or was skipped: outcome without agreement (1 ms)
+  VTID-04799 wiring
+    ✓ the report write-back runs after the report is parsed, never awaited (1 ms)
+  VTID-04799 pins
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.warn
+    [jev] JEV_CI_FAILURE_ROUTING_MODE="yes" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isCiFailureRoutingOn (src/services/jev/gates/ci-failure-gate.ts:57:21)
+      at Object.<anonymous> (test/vtid-04800-ci-failure-routing.test.ts:62:34)
+
+  console.warn
+    [jev] voice_session_outcome check failed for v7: net
+
+      168 |     );
+      169 |   } catch (err: any) {
+    > 170 |     console.warn(`[jev] ${VOICE_OUTCOME_GATE} check failed for ${a.sessionId}: ${err?.message || err}`);
+          |             ^
+      171 |     return null;
+      172 |   }
+      173 | }
+
+      at runVoiceOutcomeCheck (src/services/jev/gates/voice-outcome-gate.ts:170:13)
+      at Object.<anonymous> (test/vtid-04775-voice-outcome-gate.test.ts:159:5)
+
+  console.warn
+    [jev] ci_failure_routing check failed for e5: net
+
+      115 |     );
+      116 |   } catch (err: any) {
+    > 117 |     console.warn(`[jev] ${CI_FAILURE_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      118 |     return null;
+      119 |   }
+      120 | }
+
+      at runCiFailureRouting (src/services/jev/gates/ci-failure-gate.ts:117:13)
+      at Object.<anonymous> (test/vtid-04800-ci-failure-routing.test.ts:113:5)
+
+PASS test/vtid-04800-ci-failure-routing.test.ts
+  VTID-04800 rule bucket
+    ✓ validate-pr → docs/validation/VTID-04111/outputs/ missing (1 ms)
+    ✓ Path Ownership Guard → 
+    ✓ change-suite → FAIL test/vtid-04111-foo.test.ts
+  ● foo › returns the right value
+    expect(received).toBe(expected)
+Tests:       1 failed, 200 passed (1 ms)
+    ✓ Gateway Service Tests → src/services/foo.ts(12,5): error TS2322: Type 'string' is not assignable to type 'number'.
+    ✓ Gateway (Jest, ~7.5k tests) → FAIL test/vtid-04111-foo.test.ts
+  ● foo › returns the right value
+    expect(received).toBe(expected)
+Tests:       1 failed, 200 passed (1 ms)
+    ✓ Gateway Service Tests → npm ERR! code ERESOLVE
+npm ERR! ERESOLVE unable to resolve dependency tree (1 ms)
+    ✓ Gateway Service Tests → The runner has received a shutdown signal. This can happen when the runner service is stopped.
+    ✓ lint → /src/x.ts
+  3:1  error  Unexpected console statement  no-console
+✖ 1 problem (1 error, 0 warnings) (1 ms)
+    ✓ Gateway Service Tests → Process completed with exit code 1.
+  VTID-04800 gate
+    ✓ off (default, typo): nothing asked or written (4 ms)
+    ✓ no usable log excerpt: nothing asked
+    ✓ shadow: one row per execution, Jev and rules per check, agreement where the rules knew (2 ms)
+    ✓ Jev disagrees with a rule on any check: agreed false (1 ms)
+    ✓ rules unsure: agreed null, Jev answer kept
+    ✓ at most 3 checks asked; Jev unavailable is a fallback row; never throws (2 ms)
+  VTID-04800 wiring and pins
+    ✓ runs after the evidence is collected and before the self-heal bridge, never awaited (1 ms)
+    ✓ both gateways pin shadow, never enforce (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04775-voice-outcome-gate.test.ts
+  VTID-04775 decision
+    ✓ voice_session_outcome: telemetry, pii forbidden, internal planes, eight outcomes (1 ms)
+  VTID-04775 signals
+    ✓ reads counters and flags by allow-list only — never transcript, identity or memory
+    ✓ a missing or odd session yields empty signals, never a throw
+  VTID-04775 check
+    ✓ off (default, typo) and synthetic: nothing asked or written (12 ms)
+    ✓ no metrics and no connection failure: skipped
+    ✓ shadow: one row with Jev next to the rule class; agreement when the rules named one (3 ms)
+    ✓ disagreement with the rules is recorded as agreed=false (1 ms)
+    ✓ no rule class: agreed null, the row measures the rules’ blind spot (1 ms)
+    ✓ a fast-fail with no metrics still earns a row when the connection failed (1 ms)
+    ✓ a throwing Jev call never throws out of the gate (1 ms)
+    ✓ rule class → outcome mapping covers the quality and error classes (2 ms)
+  VTID-04775 wiring and pins
+    ✓ the fire-and-forget dispatch runs the gate after the rule classifier, never on a repeat report (1 ms)
+    ✓ every session-stop dispatch passes outcome signals (13 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    [AutomationExecutor] Registered handler: testShadowSafe
+
+      at registerHandler (src/services/automation-executor.ts:197:11)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [AutomationExecutor] Registered handler: runMorningBriefing
+
+      at registerHandler (src/services/automation-executor.ts:197:11)
+
+  console.log
+    [AP-TEST-SAFE] Starting execution (trigger: manual)
+
+      at Object.log (src/services/automation-executor.ts:308:15)
+
+  console.log
+    [AP-TEST-SAFE] Completed: 1 users, 1 actions
+
+      at Object.log (src/services/automation-executor.ts:308:15)
+
+  console.log
+    [AutomationExecutor] Shadow mode: AP-TEST-UNSAFE (runMorningBriefing) not run — it delivers outside ctx
+
+      at executeAutomation (src/services/automation-executor.ts:273:13)
+
+  console.log
+    [AP-TEST-SAFE] Starting execution (trigger: manual)
+
+      at Object.log (src/services/automation-executor.ts:308:15)
+
+  console.log
+    [AP-TEST-SAFE] Completed: 1 users, 1 actions
+
+      at Object.log (src/services/automation-executor.ts:308:15)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04349-automation-shadow.test.ts
+  resolveAutomationDeliveryMode
+    ✓ keeps production behaviour when unset or live (1 ms)
+    ✓ treats shadow, and any other explicit value (typo), as shadow (1 ms)
+  createShadowSupabase
+    ✓ passes reads through and records writes and RPCs without performing them (2 ms)
+  executeAutomation in shadow mode
+    ✓ records notifications, writes and RPCs and performs none of them (6 ms)
+    ✓ never runs a handler that delivers outside ctx (1 ms)
+    ✓ live mode (unset) still notifies and writes as before (2 ms)
+  SHADOW_UNSAFE_HANDLERS drift guard
+    ✓ lists exactly the handlers that reach an HTTP call or a lazily imported service (8 ms)
+    ✓ repositories only use the client they are given (4 ms)
+  trigger routes and pins
+    ✓ gates execute / heartbeat / dispatch / cron
+    ✓ pins shadow mode, the heartbeat and the Maxina tenant on staging only (4 ms)
+    ✓ EventBridge automation jobs carry the internal token and default to staging (3 ms)
+
+  console.warn
+    [jev] JEV_CRM_LEAD_SCORE_MODE="yes" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isCrmGatesOn (src/services/jev/gates/crm-gates.ts:94:21)
+      at Object.<anonymous> (test/vtid-04782-crm-gates.test.ts:95:26)
+
+  console.warn
+    [jev] JEV_VOICE_BACKSTOP_CLUSTERS_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isBackstopClustersOn (src/services/jev/gates/backstop-cluster-gate.ts:102:21)
+      at Object.<anonymous> (test/vtid-04804-voice-backstop-clusters.test.ts:92:34)
+
+  console.warn
+    [jev] CRM gate failed for command cmd-crm.lead.create: net
+
+      121 |     return null;
+      122 |   } catch (err: any) {
+    > 123 |     console.warn(`[jev] CRM gate failed for command ${row.id}: ${err?.message || err}`);
+          |             ^
+      124 |     return null;
+      125 |   }
+      126 | }
+
+      at runCrmGates (src/services/jev/gates/crm-gates.ts:123:13)
+      at Object.<anonymous> (test/vtid-04782-crm-gates.test.ts:138:5)
+
+  console.warn
+    [jev] voice_backstop_clusters day 2026-09-30 failed: db
+
+      167 |     return written;
+      168 |   } catch (err: any) {
+    > 169 |     console.warn(`[jev] ${BACKSTOP_CLUSTER_GATE} day ${day} failed: ${err?.message || err}`);
+          |             ^
+      170 |     return 0;
+      171 |   }
+      172 | }
+
+      at runBackstopClusterDay (src/services/jev/gates/backstop-cluster-gate.ts:169:13)
+      at Object.<anonymous> (test/vtid-04804-voice-backstop-clusters.test.ts:133:5)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04782-crm-gates.test.ts
+  VTID-04782 what is sent
+    ✓ a lead sends business fields only — never the person, email, phone, LinkedIn or free notes (1 ms)
+    ✓ a lead with no business field sends nothing
+    ✓ a CRM company sends name + business notes; lifecycle implies the kind (1 ms)
+    ✓ a customer is classified only when it is explicitly a company (1 ms)
+  VTID-04782 E3 lead score
+    ✓ off (default, typo): nothing asked or written (12 ms)
+    ✓ shadow: one row per lead, keyed on the ERP lead id, for the tenant (22 ms)
+    ✓ a command that did not execute is never scored
+    ✓ converting a lead scored 3 writes agreed=true (2 ms)
+    ✓ converting a lead scored 2 writes agreed=true
+    ✓ converting a lead scored 1 writes agreed=false (1 ms)
+    ✓ converting a lead never scored writes nothing
+    ✓ a throwing Jev call never throws out of the gate (1 ms)
+  VTID-04782 E6 account classification
+    ✓ a sales customer that Jev also calls a customer: agreed at once (1 ms)
+    ✓ a CRM company created as a vendor that Jev calls a partner: disagreed (1 ms)
+    ✓ a CRM company with no lifecycle: agreed stays null (1 ms)
+    ✓ an individual customer is never sent
+    ✓ each gate has its own mode (2 ms)
+  VTID-04782 wiring and pins
+    ✓ both execute paths (direct and approved) run the gates after the command, never awaited
+    ✓ both gateways pin shadow, never enforce (5 ms)
+
+PASS test/vtid-04804-voice-backstop-clusters.test.ts
+  VTID-04804 decision
+    ✓ backstop_cluster_defect: telemetry, internal planes, no PII, defect + kind (2 ms)
+  VTID-04804 clustering
+    ✓ groups by stage + sub-cause, this environment only, biggest first; non-backstop stages ignored (1 ms)
+  VTID-04804 gate
+    ✓ off (default, typo): nothing read, asked or written (8 ms)
+    ✓ clusters with at least 3 firings are judged, one row each, counts only (3 ms)
+    ✓ a cluster already judged for that day is not asked again (1 ms)
+    ✓ Jev unavailable → a fallback row; a read error or a throwing read → 0; never throws (2 ms)
+  VTID-04804 wiring and pins
+    ✓ the scheduler starts from index.ts, guarded, non-fatal (3 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_REPEAT_RUN_GUARD_MODE="true" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isRepeatRunGuardOn (src/services/jev/gates/repeat-run-gate.ts:55:21)
+      at Object.<anonymous> (test/vtid-04801-repeat-run-guard.test.ts:70:32)
+
+  console.warn
+    [jev] repeat_run_guard check failed for e: db
+
+      132 |     );
+      133 |   } catch (err: any) {
+    > 134 |     console.warn(`[jev] ${REPEAT_RUN_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      135 |     return null;
+      136 |   }
+      137 | }
+
+      at runRepeatRunCheck (src/services/jev/gates/repeat-run-gate.ts:134:13)
+      at Object.<anonymous> (test/vtid-04801-repeat-run-guard.test.ts:107:5)
+
+  console.warn
+    [jev] repeat_run_guard check failed for e: net
+
+      132 |     );
+      133 |   } catch (err: any) {
+    > 134 |     console.warn(`[jev] ${REPEAT_RUN_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      135 |     return null;
+      136 |   }
+      137 | }
+
+      at runRepeatRunCheck (src/services/jev/gates/repeat-run-gate.ts:134:13)
+      at Object.<anonymous> (test/vtid-04801-repeat-run-guard.test.ts:108:5)
+
+PASS test/vtid-04801-repeat-run-guard.test.ts
+  VTID-04801 decision
+    ✓ execution_repeat: telemetry, internal planes, repeat + will_succeed (2 ms)
+  VTID-04801 gate
+    ✓ off (default, typo): nothing loaded, asked or written (5 ms)
+    ✓ no failed attempt in the window: no row (1 ms)
+    ✓ same plan version as the failed attempt: a rules row, no Jev call (1 ms)
+    ✓ a new plan version: Jev compares both plans and the previous failure (2 ms)
+    ✓ a throwing loader or call never throws and writes nothing (2 ms)
+  VTID-04801 outcome
+    ✓ repeat p=0.9, result {"ok":false,"error":"tests failed"} → run_failed, agreed true (1 ms)
+    ✓ repeat p=0.9, result {"ok":true} → run_pr_opened, agreed false (1 ms)
+    ✓ repeat p=0.1, result {"ok":true} → run_pr_opened, agreed true
+    ✓ repeat p=0.1, result {"ok":false} → run_failed, agreed false (1 ms)
+    ✓ repeat p=0.9, result {"ok":false,"cancelled":true} → run_cancelled, agreed null
+    ✓ the rules row is judged the same way (1 ms)
+    ✓ no row (gate off): nothing written
+  VTID-04801 wiring and pins
+    ✓ beside A2 at the claim, before dispatch, never awaited; outcome written from every applied result (3 ms)
+    ✓ the previous attempt is the newest failed one of the same finding in 7 days, never this one (1 ms)
+    ✓ both gateways pin shadow, never enforce (5 ms)
+
+  console.warn
+    [jev] JEV_PARTNER_ONBOARDING_TRIAGE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isPartnerTriageOn (src/services/jev/gates/partner-triage-gate.ts:51:21)
+      at Object.<anonymous> (test/vtid-04820-partner-onboarding-triage.test.ts:75:31)
+
+  console.warn
+    [jev] JEV_PAYMENT_INVOICE_MATCH_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isPaymentMatchOn (src/services/jev/gates/payment-match-gate.ts:111:21)
+      at Object.<anonymous> (test/vtid-04819-payment-invoice-match.test.ts:96:30)
+
+  console.warn
+    [jev] partner_onboarding_triage failed for undefined: Cannot read properties of null (reading 'partner_type')
+
+      121 |     );
+      122 |   } catch (err: any) {
+    > 123 |     console.warn(`[jev] ${PARTNER_TRIAGE_GATE} failed for ${a.org?.id}: ${err?.message || err}`);
+          |             ^
+      124 |     return null;
+      125 |   }
+      126 | }
+
+      at runPartnerTriage (src/services/jev/gates/partner-triage-gate.ts:123:13)
+      at Object.<anonymous> (test/vtid-04820-partner-onboarding-triage.test.ts:101:34)
+
+  console.warn
+    [jev] payment_invoice_match failed for command cmd-finance.payment.allocate: boom
+
+      170 |     );
+      171 |   } catch (err: any) {
+    > 172 |     console.warn(`[jev] ${PAYMENT_MATCH_GATE} failed for command ${row.id}: ${err?.message || err}`);
+          |             ^
+      173 |     return null;
+      174 |   }
+      175 | }
+
+      at runPaymentMatchCheck (src/services/jev/gates/payment-match-gate.ts:172:13)
+      at Object.<anonymous> (test/vtid-04819-payment-invoice-match.test.ts:136:5)
+
+PASS test/vtid-04819-payment-invoice-match.test.ts
+  VTID-04819 decision and input
+    ✓ payment_invoice_match: business data, internal plane, redacted (2 ms)
+    ✓ ids, records and the input; the party is compared here and never sent (1 ms)
+    ✓ rule {} → true (1 ms)
+    ✓ rule {"same_party":false} → false
+    ✓ rule {"invoice_currency":"USD"} → false
+    ✓ rule {"allocated_amount":200} → null
+    ✓ rule {"same_party":null} → null
+  VTID-04819 gate
+    ✓ off (default, typo), another command, not executed, no bridge: nothing read, asked or written (16 ms)
+    ✓ shadow: reads both records through the bridge as the requester; one row; agreement against the rule (2 ms)
+    ✓ a different party: Jev saying it matches disagrees with the rule (1 ms)
+    ✓ records missing, ids missing, bridge throwing → nothing; Jev down → fallback row; never throws (3 ms)
+  VTID-04819 wiring and pins
+    ✓ both command paths run the check after the command, never awaited
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+PASS test/vtid-04820-partner-onboarding-triage.test.ts
+  VTID-04820 decision and input
+    ✓ partner_onboarding_triage: business data, internal plane, redacted, ready + concern (1 ms)
+    ✓ business facts and the checklist; the VAT number itself never leaves, only whether one exists (1 ms)
+  VTID-04820 gate
+    ✓ off (default, typo) or no tenant: nothing asked or written (4 ms)
+    ✓ rules needs_action, Jev ready p=0.1 → agreed true (2 ms)
+    ✓ rules needs_action, Jev ready p=0.9 → agreed false (1 ms)
+    ✓ rules live, Jev ready p=0.9 → agreed true (1 ms)
+    ✓ rules live, Jev ready p=0.1 → agreed false
+    ✓ abstained → agreed null; Jev down → fallback row; never throws (2 ms)
+  VTID-04820 wiring and pins
+    ✓ after submit's state moves, before the response, never awaited (1 ms)
+    ✓ both gateways pin shadow, never enforce (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_PLANNABILITY_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isPlannabilityOn (src/services/jev/gates/plannability-gate.ts:50:21)
+      at Object.<anonymous> (test/vtid-04806-plannability.test.ts:73:30)
+
+  console.warn
+    [jev] JEV_TEST_SELECTION_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isTestSelectionOn (src/services/jev/gates/test-selection-gate.ts:53:21)
+      at Object.<anonymous> (test/vtid-04807-test-selection.test.ts:107:31)
+
+  console.warn
+    [jev] plannability outcome not recorded: x
+
+      143 |     await recordJevShadowOutcome(c.shadow_id, outcome, agreed, sb);
+      144 |   } catch (err: any) {
+    > 145 |     console.warn(`[jev] ${PLANNABILITY_GATE} outcome not recorded: ${err?.message || err}`);
+          |             ^
+      146 |   }
+      147 | }
+      148 |
+
+      at recordPlannabilityOutcome (src/services/jev/gates/plannability-gate.ts:145:13)
+      at Object.<anonymous> (test/vtid-04806-plannability.test.ts:111:5)
+
+  console.warn
+    [jev] test_selection check failed for e4: Cannot read properties of null (reading 'candidates')
+
+      171 |     );
+      172 |   } catch (err: any) {
+    > 173 |     console.warn(`[jev] ${TEST_SELECTION_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      174 |     return null;
+      175 |   }
+      176 | }
+
+      at runTestSelectionCheck (src/services/jev/gates/test-selection-gate.ts:173:13)
+      at Object.<anonymous> (test/vtid-04807-test-selection.test.ts:132:39)
+
+  console.warn
+    [jev] JEV_LESSON_NOVELTY_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isLessonNoveltyOn (src/services/jev/gates/lesson-novelty-gate.ts:52:21)
+      at Object.<anonymous> (test/vtid-04818-lesson-novelty.test.ts:66:31)
+
+  console.warn
+    [jev] lesson_novelty failed for t6: db
+
+      126 |     );
+      127 |   } catch (err: any) {
+    > 128 |     console.warn(`[jev] ${LESSON_NOVELTY_GATE} failed for ${a.threadId}: ${err?.message || err}`);
+          |             ^
+      129 |     return null;
+      130 |   }
+      131 | }
+
+      at runLessonNoveltyCheck (src/services/jev/gates/lesson-novelty-gate.ts:128:13)
+      at Object.<anonymous> (test/vtid-04818-lesson-novelty.test.ts:104:5)
+
+PASS test/vtid-04807-test-selection.test.ts
+  VTID-04807 decision
+    ✓ test_suite_relevance: internal planes, redacted, one question (2 ms)
+  VTID-04807 candidates
+    ✓ importers of a changed module, minus the paired suite, changed tests, near-miss stems and unrelated suites (3 ms)
+    ✓ nothing to judge: only tests changed, no importers, or files outside a service (2 ms)
+    ✓ titles and failing suites are read from text (1 ms)
+  VTID-04807 gate
+    ✓ off (default, typo): nothing asked or written (6 ms)
+    ✓ shadow: one call per candidate, one row with Jev's picks (2 ms)
+    ✓ Jev unavailable → a fallback row with no picks; never throws (3 ms)
+  VTID-04807 outcome
+    ✓ CI {"passed":true} → ci_passed, agreed null
+    ✓ CI {"passed":false,"evidence":[{"check_name":"Gateway Service Tests","excerpt":"error TS2345"}]} → ci_failed_no_jest_suite, agreed null (1 ms)
+    ✓ CI {"passed":false,"evidence":[{"check_name":"Gateway Service Tests","excerpt":"FAIL test/unrelated.test.ts"}]} → ci_jest_failed:outside_candidates, agreed null
+    ✓ CI {"passed":false,"evidence":[{"check_name":"Gateway Service Tests","excerpt":"FAIL test/diary-routes.test.ts"}]} → ci_jest_failed:jev_selected, agreed true
+    ✓ CI {"passed":false,"evidence":[{"check_name":"Gateway Service Tests","excerpt":"FAIL test/sub/reminders.test.ts"}]} → ci_jest_failed:jev_skipped, agreed false (1 ms)
+    ✓ no row, a read error or no database → nothing; never throws
+  VTID-04807 wiring and pins
+    ✓ runner: listed after the runner checks pass and before the PR contract, never awaited (3 ms)
+    ✓ watcher: the outcome on CI failure and on CI pass, never awaited (1 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+PASS test/vtid-04818-lesson-novelty.test.ts
+  VTID-04818 decision and rule
+    ✓ lesson_novelty: telemetry, redacted, new_and_durable + kind (1 ms)
+    ✓ the rule is certain only at the edges (1 ms)
+  VTID-04818 gate
+    ✓ off (default, typo): nothing recalled, asked or written (4 ms)
+    ✓ shadow: candidate judged next to the three most similar stored lessons; agreement against the rule (2 ms)
+    ✓ stored [], Jev keep p=0.9 → agreed true (1 ms)
+    ✓ stored [{"category":"gotcha","title":"Opus 4.7 on Bedrock is unsubscribed","content":"AccessDenied on invoke","similarity":0.5,"created_at":"2026-09-21T12:00:00Z"}], Jev keep p=0.1 → agreed false (1 ms)
+    ✓ stored [{"category":"gotcha","title":"Opus 4.7 on Bedrock is unsubscribed","content":"AccessDenied on invoke","similarity":0.85,"created_at":"2026-09-21T12:00:00Z"}], Jev keep p=0.9 → agreed null
+    ✓ recall failure → nothing; Jev down → fallback row; never throws (2 ms)
+  VTID-04818 wiring and pins
+    ✓ every extracted lesson is checked before its write, never awaited; the write is unchanged
+    ✓ both gateways pin shadow, never enforce (3 ms)
+
+PASS test/vtid-04806-plannability.test.ts
+  VTID-04806 decision
+    ✓ finding_plannable: internal planes, redacted, plannable + blocker (2 ms)
+    ✓ file hints: the finding path plus proposed files with a path, deduped (1 ms)
+  VTID-04806 gate
+    ✓ off (default, typo): nothing asked or written (6 ms)
+    ✓ shadow: one row per first-time plan with Jev's call and the blocker (3 ms)
+    ✓ Jev p=0.9, planner {"ok":true,"files":3} → plan_with_files, agreed true (1 ms)
+    ✓ Jev p=0.9, planner {"ok":true,"files":0} → plan_without_files, agreed false
+    ✓ Jev p=0.1, planner {"ok":false,"error":"plan has no usable sections"} → plan_failed, agreed true (1 ms)
+    ✓ Jev p=0.9, planner {"ok":false,"error":"Plan generation failed after 34s: unknown error"} → plan_infra_error, agreed null (1 ms)
+    ✓ Jev p=0.9, planner {"ok":false,"error":"both providers failed: primary=Bedrock"} → plan_infra_error, agreed null
+    ✓ abstained or unavailable → agreed null; a throwing call → nothing; never throws (3 ms)
+  VTID-04806 wiring and pins
+    ✓ first-time plans only, started before the planner, never awaited; outcome on every exit (1 ms)
+    ✓ both gateways pin shadow, never enforce (6 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_FIX_VERIFICATION_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isFixVerificationOn (src/services/jev/gates/fix-verification-gate.ts:55:21)
+      at Object.<anonymous> (test/vtid-04803-fix-verification.test.ts:57:33)
+
+PASS test/services/testing/test-launcher.test.ts
+  the launch list
+    ✓ never lists a deploy, a job or a PR gate (3 ms)
+    ✓ lists only read-only health checks for production (2 ms)
+    ✓ every platform workflow on the list exists, is manually dispatchable, and never writes through a non-RPC POST (3 ms)
+    ✓ explains why other manually triggerable workflows are not launchable (2 ms)
+  validateLaunch
+    ✓ refuses anything not on the list, including deploys
+    ✓ requires a reason (1 ms)
+    ✓ requires known Playwright projects for staging E2E (1 ms)
+  dispatchInputs
+    ✓ always runs staging E2E read-only against the staging app
+    ✓ pins STAGING-VERIFY to the commit staging serves, and refuses without one (11 ms)
+    ✓ sends no inputs to workflows that take none
+
+  console.warn
+    [jev] fix_verification check failed for e7: db
+
+      109 |     );
+      110 |   } catch (err: any) {
+    > 111 |     console.warn(`[jev] ${FIX_VERIFICATION_GATE} check failed for ${a.executionId}: ${err?.message || err}`);
+          |             ^
+      112 |     return null;
+      113 |   }
+      114 | }
+
+      at runFixVerificationCheck (src/services/jev/gates/fix-verification-gate.ts:111:13)
+      at Object.<anonymous> (test/vtid-04803-fix-verification.test.ts:91:5)
+
+  console.warn
+    [jev] JEV_OPERATOR_ROUTE_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isOperatorRouteOn (src/services/jev/gates/operator-route-gate.ts:63:21)
+      at Object.<anonymous> (test/vtid-04816-operator-route.test.ts:69:31)
+
+PASS test/vtid-04803-fix-verification.test.ts
+  VTID-04803 decision
+    ✓ fix_verification: telemetry, internal planes, resolved + evidence_sufficient (1 ms)
+    ✓ the rules verdict is described in plain lines (1 ms)
+  VTID-04803 gate
+    ✓ off (default, typo): nothing loaded, asked or written (5 ms)
+    ✓ a pass with no probe that Jev doubts: disagreement recorded (2 ms)
+    ✓ rules {"state":"pass","reason":null,"blast_radius":0,"probe":{"endpoint":"/api/v1/diary/entries","healthy":true,"http_status":200}} vs Jev resolved p=0.9 → agreed true (1 ms)
+    ✓ rules {"state":"fail","reason":"reprobe_unhealthy","blast_radius":0,"probe":{"endpoint":"/api/v1/diary/entries","healthy":false,"http_status":500}} vs Jev resolved p=0.1 → agreed true (1 ms)
+    ✓ rules {"state":"fail","reason":"reprobe_unhealthy","blast_radius":0,"probe":{"endpoint":"/api/v1/diary/entries","healthy":false,"http_status":500}} vs Jev resolved p=0.9 → agreed false (1 ms)
+    ✓ abstained or unavailable: agreed null; missing finding: nothing; never throws (21 ms)
+  VTID-04803 wiring and pins
+    ✓ every verdict branch asks, before the bridge or the completion, never awaited (1 ms)
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.warn
+    [jev] operator_route outcome not recorded: x
+
+      123 |     await recordJevShadowOutcome(c.shadow_id, `turn_lane:${lane ?? 'unknown'}`, agreed, sb);
+      124 |   } catch (err: any) {
+    > 125 |     console.warn(`[jev] ${OPERATOR_ROUTE_GATE} outcome not recorded: ${err?.message || err}`);
+          |             ^
+      126 |   }
+      127 | }
+      128 |
+
+      at recordOperatorRouteOutcome (src/services/jev/gates/operator-route-gate.ts:125:13)
+      at Object.<anonymous> (test/vtid-04816-operator-route.test.ts:95:5)
+
+PASS test/vtid-04816-operator-route.test.ts
+  VTID-04816 decision and lanes
+    ✓ operator_route: internal plane, redacted, six lanes (2 ms)
+    ✓ every operator tool has a lane that the decision knows (8 ms)
+    ✓ the lane a turn took: none → answer only; most frequent; tie → first; unknown only → null (2 ms)
+  VTID-04816 gate
+    ✓ off (default, typo): nothing asked or written (4 ms)
+    ✓ Jev ops_diagnostics, tools ["dev_cicd_health","dev_cloudwatch_logs"] → agreed true (14 ms)
+    ✓ Jev ops_diagnostics, tools [] → agreed false
+    ✓ Jev answer_only, tools [] → agreed true (1 ms)
+    ✓ Jev code_lookup, tools ["autopilot_run_task"] → agreed false
+    ✓ abstained, unavailable, unknown tools → agreed null; off → no outcome; never throws (4 ms)
+  VTID-04816 wiring and pins
+    ✓ started before the turn, never awaited; outcome after the (possibly retried) turn (1 ms)
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04647-prod-deploy-auto-rollback.test.ts
+  VTID-04647 prod deploy: post-deploy verification + automatic rollback
+    ✓ captures the rollback target before the service is rolled (1 ms)
+    ✓ checks after the smoke gate, with GET requests only (1 ms)
+    ✓ rolls back to the captured task definition when a later step fails (18 ms)
+    ✓ records a rollback as prod.deploy.rolled_back (2 ms)
+    ✓ stays dispatch-only (1 ms)
+
+PASS test/vtid-04230-prod-operator-flags-declared.test.ts
+  VTID-04230: prod declares the operator/autopilot flags staging pins
+    ✓ OPERATOR_EXECUTION_ONRAMP_ENABLED is pinned on prod with exactly the value staging pins (2 ms)
+    ✓ OPERATOR_ONRAMP_EXECUTOR is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_CODEBASE_READ_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_DB_READONLY_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_AWS_READONLY_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_BOOTSTRAP_PACK_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_BOOTSTRAP_BUILD_INFO_URLS is pinned on prod with exactly the value staging pins
+    ✓ OPERATOR_VTID_SELF_ALLOCATE_ENABLED is pinned on prod with exactly the value staging pins
+    ✓ OPERATOR_PR_APPROVAL_REQUIRED is pinned on prod with exactly the value staging pins
+    ✓ OPERATOR_THREADS_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_TURN_MEMORY_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_CODEINTEL_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ OPERATOR_PLANNER_ENABLED is pinned on prod with exactly the value staging pins (1 ms)
+    ✓ strips an inherited OPERATOR_EXECUTION_ONRAMP_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_ONRAMP_EXECUTOR first, so a stale value cannot survive a deploy (4 ms)
+    ✓ strips an inherited OPERATOR_CODEBASE_READ_ENABLED first, so a stale value cannot survive a deploy (18 ms)
+    ✓ strips an inherited OPERATOR_DB_READONLY_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_AWS_READONLY_ENABLED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_BOOTSTRAP_PACK_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_BOOTSTRAP_BUILD_INFO_URLS first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_VTID_SELF_ALLOCATE_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_PR_APPROVAL_REQUIRED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_THREADS_ENABLED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_TURN_MEMORY_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_CODEINTEL_ENABLED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_PLANNER_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ is one unconditional jq pass in the pinned-flags step, not a dispatch input (so PUBLISH promotes it too)
+    ✓ deliberately does not pin the SQL-readonly or DeepSeek wiring on prod, and says why (2 ms)
+    ✓ every mirrored flag is a code-level exact-string gate, so a wrong value is off, never on (3 ms)
+    ✓ the prod workflow still has no push trigger — declaring here never deploys on merge (1 ms)
+
+PASS test/vtid-04507-staging-connected-apps-oauth-wiring.test.ts
+  VTID-04507: staging wires Connected Apps sign-in
+    ✓ resolves the config in its own step, before the task definition is registered (1 ms)
+    ✓ pins the public URLs the OAuth redirect and return are built from
+    ✓ probes GOOGLE_OAUTH_CLIENT_ID from vitana/gateway/staging/google-oauth-client-id (1 ms)
+    ✓ probes GOOGLE_OAUTH_CLIENT_SECRET from vitana/gateway/staging/google-oauth-client-secret
+    ✓ probes MICROSOFT_OAUTH_CLIENT_ID from vitana/gateway/staging/microsoft-oauth-client-id
+    ✓ probes MICROSOFT_OAUTH_CLIENT_SECRET from vitana/gateway/staging/microsoft-oauth-client-secret
+    ✓ probes AI_CREDENTIALS_ENC_KEY from vitana/gateway/staging/credentials-enc-key (1 ms)
+    ✓ probes with describe-secret and never exits when a secret is absent
+    ✓ merges the file into the task definition with one slurpfile clause (21 ms)
+    ✓ does not touch the production workflow (1 ms)
+    ✓ ships an executable setup script covering the same five secrets (6 ms)
+  VTID-04507: the jq merge
+    ✓ replaces stale values and keeps unrelated entries and absent secrets as they were (14 ms)
+    ✓ with no secrets provisioned, only pins the two URLs (15 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts
+  VTID-04225: no .github/workflows/*.yml references the decommissioned GCP estate
+    ✓ scans a non-trivial number of workflow files (guard against a wrong path) (2 ms)
+    ✓ no workflow references a Cloud Run host (*.run.app) (6 ms)
+    ✓ no workflow references a decommissioned GCP project id (6 ms)
+  VTID-04225: the loop-feeding workflows target the AWS STAGING gateway (staging-first, §16)
+    ✓ DEV-AUTOPILOT.yml POSTs the scan to staging by default, prod only via an explicit gateway_url dispatch input
+    ✓ DEV-AUTOPILOT-IMPACT.yml ingests impact findings into the staging gateway (1 ms)
+    ✓ E2E-ORB-MONITOR.yml tests the staging Command Hub and reports failures to the staging self-healing endpoint
+    ✓ E2E-TEST-RUN.yml uses the staging gateway for the hub and the self-healing report
+    ✓ SCREEN-LOAD-TIMING.yml reports timings to the staging gateway (1 ms)
+    ✓ VISUAL-VERIFY-FRONTEND.yml defaults to the staging frontend
+    ✓ the retired GCP-only workflows are gone, not merely disabled (1 ms)
+    ✓ SMOKE-WELCOME-GREETING.yml no longer waits on the retired EXEC-DEPLOY workflow_run
+  VTID-04225: the e2e harness defaults match the workflows
+    ✓ playwright.config.ts and fixtures/test-users.ts default HUB_URL to the staging gateway (1 ms)
+  VTID-04225: the staging gateway task def carries the credentials those workflows present
+    ✓ pins DEV_AUTOPILOT_SCAN_TOKEN from the repo secret (requireScanToken rejects everything when it is unset)
+    ✓ wires GATEWAY_SERVICE_TOKEN to the same secret the prod task def maps it to (require-service-or-admin.ts fails closed without it) (2 ms)
+    ✓ wires GATEWAY_INTERNAL_TOKEN only when its secret exists (ERP-bridge pattern — never fails a deploy) (1 ms)
+    ✓ adds none of the three to the prod gateway workflow (prod promotion is a separate decision)
+
+PASS test/vtid-04727-ledger-write-auth.test.ts
+  VTID-04727 ledger write auth
+    ✓ off skips the check entirely
+    ✓ serviceAuthHeaders carries the token only when it is set (1 ms)
+    mode resolution
+      ✓ defaults to log, and only exact enforce/off select the others (2 ms)
+    enforce
+      ✓ rejects an anonymous request with 401 and does not call next (1 ms)
+      ✓ rejects a wrong bearer that is not a valid JWT with 401
+      ✓ rejects a valid non-admin JWT with 403 (1 ms)
+      ✓ accepts the service token and records the actor without JWT validation (1 ms)
+      ✓ accepts an exafy_admin JWT and records admin:<user_id>
+      ✓ never authorises an empty service token (unset env var) (1 ms)
+      ✓ fails closed when JWT verification throws (6 ms)
+    log (the default)
+      ✓ lets an anonymous request through but logs that it would be rejected (2 ms)
+      ✓ still records the verified actor for a good caller, without logging (1 ms)
+  VTID-04727 wiring
+    ✓ write route is gated: 0 (1 ms)
+    ✓ write route is gated: 1
+    ✓ write route is gated: 2
+    ✓ write route is gated: 3
+    ✓ write route is gated: 4 (1 ms)
+    ✓ write route is gated: 5
+    ✓ no write route on the tasks router is left ungated (1 ms)
+    ✓ read routes stay open (out of scope for this VTID)
+    ✓ delete records the verified actor before the caller-supplied header (1 ms)
+    ✓ the voice developer tools send the service token on every ledger write (1 ms)
+    ✓ the auto-close workflow passes the service token secret to the script
+    ✓ the backlog conversion script sends the service token when allocating (1 ms)
+    ✓ staging pins enforce; production does not (it runs the log default) (1 ms)
+
+PASS test/vtid-04754-jev-prod-workflow.test.ts
+  VTID-04754 production Jev declaration
+    ✓ pins the full secret ARN in the Jev step env (the prod deploy role cannot describe secrets) (1 ms)
+    ✓ upserts TYPESAFE_API_KEY as a secret reference, never a plain env value (1 ms)
+    ✓ upserts JEV_DECISIONS_ENABLED=true (strip, then add)
+    ✓ reads and writes back the partial task definition, after step 1/2 and before step 2/2 (whose env_overrides may still override it) (1 ms)
+    ✓ never opens the member plane
+  VTID-04754 staging probe classifies the AWS error
+    ✓ keeps stderr instead of discarding it
+    ✓ names not-found, access-denied and other failures separately (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    GitHub API error: 403 - {"message":"Resource not accessible by personal access token"}
+
+      73 |   if (!response.ok) {
+      74 |     const errorBody = await response.text();
+    > 75 |     console.error(`GitHub API error: ${response.status} - ${errorBody}`);
+         |             ^
+      76 |     throw new Error(formatGitHubApiError(response.status, response.statusText, errorBody));
+      77 |   }
+      78 |
+
+      at githubRequest (src/services/github-service.ts:75:13)
+      at triggerWorkflow (src/services/github-service.ts:664:3)
+      at Object.<anonymous> (test/vtid-04633-github-api-error-message.test.ts:55:5)
+
+PASS test/scripts/validator-path-guard.test.ts
+  the remit is exactly the workflow trigger
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (3 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree (1 ms)
+    ✓ approves evidence docs alongside source
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile (1 ms)
+    ✓ says out loud which files it did not judge (1 ms)
+    ✓ does not present "not judged" as approval of those trees (1 ms)
+    ✓ .env.example is NOT treated as a committed .env
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit (1 ms)
+    ✓ rejects a bare .env at the repo root
+    ✓ rejects an unknown profile (1 ms)
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation (1 ms)
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change
+    ✓ approves the same change once declared (1 ms)
+    ✓ still reports the dependency change when declared
+    ✓ catches yarn.lock too, not just npm and pnpm
+    ✓ ranks a committed .env above an undeclared lockfile (1 ms)
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (1 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route
+    ✓ ignores removed and context lines
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ requires evidence if any added line registers a route, among many that do not
+    ✓ treats an empty diff as not requiring evidence (2 ms)
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations (1 ms)
+    ✓ does not scan gateway backend source — it is not served to a browser
+    ✓ picks the frontend files out of a mixed change set
+  CSP scan judges ADDED lines, not whole file content (VTID-03714)
+    ✓ flags a pattern that appears in an ADDED line (1 ms)
+    ✓ does NOT flag the identical pattern in a context (unchanged) line
+    ✓ does NOT flag a pattern in a REMOVED line (1 ms)
+    ✓ ignores the +++ file header, which is not an added line
+    ✓ reproduces the exact PR #3167 false positive and confirms it is now clean
+    ✓ still catches a genuinely NEW CSP violation added by a diff (1 ms)
+    ✓ P2 — an added line that itself starts with "++" is not mistaken for a file header
+    ✓ P2 — a genuine unified-diff file header (with the space) is still skipped
+    ✓ P1 — a pattern split across two consecutive added lines is still caught (1 ms)
+    ✓ P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)
+    ✓ isDiffFileHeader distinguishes a real header from added content that merely starts with +++
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace (1 ms)
+    ✓ approves an empty change set rather than throwing
+  VTID-03706 — the three diff-marker cases VTID-03714 does not cover
+    ✓ does NOT flag a pre-existing violation carried as a CONTEXT line
+    ✓ does NOT flag a violation being REMOVED
+    ✓ does not flag an external <script src=…>, which is the sanctioned form
+
+PASS test/orb/live/upstream/staging-nova-instruction-debug-flag-pinned.test.ts
+  VTID-03787: staging pins ORB_LOG_NOVA_INSTRUCTION_DEBUG, prod never does
+    ✓ upserts the flag as exact-"true" on staging (2 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ is NEVER set on the prod deploy workflow — the dumped text carries user context
+  VTID-03787: orb-live.ts gates the instruction dump behind the exact-"true" env check
+    ✓ reads process.env.ORB_LOG_NOVA_INSTRUCTION_DEBUG === 'true' before emitting (1 ms)
+    ✓ emits the literal novaSystemInstruction text on the diag stage nova_instruction_debug_dump (1 ms)
+
+PASS test/vtid-04633-github-api-error-message.test.ts
+  VTID-04633 formatGitHubApiError
+    ✓ appends GitHub message to the status line (1 ms)
+    ✓ keeps the prefix callers match on
+    ✓ falls back to the status line for non-JSON or empty bodies (1 ms)
+    ✓ bounds a long message
+  VTID-04633 triggerWorkflow surfaces the 403 reason
+    ✓ rejects with GitHub message (35 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04786-memory-embedding-backfill-loop.test.ts
+  AP-0910 backfill loop configuration (VTID-04786)
+    ✓ starts only on the exact flag with a tenant id, in live delivery mode (1 ms)
+    ✓ never starts in shadow mode, whatever the flag says (staging shares the production database)
+    ✓ parses a comma-separated tenant list
+    ✓ documents why the heartbeat loop could not carry it: the handler is shadow-unsafe
+  AP-0910 backfill tick (VTID-04786)
+    ✓ runs a tenant that has never run or ran longer than 30 min ago (1 ms)
+    ✓ skips a tenant another gateway task ran inside the interval (1 ms)
+    ✓ reports a failed run and a governance skip separately
+  AP-0910 backfill loop wiring (VTID-04786)
+    ✓ the gateway starts the loop at boot (2 ms)
+    ✓ production pins the loop on for Maxina; staging does not (3 ms)
+
+PASS test/vtid-04517-staging-nav-v2-pinned.test.ts
+  VTID-04517: staging pins registry navigation
+    ✓ pins NAV_V2_ENABLED to exact "true" and the registry to the staging frontend (6 ms)
+    ✓ strips inherited values first and pins each exactly once (1 ms)
+    ✓ points production at its own registry, never the staging one (VTID-04541) (1 ms)
+    ✓ is read with the exact-string check (a typo is off) (5 ms)
+
+PASS test/vtid-04037-staging-operator-agent-flags-pinned.test.ts
+  VTID-04037: staging pins the four operator-agent flags to exact "true"
+    ✓ pins OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true on the staging gateway task def (2 ms)
+    ✓ pins OPERATOR_PR_APPROVAL_REQUIRED=true on the staging gateway task def
+    ✓ pins OPERATOR_THREADS_ENABLED=true on the staging gateway task def
+    ✓ pins OPERATOR_TURN_MEMORY_ENABLED=true on the staging gateway task def
+    ✓ strips an inherited OPERATOR_VTID_SELF_ALLOCATE_ENABLED first, so a stale value cannot survive a deploy (1 ms)
+    ✓ strips an inherited OPERATOR_PR_APPROVAL_REQUIRED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_THREADS_ENABLED first, so a stale value cannot survive a deploy
+    ✓ strips an inherited OPERATOR_TURN_MEMORY_ENABLED first, so a stale value cannot survive a deploy
+    ✓ is now ALSO declared OPERATOR_VTID_SELF_ALLOCATE_ENABLED=true on the prod gateway deploy workflow (VTID-04230 prod parity — declared, not dispatched)
+    ✓ is now ALSO declared OPERATOR_PR_APPROVAL_REQUIRED=true on the prod gateway deploy workflow (VTID-04230 prod parity — declared, not dispatched)
+    ✓ is now ALSO declared OPERATOR_THREADS_ENABLED=true on the prod gateway deploy workflow (VTID-04230 prod parity — declared, not dispatched)
+    ✓ is now ALSO declared OPERATOR_TURN_MEMORY_ENABLED=true on the prod gateway deploy workflow (VTID-04230 prod parity — declared, not dispatched) (1 ms)
+    ✓ keeps the on-ramp, agent executor and ECS dispatch the flags depend on
+    ✓ every pinned flag is read by its module with the exact-string check (a typo is off)
+  VTID-04037: read-only SQL is wired optionally, the ERP-bridge way
+    ✓ resolves the URL secret with describe-secret and tolerates its absence (never exit 1)
+    ✓ is NOT in the hard-fail secret-resolution loop (1 ms)
+    ✓ enables the tool and injects the URL as a secret only when the secret exists
+    ✓ strips a stale switch and URL first (1 ms)
+    ✓ prod carries none of it
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04473-jev-staging-wiring.test.ts
+  VTID-04473 Jev staging wiring
+    ✓ probes the staging secret with describe-secret and tolerates its absence (1 ms)
+    ✓ the key is a secret reference, never a plain env value (1 ms)
+    ✓ the flag is always written: true with the key, false without (1 ms)
+    ✓ runs after connected-apps.json is written and before the task definition is registered
+    ✓ community stays off everywhere (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04709-staging-deploy-pinned-commit.test.ts
+  VTID-04709: staging deploy accepts a pinned commit
+    ✓ declares an optional commit_sha dispatch input defaulting to empty (2 ms)
+    ✓ checks out the pinned commit, else the triggering commit (push unchanged)
+    ✓ refuses a pin that is not a full SHA already on main (1 ms)
+    ✓ stamps the commit actually checked out, never GITHUB_SHA (1 ms)
+    ✓ leaves the push trigger in place
+
+PASS test/vtid-04474-staging-orchestrator-flags.test.ts
+  VTID-04474 staging orchestrator flags
+    ✓ ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is stripped then re-added as exact "true" on staging (2 ms)
+    ✓ ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED is stripped then re-added as exact "true" on staging
+    ✓ ORCHESTRATOR_DELEGATION_PERSIST_ENABLED is stripped then re-added as exact "true" on staging
+    ✓ ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED is declared "true" on the prod workflow too (VTID-04605)
+    ✓ ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED is declared "true" on the prod workflow too (VTID-04605)
+    ✓ ORCHESTRATOR_DELEGATION_PERSIST_ENABLED is declared "true" on the prod workflow too (VTID-04605)
+    ✓ does not enable run leases (their migration is not applied) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-fast-start-brain-cache-flags-pinned.test.ts
+  VTID-03741: staging pins FEATURE_ORB_FAST_START_ENV and FEATURE_ORB_BRAIN_CACHE_ENV
+    ✓ upserts FEATURE_ORB_FAST_START_ENV as "staging+prod", matching prod (1 ms)
+    ✓ upserts FEATURE_ORB_BRAIN_CACHE_ENV as "staging+prod", matching prod
+    ✓ strips both inherited values first, so a stale one cannot survive
+    ✓ matches the exact value AWS-PROD-DEPLOY-GATEWAY.yml pins, so staging and prod cannot silently diverge (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts
+  VTID-03779: staging pins FEATURE_ORB_NOVA_PREWARM_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (4 ms)
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (2 ms)
+
+PASS test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts
+  VTID-04227: prod gateway workflow declares the Dev Autopilot flags
+    ✓ pins DEV_AUTOPILOT_WATCHER_LIVE="true" unconditionally (1 ms)
+    ✓ strips any inherited DEV_AUTOPILOT_WATCHER_LIVE first, so a stale live value cannot survive a deploy (10 ms)
+    ✓ pins DEV_AUTOPILOT_USE_JOB="true" unconditionally
+    ✓ strips any inherited DEV_AUTOPILOT_USE_JOB first, so a stale live value cannot survive a deploy
+    ✓ pins DEV_AUTOPILOT_JOB_CLOUD="aws" unconditionally (1 ms)
+    ✓ strips any inherited DEV_AUTOPILOT_JOB_CLOUD first, so a stale live value cannot survive a deploy
+    ✓ pins DEV_AUTOPILOT_LLM_REVIEW_ENABLED="true" unconditionally
+    ✓ strips any inherited DEV_AUTOPILOT_LLM_REVIEW_ENABLED first, so a stale live value cannot survive a deploy
+    ✓ pins DEV_AUTOPILOT_EXECUTOR_ENABLED="true" unconditionally
+    ✓ strips any inherited DEV_AUTOPILOT_EXECUTOR_ENABLED first, so a stale live value cannot survive a deploy
+    ✓ the block is unconditional — not behind an `if [ -n "$…INPUT" ]` guard (1 ms)
+    ✓ the per-dispatch circuit breaker (dev_autopilot_executor_enabled input) still runs AFTER the declaration, so it wins for that dispatch (1 ms)
+    ✓ never pins the gcp job cloud anywhere
+    ✓ prod and staging now agree on all five values (VTID-03850 / VTID-03883 staging pins) (1 ms)
+    ✓ is still workflow_dispatch-only — declaring is not deploying (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04258-nav-continuation-bind-flag-pinned.test.ts
+  VTID-04258: NAV_CONTINUATION_BIND is pinned true on staging and prod
+    ✓ staging: upserts the flag as exact string "true" (1 ms)
+    ✓ staging: strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ prod: upserts the flag as exact string "true", declared not dispatched
+    ✓ prod: strips the inherited value before re-adding it, in that order
+    ✓ the pinned jq block on prod has balanced parens (no stray paren the shell would choke on) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04452-staging-orb-recall-pinned.test.ts
+  MEMORY_ORB_RECALL_ENABLED pinning
+    ✓ staging strips it and sets exactly "true" (2 ms)
+    ✓ prod does not set it (2 ms)
+
+PASS test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+  VTID-03850: staging gateway dispatches executions to the ECS executor
+    ✓ pins DEV_AUTOPILOT_USE_JOB to the exact string "true" (1 ms)
+    ✓ pins DEV_AUTOPILOT_JOB_CLOUD to "aws" — the gcp branch is dead code (1 ms)
+    ✓ strips both inherited values first, so a stale one cannot survive a deploy
+    ✓ is now ALSO declared on the prod gateway deploy workflow (VTID-04227 — was "deliberately NOT" until 2026-09-21)
+    ✓ the on-ramp flag it feeds is still pinned on staging (VTID-03820) — this change is downstream of it
+  VTID-03850: the executor task definition gets an LLM runtime of its own
+    ✓ sets BEDROCK_ROLE_ARN from the executor task definition's own taskRoleArn (gateway pattern)
+    ✓ sets AWS_BEDROCK_REGION to the deploy region (1 ms)
+    ✓ wires DEEPSEEK_API_KEY from the same Secrets Manager secret the staging gateway resolves
+    ✓ strips inherited copies before upserting, and tolerates a null environment/secrets array
+    ✓ sets AGENT_MAX_TURNS/AGENT_DEADLINE_MS for the Command Hub turn-budget raise (VTID-04050) (1 ms)
+    ✓ still only builds + registers — no ECS service roll, next RunTask picks the new revision
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts
+  VTID-03791: staging pins FEATURE_ORB_WS_TRANSPORT_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (7 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-latency-telemetry-flag-pinned.test.ts
+  VTID-03741: staging pins FEATURE_LATENCY_TELEMETRY_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+
+PASS test/orb/live/upstream/vtid-04813-russian-bridge-wiring-pinned.test.ts
+  VTID-04813: staging pins VERTEX_RUSSIAN_BRIDGE_ENABLED
+    ✓ strips the var before re-adding it, so a re-deploy replaces rather than duplicates (2 ms)
+    ✓ re-adds it as the exact string "true" — the predicate accepts nothing else
+    ✓ keeps the Serbian bridge pinned alongside it — this adds a bridge, it does not replace one
+    ✓ still pins the GCP project and location the bridge needs — a bare flag would fail against a project with no billing
+    ✓ adds exactly one entry for the flag, not two
+  VTID-04813: prod pins VERTEX_RUSSIAN_BRIDGE_ENABLED
+    ✓ strips the var before re-adding it, so a re-deploy replaces rather than duplicates
+    ✓ re-adds it as the exact string "true" — the predicate accepts nothing else
+    ✓ keeps the Serbian bridge pinned alongside it — this adds a bridge, it does not replace one
+    ✓ still pins the GCP project and location the bridge needs — a bare flag would fail against a project with no billing
+    ✓ adds exactly one entry for the flag, not two (1 ms)
+  VTID-04813: prod deploy stays manual-dispatch only
+    ✓ has no push trigger — pinning a flag must never create an auto-to-prod path
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04333-staging-feedback-auto-dispatch-pinned.test.ts
+  VTID-04333: staging pins FEEDBACK_AUTO_DISPATCH_ENABLED=true
+    ✓ pins the flag to exact "true" on the staging task def (1 ms)
+    ✓ strips an inherited value first, so a stale value cannot survive a deploy
+    ✓ is pinned exactly once (no duplicate env entry)
+    ✓ is NOT declared on the prod gateway deploy workflow
+    ✓ the drafter reads it with the exact-string check (a typo is off) (1 ms)
+
+PASS test/vtid-04006-staging-onramp-executor-pinned.test.ts
+  VTID-04006: staging pins OPERATOR_ONRAMP_EXECUTOR=agent
+    ✓ pins the exact value "agent" on the staging gateway task def (1 ms)
+    ✓ strips an inherited value first, so a stale one cannot survive a deploy (1 ms)
+    ✓ is now ALSO declared on the prod gateway deploy workflow (VTID-04230 prod parity)
+    ✓ sits behind the on-ramp flag and the ECS executor dispatch it depends on
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-03820-onramp-staging-flag-pinned.test.ts
+  VTID-03820 follow-up: staging pins OPERATOR_EXECUTION_ONRAMP_ENABLED
+    ✓ upserts the flag as the exact string "true" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive
+    ✓ is now ALSO declared on the prod deploy workflow (VTID-04230 prod parity — declared, never dispatched from a session) (3 ms)
+    ✓ DEEPSEEK_API_KEY secret is already wired on the same task definition (a real prerequisite for the on-ramp) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts
+  VTID-03813: staging pins AURORA_RLS_DATABASE_URL
+    ✓ resolves the authenticator-role secret ARN via describe-secret, not a hardcoded ARN (1 ms)
+    ✓ passes the resolved ARN into the jq filter as $SEC_AURORA_RLS (1 ms)
+    ✓ strips the inherited secret first, so a stale one cannot survive
+    ✓ upserts the AURORA_RLS_DATABASE_URL secret pointed at $SEC_AURORA_RLS
+    ✓ does not collide with the separately-wired AURORA_DATABASE_URL (VTID-03773, vitana_admin secret) (1 ms)
+    ✓ is NOT wired on prod — promoting this is a separate, later, human decision (1 ms)
+
+PASS test/vtid-04573-staging-github-token-secret.test.ts
+  VTID-04573: staging GitHub token secret
+    ✓ resolves SEC_GITHUB_TOKEN from vitana/github/pat (1 ms)
+    ✓ still wires it as GITHUB_SAFE_MERGE_TOKEN, a secret reference, never a plain value (1 ms)
+  VTID-04573: production GitHub token secret
+    ✓ pins the full ARN of vitana/github/pat (the prod deploy role cannot describe secrets)
+    ✓ replaces only the GITHUB_SAFE_MERGE_TOKEN secret, keeping every other secret (1 ms)
+    ✓ runs unconditionally just before register, so an env-only dispatch applies it
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/vtid-04100-prod-greeting-bridge-flag-pinned.test.ts
+  VTID-04128: production no longer force-pins FEATURE_ORB_GREETING_TTS_BRIDGE_ENV
+    ✓ does NOT unconditionally upsert the flag to "staging+prod" any more (1 ms)
+    ✓ does NOT strip the flag out of the current task def either — a deploy must leave it alone
+    ✓ records WHY the always-pin was reversed, not just that it was (1 ms)
+    ✓ the other four VTID-04098/04100 flags remain pinned — this reversal is scoped to one flag only (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04262-staging-operator-machine-auth-wiring.test.ts
+  VTID-04262: staging wires OPERATOR_MACHINE_AUTH_TOKEN optionally, like the SQL-readonly secret
+    ✓ describes the secret before using it, never assumes it exists (1 ms)
+    ✓ resolves to an empty string, not a failure, when the secret is absent (1 ms)
+    ✓ strips OPERATOR_MACHINE_AUTH_ENABLED/TOKEN first, so a stale value cannot survive (1 ms)
+    ✓ only activates OPERATOR_MACHINE_AUTH_ENABLED when the secret was actually resolved (1 ms)
+    ✓ is never unconditionally forced true — absent secret must leave it untouched (1 ms)
+    ✓ is NOT declared on the prod deploy workflow — staging-only credential, no product reason for prod (2 ms)
+
+PASS test/vtid-04237-executor-agent-hold-pinned.test.ts
+  VTID-04237: executor task def pins agent mode + approval hold
+    ✓ pins DEV_AUTOPILOT_EXECUTOR to the exact string "agent" (2 ms)
+    ✓ pins DEV_AUTOPILOT_PR_APPROVAL_REQUIRED to the exact string "true" (approvalRequired() compares exactly) (3 ms)
+    ✓ strips both inherited values first, so a stale task-def value cannot survive a deploy
+  VTID-04237: staging gateway (in-process fallback) pins the same two values
+    ✓ pins DEV_AUTOPILOT_EXECUTOR=agent and DEV_AUTOPILOT_PR_APPROVAL_REQUIRED=true (1 ms)
+    ✓ strips both on staging too (9 ms)
+    ✓ does NOT touch the prod gateway workflow — prod keeps DEV_AUTOPILOT_EXECUTOR_ENABLED as declared by VTID-04227 and gets no new pins here (1 ms)
+  VTID-04237: the pins target the code paths that actually read them
+    ✓ resolveExecutorMode reads DEV_AUTOPILOT_EXECUTOR from the process env
+    ✓ approvalRequired reads DEV_AUTOPILOT_PR_APPROVAL_REQUIRED === "true" from the process env
+
+PASS test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts
+  VTID-04000: staging wires the Vertex Serbian bridge (WIF), unconditionally
+    ✓ never resolves a GCP service-account secret via describe-secret — there is no key to store (6 ms)
+    ✓ assembles the WIF external_account credential config as a static, non-secret variable
+    ✓ pins the real pool/provider/project the platform owner provisioned via Cloud Shell (1 ms)
+    ✓ passes the credential config into the jq filter as $GCP_CRED_CONFIG
+    ✓ wires all four vars UNCONDITIONALLY, in the same strip/add block as AURORA_CA_BUNDLE_PATH — no if-guard (7 ms)
+    ✓ pins the exact project id and global location the platform owner gave
+    ✓ wires GCP_SERVICE_ACCOUNT_JSON as a plain environment value pointed at $GCP_CRED_CONFIG, not a secret (1 ms)
+    ✓ strips any GCP_SERVICE_ACCOUNT_JSON left in .secrets, for migration hygiene, without re-adding it there
+    ✓ is wired on prod, unconditionally, with the SAME GCP_CRED_CONFIG value staging uses (VTID-04048) (2 ms)
+    ✓ prod points at the same new GCP project — never the decommissioned one (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04380-staging-gateway-url-pinned.test.ts
+  GATEWAY_URL on the staging task def
+    ✓ is stripped then re-added with the staging host (1 ms)
+    ✓ is not pinned to the staging host on prod (1 ms)
+  no decommissioned GCP defaults in autopilot verification
+    ✓ gateway and oasis-operator default to AWS hosts
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 81 passed, 81 total
+Tests:       987 passed, 987 total
+Snapshots:   0 total
+Time:        5.836 s
+Ran all test suites matching /test\/vtid-04573-staging-github-token-secret.test.ts|test\/vtid-03820-onramp-staging-flag-pinned.test.ts|test\/vtid-04806-plannability.test.ts|test\/vtid-04808-pr-clash.test.ts|test\/vtid-04803-fix-verification.test.ts|test\/vtid-04452-staging-orb-recall-pinned.test.ts|test\/vtid-04225-no-dead-gcp-urls-in-workflows.test.ts|test\/vtid-04800-ci-failure-routing.test.ts|test\/vtid-04473-jev-staging-wiring.test.ts|test\/vtid-04215-deploy-event-contract.test.ts|test\/orb\/live\/upstream\/staging-vertex-serbian-bridge-wiring-pinned.test.ts|test\/orb\/live\/upstream\/staging-fast-start-brain-cache-flags-pinned.test.ts|test\/orb\/live\/upstream\/staging-ws-transport-flag-pinned.test.ts|test\/orb\/live\/upstream\/vtid-04813-russian-bridge-wiring-pinned.test.ts|test\/orb\/live\/upstream\/staging-aurora-database-url-pinned.test.ts|test\/orb\/live\/upstream\/staging-nova-instruction-debug-flag-pinned.test.ts|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax.test.ts|test\/orb\/live\/upstream\/staging-nova-prewarm-flag-pinned.test.ts|test\/orb\/live\/upstream\/vtid-04100-prod-greeting-bridge-flag-pinned.test.ts|test\/orb\/live\/upstream\/staging-latency-telemetry-flag-pinned.test.ts|test\/orb\/live\/session\/vtid-04418-teardown-dedupe.test.ts|test\/orb\/live\/tools\/vtid-04426-session-tool-selection.test.ts|test\/vtid-04821-company-doc-search.test.ts|test\/vtid-04815-change-risk.test.ts|test\/vtid-04374-calendar-maintenance.test.ts|test\/vtid-04258-nav-continuation-bind-flag-pinned.test.ts|test\/vtid-04811-approval-risk.test.ts|test\/services\/conversation\/vtid-04435-personal-weights.test.ts|test\/services\/conversation\/vtid-04454-scored-opening.test.ts|test\/services\/testing\/test-launcher.test.ts|test\/vtid-04349-automation-shadow.test.ts|test\/vtid-04818-lesson-novelty.test.ts|test\/vtid-04647-prod-deploy-auto-rollback.test.ts|test\/vtid-04817-voice-opener-outcomes.test.ts|test\/specs-gen-system-prompt-accuracy.test.ts|test\/vtid-04333-staging-feedback-auto-dispatch-pinned.test.ts|test\/vtid-04262-staging-operator-machine-auth-wiring.test.ts|test\/vtid-04037-staging-operator-agent-flags-pinned.test.ts|test\/vtid-04802-selfheal-deploy-cause.test.ts|test\/vtid-03961-env-only-deploy-mode.test.ts|test\/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts|test\/vtid-04754-jev-prod-workflow.test.ts|test\/vtid-04805-voice-slow-session.test.ts|test\/vtid-04633-github-api-error-message.test.ts|test\/vtid-04380-staging-gateway-url-pinned.test.ts|test\/vtid-03850-staging-executor-dispatch-pinned.test.ts|test\/vtid-04338-calendar-default-reminders.test.ts|test\/scripts\/workflow-dispatch-input-limit.test.ts|test\/scripts\/test-catalog-lib.test.ts|test\/scripts\/validator-path-guard.test.ts|test\/dev-autopilot-synthesis.test.ts|test\/vtid-04797-finding-dedupe-gate.test.ts|test\/vtid-04801-repeat-run-guard.test.ts|test\/vtid-04727-ledger-write-auth.test.ts|test\/vtid-04624-operator-sql-live-db.test.ts|test\/vtid-04709-staging-deploy-pinned-commit.test.ts|test\/vtid-04018-operator-bootstrap-pack.test.ts|test\/vtid-04372-calendar-google-sync.test.ts|test\/vtid-04775-voice-outcome-gate.test.ts|test\/vtid-04820-partner-onboarding-triage.test.ts|test\/vtid-04799-selfheal-pretriage.test.ts|test\/vtid-04237-executor-agent-hold-pinned.test.ts|test\/vtid-04816-operator-route.test.ts|test\/vtid-04320-reminders-dispatch.test.ts|test\/vtid-04819-payment-invoice-match.test.ts|test\/vtid-04807-test-selection.test.ts|test\/vtid-04822-document-type-routing.test.ts|test\/vtid-04764-agent-progress-gate.test.ts|test\/vtid-04507-staging-connected-apps-oauth-wiring.test.ts|test\/vtid-03958-env-overrides-input.test.ts|test\/vtid-04804-voice-backstop-clusters.test.ts|test\/vtid-04759-selfheal-jev-gates.test.ts|test\/vtid-04782-crm-gates.test.ts|test\/vtid-04774-claim-feasibility-gate.test.ts|test\/vtid-04474-staging-orchestrator-flags.test.ts|test\/routes\/testing-launcher.test.ts|test\/vtid-04517-staging-nav-v2-pinned.test.ts|test\/vtid-04006-staging-onramp-executor-pinned.test.ts|test\/vtid-04230-prod-operator-flags-declared.test.ts|test\/vtid-04810-duplicate-account.test.ts|test\/vtid-04786-memory-embedding-backfill-loop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

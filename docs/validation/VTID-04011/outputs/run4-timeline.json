@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-04011",
+  "source_run": "Test Run #4 (VTID-04008), execution 47a4d6eb-abc1-45e8-b9cc-743b17c4df48, staging, ECS task dabb2bb6, task def vitana-autopilot-executor:9",
+  "timeline_utc": [
+    { "t": "19:28:43", "event": "operator chat fired; on-ramp queued execution (metadata.executor=agent)" },
+    { "t": "19:29:08", "event": "claimed by staging gateway (claimed_env=staging); updated_at last refreshed here" },
+    { "t": "19:29:35", "event": "ECS executor task RUNNING" },
+    { "t": "19:29:49", "event": "agent turns 1-11: read both plan files, search_text renderCiEvidence(, read + edit dev-autopilot-watcher.ts (the unlisted caller), edit ci-logs.ts and its test" },
+    { "t": "19:30:13", "event": "turn 12 run_check tsc -> V8 allocation failure at ~2 GB after 140 s (VTID-04009); repeated at turns 13,17,24,31,33,36,38,39,44" },
+    { "t": "19:34:47", "event": "jest on dev-autopilot-ci-logs.test.ts and the watcher suites passed" },
+    { "t": "19:49:37", "event": "running-watchdog reclaimed the row (updated_at older than 20 min) while the task was alive; metadata replaced with {error}" },
+    { "t": "19:50:05", "event": "self-heal child 8b2bce93 spawned; inherited no executor -> single-shot" },
+    { "t": "19:51:33", "event": "child ECS task on task def :10 (VTID-04009 image); single-shot on Bedrock Opus 4.5 (override lost)" },
+    { "t": "19:52:50", "event": "child opened PR #3379: renderCiEvidence change + 6 tests, caller untouched (single-shot cannot read it); closed by this session" },
+    { "t": "19:53:46", "event": "parent agent deadline exceeded after 44 turns; applyExecutionResult replaced metadata again and set status=failed over the bridge's reverted" },
+    { "t": "19:55:01", "event": "prod gateway dry-run watcher (not on VTID-04004/04005) synthesized ci_passed/pr_merged on the staging-claimed child" }
+  ],
+  "defects": [
+    "watchdog reclaim PATCH replaces metadata (fixed: buildWatchdogReclaimPatch merges)",
+    "applyExecutionResult failure PATCH replaces metadata (fixed: buildExecutionFailurePatch merges)",
+    "no liveness signal from a running agent; updated_at frozen at claim; agent deadline 22m > watchdog 20m (fixed: startExecutionHeartbeat)"
+  ]
+}

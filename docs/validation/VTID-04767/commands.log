@@ -1,0 +1,2 @@
+npx jest test/docs/vtid-04767-memory-plan.test.ts   -> 3 passed
+npx jest --ci --silent   -> 1415 suites passed (1 skipped), 22773 tests passed

@@ -1,0 +1,444 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (dca6745a-7e6c-4336-90b1-e502c4f4ced0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (11da2efd-222d-4b20-914a-17362bc5de5c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (17e5883d-d412-4b7b-98b7-170b4911e7b7)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (380086a4-738b-4571-954a-b30b99e50b0c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (92bdf61f-08f5-4b34-a30f-a49785608e46)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (a61568b2-9db8-49a0-a22c-433ca97a6859)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (eb1fa50c-c902-4fdf-8998-45cbccba710a)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (ac7a9a5c-478e-4fcd-9e99-7f95d37f6d5d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (dcf6e03c-b2e2-4c26-b7ae-5c4143126d85)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (c044da9c-d363-4318-bcb9-67e7b2d1839d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (e887f1cc-dd7e-4f2c-be73-17558f4a6c83)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (9a205d3c-fc72-4036-88da-567bfe04b599)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [self-healing-injector] VTID-99999 autopilot bridge failed: SELF_HEALING_TEST_PATH_UNDERIVED: cannot derive paired test path for services/gateway/src/index.ts — worker-runner will see no execution_id and the repair-evidence gate will refuse completion.
+
+      566 |             );
+      567 |           } else {
+    > 568 |             console.warn(
+          |                     ^
+      569 |               `[self-healing-injector] ${vtid} autopilot bridge failed: ${bridge.error || 'unknown'} — ` +
+      570 |                 `worker-runner will see no execution_id and the repair-evidence gate will refuse completion.`,
+      571 |             );
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:568:21)
+      at Object.<anonymous> (test/self-healing-test-path-derivation.test.ts:207:5)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (f4e4d9d0-4026-4833-a8e3-e296d9e328ad)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (3f5bfbfb-e2dd-47ec-90e2-e67a3daf8d27)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (122c118f-849e-44bb-b312-9c7a32d9d814)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (4169b860-f6fb-495b-93eb-6da0139acb7b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [self-healing-injector] VTID-99999 autopilot bridge failed: SELF_HEALING_TEST_PATH_UNDERIVED: cannot derive paired test path for services/agents/orb-agent/src/whatever.py — worker-runner will see no execution_id and the repair-evidence gate will refuse completion.
+
+      566 |             );
+      567 |           } else {
+    > 568 |             console.warn(
+          |                     ^
+      569 |               `[self-healing-injector] ${vtid} autopilot bridge failed: ${bridge.error || 'unknown'} — ` +
+      570 |                 `worker-runner will see no execution_id and the repair-evidence gate will refuse completion.`,
+      571 |             );
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:568:21)
+      at Object.<anonymous> (test/self-healing-test-path-derivation.test.ts:230:5)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (3b93f99c-1f97-4817-a39d-28dc0aacc456)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (5a47f87a-c0da-4699-9d8b-32c8428c28ab)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (2caab152-bb6f-44bd-ac0d-d81810673f9b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (52de0918-6084-41d5-811e-592677837043)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [self-healing-injector] VTID-99999 autopilot bridge failed: SELF_HEALING_TEST_PATH_UNDERIVED: cannot derive paired test path for services/gateway/src/index.ts — worker-runner will see no execution_id and the repair-evidence gate will refuse completion.
+
+      566 |             );
+      567 |           } else {
+    > 568 |             console.warn(
+          |                     ^
+      569 |               `[self-healing-injector] ${vtid} autopilot bridge failed: ${bridge.error || 'unknown'} — ` +
+      570 |                 `worker-runner will see no execution_id and the repair-evidence gate will refuse completion.`,
+      571 |             );
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:568:21)
+      at Object.<anonymous> (test/self-healing-test-path-derivation.test.ts:250:5)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99999 (936631a5-d0d4-4df0-8ec4-ca498b3d1ef7)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (8e427d52-6e75-4863-81c8-c367866df364)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (8e5dd550-c58c-41f1-8f55-1ad1cd0306d2)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (a580c2f0-798e-42a3-b0da-0f8bbbe8f94b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+PASS test/self-healing-test-path-derivation.test.ts
+  PR-H — test-path derivation in self-healing injector
+    ✓ uses an existing test file when one is present (flat default) (22 ms)
+    ✓ prefers test/routes/<name>.test.ts when that mirror path exists (4 ms)
+    ✓ falls back to the flat test path with create verb when no test exists (3 ms)
+    ✓ REFUSES the bridge when source is services/gateway/src/index.ts (4 ms)
+    ✓ REFUSES the bridge for paths outside services/gateway/src/** (3 ms)
+    ✓ REFUSES the bridge if any one of multiple sources is underived (3 ms)
+    ✓ handles two sources mapping to the same test path without duplicating (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [dev-autopilot-execute] [4208c292] safety gate blocked auto-approve — snoozed 7d (Plan touches 1 file(s) outside the allow-scope.)
+
+      at approveAutoExecute (src/services/dev-autopilot-execute.ts:635:15)
+
+PASS test/vtid-03839-onramp-approved-by-uuid.test.ts
+  isUuidString (VTID-03839)
+    ✓ accepts a canonical UUID in either case
+    ✓ rejects the on-ramp label that broke the real INSERT, and other non-UUIDs
+  approveAutoExecute — approved_by must be a UUID (VTID-03839)
+    ✓ rejects a non-UUID approved_by BEFORE any DB access, naming the uuid column and the interactive alternative (1 ms)
+    ✓ interactive request with no approved_by: inserts approved_by = null and records a human "approved" outcome (3 ms)
+    ✓ a real user UUID still passes the pre-check and is written verbatim (the guard does not over-reject) (1 ms)
+    ✓ system auto-approve (no approved_by, not interactive) is unchanged: approved_by = null, outcome auto_exec (1 ms)
+    safety-gate rejection
+      ✓ interactive caller gets the violation back and the finding is NOT snoozed
+      ✓ mutation check: the same rejection WITHOUT interactive (unattended tick) still snoozes for 7 days (11 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (3bc12ee6-ac10-43a3-bb7c-882f445121f2)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (ed3372e5-bcfd-4500-b9c5-e4eb29eeea0d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridged for VTID-99999 (e491e08e-da4c-48aa-8cfe-5383abf1857d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99999 (ca746336-cd4f-4ff7-81cf-c4b16f93ac1c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99999 (da0dab83-da3a-4185-85ca-07a004e12860)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.injection.deduped for VTID-99999 (053c122a-e83a-48e0-8e43-ef8257e55ce1)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99999 bridged to autopilot execution exec-uui (deduped, reused existing)
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:563:21)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99998 (db2218ba-22a4-46f6-9a3f-1cc8f571ea44)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99998 (3c72bc05-9c25-4fc3-898c-9f0941d59ed4)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99998 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.task.injected for VTID-99997 (f5c8edb2-b2d2-488e-b5ed-655beca39e17)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [OASIS Event] Emitted: autopilot.task.spec.created for VTID-99997 (a77e8fa7-acb4-4e92-8a70-a9fe9d370922)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-injector] VTID-99997 auto-approved and injected into autopilot pipeline
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:524:15)
+
+  console.warn
+    [self-healing-injector] VTID-99997 autopilot bridge failed: bridgeActivationToExecution failed: plan generation failed — worker-runner will see no execution_id and the repair-evidence gate will refuse completion.
+
+      566 |             );
+      567 |           } else {
+    > 568 |             console.warn(
+          |                     ^
+      569 |               `[self-healing-injector] ${vtid} autopilot bridge failed: ${bridge.error || 'unknown'} — ` +
+      570 |                 `worker-runner will see no execution_id and the repair-evidence gate will refuse completion.`,
+      571 |             );
+
+      at injectIntoAutopilotPipeline (src/services/self-healing-injector-service.ts:568:21)
+      at Object.<anonymous> (test/self-healing-injector-autopilot-bridge.test.ts:229:20)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.bridge_failed for VTID-99997 (ba9e328d-45e0-4a43-a2d8-cf3fd1987b68)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+PASS test/self-healing-injector-autopilot-bridge.test.ts
+  injectIntoAutopilotPipeline — autopilot bridge
+    ✓ first injection writes recommendation + plan_version + execution link (5 ms)
+    ✓ second injection with same dedupe key reuses the existing execution (2 ms)
+    ✓ voice synthetic endpoints skip the autopilot bridge entirely (1 ms)
+    ✓ bridge failure does not break the injector (worker-runner gate catches it) (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [dev-autopilot/context-loader] loaded 7641 chars of conventions + imports surface
+
+      at loadAutopilotContext (src/services/dev-autopilot/context-loader.ts:242:11)
+
+PASS test/dev-autopilot-planning.test.ts
+  buildPlanningPrompt
+    ✓ includes the finding fields in the prompt (6 ms)
+    ✓ emphasizes plan structure and file validation in the system instructions
+    ✓ includes previous plan and feedback in continue-planning mode (1 ms)
+    ✓ omits the previous-plan section when neither feedback nor prior plan present
+  buildStubPlan
+    ✓ produces a plan with all required sections (1 ms)
+    ✓ cites a matching test file alongside the source file
+    ✓ mentions reviewer feedback when present
+    ✓ uses a sensible default when no file is specified
+  extractFilePaths
+    ✓ pulls paths from the Files to modify section
+    ✓ also catches paths mentioned in prose
+    ✓ returns an empty array for a plan with no paths (1 ms)
+    ✓ deduplicates repeated paths
+    ✓ accepts sql and yaml extensions
+    ✓ preserves .json extension (regression: alternation truncated to .js) (1 ms)
+    ✓ ignores prose path noise when Files to modify section is populated
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+  VTID-03838: operator prompt lists autopilot_execute_task
+    ✓ is declared as a tool (VTID-03820) — the precondition this test exists for
+    ✓ the two prompt sources carry the same execution-rules block (no drift) (1 ms)
+    PERSONALITY_DEFAULTS.operator_chat.system_prompt (served)
+      ✓ lists autopilot_execute_task under Available tools (1 ms)
+      ✓ routes explicit execution requests to autopilot_execute_task
+      ✓ tells the model a ledger status of in_progress is not a running execution (1 ms)
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it
+      ✓ files_referenced = the files the plan will create or change; a test-only plan lists only the test file
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection
+    getOperatorSystemPrompt() inline fallback
+      ✓ lists autopilot_execute_task under Available tools
+      ✓ routes explicit execution requests to autopilot_execute_task
+      ✓ tells the model a ledger status of in_progress is not a running execution
+      ✓ forbids the exact failure observed live: declaring the tool unavailable without calling it (1 ms)
+      ✓ files_referenced = the files the plan will create or change; a test-only plan lists only the test file
+      ✓ keeps the guardrails: named VTID only, never speculative, honest on rejection
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03844-outcomes-record-operator-onramp.test.ts
+  VTID-03844 — recordOutcome accepts every executor-lane source_type
+    ✓ records an outcome row for an operator_onramp finding (the case observed missing on staging) (1 ms)
+    ✓ still records the legacy dev_autopilot source_type (1 ms)
+    ✓ still records the legacy dev_autopilot_impact source_type
+    ✓ still skips a non-executable source_type — no INSERT is attempted
+    ✓ skips a null source_type and a missing finding
+  VTID-03844 — the DB CHECK constraint mirrors the executor-lane allowlist
+    ✓ migration 20260913100000 lists exactly EXECUTABLE_RECOMMENDATION_SOURCE_TYPES
+
+Test Suites: 6 passed, 6 total
+Tests:       54 passed, 54 total
+Snapshots:   0 total
+Time:        0.847 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03838-operator-prompt-lists-execute-tool.test.ts|test\/vtid-03839-onramp-approved-by-uuid.test.ts|test\/vtid-03844-outcomes-record-operator-onramp.test.ts|test\/dev-autopilot-planning.test.ts|test\/self-healing-injector-autopilot-bridge.test.ts|test\/self-healing-test-path-derivation.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

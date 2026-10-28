@@ -1,0 +1,66 @@
+# AWS-PROVISION-DEV-MEMORY-PACK-TOKEN — VTID-05009, one-off provisioning of
+# the STAGING developer morning-pack token (vitana/gateway/staging/dev-memory-pack-token).
+#
+# The gateway route GET /api/v1/dev-memory/morning-pack (VTID-04408) accepts an
+# X-Dev-Memory-Token header that matches DEV_MEMORY_PACK_TOKEN. The staging
+# deploy (AWS-STAGE-DEPLOY-GATEWAY.yml, "Resolve dev-memory pack token") wires
+# that secret onto the task definition when it exists; this workflow is what
+# creates it, because no Claude Code session holds secretsmanager:CreateSecret.
+#
+# - workflow_dispatch only, required `reason`, STAGING ONLY (staging static keys,
+#   the same credentials as AWS-PROVISION-APPILIX-SECRETS.yml's staging leg).
+#   Production stays an owner step (repo variable DEV_MEMORY_PACK_TOKEN_PROD_ARN).
+# - Never rotates: if the secret exists the run is a no-op. Rotation is a
+#   deliberate owner action, because every developer's environment holds the value.
+# - The value is generated inside the job, masked before first use, and never
+#   printed. The owner reads it from Secrets Manager to put it in the Claude Code
+#   environment (DEV_MEMORY_PACK_TOKEN).
+# - Does not touch the task definition: the next staging deploy wires it.
+name: AWS Provision Dev-Memory Pack Token (staging)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reason:
+        description: 'Reason for this provisioning run — required'
+        required: true
+
+permissions:
+  contents: read
+
+concurrency:
+  group: aws-provision-dev-memory-pack-token
+  cancel-in-progress: false
+
+jobs:
+  provision-staging:
+    runs-on: ubuntu-latest
+    env:
+      SECRET_NAME: vitana/gateway/staging/dev-memory-pack-token
+    steps:
+      - name: Configure AWS credentials (staging static keys)
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: eu-central-1
+
+      - name: Create the secret if it does not exist
+        env:
+          REASON: ${{ inputs.reason }}
+        run: |
+          set -euo pipefail
+          echo "Reason: $REASON"
+          if ARN=$(aws secretsmanager describe-secret --secret-id "$SECRET_NAME" --query ARN --output text 2>/dev/null); then
+            echo "$SECRET_NAME already exists ($ARN) — no-op, never rotated here."
+            exit 0
+          fi
+          TOKEN="$(openssl rand -base64 48 | tr -d '\n=+/' | cut -c1-48)"
+          echo "::add-mask::$TOKEN"
+          [ "${#TOKEN}" -ge 24 ] || { echo "::error::generated token too short"; exit 1; }
+          ARN=$(aws secretsmanager create-secret --name "$SECRET_NAME" \
+            --description "VTID-05009 developer morning-pack token (X-Dev-Memory-Token), staging gateway" \
+            --secret-string "$TOKEN" --query ARN --output text)
+          unset TOKEN
+          echo "Created $SECRET_NAME -> $ARN"
+          echo "Next staging deploy wires it as DEV_MEMORY_PACK_TOKEN." >> "$GITHUB_STEP_SUMMARY"

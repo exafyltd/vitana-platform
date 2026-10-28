@@ -1,0 +1,3 @@
+# git status after the full suite: test/scripts/find-dead-css-classes.test.ts ('against the real repo styles.css') runs --fix on the real file and strips the .orb-config-value-* rules (a false positive that predates VTID-04876, same on the base branch). Restored with git checkout afterwards.
+ M services/gateway/src/frontend/command-hub/styles.css
+?? docs/validation/VTID-04876/

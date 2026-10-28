@@ -1,0 +1,8 @@
+# VTID-04849 — commands (read-only AWS, account 472838866351 / eu-central-1)
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway-awsdr   # 7x ResourceInitializationError: rds!cluster-eba8a4f2-… ResourceNotFoundException
+aws rds describe-db-clusters                                       # vitana-aurora-prod MasterUserSecret: null
+aws secretsmanager list-secrets --filters Key=name,Values='rds!'   # only rds!db-baf646a7 (staging RDS instance); no rds!cluster secret
+grep -rn DB_PASSWORD services/gateway/src                          # no hits
+jq '<step filter>' td142.json                                      # 12 secrets left; describe-secret on each: all exist
+npx jest $(grep -rl AWS-PROD-DEPLOY-GATEWAY test) test/vtid-04849-prod-deploy-drops-dead-db-secret.test.ts   (services/gateway)   # 83 suites, 1011 tests passed
+mutation: filter changed to drop a different name -> vtid-04849 suite fails (1 failed, 3 passed); restored -> 4 passed

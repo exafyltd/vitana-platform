@@ -1,0 +1,115 @@
+name: Regen Screens Catalog (DEV-COMHU-0413)
+# Auto-regenerates services/gateway/specs/dev-screen-inventory-v1.json and
+# services/gateway/src/frontend/command-hub/navigation-config.js from the
+# canonical source-of-truth files in this repo and in exafyltd/vitana-v1.
+#
+# Triggers:
+#   - Push to main touching nav files in this repo (DEV portion)
+#   - Repository dispatch from vitana-v1 when admin-navigation.ts or screen-id.ts change (ADM/COM portion)
+#   - Manual workflow_dispatch
+#
+# When the regen produces a diff, this workflow keeps ONE rolling PR on the
+# branch auto/screens-catalog (VTID-05080) and enables auto-merge so it lands
+# once CI passes — no human approval needed for a pure data sync. The branch
+# and PR logic lives in scripts/ci/regen-screens-catalog-pr.sh so it is tested
+# (services/gateway/test/vtid-05080-regen-screens-catalog-pr.test.ts).
+#
+# Why the PR step needs SCREENS_CATALOG_PR_TOKEN: a push or PR made with the
+# default GITHUB_TOKEN starts no workflows, so no check would ever run on the
+# PR and it could never merge. The title carries the standing VTID because the
+# PR touches gateway deploy paths (STAGING-TESTS-REQUIRED needs a VTID).
+
+on:
+  push:
+    branches: [main]
+    paths:
+      - 'services/gateway/src/frontend/command-hub/app.js'
+      - 'services/gateway/specs/screens-overrides.json'
+      - 'services/gateway/scripts/regen-screens-catalog.mjs'
+  repository_dispatch:
+    types: [regen-screens-catalog]
+  workflow_dispatch: {}
+
+permissions:
+  contents: write
+  pull-requests: write
+
+# Serialise runs: the rolling branch is force-pushed, so an older run must not
+# overwrite a newer one.
+concurrency:
+  group: regen-screens-catalog
+  cancel-in-progress: false
+
+env:
+  # Standing, never-terminal VTID for automated catalog syncs (VTID-05080).
+  REGEN_STANDING_VTID: VTID-05080
+
+jobs:
+  regen:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout vitana-platform
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          # The PAT is wired in by the publish step only; no-diff runs and the
+          # cleanup step never need it.
+          persist-credentials: false
+
+      - name: Checkout vitana-v1 (read-only)
+        id: checkout_v1
+        continue-on-error: true
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: main
+          path: vitana-v1
+
+      - name: Note v1 checkout outcome
+        if: steps.checkout_v1.outcome != 'success'
+        run: |
+          echo "::warning::vitana-v1 checkout failed — VITANA_V1_READ_TOKEN secret likely missing. ADMIN rows will be preserved from existing spec; DEV side will still regenerate."
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+
+      - name: Run regen script
+        env:
+          VITANA_V1_ROOT: ${{ github.workspace }}/vitana-v1
+        run: node services/gateway/scripts/regen-screens-catalog.mjs
+
+      - name: Validate dev-frontend spec
+        run: node services/gateway/scripts/validate-dev-frontend-spec.mjs
+
+      - name: Detect changes
+        id: diff
+        run: |
+          if git diff --quiet services/gateway/specs/dev-screen-inventory-v1.json services/gateway/src/frontend/command-hub/navigation-config.js; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            echo "No changes."
+          else
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+            git diff --stat services/gateway/specs/dev-screen-inventory-v1.json services/gateway/src/frontend/command-hub/navigation-config.js
+          fi
+
+      - name: Verify the regenerated catalog is in sync
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          VITANA_V1_ROOT: ${{ github.workspace }}/vitana-v1
+        run: node services/gateway/scripts/regen-screens-catalog.mjs --check
+
+      - name: Publish the rolling catalog PR
+        if: steps.diff.outputs.changed == 'true'
+        env:
+          SCREENS_CATALOG_PR_TOKEN: ${{ secrets.SCREENS_CATALOG_PR_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+        run: bash scripts/ci/regen-screens-catalog-pr.sh publish
+
+      - name: Close a stale rolling catalog PR
+        if: steps.diff.outputs.changed == 'false'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+        run: bash scripts/ci/regen-screens-catalog-pr.sh cleanup

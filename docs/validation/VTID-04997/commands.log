@@ -1,0 +1,6 @@
+# VTID-04997 — commands run and their results (local throwaway Postgres 16 on a unix socket; never a shared or production database)
+$ scripts/ci/sql-tests/run-test-results-in-calendar-test.sh   -> PASS vtid-04997 test results in calendar   (outputs/sql-test.txt)
+$ [mutation 1] drop the pending-status requirement from the wanted condition, rerun -> ERROR 'result_ready -> entry cancelled'; restored -> PASS
+$ [mutation 2] narrow the exception handler to no_data_found, rerun -> ERROR (order write blocked by the failing mirror); restored -> PASS
+$ cd services/gateway && npx jest test/calendar test/vtid-04997-test-results-in-calendar-migration.test.ts test/vtid-04994-subscription-dates-in-calendar-migration.test.ts test/vtid-04978-reminders-in-calendar-migration.test.ts test/vtid-04331-calendar-data-model.test.ts test/vtid-04995-calendar-conflicts.test.ts test/vtid-04996-calendar-find-a-time.test.ts   (outputs/jest.txt)
+$ cd services/gateway && npx tsc --noEmit -p .   -> clean

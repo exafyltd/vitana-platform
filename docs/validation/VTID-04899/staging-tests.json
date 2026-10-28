@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04899",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/wallet/reward-rules",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "Wallet → Rewards overview is mounted and refuses an unsigned caller (read-only probe)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04899-autopilot-reward-switch.test.ts test/vtid-04878-reward-earning.test.ts test/vtid-04878-reward-routes.test.ts test/vtid-04864-vtna-reward-rules.test.ts test/vtid-04896-prod-reward-sweep-pin.test.ts test/vtid-04897-prod-commerce-mcp-pin.test.ts",
+      "cwd": "services/gateway",
+      "reason": "payout disabled/enabled (fail closed), the daily cap, Wallet visibility from the same switch, independence of the autopilot, sweep and invite switches, the production pin + live check and the staging pin; staging shares the production database, so nothing is claimed or credited during verification"
+    }
+  ]
+}

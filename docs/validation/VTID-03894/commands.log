@@ -1,0 +1,46 @@
+# VTID-03894 — commands actually run, in order
+#
+# Environment note, stated up front because it changes how to read this file:
+# the npm registry is blocked here (403), so neither repo has node_modules.
+# `npm test`, `npm run build`, tsc and eslint CANNOT run in this environment.
+# They run in CI, and CI is the authority. What IS run here is a real
+# PostgreSQL 16 instance and plain-Node execution of each suite's assertions
+# against the real source files.
+
+# --- local PostgreSQL 16 harness (no live system touched) -------------------
+$ /usr/lib/postgresql/16/bin/pg_ctl -D /var/tmp/vtid03894pg/data start
+$ createdb vtid03894
+$ psql -d vtid03894 -f deps.sql
+#   real production definitions for merchants, products, catalog_vocabulary.
+#   VECTOR(1536) and the non-immutable generated search_text column are
+#   neutralised here — pgvector is absent locally and array_to_string is STABLE,
+#   not IMMUTABLE, so the column cannot be generated outside Supabase. Neither
+#   is touched by this VTID.
+
+$ psql -d vtid03894 -v ON_ERROR_STOP=1 -f supabase/migrations/20260915100000_vtid_03894_supplier_verticals.sql
+$ psql -d vtid03894 -v ON_ERROR_STOP=1 -f supabase/migrations/20260915100100_vtid_03894_seed_verticals.sql
+$ psql -d vtid03894 -v ON_ERROR_STOP=1 -f supabase/migrations/20260915103000_vtid_03894_supplier_affiliate_link.sql
+#   all three applied clean from scratch -> outputs/pg16-harness.txt
+
+$ psql -d vtid03894   # INSERT a merchant and a product using the route's exact
+                      # shapes, then SELECT how checkout would classify them
+#   -> source_network='supplier_referral', routing='affiliate (clicks out)',
+#      is_active=false, onboarding_status='draft'  -> outputs/pg16-harness.txt
+
+# --- suite assertions executed in plain Node (jest cannot run here) ---------
+$ node firstparty-check.mjs     # 6/6  -> outputs/guard-assertions.txt
+$ node networks-check.mjs       # 11/11 -> outputs/guard-assertions.txt
+#   Both parse the REAL source files rather than a copy, so a drift between
+#   the constants and these assertions shows up as a failure, not a pass.
+
+# --- acceptance mapping, checked against the gate's own logic ---------------
+$ python3 - <<'PY'   # the Acceptance Mapping Gate's exact regex, run locally
+#   8 AC entries, every one mapped to TEST:/CURL: within 12 lines;
+#   ROUTE_MOUNT:, FINAL_URL:, CURL_PROOF: all present.
+
+# --- what is NOT run here, and must be read from CI ------------------------
+#   npm test              (Gateway (Jest, ~7.5k tests))
+#   npm run build         (Gateway Validation)
+#   tsc --noEmit
+#   the runtime CURLs in acceptance.md — the routes are undeployed; they run
+#   against preview-aws-gateway.vitanaland.com after merge, never against prod.

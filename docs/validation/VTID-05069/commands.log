@@ -1,0 +1,18 @@
+# services/gateway
+npx tsc --noEmit -p .
+node --check src/frontend/command-hub/pipeline-tree.js
+node --check src/frontend/command-hub/app.js
+node --check test/command-hub/fixtures/pipeline-tree-harness.js
+npx jest test/operator-runs-view.test.ts
+npx jest test/command-hub/vtid-05069-pipeline-tree.test.ts
+npm run test:operator
+npm run test:support
+npm run test:roles
+npx jest test/command-hub test/scripts/command-hub-ownership-guard.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/operator-runs-view.test.ts
+npx jest --silent
+PLAYWRIGHT_BROWSERS_PATH=/opt/pw-browsers PLAYWRIGHT=/opt/node22/lib/node_modules/playwright npx tsx test/command-hub/fixtures/capture-pipeline-tree.ts ../../docs/validation/VTID-05069/outputs
+# repo root
+node --check scripts/ci/command-hub-ownership-guard.js
+node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of services/gateway/src/frontend/>
+node -e "validateManifest(docs/validation/VTID-05069/staging-tests.json, { vtid: 'VTID-05069', service: 'gateway' })"

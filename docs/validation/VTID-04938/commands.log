@@ -1,0 +1,5 @@
+# VTID-04938 — read-only commands run (code and docs only; nothing against production)
+grep -rn "auth_callback|uri_allow_list" over vitana-v1 and vitana-platform  -> only a vitana-v1 unit-test fixture
+sed -n 36,82p services/gateway/src/services/partner-onboarding-checklist.ts    -> REQUIRED_BY_TYPE
+grep step_key writers in services/partner-*.ts routes/partner-*.ts             -> mapping (partner-onboarding-connections.ts:117,127), verification (partner-onboarding.ts:300,377)
+ls vitana-v1/public/brand                                                      -> vitana-og-default.jpg only

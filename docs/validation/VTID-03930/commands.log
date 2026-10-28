@@ -1,0 +1,86 @@
+# VTID-03930 — commands run during this change
+
+## Investigation
+$ repowise --help
+$ graphify --help
+Confirmed real CLI command surfaces available in this session's sandbox.
+
+$ cd /home/user/vitana-platform && git log -1 --format=%H
+$ repowise status
+Last sync commit 7dd44da9... vs current HEAD 219e27b5... (stale) — noted
+as a separate, tangential finding about this session's own compliance
+with CLAUDE.md's mandatory-workflow section, not something that changes
+the Operator wiring conclusion (the deployed container has no RepoWise
+index either way, current or stale).
+
+$ find / -maxdepth 4 -iname "*repowise*" -o -iname "*graphify*"
+Confirmed: repowise/graphify binaries and their generated indexes
+(graphify-out/graph.json, .repowise/) live only under this session's own
+filesystem (/root/.local/bin, /home/user/vitana-platform/graphify-out,
+/home/user/vitana-platform/.repowise) — nothing under services/gateway/
+references either tool, and the deployed ECS image is built from
+services/gateway/ only (see Dockerfile), so neither the binaries nor the
+indexes are ever part of the deployed container.
+
+## Content generation
+$ cd /home/user/vitana-platform && graphify god-nodes --top 15
+God nodes (most connected): RunContext (555), function_tool() (554),
+summarize() (551), emitOasisEvent() (507), getSupabase() (490),
+_dispatch() (416), renderApp() (307), gatewayApiCall() (290),
+buildContextHeaders() (185), Ri() (155), requireAuth() (151),
+developerGate() (144), renderModuleContent() (138),
+_dispatch_with_directive() (130), log() (127).
+
+$ repowise health (already run earlier this session)
+Health 8.3 (avg) [Good], hotspots 4.2, worst: services/gateway/src/routes/orb-live.ts,
+maintainability 7.5, 598 perf findings.
+
+Used the top god-nodes and the worst-health file directly in the new
+CODEBASE_OVERVIEW_BLOCK constant, plus CLAUDE.md §2's services table.
+
+## Fix
+Added CODEBASE_OVERVIEW_BLOCK constant and wired it into callVertexWithTools's
+systemPrompt assembly in services/gateway/src/services/gemini-operator.ts —
+appended unconditionally, after the existing dev_agent_memory block.
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03930-operator-codebase-overview.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 906 passed, 906 of 907 total
+Tests:       29 skipped, 6 todo, 14982 passed, 15017 total
+0 failures.
+(full output: outputs/jest-full-suite.txt)
+
+## Existing prompt-content test check
+$ grep -n "toContain\|toEqual\|toMatchSnapshot" test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+Only toContain assertions — confirmed this additive change cannot break it.
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"operator-codebase-overview"}'
+{"ok":true,"vtid":"VTID-03930","num":3930,"id":"471b570e-605e-4206-b776-650870f89f86"}
+
+Note: the code/comment/test-file was initially written under a
+provisional VTID-03929 label before the AWS work (already using that
+number) was split out as its own VTID — relabeled to VTID-03930 via sed
+across the source file, test file (renamed), and this evidence pack
+before committing. No VTID-03929 references remain in this VTID's files.
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb) to
+set title/summary, status='in_progress', spec_status='approved'.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/services/gemini-operator.ts,
+services/gateway/test/vtid-03930-operator-codebase-overview.test.ts,
+docs/validation/VTID-03930/** — all within the gateway_backend profile's
+allowed paths.

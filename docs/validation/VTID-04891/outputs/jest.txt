@@ -1,0 +1,3 @@
+PASS test/vtid-04891-identity-drift-supabase-count.test.ts
+PASS test/vtid-04787-self-audit-and-identity-drift.test.ts
+Tests:       5 passed, 5 total

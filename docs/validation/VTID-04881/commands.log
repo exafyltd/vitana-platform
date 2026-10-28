@@ -1,0 +1,10 @@
+# VTID-04881 — commands run (2026-10-05)
+cd services/agents/orb-agent && python3 -m pytest tests/test_nav_tool_args.py -q      # 30 passed, 1 skipped (livekit schema, package not installed)
+python3 -m pytest tests -q   # main vs this change: identical set of 23 pre-existing failures (no livekit-agents locally); diff empty
+# mutation: comment out "event_id" in NAVIGATE_TO_SCREEN_ENTITY_ARGS -> registry coverage test fails; restored -> passes
+cd services/gateway && npx tsc --noEmit -p .                                           # clean
+npx jest test/routes/vtid-04881-orb-tool-lang.test.ts test/orb-tools-selfcheck.test.ts # 19 passed
+npm run test:support                                                                   # 85 passed (rule 42c)
+npx jest --silent                                                                      # 1503 suites passed, 23924 tests — outputs/test-results.txt
+cd voice-pipeline-spec && npm run validate-spec                                        # spec.json OK — 159 tools
+node -e "validateManifest(docs/validation/VTID-04881/staging-tests.json)"              # ok

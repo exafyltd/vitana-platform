@@ -1,0 +1,1005 @@
+TAP version 13
+# file:///tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/confirm-live.test.mjs:15
+# import { confirmLive } from './run.mjs';
+#          ^^^^^^^^^^^
+# SyntaxError: The requested module './run.mjs' does not provide an export named 'confirmLive'
+#     at ModuleJob._instantiate (node:internal/modules/esm/module_job:226:21)
+#     at async ModuleJob.run (node:internal/modules/esm/module_job:335:5)
+#     at async onImport.tracePromise.__proto__ (node:internal/modules/esm/loader:665:26)
+#     at async asyncRunEntryPointWithESMLoader (node:internal/modules/run_main:117:5)
+# Node.js v22.22.0
+# Subtest: scripts/ci/staging-verify/confirm-live.test.mjs
+not ok 1 - scripts/ci/staging-verify/confirm-live.test.mjs
+  ---
+  duration_ms: 107.175267
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/confirm-live.test.mjs:1:1'
+  failureType: 'testCodeFailure'
+  exitCode: 1
+  signal: ~
+  error: 'test failed'
+  code: 'ERR_TEST_FAILURE'
+  ...
+# Subtest: production hosts are refused as test targets
+ok 2 - production hosts are refused as test targets
+  ---
+  duration_ms: 3.058639
+  type: 'test'
+  ...
+# Subtest: the fixed staging targets are not production
+ok 3 - the fixed staging targets are not production
+  ---
+  duration_ms: 1.783351
+  type: 'test'
+  ...
+# Subtest: deploy paths decide whether a commit belongs to a service
+ok 4 - deploy paths decide whether a commit belongs to a service
+  ---
+  duration_ms: 0.378842
+  type: 'test'
+  ...
+# Subtest: VTIDs are extracted, normalised and de-duplicated
+ok 5 - VTIDs are extracted, normalised and de-duplicated
+  ---
+  duration_ms: 1.767009
+  type: 'test'
+  ...
+# Subtest: a GET http test is valid
+ok 6 - a GET http test is valid
+  ---
+  duration_ms: 0.59613
+  type: 'test'
+  ...
+# Subtest: writes are refused unless they are an auth-rejected probe
+ok 7 - writes are refused unless they are an auth-rejected probe
+  ---
+  duration_ms: 0.236245
+  type: 'test'
+  ...
+# Subtest: playwright specs must be .staging.spec.ts inside the repo
+ok 8 - playwright specs must be .staging.spec.ts inside the repo
+  ---
+  duration_ms: 0.426063
+  type: 'test'
+  ...
+# Subtest: existing suites are limited to test-runner commands and need a reason
+ok 9 - existing suites are limited to test-runner commands and need a reason
+  ---
+  duration_ms: 0.362502
+  type: 'test'
+  ...
+# Subtest: manifest identity and shape are checked
+ok 10 - manifest identity and shape are checked
+  ---
+  duration_ms: 0.489266
+  type: 'test'
+  ...
+# Subtest: planRange: suites run, missing ones fail only after the rule took effect
+ok 11 - planRange: suites run, missing ones fail only after the rule took effect
+  ---
+  duration_ms: 0.893286
+  type: 'test'
+  ...
+# Subtest: planRange: an invalid manifest is reported, not run
+ok 12 - planRange: an invalid manifest is reported, not run
+  ---
+  duration_ms: 0.278436
+  type: 'test'
+  ...
+# Subtest: live commit matching
+ok 13 - live commit matching
+  ---
+  duration_ms: 0.332683
+  type: 'test'
+  ...
+# Subtest: evaluateHttp checks status, json type, fields and body
+ok 14 - evaluateHttp checks status, json type, fields and body
+  ---
+  duration_ms: 0.361637
+  type: 'test'
+  ...
+# Subtest: an accepted write probe is flagged loudly
+ok 15 - an accepted write probe is flagged loudly
+  ---
+  duration_ms: 0.275812
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a GET/HEAD rejected probe has the invalid bearer and no body
+ok 16 - VTID-05083: a GET/HEAD rejected probe has the invalid bearer and no body
+  ---
+  duration_ms: 0.213184
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a write rejected probe keeps bearer, JSON type and {} body
+ok 17 - VTID-05083: a write rejected probe keeps bearer, JSON type and {} body
+  ---
+  duration_ms: 0.109424
+  type: 'test'
+  ...
+# Subtest: VTID-05083: a plain GET carries no authorization header
+ok 18 - VTID-05083: a plain GET carries no authorization header
+  ---
+  duration_ms: 0.17478
+  type: 'test'
+  ...
+# Subtest: VTID-05083: an accepted read probe is flagged and names the method
+ok 19 - VTID-05083: an accepted read probe is flagged and names the method
+  ---
+  duration_ms: 0.150231
+  type: 'test'
+  ...
+# Subtest: outcome: superseded only when no attributed failure, missing suites fail
+not ok 20 - outcome: superseded only when no attributed failure, missing suites fail
+  ---
+  duration_ms: 1.33897
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:164:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'superseded'
+    - 'failed'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'failed'
+  actual: 'superseded'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:167:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: superseded + no attributed failure → superseded (never a pass)
+ok 21 - VTID-05144: superseded + no attributed failure → superseded (never a pass)
+  ---
+  duration_ms: 0.119136
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded + an attributed failure → failed (a real failure is never hidden)
+not ok 22 - VTID-05144: superseded + an attributed failure → failed (a real failure is never hidden)
+  ---
+  duration_ms: 0.36233
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:179:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + 'superseded'
+    - 'failed'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: 'failed'
+  actual: 'superseded'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:182:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: superseded + only unattributed failures → superseded
+ok 23 - VTID-05144: superseded + only unattributed failures → superseded
+  ---
+  duration_ms: 0.131244
+  type: 'test'
+  ...
+# Subtest: VTID-05144: not superseded is unchanged — every failure counts, attributed or not
+ok 24 - VTID-05144: not superseded is unchanged — every failure counts, attributed or not
+  ---
+  duration_ms: 0.1951
+  type: 'test'
+  ...
+# Subtest: VTID-05144: attributeResults — ended before T_cut or static; the boundary is not attributed
+not ok 25 - VTID-05144: attributeResults — ended before T_cut or static; the boundary is not attributed
+  ---
+  duration_ms: 0.305266
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:198:1'
+  failureType: 'testCodeFailure'
+  error: 'lib.attributeResults is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:207:19)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: deployCutoff — earliest relevant deploy run, clamped to runStart
+not ok 26 - VTID-05144: deployCutoff — earliest relevant deploy run, clamped to runStart
+  ---
+  duration_ms: 0.573519
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:215:1'
+  failureType: 'testCodeFailure'
+  error: 'lib.deployCutoff is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:219:20)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: deployCutoff — skipped and completed-before-runStart-minus-5-min runs are excluded
+not ok 27 - VTID-05144: deployCutoff — skipped and completed-before-runStart-minus-5-min runs are excluded
+  ---
+  duration_ms: 0.314899
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:228:1'
+  failureType: 'testCodeFailure'
+  error: 'lib.deployCutoff is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:232:20)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: deployCutoff — a deploy in progress at run start → runStart
+not ok 28 - VTID-05144: deployCutoff — a deploy in progress at run start → runStart
+  ---
+  duration_ms: 0.178338
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:240:1'
+  failureType: 'testCodeFailure'
+  error: 'lib.deployCutoff is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:243:20)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: deployCutoff — lookup error or no runs → runStart (fail closed: nothing attributed)
+not ok 29 - VTID-05144: deployCutoff — lookup error or no runs → runStart (fail closed: nothing attributed)
+  ---
+  duration_ms: 0.156383
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:246:1'
+  failureType: 'testCodeFailure'
+  error: 'lib.deployCutoff is not a function'
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:248:20)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: superseded message names the new stamp, T_cut, attributed counts and unattributed failures
+not ok 30 - VTID-05144: superseded message names the new stamp, T_cut, attributed counts and unattributed failures
+  ---
+  duration_ms: 0.932561
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:257:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /2541b523a000/. Input:
+    
+    '**Staging verification superseded** — staging moved past `a837b4194c00` during the run; the newer deploy gets its own verification. No production prompt.\n' +
+      '\n' +
+      '- Service: `gateway`\n' +
+      '- Verified commit: `a837b4194c0000000000000000000000000000aa`\n' +
+      '- Tests: 3/4 passed\n' +
+      '\n' +
+      'Failed:\n' +
+      '- VTID-05000 › late probe: fetch failed\n' +
+      '\n' +
+      'What would ship (production `unknown` → `a837b4194c00`, 0 commit(s)):\n' +
+      '- (none — production already serves or contains this commit, or its version could not be read)'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    **Staging verification superseded** — staging moved past `a837b4194c00` during the run; the newer deploy gets its own verification. No production prompt.
+    
+    - Service: `gateway`
+    - Verified commit: `a837b4194c0000000000000000000000000000aa`
+    - Tests: 3/4 passed
+    
+    Failed:
+    - VTID-05000 › late probe: fetch failed
+    
+    What would ship (production `unknown` → `a837b4194c00`, 0 commit(s)):
+    - (none — production already serves or contains this commit, or its version could not be read)
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:272:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: superseded run with an attributed failure reads as FAILED and lists it under Failed
+not ok 31 - VTID-05144: superseded run with an attributed failure reads as FAILED and lists it under Failed
+  ---
+  duration_ms: 0.476515
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:280:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /Not attributed — staging was redeploying:\n- VTID-05000 › late probe/. Input:
+    
+    '**Staging verification FAILED — not ready for production.** Nothing will be offered for PUBLISH until this is green.\n' +
+      '\n' +
+      '- Service: `gateway`\n' +
+      '- Verified commit: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`\n' +
+      '- Tests: 0/2 passed\n' +
+      '\n' +
+      'Failed:\n' +
+      '- smoke › alive: status 500\n' +
+      '- VTID-05000 › late probe: fetch failed\n' +
+      '\n' +
+      'What would ship (production `unknown` → `aaaaaaaaaaaa`, 0 commit(s)):\n' +
+      '- (none — production already serves or contains this commit, or its version could not be read)'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    **Staging verification FAILED — not ready for production.** Nothing will be offered for PUBLISH until this is green.
+    
+    - Service: `gateway`
+    - Verified commit: `aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa`
+    - Tests: 0/2 passed
+    
+    Failed:
+    - smoke › alive: status 500
+    - VTID-05000 › late probe: fetch failed
+    
+    What would ship (production `unknown` → `aaaaaaaaaaaa`, 0 commit(s)):
+    - (none — production already serves or contains this commit, or its version could not be read)
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/lib.test.cjs:292:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: ready message asks the question only on a pass and lists what ships
+ok 32 - ready message asks the question only on a pass and lists what ships
+  ---
+  duration_ms: 0.498521
+  type: 'test'
+  ...
+# Subtest: a body check finds code served past the first megabyte
+ok 33 - a body check finds code served past the first megabyte
+  ---
+  duration_ms: 2.698132
+  type: 'test'
+  ...
+# Subtest: the body cap is large enough for every Command Hub asset
+ok 34 - the body cap is large enough for every Command Hub asset
+  ---
+  duration_ms: 0.195312
+  type: 'test'
+  ...
+# Subtest: a body past the cap is reported as cut off, not as a plain miss
+ok 35 - a body past the cap is reported as cut off, not as a plain miss
+  ---
+  duration_ms: 27.065492
+  type: 'test'
+  ...
+# Subtest: the runner reads response bodies through clipBody, never a fixed slice
+ok 36 - the runner reads response bodies through clipBody, never a fixed slice
+  ---
+  duration_ms: 0.903976
+  type: 'test'
+  ...
+# Subtest: production already past the verified commit is its own failed state
+ok 37 - production already past the verified commit is its own failed state
+  ---
+  duration_ms: 0.360548
+  type: 'test'
+  ...
+# Subtest: every other baseline state keeps its meaning
+ok 38 - every other baseline state keeps its meaning
+  ---
+  duration_ms: 0.322625
+  type: 'test'
+  ...
+# Subtest: VTID-04949: the nightly full run covers every valid suite of the service once
+ok 39 - VTID-04949: the nightly full run covers every valid suite of the service once
+  ---
+  duration_ms: 11.437166
+  type: 'test'
+  ...
+# Subtest: isLockfileOnlyCommit: only pnpm-lock.yaml counts, other files outside the build are ignored
+ok 40 - isLockfileOnlyCommit: only pnpm-lock.yaml counts, other files outside the build are ignored
+  ---
+  duration_ms: 0.379852
+  type: 'test'
+  ...
+# Subtest: planRange: the real shape of 9358d991 (lockfile + two evidence docs) is lockfile-only, not missing
+ok 41 - planRange: the real shape of 9358d991 (lockfile + two evidence docs) is lockfile-only, not missing
+  ---
+  duration_ms: 0.728561
+  type: 'test'
+  ...
+# Subtest: planRange: a lockfile commit that also changes source, or any other no-VTID commit, is still missing
+ok 42 - planRange: a lockfile commit that also changes source, or any other no-VTID commit, is still missing
+  ---
+  duration_ms: 0.353917
+  type: 'test'
+  ...
+# Subtest: planRange: a lockfile-only commit that names a VTID without a manifest is still reported
+ok 43 - planRange: a lockfile-only commit that names a VTID without a manifest is still reported
+  ---
+  duration_ms: 0.444784
+  type: 'test'
+  ...
+# Subtest: planRange: community-app package-lock.json / bun.lock commits without a VTID are still missing
+ok 44 - planRange: community-app package-lock.json / bun.lock commits without a VTID are still missing
+  ---
+  duration_ms: 0.176201
+  type: 'test'
+  ...
+# Subtest: ready message names lockfile-only commits in a passing and in a failing run, and keeps the approval line
+ok 45 - ready message names lockfile-only commits in a passing and in a failing run, and keeps the approval line
+  ---
+  duration_ms: 0.269044
+  type: 'test'
+  ...
+# Subtest: run.mjs records and logs the lockfile-only commits (audit trail)
+ok 46 - run.mjs records and logs the lockfile-only commits (audit trail)
+  ---
+  duration_ms: 0.547897
+  type: 'test'
+  ...
+# Subtest: VTID-05076: squash history lists every commit with its own files, as before
+ok 47 - VTID-05076: squash history lists every commit with its own files, as before
+  ---
+  duration_ms: 126.992914
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a merge-committed PR is judged by its merge commit; its untagged branch commit is not listed
+ok 48 - VTID-05076: a merge-committed PR is judged by its merge commit; its untagged branch commit is not listed
+  ---
+  duration_ms: 146.097157
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a direct push without a VTID still fails rule 47
+ok 49 - VTID-05076: a direct push without a VTID still fails rule 47
+  ---
+  duration_ms: 88.710454
+  type: 'test'
+  ...
+# Subtest: VTID-05076: a merge commit whose subject has no VTID fails rule 47
+ok 50 - VTID-05076: a merge commit whose subject has no VTID fails rule 47
+  ---
+  duration_ms: 102.937778
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a dropped stamp sample is unknown, not a mismatch
+ok 51 - VTID-05129: a dropped stamp sample is unknown, not a mismatch
+  ---
+  duration_ms: 0.751923
+  type: 'test'
+  ...
+# Subtest: VTID-05129: only dropped connections are retried
+ok 52 - VTID-05129: only dropped connections are retried
+  ---
+  duration_ms: 0.420359
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named
+ok 53 - VTID-05129: a dropped connection hidden in an AggregateError or a closed socket is retried, and named
+  ---
+  duration_ms: 0.894909
+  type: 'test'
+  ...
+# Subtest: VTID-05129: a guard failure keeps the blocked requests in its summary
+ok 54 - VTID-05129: a guard failure keeps the blocked requests in its summary
+  ---
+  duration_ms: 0.806404
+  type: 'test'
+  ...
+# Subtest: VTID-05129: the shared tolerated-abort list is exact, capped and never covers a real write or production
+ok 55 - VTID-05129: the shared tolerated-abort list is exact, capped and never covers a real write or production
+  ---
+  duration_ms: 1.125041
+  type: 'test'
+  ...
+# Subtest: VTID-05129: staging-guard.ts mirrors the shared list exactly
+ok 56 - VTID-05129: staging-guard.ts mirrors the shared list exactly
+  ---
+  duration_ms: 0.603587
+  type: 'test'
+  ...
+# Subtest: a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+ok 57 - a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+  ---
+  duration_ms: 63.040309
+  type: 'test'
+  ...
+# Subtest: a passed run is recorded as passed / success
+ok 58 - a passed run is recorded as passed / success
+  ---
+  duration_ms: 34.342694
+  type: 'test'
+  ...
+# Subtest: VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body
+not ok 59 - VTID-05144: superseded_by, attribution_cutoff, chain and per-result attributed reach the body
+  ---
+  duration_ms: 32.082143
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/record-oasis.test.cjs:110:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - '1234567890abcdef1234567890abcdef12345678'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: '1234567890abcdef1234567890abcdef12345678'
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/record-oasis.test.cjs:128:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VTID-05144: a run without the new fields records null/0 and no attributed key
+not ok 60 - VTID-05144: a run without the new fields records null/0 and no attributed key
+  ---
+  duration_ms: 31.618764
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/record-oasis.test.cjs:135:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    Expected values to be strictly equal:
+    + actual - expected
+    
+    + undefined
+    - null
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: ~
+  operator: 'strictEqual'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/record-oasis.test.cjs:140:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: runner crashed (no results.json) → recorded as a failed, crashed verification
+ok 61 - runner crashed (no results.json) → recorded as a failed, crashed verification
+  ---
+  duration_ms: 28.685921
+  type: 'test'
+  ...
+# Subtest: missing Supabase credentials fail loudly before anything is sent
+ok 62 - missing Supabase credentials fail loudly before anything is sent
+  ---
+  duration_ms: 5.696771
+  type: 'test'
+  ...
+# Subtest: a failed POST fails the step (no silent success)
+ok 63 - a failed POST fails the step (no silent success)
+  ---
+  duration_ms: 23.789255
+  type: 'test'
+  ...
+# Subtest: the body file is removed after the step
+ok 64 - the body file is removed after the step
+  ---
+  duration_ms: 30.358288
+  type: 'test'
+  ...
+# Subtest: the workflow step calls the script and never passes the body as an argument
+ok 65 - the workflow step calls the script and never passes the body as an argument
+  ---
+  duration_ms: 0.708821
+  type: 'test'
+  ...
+# Subtest: full runs get their own -full concurrency group; nothing running is ever cancelled
+not ok 66 - full runs get their own -full concurrency group; nothing running is ever cancelled
+  ---
+  duration_ms: 2.29426
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:26:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /group: staging-verify-\$\{\{[^\n]*\}\}\$\{\{ inputs\.full && '-full' \|\| '' \}\}\n/. Input:
+    
+    '\n' +
+      'concurrency:\n' +
+      '  # One verification per service at a time; a newer deploy queues behind the\n' +
+      '  # running one (never cancels it mid-run — a half-run proves nothing).\n' +
+      "  group: staging-verify-${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}\n" +
+      '  cancel-in-progress: false\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    
+    concurrency:
+      # One verification per service at a time; a newer deploy queues behind the
+      # running one (never cancels it mid-run — a half-run proves nothing).
+      group: staging-verify-${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
+      cancel-in-progress: false
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:28:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+not ok 67 - workflow_dispatch has a numeric `chain` input defaulting to 0, passed through to run.mjs
+  ---
+  duration_ms: 0.648185
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:33:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /\n      chain:\n(?:        .*\n)*?        type: number\n(?:        .*\n)*?        default: 0/. Input:
+    
+    '  workflow_dispatch:\n' +
+      '    inputs:\n' +
+      '      service:\n' +
+      "        description: 'Service to verify'\n" +
+      '        required: true\n' +
+      '        type: choice\n' +
+      '        options: [gateway, community-app]\n' +
+      '      commit_sha:\n' +
+      "        description: 'Full commit SHA staging is expected to serve'\n" +
+      '        required: true\n' +
+      '        type: string\n' +
+      '      full:\n' +
+      "        description: 'VTID-04949: also run every other change suite of the service (nightly full run)'\n" +
+      '        required: false\n' +
+      '        type: boolean\n' +
+      '        default: false\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+      workflow_dispatch:
+        inputs:
+          service:
+            description: 'Service to verify'
+            required: true
+            type: choice
+            options: [gateway, community-app]
+          commit_sha:
+            description: 'Full commit SHA staging is expected to serve'
+            required: true
+            type: string
+          full:
+            description: 'VTID-04949: also run every other change suite of the service (nightly full run)'
+            required: false
+            type: boolean
+            default: false
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:35:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: the verify job exposes superseded_by from the runner
+not ok 68 - the verify job exposes superseded_by from the runner
+  ---
+  duration_ms: 0.384915
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /superseded_by: \$\{\{ steps\.verify\.outputs\.superseded_by \}\}/. Input:
+    
+    '    outputs:\n' +
+      '      outcome: ${{ steps.verify.outputs.outcome }}\n' +
+      '      sha: ${{ steps.inputs.outputs.sha }}\n' +
+      '      service: ${{ env.SERVICE }}\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+        outputs:
+          outcome: ${{ steps.verify.outputs.outcome }}
+          sha: ${{ steps.inputs.outputs.sha }}
+          service: ${{ env.SERVICE }}
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:41:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: superseded is reported as commit status error with "not verified", never success
+not ok 69 - superseded is reported as commit status error with "not verified", never success
+  ---
+  duration_ms: 1.344588
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:44:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /superseded\) STATE=error; DESCRIPTION="superseded — staging moved to \$\{SUPERSEDED_BY:0:12\}; not verified";;/. Input:
+    
+    '\n' +
+      '  report:\n' +
+      '    needs: verify\n' +
+      "    if: always() && needs.verify.outputs.sha != ''\n" +
+      '    runs-on: ubuntu-latest\n' +
+      '    timeout-minutes: 5\n' +
+      '    permissions:\n' +
+      '      statuses: write\n' +
+      '      pull-requests: write\n' +
+      '    env:\n' +
+      '      SERVICE: ${{ needs.verify.outputs.service }}\n' +
+      '      SHA: ${{ needs.verify.outputs.sha }}\n' +
+      "      OUTCOME: ${{ needs.verify.outputs.outcome || 'failed' }}\n" +
+      '      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}\n' +
+      "      FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full || false }}\n" +
+      '    steps:\n' +
+      '      - name: Commit status + PR comment\n' +
+      '        env:\n' +
+      "          GH_TOKEN: ${{ needs.verify.outputs.service == 'community-app' && secrets.VITANA_V1_STATUS_TOKEN || github.token }}\n" +
+      "          HAVE_TOKEN: ${{ needs.verify.outputs.service != 'community-app' || secrets.VITANA_V1_STATUS_TOKEN != '' }}\n" +
+      '        run: |\n' +
+      '          REPO=$([ "$SERVICE" = "community-app" ] && echo exafyltd/vitana-v1 || echo exafyltd/vitana-platform)\n' +
+      '          if [ "$HAVE_TOKEN" != "true" ]; then\n' +
+      '            echo "::notice::VITANA_V1_STATUS_TOKEN not set — result stays in OASIS + this run; no status on $REPO."\n' +
+      '            exit 0\n' +
+      '          fi\n' +
+      '          case "$OUTCOME" in passed) STATE=success;; superseded) STATE=success;; *) STATE=failure;; esac\n' +
+      '          CONTEXT=$([ "$FULL" = "true" ] && echo "staging-verify/full" || echo "staging-verify")\n' +
+      '          gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context="$CONTEXT" \\\n' +
+      '            -f description="STAGING-VERIFY $OUTCOME" -f target_url="$RUN_URL" >/dev/null && echo "status $STATE on $REPO@${SHA:0:12}"\n' +
+      '          [ "$FULL" = "true" ] && exit 0\n' +
+      `          PR=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)\n` +
+      '          if [ -n "$PR" ]; then\n' +
+      '            ICON=$([ "$STATE" = "success" ] && echo "✅" || echo "❌")\n' +
+      '            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$ICON **STAGING-VERIFY $OUTCOME** for \\`${SHA:0:12}\\` ($SERVICE). Run: $RUN_URL\n' +
+      '\n' +
+      '          ---\n' +
+      '          _Generated by STAGING-VERIFY (VTID-04949)_" >/dev/null && echo "commented on $REPO#$PR"\n' +
+      '          fi\n' +
+      '\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    
+      report:
+        needs: verify
+        if: always() && needs.verify.outputs.sha != ''
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+          statuses: write
+          pull-requests: write
+        env:
+          SERVICE: ${{ needs.verify.outputs.service }}
+          SHA: ${{ needs.verify.outputs.sha }}
+          OUTCOME: ${{ needs.verify.outputs.outcome || 'failed' }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+          FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full || false }}
+        steps:
+          - name: Commit status + PR comment
+            env:
+              GH_TOKEN: ${{ needs.verify.outputs.service == 'community-app' && secrets.VITANA_V1_STATUS_TOKEN || github.token }}
+              HAVE_TOKEN: ${{ needs.verify.outputs.service != 'community-app' || secrets.VITANA_V1_STATUS_TOKEN != '' }}
+            run: |
+              REPO=$([ "$SERVICE" = "community-app" ] && echo exafyltd/vitana-v1 || echo exafyltd/vitana-platform)
+              if [ "$HAVE_TOKEN" != "true" ]; then
+                echo "::notice::VITANA_V1_STATUS_TOKEN not set — result stays in OASIS + this run; no status on $REPO."
+                exit 0
+              fi
+              case "$OUTCOME" in passed) STATE=success;; superseded) STATE=success;; *) STATE=failure;; esac
+              CONTEXT=$([ "$FULL" = "true" ] && echo "staging-verify/full" || echo "staging-verify")
+              gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context="$CONTEXT" \
+                -f description="STAGING-VERIFY $OUTCOME" -f target_url="$RUN_URL" >/dev/null && echo "status $STATE on $REPO@${SHA:0:12}"
+              [ "$FULL" = "true" ] && exit 0
+              PR=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+              if [ -n "$PR" ]; then
+                ICON=$([ "$STATE" = "success" ] && echo "✅" || echo "❌")
+                gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$ICON **STAGING-VERIFY $OUTCOME** for \`${SHA:0:12}\` ($SERVICE). Run: $RUN_URL
+    
+              ---
+              _Generated by STAGING-VERIFY (VTID-04949)_" >/dev/null && echo "commented on $REPO#$PR"
+              fi
+    
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:46:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+not ok 70 - a superseded full run re-dispatches a full run on the newer commit, guarded by FULL and chain < 3
+  ---
+  duration_ms: 0.381501
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:52:1'
+  failureType: 'testCodeFailure'
+  error: 'missing: - name: Re-run the full verification on the newer commit (VTID-05144)'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    block (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:19:10)
+    redispatch (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:24:26)
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:53:13)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the report job grants itself actions: write next to its status/comment permissions
+not ok 71 - the report job grants itself actions: write next to its status/comment permissions
+  ---
+  duration_ms: 2.205623
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:60:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /permissions:\n      statuses: write\n      pull-requests: write\n      actions: write\n/. Input:
+    
+    '\n' +
+      '  report:\n' +
+      '    needs: verify\n' +
+      "    if: always() && needs.verify.outputs.sha != ''\n" +
+      '    runs-on: ubuntu-latest\n' +
+      '    timeout-minutes: 5\n' +
+      '    permissions:\n' +
+      '      statuses: write\n' +
+      '      pull-requests: write\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    
+      report:
+        needs: verify
+        if: always() && needs.verify.outputs.sha != ''
+        runs-on: ubuntu-latest
+        timeout-minutes: 5
+        permissions:
+          statuses: write
+          pull-requests: write
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:62:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the deploy-run lookup tokens reach run.mjs, never the test processes
+not ok 72 - the deploy-run lookup tokens reach run.mjs, never the test processes
+  ---
+  duration_ms: 0.498703
+  type: 'test'
+  location: '/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:68:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /GITHUB_TOKEN: \$\{\{ github\.token \}\}/. Input:
+    
+    '- name: Run STAGING-VERIFY\n' +
+      '        id: verify\n' +
+      '        env:\n' +
+      '          # Read-only sign-in for browser tests that need a session. Never the\n' +
+      '          # service role: nothing in this step may write (rule 48).\n' +
+      '          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}\n' +
+      '          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}\n' +
+      '        run: |\n' +
+      '          node runner/scripts/ci/staging-verify/run.mjs verify \\\n' +
+      '            --service "$SERVICE" --sha "$SHA" \\\n' +
+      '            --repo-root target --out "$RUNNER_TEMP/staging-verify" \\\n' +
+      '            --full "${{ github.event_name == \'workflow_dispatch\' && inputs.full || false }}"\n' +
+      '\n' +
+      '      '
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    - name: Run STAGING-VERIFY
+            id: verify
+            env:
+              # Read-only sign-in for browser tests that need a session. Never the
+              # service role: nothing in this step may write (rule 48).
+              TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+              TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+            run: |
+              node runner/scripts/ci/staging-verify/run.mjs verify \
+                --service "$SERVICE" --sha "$SHA" \
+                --repo-root target --out "$RUNNER_TEMP/staging-verify" \
+                --full "${{ github.event_name == 'workflow_dispatch' && inputs.full || false }}"
+    
+          
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (/tmp/claude-0/-home-user/c7077b3f-13b5-54c1-9b4b-6d01bffc5e43/scratchpad/v05144/base/scripts/ci/staging-verify/workflow.test.cjs:70:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..72
+# tests 72
+# suites 0
+# pass 53
+# fail 19
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 720.916413

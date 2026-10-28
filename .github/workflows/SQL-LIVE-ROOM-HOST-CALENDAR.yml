@@ -1,0 +1,44 @@
+name: SQL-LIVE-ROOM-HOST-CALENDAR
+run-name: 'live room host calendar triggers against a throwaway Postgres [VTID: VTID-04976] (${{ github.ref_name }})'
+
+# VTID-04976 — runs the live room -> calendar triggers (host entry, edits move
+# every entry, cancel/delete, host survives un-notify, backfill, status
+# whitelist) next to the VTID-04965 subscriber trigger they replace parts of,
+# against a disposable Postgres service container. Never runs against Supabase.
+
+on:
+  pull_request:
+    paths:
+      - 'supabase/migrations/*vtid_04976*.sql'
+      - 'supabase/migrations/*vtid_04965*.sql'
+      - 'scripts/ci/sql-tests/*live-room-host-calendar*'
+      - '.github/workflows/SQL-LIVE-ROOM-HOST-CALENDAR.yml'
+  workflow_dispatch:
+
+jobs:
+  sql:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+    steps:
+      - uses: actions/checkout@v4
+      - name: Run the live room host calendar test
+        env:
+          PGHOST: 127.0.0.1
+          PGPORT: '5432'
+          PGUSER: postgres
+          PGPASSWORD: postgres
+        run: |
+          set -o pipefail
+          scripts/ci/sql-tests/run-live-room-host-calendar-test.sh 2>&1 | tee /tmp/liveroomhost.log
+      - name: Assert the test ran to the end
+        run: grep -q "^PASS vtid-04976 live room host calendar" /tmp/liveroomhost.log

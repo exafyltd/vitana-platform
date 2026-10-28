@@ -1,0 +1,5 @@
+{"vtid":"VTID-04797","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev admin stats still auth-gated (gate rows surface here)","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04797-finding-dedupe-gate.test.ts test/dev-autopilot-synthesis.test.ts test/routes/dev-autopilot.test.ts","cwd":"services/gateway","reason":"The gate runs when a Dev Autopilot scan inserts a new finding, a write a read-only staging suite must not cause. The gate (modes, candidates, row shape, wiring after the insert) and the unchanged synthesis are proven by these suites."}
+]}

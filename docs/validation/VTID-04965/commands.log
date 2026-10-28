@@ -1,0 +1,4 @@
+# VTID-04965 — commands run and their results (local, throwaway Postgres 16 on a unix socket; never a shared or production database)
+$ scripts/ci/sql-tests/run-live-room-calendar-test.sh        -> PASS vtid-04965 live room calendar   (outputs/sql-test.txt)
+$ [mutation] delete "AND v_stream.status = 'pending'" from the trigger, rerun the SQL test -> ASSERT failure (the test catches it); migration restored, rerun -> PASS
+$ cd services/gateway && npx jest test/vtid-04965-live-room-calendar-migration.test.ts -> 8 passed   (outputs/jest.txt)

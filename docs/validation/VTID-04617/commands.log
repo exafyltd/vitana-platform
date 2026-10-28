@@ -1,0 +1,13 @@
+# Reproduction on the VTID-04614 branch (dev-autopilot/d085fdd6)
+git worktree add wt-B FETCH_HEAD
+npx jest $(git grep -l "app.js?v=\|styles.css?v=\|20261013\|index.html" -- test)
+# -> 3 failed (vtid-04334, vtid-04354, vtid-04491), 35 passed, 38 suites
+
+# This change
+npx tsc --noEmit -p tsconfig.json                 # clean
+npx jest test/vtid-04617-runner-asset-tests.test.ts test/autopilot-agent-scope-validate.test.ts \
+  test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04612-merge-behind-without-update.test.ts
+# -> 4 suites, 48 tests passed
+npx jest <every suite importing run-agent-execution or agent-validate>
+# -> 10 suites, 152 tests passed
+# Mutation: runner back to selectJestTargets -> the VTID-04617 scenario fails; restored -> passes

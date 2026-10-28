@@ -1,0 +1,487 @@
+import { registerAllActionExecutors } from '../../src/services/action-executors';
+
+// ---------------------------------------------------------------------------
+// Typed mock references
+// ---------------------------------------------------------------------------
+const mockRegister = jest.fn();
+const mockGetSupabase = jest.fn();
+const mockEmitClick = jest.fn();
+
+type ExecutorFn = (args: Record<string, unknown>, ctx: Record<string, unknown>) => Promise<Record<string, unknown> | any>;
+const executors: Record<string, ExecutorFn> = {};
+
+// ---------------------------------------------------------------------------
+// Mocks
+// ---------------------------------------------------------------------------
+jest.mock('../../src/services/consent-gate', () => ({
+  registerActionExecutor: jest.fn((...args: any[]) => mockRegister(...args)),
+}));
+
+jest.mock('../../src/lib/supabase', () => ({
+  getSupabase: jest.fn((...args: any[]) => mockGetSupabase(...args)),
+}));
+
+jest.mock('../../src/services/reward-events', () => ({
+  emitClickOutbound: jest.fn((...args: any[]) => mockEmitClick(...args)),
+}));
+
+// ---------------------------------------------------------------------------
+// Supabase stub builder
+// ---------------------------------------------------------------------------
+function buildSupabaseMock(
+  rpcResult?: { data?: unknown; error?: { message: string } | null },
+  fromResult?: { data?: unknown; error?: { message: string } | null }
+) {
+  const rpc = jest.fn().mockResolvedValue(rpcResult || { data: null, error: null });
+  const single = jest.fn().mockResolvedValue(fromResult || { data: null, error: null });
+  const select = jest.fn().mockReturnValue({ single });
+  const insert = jest.fn().mockReturnValue({ select });
+  const from = jest.fn().mockReturnValue({ insert });
+
+  return { rpc, from, insert, select, single };
+}
+
+// ---------------------------------------------------------------------------
+// Shared test context
+// ---------------------------------------------------------------------------
+const CTX = {
+  action_id: 'action-abc',
+  tenant_id: 'tenant-123',
+  user_id: 'user-456',
+};
+
+// ---------------------------------------------------------------------------
+// Setup
+// ---------------------------------------------------------------------------
+beforeAll(() => {
+  mockRegister.mockImplementation((type: string, fn: ExecutorFn) => {
+    executors[type] = fn;
+  });
+  registerAllActionExecutors();
+});
+
+beforeEach(() => {
+  jest.clearAllMocks();
+  // Happy-path stub by default
+  mockGetSupabase.mockReturnValue(
+    buildSupabaseMock(
+      { data: { ok: true, id: 'offer-1', strength_delta: 1 }, error: null },
+      { data: { id: 'default-insert-id' }, error: null }
+    )
+  );
+});
+
+// ---------------------------------------------------------------------------
+// Tests
+// ---------------------------------------------------------------------------
+describe('registerAllActionExecutors', () => {
+
+  // ---- boot ----------------------------------------------------------------
+  describe('boot', () => {
+    it('registers exactly 5 executors', () => {
+      // beforeEach's clearAllMocks wipes the beforeAll call history, so
+      // re-register here (idempotent — same keys are overwritten) to assert
+      // on the registration calls themselves.
+      registerAllActionExecutors();
+      expect(mockRegister).toHaveBeenCalledTimes(5);
+      expect(Object.keys(executors)).toHaveLength(5);
+      expect(Object.keys(executors).sort()).toEqual([
+        'calendar_add_event',
+        'share_milestone',
+        'shopping_add_to_list',
+        'social_post_story',
+        'wearable_log_workout',
+      ]);
+    });
+  });
+
+  // ---- shopping_add_to_list ------------------------------------------------
+  describe('shopping_add_to_list', () => {
+    it('happy path returns ok:true with external_id and result', async () => {
+      mockGetSupabase.mockReturnValue(
+        buildSupabaseMock({ data: { ok: true, id: 'offer-1', strength_delta: 1 }, error: null })
+      );
+      const res = await executors['shopping_add_to_list']({ product_id: 'prod-1', note: 'test note' }, CTX);
+      expect(res.ok).toBe(true);
+      expect(res.external_id).toBe('offer-1');
+      expect((res.result as Record<string, unknown>).product_id).toBe('prod-1');
+      expect((res.result as Record<string, unknown>).state).toBe('saved');
+    });
+
+    it('persists through the repository with the expected offers_set_state payload', async () => {
+      const mockDb = buildSupabaseMock({
+        data: { ok: true, id: 'offer-2', strength_delta: 2 },
+        error: null,
+      });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['shopping_add_to_list'](
+        { product_id: 'prod-9', note: 'because I like it' },
+        CTX
+      );
+      expect(mockDb.rpc).toHaveBeenCalledWith('offers_set_state', {
+        p_payload: {
+          target_type: 'product',
+          target_id: 'prod-9',
+          state: 'saved',
+          notes: 'because I like it',
+        },
+      });
+      expect((res.result as Record<string, unknown>).strength_delta).toBe(2);
+    });
+
+    it('defaults the note when none is supplied (or not a string)', async () => {
+      const mockDb = buildSupabaseMock({ data: { ok: true, id: 'offer-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['shopping_add_to_list']({ product_id: 'prod-1', note: 123 }, CTX);
+      expect(mockDb.rpc).toHaveBeenCalledWith(
+        'offers_set_state',
+        expect.objectContaining({
+          p_payload: expect.objectContaining({ notes: 'Added by Vitana Assistant' }),
+        })
+      );
+    });
+
+    it('returns error when product_id is missing', async () => {
+      const res = await executors['shopping_add_to_list']({}, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('product_id required');
+    });
+
+    it('returns error when product_id is wrong type (number)', async () => {
+      const res = await executors['shopping_add_to_list']({ product_id: 42 }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('product_id required');
+    });
+
+    it('returns error when rpc returns a DB error', async () => {
+      mockGetSupabase.mockReturnValue(
+        buildSupabaseMock({ data: null, error: { message: 'rpc failed' } })
+      );
+      const res = await executors['shopping_add_to_list']({ product_id: 'prod-1' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('rpc failed');
+    });
+
+    it('returns error when data.ok is false with custom error', async () => {
+      mockGetSupabase.mockReturnValue(
+        buildSupabaseMock({ data: { ok: false, error: 'product not found' }, error: null })
+      );
+      const res = await executors['shopping_add_to_list']({ product_id: 'prod-1' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('product not found');
+    });
+
+    it('returns error when data.ok is false with no custom error (falls back to Unknown)', async () => {
+      mockGetSupabase.mockReturnValue(
+        buildSupabaseMock({ data: { ok: false }, error: null })
+      );
+      const res = await executors['shopping_add_to_list']({ product_id: 'prod-1' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('Unknown');
+    });
+
+    it('returns DB unavailable when getSupabase() returns null', async () => {
+      mockGetSupabase.mockReturnValue(null);
+      const res = await executors['shopping_add_to_list']({ product_id: 'prod-1' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('DB unavailable');
+    });
+  });
+
+  // ---- share_milestone -----------------------------------------------------
+  describe('share_milestone', () => {
+    it('happy path returns ok:true with a share URL containing action_id', async () => {
+      const res = await executors['share_milestone'](
+        { channel: 'twitter', milestone_text: 'I hit my goal!' },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect(typeof res.external_id).toBe('string');
+      expect(res.external_id).toContain(CTX.action_id);
+      expect((res.result as Record<string, unknown>).channel).toBe('twitter');
+    });
+
+    it('channel defaults to copy_link when not provided', async () => {
+      const res = await executors['share_milestone']({}, CTX);
+      expect((res.result as Record<string, unknown>).channel).toBe('copy_link');
+    });
+
+    it('milestone_text is truncated to 280 characters', async () => {
+      const longText = 'A'.repeat(400);
+      const res = await executors['share_milestone']({ milestone_text: longText }, CTX);
+      const result = res.result as Record<string, unknown>;
+      expect((result.milestone_text as string).length).toBe(280);
+    });
+
+    it('returns a share_url keyed on the action id and reuses it as external_id', async () => {
+      const res = await executors['share_milestone']({ channel: 'copy_link' }, CTX);
+      const result = res.result as Record<string, unknown>;
+      const expected = `https://vitanaland.com/share/${CTX.action_id}`;
+      expect(result.share_url).toBe(expected);
+      expect(res.external_id).toBe(expected);
+    });
+
+    it('milestone_text defaults to an empty string when not provided', async () => {
+      const res = await executors['share_milestone']({}, CTX);
+      expect((res.result as Record<string, unknown>).milestone_text).toBe('');
+    });
+
+    it('returns DB unavailable when getSupabase() returns null', async () => {
+      mockGetSupabase.mockReturnValue(null);
+      const res = await executors['share_milestone']({ milestone_text: 'hi' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('DB unavailable');
+    });
+  });
+
+  // ---- social_post_story ---------------------------------------------------
+  describe('social_post_story', () => {
+    it('happy path returns ok:true with copy_and_open action', async () => {
+      const res = await executors['social_post_story'](
+        { caption: 'My story!', provider: 'instagram' },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect((res.result as Record<string, unknown>).action).toBe('copy_and_open');
+      expect((res.result as Record<string, unknown>).provider).toBe('instagram');
+    });
+
+    it('caption is truncated to 2200 characters', async () => {
+      const longCaption = 'B'.repeat(3000);
+      const res = await executors['social_post_story']({ caption: longCaption }, CTX);
+      const result = res.result as Record<string, unknown>;
+      expect((result.caption as string).length).toBe(2200);
+    });
+
+    it('provider defaults to instagram when not provided', async () => {
+      const res = await executors['social_post_story']({}, CTX);
+      expect((res.result as Record<string, unknown>).provider).toBe('instagram');
+    });
+
+    it('coerces a non-string caption/provider to the defaults instead of throwing', async () => {
+      const res = await executors['social_post_story']({ caption: 123, provider: {} }, CTX);
+      expect(res.ok).toBe(true);
+      const result = res.result as Record<string, unknown>;
+      expect(result.caption).toBe('');
+      expect(result.provider).toBe('instagram');
+    });
+  });
+
+  // ---- wearable_log_workout ------------------------------------------------
+  describe('wearable_log_workout', () => {
+    it('happy path inserts and returns ok:true with external_id', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-99' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['wearable_log_workout'](
+        { workout_type: 'run', duration_minutes: 45, calories: 300 },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect(res.external_id).toBe('workout-99');
+      expect((res.result as Record<string, unknown>).workout_type).toBe('run');
+      expect((res.result as Record<string, unknown>).duration_minutes).toBe(45);
+    });
+
+    it('inserts the manual row with the expected columns and provider', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-200' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['wearable_log_workout'](
+        { workout_type: 'cycle', duration_minutes: 20 },
+        CTX
+      );
+      expect(mockDb.from).toHaveBeenCalledWith('wearable_workouts');
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          tenant_id: CTX.tenant_id,
+          user_id: CTX.user_id,
+          provider: 'manual',
+          external_workout_id: `manual-${CTX.action_id}`,
+          workout_type: 'cycle',
+          duration_minutes: 20,
+        })
+      );
+    });
+
+    it('defaults workout_type to other and optional numerics to null when omitted', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-201' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['wearable_log_workout']({}, CTX);
+      expect(res.ok).toBe(true);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          workout_type: 'other',
+          duration_minutes: null,
+          calories: null,
+        })
+      );
+      expect((res.result as Record<string, unknown>).workout_type).toBe('other');
+      expect((res.result as Record<string, unknown>).duration_minutes).toBeNull();
+    });
+
+    it('coerces non-number duration_minutes to null', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-100' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['wearable_log_workout']({ workout_type: 'run', duration_minutes: 'fast' }, CTX);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ duration_minutes: null })
+      );
+    });
+
+    it('coerces non-number calories to null', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'workout-101' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['wearable_log_workout']({ workout_type: 'run', calories: 'many' }, CTX);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ calories: null })
+      );
+    });
+
+    it('returns DB unavailable when getSupabase() returns null', async () => {
+      mockGetSupabase.mockReturnValue(null);
+      const res = await executors['wearable_log_workout']({ workout_type: 'run' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('DB unavailable');
+    });
+
+    it('returns error when insert returns a DB error', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: null, error: { message: 'insert failed' } });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['wearable_log_workout']({ workout_type: 'run' }, CTX);
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('insert failed');
+    });
+  });
+
+  // ---- calendar_add_event --------------------------------------------------
+  describe('calendar_add_event', () => {
+    it('happy path inserts and returns ok:true with external_id', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-1' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        {
+          title: 'Morning Yoga',
+          start_time: '2026-01-01T10:00:00.000Z',
+          duration_minutes: 60,
+        },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect(res.external_id).toBe('cal-event-1');
+      expect((res.result as Record<string, unknown>).title).toBe('Morning Yoga');
+    });
+
+    it('end_time is start_time + duration_minutes * 60000 ms', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-2' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        {
+          title: 'Test',
+          start_time: '2026-01-01T10:00:00.000Z',
+          duration_minutes: 60,
+        },
+        CTX
+      );
+      expect((res.result as Record<string, unknown>).end_time).toBe('2026-01-01T11:00:00.000Z');
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({ end_time: '2026-01-01T11:00:00.000Z' })
+      );
+    });
+
+    it('never writes tenant_id (calendar_events has no such column) — VTID-04321', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['calendar_add_event'](
+        { title: 'Walk', start_time: '2026-01-01T10:00:00.000Z' },
+        CTX
+      );
+      const row = (mockDb.insert as jest.Mock).mock.calls[0][0];
+      expect(row).not.toHaveProperty('tenant_id');
+      expect(row).toMatchObject({ user_id: CTX.user_id, source_type: 'assistant' });
+    });
+
+    it('falls back to wellness_nudge for an event_type the CHECK would reject — VTID-04321', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-4' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      await executors['calendar_add_event'](
+        { title: 'x', start_time: '2026-01-01T10:00:00.000Z', event_type: 'meditation' },
+        CTX
+      );
+      await executors['calendar_add_event'](
+        { title: 'y', start_time: '2026-01-01T10:00:00.000Z', event_type: 'workout' },
+        CTX
+      );
+      const calls = (mockDb.insert as jest.Mock).mock.calls;
+      expect(calls[0][0].event_type).toBe('wellness_nudge');
+      expect(calls[1][0].event_type).toBe('workout');
+    });
+
+    it('returns DB unavailable when getSupabase() returns null', async () => {
+      mockGetSupabase.mockReturnValue(null);
+      const res = await executors['calendar_add_event'](
+        { title: 'Test', start_time: '2026-01-01T10:00:00.000Z' },
+        CTX
+      );
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('DB unavailable');
+    });
+
+    it('inserts the event with the expected columns, defaults and wellness tags', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-3' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        {
+          title: 'Walk',
+          start_time: '2026-01-01T10:00:00.000Z',
+          duration_minutes: 60,
+          event_type: 'workout',
+          wellness_tags: ['movement', 'fresh-air'],
+        },
+        CTX
+      );
+      expect(mockDb.from).toHaveBeenCalledWith('calendar_events');
+      // No tenant_id: calendar_events has no such column (VTID-04321).
+      expect(mockDb.insert).toHaveBeenCalledWith({
+        user_id: CTX.user_id,
+        source_type: 'assistant',
+        title: 'Walk',
+        start_time: '2026-01-01T10:00:00.000Z',
+        end_time: '2026-01-01T11:00:00.000Z',
+        event_type: 'workout',
+        wellness_tags: ['movement', 'fresh-air'],
+      });
+      expect((res.result as Record<string, unknown>).start_time).toBe('2026-01-01T10:00:00.000Z');
+      expect((res.result as Record<string, unknown>).end_time).toBe('2026-01-01T11:00:00.000Z');
+    });
+
+    it('defaults title to Vitana Event, duration to 30 minutes and tags to an empty array', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: { id: 'cal-event-4' }, error: null });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        { start_time: '2026-01-01T10:00:00.000Z', wellness_tags: 'not-an-array' },
+        CTX
+      );
+      expect(res.ok).toBe(true);
+      expect(mockDb.insert).toHaveBeenCalledWith(
+        expect.objectContaining({
+          title: 'Vitana Event',
+          end_time: '2026-01-01T10:30:00.000Z',
+          event_type: 'wellness_nudge',
+          wellness_tags: [],
+        })
+      );
+      expect((res.result as Record<string, unknown>).title).toBe('Vitana Event');
+    });
+
+    it('returns error when insert returns a DB error', async () => {
+      const mockDb = buildSupabaseMock(undefined, { data: null, error: { message: 'calendar insert failed' } });
+      mockGetSupabase.mockReturnValue(mockDb);
+      const res = await executors['calendar_add_event'](
+        { title: 'Test', start_time: '2026-01-01T10:00:00.000Z' },
+        CTX
+      );
+      expect(res.ok).toBe(false);
+      expect(res.error).toBe('calendar insert failed');
+    });
+  });
+
+});

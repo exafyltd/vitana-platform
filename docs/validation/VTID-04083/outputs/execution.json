@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04083",
+  "task": "Standing guard against zero-caller functions in Command Hub app.js (T2)",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/test/command-hub/t2-no-zero-caller-functions.test.ts"
+  ],
+  "functions_removed": [
+    "fetchVtidsList", "extractLayer", "fetchVtidLedger", "approveApprovalItem",
+    "denyApprovalItem", "fetchAdminDevUsers", "grantDevAccess", "revokeDevAccess",
+    "toggleHeartbeatSession", "stopOperatorSse", "fetchOperatorHistory",
+    "ensureLineageLoaded", "ensureStepsStreamOpened", "closeStepsStream",
+    "renderDevAutopilotLineageView", "renderDevAutopilotStepsView"
+  ],
+  "lines_removed": 690,
+  "guard_allowlist": {
+    "structural_iife_exclusion": ["installAuthFetchInterceptor"],
+    "t1b_gated_memory_garden": [
+      "refreshMemoryGarden", "renderMemoryGardenView", "renderKnowledgeGraphView",
+      "renderRecallView", "renderInspectorView", "renderEmbeddingsView"
+    ]
+  },
+  "verification": {
+    "node_check": "pass",
+    "tsc_noemit": "pass",
+    "npm_run_build": "pass",
+    "jest_test_command_hub": "10 suites, 180/180 passing"
+  }
+}

@@ -1,0 +1,12 @@
+$ bash scripts/ci/test-vtid-04981-consume-credits-lockdown.sh
+VTID-04981: all assertions passed
+
+# mutation: REVOKE commented out
+psql:…/20261008170000_vtid_04981_consume_credits_lockdown.sql:33: ERROR:  VTID-04981: fn_consume_credits must not be executable by members
+
+$ npx jest test/vtid-04981-consume-credits-lockdown.test.ts
+    ✓ revokes members and keeps the gateway, and checks itself on apply (4 ms)
+    ✓ no later migration grants fn_consume_credits to members again (1 ms)
+    ✓ the gateway calls it through the service-role client
+    ✓ reproduces the VTID-03107 grant, applies the lockdown twice and passes the SQL assertions (1958 ms)
+Tests:       4 passed, 4 total

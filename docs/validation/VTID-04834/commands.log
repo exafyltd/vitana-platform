@@ -1,0 +1,13 @@
+# VTID-04834 — commands run in this session (services/gateway unless noted)
+(Supabase MCP, READ-ONLY SELECTs against oasis_events, project inmkhvwdcuyhnxkgfvsb)   # outputs/prod-evidence-readonly.txt
+npx tsc --noEmit -p .                                                                  # clean
+npx jest test/vtid-04834-live-session-start-stop-once.test.ts test/orb/routes/session-start-voice-telemetry.test.ts   # 13/13 — outputs/jest-vtid-04834.txt
+npx jest test/vtid-04834-live-session-start-stop-once.test.ts test/vtid-04835-shutdown-drain.test.ts \
+  test/orb/routes/session-start-voice-telemetry.test.ts test/orb/live/session test/vtid-04785-session-end-telemetry.test.ts \
+  test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/vtid-04776-voice-supervisor.test.ts --ci        # 45 suites, 765 tests, 56 snapshots passed (unchanged)
+npm run test:roles ; npm run test:support ; npm run test:operator                      # 105 / 84 / 30 pass — outputs/jest-related-suites.txt
+npx jest --silent --ci (full gateway suite)                                            # 1469 passed, 1 skipped; 23591 tests passed, 0 failed — outputs/jest-full-gateway.txt
+(repo root) node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base HEAD~5 --head HEAD \
+  --title "... (VTID-04834, VTID-04835)"                                               # ✓ change suite present and valid (uncommitted tree; --base origin/main sees no diff until committed)
+(repo root) node scripts/ci/staging-verify/lib.test.cjs                                # pass
+# VTID-04542 snapshot NOT updated: no voice payload changed (start/stop telemetry only).

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04696",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts", "cwd": "services/gateway",
+      "reason": "every Command Hub asset version named in a staging suite is the one index.html loads, and none is read at its bare URL" }
+  ]
+}

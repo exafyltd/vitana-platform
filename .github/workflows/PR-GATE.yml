@@ -1,0 +1,173 @@
+# PR-GATE — mechanical damage protection before merge (VTID-04950, plan E2;
+# vitana-platform twin of vitana-v1's VTID-04948 gate).
+#
+# scope guard · sparring record · test-weakening guard · red→green proof that a
+# fix's new Jest test fails on the base commit. Gateway type check, build and
+# the full Jest suite already gate PRs here (OASIS-PERSISTENCE, TEST-SUITE,
+# CICDL-GATEWAY-CI), so they are not repeated.
+#
+# Rollout: report-only. scripts/ci/pr-gate/config.json "enforce" makes it
+# blocking; setting it back to false is the owner's kill switch.
+
+name: PR-GATE
+
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+concurrency:
+  group: pr-gate-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  pr-gate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+
+      # VTID-05307: cache npm keyed on the gateway lockfile so the conditional
+      # "Gateway deps" npm ci below reuses a warm cache on a fix PR. This is a
+      # speed-only change: PR-GATE keeps running on every pull_request with no
+      # path filter (a path-filtered required gate stays pending and wedges
+      # merges — inv-code §5), and `enforce` is untouched.
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+          cache-dependency-path: services/gateway/package-lock.json
+
+      - name: Gate self-test
+        run: node --test scripts/ci/pr-gate/__tests__/*.test.mjs
+
+      - name: Live PR title
+        run: |
+          gh api "repos/${{ github.repository }}/pulls/${{ github.event.pull_request.number }}" --jq .title > "$RUNNER_TEMP/title.txt"
+          echo "PR_TITLE=$(cat "$RUNNER_TEMP/title.txt")" >> "$GITHUB_ENV"
+          echo "## PR-GATE — $(cat "$RUNNER_TEMP/title.txt")" >> "$GITHUB_STEP_SUMMARY"
+
+      # VTID-05059: every .claude/rules file has a .kiro/steering twin with the same paths,
+      # and every steering #[[file:…]] link resolves (scripts/ci/kiro-steering/guard.cjs).
+      - name: Kiro steering
+        id: kirosteering
+        continue-on-error: true
+        run: |
+          node --test scripts/ci/kiro-steering/guard.test.cjs
+          node scripts/ci/kiro-steering/guard.cjs .
+
+      - name: Scope guard
+        id: scope
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs scope --base "$BASE" --head "$HEAD"
+
+      - name: Sparring record
+        id: sparring
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs sparring --base "$BASE" --head "$HEAD"
+
+      - name: Test-weakening guard
+        id: weakening
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs weakening --base "$BASE" --head "$HEAD"
+
+      - name: Gateway deps (only when a VTID in the title is a "fix")
+        run: |
+          for v in $(echo "$PR_TITLE" | grep -Eo 'VTID-[0-9]{4,5}' | sort -u); do
+            f="docs/validation/$v/scope.json"
+            if [ -f "$f" ] && [ "$(node -p "require('./$f').kind")" = "fix" ]; then
+              (cd services/gateway && npm ci --no-audit --no-fund >/dev/null); exit 0
+            fi
+          done
+          echo "no fix VTID — red→green will skip"
+
+      - name: Red→green proof (fixes)
+        id: redgreen
+        continue-on-error: true
+        run: node scripts/ci/pr-gate/gate.mjs red-green --base "$BASE" --head "$HEAD"
+
+      - name: Verdict
+        env:
+          OUTCOMES: >-
+            scope=${{ steps.scope.outcome }}
+            kiro-steering=${{ steps.kirosteering.outcome }}
+            sparring=${{ steps.sparring.outcome }}
+            weakening=${{ steps.weakening.outcome }}
+            red-green=${{ steps.redgreen.outcome }}
+        run: |
+          FAILED=$(for o in $OUTCOMES; do case "$o" in *=success) ;; *) echo -n "${o%%=*} ";; esac; done)
+          ENFORCE=$(node -p "require('./scripts/ci/pr-gate/config.json').enforce === true")
+          if [ -z "$FAILED" ]; then echo "### ✅ PR-GATE passed" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          if [ "$ENFORCE" = "true" ]; then
+            echo "### ❌ PR-GATE failed: $FAILED" >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::PR-GATE failed: $FAILED"
+            exit 1
+          fi
+          echo "### ⚠️ PR-GATE (report-only) would fail: $FAILED" >> "$GITHUB_STEP_SUMMARY"
+          echo "::warning::PR-GATE report-only — would fail: $FAILED"
+
+  # VTID-05145: Claude Code ↔ Kiro handoff/lane files, state transitions and session/lane trailers
+  # (scripts/collab/queue.mjs; rules: .claude/rules/collaboration.md). VTID-05276: its own job and check run named
+  # exactly "Collab handoff" (the Project Manager requires it green before a merge), running every
+  # scripts/collab/*.test.mjs so a new collab test file runs in CI the moment it exists.
+  collab-handoff:
+    name: Collab handoff
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.head_ref }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Collab tests
+        run: node --test scripts/collab/*.test.mjs
+      - name: Collab handoff
+        run: node scripts/collab/queue.mjs validate --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"
+
+  # VTID-05213: Lane scope — a lane PR changes only its lane's declared `paths`; governance paths need an
+  # `executor: claude` lane (VTID-05276: or executor kiro reviewed by agent:vitana-lane-reviewer from a trusted lane
+  # file; protected gate files never); a kiro/ branch names its lane in trailers. Its own job and check run (not part
+  # of the report-only Verdict) because the Project Manager merges only when this check is green.
+  # VTID-05276: the BASE revision's checker judges the PR (head is data), as vitana-v1 and PLAN-SPAR do, so a PR never
+  # grades itself; GH_TOKEN lets it read the lane file of an open plan( PR of this repository.
+  lane-scope:
+    name: Lane scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.head_ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+      - name: Lane scope
+        run: |
+          git show "$BASE:scripts/collab/queue.mjs" > "$RUNNER_TEMP/queue.mjs"
+          if git cat-file -e "$BASE:scripts/collab/protected-gate-files.json" 2>/dev/null; then
+            git show "$BASE:scripts/collab/protected-gate-files.json" > "$RUNNER_TEMP/protected-gate-files.json"
+          fi
+          node "$RUNNER_TEMP/queue.mjs" scope-check --repo . --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --plan-repo "${{ github.repository }}" --summary "$GITHUB_STEP_SUMMARY"

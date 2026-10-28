@@ -1,0 +1,7 @@
+# full gateway jest run — summary lines (the full log was 7172032 bytes)
+  ●  Cannot log after tests are done. Did you forget to wait for something async in your test?
+  ● foo › returns the right value
+Snapshots:   109 passed, 109 total
+Test Suites: 1 skipped, 1465 passed, 1465 of 1466 total
+Tests:       29 skipped, 6 todo, 23545 passed, 23580 total
+Time:        181.152 s

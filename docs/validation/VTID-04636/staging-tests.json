@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04636",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway answers on the deployed build", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04636-reconciler-lineage.test.ts test/self-healing-reconciler-autopilot-link.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "runs the reconciler against a fix-mode lineage (reverted parent, in-flight and completed children) and the end-to-end operator pipeline scenario that drives it" }
+  ]
+}

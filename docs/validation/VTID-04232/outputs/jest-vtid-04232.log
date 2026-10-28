@@ -1,0 +1,9 @@
+PASS test/vtid-04231-validator-tools.test.ts
+PASS test/dev-autopilot-bridge.test.ts
+PASS test/vtid-04232-triage-tools.test.ts
+PASS test/vtid-04231-llm-stage-tool-loop.test.ts
+PASS test/vtid-04017-fix-mode.test.ts
+PASS test/vtid-03843-selfheal-child-inherits-onramp-override.test.ts
+PASS test/self-healing-pre-probe.test.ts
+Test Suites: 7 passed, 7 total
+Tests:       99 passed, 99 total

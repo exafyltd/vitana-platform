@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-05057",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "device contacts import is mounted and requires auth (rejected write probe)", "method": "POST", "path": "/api/v1/connected-apps/android-contacts/import", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "http", "name": "device contacts removal is mounted and requires auth (rejected write probe)", "method": "DELETE", "path": "/api/v1/connected-apps/android-contacts", "rejected_probe": true, "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/vtid-05057-contacts-phone-matching.test.ts test/vtid-04439-contacts-import-collisions.test.ts test/vtid-04402-connected-apps.test.ts", "cwd": "services/gateway",
+      "reason": "Importing is a write to the shared production database, so it is never exercised on staging. E.164 normalisation, verified+discoverable-only phone matching, test/service exclusion, the pre-migration fallback (no phone matches, no unknown column written), the method/region hint and the removal route are proven by Jest; the migration's trigger and function behaviour is proven against a throwaway local Postgres by docs/validation/VTID-05057/migration-test.sql (outputs/migration-test.txt)." }
+  ]
+}

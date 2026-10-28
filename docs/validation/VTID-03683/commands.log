@@ -1,0 +1,86 @@
+# VTID-03683 — commands run, in order
+#
+# Everything below is local (tests, typecheck, mutation) plus read-only
+# production SELECTs. No production write, no ORB session started, no deploy.
+
+# --- dependency ---
+npm install @aws-sdk/client-transcribe-streaming --save
+#   → services/gateway/package.json + package-lock.json
+#   NOTE: the lockfile change is unavoidable and trips VALIDATOR-CHECK exit 20.
+#   See acceptance.md "Dependency note".
+
+# --- typecheck, after each file was added ---
+npx tsc --noEmit
+#   → exit 0, clean. No `as never` / `as any` casts remain in the new code.
+#   Two real bugs were caught here rather than at runtime:
+#     1. `callViaRouter` opts field is `systemPrompt`, not `system`. An earlier
+#        draft passed `system` behind an `as never` cast — it compiled, and
+#        would have silently DROPPED the entire system instruction, leaving a
+#        generic assistant that sounded fine and knew nothing.
+#     2. required `service` field was missing from the same call.
+#   Also caught: two sites in routes/orb-live.ts re-declared the provider union
+#   locally as 'vertex'|'livekit'|'nova_sonic'; without updating them they would
+#   have silently excluded 'cascaded'.
+
+# --- new suite ---
+npx jest test/orb/live/upstream/cascaded-voice.test.ts
+#   → 11 passed, 11 total. See outputs/tests.txt
+
+# --- verifying the Transcribe language codes against the SDK, not against a guess ---
+grep -A60 'declare const LanguageCode' \
+  node_modules/@aws-sdk/client-transcribe-streaming/dist-types/models/enums.d.ts
+#   → confirms SR_RS: "sr-RS" exists, i.e. Serbian's blocker is Polly ONLY.
+#   This is why the eligibility check consults Polly BEFORE Transcribe: so the
+#   refusal reason names the service that is actually the blocker.
+
+# --- mutation verification (3 seams) ---
+# 1. remove the nova-native refusal   → 2 tests fail
+# 2. remove the Polly coverage guard  → 3 tests fail
+# 3. ignore the activation gate       → 1 test fails
+# each restored from a copy taken beforehand; full detail in outputs/mutation.txt
+npx jest test/orb/live/upstream/cascaded-voice.test.ts   # after each mutation
+
+# --- full regression ---
+npx jest
+#   → first run: 1 failure, test/orb/live/upstream/provider-name.test.ts, which
+#     pins VOICE_PROVIDER_NAMES as an EXACT list and correctly objected to the
+#     new member. Updated to name all four and KEEP the exact-list form rather
+#     than loosening it to toContain.
+#   → after: 673/674 suites (1 pre-existing skip), 12940 passed, 0 failed.
+
+# --- production measurement (READ-ONLY SELECTs, no writes) ---
+#   mean audio_out per turn_complete by session language, 14d
+#   count of nova_forced_vertex_unavailable, 14d  → 0 rows
+#   full results and the correction they forced: outputs/prod-telemetry.txt
+
+# =============================================================================
+# FOLLOW-UP after the first CI run on PR #3139
+# =============================================================================
+
+# The "Gateway (Jest, ~7.5k tests)" check FAILED without running a single test:
+#   ERR_PNPM_OUTDATED_LOCKFILE  Cannot install with "frozen-lockfile"
+# CI installs with pnpm against services/gateway/pnpm-lock.yaml; `npm install`
+# had only updated services/gateway/package-lock.json. Both are tracked here;
+# only the pnpm one is consumed by CI. The check NAME made this look like a
+# test failure, which it was not.
+cd services/gateway && pnpm install --lockfile-only
+#   → lockfileVersion stays '9.0'; only new churn beyond the transcribe package
+#     is one peer-suffix key on openai (credential-provider-node .78 -> .80),
+#     the expected consequence of adding an AWS SDK.
+
+# Verified under the CI-PINNED pnpm (root package.json packageManager: pnpm@9.0.0),
+# in an isolated copy so the working node_modules is never touched:
+#   cp package.json pnpm-lock.yaml $TMP && cd $TMP
+npx --yes pnpm@9.0.0 install --frozen-lockfile --lockfile-only
+#   → exit 0. NEGATIVE CONTROL, same command with the PREVIOUS lockfile against
+#     the new package.json → ERR_PNPM_OUTDATED_LOCKFILE, exit 1. So the check is
+#     known to be meaningful rather than merely green.
+
+# Impact-scan raised: ORB_CASCADED_VOICE_ENABLED / AWS_TRANSCRIBE_REGION have no
+# binding in any workflow. Added both to AWS-PROD-DEPLOY-GATEWAY.yml as
+# EMPTY-preserving workflow_dispatch inputs, matching the VTID-03560/03563
+# pattern (a lever settable only by hand-editing the live task def is the
+# VTID-03513 trap). Declaring is not setting: both default to EMPTY = preserve.
+#   → YAML parses (24 dispatch inputs), every run block bash -n clean
+#   → jq upsert applied twice against a mock task def: identical output,
+#     no duplicate key, unrelated vars (PORT) preserved.

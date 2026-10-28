@@ -1,0 +1,5 @@
+$ NODE_PATH=/opt/node22/lib/node_modules node -e "typescript.transpileModule(...)"   # syntax check of every changed .ts file
+ok (no diagnostics)
+$ cd services/gateway && npm ci   # to run jest and tsc locally
+npm error ENOTFOUND registry.npmjs.org   # the session's network policy blocks the npm registry (proxy 403)
+# jest, vitest and tsc therefore run first in CI on the PR; failures are fixed forward from the CI logs.

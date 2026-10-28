@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04911",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04910-partner-terms-draft-text.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the v1 legal text is documentation with no runtime surface; its final state (legal@vitanaland.com in §21.1 of all 11 languages, no counsel marker or placeholder, unchanged structure and owner wording, valid admin content) is proven here. Nothing is created, published or accepted."
+    }
+  ]
+}

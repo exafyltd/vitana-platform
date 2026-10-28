@@ -1,0 +1,18 @@
+# VTID-04226 — IAM probe for the --apply prerequisites, 2026-09-21, identity:
+{
+    "UserId": "AIDAW4F3EQWX3USM55A5V",
+    "Account": "472838866351",
+    "Arn": "arn:aws:iam::472838866351:user/claude-code-aws-agent"
+}
+-- aws iam get-role --role-name vitana-cron-dispatch-lambda-exec --region eu-central-1
+
+An error occurred (AccessDenied) when calling the GetRole operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: iam:GetRole on resource: role vitana-cron-dispatch-lambda-exec with an explicit deny in a permissions boundary: arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary. Go to https://us-east-1.console.aws.amazon.com/iam/home?region=us-east-1#/authorization-details/8c39ndjc06efamcn45sfo3zoe for complete details, or call the GetRequestAuthorizationDetails API with the following authorization id: 8c39ndjc06efamcn45sfo3zoe
+-- aws lambda get-function --function-name vitana-cron-dispatch --region eu-central-1
+
+An error occurred (AccessDeniedException) when calling the GetFunction operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: lambda:GetFunction on resource: arn:aws:lambda:eu-central-1:472838866351:function:vitana-cron-dispatch because no identity-based policy allows the lambda:GetFunction action
+-- aws scheduler get-schedule --name gateway-reminders-tick --region eu-central-1
+
+An error occurred (AccessDeniedException) when calling the GetSchedule operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: scheduler:GetSchedule on resource: arn:aws:scheduler:eu-central-1:472838866351:schedule/default/gateway-reminders-tick because no identity-based policy allows the scheduler:GetSchedule action
+-- aws scheduler list-schedules --region eu-central-1
+
+An error occurred (AccessDeniedException) when calling the ListSchedules operation: User: arn:aws:iam::472838866351:user/claude-code-aws-agent is not authorized to perform: scheduler:ListSchedules on resource: arn:aws:scheduler:eu-central-1:472838866351:schedule/*/* because no identity-based policy allows the scheduler:ListSchedules action

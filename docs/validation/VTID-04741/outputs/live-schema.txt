@@ -1,0 +1,20 @@
+# 2026-09-29, read-only after apply_migration vtid_04741_recommendation_commission_hold
+rc_check: CHECK ((status = ANY (ARRAY['pending','credited','skipped_ineligible','failed','reversed'])))
+rc_cols: ["confirm_after","confirmed_at","reversal_reason","reversed_at"]
+window_setting: {"days":30}
+index: idx_recommendation_commissions_due present
+live data before: 0 recommendation_commissions rows
+
+# 2026-09-29, read-only after apply_migration vtid_04741_commission_confirm_reverse_functions
+confirm_recommendation_commission(uuid): SECURITY DEFINER, acl postgres,service_role
+reverse_recommendation_commission(uuid,text): SECURITY DEFINER, acl postgres,service_role
+oasis_events: no `type` column, `role` NOT NULL; marketplace.recommendation.* events recorded to date: 0
+
+# 2026-09-29, read-only after apply_migration vtid_04741_confirm_commission_order_lock_exclusions
+confirm_recommendation_commission: order row FOR UPDATE present, service_bot_accounts/notification_test_actors check present, acl postgres,service_role
+
+# 2026-09-29, read-only after apply_migration vtid_04741_reverse_commission_order_recheck
+reverse_recommendation_commission: order row FOR UPDATE + order_not_reversing present, acl postgres,service_role
+
+# 2026-09-29, read-only after apply_migration vtid_04741_confirm_commission_refresh_terms
+confirm_recommendation_commission: refresh from order + order_no_commission present, acl postgres,service_role

@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-04738",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/live/session/vtid-04738-tool-answer-thinking.test.ts",
+      "cwd": "services/gateway",
+      "reason": "pinned by a unit test built from the production session live-cbda9130; a read-only staging suite cannot speak to the voice model"
+    }
+  ]
+}

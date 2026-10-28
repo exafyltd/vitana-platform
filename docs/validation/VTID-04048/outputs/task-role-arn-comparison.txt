@@ -1,0 +1,24 @@
+Confirmed via boto3 (this session's own AWS credentials), 2026-09-18:
+
+  ecs.describe_task_definition(taskDefinition='vitana-gateway-awsdr')
+    ['taskDefinition']['taskRoleArn']
+  -> arn:aws:iam::472838866351:role/vitana-ecs-task-role
+     (also executionRoleArn: arn:aws:iam::472838866351:role/vitana-ecs-task-execution-role)
+
+  ecs.describe_task_definition(taskDefinition='vitana-gateway')
+    ['taskDefinition']['taskRoleArn']
+  -> arn:aws:iam::472838866351:role/vitana-ecs-task-role
+
+Both the production gateway (vitana-gateway-awsdr) and the staging
+gateway (vitana-gateway) task definitions run under the SAME IAM task
+role. GCP's Workload Identity Federation trust binding authorizes that
+role ARN as an AWS principal — not a specific ECS service or task-def
+name — so the STS token exchange a running production task performs
+resolves to the exact same trusted principal staging already uses.
+No additional GCP-side grant was made or is needed for this activation.
+
+(Separately confirmed this session's AWS credentials cannot read IAM
+roles/policies directly — iam:ListRoles returned AccessDenied with an
+explicit deny in permissions boundary claude-code-aws-agent-boundary —
+so the trust policy's exact wording was read from this repo's own
+documentation, docs/AWS-PRODUCTION-BUILD-LOG.md, not queried live.)

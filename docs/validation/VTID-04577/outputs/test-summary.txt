@@ -1,0 +1,5 @@
+tsc --noEmit: clean
+vtid-04577 suite: 13 passed
+instruction + characterization: 53 suites passed
+full gateway suite: 1289 suites passed, 1 skipped; 20683 tests passed, 29 skipped, 6 todo, 0 failed
+VTID-04542 payload guard: regenerated, +262 bytes per scenario (the MEMORY LOOKUP line), tools unchanged

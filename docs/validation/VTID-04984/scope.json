@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04984",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/kiro/**",
+    "services/gateway/src/routes/operator.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/specs/command-hub-symbol-index.json",
+    "services/gateway/test/vtid-04984-*.test.ts",
+    "services/gateway/test/command-hub/vtid-04984-*.test.ts",
+    "services/gateway/test/command-hub/vtid-04975-kiro-operator-ui.test.ts",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "docs/validation/*/staging-tests.json",
+    "docs/validation/VTID-04984/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

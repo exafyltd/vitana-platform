@@ -1,0 +1,6 @@
+{"vtid":"VTID-04888","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"intents API (Find-a-Match / matchmaker entry) still auth-gated","path":"/api/v1/intents","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"http","name":"member directory still auth-gated","path":"/api/v1/community/members","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04888-rule45-exclusion.test.ts","cwd":"services/gateway","reason":"The change is database-side (RPC predicates, triggers, data fix-up) and was applied to the shared Supabase project before merge; proving it on staging would need a member write (posting an intent, editing a profile), which a read-only staging probe must not do. The SQL harness (scripts/ci/test-vtid-04888-rule45.sh, run before merge, see commands.log) proves the behaviour on a throwaway Postgres (exclusion, early returns, backstop, visibility triggers, grants, fix-up guard, rollback), the Jest suite pins the migration to the captured live bodies and the gateway fallback filter, and the post-apply read-only checks in outputs/ show the live database state."}
+]}

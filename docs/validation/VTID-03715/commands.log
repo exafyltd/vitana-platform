@@ -1,0 +1,105 @@
+# VTID-03715 — commands actually run.
+
+# --- Verifying the claim before acting on it -------------------------------
+
+# A Codex review comment on PR #3169 asserted the server discards the mime.
+# Checked every link against source rather than trusting it.
+
+# 1. Does the cascade declare the real rate? Yes.
+grep -n "mimeType" services/gateway/src/orb/live/upstream/cascaded-live-client.ts
+#   -> const mimeType = `audio/pcm;rate=${POLLY_PCM_SAMPLE_RATE_HZ}`;
+#   -> this.audioHandler?.({ dataB64: slice.toString('base64'), mimeType });
+
+# 2. Does the handler forward it? No — dataB64 only.
+grep -n "onAudioResponse" services/gateway/src/orb/live/session/upstream-message-handler.ts
+#   -> 1747: ctx.callbacks.onAudioResponse(event.dataB64);
+#   -> 238/1616: onAudioResponse: (audioB64: string) => void;   <- no mime param
+
+# 3. What do the forwarding sites send? A literal.
+grep -n "mime: 'audio/pcm;rate=24000'" services/gateway/src/routes/orb-live.ts
+#   -> 2132, 2145, 15184, 15246, 16241, 16428, 16619   (seven sites)
+
+# 4. Which of those seven are actually on the upstream path?
+#    Read each. FOUR are generateChimePcm() — locally synthesized, and
+#    `const sampleRate = 24000` in that same function makes 24000 CORRECT
+#    for them. They are left alone deliberately.
+#      2132, 15246, 16241, 16619  -> chime, correct as-is
+#    THREE carry upstream audio and were the bug:
+#      15184 -> SSE onAudioResponse callback
+#      16428 -> WS  onAudioResponse callback
+#      2145  -> flushPrebufferedGreeting replay
+grep -n "bufferedGreetingChunks" services/gateway/src/routes/orb-live.ts
+#   -> 16419: (liveSession.bufferedGreetingChunks ||= []).push(audioB64);
+#      i.e. the prebuffer is filled INSIDE the WS onAudioResponse callback,
+#      so it holds cascade audio too and needed the same fix.
+
+# Conclusion: the claim is correct. VTID-03711 fixed the CLIENT parser; the
+# rate still never survived the SERVER, so ordinary cascaded speech was
+# unaffected by it.
+
+# --- Governance -------------------------------------------------------------
+
+curl -s -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+  -H "Content-Type: application/json" \
+  -d '{"source":"claude-code","layer":"backend","module":"orb-live-audio-mime"}'
+#   -> {"ok":true,"vtid":"VTID-03715","num":3715,...}
+
+# --- Fix + verification -----------------------------------------------------
+
+cd services/gateway
+
+npx jest test/orb/routes/upstream-audio-mime-forwarding.test.ts
+#   -> 12/12                                  (outputs/targeted-tests.txt)
+
+# Mutation check 1 — drop the mime in the handler again.
+#   ctx.callbacks.onAudioResponse(event.dataB64, event.mimeType)
+#     -> ctx.callbacks.onAudioResponse(event.dataB64)
+#   -> 2 failed / 10 passed; reverted -> 12/12
+#
+# Mutation check 2 — re-hardcode the forwarding rate.
+#   mime: audioMime || DEFAULT_UPSTREAM_AUDIO_MIME
+#     -> mime: 'audio/pcm;rate=24000'
+#   -> 2 failed / 10 passed (incl. the structural chime sweep, confirming it
+#      distinguishes an upstream path from a chime); reverted -> 12/12
+#                                             (outputs/mutation-check.txt)
+
+npx jest test/orb/
+#   -> 127/127 suites, 1736/1742 (6 pre-existing todo)
+#                                             (outputs/orb-suite.txt)
+
+npx jest
+#   -> 690/690 suites, 13148 passing, 0 failures
+#                                             (outputs/full-suite.txt)
+
+npx tsc --noEmit
+#   -> clean, exit 0                          (outputs/tsc.txt, empty)
+
+# --- Six tests failed first, and all six were MINE --------------------------
+
+# Not pre-existing. Each pinned the single-argument call shape:
+#
+#   upstream-message-handler.test.ts   x3   toHaveBeenCalledWith('AQIDBA==')
+#   upstream-session-binding.test.ts   x1   toHaveBeenCalledWith('AQID')
+#   upstream-duplicate-turn-suppression.characterization.test.ts
+#                                      x1   regex on `onAudioResponse(audioB64);`
+#   upstream-greeting-reemit-suppression.characterization.test.ts
+#                                      x1   indexOf('...onAudioResponse(audioB64)')
+#
+# Re-recorded to the real new shape, not loosened:
+#   - the four arg assertions now ALSO assert the mime. Strictly stronger —
+#     every one of those tests already supplied a mime in its input.
+#   - the two characterization tests keep pinning the ORDERING invariant they
+#     exist for (guard before forward) while letting the arg list vary. The
+#     indexOf one had silently gone to -1 rather than failing loudly, which is
+#     its own small lesson about exact-prefix source matching.
+
+# --- NOT done, and why ------------------------------------------------------
+
+which aws
+#   -> aws: command not found
+# So: no task-def read, no IAM check, no re-dispatch of the cascade flag.
+
+# No live listen. Confirming normal-speed cascaded speech requires hearing a
+# real ru/pl session after PUBLISH + re-enabling the flag — this session cannot
+# play audio, and generating sessions as the test account would be a write to
+# production, which CLAUDE.md forbids absolutely.

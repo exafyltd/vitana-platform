@@ -1,0 +1,29 @@
+# VTID-04419 — commands run (2026-09-23)
+
+## VTID
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate {source:claude-code,layer:DEV,module:orb-brain-inspector} -> VTID-04419
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04419'
+
+## Read-only (Supabase MCP execute_sql)
+pg_indexes oasis_events -> idx_oasis_events_topic_created_desc (topic, created_at DESC) exists; no metadata index
+EXPLAIN (ANALYZE, BUFFERS) topic IN (…) AND created_at 6 h window AND metadata->>session_id = … -> Index Scan idx_oasis_events_topic_created_desc, 20 buffers, 0.2 ms
+orb.live.diag rows, 7 d -> 11 558 (≈1 650/day)
+one real staging session (2026-09-22 22:17 UTC) projected to the inspector's fields only -> outputs/session-events-sanitized.json (ids replaced, no text/email/UA)
+
+## Staging, pre-merge (anonymous)
+GET /api/v1/admin/conversation/sessions  -> 404 text/html (not deployed)
+GET /api/v1/admin/conversation/decisions -> 401 application/json (same router, admin gate live)
+
+## Gateway
+npx tsc --noEmit -p .                                                              -> clean
+jest test/services/conversation/vtid-04419-session-brain-inspector.test.ts        -> 14 passed
+jest test/orb test/routes test/services/conversation test/scripts test/command-hub -> 405 suites, 6648 passed, 1 skipped, 6 todo
+
+## Command Hub
+node --check app.js                                                               -> ok
+node scripts/generate-command-hub-symbol-index.mjs                                -> regenerated
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff>                 -> No CSP pattern hits in added lines.
+node docs/validation/VTID-04419/outputs/harness-server.js & ; node harness-shoot.js
+   -> first mobile capture: session-id input 260 px tall (flex-basis in a column layout); Ended value wrapped to 3 lines
+   -> fixed (.conv-brain__input flex: 0 0 auto at ≤480px; shorter Ended value)
+   -> desktop + mobile, Simulator + Journey Context: no page errors, no horizontal overflow (shoot-report.json)

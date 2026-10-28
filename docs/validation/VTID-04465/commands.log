@@ -1,0 +1,10 @@
+cd services/gateway
+node node_modules/.bin/jest test/vtid-04465-operator-pipeline-regression.test.ts --verbose   # 1 suite, 19 passed (outputs/jest-run.txt)
+node node_modules/.bin/jest test/vtid-04465-operator-pipeline-regression.test.ts             # repeated 5x: 19 passed each time, ~4.9 s
+node node_modules/.bin/tsc --noEmit -p .                                                    # exit 0 (tsconfig.json excludes test/)
+node node_modules/.bin/tsc -p <scratch tsconfig extending tsconfig.json, including
+    test/vtid-04465-operator-pipeline-regression.test.ts, test/operator-pipeline/*.ts,
+    test/support-pipeline/*.ts, strict>                                                     # exit 0; a probe file with a type error was reported, then removed
+node node_modules/.bin/jest test/operator-pipeline/__mutants__/<mutant>.test.ts             # 8 mutants, each fails >=1 test (outputs/mutation-run.txt); mutants deleted afterwards
+node node_modules/.bin/jest <temporary copy with the KNOWN BUG test as plain it()> -t "KNOWN BUG"  # fails only on the final ledger assertion (outputs/known-bug-ledger.txt); copy deleted
+node node_modules/.bin/jest test/vtid-04456-customer-support-pipeline-regression.test.ts    # 22 passed (shared FakePlatform unaffected)

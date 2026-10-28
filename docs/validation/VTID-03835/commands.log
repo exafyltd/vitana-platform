@@ -1,0 +1,77 @@
+VTID-03835/03836/03837 — commands.log
+======================================
+
+## VTID allocation (real, via the governed gateway endpoint)
+
+$ curl -s -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"operator-console-codebase-read"}'
+{"ok":true,"vtid":"VTID-03835","num":3835,"id":"e48739f1-0fa4-4cb0-89db-a0393afc2ec2"}
+
+$ curl -s -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"INFRA","module":"operator-console-aws-readonly"}'
+{"ok":true,"vtid":"VTID-03836","num":3836,"id":"be6d2cf8-2abd-48af-8184-bb1964012a43"}
+
+$ curl -s -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"operator-console-db-readonly"}'
+{"ok":true,"vtid":"VTID-03837","num":3837,"id":"54d1e0f2-e393-417f-9a18-129f7178f807"}
+
+NOTE: no gateway PATCH endpoint was exercised to set title/status/spec_status
+on these three ledger rows (none is documented as reachable from this session,
+same gap VTID-03816's changelog entry recorded) — left to an operator via the
+Command Hub, per that same precedent.
+
+## AC-1 (VTID-03836): aws-ecs-readonly.ts never imports a mutating ECS command
+
+$ grep -n "RunTask\|UpdateService\|RegisterTaskDefinition" services/gateway/src/services/aws-ecs-readonly.ts
+11: * task's IAM role, which already grants `ecs:RunTask` (it dispatches the
+74: * UpdateService/RunTask/RegisterTaskDefinition. Rejects any name not in
+
+$ grep -n "^import" services/gateway/src/services/aws-ecs-readonly.ts
+31:import { ECSClient, DescribeServicesCommand } from '@aws-sdk/client-ecs';
+
+## AC-5 (VTID-03835): OPERATOR_CODEBASE_READ_ENABLED / OPERATOR_DB_READONLY_ENABLED
+   pinned on staging only
+
+$ grep -n "OPERATOR_CODEBASE_READ_ENABLED\|OPERATOR_DB_READONLY_ENABLED" .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+567:                                                "OPERATOR_CODEBASE_READ_ENABLED",
+568:                                                "OPERATOR_DB_READONLY_ENABLED",
+594:                          {name:"OPERATOR_CODEBASE_READ_ENABLED", value:"true"},
+595:                          {name:"OPERATOR_DB_READONLY_ENABLED", value:"true"},
+
+$ grep -n "OPERATOR_CODEBASE_READ_ENABLED\|OPERATOR_DB_READONLY_ENABLED\|OPERATOR_AWS_READONLY_ENABLED" .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+(no matches — confirms not pinned in prod)
+
+## AC-3 (VTID-03836): OPERATOR_AWS_READONLY_ENABLED is NOT pinned anywhere by this PR
+
+$ grep -rn "OPERATOR_AWS_READONLY_ENABLED" .github/workflows/
+(no matches in any workflow — confirms the kill switch is code-only, not enabled anywhere yet)
+
+## AC-3 (VTID-03837): dev_autopilot_executions/dev_autopilot_plan_versions have no plain vtid column
+
+$ grep -n "vtid\b" supabase/migrations/20260416100000_dev_autopilot.sql
+175:  self_healing_vtid         TEXT,
+192:CREATE INDEX IF NOT EXISTS idx_dev_autopilot_exec_self_healing_vtid
+193:  ON dev_autopilot_executions(self_healing_vtid)
+194:  WHERE self_healing_vtid IS NOT NULL;
+
+## AC-2 (VTID-03837): dev_db_query reuses the existing SUPABASE_SERVICE_ROLE read pattern
+
+$ grep -n "SUPABASE_SERVICE_ROLE" services/gateway/src/services/gemini-operator.ts | grep -E "executeDevDbQuery|executeDevDeploymentStatus" -A0 -B0
+74:const SUPABASE_SERVICE_ROLE = process.env.SUPABASE_SERVICE_ROLE;
+1883:    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+2024:  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+2221:  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+2407:  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+2521:  const EVENTS_SUPABASE_KEY = process.env.SUPABASE_SERVICE_ROLE || '';
+
+(both executeDevDeploymentStatus, an existing pre-VTID-03835 dev_ read tool, and
+ the new executeDevDbQuery read process.env.SUPABASE_SERVICE_ROLE the same way —
+ no new credential, no widened scope)
+
+## Final verification: tsc + targeted jest slice
+
+$ cd services/gateway && npx tsc --noEmit; echo exit=$?
+exit=0 (see outputs/tsc-noemit.txt, empty output)
+
+$ cd services/gateway && npx jest test/vtid-03835-operator-console-read-tools.test.ts \
+    test/vtid-03835-github-service-read-access.test.ts test/operator-command.test.ts \
+    test/vtid-03820-operator-execution-onramp.test.ts test/vtid-03819-create-operator-task-dedup.test.ts
+Test Suites: 5 passed, 5 total
+Tests:       2 skipped, 53 passed, 55 total  (see outputs/jest-operator-read-tools.txt)

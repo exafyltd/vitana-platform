@@ -1,0 +1,98 @@
+# VTID-03794 — commands log
+
+## Investigation: reproduce the disconnect with a real client-level WS hook
+
+Playwright script (scratch, not committed) against
+https://preview-aws.vitanaland.com, both a device-preview iframe attempt
+(blocked by a separate admin login the community test account cannot
+pass) and a plain top-level tab, hooking `window.WebSocket` at
+`context.addInitScript` level so open/close/error are captured with real
+`event.code`/`event.reason`/`event.wasClean` — not inferred from server
+logs.
+
+Result (plain tab, 3-minute run):
+  t=3913ms   WS opens, session live-6ce9ccdb starts
+  t=61011ms  WS closes — code=1005, reason="", wasClean=true   (57.1s alive)
+  t=61460ms  reconnects, brand-new session live-67007848
+  t=120009ms WS closes — code=1005 again                        (58.5s alive)
+  t=120546ms reconnects, brand-new session live-27805caf
+  t=181155ms WS closes — code=1005 again                        (60.6s alive)
+  t=181749ms reconnects, brand-new session live-fea6d047
+
+## Investigation: confirm lost continuity against real oasis_events
+
+Queries run via the Supabase MCP tool against project inmkhvwdcuyhnxkgfvsb.
+Correct column mapping confirmed by reading
+services/gateway/src/services/oasis-event-service.ts:
+`event.type` -> `topic` column, `event.payload` -> `metadata` column
+(JSON, spread + env tag).
+
+  SELECT created_at, topic, metadata->>'stage', metadata->>'session_id',
+         metadata->>'reason'
+  FROM oasis_events
+  WHERE created_at > now() - interval '20 minutes'
+    AND topic IN ('vtid.live.session.start','vtid.live.session.stop','orb.live.diag')
+  ORDER BY created_at ASC;
+
+  -- live-c83bb562-...: healthy 112s conversation, multiple turn_complete,
+  -- then session.stop reason="client_disconnect" + orb.live.diag
+  -- stage="upstream_closed" reason="ws_session_cleanup"
+  -- 353ms later: live-db65374d-... starts fresh
+
+  SELECT created_at, topic, metadata->>'stage', metadata
+  FROM oasis_events
+  WHERE metadata->>'session_id' = 'live-db65374d-51dc-45a6-8e98-015ecaec305b'
+  ORDER BY created_at ASC;
+
+  -- confirmed: wake_opener:"safe_fast_newday_overview" — a first-open
+  -- greeting, not a VTID-02020 recovery prompt. grep on the raw dump for
+  -- "reconnect"/"native_resume"/"reconnect_opening_silent" found nothing.
+
+## Code trace
+
+  grep -n "30_000|clientPingInterval|VTID-STREAM-KEEPALIVE" \
+    services/gateway/src/routes/orb-live.ts
+  -- confirmed the comment still says "Cloud Run ALB" and the interval is 30s
+
+  grep -n "reconnect_stage|reconnectStage|_preDisconnectStage|transcript_history" \
+    services/gateway/src/frontend/command-hub/orb-widget.js
+  -- confirmed _announceDisconnect() (called from both w.onclose and the
+  -- 30s client watchdog) correctly computes stage='idle' when nothing was
+  -- in flight, and _sessionStart() attaches reconnect_stage whenever
+  -- hasStage||hasHistory is true — hasStage is `!!_s._preDisconnectStage`,
+  -- which is truthy even for the literal string 'idle'.
+
+  Read services/gateway/src/orb/live/session/live-session-controller.ts
+  around the reconnectStage/isReconnectStart computation (~L741-756 before
+  this fix) — confirmed reconnectStage collapses "field absent" and "field
+  explicitly idle" to the same normalized 'idle' value, which
+  isReconnectStart's `!== 'idle'` check cannot tell apart.
+
+  grep -n "sendReconnectRecoveryPromptToLiveAPI(" services/gateway/src/routes/orb-live.ts
+  Read services/gateway/src/routes/orb-live.ts around L15749-15765
+  -- confirmed isReconnectGreetingSkip (session.resumedFromHistory ||
+  -- session._reconnectCount>0) is what actually routes to the recovery
+  -- prompt vs the fresh wake-brief greeting, and resumedFromHistory is set
+  -- directly from isReconnectStart in live-session-controller.ts.
+
+## Fix + verification
+
+  cd services/gateway
+  npx tsc --noEmit -p .
+  -- clean
+
+  npx jest test/orb/live/session/live-session-controller.test.ts
+  -- 80/80 passing (78 pre-existing + 2 new)
+
+  npx jest test/orb
+  -- 197/197 suites passing, 3536 tests passing (6 pre-existing todo), 0 failures
+
+## Mutation verification (by hand, before committing)
+
+  cp src/orb/live/session/live-session-controller.ts /tmp/lsc-backup.ts
+  # reverted isReconnectStart to the old two-term formula
+  npx jest test/orb/live/session/live-session-controller.test.ts \
+    -t "reconnect_stage is explicitly"
+  -- FAILS as expected: resumedFromHistory received undefined, expected true
+  cp /tmp/lsc-backup.ts src/orb/live/session/live-session-controller.ts
+  # restored; diff confirmed identical to the committed fix

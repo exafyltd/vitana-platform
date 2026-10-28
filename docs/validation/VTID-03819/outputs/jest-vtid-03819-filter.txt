@@ -1,0 +1,196 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [VTID-03819] Duplicate task detected — reusing VTID-04010 ("Existing task", similarity=0.970) instead of creating a new one
+
+      at createOperatorTask (src/services/operator-service.ts:996:13)
+
+  console.log
+    [VTID-0542] Allocated VTID: VTID-04011 (num=4011, source=operator-chat)
+
+      at allocateVtid (src/services/operator-service.ts:685:13)
+
+  console.log
+    [VTID-0542] Using allocated VTID: VTID-04011
+
+      at createOperatorTask (src/services/operator-service.ts:1013:13)
+
+  console.log
+    [VTID-0542] Task entry updated: VTID-04011 (1 row(s))
+
+      at updateAllocatedTaskEntry (src/services/operator-service.ts:964:13)
+
+  console.log
+    [VTID-0532] Task spec event emitted: 26dce9bd-91fd-4f04-bea6-1ef8cab64309 for VTID-04011
+
+      at emitTaskSpecEvent (src/services/operator-service.ts:903:13)
+
+  console.log
+    [VTID-0542] Operator task created: VTID-04011 - "Gateway: DEV: a brand new task nobody has filed before"
+
+      at createOperatorTask (src/services/operator-service.ts:1060:11)
+
+  console.log
+    [VTID-0542] Allocated VTID: VTID-04013 (num=4013, source=operator-chat)
+
+      at allocateVtid (src/services/operator-service.ts:685:13)
+
+  console.log
+    [VTID-0542] Using allocated VTID: VTID-04013
+
+      at createOperatorTask (src/services/operator-service.ts:1013:13)
+
+  console.log
+    [VTID-0542] Task entry updated: VTID-04013 (1 row(s))
+
+      at updateAllocatedTaskEntry (src/services/operator-service.ts:964:13)
+
+  console.log
+    [VTID-0532] Task spec event emitted: d3a09664-6d07-4022-b569-96ef8056179b for VTID-04013
+
+      at emitTaskSpecEvent (src/services/operator-service.ts:903:13)
+
+  console.log
+    [VTID-0542] Operator task created: VTID-04013 - "Gateway: DEV: a task related to an existing one"
+
+      at createOperatorTask (src/services/operator-service.ts:1060:11)
+
+PASS test/vtid-03819-create-operator-task-dedup.test.ts
+  createOperatorTask dedup wiring (VTID-03819)
+    ✓ short-circuits on a duplicate: returns the existing VTID and never calls the allocator (17 ms)
+    ✓ creates normally when no similar task is found, and stamps the new row embedding (5 ms)
+    ✓ creates normally on a related (non-duplicate) match, and stamps related_vtid in metadata (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03819-related-task-chip.test.ts
+  Related-task chip (VTID-03819)
+    ✓ defines createRelatedTaskChip() (1 ms)
+    ✓ createRelatedTaskChip reads task.metadata.related_vtid and returns null when absent (1 ms)
+    ✓ the chip click filters the board via state.taskSearchQuery + renderApp() (1 ms)
+    ✓ createTaskCard() appends the related chip after the stage timeline
+    ✓ renderTaskDrawer() appends the related chip to the drawer header
+    ✓ styles.css defines the .task-related-chip class (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-03819] Embedding generation unavailable (no_api_key) — skipping similarity check
+
+      65 |   const embeddingResult = await generateEmbedding(text);
+      66 |   if (!embeddingResult.ok || !embeddingResult.embedding) {
+    > 67 |     console.warn(`[${VTID}] Embedding generation unavailable (${embeddingResult.error ?? 'unknown error'}) — skipping similarity check`);
+         |             ^
+      68 |     return {};
+      69 |   }
+      70 |
+
+      at checkForSimilarTask (src/services/ledger-task-dedup.ts:67:13)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:53:20)
+
+  console.warn
+    [VTID-03819] find_similar_vtid_tasks RPC failed: 500 - {"error":"internal"}
+
+      87 |     if (!resp.ok) {
+      88 |       const errText = await resp.text();
+    > 89 |       console.warn(`[${VTID}] find_similar_vtid_tasks RPC failed: ${resp.status} - ${errText}`);
+         |               ^
+      90 |       return {};
+      91 |     }
+      92 |
+
+      at checkForSimilarTask (src/services/ledger-task-dedup.ts:89:15)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:61:20)
+
+  console.warn
+    [VTID-03819] Similarity check error: network down
+
+      103 |     return { related: best };
+      104 |   } catch (error: any) {
+    > 105 |     console.warn(`[${VTID}] Similarity check error: ${error.message}`);
+          |             ^
+      106 |     return {};
+      107 |   }
+      108 | }
+
+      at checkForSimilarTask (src/services/ledger-task-dedup.ts:105:13)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:68:20)
+
+  console.warn
+    [VTID-03819] Could not stamp embedding for VTID-04003: no_api_key
+
+      122 |     const embeddingResult = await generateEmbedding(text);
+      123 |     if (!embeddingResult.ok || !embeddingResult.embedding) {
+    > 124 |       console.warn(`[${VTID}] Could not stamp embedding for ${vtid}: ${embeddingResult.error ?? 'unknown error'}`);
+          |               ^
+      125 |       return;
+      126 |     }
+      127 |
+
+      at stampTaskEmbedding (src/services/ledger-task-dedup.ts:124:15)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:144:5)
+
+  console.warn
+    [VTID-03819] Embedding PATCH failed for VTID-04004: 500 - {"error":"internal"}
+
+      143 |     if (!resp.ok) {
+      144 |       const errText = await resp.text();
+    > 145 |       console.warn(`[${VTID}] Embedding PATCH failed for ${vtid}: ${resp.status} - ${errText}`);
+          |               ^
+      146 |     }
+      147 |   } catch (error: any) {
+      148 |     console.warn(`[${VTID}] Embedding stamp error for ${vtid}: ${error.message}`);
+
+      at stampTaskEmbedding (src/services/ledger-task-dedup.ts:145:15)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:151:5)
+
+  console.warn
+    [VTID-03819] Embedding stamp error for VTID-04005: network down
+
+      146 |     }
+      147 |   } catch (error: any) {
+    > 148 |     console.warn(`[${VTID}] Embedding stamp error for ${vtid}: ${error.message}`);
+          |             ^
+      149 |   }
+      150 | }
+      151 |
+
+      at stampTaskEmbedding (src/services/ledger-task-dedup.ts:148:13)
+      at Object.<anonymous> (test/vtid-03819-ledger-task-dedup.test.ts:157:5)
+
+PASS test/vtid-03819-ledger-task-dedup.test.ts
+  checkForSimilarTask (VTID-03819)
+    ✓ returns {} when embedding generation fails (fail open) (5 ms)
+    ✓ returns {} when the RPC call fails (1 ms)
+    ✓ returns {} when the RPC call throws (1 ms)
+    ✓ returns {} when no matches are found (1 ms)
+    ✓ classifies a match at/above HARD_DUPLICATE_THRESHOLD as a duplicate (1 ms)
+    ✓ classifies a match between RELATED_THRESHOLD and HARD_DUPLICATE_THRESHOLD as related, not duplicate
+    ✓ sends the RPC request against find_similar_vtid_tasks with the generated embedding (1 ms)
+  stampTaskEmbedding (VTID-03819)
+    ✓ PATCHes the embedding column on the newly-created row (2 ms)
+    ✓ never throws when embedding generation fails (1 ms)
+    ✓ never throws when the PATCH request fails (1 ms)
+    ✓ never throws when fetch itself throws (1 ms)
+  Supabase-not-configured guard (VTID-03819, source check)
+    ✓ checkForSimilarTask returns {} before generating an embedding when Supabase is unconfigured (1 ms)
+    ✓ stampTaskEmbedding returns before generating an embedding when Supabase is unconfigured
+
+Test Suites: 3 passed, 3 total
+Tests:       22 passed, 22 total
+Snapshots:   0 total
+Time:        0.689 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03819-ledger-task-dedup.test.ts|test\/vtid-03819-related-task-chip.test.ts|test\/vtid-03819-create-operator-task-dedup.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

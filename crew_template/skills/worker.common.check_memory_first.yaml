@@ -1,0 +1,154 @@
+# =============================================================================
+# Skill: Worker Common Check Memory First - VTID-01164
+# =============================================================================
+# Enforces memory-first governance before any apply_patch operation.
+# Searches internal memory/indexer endpoints and OASIS/task spec history.
+# =============================================================================
+
+skill_id: worker.common.check_memory_first
+name: Check Memory First
+description: |
+  Enforces memory-first governance before any apply_patch. Searches internal
+  memory/indexer endpoints and OASIS/task spec history to answer: "do we have
+  prior work relevant to X?" Returns memory hits, relevant references, and
+  confidence score.
+version: 1.0.0
+category: worker
+domain: common
+vtid: VTID-01164
+
+provider:
+  type: internal
+  module: services/agents/workforce/skills/checkMemoryFirst
+  function: checkMemoryFirst
+  timeout_ms: 30000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  query:
+    type: string
+    required: true
+    description: Search query describing the work to be done
+    examples:
+      - "Add new endpoint for user authentication"
+      - "Fix CSP headers in Command Hub"
+      - "Create RLS policy for tenant isolation"
+
+  target_paths:
+    type: array
+    required: false
+    description: File paths that will be modified (helps narrow memory search)
+    items:
+      type: string
+    examples:
+      - ["services/gateway/src/routes/auth.ts"]
+      - ["supabase/migrations/"]
+
+  include_oasis_history:
+    type: boolean
+    required: false
+    default: true
+    description: Search OASIS event history for relevant prior work
+
+  include_kb:
+    type: boolean
+    required: false
+    default: true
+    description: Search knowledge base for relevant documentation
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether the memory check completed successfully
+
+  memory_hit:
+    type: boolean
+    description: Whether relevant prior work was found
+
+  confidence:
+    type: number
+    description: Confidence score (0.0-1.0) that prior work is relevant
+
+  relevant_refs:
+    type: array
+    description: List of relevant references found
+    items:
+      type: object
+      properties:
+        type:
+          type: string
+          enum: [vtid, doc, event, pattern]
+        id:
+          type: string
+        title:
+          type: string
+        relevance_score:
+          type: number
+        summary:
+          type: string
+
+  recommendation:
+    type: string
+    description: Recommendation based on memory search results
+    enum:
+      - proceed
+      - review_prior_work
+      - consult_prior_vtid
+      - duplicate_detected
+
+  prior_vtids:
+    type: array
+    description: Related VTIDs found in memory
+    items:
+      type: string
+
+  error:
+    type: string
+    description: Error message if check failed
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_common.memory_first.start
+    - vtid.stage.worker_common.memory_first.success
+    - vtid.stage.worker_common.memory_first.failed
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - query
+    - memory_hit
+    - confidence
+    - relevant_refs_count
+
+usage:
+  roles:
+    - worker
+    - orchestrator
+  primary_role: worker
+  use_cases:
+    - Check for prior work before applying patches
+    - Detect duplicate work attempts
+    - Find related VTIDs and patterns
+    - Enforce governance memory-first rule
+
+error_handling:
+  retry_attempts: 2
+  retry_backoff_ms: 1000
+  fallback_strategy: continue_with_warning
+
+  error_codes:
+    MEMORY_UNAVAILABLE:
+      description: Memory/indexer service is not reachable
+      recoverable: true
+
+    SEARCH_TIMEOUT:
+      description: Memory search exceeded timeout
+      recoverable: true
+
+    INVALID_QUERY:
+      description: Query format is invalid
+      recoverable: false

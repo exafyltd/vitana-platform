@@ -1,0 +1,5 @@
+# 01 — CoA loader: non-shipped template before file exists (expect error)
+{
+  "status": "error",
+  "message": "Chart template 'uae_ifrs' not found. Expected at assets/charts/uae_ifrs.json"
+}

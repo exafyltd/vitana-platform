@@ -1,0 +1,11 @@
+# run in services/gateway, branch claude/zealous-wozniak-g57gnn after merging origin/main (b4852b9db)
+npx tsc --noEmit -p .                                   # clean
+npx jest test/vtid-04618-memory-owned-by-user.test.ts test/orb/live/session/vtid-04619-navigate-backstop.test.ts \
+  test/orb/latency test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts \
+  test/vtid-04560-role-separation-regression.test.ts    # 154 passed, 56 snapshots passed
+npm run test:nav-redirect                               # 72 passed (VTID-04607 suite, unchanged by this PR)
+npx jest                                                # 1306 suites passed (1 skipped), 20,934 tests passed, 0 failed
+npx jest test/orb/latency -u                            # VTID-04542 payload identity regenerated on purpose: only the
+                                                        # authenticated community de context_instruction hash moved
+# mutation check (VTID-04619): commenting out the maybeRunNavigateBackstop call in
+# upstream-message-handler.ts fails "navigates once when the member says okay mach das"; restored after.

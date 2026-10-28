@@ -1,0 +1,5 @@
+# Captured 2026-09-25 15:47 UTC, before this PR, against staging (git 1e09f774605d)
+GET https://preview-aws-gateway.vitanaland.com/api/v1/jev/decisions -> 404 text/html; charset=utf-8
+<pre>Cannot GET /api/v1/jev/decisions</pre>
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info -> 200 application/json
+{"ok":true,"env":"staging","git_commit":"1e09f774605d673a4655d47c0fed4781ac7fb471"}

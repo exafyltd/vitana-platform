@@ -1,0 +1,1121 @@
+{
+  "version": "1.0.0",
+  "vtid": "VTID-05084",
+  "doctrine": "docs/autonomy/LOOP-ENGINEERING.md",
+  "principle": "A check is not a loop. Sensors observe; loops close sense -> act -> verify with the same sensor -> learn; one shared engine.",
+  "loops": [
+    {
+      "id": "L1",
+      "name": "Repair",
+      "group": "platform",
+      "risk": "R1",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "Fourteen deterministic routines run inside the gateway (routine runner, VTID-05103/05141/05148/05153; learn-outcomes is owned by L3, supplier-catalog-check by L9) with a stop rule (three crashed runs in a row switch a routine off and raise routine.runner.stagnated) and repeated-breach damping (the same breach three days running is not re-sent to self-healing). Every ALERT-* workflow check except the Supabase-vs-Aurora identity drift has one gateway ops health route, and the workflows report failures to the self-healing intake. Four routines still need a claude.ai session (gh, a browser, a member sign-in, CI artifacts); they fail at the cloud environment setup script until the owner fixes it.",
+      "trigger": "Any owned sensor turns red (health check, routine run, alert workflow, test contract, error cluster).",
+      "goal": "The same sensor that fired is green again after the fix is deployed, and STAGING-VERIFY passes on that commit.",
+      "act": "One intake (self_healing_log) -> six-layer diagnosis -> spec -> fix through the one executor (Dev Autopilot).",
+      "verifier": "Re-run of the sensor that fired, plus STAGING-VERIFY. Never the agent that wrote the fix.",
+      "stop": "Sensor green -> close. Same failure class 3 times, or no progress after the reconciler cap -> stop and escalate.",
+      "human_gate": "Spec approval for any code change; rollback decisions.",
+      "budget": "Retry breaker: at most 5 failed attempts per finding per 24 h; reconciler re-dispatch at most every 30 min.",
+      "metrics": "Mean time to green per sensor; share of red sensors that reach the intake; repeat-failure rate.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/self-healing-reconciler.ts"
+      },
+      "run_plane": "self_healing",
+      "sensors": {
+        "health_groups": [
+          "Core Infrastructure",
+          "AI & Assistant",
+          "Autopilot",
+          "Automation & Scheduling",
+          "Community & Social",
+          "Domain & Context",
+          "Visual & VTID",
+          "Frontend & Performance",
+          "Self-Healing & Ops",
+          "Data & Memory",
+          "Commerce",
+          "AWS Runtime",
+          "Voice & Media",
+          "Data & Scheduling",
+          "Business & Support"
+        ],
+        "routines": [
+          "agents-heartbeat",
+          "mobile-bundle-budget",
+          "mobile-screen-api-latency",
+          "mobile-screen-latency-rollup",
+          "mobile-synthetic-load-probe",
+          "oasis-event-anomaly",
+          "spec-memory-quarantine",
+          "supabase-io-audit"
+        ],
+        "workflows": [
+          "ALERT-APP-USERS-IDENTITY-DRIFT",
+          "ALERT-ORB-BOOTSTRAP-LATENCY",
+          "ALERT-ORB-SESSION-STATE-HEALTH",
+          "ALERT-PUSH-DISPATCH-HEALTH",
+          "DAILY-STATUS-UPDATE",
+          "E2E-ORB-MONITOR",
+          "MIGRATION-DRIFT-CHECK",
+          "MORNING-SYSTEM-HEALTH-CHECK",
+          "SCREEN-LOAD-DAILY",
+          "SCREEN-LOAD-TIMING",
+          "TENANT-RESERVED-SLUGS-DRIFT",
+          "VCAOP-HEALTH"
+        ],
+        "test_contracts": [
+          "gateway.alive",
+          "canary_target.disarmed_health",
+          "canary_target.status",
+          "self_healing.active_route_mounted",
+          "oasis.vtid_terminalize_validates_payload",
+          "worker_orchestrator.await_autopilot_requires_auth",
+          "worker_runner.alive",
+          "worker_runner.ready",
+          "worker_runner.live",
+          "worker_runner.metrics",
+          "worker_runner.canary_target_health"
+        ]
+      },
+      "cases": [
+        {
+          "id": "P01",
+          "title": "Self-healing diagnose → spec → fix → verify"
+        },
+        {
+          "id": "P02",
+          "title": "Orphaned-heal reconciler"
+        },
+        {
+          "id": "P03",
+          "title": "Voice recurrence sentinel + quarantine + rollback"
+        },
+        {
+          "id": "P05",
+          "title": "Push-dispatch health → remediation"
+        },
+        {
+          "id": "P06",
+          "title": "Screen-load latency regression → fix VTID"
+        },
+        {
+          "id": "P07",
+          "title": "ORB bootstrap latency"
+        },
+        {
+          "id": "P08",
+          "title": "Migration drift → reconcile PR"
+        },
+        {
+          "id": "P09",
+          "title": "Identity drift repair"
+        },
+        {
+          "id": "P10",
+          "title": "Connector token health"
+        },
+        {
+          "id": "Q01",
+          "title": "Test-contract failure → repair VTID"
+        },
+        {
+          "id": "Q10",
+          "title": "Error-log clustering → self-healing intake"
+        },
+        {
+          "id": "V02",
+          "title": "Slow-session cluster → fix"
+        },
+        {
+          "id": "V03",
+          "title": "Backstop/tool-fallback cluster"
+        },
+        {
+          "id": "G07",
+          "title": "Nightly memory consolidation"
+        },
+        {
+          "id": "G08",
+          "title": "Memory embedding backfill"
+        }
+      ],
+      "uses_shared_verifiers": []
+    },
+    {
+      "id": "L2",
+      "name": "Build & Release",
+      "group": "platform",
+      "risk": "R1",
+      "autonomy": "L3",
+      "status": "LIVE",
+      "gap": "Accessibility, visual-regression and CSP gates are not built yet.",
+      "trigger": "An approved finding (scanner, ticket, repair spec) or a merge to main.",
+      "goal": "The change is merged, deployed to staging, STAGING-VERIFY passes on the deployed commit, and production passes its post-deploy check after Gate 2.",
+      "act": "Plan -> PR -> LLM merge review -> merge -> staging deploy -> STAGING-VERIFY -> Gate 2 -> production deploy check.",
+      "verifier": "CI suites, STAGING-VERIFY on the exact deployed commit, the production post-deploy check (automatic rollback on failure).",
+      "stop": "Verified -> complete. Retry breaker or outage gate trips -> stop and escalate.",
+      "human_gate": "Approval gates before execution; Gate 2 before production.",
+      "budget": "Retry breaker 5 failures per 24 h per finding; planner turn cap; one loop owner across staging and production.",
+      "metrics": "Lead time finding -> verified deploy; change failure rate; share of runs needing a human.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/dev-autopilot-execute.ts"
+      },
+      "run_plane": "dev_autopilot",
+      "sensors": {
+        "health_groups": [
+          "Deploy & Release",
+          "Dev Autopilot"
+        ],
+        "routines": [
+          "draft-pr-babysitter"
+        ],
+        "workflows": [
+          "CI-HEALTH",
+          "DEV-AUTOPILOT",
+          "STAGING-VERIFY-NIGHTLY",
+          "TEST-SUITE"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "E01",
+          "title": "Dev Autopilot scan → plan → PR → merge → verify"
+        },
+        {
+          "id": "E02",
+          "title": "LLM merge review"
+        },
+        {
+          "id": "E03",
+          "title": "Retry breaker / outage gate"
+        },
+        {
+          "id": "E08",
+          "title": "Draft-PR babysitter"
+        },
+        {
+          "id": "E09",
+          "title": "Health-hotspot reduction"
+        },
+        {
+          "id": "E10",
+          "title": "Dependency & security patch loop"
+        },
+        {
+          "id": "P04",
+          "title": "Staging verify → fix-forward"
+        },
+        {
+          "id": "Q04",
+          "title": "Nightly full staging suite"
+        },
+        {
+          "id": "Q06",
+          "title": "Accessibility scan of changed screens"
+        },
+        {
+          "id": "Q07",
+          "title": "Visual regression on changed screens (staging, read-only)"
+        },
+        {
+          "id": "Q08",
+          "title": "Nav registry ↔ App.tsx drift"
+        },
+        {
+          "id": "Q09",
+          "title": "CSP violation report → fix"
+        }
+      ],
+      "uses_shared_verifiers": []
+    },
+    {
+      "id": "L3",
+      "name": "Learn",
+      "group": "platform",
+      "risk": "R1",
+      "autonomy": "L1",
+      "status": "PARTIAL",
+      "gap": "The learn-outcomes routine (VTID-05148, daily 12:00 UTC) measures repeat-failure rate per class, the share of fixes reusing a known pattern and escaped bugs that became tests; records which tests each fix PR shipped and files one write_test finding for a fix without one; and proposes (never applies) graduations on Mondays, withdrawing a proposal whose class regresses. Still recorded only: repair patterns are not auto-recorded or looked up by the executor (pattern reuse reports not measured), and prompt learnings and shadow-eval promotions have no graduation step.",
+      "trigger": "Every finished L1, L2 or L6 run (success or failure); every escaped bug; every shadow-eval result.",
+      "goal": "Each outcome leaves exactly one lesson: a new test, a repair pattern, a prompt learning, or a graduation proposal.",
+      "act": "Write the lesson to its existing store; propose (never apply) a graduation of a finding class to auto-approve.",
+      "verifier": "The lesson is checked against the next runs of the same class: repeat-failure rate must fall.",
+      "stop": "Lesson recorded -> done. A graduation proposal whose class regresses is withdrawn automatically.",
+      "human_gate": "The owner approves every graduation and every model promotion.",
+      "budget": "One lesson per outcome; graduation proposals at most weekly.",
+      "metrics": "Repeat-failure rate per class; share of fixes reusing a known pattern; escaped bugs that became tests.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/dev-autopilot-outcomes.ts"
+      },
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "autopilot-rec-quality",
+          "learn-outcomes"
+        ],
+        "workflows": [
+          "CRON-AUTO-PROMOTER",
+          "CRON-GRADUATION-RECOMMENDER",
+          "CRON-SHADOW-COMPARISON-REPORT",
+          "EXERCISE-STAGING-SHADOW",
+          "EXERCISE-STAGING-SHADOW-CORPUS"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "E04",
+          "title": "Outcome-driven graduation"
+        },
+        {
+          "id": "E05",
+          "title": "Prompt learnings from failed runs"
+        },
+        {
+          "id": "E06",
+          "title": "Repair-pattern reuse"
+        },
+        {
+          "id": "E07",
+          "title": "Plan-sparring quality loop"
+        },
+        {
+          "id": "V10",
+          "title": "Shadow-eval model promotion"
+        },
+        {
+          "id": "Q02",
+          "title": "Missing-test scanner"
+        },
+        {
+          "id": "Q03",
+          "title": "Flaky-test detector → robustness fix"
+        },
+        {
+          "id": "Q05",
+          "title": "Support regression suite growth"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L4",
+      "name": "Simplify",
+      "group": "platform",
+      "risk": "R1",
+      "autonomy": "L1",
+      "status": "PLANNED",
+      "gap": "New loop. Phase 1 ships its input (coverage and overlaps on the Loops screen); removals come in Phase 2.",
+      "trigger": "A sensor with no loop or two loops, a duplicate check, a check that never turns red, dead code, or a rule that points at a missing path.",
+      "goal": "The duplicate or orphan is removed or merged and sensor coverage is unchanged (no loop loses a signal).",
+      "act": "Propose a retire/merge -> removal PR through the executor -> re-run the coverage check.",
+      "verifier": "The coverage check (every sensor owned by exactly one loop) and the owning loop's own sensors stay green.",
+      "stop": "Overlap removed -> done. A removal that drops coverage is reverted.",
+      "human_gate": "The owner approves every removal.",
+      "budget": "At most one removal PR in flight at a time.",
+      "metrics": "Number of sensors, screens and scheduled-job lists over time (should fall); orphan count (should be 0).",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/specs/loop-catalog-v1.json"
+      },
+      "sensors": {
+        "health_groups": [],
+        "routines": [],
+        "workflows": [
+          "TEST-CATALOG"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "K10",
+          "title": "Rules/CLAUDE.md ↔ code drift"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L5",
+      "name": "Guard",
+      "group": "platform",
+      "risk": "R3",
+      "autonomy": "L0",
+      "status": "PARTIAL",
+      "gap": "LLM spend is compared with the budgets daily (llm-spend-budget, alert only) and any LLM call that lands on Google is an incident (llm-fallback-watch), both VTID-05141; agents_registry.enabled is enforced as the per-agent kill switch. Blocking calls over budget, the GCP carve-out window watcher and the consent audit do not exist yet.",
+      "trigger": "A cost, model-fallback, secret, test-account, consent or ledger-integrity signal.",
+      "goal": "Every such signal reaches the owner (or DPO) with evidence within one check interval.",
+      "act": "Escalate only. This loop never changes code, data or configuration by itself.",
+      "verifier": "The escalation is acknowledged; the underlying check returns to green.",
+      "stop": "Acknowledged and green -> close. Unacknowledged -> re-escalate every interval.",
+      "human_gate": "Owner or DPO decides every action.",
+      "budget": "Read-only checks; no LLM spend.",
+      "metrics": "Time to acknowledge; number of silent fallbacks (should be 0); spend per stage versus budget.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/routes/ops-health-checks.ts"
+      },
+      "sensors": {
+        "health_groups": [
+          "Governance & Integrity"
+        ],
+        "routines": [
+          "llm-fallback-watch",
+          "llm-spend-budget"
+        ],
+        "workflows": [
+          "ALERT-OASIS-LEDGER-INTEGRITY"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "G02",
+          "title": "OASIS ledger integrity"
+        },
+        {
+          "id": "G03",
+          "title": "Plan-sparring gate reconciler"
+        },
+        {
+          "id": "G04",
+          "title": "LLM spend per stage → budget alert/throttle"
+        },
+        {
+          "id": "G05",
+          "title": "Silent model-fallback detector (any Google fallback = incident)"
+        },
+        {
+          "id": "G06",
+          "title": "GCP carve-out window watcher (ru/sr bridge, audiobook cap)"
+        },
+        {
+          "id": "G09",
+          "title": "Consent & health-data access audit"
+        },
+        {
+          "id": "G10",
+          "title": "Secret hygiene → rotation VTID"
+        },
+        {
+          "id": "M07",
+          "title": "Test/service-account leak scan (rules 43–45)"
+        },
+        {
+          "id": "V04",
+          "title": "Persona voice gender guard"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L6",
+      "name": "Support",
+      "group": "platform",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "LIVE",
+      "gap": "Answer acceptance does not feed the knowledge base yet.",
+      "trigger": "A member files a ticket (app, voice, or the conversation with Devon).",
+      "goal": "The ticket is closed with a verified fix or an accepted answer, and the reporter is notified.",
+      "act": "Auto-triage -> Devon drafts a spec / Sage drafts an answer -> supervisor review -> executor -> completion reconciler -> reporter notified.",
+      "verifier": "Supervisor review of drafts; the fix passes L2; the support regression suite stays green.",
+      "stop": "Closed and notified -> done. Placeholder specs are blocked.",
+      "human_gate": "A human activates dispatch to the executor.",
+      "budget": "As L2 for the fix; one draft per ticket revision.",
+      "metrics": "Time to close; reopen rate; answer acceptance rate.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/feedback-execution-bridge.ts"
+      },
+      "sensors": {
+        "health_groups": [],
+        "routines": [],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "G01",
+          "title": "Support ticket → Devon spec → autopilot → reporter notified"
+        },
+        {
+          "id": "K09",
+          "title": "Support answer acceptance → knowledge base"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L7",
+      "name": "Voice quality",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "Opener, slow-session and fallback gates run; voice-lab-triage compares 24 h of voice_session_facts outcomes and failure classes with the prior 7 days (VTID-05141). Tool success, misroutes, locale errors and provider cost per language are not measured as a loop.",
+      "trigger": "Voice session outcomes, aggregated daily.",
+      "goal": "Per-language opener success, tool success and misroute rate meet their targets.",
+      "act": "Tuning PR (tool description, navigation phrasing, prompt intent) -> shadow -> enforce.",
+      "verifier": "The same session metrics over the next window, in shadow before enforce.",
+      "stop": "Target met -> hold. A tuning that regresses in shadow is dropped.",
+      "human_gate": "The owner flips shadow -> enforce.",
+      "budget": "One tuning change per metric in shadow at a time.",
+      "metrics": "Opener success, tool success, misroute rate, wrong-locale sessions, cost per minute per language.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "glob",
+        "ref": "services/gateway/src/services/jev/gates/*"
+      },
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "voice-lab-triage"
+        ],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "V01",
+          "title": "Opener-outcome gate"
+        },
+        {
+          "id": "V05",
+          "title": "ORB tool success rate → schema/description tuning"
+        },
+        {
+          "id": "V06",
+          "title": "Voice-navigation misroute → registry phrasing PR"
+        },
+        {
+          "id": "V07",
+          "title": "STT language-detection accuracy"
+        },
+        {
+          "id": "V08",
+          "title": "Greeting anti-repeat cadence"
+        },
+        {
+          "id": "V09",
+          "title": "Voice provider quality/cost per language + ru/sr carve-out review"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L8",
+      "name": "Content & language",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "The LLM translation audit runs only by hand; the du-form and RTL checks are not built.",
+      "trigger": "A new or changed string, a new feature entry, or new curated content.",
+      "goal": "All 11 locales are complete, pass the register and RTL checks, and new finished features get one What's New card.",
+      "act": "Propagate German source to every locale -> audit -> apply suggestions with confidence >= 0.80 -> What's New once the build is live.",
+      "verifier": "Locale completeness check, the LLM audit (a second model), and the shared claim verifier for curated content.",
+      "stop": "Complete and audited -> done.",
+      "human_gate": "A human merges translation and What's New PRs.",
+      "budget": "One audit per locale per change.",
+      "metrics": "Locale coverage; audit score per locale; formal-register findings (should be 0).",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/whats-new-publisher.ts"
+      },
+      "uses_shared_verifiers": [
+        "claim_verifier"
+      ],
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "knowledge-docs-freshness"
+        ],
+        "workflows": [
+          "I18N-DB-SEED"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "K01",
+          "title": "What's New drafter"
+        },
+        {
+          "id": "K02",
+          "title": "What's New publisher"
+        },
+        {
+          "id": "K03",
+          "title": "i18n propagate DE → all locales"
+        },
+        {
+          "id": "K04",
+          "title": "i18n LLM audit → apply ≥ 0.80 suggestions"
+        },
+        {
+          "id": "K05",
+          "title": "du-form register guard"
+        },
+        {
+          "id": "K06",
+          "title": "RTL check on new screens (ar)"
+        },
+        {
+          "id": "K07",
+          "title": "Knowledge docs freshness"
+        },
+        {
+          "id": "K08",
+          "title": "Longevity news → claim-checked curation"
+        }
+      ],
+      "run_plane": null
+    },
+    {
+      "id": "L9",
+      "name": "Supplier catalog",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "Wave 1 (VTID-05153): the supplier-catalog-check routine (daily 13:00 UTC, at most 20 supplement rows per run, no LLM) normalizes rows losslessly, checks required fields and money, finds duplicates within a supplier, probes images (SSRF-guarded HEAD, outage guard), pre-screens disease claims (a hit only routes to human review), stores one result per row and returns a row to the supplier after the same failure 3 times (checklist catalogue_fixes, MCP next_action); it never publishes. Partner verification and marketplace sync also run. Not yet: verified claims (shared claim verifier, Phase 6), certificate expiry (needs the evidence tables), stock/reorder drafts (S10), sync drift (S07), WooCommerce feed import.",
+      "trigger": "A supplier signs up or submits a feed; a source feed changes; stock crosses its threshold.",
+      "goal": "80% of supplier product rows are normalized, validated and ready for approval without manual entry; live listings match their source.",
+      "act": "Normalize with deterministic validators first, LLM only for extraction and exceptions -> claim, media, certificate and duplicate checks -> draft -> approval -> publish -> keep in sync.",
+      "verifier": "Schema validators, the shared claim verifier, image and certificate checks, sync drift check.",
+      "stop": "All rows valid and approved -> publish. The same validation error 3 times -> back to the supplier.",
+      "human_gate": "Human review and publish; purchase orders are drafted only, never paid by the loop.",
+      "budget": "Narrow first: one category, at most 20 SKUs per run.",
+      "metrics": "Rows auto-normalized; validation failure rate; time to listing; human edits per listing.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/partner-verification.ts"
+      },
+      "uses_shared_verifiers": [
+        "claim_verifier"
+      ],
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "supplier-catalog-check"
+        ],
+        "workflows": [
+          "MARKETPLACE-SYNC-CRON"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "S01",
+          "title": "Supplier onboarding (status → next_action)"
+        },
+        {
+          "id": "S02",
+          "title": "Feed normalization (CSV/Shopify/Woo → schema), deterministic validators before any LLM"
+        },
+        {
+          "id": "S03",
+          "title": "Prohibited health-claim scanner on product copy"
+        },
+        {
+          "id": "S04",
+          "title": "Certificate/document expiry watcher"
+        },
+        {
+          "id": "S05",
+          "title": "Duplicate SKU detection"
+        },
+        {
+          "id": "S06",
+          "title": "Broken image / media check"
+        },
+        {
+          "id": "S07",
+          "title": "Marketplace sync drift"
+        },
+        {
+          "id": "S08",
+          "title": "Supplier performance score"
+        },
+        {
+          "id": "S09",
+          "title": "Price / availability change watcher"
+        },
+        {
+          "id": "S10",
+          "title": "Inventory days-of-cover → reorder draft"
+        },
+        {
+          "id": "C09",
+          "title": "Affiliate link health + commission reconciliation"
+        }
+      ],
+      "run_plane": null
+    },
+    {
+      "id": "L10",
+      "name": "Listing & creator commerce",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PLANNED",
+      "gap": "New loop.",
+      "trigger": "A new or low-converting listing; a creator uploads a video.",
+      "goal": "The listing passes schema, media and completeness checks; conversion improves against a control.",
+      "act": "Audit -> product match and copy/caption variants under the claim verifier -> creator or supplier approves -> measure.",
+      "verifier": "Schema and media checks, the shared claim verifier, CTR/CVR against a control.",
+      "stop": "Checks pass and the variant beats control -> keep; otherwise revert to control.",
+      "human_gate": "The creator or supplier approves every published change.",
+      "budget": "One live experiment per listing.",
+      "metrics": "Listing completeness; CTR; add-to-cart; conversion.",
+      "existing_ref": null,
+      "uses_shared_verifiers": [
+        "claim_verifier"
+      ],
+      "sensors": {
+        "health_groups": [],
+        "routines": [],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "C01",
+          "title": "Listing completeness audit → improvement draft"
+        },
+        {
+          "id": "C02",
+          "title": "Copy rewrite under no-medical-claim verifier, measured CTR/CVR"
+        },
+        {
+          "id": "C03",
+          "title": "Image quality / background consistency"
+        },
+        {
+          "id": "C04",
+          "title": "SEO fields + category correctness"
+        },
+        {
+          "id": "C05",
+          "title": "Video → primary product match (product drawer)"
+        },
+        {
+          "id": "C06",
+          "title": "Caption / hashtag / thumbnail variants"
+        },
+        {
+          "id": "C07",
+          "title": "Post-publish performance → next content angle"
+        },
+        {
+          "id": "C10",
+          "title": "Zero-result search → catalog gap / synonym"
+        }
+      ],
+      "run_plane": null
+    },
+    {
+      "id": "L11",
+      "name": "Trust",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PLANNED",
+      "gap": "New loop.",
+      "trigger": "A new review or a member report.",
+      "goal": "Every report is classified within its SLA and a human decides; suspicious reviews are held before they show.",
+      "act": "Classify (fraud, abuse, test account) -> hold -> human decision -> feed the decision back to the classifier.",
+      "verifier": "Moderator decisions measured against the classifier.",
+      "stop": "Decided -> close.",
+      "human_gate": "A moderator decides every case.",
+      "budget": "Classification only; no automatic removals.",
+      "metrics": "Time to decision; classifier precision against moderator decisions.",
+      "existing_ref": null,
+      "sensors": {
+        "health_groups": [],
+        "routines": [],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "C08",
+          "title": "Review quality / fraud monitor"
+        },
+        {
+          "id": "M10",
+          "title": "Moderation report triage"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L12",
+      "name": "Engagement",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "The morning-brief pacer and lifecycle worker run; mute/unsubscribe rates do not yet adjust cadence.",
+      "trigger": "Every notification, nudge or tour step sent.",
+      "goal": "Open and activation rates rise without a rise in mute or unsubscribe rates.",
+      "act": "Propose a cadence or throttle change within fixed bounds; apply it once a human approves.",
+      "verifier": "Open, mute and unsubscribe rates over the next window.",
+      "stop": "A cadence change that raises mutes is reverted.",
+      "human_gate": "A human approves every cadence change. Automatic changes inside fixed bounds wait for the per-loop kill switch and budget (roadmap Phase 3).",
+      "budget": "Cadence can only move within the configured minimum and maximum.",
+      "metrics": "Open rate; activation rate; mute and unsubscribe rate.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "workflow",
+        "ref": "ALERT-WELCOME-GREETING-HEALTH"
+      },
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "dyk-tour-progress"
+        ],
+        "workflows": [
+          "ALERT-NEWDAY-BRIEFING-LOOP",
+          "ALERT-WELCOME-GREETING-HEALTH",
+          "SMOKE-WELCOME-GREETING"
+        ],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "M03",
+          "title": "Morning-brief pacing"
+        },
+        {
+          "id": "M04",
+          "title": "Onboarding drop-off nudges"
+        },
+        {
+          "id": "M06",
+          "title": "Welcome flow health"
+        },
+        {
+          "id": "M08",
+          "title": "Notification fatigue → throttle"
+        }
+      ],
+      "uses_shared_verifiers": [],
+      "run_plane": null
+    },
+    {
+      "id": "L13",
+      "name": "Community matching",
+      "group": "product",
+      "risk": "R2",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "Community autopilot runs in shadow; acceptance and attendance do not feed the weights yet.",
+      "trigger": "Daily recompute; a match, event or recommendation is shown.",
+      "goal": "Acceptance and attendance rates rise.",
+      "act": "Recompute matches and recommendations -> propose -> learn from acceptance.",
+      "verifier": "Acceptance and attendance over the next window.",
+      "stop": "A weight change that lowers acceptance is reverted.",
+      "human_gate": "Supervisor or tenant admin approves proposals.",
+      "budget": "One weight change per window.",
+      "metrics": "Match acceptance; event attendance; recommendation acceptance.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "glob",
+        "ref": "services/gateway/src/services/community-autopilot/*"
+      },
+      "run_plane": "community_autopilot",
+      "sensors": {
+        "health_groups": [],
+        "routines": [],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "M01",
+          "title": "Community autopilot scan → propose → supervise"
+        },
+        {
+          "id": "M02",
+          "title": "Admin awareness scanners → insights"
+        },
+        {
+          "id": "M05",
+          "title": "Intent-match feedback"
+        },
+        {
+          "id": "M09",
+          "title": "Event attendance feedback → recommendations"
+        },
+        {
+          "id": "H06",
+          "title": "Recommendation outcome feedback"
+        }
+      ],
+      "uses_shared_verifiers": []
+    },
+    {
+      "id": "L14",
+      "name": "Health coaching",
+      "group": "product",
+      "risk": "R3",
+      "autonomy": "L2",
+      "status": "PARTIAL",
+      "gap": "Guided journey and the daily index recompute run; check-in plans, prepared carts and adherence tracking do not.",
+      "trigger": "A member check-in or newly consented data.",
+      "goal": "The member gets a non-diagnostic plan, accepts or rejects each action, and the outcome is recorded for the next cycle.",
+      "act": "Summarize consented data -> plan -> prepare a cart or booking (never execute) -> member confirms -> track adherence -> adjust.",
+      "verifier": "The shared claim verifier (no diagnosis or treatment claims) and red-flag rules (urgent-care escalation) on every reply.",
+      "stop": "Plan delivered and the member decided -> record. A red flag -> stop and escalate to urgent-care guidance.",
+      "human_gate": "The member confirms every action; a professional reviews lab results.",
+      "budget": "No autonomous purchase or booking, ever.",
+      "metrics": "Plan acceptance; adherence; red-flag escalations handled correctly on the eval set.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/daily-recompute-service.ts"
+      },
+      "uses_shared_verifiers": [
+        "claim_verifier",
+        "red_flag_rules"
+      ],
+      "sensors": {
+        "health_groups": [],
+        "routines": [
+          "vitana-index-health"
+        ],
+        "workflows": [],
+        "test_contracts": []
+      },
+      "cases": [
+        {
+          "id": "H01",
+          "title": "Daily check-in → plan adjust"
+        },
+        {
+          "id": "H02",
+          "title": "Wearable/sleep signal → non-diagnostic insight"
+        },
+        {
+          "id": "H03",
+          "title": "Lab upload → explain + refer to professional"
+        },
+        {
+          "id": "H05",
+          "title": "Adherence → reminder cadence"
+        },
+        {
+          "id": "H07",
+          "title": "Guided-journey checklist regenerate"
+        },
+        {
+          "id": "H08",
+          "title": "Longevity index daily recompute"
+        },
+        {
+          "id": "H09",
+          "title": "Suggest product/service → prepared cart (never executed)"
+        }
+      ],
+      "run_plane": null
+    }
+  ],
+  "components": [
+    {
+      "id": "intake",
+      "name": "Intake",
+      "what": "Where every problem lands.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "table",
+        "ref": "self_healing_log"
+      },
+      "also": "autopilot_recommendations"
+    },
+    {
+      "id": "executor",
+      "name": "Executor",
+      "what": "The one thing that changes code.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/services/dev-autopilot-execute.ts"
+      }
+    },
+    {
+      "id": "run_ledger",
+      "name": "Run ledger",
+      "what": "One history of every autonomous run.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "table",
+        "ref": "agent_runs_unified"
+      }
+    },
+    {
+      "id": "human_inbox",
+      "name": "Human inbox",
+      "what": "The one place a human approves or rejects.",
+      "existing_ref": {
+        "repo": "vitana-platform",
+        "kind": "file",
+        "ref": "services/gateway/src/routes/autonomy-pulse.ts"
+      }
+    },
+    {
+      "id": "claim_verifier",
+      "name": "Claim verifier",
+      "what": "No diagnosis or treatment claims in any health, product or creator text.",
+      "existing_ref": null,
+      "cases": [
+        {
+          "id": "H10",
+          "title": "Health-claims verifier on assistant replies"
+        }
+      ]
+    },
+    {
+      "id": "red_flag_rules",
+      "name": "Red-flag rules",
+      "what": "Deterministic urgent-care escalation; never suppressed.",
+      "existing_ref": null,
+      "cases": [
+        {
+          "id": "H04",
+          "title": "Red-flag symptom escalation (deterministic rules first)"
+        }
+      ]
+    }
+  ],
+  "overlaps": [
+    {
+      "id": "O1",
+      "title": "Two Health Checks tabs show the same 5 probes",
+      "items": [
+        "diagnostics/health-checks",
+        "infrastructure/health"
+      ],
+      "note": "Neither uses the 117-check Service Health registry.",
+      "status": "resolved",
+      "resolution": "VTID-05098: Infrastructure → Health removed and redirected to Diagnostics → Health Checks (unchanged). The full registry stays in the header Service Health pill."
+    },
+    {
+      "id": "O2",
+      "title": "Voice assistant (ORB) health checked in 4 places",
+      "items": [
+        "routine orb-audio-smoke",
+        "E2E-ORB-MONITOR",
+        "ALERT-ORB-*",
+        "Service Health registry"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine orb-audio-smoke retired (duplicate of registry \"ORB Live\"; its Vertex fields breach falsely). E2E-ORB-MONITOR and the bootstrap-latency alert are distinct signals and stay. VTID-05141: ALERT-ORB-SESSION-STATE-HEALTH now calls the registry route /ops/health/orb-session-ledger, one implementation."
+    },
+    {
+      "id": "O3",
+      "title": "Push pipeline checked in 3 places",
+      "items": [
+        "routine push-pipeline-probe",
+        "ALERT-PUSH-DISPATCH-HEALTH",
+        "ops/health/push-dispatch"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine push-pipeline-probe and its audit endpoint retired. ALERT-PUSH-DISPATCH-HEALTH and /ops/health/push-dispatch run the same query; VTID-05141: the workflow now calls the route, one implementation."
+    },
+    {
+      "id": "O4",
+      "title": "Migration drift checked twice",
+      "items": [
+        "routine migration-backlog",
+        "MIGRATION-DRIFT-CHECK"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine migration-backlog and /routines/audits/migration-backlog retired (its diff always breached). MIGRATION-DRIFT-CHECK is the check."
+    },
+    {
+      "id": "O5",
+      "title": "Frontend reachability checked twice",
+      "items": [
+        "routine cloud-run-frontend-health",
+        "ops/runtime/deploy/frontend-*"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: routine cloud-run-frontend-health retired; the registry Gateway Alive / Frontend Prod / Frontend Staging checks remain."
+    },
+    {
+      "id": "O6",
+      "title": "Self-healing queue actionable on 2 screens",
+      "items": [
+        "autonomy/self-healing",
+        "autonomy/autonomy-pulse"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: Pulse shows self-healing items with an Open link; acting happens only in Autonomy → Self-Healing (Pulse apply/discard sent {vtid} and always failed)."
+    },
+    {
+      "id": "O7",
+      "title": "Test-contract failures actionable on 2 screens",
+      "items": [
+        "testing-qa/test-contracts",
+        "autonomy/autonomy-pulse"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: Pulse shows failing contracts with an Open link; re-running happens only in Testing & QA → Test Contracts (Pulse rerun/open had no handler)."
+    },
+    {
+      "id": "O8",
+      "title": "self-healing-triage registered twice",
+      "items": [
+        "routines table",
+        "agents_registry"
+      ],
+      "status": "resolved",
+      "resolution": "VTID-05098: not the same thing — the routine was an inert daily rules pass and is retired; the in-gateway triage agent stays."
+    },
+    {
+      "id": "O9",
+      "title": "Missing-test scanner registered twice",
+      "items": [
+        "dev_autopilot_scanners",
+        "test-contract source type"
+      ],
+      "status": "not_a_duplicate",
+      "resolution": "VTID-05098: two live code paths with different signals (.ts without .test.ts vs endpoint without a test contract). Both stay."
+    },
+    {
+      "id": "O10",
+      "title": "Scheduled jobs listed in 4 places",
+      "items": [
+        "routines table",
+        "TEST-CATALOG JSON",
+        "EventBridge setup script",
+        "SCHEDULED_WORKFLOWS in ops-runtime-health.ts"
+      ],
+      "status": "not_a_duplicate",
+      "resolution": "VTID-05098: four different scopes; TEST-CATALOG is generated. VTID-05141: SCHEDULED_WORKFLOWS is derived from it (fallback to the old five on a read error)."
+    }
+  ],
+  "retire_candidates": []
+}

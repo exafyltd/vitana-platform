@@ -1,0 +1,28 @@
+{
+  "_note": "One real staging voice session (2026-09-22 22:17 UTC, read-only via Supabase MCP). Only the fields the inspector reads are kept; the usage-counter rows are dropped; session id and user id are replaced. No transcript text, email or user agent.",
+  "rows": [
+    {"topic":"vtid.live.session.start","created_at":"2026-09-22T22:17:38.929Z","metadata":{"lang":"en","origin":"https://preview-aws-gateway.vitanaland.com","user_id":"00000000-0000-4000-8000-000000000001","transport":"ws","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:38.933Z","metadata":{"stage":"nova_prewarm_skipped_work_surface","provider":"nova_sonic","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:39.324Z","metadata":{"stage":"tool_catalog_trimmed","provider":"nova_sonic","session_id":"live-harness-0001","bytes_after":65521,"bytes_before":226803,"dropped_count":249}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:39.326Z","metadata":{"stage":"nova_instruction_sanitized","provider":"nova_sonic","session_id":"live-harness-0001"}},
+    {"topic":"vtid.live.session.start","created_at":"2026-09-22T22:17:39.493Z","metadata":{"lang":"en","origin":"https://preview-aws-gateway.vitanaland.com","user_id":"00000000-0000-4000-8000-000000000001","transport":"websocket","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.context.bootstrap","created_at":"2026-09-22T22:17:39.521Z","metadata":{"user_id":"00000000-0000-4000-8000-000000000001","transport":"ws","latency_ms":5,"session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:39.542Z","metadata":{"lang":"en","stage":"greeting_context_pending","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:40.041Z","metadata":{"nba":"next_session","lang":"en","stage":"greeting_sent","bucket":"reconnect","register":"continue","nba_domain":"journey","session_id":"live-harness-0001","wake_opener":"conv_resume","current_route":"/command-hub/autopilot/live/"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:41.858Z","metadata":{"stage":"model_start_speaking","session_id":"live-harness-0001"}},
+    {"topic":"voice.latency.measured","created_at":"2026-09-22T22:17:41.859Z","metadata":{"turn":0,"phases":[{"phase":"upstream_connected","offset_ms":1},{"phase":"context_awaited","detail":{"timed_out":true,"awaited_ms":300},"offset_ms":301},{"phase":"setup_sent","detail":{"context_chars":0},"offset_ms":394},{"phase":"greeting_sent","detail":{"deferred":true},"offset_ms":611},{"phase":"audio_out_first_chunk","detail":{"source":"greeting"},"offset_ms":2927}],"provider":"nova_sonic/amazon.nova-2-sonic-v1:0","transport":"websocket","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:44.016Z","metadata":{"stage":"turn_complete","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:17:59.796Z","metadata":{"stage":"input_transcription","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:07.086Z","metadata":{"stage":"model_start_speaking","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:09.488Z","metadata":{"stage":"turn_complete","session_id":"live-harness-0001"}},
+    {"topic":"voice.latency.measured","created_at":"2026-09-22T22:18:09.489Z","metadata":{"turn":1,"phases":[{"phase":"audio_in_first_byte","offset_ms":0},{"phase":"transcript_ready","detail":{"chars":51},"offset_ms":5407},{"phase":"audio_out_first_chunk","offset_ms":12697}],"session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:19.924Z","metadata":{"stage":"watchdog_skipped","reason":"model_responded_this_turn","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:25.131Z","metadata":{"stage":"input_transcription","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:26.251Z","metadata":{"stage":"model_start_speaking","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:18:36.144Z","metadata":{"stage":"turn_complete","session_id":"live-harness-0001"}},
+    {"topic":"voice.latency.measured","created_at":"2026-09-22T22:18:36.145Z","metadata":{"turn":2,"phases":[{"phase":"audio_in_first_byte","offset_ms":0},{"phase":"transcript_ready","detail":{"chars":53},"offset_ms":15588},{"phase":"audio_out_first_chunk","offset_ms":16708}],"session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:19:21.875Z","metadata":{"stage":"watchdog_fired","reason":"forwarding_no_ack","session_id":"live-harness-0001"}},
+    {"topic":"orb.live.diag","created_at":"2026-09-22T22:19:21.966Z","metadata":{"stage":"upstream_closed","reason":"terminated","provider":"nova_sonic","session_id":"live-harness-0001"}},
+    {"topic":"vtid.live.session.stop","created_at":"2026-09-22T22:20:21.607Z","metadata":{"user_id":"00000000-0000-4000-8000-000000000001","session_id":"live-harness-0001","turn_count":3,"duration_ms":162678,"audio_out_chunks":1006}}
+  ]
+}

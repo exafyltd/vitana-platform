@@ -1,0 +1,551 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_search_codebase thread=thread-dev-1 repo=exafyltd/vitana-platform query="foo" results=0
+
+      at executeDevSearchCodebase (src/services/gemini-operator.ts:2406:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (b7f56d30-20e1-47b7-bc1d-e5f8a6b4f93c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 10ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_search_codebase thread=thread-dev-1 repo=exafyltd/vitana-v1 query="CommandHubOperatorConsole" results=0
+
+      at executeDevSearchCodebase (src/services/gemini-operator.ts:2406:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (9d6a8a18-6dc0-4c35-a8de-90f661fb3389)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 2ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (e9d09a3c-1337-4504-ae70-852f63b80c6f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 0ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (89fa40b4-b15c-4af8-9e88-ef4e6fa66604)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_read_file thread=thread-dev-1 repo=exafyltd/vitana-platform path="README.md" ref="main" type=file
+
+      at executeDevReadFile (src/services/gemini-operator.ts:2432:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (3105f2f9-0965-4b31-8524-dc33dd6276a0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_read_file thread=thread-dev-1 repo=exafyltd/vitana-v1 path="src/pages/Home.tsx" ref="main" type=file
+
+      at executeDevReadFile (src/services/gemini-operator.ts:2432:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (a0912bda-5c8b-472d-8871-55c770bb236d)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (d74edceb-86bc-4d27-82bb-9aa6d75afa01)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (b10d4338-d816-44ae-80ab-239d5f5b6a59)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+PASS test/vtid-03946-operator-cross-repo-search.test.ts
+  VTID-03946: cross-repo dev_search_codebase/dev_read_file
+    dev_search_codebase
+      ✓ still defaults to vitana-platform with a 3-arg call when repo is omitted (45 ms)
+      ✓ routes to vitana-v1 with the FRONTEND_DEPLOY_TOKEN override when repo is passed (4 ms)
+      ✓ rejects an unlisted repo without ever calling GitHub (8 ms)
+      ✓ fails loudly rather than silently using the wrong token when FRONTEND_DEPLOY_TOKEN is unset (2 ms)
+    dev_read_file
+      ✓ still defaults to vitana-platform with a 3-arg call when repo is omitted (2 ms)
+      ✓ routes to vitana-v1 with the FRONTEND_DEPLOY_TOKEN override when repo is passed (2 ms)
+      ✓ rejects an unlisted repo without ever calling GitHub (2 ms)
+      ✓ fails loudly rather than silently using the wrong token when FRONTEND_DEPLOY_TOKEN is unset (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.warn
+    [VTID-DEV-ASSIST] TOOL BLOCKED: dev_search_codebase denied for role=community thread=thread-community-1
+
+      2977 |     const threadRole = threadIdentity?.role;
+      2978 |     if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+    > 2979 |       console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+           |               ^
+      2980 |       return {
+      2981 |         ok: false,
+      2982 |         error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+
+      at executeTool (src/services/gemini-operator.ts:2979:15)
+      at test/vtid-03835-operator-console-read-tools.test.ts:78:39
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.warn
+    [VTID-DEV-ASSIST] TOOL BLOCKED: dev_read_file denied for role=community thread=thread-community-1
+
+      2977 |     const threadRole = threadIdentity?.role;
+      2978 |     if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+    > 2979 |       console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+           |               ^
+      2980 |       return {
+      2981 |         ok: false,
+      2982 |         error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+
+      at executeTool (src/services/gemini-operator.ts:2979:15)
+      at test/vtid-03835-operator-console-read-tools.test.ts:78:39
+
+  console.log
+    [VTID-0536] Executing tool: dev_aws_ecs_status
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.warn
+    [VTID-DEV-ASSIST] TOOL BLOCKED: dev_aws_ecs_status denied for role=community thread=thread-community-1
+
+      2977 |     const threadRole = threadIdentity?.role;
+      2978 |     if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+    > 2979 |       console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+           |               ^
+      2980 |       return {
+      2981 |         ok: false,
+      2982 |         error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+
+      at executeTool (src/services/gemini-operator.ts:2979:15)
+      at test/vtid-03835-operator-console-read-tools.test.ts:78:39
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.warn
+    [VTID-DEV-ASSIST] TOOL BLOCKED: dev_db_query denied for role=community thread=thread-community-1
+
+      2977 |     const threadRole = threadIdentity?.role;
+      2978 |     if (threadRole && !['developer', 'admin'].includes(threadRole)) {
+    > 2979 |       console.warn(`[VTID-DEV-ASSIST] TOOL BLOCKED: ${toolName} denied for role=${threadRole} thread=${threadId}`);
+           |               ^
+      2980 |       return {
+      2981 |         ok: false,
+      2982 |         error: `Access denied: tool ${toolName} requires developer role (current: ${threadRole})`,
+
+      at executeTool (src/services/gemini-operator.ts:2979:15)
+      at test/vtid-03835-operator-console-read-tools.test.ts:78:39
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (1d039a42-6fcf-4e31-9b2b-bd1a415bfde8)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_search_codebase thread=thread-dev-1 repo=exafyltd/vitana-platform query="executeTool" results=1
+
+      at executeDevSearchCodebase (src/services/gemini-operator.ts:2406:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (74190819-01f3-443d-ab63-7e9a54fc1107)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (9569f08f-3f75-4804-a7e8-873902caa54f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_search_codebase
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (61721b91-b899-4feb-9817-17ba819029ac)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_search_codebase completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (b8bc4f64-3e3b-4615-80cf-d74fd3807386)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_read_file thread=thread-dev-1 repo=exafyltd/vitana-platform path="README.md" ref="main" type=file
+
+      at executeDevReadFile (src/services/gemini-operator.ts:2432:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (6338836e-3f85-419e-8a32-d35db647e497)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03835] dev_read_file thread=thread-dev-1 repo=exafyltd/vitana-platform path="README.md" ref="a-feature-branch" type=file
+
+      at executeDevReadFile (src/services/gemini-operator.ts:2432:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (b365a469-10c1-4d4f-a39b-791d6e38e212)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_read_file
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (8c69825e-9af7-4993-84d2-c492fe402f4b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_read_file completed in 0ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_aws_ecs_status
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (f35e8b4d-1a01-494a-9cc8-01cea9953a28)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_aws_ecs_status completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_aws_ecs_status
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03836] dev_aws_ecs_status thread=thread-dev-1 service=vitana-gateway-awsdr
+
+      at executeDevAwsEcsStatus (src/services/gemini-operator.ts:2458:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (1c5fb3e1-f16c-49e5-81a9-2437dd81709f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_aws_ecs_status completed in 1ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_aws_ecs_status
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03836] dev_aws_ecs_status thread=thread-dev-1 service=vitana-gateway-awsdr
+
+      at executeDevAwsEcsStatus (src/services/gemini-operator.ts:2458:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (97d1c248-0fac-43ca-958c-7c540c32ac58)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_aws_ecs_status completed in 1ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (a8b85ad2-13c6-4d3f-853c-c0090f0e45a6)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_db_query completed in 0ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (ac8f662c-ea0b-44d1-a9f1-05f31b08bb0f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_db_query completed in 0ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03837] dev_db_query thread=thread-dev-1 table=vtid_ledger rows=1
+
+      at executeDevDbQuery (src/services/gemini-operator.ts:2517:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (126171e1-5458-4710-93de-e913729125b0)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_db_query completed in 4ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [VTID-03837] dev_db_query thread=thread-dev-1 table=vtid_ledger rows=0
+
+      at executeDevDbQuery (src/services/gemini-operator.ts:2517:13)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (9c13ca72-9254-48b7-9fc5-d4528ba055cd)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_db_query completed in 0ms: success
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+  console.log
+    [VTID-0536] Executing tool: dev_db_query
+
+      at executeTool (src/services/gemini-operator.ts:2970:11)
+
+  console.log
+    [OASIS Event] Emitted: assistant.turn for VTID-0536 (bc122b11-18db-44ff-ae91-e4f61c099a73)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [VTID-0536] Tool dev_db_query completed in 0ms: error
+
+      at executeTool (src/services/gemini-operator.ts:3385:11)
+
+PASS test/vtid-03835-operator-console-read-tools.test.ts
+  Operator Console read-only tools
+    role gating (defense-in-depth, VTID-DEV-ASSIST pattern)
+      ✓ blocks dev_search_codebase for a non-developer role (7 ms)
+      ✓ blocks dev_read_file for a non-developer role (8 ms)
+      ✓ blocks dev_aws_ecs_status for a non-developer role (4 ms)
+      ✓ blocks dev_db_query for a non-developer role (3 ms)
+    dev_search_codebase (VTID-03835)
+      ✓ rejects when the kill switch is not "true" (default OFF) (3 ms)
+      ✓ searches the default repo and returns results (2 ms)
+      ✓ rejects an empty query without calling GitHub (2 ms)
+      ✓ surfaces a GitHub API failure as a tool error, not a throw (2 ms)
+    dev_read_file (VTID-03835)
+      ✓ rejects when the kill switch is not "true" (default OFF) (2 ms)
+      ✓ defaults ref to "main" when omitted (3 ms)
+      ✓ passes an explicit ref through unchanged (2 ms)
+      ✓ surfaces a file-too-large error as a tool error (2 ms)
+    dev_aws_ecs_status (VTID-03836)
+      ✓ rejects when the kill switch is not "true" (default OFF) — the shipped default (2 ms)
+      ✓ returns the described service status (2 ms)
+      ✓ reports not-found when AWS returns no matching service (2 ms)
+    dev_db_query (VTID-03837)
+      ✓ rejects when the kill switch is not "true" (default OFF) (2 ms)
+      ✓ rejects a table not on the allowlist without ever calling Supabase (1 ms)
+      ✓ queries the allowlisted table with a capped limit (6 ms)
+      ✓ filters by vtid on vtid_ledger (2 ms)
+      ✓ refuses a vtid filter on a table with no vtid column (3 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        1.016 s
+Ran all test suites matching /test\/vtid-03946-operator-cross-repo-search.test.ts|test\/vtid-03835-operator-console-read-tools.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,2 @@
+$ node node_modules/.bin/jest test/vtid-04018-operator-bootstrap-pack.test.ts   # before: 1 failed on unmodified main (0 change-log rows)
+Tests: 16 passed, 16 total   # after

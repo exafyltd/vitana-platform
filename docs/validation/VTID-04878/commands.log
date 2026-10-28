@@ -1,0 +1,12 @@
+# VTID-04878 commands (2026-10-05)
+bash scripts/ci/test-vtid-04878-capped-rewards.sh                    # SQL harness: all assertions passed
+# mutation: count metadata->>'origin' instead of 'source' -> "third claim in a day is capped" fails
+# mutation: drop the e2e-address clause -> "e2e address refused" fails
+cd services/gateway && npx tsc --noEmit -p .                         # clean
+npx jest test/vtid-04878 test/vtid-04864                              # 4 suites, 58 tests passed
+# mutation: remove the staging gate -> 3 sweep tests fail; pay repeat completions -> 1 route test fails
+npx jest test/vtid-04560 test/vtid-04349 test/diary-streak test/vtid-04508 test/calendar test/vtid-04331 test/vtid-04668 test/vtid-04809 test/services/automation-handlers-wallet-payments test/services/automation-handlers-sharing-growth   # all passed
+cd services/gateway && npx jest --silent                              # full suite: 1506 suites, 23,997 tests; 3 failures, all in suites pinning the old contract:
+#   test/milestone-service.test.ts                    -> kept the original "credit_wallet RPC returned an error" log wording (no test change)
+#   test/routes/autopilot-recommendations*.test.ts    -> reward now = the capped claim's credit (contract changed on purpose, commented)
+npx jest test/milestone-service.test.ts test/routes/autopilot-recommendations test/vtid-04878 test/vtid-04864   # 7 suites, 158 tests passed

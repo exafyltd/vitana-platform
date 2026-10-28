@@ -1,0 +1,10 @@
+# live reproduction (staging 1335b48), rows read read-only
+MEMORY_VERIFY_KEEP_ROWS=1 node scripts/memory-verification/run-live.mjs --only B-CONF-03 --runs 1
+select fact_key, fact_value, entity, provenance_source, superseded_at from memory_facts where user_id=<test user> and fact_key ilike '%paul%'
+  -> two current rows: May 5 (self, garden) and 7. Mai (disclosed, user_stated)
+select substring(pg_get_functiondef('write_fact'::regproc...) -> UPDATE ... AND entity = p_entity
+# local
+npx tsc --noEmit -p services/gateway                                -> clean
+npx jest -t A-CONF-11                                               -> pass
+mutation: supersede call disabled                                   -> A-CONF-11 fails; restored
+npx jest conformance + memory + remember_fact/backstop suites       -> 27 suites, 478 tests passed

@@ -1,0 +1,26 @@
+{
+  "name": "@vitana/voice-pipeline-spec",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Canonical spec + parity scanner for the Vitana voice pipeline. Single source of truth that the Vertex (TypeScript) and LiveKit (Python) implementations are diffed against on every PR.",
+  "scripts": {
+    "extract:ts": "tsx tools/extract-ts.ts",
+    "extract:py": "python3 tools/extract-py.py",
+    "diff": "tsx tools/diff.ts",
+    "scan": "npm run extract:ts && npm run extract:py && npm run diff",
+    "validate-spec": "tsx tools/validate-spec.ts"
+  },
+  "dependencies": {
+    "ajv": "^8.17.1",
+    "ajv-formats": "^3.0.1",
+    "ts-morph": "^24.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "tsx": "^4.19.0",
+    "typescript": "^5.6.0"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

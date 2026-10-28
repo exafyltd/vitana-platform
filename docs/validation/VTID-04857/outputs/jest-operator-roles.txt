@@ -1,0 +1,6 @@
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.075 s)
+Test Suites: 1 passed, 1 total
+Tests:       30 passed, 30 total
+PASS test/vtid-04560-role-separation-regression.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       105 passed, 105 total

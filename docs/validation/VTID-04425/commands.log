@@ -1,0 +1,16 @@
+# VTID-04425 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04425; vtid_ledger in_progress / approved.
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+npx jest test/orb/live/session/vtid-04425-context-update.test.ts -> 15 passed
+npx jest test/orb test/frontend test/command-hub test/services/orb-tools test/routes/orb-live
+  -> 1 failure: session-context shape test (12 keys) — screenContext added deliberately, test updated to 13
+npx jest test/orb/live/session/session-context.test.ts -> 16 passed
+npx jest test/services/orb-tools-shared test/services/conversation test/routes -> 143 suites, 2303 passed
+npx jest test/scripts/vtid-04417-transport-flow-parity.test.ts -> 6 passed
+node scripts/generate-command-hub-symbol-index.mjs -> regenerated (822 functions)
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of command-hub/> -> No CSP pattern hits in added lines.
+node scripts/ci/dev-autopilot-impact-scan.mjs -> blocker=0 warning=1 (env vars without binding; gateway ones added to .env.example)
+cd ../vitana-v1 (branch restarted from origin/main; the earlier closed-unmerged PR #781 commit stays reachable via refs/pull/781)
+npx vitest run src/lib/orbScreenContext.test.ts -> 3 passed; npx vitest run -> 150 files, 849 passed
+npm run build -> built

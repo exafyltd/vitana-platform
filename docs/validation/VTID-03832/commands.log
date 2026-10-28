@@ -1,0 +1,52 @@
+VTID-03832 — commands.log
+==========================
+
+## VTID self-allocation + ledger (governed staging gateway, real)
+
+$ curl -sS -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate \
+    -H 'Content-Type: application/json' \
+    -d '{"source":"claude-code","layer":"DEV","module":"backoffice-role-enum-alignment"}'
+-> HTTP 201 {"ok":true,"vtid":"VTID-03832","num":3832,"id":"a880dc50-db43-4c15-b153-a2ba3cb8b8d3"}
+
+$ curl -sS -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03832 \
+    -d '{"title":"Auth: backoffice role + vitana_role/tenant_role enum alignment","status":"in_progress"}'
+-> HTTP 200
+
+## Spec pipeline (raw responses in outputs/spec-*.json)
+
+$ POST .../api/v1/specs/VTID-03832/generate       -> HTTP 201 version 1, draft
+$ POST .../api/v1/specs/VTID-03832/validate       -> HTTP 200 result pass, missing_sections [], validated
+$ POST .../api/v1/specs/VTID-03832/quality-check  -> HTTP 200 overall_result pass, score 95, risk_level CRITICAL (known false positive)
+$ POST .../api/v1/specs/VTID-03832/approve        -> HTTP 200 spec_status approved, approval_id 635bf1d3-dc63-4e6f-a743-3e2d3c70eeab
+
+## Live DB state (READ-ONLY, project inmkhvwdcuyhnxkgfvsb, 2026-09-12) — what the migrations are written against
+
+$ SELECT enum_range(NULL::public.vitana_role)  -> {community,patient,professional,staff,admin,developer}   (no infra)
+$ SELECT enum_range(NULL::public.tenant_role)  -> {community,patient,professional,reseller,staff,admin}
+$ SELECT pg_get_functiondef(...) FOR get_my_permitted_roles, me_set_active_role, set_active_role,
+    set_role_preference, validate_role_assignment, check_role_permitted
+-> bodies captured; set_role_preference and validate_role_assignment had NO definition in this repo's
+   supabase/migrations/ (live-only). The CREATE OR REPLACE in 20260913000002_* reproduces each live body
+   verbatim except for the lines marked "VTID-03832".
+$ information_schema.columns WHERE udt_name IN ('vitana_role','tenant_role') ...
+-> memberships.role = tenant_role; role_sessions.active_role = vitana_role; user_roles.role = vitana_role;
+   user_permitted_roles.role = text; role_preferences.role = text
+
+## NOT DONE — deliberately: migrations are NOT applied
+
+The three files under supabase/migrations/20260913000*_vtid_03832_* are in this PR only. Applying them is a
+production schema change on the single Supabase project and needs the platform owner's explicit "apply now"
+in-conversation (execution brief rule 4). Consequently the staging verification step (grant `backoffice` to the
+documented test user, switch into it, revert) is also NOT done — it cannot succeed before the enum exists.
+
+## Gateway
+
+$ npx tsc --noEmit -p tsconfig.json                                    -> exit 0 (outputs/gateway-tsc-noemit.txt)
+$ npx jest test/vtid-03832-vitana-roles-constant.test.ts test/nav-catalog-role.test.ts
+-> 2 suites, 9 tests passed (outputs/gateway-jest-vtid-03832.txt)
+$ npx jest   (full suite)                                              -> see outputs/gateway-jest-full-tail.txt
+
+## Migration file sanity
+
+$ python3 -c "count $function$/$$ tags and parens per file"
+-> 20260913000000: 0 dollar tags, parens 6/6; 20260913000001: 0 tags, parens 5/5; 20260913000002: 8 tags (even), parens 100/100

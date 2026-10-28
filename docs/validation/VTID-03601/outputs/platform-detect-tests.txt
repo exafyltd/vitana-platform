@@ -1,0 +1,65 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/platform-detect.test.ts
+  input validation
+    ✓ rejects an invalid URL (5 ms)
+    ✓ rejects non-http(s) protocols (1 ms)
+    ✓ rejects file:// URLs (1 ms)
+  SSRF guard
+    ✓ rejects a raw private IPv4 literal without needing a DNS lookup (1 ms)
+    ✓ rejects loopback (1 ms)
+    ✓ rejects RFC1918 10.x literal (1 ms)
+    ✓ rejects a hostname that resolves to a private address (5 ms)
+    ✓ rejects a hostname with a MIXED public+private resolution (any private hit blocks) (2 ms)
+    ✓ rejects a redirect that points at a private address (re-validates every hop) (3 ms)
+    ✓ follows a legitimate same-scheme redirect and detects on the final page (4 ms)
+    ✓ gives up after too many redirects (2 ms)
+    ✓ rejects a redirect response with no Location header
+  fingerprint detection
+    ✓ detects Shopify via the x-shopid header (1 ms)
+    ✓ detects Shopify via a body content signal (1 ms)
+    ✓ detects WooCommerce via a Woo-specific body signal (1 ms)
+    ✓ plain WordPress (no Woo signal) does NOT get tagged as woocommerce (2 ms)
+    ✓ detects Magento
+    ✓ detects BigCommerce
+    ✓ returns confidence "none" when nothing matches (1 ms)
+    ✓ a fetch failure is reported, not thrown (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/routes/vcaop-portal-my.test.ts
+  ownership scoping
+    ✓ GET /connections filters on partner_tenant.owner_user_id = the caller (30 ms)
+    ✓ a connection owned by someone else reads as 404, not 403 (7 ms)
+    ✓ create stamps owner_user_id + owner_email from the JWT, never the body (61 ms)
+  authority boundaries
+    ✓ no /approve-activation on the merchant surface — activation stays admin-only (5 ms)
+    ✓ activation-summary reports awaiting_platform_approval instead of can_activate (6 ms)
+  certification gate integrity (Codex review, VTID-03555)
+    ✓ zero mappings can NEVER certify — sandbox tests refuse with awaiting_factory_run (5 ms)
+    ✓ a rejected mapping is removed from the version so it cannot reach certification (5 ms)
+    ✓ approval_required connections can re-run sandbox tests after a decision (4 ms)
+  input + infrastructure guards
+    ✓ database unavailable → 503, not a crash (5 ms)
+    ✓ create validates required fields before touching the database (4 ms)
+    ✓ lifecycle transition on a foreign connection is 404 and writes nothing (3 ms)
+  detect-platform (VTID-03601, Track 4)
+    ✓ requires a url (3 ms)
+    ✓ is read-only — never touches the database (3 ms)
+    ✓ an SSRF-blocked or failed detection surfaces as 422, not 500 (3 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       34 passed, 34 total
+Snapshots:   0 total
+Time:        3.057 s
+Ran all test suites matching /test\/services\/platform-detect.test.ts|test\/routes\/vcaop-portal-my.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

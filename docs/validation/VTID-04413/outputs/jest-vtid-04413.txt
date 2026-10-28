@@ -1,0 +1,87 @@
+PASS test/orb/live/upstream/cascaded/tts-backend.test.ts
+      ✓ pollyBackend.synthesize returns audioB64 on a successful Polly call (6 ms)
+      ✓ pollyBackend.synthesize returns null when Polly returns null
+      ✓ fishBackend.synthesize returns audioB64 on a successful Fish call (1 ms)
+      ✓ fishBackend.synthesize returns null when Fish returns null (1 ms)
+      ✓ returns the Polly result and never calls Fish when Polly succeeds (1 ms)
+      ✓ does not fall back to Fish when Polly fails but the language HAS a Polly voice (a runtime failure, not a coverage gap) (1 ms)
+      ✓ falls back to Fish when Polly fails AND the language has no Polly voice at all (1 ms)
+      ✓ returns null when both Polly and Fish fail for a Fish-only language
+PASS test/orb/live/upstream/cascaded-persona-swap.test.ts
+    ✓ keeps only the hand-off tools from a Vertex-style catalog (6 ms)
+    ✓ returns nothing for an empty or anonymous catalog (1 ms)
+    ✓ declares only the hand-off tools to the model (3 ms)
+    ✓ applyPersona replaces the instruction for the next turn and runs the opening turn (2 ms)
+    ✓ the specialist speaks in the specialist voice where the backend has one (2 ms)
+    ✓ swap back restores the connect-time instruction + appendix, receptionist voice, no opening turn (1 ms)
+    ✓ keeps a bounded rolling history so the "yes" turn knows what was proposed (1 ms)
+    ✓ runs one tool round: onToolCall fires, the result is sent back, the bridge is spoken (2 ms)
+    ✓ never hangs on a pending tool call: close() answers it (1 ms)
+    ✓ a tool the allowlist does not name is answered as unavailable, never dispatched (1 ms)
+    ✓ declares only the hand-off tools to the model (1 ms)
+    ✓ applyPersona replaces the instruction for the next turn and runs the opening turn (1 ms)
+    ✓ the specialist speaks in the specialist voice where the backend has one (1 ms)
+    ✓ swap back restores the connect-time instruction + appendix, receptionist voice, no opening turn (1 ms)
+    ✓ keeps a bounded rolling history so the "yes" turn knows what was proposed
+    ✓ runs one tool round: onToolCall fires, the result is sent back, the bridge is spoken (2 ms)
+    ✓ never hangs on a pending tool call: close() answers it
+    ✓ a tool the allowlist does not name is answered as unavailable, never dispatched
+    ✓ falls back to the receptionist voice when the specialist synthesis returns null (15 ms)
+PASS test/orb/live/upstream/cascaded-wiring.test.ts
+    ✓ imports the cascade gate helpers (they previously had NO caller on any live path) (2 ms)
+    ✓ passes a `cascade` field into selectUpstreamProvider (1 ms)
+    ✓ derives languageSupported from the session language, not a hardcoded list (1 ms)
+    ✓ has a branch on the cascaded provider decision
+    ✓ constructs the client with the 'cascaded' provider and supplies deps.cascaded (1 ms)
+    ✓ the cascaded branch precedes the nova_sonic branch and returns (3 ms)
+    ✓ binds the shared session handlers to the cascaded client (1 ms)
+    ✓ reuses the generic ws facade rather than introducing a second adapter (1 ms)
+    ✓ sets upstreamProvider so telemetry does not report the session as Nova
+    ✓ does not arm the silence keepalive on the cascaded path
+    ✓ does not arm Nova stream rotation on the cascaded path (1 ms)
+    ✓ emits a typed failure event carrying the error code (1 ms)
+    ✓ emits a success event so the rescue is observable in oasis_events
+PASS test/orb/live/upstream/cascaded-voice.test.ts
+    ✓ REFUSES every language Nova speaks natively (2 ms)
+    ✓ takes exactly the languages Nova cannot speak AND both AWS services can (2 ms)
+    ✓ refuses sr, and blames POLLY — the blocker that is actually verified (1 ms)
+    ✓ derives coverage from Polly rather than restating it (2 ms)
+    ✓ normalises locale tags and refuses unknown languages (1 ms)
+    ✓ is off unless the value is exactly "true" (1 ms)
+    ✓ without the flag, behaviour is byte-for-byte the old forced-Nova path
+    ✓ with the flag on and the language covered, it routes to the cascade
+    ✓ with the flag on but the language NOT covered (sr), it does not divert
+    ✓ VTID-03723: the cascade now rescues regardless of vertexUnavailable — there is no "live Vertex" branch left to defer to (1 ms)
+    ✓ never diverts a session whose language Nova DOES support (7 ms)
+PASS test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts
+    ✓ sr stays ineligible (no_polly_voice) when Fish is unconfigured — the pre-existing default (1 ms)
+    ✓ sr stays ineligible when the flag is set but no API key is configured
+    ✓ sr becomes eligible, routed to Fish, once explicitly enabled AND keyed
+    ✓ a language Polly already covers stays on Polly even with Fish enabled (1 ms)
+    ✓ a language with no curated Fish voice either stays ineligible even with Fish enabled
+PASS test/orb/live/upstream/cascaded-live-client-audio-gating.test.ts
+    ✓ forwards audio normally before any turn has ever run (2 ms)
+    ✓ drops mic audio while a turn is generating (turnInFlight), then resumes once the reply finishes playing (2 ms)
+    ✓ does not extend the busy window when the turn errors before any audio is emitted (1 ms)
+    ✓ a short reply gates for a correspondingly short window, not a fixed long one
+    ✓ still returns false (not true) when the client is not open at all (1 ms)
+PASS test/orb/live/upstream/vtid-04413-cascade-delegation-tools.test.ts
+    ✓ AC-1: the allowlist names exactly the hand-off tools plus the four delegation tools (6 ms)
+    ✓ AC-2: the allowlisted names match the real declarations (no drift) (1 ms)
+    ✓ AC-3: a member catalog with the support tool declares it with its schema; unrelated tools stay off (2 ms)
+    ✓ AC-4: when the flags leave the tools out of the catalog, the cascade declares nothing new
+PASS test/orb/live/upstream/cascaded/tts-backend-specialist.test.ts
+    ✓ specialist → one specialist Polly request (2 ms)
+    ✓ receptionist / no options → the exact pre-VTID-04336 request (1 ms)
+    ✓ describeCascadeVoice reports a distinct specialist voice (1 ms)
+    ✓ fishBackend ignores the voice role — the curated voice, same request (1 ms)
+    ✓ synthesizeCascadeReply keeps Polly-first/Fish-fallback for the specialist (1 ms)
+    ✓ describeCascadeVoice: curated Fish voice, not distinct (1 ms)
+PASS test/orb/live/upstream/cascaded-live-client-empty-completion.test.ts
+    ✓ retries against the fallback model and completes the turn when the retry has real text (2 ms)
+    ✓ reports cascade_llm_empty only after BOTH the primary and the retry come back empty (1 ms)
+    ✓ does NOT retry when the primary already used the router-level fallback (fallbackUsed:true) (1 ms)
+    ✓ does not retry on an explicit primary failure (ok:false) — cascade_llm_failed still fires immediately (1 ms)
+    ✓ a non-empty primary reply never triggers a retry call at all (1 ms)
+Test Suites: 9 passed, 9 total
+Tests:       76 passed, 76 total

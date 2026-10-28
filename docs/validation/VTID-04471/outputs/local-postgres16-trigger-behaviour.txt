@@ -1,0 +1,53 @@
+== legacy /register insert (status only)
+status|lifecycle_state|commerce_vertical
+pending_review|draft|health
+(1 row)
+INSERT 0 1
+== legacy /activate (status=active)
+status|lifecycle_state
+active|live
+(1 row)
+UPDATE 1
+== new insert with partner_type: vertical derived
+status|lifecycle_state|commerce_vertical
+pending_review|submitted|health
+(1 row)
+INSERT 0 1
+== lifecycle drives status
+status|lifecycle_state
+pending_review|verifying
+(1 row)
+UPDATE 1
+status|lifecycle_state
+active|live
+(1 row)
+UPDATE 1
+status|lifecycle_state
+suspended|paused
+(1 row)
+UPDATE 1
+== legacy status pending_review from paused -> submitted
+status|lifecycle_state
+pending_review|submitted
+(1 row)
+UPDATE 1
+== legacy status write while already pending keeps the lifecycle
+UPDATE 1
+status|lifecycle_state
+pending_review|needs_action
+(1 row)
+UPDATE 1
+== commerce_vertical cannot drift from partner_type
+commerce_vertical
+health
+(1 row)
+UPDATE 1
+== invalid values rejected
+ERROR:  new row for relation "partner_organizations" violates check constraint "partner_organizations_partner_type_check"
+DETAIL:  Failing row contains (9d0130fa-7770-4835-9c43-6a2afde2417a, clinic, x, clinic, pending_review, a067fcef-ead1-401a-a46f-3fee2e47e085, {}, 2026-09-24 12:31:25.084105+00, 2026-09-24 12:31:25.084105+00, general, bank, needs_action, null, DE, null, null, 0).
+ERROR:  new row for relation "partner_organizations" violates check constraint "partner_organizations_lifecycle_state_check"
+DETAIL:  Failing row contains (9d0130fa-7770-4835-9c43-6a2afde2417a, clinic, x, clinic, pending_review, a067fcef-ead1-401a-a46f-3fee2e47e085, {}, 2026-09-24 12:31:25.084105+00, 2026-09-24 12:31:25.084105+00, health, practitioner_clinic, done, null, DE, null, null, 0).
+ERROR:  new row for relation "partner_organizations" violates check constraint "partner_organizations_country_check"
+DETAIL:  Failing row contains (9d0130fa-7770-4835-9c43-6a2afde2417a, clinic, x, clinic, pending_review, a067fcef-ead1-401a-a46f-3fee2e47e085, {}, 2026-09-24 12:31:25.084105+00, 2026-09-24 12:31:25.084105+00, health, practitioner_clinic, needs_action, null, de, null, null, 0).
+ERROR:  new row for relation "partner_organizations" violates check constraint "partner_organizations_trust_level_check"
+DETAIL:  Failing row contains (9d0130fa-7770-4835-9c43-6a2afde2417a, clinic, x, clinic, pending_review, a067fcef-ead1-401a-a46f-3fee2e47e085, {}, 2026-09-24 12:31:25.084105+00, 2026-09-24 12:31:25.084105+00, health, practitioner_clinic, needs_action, null, DE, null, null, 3).

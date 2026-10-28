@@ -1,0 +1,8 @@
+# VTID-05218 — local checks (2026-10-15)
+$ node --test scripts/collab/*.test.mjs
+# pass 39
+# fail 0
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD
+exit=0
+$ diff vitana-platform/.claude/rules/collaboration.md vitana-v1/.claude/rules/collaboration.md
+(no output — identical)

@@ -1,0 +1,2 @@
+    ✕ ignores completed slots, other sources and suggestions no longer activated (2 ms)
+Tests:       1 failed, 10 passed, 11 total

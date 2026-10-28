@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-04264",
+  "title": "Dev Autopilot kill-switch button on Command Hub",
+  "executor": "claude-code-session",
+  "origin": "operator-console-onramp-took-over-on-failure",
+  "prior_execution": {
+    "tool": "autopilot_run_task",
+    "outcome": "failed",
+    "reason": "120-turn agent cap reached without a write_file/edit_file call",
+    "notes": "Confirmed via dev_query_oasis_events (dev_autopilot.agent.tool / dev_autopilot.agent.llm) — every turn was read_file/search_text against the 2.6MB app.js; one LLM call measured ~603s."
+  },
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "services/gateway/src/frontend/command-hub/styles.css",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/vtid-04264-kill-switch-button.test.ts",
+    "docs/validation/VTID-04264/acceptance.md",
+    "docs/validation/VTID-04264/commands.log",
+    "docs/validation/VTID-04264/outputs/execution.json"
+  ],
+  "backend_changed": false,
+  "new_routes": false,
+  "test_suites_run": [
+    "services/gateway/test/vtid-04264-kill-switch-button.test.ts",
+    "services/gateway/test/command-hub/",
+    "services/gateway/test/scripts/command-hub-ownership-guard.test.ts",
+    "services/gateway/test/scripts/generate-command-hub-symbol-index.test.ts",
+    "services/gateway/test/console-task-17-cost-badge-tooltip.test.ts"
+  ],
+  "test_result": "22 suites passed, 305 tests passed, 0 regressions",
+  "tsc_noemit": "clean",
+  "csp_gate": "No CSP pattern hits in added lines.",
+  "deployed": false,
+  "not_verified_live": "The next real Dev Autopilot panel load on staging after this deploys is the exercise — click Arm/Disarm and confirm the read-only chip and GET /config both reflect the change."
+}

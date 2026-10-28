@@ -1,0 +1,19 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/intent-detection-engine.test.ts
+  buildContextSignalFromMemory
+    ✓ returns undefined when memoryContext.ok is false (3 ms)
+    ✓ returns undefined when there are no items (1 ms)
+    ✓ extracts personal_facts from personal/relationships items, unchanged (1 ms)
+    ✓ VTID-03940: extracts recent_topics from conversation/notes items instead of always returning [] (1 ms)
+    ✓ recent_topics stays empty when no conversation/notes items are present (no regression)
+    ✓ caps recent_topics at 5, same as personal_facts (1 ms)
+    ✓ truncates each recent_topics entry to 100 characters, same as personal_facts
+    ✓ memory_categories and memory_item_count are unaffected by the recent_topics fix
+
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        0.475 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

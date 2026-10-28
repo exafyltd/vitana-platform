@@ -1,0 +1,42 @@
+VTID-03770 mutation testing — orb-widget.js, _resetAndReconnect()
+
+Backed up the file, then for each of 2 regions: reverted exactly that
+region's fix, re-ran the target test suite, confirmed exactly the expected
+subset of tests failed and nothing else did, restored the backup, re-verified
+`node --check` clean, moved to the next region.
+
+## Mutation 1 — remove the guided-topic restore guard
+
+Removed the `if (_s._guidedTopicInFlight && !_s.guidedTopic) { ... }` block
+(and its preceding comment) that re-arms `_s.guidedTopic` before
+`_sessionStart()` is called.
+
+Result: 2 of 13 tests in the VTID-03770 describe block failed —
+  - "re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic
+    was already cleared — same condition as _attemptReconnect"
+  - "the guided-topic re-arm runs before the _isReconnecting reset in the
+    settle handlers"
+Both failed with `armIdx` / `startIdx` resolving to -1 (pattern not found),
+exactly as expected — the guard was genuinely gone.
+All other 11 tests in the file still passed.
+
+## Mutation 2 — revert the _isReconnecting mutex fix
+
+Reverted `_s._isReconnecting = true;` back to the original
+`_s._isReconnecting = false;` at the top of `_resetAndReconnect()`.
+
+Result: 1 of 13 tests in the VTID-03770 describe block failed —
+  - "sets _isReconnecting = true before starting the reconnect — the
+    health-probe watchdog's own 'if (_s._isReconnecting) return;' guard is
+    otherwise inert"
+Failed on `expect(body).toMatch(/_s\._isReconnecting = true;/)` finding no
+match, exactly as expected.
+All other 12 tests in the file still passed.
+
+## Restoration
+
+After each mutation, restored the backup and re-ran `node --check
+src/frontend/command-hub/orb-widget.js` — clean (exit 0) both times.
+
+Conclusion: both fixes are load-bearing for their respective new tests; no
+mutation survived undetected.

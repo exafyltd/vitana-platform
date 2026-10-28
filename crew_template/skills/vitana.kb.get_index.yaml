@@ -1,0 +1,57 @@
+skill_id: vitana.kb.get_index
+name: Get Knowledge Base Index
+description: Retrieves the complete index of available Vitana Knowledge Base documents with metadata
+version: 1.0.0
+category: knowledge_base
+
+provider:
+  type: http
+  method: GET
+  endpoint: ${KB_AGENT_BASE_URL}/api/kb/index
+  timeout_ms: 5000
+
+parameters:
+  family_id:
+    type: string
+    required: false
+    description: Optional family identifier to filter index
+    examples:
+      - foundation
+      - roadmap
+      - technical
+  
+  include_metadata:
+    type: boolean
+    required: false
+    default: true
+    description: Include detailed metadata for each document
+
+response_schema:
+  families:
+    type: array
+  total_documents:
+    type: integer
+  total_words:
+    type: integer
+
+telemetry:
+  emit_events: true
+  event_types:
+    - kb.skill_invoked
+    - kb.index_accessed
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+
+usage:
+  roles:
+    - planner
+    - worker
+  primary_role: planner
+  use_cases:
+    - Pre-planning context gathering
+    - Document discovery
+    - KB availability check
+
+error_handling:
+  retry_attempts: 3
+  retry_backoff_ms: 1000
+  fallback_strategy: continue_without_kb

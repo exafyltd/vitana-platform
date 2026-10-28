@@ -1,0 +1,12 @@
+[tool.poetry]
+name = "vitana-py"
+version = "0.1.0"
+description = "Shared Python SDK for Vitana"
+authors = ["Your Name <your-github-email@example.com>"]
+
+[tool.poetry.dependencies]
+python = "^3.11"
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"

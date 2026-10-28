@@ -1,0 +1,17 @@
+AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml — run 13
+run id: 35317378080
+event: workflow_dispatch (owner-approved in conversation 2026-09-18)
+head_branch: main
+head_sha: 7c8c6009e0aae25b77bafa3b246e654db598f492 (W5c, VTID-04035 — current main)
+created: 2026-09-18T07:00:16Z
+completed: 2026-09-18T07:03:44Z
+conclusion: success
+previous image: run 12 from 3c9c6d03cf0ebf80fa89f81b26b2c270541debb9 (W3, VTID-04017)
+what the new image carries that run 12 did not (executor-side code merged after 3c9c6d0):
+  - VTID-04029 W4e: stageExecutionForApproval — agent pushes its branch and holds awaiting_approval
+  - VTID-04032 W4h: heartbeat cancel flag + isCancelled checks at every turn/tool/check/push boundary
+  - VTID-04025 W4c: task_outcome / gotcha memory rows from applyExecutionResult
+reason input (verbatim): VTID-04037: rebuild the autopilot-executor image from main 7c8c600 so staging
+  agent runs carry W4e (hold for approval, VTID-04029) and W4h (cooperative cancel, VTID-04032); the
+  last image (run 12) was built from 3c9c6d0 (W3). Owner-approved in conversation 2026-09-18 as step 1
+  of the enablement plan.

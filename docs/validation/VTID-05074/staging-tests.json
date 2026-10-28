@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-05074",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "the plugin privacy page is static HTML",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/legal/vitanaland-commerce/privacy",
+      "expect_status": 200,
+      "expect_body_contains": "Privacy for the Vitanaland plugin",
+      "reason": "read-only GET of a static page"
+    },
+    {
+      "kind": "http",
+      "name": "the plugin terms page is static HTML",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/legal/vitanaland-commerce/terms",
+      "expect_status": 200,
+      "expect_body_contains": "Terms for the Vitanaland plugin",
+      "reason": "read-only GET of a static page"
+    },
+    {
+      "kind": "http",
+      "name": "the plugin support page is static HTML",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/legal/vitanaland-commerce/support",
+      "expect_status": 200,
+      "expect_body_contains": "Support for the Vitanaland plugin",
+      "reason": "read-only GET of a static page"
+    }
+  ]
+}

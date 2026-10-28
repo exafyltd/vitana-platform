@@ -1,0 +1,3 @@
+$ python3 -c "import re; sql=open('../../supabase/migrations/20260827090000_vtid_03767_fix_seed_community_onboarding_autopilot.sql').read(); ..." (parse + compare onboarding_maxina row)
+onboarding_maxina row: ('onboarding_maxina', 'Say hello to Vitana', 'Your AI companion Vitana is ready to get to know you. Start a conversation!', 'community', 'medium', '7', '1', '60')
+row count: 8

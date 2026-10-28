@@ -1,0 +1,20 @@
+PASS test/vtid-04467-dispatch-fallback.test.ts
+    ✓ single-shot always runs in-process (4 ms)
+    ✓ an agent run on a process with the toolchain runs in-process (1 ms)
+    ✓ an agent run without the toolchain requeues, then fails on the last attempt (1 ms)
+    ✓ requeue delay grows 2, 4, 8 … minutes, capped at 30 (1 ms)
+    ✓ prior failures are read from the row metadata; garbage is zero (1 ms)
+    ✓ max attempts is env-tunable within 1..20 (1 ms)
+    ✓ names the attempts and the dispatch error (1 ms)
+    ✓ is an outage-class failure even when the dispatch error itself is not
+    ✓ five of them never snooze the finding
+    ✓ the helper slice is bounded
+    ✓ the decision sits between the dispatch attempt and the in-process fallback
+    ✓ requeue is a conditional PATCH back to cooling with execute_after and the attempt count
+    ✓ both outcomes release the run lease and emit their own event (1 ms)
+    ✓ a dispatch failure never goes through applyExecutionResult (no self-heal bridge)
+    ✓ the event types are declared (1 ms)
+    ✓ false when the linked node_modules has no tsc (the gateway image) (1 ms)
+    ✓ true when tsc is present and git runs (the executor image) (6 ms)
+    ✓ the answer is cached for the process (1 ms)
+Tests:       18 passed, 18 total

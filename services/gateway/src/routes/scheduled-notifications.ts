@@ -1,0 +1,1805 @@
+/**
+ * Scheduled Notification Webhook Endpoints
+ *
+ * Cloud Scheduler (or manual cron) triggers these endpoints to dispatch
+ * time-based notifications to all active users in a tenant.
+ *
+ * Endpoints:
+ *   POST /api/v1/scheduled-notifications/morning-briefing
+ *   POST /api/v1/scheduled-notifications/daily-pace-notifications
+ *   POST /api/v1/scheduled-notifications/diary-reminder
+ *   POST /api/v1/scheduled-notifications/weekly-digest
+ *   POST /api/v1/scheduled-notifications/weekly-summary
+ *   POST /api/v1/scheduled-notifications/weekly-reflection
+ *   POST /api/v1/scheduled-notifications/meetup-reminders   (retired, no-op — VTID-04374)
+ *   POST /api/v1/scheduled-notifications/upcoming-events
+ *   POST /api/v1/scheduled-notifications/recommendation-expiry
+ *   POST /api/v1/scheduled-notifications/signal-cleanup
+ *   POST /api/v1/scheduled-notifications/night-push
+ *   POST /api/v1/scheduled-notifications/whats-new         (VTID-04733)
+ *   POST /api/v1/scheduled-notifications/welcome-team-tick (VTID-05205)
+ */
+
+import { Router, Request, Response } from 'express';
+import {
+  notifyUser, notifyUserAsync, TYPE_META,
+  newPushFanoutOutcome, classifyPushOutcome, recordPushOutcome, type PushOutcome,
+} from '../services/notification-service';
+import { dispatchPush } from '../services/push-routing';
+import { generatePersonalRecommendations } from '../services/recommendation-engine';
+import { LangCode, resolveLanguage } from '../services/recommendation-engine/analyzers/community-user-analyzer';
+import { tt, type GatewayI18nKey } from '../i18n/catalog';
+import { getUserLocale, bulkGetUserLocales } from '../i18n/server-locale';
+import {
+  computePaceDecision,
+  paceToneKeys,
+  type SkipReason,
+} from '../services/daily-pace-service';
+import { FEATURE_TIPS } from '../data/feature-tips';
+import {
+  fetchWhatsNewManifest, parseWhatsNewManifest, selectNextWhatsNewEntry,
+  WHATS_NEW_CREATED_BY_PREFIX, WHATS_NEW_MIN_GAP_HOURS,
+} from '../services/whats-new-publisher';
+import * as repo from './scheduled-notifications-repository';
+import { withJobTenants } from '../services/jobs/job-tenant-loop';
+import { CHAT_PUSH_TYPES, chatConversationKeyFromData, keysByMessageId, messageIdOf, viewingKey, viewingPairs } from '../services/chat-viewing-presence';
+import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
+import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
+import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
+
+import { withDependencyHealth } from '../services/dependency-probe';
+import { requireScheduledNotificationsAuth, scheduledNotificationsAuthStatus, evaluateScheduledNotificationsAuth } from '../middleware/scheduled-notifications-auth';
+import { runCoachTick } from '../services/onboarding-coach/coach-service';
+import { resolveCoachConfig } from '../services/onboarding-coach/config';
+import { runCompanionTick } from '../services/companion/companion-service';
+import { resolveCompanionConfig, isSendMode } from '../services/companion/config';
+import { runWelcomeTeamTick } from '../services/welcome-team/welcome-team-service';
+import { resolveWelcomeTeamConfig } from '../services/welcome-team/config';
+const router = Router();
+
+// VTID-04677: every route below fans out notifications to members, so each
+// caller must present X-Gateway-Internal (the EventBridge Lambdas and the
+// gateway's own automation handlers). GET /health stays open; the middleware
+// passes it through itself. SCHEDULED_NOTIFICATIONS_AUTH_MODE decides whether a
+// missing/wrong token is logged (default) or rejected (enforce).
+router.use(requireScheduledNotificationsAuth);
+
+// ── Helper: get service-role Supabase client ─────────────────
+async function getServiceClient() {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  const { createClient } = await import('@supabase/supabase-js');
+  return createClient(url, key);
+}
+
+// ── Helper: get all active users for a tenant ────────────────
+// Pages through user_tenants: Supabase REST caps a single select at ~1000
+// rows, which silently truncated large tenants (users past the cap never
+// received scheduled notifications).
+async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ user_id: string }>> {
+  const PAGE_SIZE = 1000;
+  const users: Array<{ user_id: string }> = [];
+  for (let offset = 0; ; offset += PAGE_SIZE) {
+    const { data, error } = await repo.fetchActiveUsersPage(supabase, { tenantId, offset, pageSize: PAGE_SIZE });
+    if (error) {
+      // Deliberately does not throw: these 9 call sites have no top-level
+      // error-catching middleware, and a hung/unhandled-rejection cron
+      // request risks a Scheduler timeout+retry double-send (see the
+      // VTID-03487 comment above) — worse than the partial page this
+      // already degrades to. Logged loudly so a mid-pagination DB error is
+      // at least visible instead of silently read as "reached the end of
+      // this tenant's users."
+      console.error(
+        `[scheduled-notifications] getActiveUsers query failed for tenant=${tenantId} offset=${offset}: ${error.message} — returning ${users.length} user(s) collected so far, possibly a partial list`,
+      );
+      break;
+    }
+    const page = data || [];
+    users.push(...page);
+    if (page.length < PAGE_SIZE) break;
+  }
+  return users;
+}
+
+// ── Helper: extract tenant_id from body or use default ───────
+function getTenantId(req: Request): string | null {
+  return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// ── VTID-05270 (mt-jobs): tenant fan-out for the getTenantId-driven routes ──
+// Master off (MT_RESOLUTION_V2 unset) ⇒ the handler gets getTenantId(req) and
+// the live response, exactly as before. Master on ⇒ a body tenant_id runs once
+// for that tenant (AP-0501 → /morning-briefing never re-fans out); no body
+// tenant ⇒ one pass per active tenant (resolveJobTenants). Per-user timezones
+// and the findRecentlyNotified idempotency check stay inside each pass.
+function jobRoute(handler: (req: Request, res: Response, tenantId: string | null) => unknown) {
+  return withJobTenants(handler, getTenantId, { getClient: getServiceClient as any });
+}
+
+/**
+ * Which of these users already received `type` recently — i.e. this run is a
+ * REPEAT for them and must send nothing (VTID-03487).
+ *
+ * Every scheduled fan-out in this file is driven by Cloud Scheduler with
+ * `--attempt-deadline=300s --max-retry-attempts=1`, and each one loops over the
+ * whole tenant synchronously before responding. Once the tenant grew past what
+ * fits in five minutes, Scheduler stopped seeing a 200, declared the run failed,
+ * and retried it — re-running the ENTIRE fan-out. Nothing was idempotent, so
+ * every user got the notification a second time.
+ *
+ * That is exactly what happened to the morning briefing on 2026-08-04: wave one
+ * ran 05:00–05:04, the deadline expired at 05:05:00, and wave two immediately
+ * re-sent all ~200 users. On 2026-08-03 the same job finished in three minutes,
+ * never timed out, and produced no duplicates — which is why this looked
+ * intermittent. Because the briefing picks a random greeting per send, the two
+ * copies read as "the same notification with two different wordings" rather
+ * than as an obvious duplicate.
+ *
+ * Uses a lookback WINDOW rather than a calendar-day boundary on purpose: these
+ * jobs are scheduled in Europe/Berlin while the DB stores UTC, so a midnight
+ * boundary would both mis-bucket around DST and fail to suppress a retry that
+ * straddles it. A window shorter than the job's own cadence suppresses the
+ * retry (minutes later) while never blocking the next legitimate run.
+ *
+ * Fails OPEN: if the lookup errors we return an empty set and send anyway. A
+ * missed briefing is worse than a duplicated one, and this guard is a safety
+ * net over the schedule, not the thing that decides who is eligible.
+ */
+async function findRecentlyNotified(
+  supa: any,
+  tenantId: string,
+  userIds: string[],
+  type: string,
+  withinHours: number,
+): Promise<Set<string>> {
+  const already = new Set<string>();
+  if (!userIds.length) return already;
+
+  const since = new Date(Date.now() - withinHours * 60 * 60 * 1000).toISOString();
+
+  // Chunked so a large tenant doesn't build an unbounded PostgREST `in.()` list.
+  const CHUNK = 500;
+  for (let i = 0; i < userIds.length; i += CHUNK) {
+    const chunk = userIds.slice(i, i + CHUNK);
+    const { data, error } = await repo.fetchRecentlyNotifiedChunk(supa, { tenantId, type, since, userIdChunk: chunk });
+
+    if (error) {
+      console.warn(`[Scheduled] ${type} idempotency lookup failed, sending anyway: ${error.message}`);
+      return new Set<string>();
+    }
+    for (const row of data || []) already.add(row.user_id);
+  }
+  return already;
+}
+
+// ── Helper: fan-out a localized notification across a user list ───────
+// Looks up each user's preferred locale (bulk), then dispatches the
+// notification with the title/body resolved per-user against the gateway
+// catalog. Use this instead of raw notifyUserAsync() in scheduled jobs.
+async function dispatchLocalized(
+  supa: any,
+  users: Array<{ user_id: string }>,
+  tenantId: string,
+  type: string,
+  titleKey: GatewayI18nKey,
+  bodyKey: GatewayI18nKey,
+  data: Record<string, string>,
+  bodyParams?: (userId: string) => Record<string, string | number>,
+  /**
+   * Suppress users who already got this type within this many hours
+   * (VTID-03487). Pass the job's own cadence minus a margin: ~20h for a daily
+   * job, ~144h (6d) for a weekly one. Guards against a Cloud Scheduler retry
+   * re-running the whole fan-out — see findRecentlyNotified().
+   */
+  minIntervalHours?: number,
+): Promise<number> {
+  const userIds = users.map((u) => u.user_id);
+  const already = minIntervalHours
+    ? await findRecentlyNotified(supa, tenantId, userIds, type, minIntervalHours)
+    : new Set<string>();
+  if (already.size) {
+    console.log(`[Scheduled] ${type} → skipping ${already.size} already notified within ${minIntervalHours}h`);
+  }
+
+  const locales = await bulkGetUserLocales(supa, userIds);
+  let dispatched = 0;
+  for (const { user_id } of users) {
+    if (already.has(user_id)) continue;
+    const lc = locales.get(user_id);
+    const params = bodyParams ? bodyParams(user_id) : undefined;
+    notifyUserAsync(
+      user_id,
+      tenantId,
+      type,
+      {
+        title: tt(titleKey, lc),
+        body: tt(bodyKey, lc, params),
+        data,
+      },
+      supa,
+    );
+    dispatched++;
+  }
+  return dispatched;
+}
+
+// =============================================================================
+// POST /morning-briefing — Daily 7 AM UTC (Personalized from Maxina)
+// =============================================================================
+
+const GREETINGS: Record<LangCode, string[]> = {
+  en: ['Good morning', 'Rise and shine', 'Hello', 'Hey'],
+  de: ['Guten Morgen', 'Schönen guten Morgen', 'Einen wunderschönen Morgen', 'Hey', 'Hallo', 'Moin'],
+  fr: ['Bonjour', 'Bien le bonjour', 'Salut', 'Coucou'],
+  es: ['Buenos días', 'Hola', 'Buen día', 'Hey'],
+  ar: ['صباح الخير', 'مرحباً', 'أهلاً'],
+  zh: ['早上好', '你好', '嗨'],
+  ru: ['Доброе утро', 'Привет', 'Здравствуй'],
+  sr: ['Dobro jutro', 'Zdravo', 'Ćao'],
+};
+
+const CLOSINGS: Record<LangCode, string[]> = {
+  en: ['Your Maxina wishes you a great day!', "I'm here when you need me. Your Maxina.", "Let's make today a good one!", 'You got this! Your Maxina.', 'Maxina believes in you!', 'Make the best of today! Your Maxina.'],
+  de: ['Deine Maxina wünscht dir einen tollen Tag!', 'Ich bin da, wenn du mich brauchst. Deine Maxina.', 'Lass uns gemeinsam einen guten Tag machen!', 'Du schaffst das! Deine Maxina.', 'Einen schönen Tag wünscht dir Maxina.', 'Maxina glaubt an dich!', 'Mach das Beste aus heute! Deine Maxina.'],
+  fr: ['Ta Maxina te souhaite une super journée !', 'Je suis là quand tu as besoin de moi. Ta Maxina.', 'Faisons de cette journée une belle journée !', 'Tu vas y arriver ! Ta Maxina.', 'Maxina croit en toi !', 'Profite bien de ta journée ! Ta Maxina.'],
+  es: ['¡Tu Maxina te desea un gran día!', 'Estoy aquí cuando me necesites. Tu Maxina.', '¡Hagamos de hoy un buen día!', '¡Tú puedes! Tu Maxina.', '¡Maxina cree en ti!', '¡Aprovecha el día! Tu Maxina.'],
+  ar: ['ماكسينا تتمنى لك يوماً رائعاً!', 'أنا هنا عندما تحتاجني. ماكسينا.', 'لنجعل اليوم يوماً جميلاً!', 'يمكنك ذلك! ماكسينا.', 'ماكسينا تؤمن بك!'],
+  zh: ['你的Maxina祝你度过美好的一天！', '需要我的时候我就在。你的Maxina。', '让我们一起度过美好的一天！', '你可以的！你的Maxina。', 'Maxina相信你！'],
+  ru: ['Твоя Максина желает тебе отличного дня!', 'Я рядом, когда нужна. Твоя Максина.', 'Давай сделаем сегодня хорошим днём!', 'У тебя получится! Твоя Максина.', 'Максина верит в тебя!'],
+  sr: ['Tvoja Maxina ti želi divan dan!', 'Tu sam kad me trebaš. Tvoja Maxina.', 'Hajde da napravimo dobar dan!', 'Možeš ti to! Tvoja Maxina.', 'Maxina veruje u tebe!'],
+};
+
+const MOOD_MESSAGES: Record<LangCode, Record<string, string>> = {
+  en: {
+    sad: 'Yesterday was a tough day. Today will be better!',
+    anxious: "I see you weren't feeling great. I'm here for you.",
+    stressed: "Let's take it easy today.",
+    happy: "Great that you're feeling good! Keep it up!",
+    energetic: 'You had lots of energy yesterday!',
+    calm: "Nice that you're feeling balanced.",
+    tired: 'Take some time for yourself today.',
+  },
+  de: {
+    sad: 'Gestern war ein schwieriger Tag. Heute wird besser!',
+    anxious: 'Ich sehe, dass es dir nicht so gut ging. Ich bin für dich da.',
+    stressed: 'Lass uns heute etwas ruhiger angehen.',
+    happy: 'Toll, dass es dir gut geht! Weiter so!',
+    energetic: 'Du hattest gestern richtig viel Energie!',
+    calm: 'Schön, dass du ausgeglichen bist.',
+    tired: 'Nimm dir heute Zeit für dich.',
+  },
+  fr: {
+    sad: "Hier était une journée difficile. Aujourd'hui sera mieux !",
+    anxious: "Je vois que ça n'allait pas très bien. Je suis là pour toi.",
+    stressed: 'Prenons les choses doucement aujourd\'hui.',
+    happy: 'Super que tu te sentes bien ! Continue comme ça !',
+    energetic: "Tu avais beaucoup d'énergie hier !",
+    calm: "C'est bien que tu sois équilibré(e).",
+    tired: "Prends du temps pour toi aujourd'hui.",
+  },
+  es: {
+    sad: 'Ayer fue un día difícil. ¡Hoy será mejor!',
+    anxious: 'Veo que no te sentías bien. Estoy aquí para ti.',
+    stressed: 'Vamos con calma hoy.',
+    happy: '¡Qué bien que te sientas bien! ¡Sigue así!',
+    energetic: '¡Ayer tenías mucha energía!',
+    calm: 'Qué bueno que estés equilibrado/a.',
+    tired: 'Tómate tiempo para ti hoy.',
+  },
+  ar: {
+    sad: 'كان أمس يوماً صعباً. اليوم سيكون أفضل!',
+    anxious: 'أرى أنك لم تكن بخير. أنا هنا من أجلك.',
+    stressed: 'لنأخذ الأمور ببساطة اليوم.',
+    happy: 'رائع أنك تشعر بالارتياح! استمر!',
+    energetic: 'كانت لديك طاقة كبيرة أمس!',
+    calm: 'جميل أنك متوازن.',
+    tired: 'خذ بعض الوقت لنفسك اليوم.',
+  },
+  zh: {
+    sad: '昨天是艰难的一天。今天会更好！',
+    anxious: '我看到你感觉不太好。我在你身边。',
+    stressed: '今天我们慢慢来。',
+    happy: '很高兴你感觉不错！继续保持！',
+    energetic: '你昨天精力充沛！',
+    calm: '很好，你很平衡。',
+    tired: '今天给自己一些时间。',
+  },
+  ru: {
+    sad: 'Вчера был трудный день. Сегодня будет лучше!',
+    anxious: 'Вижу, что тебе было нелегко. Я рядом.',
+    stressed: 'Давай сегодня полегче.',
+    happy: 'Здорово, что тебе хорошо! Так держать!',
+    energetic: 'Вчера у тебя было много энергии!',
+    calm: 'Хорошо, что ты в равновесии.',
+    tired: 'Удели сегодня время себе.',
+  },
+  sr: {
+    sad: 'Juče je bio težak dan. Danas će biti bolje!',
+    anxious: 'Vidim da ti nije bilo lako. Tu sam za tebe.',
+    stressed: 'Hajde da danas idemo lagano.',
+    happy: 'Super da se dobro osećaš! Nastavi tako!',
+    energetic: 'Juče si imao/la puno energije!',
+    calm: 'Lepo da si uravnotežen/a.',
+    tired: 'Uzmi danas malo vremena za sebe.',
+  },
+};
+
+const BRIEFING_TEXT: Record<LangCode, {
+  vitanaIndex: string;
+  trendUp: string;
+  trendDown: string;
+  trendStable: string;
+  streakHigh: string;
+  streakMid: string;
+  matchesPending: string;
+  recsReady: string;
+  fallbackTitle: string;
+  fallbackBody: string;
+}> = {
+  en: { vitanaIndex: 'Your Vitana Index: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: '{count}-day diary streak! Impressive!', streakMid: '{count} days in a row journaling. Keep it up!', matchesPending: '{count} new match(es) waiting for you.', recsReady: '{count} Autopilot action(s) ready.', fallbackTitle: 'Good morning!', fallbackBody: 'Your daily briefing is ready. Take a look!' },
+  de: { vitanaIndex: 'Dein Vitana-Index: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: '{count}-Tage-Tagebuch-Serie! Beeindruckend!', streakMid: 'Schon {count} Tage in Folge Tagebuch geschrieben. Bleib dran!', matchesPending: '{count} neue Match(es) warten auf dich.', recsReady: '{count} Autopilot-Aktion(en) bereit.', fallbackTitle: 'Guten Morgen!', fallbackBody: 'Dein tägliches Briefing ist bereit. Schau mal rein!' },
+  fr: { vitanaIndex: 'Ton indice Vitana : {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: 'Série de {count} jours de journal ! Impressionnant !', streakMid: '{count} jours de suite. Continue !', matchesPending: '{count} nouveau(x) match(s) en attente.', recsReady: '{count} action(s) Autopilot prête(s).', fallbackTitle: 'Bonjour !', fallbackBody: 'Ton briefing quotidien est prêt. Jette un œil !' },
+  es: { vitanaIndex: 'Tu índice Vitana: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: '¡Racha de {count} días de diario! ¡Impresionante!', streakMid: '{count} días seguidos. ¡Sigue así!', matchesPending: '{count} match(es) nuevo(s) esperándote.', recsReady: '{count} acción(es) Autopilot lista(s).', fallbackTitle: '¡Buenos días!', fallbackBody: 'Tu briefing diario está listo. ¡Échale un vistazo!' },
+  ar: { vitanaIndex: 'مؤشر فيتانا: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: 'سلسلة {count} يوم من اليوميات! مثير للإعجاب!', streakMid: '{count} يوم متتالي. استمر!', matchesPending: '{count} تطابق(ات) جديدة بانتظارك.', recsReady: '{count} إجراء(ات) Autopilot جاهزة.', fallbackTitle: 'صباح الخير!', fallbackBody: 'ملخصك اليومي جاهز. ألقِ نظرة!' },
+  zh: { vitanaIndex: '你的Vitana指数：{score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: '{count}天日记连续！令人印象深刻！', streakMid: '连续{count}天。继续坚持！', matchesPending: '{count}个新匹配等着你。', recsReady: '{count}个Autopilot操作已就绪。', fallbackTitle: '早上好！', fallbackBody: '你的每日简报已准备好。看看吧！' },
+  ru: { vitanaIndex: 'Твой индекс Vitana: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: 'Серия {count} дней дневника! Впечатляет!', streakMid: '{count} дней подряд. Так держать!', matchesPending: '{count} новых совпадений ждут тебя.', recsReady: '{count} действий Autopilot готово.', fallbackTitle: 'Доброе утро!', fallbackBody: 'Твой ежедневный брифинг готов. Загляни!' },
+  sr: { vitanaIndex: 'Tvoj Vitana indeks: {score}/100', trendUp: '↑', trendDown: '↓', trendStable: '→', streakHigh: 'Serija od {count} dana dnevnika! Impresivno!', streakMid: '{count} dana zaredom. Nastavi!', matchesPending: '{count} novih poklapanja te čeka.', recsReady: '{count} Autopilot akcija spremno.', fallbackTitle: 'Dobro jutro!', fallbackBody: 'Tvoj dnevni brifing je spreman. Pogledaj!' },
+};
+
+interface BriefingContext {
+  userName: string | null;
+  language: LangCode;
+  healthScore: number | null;
+  healthTrend: 'up' | 'stable' | 'down' | null;
+  diaryMood: string | null;
+  diaryStreak: number;
+  pendingMatchCount: number;
+  newRecCount: number;
+  connectionCount: number;
+}
+
+async function gatherBriefingContext(supa: any, userId: string, tenantId: string): Promise<BriefingContext> {
+  const [factsResult, healthResult, diaryResult, matchResult, recResult, connResult, streakResult] = await Promise.all([
+    repo.fetchBriefingFacts(supa, userId),
+    repo.fetchBriefingHealthScores(supa, userId),
+    repo.fetchBriefingLatestDiaryEntry(supa, userId),
+    repo.fetchBriefingPendingMatchCount(supa, { userId, tenantId }),
+    repo.fetchBriefingNewRecCount(supa, userId),
+    repo.fetchBriefingConnectionCount(supa, { userId, tenantId }),
+    repo.fetchBriefingDiaryStreakEntries(supa, userId),
+  ]);
+
+  // Parse facts
+  const facts = factsResult.data || [];
+  const userName = facts.find((f: any) => f.fact_key === 'display_name' || f.fact_key === 'name')?.fact_value || null;
+  const langFact = facts.find((f: any) => f.fact_key === 'preferred_language')?.fact_value;
+  const language = resolveLanguage(langFact);
+
+  // Parse health trend
+  const healthRows = healthResult.data || [];
+  let healthScore: number | null = null;
+  let healthTrend: 'up' | 'stable' | 'down' | null = null;
+  if (healthRows.length > 0) {
+    healthScore = healthRows[0].score_total;
+    if (healthRows.length > 1) {
+      const delta = healthRows[0].score_total - healthRows[1].score_total;
+      healthTrend = delta > 2 ? 'up' : delta < -2 ? 'down' : 'stable';
+    }
+  }
+
+  // Parse diary mood
+  let diaryMood: string | null = null;
+  if (diaryResult.data?.length > 0) {
+    const meta = diaryResult.data[0].metadata as any;
+    const tags = diaryResult.data[0].tags as string[] || [];
+    diaryMood = meta?.mood || tags.find((t: string) => ['happy', 'sad', 'anxious', 'calm', 'stressed', 'energetic', 'tired'].includes(t)) || null;
+  }
+
+  // Calculate diary streak
+  let diaryStreak = 0;
+  const entries = streakResult.data || [];
+  if (entries.length > 0) {
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+    let checkDate = new Date(today);
+    for (const entry of entries) {
+      const entryDate = new Date(entry.created_at);
+      entryDate.setHours(0, 0, 0, 0);
+      if (entryDate.getTime() === checkDate.getTime()) {
+        diaryStreak++;
+        checkDate.setDate(checkDate.getDate() - 1);
+      } else if (entryDate.getTime() < checkDate.getTime()) {
+        if (checkDate.getTime() - entryDate.getTime() <= 86400000) {
+          checkDate = new Date(entryDate);
+          diaryStreak++;
+          checkDate.setDate(checkDate.getDate() - 1);
+        } else {
+          break;
+        }
+      }
+    }
+  }
+
+  return {
+    userName,
+    language,
+    healthScore,
+    healthTrend,
+    diaryMood,
+    diaryStreak,
+    pendingMatchCount: matchResult.count || 0,
+    newRecCount: recResult.count || 0,
+    connectionCount: connResult.count || 0,
+  };
+}
+
+function pick<T>(arr: T[]): T {
+  return arr[Math.floor(Math.random() * arr.length)];
+}
+
+function composeMorningBriefing(ctx: BriefingContext): string {
+  const lang = ctx.language;
+  const bt = BRIEFING_TEXT[lang] ?? BRIEFING_TEXT['en'];
+  const parts: string[] = [];
+
+  // 1. Greeting
+  const greetings = GREETINGS[lang] ?? GREETINGS['en'];
+  const greeting = pick(greetings);
+  parts.push(ctx.userName ? `${greeting}, ${ctx.userName}!` : `${greeting}!`);
+
+  // 2. Health pulse
+  if (ctx.healthScore !== null) {
+    const trendEmoji = ctx.healthTrend === 'up' ? bt.trendUp : ctx.healthTrend === 'down' ? bt.trendDown : bt.trendStable;
+    parts.push(`${bt.vitanaIndex.replace('{score}', String(ctx.healthScore))} ${trendEmoji}`);
+  }
+
+  // 3. Mood acknowledgment
+  if (ctx.diaryMood) {
+    const moods = MOOD_MESSAGES[lang] ?? MOOD_MESSAGES['en'];
+    if (moods[ctx.diaryMood]) {
+      parts.push(moods[ctx.diaryMood]);
+    }
+  }
+
+  // 4. Streak celebration
+  if (ctx.diaryStreak >= 7) {
+    parts.push(bt.streakHigh.replace('{count}', String(ctx.diaryStreak)));
+  } else if (ctx.diaryStreak >= 3) {
+    parts.push(bt.streakMid.replace('{count}', String(ctx.diaryStreak)));
+  }
+
+  // 5. Social pulse
+  if (ctx.pendingMatchCount > 0) {
+    parts.push(bt.matchesPending.replace('{count}', String(ctx.pendingMatchCount)));
+  }
+
+  // 6. Recommendations
+  if (ctx.newRecCount > 0) {
+    parts.push(bt.recsReady.replace('{count}', String(ctx.newRecCount)));
+  }
+
+  // 7. Closing
+  const closings = CLOSINGS[lang] ?? CLOSINGS['en'];
+  parts.push(pick(closings));
+
+  return parts.join(' ');
+}
+
+router.post('/morning-briefing', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const users = await getActiveUsers(supa, tenantId);
+
+  // VTID-03487 — this is the fan-out that actually double-sent in production.
+  // The per-user body below is expensive (a recommendation generation plus a
+  // context gather each), so the whole loop outgrew Cloud Scheduler's 300s
+  // attempt deadline; Scheduler then retried and re-sent every user a second
+  // briefing, with a freshly randomized greeting so it read as a differently
+  // worded copy rather than an obvious duplicate.
+  //
+  // The check runs BEFORE any of that work, so a retry now costs one query and
+  // returns immediately instead of burning another five minutes and timing out
+  // again. 20h is under the 24h cadence: it suppresses today's retry and never
+  // blocks tomorrow's run.
+  const alreadyBriefed = await findRecentlyNotified(
+    supa, tenantId, users.map((u) => u.user_id), 'morning_briefing_ready', 20,
+  );
+  let dispatched = 0;
+  let skippedDuplicate = 0;
+
+  for (const { user_id } of users) {
+    if (alreadyBriefed.has(user_id)) {
+      skippedDuplicate++;
+      continue;
+    }
+    try {
+      // Generate fresh personal recommendations for this user
+      await generatePersonalRecommendations(user_id, tenantId, { trigger_type: 'scheduled' });
+
+      // Gather briefing context and compose personalized message
+      const ctx = await gatherBriefingContext(supa, user_id, tenantId);
+      const briefingBody = composeMorningBriefing(ctx);
+
+      const greetings = GREETINGS[ctx.language] ?? GREETINGS['en'];
+      const greetingTitle = ctx.userName ? `${pick(greetings)}, ${ctx.userName}!` : `${pick(greetings)}!`;
+
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title: greetingTitle,
+        body: briefingBody,
+        data: { url: '/dashboard' },
+      }, supa);
+      dispatched++;
+    } catch (err: any) {
+      console.warn(`[Scheduled] morning_briefing error for ${user_id.slice(0, 8)}: ${err.message}`);
+      // Fallback to basic notification (English default)
+      const fb = BRIEFING_TEXT['en'];
+      notifyUserAsync(user_id, tenantId, 'morning_briefing_ready', {
+        title: fb.fallbackTitle,
+        body: fb.fallbackBody,
+        data: { url: '/dashboard' },
+      }, supa);
+      dispatched++;
+    }
+  }
+
+  console.log(
+    `[Scheduled] morning_briefing_ready → ${dispatched} users (personalized)` +
+    (skippedDuplicate ? `, ${skippedDuplicate} skipped as already briefed today` : ''),
+  );
+  return res.status(200).json({ ok: true, dispatched, skipped_duplicate: skippedDuplicate });
+}));
+
+// =============================================================================
+// POST /daily-pace-notifications — Hourly UTC (claude/daily-pace-notifications)
+//
+// Cron fires every hour on the hour (UTC). For each user in the tenant we
+// compute a per-user `PaceDecision` that:
+//   - resolves the user's timezone (app_users → user_preferences →
+//     memory_facts → Europe/Berlin default);
+//   - checks that their local hour is exactly 19 (one tick per local day);
+//   - checks active life_compass goal, push not muted, ≥3 surfaced
+//     autopilot recs in the last 7 days, and not already sent today;
+//   - if eligible, buckets activated_7d / surfaced_7d into one of three
+//     tones (on_track / slightly_behind / falling_behind) and dispatches
+//     ONE localized push via notifyUserAsync.
+//
+// Per-user dispatch is mirrored from morning-briefing (per-user try/catch
+// in the loop so one bad user doesn't kill the run). The per-user tone
+// means dispatchLocalized's "one key pair per fan-out" shape doesn't fit —
+// we inline a fan-out loop instead of refactoring dispatchLocalized.
+//
+// NOTE: This is the first hourly-UTC scheduled notification in the
+// codebase — all other entries in this file are daily Europe/Berlin. The
+// hourly+UTC pattern is intentional: it gives us a tick that lands in
+// every user's local 19:00 hour regardless of their tz offset (including
+// fractional offsets like Asia/Kathmandu UTC+5:45).
+// =============================================================================
+router.post('/daily-pace-notifications', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  // auth: scheduled-notifications-auth (VTID-04677)
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  // Debug params for on-call / manual testing:
+  //   user_id — process ONLY this user (skip the tenant fan-out)
+  //   force   — also bypass the wrong_hour gate so you can fire a test
+  //             push at any time of day. Both also accepted as query string.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const nowUtc = new Date();
+  // When user_id is supplied, target that user directly instead of
+  // fetching the tenant fan-out and filtering in memory — Supabase REST
+  // pages at ~1k rows so a valid user on a later page would otherwise be
+  // silently dropped (codex review). computePaceDecision already
+  // tenant-scopes every read it does, so bogus UUIDs surface as the
+  // expected skip reasons (no_goal etc.) in the response.
+  const users = debugUserId
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
+
+  // Pre-fetch locales for the whole tenant in one query (same pattern as
+  // the other fan-out routes — avoids N round-trips for catalog lookups).
+  const locales = await bulkGetUserLocales(supa, users.map((u) => u.user_id));
+
+  const skipped: Record<SkipReason | 'error', number> = {
+    no_goal: 0,
+    insufficient_actions: 0,
+    muted: 0,
+    already_sent: 0,
+    wrong_hour: 0,
+    invalid_tz: 0,
+    error: 0,
+  };
+  let dispatched = 0;
+  const errors: Array<{ user_id: string; message: string }> = [];
+
+  for (const { user_id } of users) {
+    try {
+      const decision = await computePaceDecision(supa, user_id, tenantId, nowUtc, {
+        skipHourCheck: force,
+      });
+
+      if (!decision.shouldNotify) {
+        if (decision.skipReason) skipped[decision.skipReason]++;
+        continue;
+      }
+
+      const tone = decision.tone!;
+      const { titleKey, bodyKey } = paceToneKeys(tone);
+      const lc = locales.get(user_id);
+      const titleStr = tt(titleKey as GatewayI18nKey, lc);
+      const bodyStr = tt(bodyKey as GatewayI18nKey, lc);
+
+      // Pre-write the dedup row FIRST (synchronously), THEN dispatch.
+      // If we did this in the other order, a same-second retry could land
+      // between the async notifyUserAsync start and the pre-insert returning
+      // — leaving alreadySentToday seeing nothing and double-firing.
+      // Read TYPE_META so the pre-insert's channel/priority/category never
+      // drift from the canonical notifyUser row if TYPE_META is later tuned.
+      // Defensive: defaults are aligned with the canonical TYPE_META entry,
+      // so a missing or partial import in test contexts still produces a
+      // sane pre-insert.
+      const meta = TYPE_META?.['daily_pace_check'];
+      try {
+        // push_sent_at is set so the /push-dispatch cron (which scans for
+        // push_sent_at IS NULL within the last 5 min) ignores this row.
+        // Without it, the dispatch cron would deliver a second push within
+        // 30 seconds. notifyUserAsync below writes its own canonical row;
+        // /push-dispatch skips both.
+        await repo.insertDailyPacePreNotification(supa, {
+          user_id,
+          tenant_id: tenantId,
+          type: 'daily_pace_check',
+          title: titleStr,
+          body: bodyStr,
+          // Stringify numeric metric fields to match notifyUser's
+          // Record<string, string> data shape — analytics queries on
+          // data->tone / data->url see the same shape on both rows.
+          data: {
+            type: 'daily_pace_check',
+            tone,
+            url: '/autopilot',
+            deeplink: '/autopilot',
+            ratio: String(decision.ratio ?? ''),
+            surfaced_7d: String(decision.surfaced7d ?? ''),
+            activated_7d: String(decision.activated7d ?? ''),
+            local_date: decision.userLocalDate ?? '',
+          },
+          channel: meta?.channel ?? 'push_and_inapp',
+          priority: meta?.priority ?? 'p2',
+          category: meta?.category ?? 'calendar',
+          push_sent_at: new Date().toISOString(),
+        });
+      } catch (insErr: any) {
+        // notifyUser() inside notifyUserAsync will still write its own row
+        // via the canonical pipeline; this is a best-effort dedup hint.
+        console.warn(
+          `[Scheduled] daily_pace pre-insert failed for ${user_id.slice(0, 8)}: ${insErr?.message || insErr}`,
+        );
+      }
+
+      // Now dispatch via the canonical pipeline (writes its own user_notifications
+      // row + sends FCM/Appilix). Fire-and-forget; metrics on per-user delivery
+      // outcomes are owned by notifyUser.
+      notifyUserAsync(
+        user_id,
+        tenantId,
+        'daily_pace_check',
+        {
+          title: titleStr,
+          body: bodyStr,
+          data: {
+            type: 'daily_pace_check',
+            tone,
+            // Deep-link convention in this file: morning-briefing uses
+            // `data.url: '/dashboard'`. Match that — raw path, not a
+            // `vitana://` scheme — so the frontend's existing handler
+            // routes us to the autopilot surface.
+            url: '/autopilot',
+            deeplink: '/autopilot',
+          },
+        },
+        supa,
+      );
+
+      dispatched++;
+    } catch (err: any) {
+      skipped.error++;
+      errors.push({ user_id, message: err?.message || String(err) });
+      console.warn(
+        `[Scheduled] daily_pace_check error for ${user_id.slice(0, 8)}: ${err?.message || err}`,
+      );
+    }
+  }
+
+  console.log(
+    `[Scheduled] daily_pace_check → dispatched=${dispatched} ` +
+      `skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
+  );
+
+  // Record the dispatch as a state transition (push fan-out is a real action,
+  // not a poll). Matches the OASIS emit pattern used by other handlers in
+  // this file. Best-effort — never fail the response if OASIS write fails.
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      type: 'notification.daily_pace.dispatched' as any,
+      source: 'gateway',
+      // VTID format is VTID-\d{4,5} per CLAUDE.md §4; no real VTID is bound
+      // to this feature yet, so use the BOOTSTRAP- prefix accepted by the
+      // OASIS validator and the AUTO-DEPLOY regex.
+      vtid: 'BOOTSTRAP-DAILY-PACE',
+      status: 'info',
+      message: `daily_pace_check fan-out: ${dispatched} dispatched, ${errors.length} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors: errors.length, skipped, total_users: users.length },
+    });
+  } catch (oasisErr: any) {
+    console.warn(`[Scheduled] daily_pace_check OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+  }
+
+  return res.status(200).json({ ok: true, dispatched, skipped, errors });
+}));
+
+// =============================================================================
+// POST /diary-reminder — Daily 9 PM UTC
+// =============================================================================
+router.post('/diary-reminder', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const users = await getActiveUsers(supa, tenantId);
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'daily_diary_reminder',
+    'notif.diary_reminder.title',
+    'notif.diary_reminder.body',
+    { url: '/diary' },
+    undefined,
+    20, // daily job — suppress a same-day Scheduler retry (VTID-03487)
+  );
+
+  console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /daily-feature-tip — Daily 17:00 UTC (BOOTSTRAP-DAILY-FEATURE-TIP)
+//
+// Publishes the next "Did You Know" News Feed card in FEATURE_TIPS rotation
+// (services/gateway/src/data/feature-tips.ts), tracked per-tenant in
+// did_you_know_state so the same tip never repeats back-to-back — wraps
+// around once the list is exhausted. Mirrors admin-feature-announcements.ts's
+// publish logic exactly (tenant-wide row + per-user locale-resolved fan-out),
+// just automated instead of admin-triggered.
+// =============================================================================
+function pickTipLocale(text: { en: string; de: string; [k: string]: string }, locale: string): string {
+  return text[locale] ?? text.en;
+}
+
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/daily-feature-tip', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    // 1. Advance the rotation for this tenant.
+    const { data: state } = await repo.fetchDidYouKnowState(supa, tenantId);
+    const lastIndex = (state as { last_index?: number } | null)?.last_index ?? -1;
+    const nextIndex = (lastIndex + 1) % FEATURE_TIPS.length;
+    const tip = FEATURE_TIPS[nextIndex];
+
+    // 2. Publish the tenant-wide "did-you-know-feature" card. NULL
+    //    target_user_ids → every tenant member's feed reads it (RLS-scoped).
+    const { data: inserted, error: insertError } = await repo.insertFeatureAnnouncement(supa, {
+      tenant_id: tenantId,
+      variant: 'did-you-know-feature',
+      feature_title: tip.title,
+      description: tip.description,
+      deep_link: tip.deepLink,
+      created_by: 'scheduled:daily-feature-tip',
+      target_user_ids: null,
+    });
+
+    if (insertError || !inserted) {
+      console.error('[Scheduled] daily_feature_tip insert error:', insertError?.message);
+      return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+    }
+    const announcementId = inserted.id as string;
+
+    // 3. Fan out to every tenant member, in their own locale. Push lands on
+    //    /home/notif — NOT tip.deepLink (the card's own "Try it now" in-app
+    //    button target) — same reasoning as admin-feature-announcements.ts:
+    //    /home is a vitana-v1 MAXINA_LANDING_ROUTES entry that auto-opens the
+    //    Orb front-door on a fresh mount, which a push-notification tap
+    //    counts as; /home/notif is the identical feed minus that collision.
+    // Awaited (via notifyUser, not the fire-and-forget notifyUserAsync) so
+    // the HTTP response isn't sent until every dispatch has actually
+    // finished. Confirmed live: with fire-and-forget, Cloud Run returned the
+    // response and froze/recycled the container before all ~181 background
+    // promises finished writing their row — only 33 of 181 members actually
+    // got notified for one day's run (card still showed for everyone via
+    // the direct RLS read, just the notification silently never arrived for
+    // most people). Promise.allSettled so one bad user can't block the rest.
+    const users = await getActiveUsers(supa, tenantId);
+    const userIds = users.map((u) => u.user_id);
+    const locales = await bulkGetUserLocales(supa, userIds);
+    const results = await Promise.allSettled(
+      userIds.map((uid) => {
+        const lc = locales.get(uid) || 'de';
+        return notifyUser(
+          uid,
+          tenantId,
+          'feature_announcement',
+          {
+            title: tt('notif.feature_tip.title', lc, { feature: pickTipLocale(tip.title, lc) }),
+            body: pickTipLocale(tip.description, lc),
+            data: { url: '/home/notif', entity_id: announcementId },
+          },
+          supa,
+        );
+      }),
+    );
+    const dispatched = results.filter((r) => r.status === 'fulfilled').length;
+    const failed = results.length - dispatched;
+    if (failed > 0) {
+      console.warn(`[Scheduled] daily_feature_tip: ${failed}/${results.length} notifyUser calls rejected`);
+    }
+
+    // 4. Advance rotation state for next time, and record when dispatch
+    //    actually finished (not when the row was first inserted).
+    await repo.upsertDidYouKnowState(supa, { tenantId, lastIndex: nextIndex, updatedAt: new Date().toISOString() });
+    await repo.markFeatureAnnouncementNotified(supa, { announcementId, notifiedAt: new Date().toISOString() });
+
+    console.log(`[Scheduled] daily_feature_tip → tip=${tip.key} dispatched=${dispatched} users`);
+
+    // Record the publish as a state transition (a real action, not a poll),
+    // same pattern as /daily-pace-notifications above. Best-effort — never
+    // fail the response if OASIS write fails.
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.daily_feature_tip.dispatched' as any,
+        source: 'gateway',
+        vtid: 'BOOTSTRAP-DAILY-FEATURE-TIP',
+        status: 'info',
+        message: `daily_feature_tip fan-out: tip=${tip.key} dispatched=${dispatched}`,
+        payload: { tenant_id: tenantId, tip: tip.key, announcement_id: announcementId, dispatched },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[Scheduled] daily_feature_tip OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+    }
+
+    return res.status(200).json({ ok: true, tip: tip.key, announcement_id: announcementId, dispatched });
+  } catch (err: any) {
+    console.error('[Scheduled] daily_feature_tip exception:', err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+}));
+
+// =============================================================================
+// POST /whats-new — Daily 16:00 UTC (VTID-04733)
+//
+// Publishes the next "Brand New Feature" News Feed card from the What's New
+// manifest the PRODUCTION frontend ships (/whats-new.json, one entry per
+// user-facing change — see vitana-v1 src/whats-new/README.md). Because it reads
+// the production build, an entry is announced only once members can actually
+// use the feature. Guard rails: one card per WHATS_NEW_MIN_GAP_HOURS, oldest
+// first; entries older than WHATS_NEW_MAX_AGE_DAYS never publish; each entry id
+// is published once per tenant (recorded in created_by). Kill switch:
+// WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
+// =============================================================================
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/whats-new', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
+    return res.status(200).json({ ok: true, skipped: 'disabled' });
+  }
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  try {
+    let manifest: unknown;
+    try {
+      manifest = await fetchWhatsNewManifest();
+    } catch (err: any) {
+      // Nothing was published, so a retry is harmless; surface it loudly.
+      console.error('[Scheduled] whats_new manifest fetch failed:', err?.message || err);
+      return res.status(502).json({ ok: false, error: 'MANIFEST_UNAVAILABLE' });
+    }
+    const { entries, skipped } = parseWhatsNewManifest(manifest);
+    if (skipped > 0) console.warn(`[Scheduled] whats_new: skipped ${skipped} malformed manifest entr(y/ies)`);
+
+    const { data: prior, error: priorError } = await repo.fetchWhatsNewPublished(supa, {
+      tenantId,
+      createdByPrefix: WHATS_NEW_CREATED_BY_PREFIX,
+    });
+    if (priorError) {
+      // Without the dedupe list we could re-announce everything: stop, don't guess.
+      console.error('[Scheduled] whats_new published-lookup failed:', priorError.message);
+      return res.status(500).json({ ok: false, error: 'LOOKUP_FAILED' });
+    }
+    const rows = (prior || []) as Array<{ created_by: string; created_at: string }>;
+    const publishedIds = new Set(rows.map((r) => r.created_by.slice(WHATS_NEW_CREATED_BY_PREFIX.length)));
+
+    const now = new Date();
+    const lastAt = rows.reduce((m, r) => Math.max(m, Date.parse(r.created_at) || 0), 0);
+    if (lastAt && now.getTime() - lastAt < WHATS_NEW_MIN_GAP_HOURS * 3600 * 1000) {
+      return res.status(200).json({ ok: true, skipped: 'published_recently' });
+    }
+
+    const entry = selectNextWhatsNewEntry(entries, publishedIds, now);
+    if (!entry) return res.status(200).json({ ok: true, skipped: 'nothing_new', entries: entries.length });
+
+    // Insert first: the row is the dedupe record, so a retry after a partial
+    // fan-out can never announce the same entry twice.
+    const { data: inserted, error: insertError } = await repo.insertFeatureAnnouncement(supa, {
+      tenant_id: tenantId,
+      variant: 'brand-new-feature',
+      feature_title: entry.title,
+      description: entry.description,
+      deep_link: entry.deepLink,
+      created_by: `${WHATS_NEW_CREATED_BY_PREFIX}${entry.id}`,
+      target_user_ids: null,
+    });
+    if (insertError || !inserted) {
+      console.error('[Scheduled] whats_new insert error:', insertError?.message);
+      return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+    }
+    const announcementId = inserted.id as string;
+
+    // Awaited Promise.allSettled — never fire-and-forget (see /daily-feature-tip).
+    // Push lands on /home/notif, not the card's own CTA target (same reason).
+    const users = await getActiveUsers(supa, tenantId);
+    const userIds = users.map((u) => u.user_id);
+    const locales = await bulkGetUserLocales(supa, userIds);
+    const results = await Promise.allSettled(
+      userIds.map((uid) => {
+        const lc = locales.get(uid) || 'de';
+        return notifyUser(
+          uid,
+          tenantId,
+          'feature_announcement',
+          {
+            title: tt('notif.feature_announcement.title', lc, { feature: pickTipLocale(entry.title as any, lc) }),
+            body: pickTipLocale(entry.description as any, lc),
+            data: { url: '/home/notif', entity_id: announcementId },
+          },
+          supa,
+        );
+      }),
+    );
+    const dispatched = results.filter((r) => r.status === 'fulfilled').length;
+    if (dispatched < results.length) {
+      console.warn(`[Scheduled] whats_new: ${results.length - dispatched}/${results.length} notifyUser calls rejected`);
+    }
+    await repo.markFeatureAnnouncementNotified(supa, { announcementId, notifiedAt: new Date().toISOString() });
+    console.log(`[Scheduled] whats_new → entry=${entry.id} dispatched=${dispatched} users`);
+
+    try {
+      const { emitOasisEvent } = await import('../services/oasis-event-service');
+      await emitOasisEvent({
+        type: 'notification.whats_new.dispatched' as any,
+        source: 'gateway',
+        vtid: 'VTID-04733',
+        status: 'info',
+        message: `whats_new fan-out: entry=${entry.id} dispatched=${dispatched}`,
+        payload: { tenant_id: tenantId, entry: entry.id, announcement_id: announcementId, dispatched },
+      });
+    } catch (oasisErr: any) {
+      console.warn(`[Scheduled] whats_new OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+    }
+
+    return res.status(200).json({ ok: true, entry: entry.id, announcement_id: announcementId, dispatched });
+  } catch (err: any) {
+    console.error('[Scheduled] whats_new exception:', err.message);
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+}));
+
+// =============================================================================
+// POST /weekly-digest — Sunday 6 PM UTC
+// =============================================================================
+router.post('/weekly-digest', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const users = await getActiveUsers(supa, tenantId);
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_community_digest',
+    'notif.weekly_digest.title',
+    'notif.weekly_digest.body',
+    { url: '/community' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
+  );
+
+  console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /weekly-summary — Sunday 8 AM UTC
+// =============================================================================
+router.post('/weekly-summary', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const users = await getActiveUsers(supa, tenantId);
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_activity_summary',
+    'notif.weekly_summary.title',
+    'notif.weekly_summary.body',
+    { url: '/dashboard' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
+  );
+
+  console.log(`[Scheduled] weekly_activity_summary → ${dispatched} users`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /weekly-reflection — Friday 8 PM UTC
+// =============================================================================
+router.post('/weekly-reflection', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const users = await getActiveUsers(supa, tenantId);
+  const dispatched = await dispatchLocalized(
+    supa,
+    users,
+    tenantId,
+    'weekly_reflection_prompt',
+    'notif.weekly_reflection.title',
+    'notif.weekly_reflection.body',
+    { url: '/diary' },
+    undefined,
+    144, // weekly job — 6d window suppresses a retry, never next week (VTID-03487)
+  );
+
+  console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /meetup-reminders — RETIRED (VTID-04374)
+// =============================================================================
+// It read community_meetup_attendance, a table that does not exist, over
+// community_meetups, which has never had a row — so it never sent a
+// notification. Community events a member signs up for reach the calendar
+// (global_event_participants → calendar_events, VTID-04321) and get the
+// calendar's own reminders (VTID-04338). Kept as a no-op so an old caller
+// gets a clear answer instead of a 404.
+// Retired no-op: it reads and writes nothing, so there is nothing to protect.
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/meetup-reminders', (_req: Request, res: Response) => {
+  // impact-allow-no-oasis — retired: no state change at all (VTID-04374)
+  return res.status(200).json({ ok: true, dispatched: 0, retired: true, replaced_by: 'calendar-reminders' });
+});
+
+// =============================================================================
+// POST /upcoming-events — Daily 8 AM UTC (BOOTSTRAP-NOTIF-SYSTEM-EVENTS)
+// Fires `upcoming_event_today` per user for each calendar event scheduled
+// today. Push-only (channel='push' in TYPE_META) so it doesn't clutter the
+// in-app inbox.
+// =============================================================================
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/upcoming-events', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  // impact-allow-no-oasis
+  // Fan-out only — reads calendar_events and dispatches push notifications.
+  // No state transition worth recording; mirrors the other scheduled-
+  // notification handlers in this file (morning-briefing, diary-reminder).
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // VTID-04321: "today" is each user's local day, not the gateway's (UTC).
+  // Fetch a window that contains every timezone's today, then keep per user
+  // the first event on their local date, with the time in their zone.
+  const now = new Date();
+  const span = wideTodayWindow(now);
+  const { data: events, error } = await repo.fetchTodaysCalendarEvents(supa, {
+    todayStart: span.from,
+    todayEnd: span.to,
+  });
+
+  if (error) {
+    console.error('[Scheduled] upcoming-events query error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  const rows = (events || []) as Array<{ id: string; user_id: string; title?: string | null; start_time: string }>;
+  const { getUserTimezone } = await import('../services/daily-pace-service');
+  const userIds = [...new Set(rows.map((e) => e.user_id))];
+  const tzByUser = new Map<string, string>();
+  for (const uid of userIds) {
+    tzByUser.set(uid, await getUserTimezone(supa, uid, tenantId));
+  }
+  const picks = pickFirstEventTodayPerUser(rows, (uid) => tzByUser.get(uid) as string, now);
+
+  const locales = await bulkGetUserLocales(supa, picks.map((p) => p.event.user_id));
+  let dispatched = 0;
+
+  for (const { event: ev, localTime } of picks) {
+    const lc = locales.get(ev.user_id);
+
+    notifyUserAsync(ev.user_id, tenantId, 'upcoming_event_today', {
+      title: tt('notif.event_today.title', lc),
+      body: tt('notif.event_today.body', lc, { title: ev.title || tt('notif.fallback_app_name', lc), time: localTime }),
+      data: { url: '/calendar', entity_id: ev.id, event_id: ev.id, start_time: ev.start_time },
+    }, supa);
+    dispatched++;
+  }
+
+  console.log(`[Scheduled] upcoming_event_today → ${dispatched} users`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /recommendation-expiry — Daily 10 AM UTC
+// =============================================================================
+router.post('/recommendation-expiry', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // Find recommendations expiring in the next 24 hours
+  const tomorrow = new Date(Date.now() + 24 * 60 * 60 * 1000);
+
+  const { data: expiring } = await repo.fetchExpiringRecommendations(supa, {
+    tenantId,
+    tomorrow: tomorrow.toISOString(),
+    now: new Date().toISOString(),
+  });
+
+  const expiringList = (expiring || []) as Array<{ id: string; user_id: string; title: string | null }>;
+  const expiringLocales = await bulkGetUserLocales(supa, expiringList.map((r) => r.user_id));
+  let dispatched = 0;
+  for (const rec of expiringList) {
+    const lc = expiringLocales.get(rec.user_id);
+    notifyUserAsync(rec.user_id, tenantId, 'recommendation_expires_soon', {
+      title: tt('notif.recommendation_expiring.title', lc),
+      body: tt('notif.recommendation_expiring.body', lc, { title: rec.title || tt('notif.fallback_app_name', lc) }),
+      data: { url: '/autopilot', entity_id: rec.id, recommendation_id: rec.id },
+    }, supa);
+    dispatched++;
+  }
+
+  console.log(`[Scheduled] recommendation_expires_soon → ${dispatched} notifications`);
+  return res.status(200).json({ ok: true, dispatched });
+}));
+
+// =============================================================================
+// POST /signal-cleanup — Daily 3 AM UTC
+// =============================================================================
+router.post('/signal-cleanup', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // Find active signals that have expired
+  const { data: expired } = await repo.fetchActiveExpiredSignals(supa, { tenantId, now: new Date().toISOString() });
+
+  const expiredList = (expired || []) as Array<{ id: string; user_id: string }>;
+  const sigLocales = await bulkGetUserLocales(supa, expiredList.map((s) => s.user_id));
+  let cleaned = 0;
+  for (const signal of expiredList) {
+    // Mark as expired
+    await repo.markSignalExpired(supa, signal.id);
+
+    const lc = sigLocales.get(signal.user_id);
+    // Silent notification (no push, in-app only for audit)
+    notifyUserAsync(signal.user_id, tenantId, 'signal_expired', {
+      title: tt('notif.signal_expired.title', lc),
+      body: tt('notif.signal_expired.body', lc),
+      data: { entity_id: signal.id },
+    }, supa);
+    cleaned++;
+  }
+
+  console.log(`[Scheduled] signal_cleanup → ${cleaned} signals expired`);
+  return res.status(200).json({ ok: true, cleaned });
+}));
+
+// =============================================================================
+// POST /push-dispatch — Cloud Scheduler, every minute
+// (VTID-03656: the "every 30 seconds" this comment used to claim doesn't
+// match what GCP Cloud Scheduler's standard unix-cron can express — minimum
+// granularity is 1 minute — and doesn't match the job actually registered in
+// scripts/setup-cloud-scheduler.sh's `gateway-push-dispatch` entry either.
+// This route ALSO wasn't registered in that script at all until VTID-03656,
+// meaning whatever job was calling it before lived only in live GCP state,
+// invisible to this repo — see that VTID for the outage this caused.)
+// Picks up trigger-created notifications that haven't had FCM push sent yet.
+// DB triggers (chat messages, group invites, predictive signals, etc.) write
+// to user_notifications but can't send FCM. This cron bridges the gap.
+// =============================================================================
+router.post('/push-dispatch', async (req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  // Find notifications created by DB triggers that haven't been pushed yet.
+  // push_sent_at IS NULL  → not yet pushed
+  // channel includes push → should be pushed
+  //
+  // VTID-03656: this used to bound the query to `created_at >= now - 5min`.
+  // That window was sized for the steady-state case (this cron is expected
+  // to fire every ~30s), but it meant a stalled/dead scheduler invocation
+  // — for ANY reason, including one this route can't detect from inside a
+  // single request — silently and PERMANENTLY orphaned every notification
+  // older than 5 minutes: once the cron resumed, those rows would simply
+  // never be selected again. That is exactly what happened 2026-08-15
+  // ~18:52 UTC onward — the scheduler stopped invoking this route (root
+  // cause not yet found; the job isn't even registered in
+  // scripts/setup-cloud-scheduler.sh, so it was never visible to this
+  // repo) and 782+ community_post_published notifications sat unsent for
+  // 40+ hours with no way to recover them even after the cron came back.
+  // A late "X shared a new post" push is strictly better than a
+  // notification that silently never arrives, so the window is now wide
+  // enough to drain a multi-day outage once the scheduler resumes — capped
+  // so a truly ancient/abandoned backlog doesn't get pushed as if it were
+  // fresh forever.
+  const LOOKBACK_MS = 48 * 60 * 60 * 1000; // 48h — see VTID-03656 comment above
+  const lookbackCutoff = new Date(Date.now() - LOOKBACK_MS).toISOString();
+
+  const { data: pending, error } = await repo.fetchPendingPushNotifications(supa, lookbackCutoff);
+
+  if (error) {
+    console.error('[PushDispatch] Query error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  if (!pending?.length) {
+    return res.status(200).json({ ok: true, dispatched: 0, message: 'no pending pushes' });
+  }
+
+  // VTID-03656: a loud, grep-able signal that this cron went quiet for a
+  // while — the exact condition that let the 2026-08-15 outage run silent
+  // for 40+ hours. Anything older than the old 5-minute window means the
+  // scheduler missed at least one expected invocation.
+  const oldestAgeMs = Date.now() - new Date(pending[0]?.created_at ?? Date.now()).getTime();
+  if (oldestAgeMs > 5 * 60 * 1000) {
+    console.warn(
+      `[PushDispatch] Catching up on a backlog — oldest pending notification is ${Math.round(oldestAgeMs / 60000)}min old (batch of ${pending.length}). ` +
+      `The scheduler likely missed invocations; if this recurs, verify the Cloud Scheduler job still exists and is succeeding.`,
+    );
+  }
+
+  let dispatched = 0;
+  let skipped = 0;
+
+  // VTID-04962: push_sent_at stays the "handled" marker and is written first,
+  // on its own, so a failed outcome write can never leave a row to be pushed
+  // again. The outcome is recorded after it, best effort.
+  const markHandled = async (id: string, outcome: PushOutcome) => {
+    await repo.markNotificationPushSent(supa, id, new Date().toISOString());
+    await recordPushOutcome(supa, id, outcome);
+  };
+
+  // VTID-05312: chat rows of this batch, decided before anything is sent:
+  //   - duplicates: of rows for the same recipient and chat message the oldest
+  //     is kept; the others — and a kept row whose sibling was already pushed —
+  //     are marked suppressed_duplicate;
+  //   - viewing: the recipient is looking at that conversation → suppressed_viewing.
+  // Keys are resolved for the whole batch (one chat_messages read for rows that
+  // name neither group nor sender, one presence read). Fails open.
+  const chatDuplicateIds = new Set<string>();
+  const chatViewingIds = new Set<string>();
+  const chatRows = pending.filter((n: any) => CHAT_PUSH_TYPES.has(n.type));
+  if (chatRows.length > 0) {
+    try {
+      const keptByPair = new Map<string, string>();
+      for (const n of chatRows) {
+        const mid = messageIdOf(n.data);
+        if (!mid) continue;
+        const pair = `${n.user_id}|${mid}`;
+        if (keptByPair.has(pair)) chatDuplicateIds.add(n.id);
+        else keptByPair.set(pair, n.id);
+      }
+      const mids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[1])));
+      if (mids.length > 0) {
+        const uids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[0])));
+        const { data: pushed, error: siblingError } = await repo.fetchPushedChatSiblings(supa, mids, uids);
+        if (siblingError) console.warn(`[PushDispatch] pushed-sibling read failed (dedup of already-pushed rows skipped this tick): ${siblingError.message}`);
+        for (const r of (pushed as Array<{ id: string; user_id: string; message_id: string }> | null) ?? []) {
+          const kept = keptByPair.get(`${r.user_id}|${r.message_id}`);
+          if (kept && kept !== r.id) chatDuplicateIds.add(kept);
+        }
+      }
+      const needLookup = chatRows
+        .filter((n: any) => !chatConversationKeyFromData(n.data))
+        .map((n: any) => messageIdOf(n.data))
+        .filter((x: string | null): x is string => !!x);
+      const keyByMessage = await keysByMessageId(supa, needLookup);
+      const keyByRow = new Map<string, string>();
+      for (const n of chatRows) {
+        const key = chatConversationKeyFromData(n.data) ?? keyByMessage.get(messageIdOf(n.data) ?? '') ?? null;
+        if (key) keyByRow.set(n.id, key);
+      }
+      const viewing = await viewingPairs(supa, chatRows
+        .filter((n: any) => keyByRow.has(n.id))
+        .map((n: any) => ({ userId: n.user_id, tenantId: n.tenant_id, key: keyByRow.get(n.id)! })));
+      for (const n of chatRows) {
+        const key = keyByRow.get(n.id);
+        if (key && viewing.has(viewingKey(n.user_id, n.tenant_id, key))) chatViewingIds.add(n.id);
+      }
+    } catch (err: any) {
+      console.warn(`[PushDispatch] chat dedup/viewing check failed (pushing as before): ${err?.message || err}`);
+    }
+  }
+
+  for (const notif of pending) {
+    try {
+      if (chatDuplicateIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_duplicate');
+        skipped++;
+        continue;
+      }
+      if (chatViewingIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_viewing');
+        skipped++;
+        continue;
+      }
+
+      // VTID-04674: the admin switch. The row exists (it passed the database
+      // guard when it was written), but a type switched off since must not
+      // push. Marked handled so it is not picked up again.
+      const sourceKey = normalizeSourceKey(
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).automation_id : '',
+      );
+      if (!(await isNotificationTypeAllowed(supa, notif.tenant_id, notif.type, sourceKey))) {
+        await markHandled(notif.id, 'suppressed_type_disabled');
+        skipped++;
+        continue;
+      }
+
+      // Check user preferences (DND, category toggles, push_enabled)
+      const { data: prefs } = await repo.fetchUserNotificationPreferences(supa, {
+        userId: notif.user_id,
+        tenantId: notif.tenant_id,
+      });
+
+      // If push disabled globally, skip push but still mark as handled
+      if (prefs?.push_enabled === false) {
+        await markHandled(notif.id, 'suppressed_push_disabled');
+        skipped++;
+        continue;
+      }
+
+      // DND check — p0 bypasses DND. VTID-04674: in the member's timezone,
+      // not the gateway's UTC clock.
+      if (notif.priority !== 'p0' && (await isMemberInQuietHours(supa, notif.user_id, prefs))) {
+        await markHandled(notif.id, 'suppressed_dnd');
+        skipped++;
+        continue;
+      }
+
+      // Send push. Mirror notifyUser()'s dispatch policy
+      // (notification-service.ts): notifications WITH a deep-link URL must go
+      // Appilix-FIRST — an FCM-delivered notification tapped inside the Appilix
+      // WebView crashes it ("Something went wrong") because FCM doesn't pass the
+      // URL to Appilix's native tap handler. Only fall back to FCM if Appilix
+      // didn't deliver. Without a URL, FCM-first with Appilix fallback.
+      //
+      // Previously this cron fired BOTH channels unconditionally, so a user with
+      // both an FCM token and an Appilix identity received the SAME notification
+      // twice — once via Appilix (deep-links correctly) and once via FCM (opens
+      // the WebView crash screen). That is the like/comment "double notification,
+      // one opens Try Again" bug.
+      const hasDeepLink =
+        typeof notif.data === 'object' && notif.data !== null && !!(notif.data as any).url;
+      // VTID-03684: stable per-entity tag so a row that gets UPDATEd (e.g.
+      // a cumulative post_like notification picking up another liker) and
+      // re-queued via push_sent_at=NULL replaces its earlier push in the OS
+      // tray on the FCM/web-push path, instead of stacking a second one.
+      const entityId =
+        typeof notif.data === 'object' && notif.data !== null ? (notif.data as any).entity_id : undefined;
+      const pushTag = entityId ? `${notif.type}:${entityId}` : undefined;
+      const pushPayload = {
+        title: notif.title || 'Vitana',
+        body: notif.body || '',
+        data: typeof notif.data === 'object' && notif.data !== null
+          ? Object.fromEntries(Object.entries(notif.data).map(([k, v]) => [k, String(v)]))
+          : undefined,
+        tag: pushTag,
+      };
+      //
+      // VTID-03481: mirror notifyUser()'s Appilix suppression too. This cron is
+      // the path that delivers the trigger-written community fan-out — the one
+      // that produced "Neuer Beitrag" and "New post" on the SAME phone a minute
+      // apart, because two accounts had been signed in on it and Appilix still
+      // had both identities mapped to the device.
+      //
+      // VTID-05177: routed through dispatchPush(). This site keeps its own,
+      // pre-existing policy: the narrower signed-out-everywhere suppression,
+      // and a deep-link FCM fallback that does NOT exclude Appilix-tagged
+      // tokens (unlike notifyUser — a known asymmetry, kept byte-for-byte and
+      // tracked separately). No server badge on this cron path.
+      const fcmTally = newPushFanoutOutcome();
+      const dispatchedPush = await dispatchPush({
+        userId: notif.user_id,
+        tenantId: notif.tenant_id,
+        payload: pushPayload,
+        supabase: supa,
+        policy: {
+          kind: 'deep_link_split',
+          hasDeepLink,
+          suppression: 'signed_out_only',
+          excludeAppilixTaggedOnFallback: false,
+        },
+        outcome: fcmTally,
+      });
+      const sent = dispatchedPush.sent;
+      const appilixSent = dispatchedPush.appilixSent;
+
+      // Mark as dispatched, with what actually happened
+      await markHandled(notif.id, classifyPushOutcome(fcmTally, appilixSent));
+
+      if (sent > 0 || appilixSent) dispatched++;
+      else skipped++; // No device tokens found and Appilix not configured
+    } catch (err: any) {
+      console.error(`[PushDispatch] Failed for notification ${notif.id}:`, err.message || err);
+      // Still mark as handled to avoid infinite retries
+      await markHandled(notif.id, 'dispatch_exception');
+      skipped++;
+    }
+  }
+
+  console.log(`[PushDispatch] dispatched=${dispatched} skipped=${skipped} total=${pending.length}`);
+  return res.status(200).json({ ok: true, dispatched, skipped, total: pending.length });
+});
+
+// =============================================================================
+// POST /recommendation-cleanup — Daily 3 AM UTC (alongside signal-cleanup)
+// VTID-01185: Clean up expired/stale recommendations
+// =============================================================================
+router.post('/recommendation-cleanup', async (_req: Request, res: Response) => {
+  try {
+    const supa = await getServiceClient();
+    if (!supa) return res.status(500).json({ ok: false, error: 'Missing Supabase credentials' });
+
+    const now = new Date().toISOString();
+    let expired = 0;
+    let unsnoozed = 0;
+    let stalePurged = 0;
+
+    // 1. Expire recommendations past their expires_at
+    const { count: expiredCount } = await repo.expireOverdueRecommendations(supa, now);
+    expired = expiredCount || 0;
+
+    // 2. Unsnoze past-due snoozed recommendations
+    const { count: unsnoozedCount } = await repo.unsnoozeOverdueRecommendations(supa, now);
+    unsnoozed = unsnoozedCount || 0;
+
+    // 3. Purge stale seed data (no fingerprint, >30 days old)
+    const thirtyDaysAgo = new Date(Date.now() - 30 * 24 * 60 * 60 * 1000).toISOString();
+    const { count: staleCount } = await repo.purgeStaleRecommendationSeeds(supa, { now, thirtyDaysAgo });
+    stalePurged = staleCount || 0;
+
+    // 4. Try RPC cleanup if available
+    try {
+      await repo.rpcCleanupExpiredAutopilotRecommendations(supa);
+    } catch {
+      // RPC may not exist yet
+    }
+
+    console.log(`[RecommendationCleanup] expired=${expired} unsnoozed=${unsnoozed} stale_purged=${stalePurged}`);
+    return res.status(200).json({
+      ok: true,
+      expired,
+      unsnoozed,
+      stale_purged: stalePurged,
+      timestamp: now,
+    });
+  } catch (err: any) {
+    console.error('[RecommendationCleanup] Error:', err.message || err);
+    return res.status(500).json({ ok: false, error: err.message });
+  }
+});
+
+// =============================================================================
+// VTID-02601 — POST /reminders-tick and /reminders-sweeper
+//
+// The logic lives in services/reminders-dispatch.ts (VTID-04320) so the same
+// code also runs in-process via startRemindersDispatchLoop(). These routes stay
+// for an external scheduler or a manual kick.
+// =============================================================================
+router.post('/reminders-tick', async (_req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runRemindersTick(supa);
+    return res.status(result.ok ? 200 : 500).json(result);
+  } catch (err: any) {
+    console.error('[reminders-tick] error:', err?.message);
+    return res.status(500).json({ ok: false, error: err?.message || 'internal' });
+  }
+});
+
+router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runRemindersSweeper(supa);
+    return res.status(result.ok ? 200 : 500).json(result);
+  } catch (err: any) {
+    console.error('[reminders-sweeper] error:', err?.message);
+    return res.status(500).json({ ok: false, error: err?.message || 'internal' });
+  }
+});
+
+// =============================================================================
+// POST /night-push — Hourly UTC (VTID-03604, surface 2 of the ORB day-close)
+//
+// The "you did not open ORB tonight" counterpart to the spoken day-close rung
+// in compute-greeting-decision.ts. Same hourly-UTC-tick / per-user-local-hour
+// pattern as /daily-pace-notifications (the first hourly entry in this file):
+// this fires every hour, and each user is only ELIGIBLE on the one tick where
+// their local hour equals NIGHT_PUSH_LOCAL_HOUR.
+//
+// Fixed catalog text (notif.day_close.*), never LLM-composed — a push has a
+// fixed contract and must stay translated/reviewable (CLAUDE.md §13b), unlike
+// the ORB voice path (CLAUDE.md NEVER-rule 41, VTID-03622), which is
+// deliberately never scripted. Do not "upgrade" this to a composed line.
+//
+// Deliberately fires at 22:00 local, not 21:00 (the start of the day-close
+// window): the spoken close takes priority, so the push waits until the
+// window has had an hour to be claimed by an actual ORB open before assuming
+// the user is not coming back tonight.
+// =============================================================================
+const NIGHT_PUSH_LOCAL_HOUR = 22;
+
+// auth: scheduled-notifications-auth (VTID-04677)
+router.post('/night-push', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
+  if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
+
+  // Debug params for on-call / manual testing, same convention as
+  // /daily-pace-notifications: user_id targets one user directly, force
+  // bypasses the wrong_hour gate.
+  const debugUserId =
+    (req.body?.user_id as string | undefined) ||
+    (req.query?.user_id as string | undefined) ||
+    undefined;
+  const force =
+    req.body?.force === true ||
+    req.body?.force === 'true' ||
+    req.query?.force === 'true' ||
+    req.query?.force === '1';
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+
+  const { getUserTimezone } = await import('../services/daily-pace-service');
+  const { todayInTimezone, localHourInTimezone } = await import(
+    '../services/assistant-continuation/providers/new-day-return'
+  );
+
+  const nowUtc = new Date();
+  const users = debugUserId
+    ? [{ user_id: debugUserId }]
+    : await getActiveUsers(supa, tenantId);
+  const locales = await bulkGetUserLocales(supa, users.map((u) => u.user_id));
+
+  const skipped: Record<'wrong_hour' | 'already_closed' | 'already_pushed' | 'error', number> = {
+    wrong_hour: 0,
+    already_closed: 0,
+    already_pushed: 0,
+    error: 0,
+  };
+  let dispatched = 0;
+  const errors: Array<{ user_id: string; message: string }> = [];
+
+  for (const { user_id } of users) {
+    try {
+      const tz = await getUserTimezone(supa, user_id, tenantId);
+      const localHour = localHourInTimezone(nowUtc, tz);
+      if (!force && localHour !== NIGHT_PUSH_LOCAL_HOUR) {
+        skipped.wrong_hour++;
+        continue;
+      }
+      // 22:00 local is inside the day-close window and never past midnight,
+      // so tonight's night key is simply the user's local calendar date —
+      // no dayCloseNightKey rollover math needed the way the ORB rung has.
+      const nightKey = todayInTimezone(nowUtc, tz);
+
+      const { data: journeyRow } = await repo.fetchUserJourneyNightDates(supa, user_id);
+      const lastClose = (journeyRow as { last_day_close_date?: string | null } | null)?.last_day_close_date ?? null;
+      const lastPush = (journeyRow as { last_night_push_date?: string | null } | null)?.last_night_push_date ?? null;
+
+      // Already got the SPOKEN close tonight — the whole point of separate
+      // stamps (see the migration header): the push must defer to it.
+      if (typeof lastClose === 'string' && lastClose >= nightKey) {
+        skipped.already_closed++;
+        continue;
+      }
+      // Already pushed tonight — once per night.
+      if (typeof lastPush === 'string' && lastPush >= nightKey) {
+        skipped.already_pushed++;
+        continue;
+      }
+
+      const lc = locales.get(user_id);
+      const titleStr = tt('notif.day_close.title', lc);
+      const bodyStr = tt('notif.day_close.body', lc);
+
+      // Stamp FIRST, dispatch second — same ordering rationale as
+      // /daily-pace-notifications: a same-hour retry must see the stamp
+      // before it can double-send, not after.
+      await repo.updateLastNightPushDate(supa, { userId: user_id, nightKey });
+
+      notifyUserAsync(
+        user_id,
+        tenantId,
+        'day_close_push' as any,
+        { title: titleStr, body: bodyStr, data: { type: 'day_close_push', url: '/orb' } },
+        supa,
+      );
+      dispatched++;
+    } catch (err: any) {
+      skipped.error++;
+      errors.push({ user_id, message: err?.message || String(err) });
+      console.warn(`[Scheduled] night_push error for ${user_id.slice(0, 8)}: ${err?.message || err}`);
+    }
+  }
+
+  console.log(
+    `[Scheduled] night_push → dispatched=${dispatched} skipped=${JSON.stringify(skipped)} total_users=${users.length}`,
+  );
+
+  try {
+    const { emitOasisEvent } = await import('../services/oasis-event-service');
+    await emitOasisEvent({
+      type: 'notification.night_push.dispatched' as any,
+      source: 'gateway',
+      vtid: 'VTID-03604',
+      status: 'info',
+      message: `night_push fan-out: ${dispatched} dispatched, ${errors.length} errors`,
+      payload: { tenant_id: tenantId, dispatched, errors: errors.length, skipped, total_users: users.length },
+    });
+  } catch (oasisErr: any) {
+    console.warn(`[Scheduled] night_push OASIS emit failed: ${oasisErr?.message || oasisErr}`);
+  }
+
+  return res.status(200).json({ ok: true, dispatched, skipped, errors });
+}));
+
+// =============================================================================
+// Health check
+// =============================================================================
+router.get('/health', async (_req: Request, res: Response) => {
+  // VTID-04665: report whether the dependency answers, not just that the route exists.
+  // VTID-04677: also report the auth mode (and only whether a token is set),
+  // so the staging suite can prove what is deployed without sending a POST.
+  return res.status(200).json(await withDependencyHealth([{ table: 'user_notifications' }], {
+    ok: true,
+    service: 'scheduled-notifications',
+    ...scheduledNotificationsAuthStatus(),
+  }));
+});
+
+// =============================================================================
+// VTID-04892: Vitana Onboarding Assistant — coach tick (slice 1: shadow only)
+// =============================================================================
+// Decides, for every new member in the cohort, the next best onboarding step
+// and records it in coach-owned tables. Sends nothing in slice 1.
+//
+// The token is enforced HERE, whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE says:
+// that global mode is `log` in both environments today and would let an
+// untokened call through (plan v3 §4.2, sparring N1). The staging gateway
+// refuses the tick outright — staging shares the production database.
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-04892)
+router.post('/onboarding-coach-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runCoachTick emits the OASIS events itself (one tick_completed per tick + real stage changes).
+
+  const config = resolveCoachConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'onboarding coach does not run on staging' });
+  }
+  if (config.mode !== 'shadow') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runCoachTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[onboarding-coach] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'onboarding coach tick failed' });
+  }
+});
+
+// VTID-05099 — Vitana Companion Messages tick (shadow; VTID-05100 adds staff/live sending, gated off by COMPANION_SEND_ENABLED).
+// Every 15 minutes (EventBridge, production gateway only). Decides, for each
+// member inside their local morning window, the one moment + Vitana card
+// Vitana would bring today and records it; composes a capped sample. In shadow it sends
+// nothing. The staging gateway answers 409 — it shares the production database.
+router.post('/companion-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runCompanionTick emits one companion.tick.completed per tick that decided something.
+
+  const config = resolveCompanionConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'companion messages do not run on staging' });
+  }
+  // VTID-05100: staff/live exist only with COMPANION_SEND_ENABLED=true (config.ts).
+  if (config.mode !== 'shadow' && !isSendMode(config.mode)) return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runCompanionTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[companion] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'companion tick failed' });
+  }
+});
+
+// VTID-05205 — team welcome DMs tick (Mariia day 0, Jovana day 1, Alex Blue day 2).
+// Sibling of the coach tick, not part of it (plan S2): the coach has no live
+// mode yet, and these welcomes are not paced coaching touches. Same token rule
+// as the ticks above — enforced HERE whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE
+// says — and the staging gateway refuses outright (shared production database).
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-05205)
+router.post('/welcome-team-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runWelcomeTeamTick emits welcome_team.message.sent/failed per DM and one tick.completed per tick that decided something.
+
+  const config = resolveWelcomeTeamConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'welcome-team tick does not run on staging' });
+  }
+  if (config.mode !== 'shadow' && config.mode !== 'live') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runWelcomeTeamTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[welcome-team] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'welcome-team tick failed' });
+  }
+});
+
+export default router;

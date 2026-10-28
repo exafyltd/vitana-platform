@@ -1,0 +1,6 @@
+ .../gateway/src/routes/admin-partner-health.ts     | 40 ++++++++++-
+ services/gateway/src/routes/partner-orgs.ts        | 66 ++++++++++++++++--
+ services/gateway/src/types/cicd.ts                 |  3 +-
+ services/gateway/test/admin-partner-health.test.ts | 81 ++++++++++++++++++++++
+ services/gateway/test/partner-orgs.test.ts         | 78 +++++++++++++++++++--
+ 5 files changed, 257 insertions(+), 11 deletions(-)

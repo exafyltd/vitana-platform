@@ -1,0 +1,5 @@
+{"vtid":"VTID-04809","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"billing still auth-gated (JSON 401, route mounted)","path":"/api/v1/billing/me","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04809-vtna-reward-ledger.test.ts test/vtid-04508-community-invites.test.ts test/services/automation-handlers-onboarding-growth.test.ts test/services/automation-handlers-sharing-growth.test.ts test/diary-streak-celebrator.test.ts test/milestone-service.test.ts test/services/automation-handlers-wallet-payments.test.ts","cwd":"services/gateway","reason":"Crediting VTNA is a write; staging writes to the production Supabase project, so it is never exercised by a staging probe. The ledger is proven by applying the migration twice to a local Postgres replica of the live wallet tables (scripts/ci/test-vtid-04809-vtna-ledger.sh, run inside the first suite) and by the caller suites. The migration itself is applied separately via RUN-MIGRATION.yml after approval."}
+]}

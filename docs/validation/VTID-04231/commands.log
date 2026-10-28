@@ -1,0 +1,13 @@
+# VTID-04231 — commands run (2026-09-21)
+
+git worktree add scratchpad/wt-04231 -b claude/cool-dijkstra-p9s8vx-vtid-04231 origin/main   # f36e40f
+
+# New: src/services/llm-stage-tool-loop.ts (shared bounded loop), src/services/dev-autopilot-llm-review-tools.ts (validator tool set)
+# Edited: src/services/dev-autopilot-llm-review.ts (loop + tools + telemetry), src/services/dev-autopilot-watcher.ts (event payload)
+
+cd services/gateway
+npx tsc --noEmit -p .; echo exit=$?                                    # -> outputs/tsc-noEmit.log
+npx jest test/vtid-04231-llm-stage-tool-loop.test.ts test/vtid-04231-validator-tools.test.ts \
+         test/vtid-03853-llm-merge-review.test.ts test/vtid-03853-watcher-review-wiring.test.ts
+npx jest test/dev-autopilot-watcher test/vtid-04005 test/vtid-03853 test/vtid-04231 test/vtid-04229-code-index
+#   -> outputs/jest-vtid-04231.log (8 suites / 121 tests)

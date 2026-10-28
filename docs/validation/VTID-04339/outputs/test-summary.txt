@@ -1,0 +1,15 @@
+PASS test/routes/voice-awareness.test.ts
+    ✓ rejects a request without an Authorization header (401) and never reads telemetry (26 ms)
+    ✓ rejects an authenticated non-admin (403) (24 ms)
+    ✓ returns the watchdog statuses to an exafy admin (5 ms)
+    ✓ returns 500 with the error message when the service throws (4 ms)
+PASS test/services/vtid-04339-assistant-brain-identity.test.ts
+    ✓ uses the verified identity, not the session id or body tenant, on the brain path (5 ms)
+    ✓ never calls the brain without an identity, even with the brain flag on (3 ms)
+    ✓ never calls the brain when the identity has no tenant (3 ms)
+    ✓ takes the stateless path when the brain flag is off (3 ms)
+PASS test/vtid-04339-brain-test-route-auth.test.ts
+    ✓ is registered exactly once (1 ms)
+    ✓ is gated by requireAuth then requireExafyAdmin before the handler
+Test Suites: 3 passed, 3 total
+Tests:       10 passed, 10 total

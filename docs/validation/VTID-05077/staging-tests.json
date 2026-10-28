@@ -1,0 +1,35 @@
+{
+  "vtid": "VTID-05077",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "Command Hub serves app.js and styles.css at the VTID-05077 version",
+      "path": "/command-hub/",
+      "expect_status": 200,
+      "expect_content_type": "text/html",
+      "expect_body_contains": [
+        "app.js?v=20261121-vtid-05082",
+        "styles.css?v=20261121-vtid-05082"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "served app.js shows the planner fallback rate chip",
+      "path": "/command-hub/app.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_content_type": "javascript",
+      "expect_body_contains": [
+        "Planner fallback 24h",
+        "spend.planner.fallback_24h"
+      ]
+    },
+    {
+      "kind": "http",
+      "name": "the spend route is mounted and still requires a developer login",
+      "path": "/api/v1/dev-autopilot/spend",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    }
+  ]
+}

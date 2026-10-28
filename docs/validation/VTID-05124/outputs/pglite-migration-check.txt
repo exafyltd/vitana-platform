@@ -1,0 +1,31 @@
+ok   seed: 18 memberships (12 orphans + 6 real)
+ok   apply: 18 -> 6 memberships
+ok   apply: every orphan deleted
+ok   apply: real members' rows untouched, byte-identical (incl. the inactive one)
+ok   apply: archive holds 12 rows
+ok   apply: ...of 11 distinct users
+ok   apply: archive has all 7 columns + captured_at: id,user_id,tenant_id,role,status,created_at,updated_at,captured_at
+ok   apply: anon cannot read the archive
+ok   apply: authenticated cannot read the archive
+ok   apply: post-check orphans = 0
+ok   second run fails loudly (archive exists): relation "bak_fu8_orphan_memberships_20261012" already exists
+ok   second run fails loudly (archive exists) -> memberships unchanged
+ok   ...and the archive is untouched
+ok   rollback: memberships restored byte-identical to before the migration
+ok   rollback re-run is a no-op (ON CONFLICT (id) DO NOTHING)
+ok   rollback aborts on a re-created (user_id, tenant_id): duplicate key value violates unique constraint "memberships_user_id_tenant_id_key"
+ok   rollback aborts on a re-created (user_id, tenant_id) -> memberships unchanged
+ok   aborts on 20 orphans (count guard, upper): VTID-05124: 20 orphan memberships (expected 10..14, counted 12) — aborting
+ok   aborts on 20 orphans (count guard, upper) -> memberships unchanged
+ok   ...and leaves no archive table
+ok   aborts on 9 orphans (count guard, lower): VTID-05124: 9 orphan memberships (expected 10..14, counted 12) — aborting
+ok   aborts on 9 orphans (count guard, lower) -> memberships unchanged
+ok   boundary: 14 orphans are deleted
+ok   aborts when an orphan has a profiles row (profiles.user_id): VTID-05124: 1 archived memberships belong to a user with user_tenants or profiles rows — aborting
+ok   aborts when an orphan has a profiles row (profiles.user_id) -> memberships unchanged
+ok   ...and leaves no archive table
+ok   aborts when an orphan has a profiles row (profiles.id): VTID-05124: 1 archived memberships belong to a user with user_tenants or profiles rows — aborting
+ok   aborts when an orphan has a profiles row (profiles.id) -> memberships unchanged
+ok   aborts when a FK references memberships: VTID-05124: 1 foreign keys now reference public.memberships — aborting
+ok   aborts when a FK references memberships -> memberships unchanged
+ALL MIGRATION CHECKS PASSED

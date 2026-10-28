@@ -1,0 +1,80 @@
+VTID-04813 — preconditions, measured not assumed
+=================================================
+
+[1] Polly's Russian voice — the fault, and why it is not fixable in Polly
+    services/gateway/src/services/tts/polly.ts
+      ru: { voiceId: 'Tatyana', engine: 'standard', languageCode: 'ru-RU' }
+    DescribeVoices(ru-RU), eu-central-1, re-measured live 2026-09-29:
+      Tatyana  -> standard only
+      Maxim    -> standard only
+      (no neural, no generative Russian voice exists)
+    `ru` is the ONLY language in POLLY_VOICES not pinned to `neural`.
+
+[2] Gemini Live supports Russian
+    ai.google.dev/gemini-api/docs/live-guide, checked 2026-10-01
+      "Live API supports the following 99 languages"
+      Russian -> `ru`   SUPPORTED
+      Serbian -> `sr`   SUPPORTED
+
+[3] The live voice row ru would use (read-only, production Supabase)
+    SELECT policy_key, value_json FROM decision_policy
+     WHERE policy_key IN ('voice.live_api.voice.ru','voice.live_api.voice.sr');
+
+      voice.live_api.voice.ru | {"voice_name":"Aoede","fallback_lang":"en"} | v1
+      voice.live_api.voice.sr | {"voice_name":"Aoede","fallback_lang":"en"} | v1
+
+    IDENTICAL. Russian inherits the exact voice Serbian already uses on this
+    bridge in production. No DB change was needed or made.
+
+[4] That voice satisfies the persona voice-gender rule (VTID-04445)
+    orb/live/voice/persona-voice-gender.ts -> GEMINI_VOICE_GENDER
+      Aoede  : female   <- Vitana (rule: female in every language)
+      Kore   : female
+      Charon : male     <- Devon via VERTEX_SPECIALIST_FALLBACK_VOICE
+
+[5] The bridge is already provisioned on BOTH stacks
+    .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml
+    .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+      GOOGLE_CLOUD_PROJECT         = project-da3eb05a-c86e-47cb-85f
+      VERTEX_AI_LOCATION           = global
+      VERTEX_SERBIAN_BRIDGE_ENABLED= true     <- live in PRODUCTION
+      GCP_SERVICE_ACCOUNT_JSON     = <WIF external_account config>
+    Nothing new to provision for Russian.
+
+[6] CLAUDE.md's canary precondition — route 2 ("confirm gateway-level
+    timeouts elsewhere already bound it") holds
+    orb/live/config.ts            : SESSION_TIMEOUT_MS = 30 * 60 * 1000
+    session/live-session-controller.ts:347 cleanupExpiredSessions()
+    routes/orb-live.ts:17892          wsClientSessions sweep, every 5 min
+    NEITHER reads session.upstreamProvider. A Vertex session is reaped on
+    the same 30-minute idle rule as a Nova session.
+
+[7] Exposure, measured (read-only, production oasis_events)
+    greeting_sent per language, 30 days to 2026-10-01:
+
+      lang | sessions | on the bridge?
+      -----+----------+----------------------------------
+      de   |      866 | no
+      en   |      258 | no
+      sr   |      136 | YES - in production today
+      ru   |       18 | this VTID
+      fr   |        3 | no
+      es   |        1 | no
+
+    Russian is ~7.5x SMALLER than the language already on this bridge.
+    Enabling it widens bridge exposure by ~13%, not 8x.
+
+[8] Verification
+    tsc --noEmit                            clean
+    vtid-04813 suites                       23/23
+    test/orb/live/upstream                  49 suites / 589 tests / 0 fail
+    full gateway suite                      1453 suites / 23,304 tests / 0 fail
+                                            109/109 snapshots
+    mutation A (revert selector wiring)     2 fail  -> wiring is load-bearing
+    mutation B (widen ru predicate to sr)   2 fail  -> never-widened is enforced
+
+[9] NOT verified
+    No real Russian voice session has been heard on this bridge. This
+    session cannot place an ORB call and production testing is forbidden.
+    Post-deploy signal: a ru session in oasis_events reporting
+    reason='vertex_russian_bridge' AND producing audio.

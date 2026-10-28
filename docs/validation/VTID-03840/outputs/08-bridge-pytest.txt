@@ -1,0 +1,43 @@
+============================= test session starts ==============================
+platform linux -- Python 3.11.15, pytest-8.3.4, pluggy-1.6.0 -- /usr/local/bin/python3
+rootdir: /home/user/vitana-platform/services/erp-bridge
+plugins: anyio-4.15.1
+collecting ... collected 36 items
+tests/test_api.py::test_alive_and_ready_need_no_token PASSED             [  2%]
+tests/test_api.py::test_v1_refuses_without_token PASSED                  [  5%]
+tests/test_api.py::test_catalog_lists_actions_without_secrets PASSED     [  8%]
+tests/test_api.py::test_read_action_executes_and_replays PASSED          [ 11%]
+tests/test_api.py::test_unknown_or_never_exposed_action_is_refused_before_running PASSED [ 13%]
+tests/test_api.py::test_unknown_tenant_is_404 PASSED                     [ 16%]
+tests/test_api.py::test_commit_tier_requires_confirmation_and_sets_user_confirmed PASSED [ 19%]
+tests/test_api.py::test_high_risk_needs_maker_checker_and_never_voice PASSED [ 22%]
+tests/test_api.py::test_smuggled_flag_is_422_and_burns_no_key PASSED     [ 25%]
+tests/test_api.py::test_erpclaw_error_becomes_failed_receipt PASSED      [ 27%]
+tests/test_catalog.py::test_never_exposed_actions_are_absent PASSED      [ 30%]
+tests/test_catalog.py::test_every_catalog_action_exists_in_the_pinned_tree PASSED [ 33%]
+tests/test_catalog.py::test_only_the_crm_domain_of_growth_is_allowlisted PASSED [ 36%]
+tests/test_catalog.py::test_explicit_params_map_to_declared_flags PASSED [ 38%]
+tests/test_catalog.py::test_deny_flags_are_never_admitted PASSED         [ 41%]
+tests/test_catalog.py::test_tier_and_gating_are_consistent_with_the_design_gate PASSED [ 44%]
+tests/test_catalog.py::test_dangerous_set_matches_the_vendored_router_when_available PASSED [ 47%]
+tests/test_catalog.py::test_public_catalog_has_no_secrets_and_is_json PASSED [ 50%]
+tests/test_idempotency.py::test_memory_store PASSED                      [ 52%]
+tests/test_idempotency.py::test_abandoned_in_progress_is_retried PASSED  [ 55%]
+tests/test_idempotency.py::test_postgres_store_end_to_end PASSED         [ 58%]
+tests/test_runner.py::test_argv_is_built_only_from_the_spec PASSED       [ 61%]
+tests/test_runner.py::test_user_confirmed_only_for_gated_actions_and_only_when_confirmed PASSED [ 63%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params0] PASSED [ 66%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params1] PASSED [ 69%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params2] PASSED [ 72%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params3] PASSED [ 75%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params4] PASSED [ 77%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params5] PASSED [ 80%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params6] PASSED [ 83%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params7] PASSED [ 86%]
+tests/test_runner.py::test_smuggled_flags_and_values_are_refused[params8] PASSED [ 88%]
+tests/test_runner.py::test_company_scoped_action_needs_a_configured_company PASSED [ 91%]
+tests/test_runner.py::test_store_true_flags_take_booleans_only PASSED    [ 94%]
+tests/test_runner.py::test_subprocess_env_is_minimal_and_redaction_hides_the_url PASSED [ 97%]
+tests/test_runner.py::test_real_subprocess_runs_with_timeout_and_json PASSED [100%]
+tests/test_api.py::test_alive_and_ready_need_no_token
+======================== 36 passed, 1 warning in 5.58s =========================

@@ -1,0 +1,10 @@
+# Read-only evidence (2026-10-04)
+recall-shadow-report.sh /vitana/gateway-awsdr 12 -> served legacy p50 144 / recall shadow p50 353
+recall-shadow-report.sh /vitana/gateway 72       -> served recall p50 767 / legacy shadow p50 237 (30 sessions, facts identical 30/30)
+paired [VTID-04452] orb recall lines with recall-shadow lines per log stream (staging, 72 h) -> served_total ~= recall ms (+<10%)
+SELECT avg/max/p95 length(content), count(*) FROM memory_items -> 90 / 1923 / 195, 3749 rows
+
+# Local verification (services/gateway)
+memory-broker-episodic-fallback VTID-04870 test on old memory-broker.ts -> fails (limit 150)
+npx jest vtid-04870 + broker + memory suites -> 45 suites, 587 tests passed
+npx tsc --noEmit -p . -> exit 0

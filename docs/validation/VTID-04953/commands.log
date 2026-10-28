@@ -1,0 +1,6 @@
+# VTID-04953 — commands run for this change (no production reads or writes beyond the read-only baseline in the PR body)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-04953/staging-tests.json'))"
+VTID=VTID-04953 python3 -I acgate.py          # local copy of the acceptance gate
+node scripts/ci/validator-path-guard.cjs <changed-files> gateway_backend <pr-body>
+# TypeScript transpile diagnostics on every changed .ts file; node --check on partner-review.js
+# Jest is not runnable in this session (npm registry blocked by the environment's network policy); CI runs it.

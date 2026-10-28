@@ -1,0 +1,4 @@
+cd services/gateway
+npx jest test/services/orchestrator/vtid-04415-delegation-run-store.test.ts   # 9/9
+npx jest test/services/orchestrator test/orb/live/vtid-04386-voice-delegation.test.ts test/orb/live/upstream   # 50 suites, 611 tests passed
+npx tsc --noEmit   # clean

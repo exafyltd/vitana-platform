@@ -1,0 +1,162 @@
+provider_policy:
+  # ═══════════════════════════════════════════════════════════════════════
+  # SINGLE SOURCE OF TRUTH for all model assignments.
+  # All services (worker-runner, conductor/llm-router) MUST read from here.
+  # Do NOT hardcode model IDs in service code.
+  # VTID-01230: Unified model config
+  # ═══════════════════════════════════════════════════════════════════════
+
+  version: "2.0"
+  memory_gateway: supabase_oasis
+
+  # Concrete model IDs — the only place these are defined
+  models:
+    claude:
+      provider: anthropic
+      model_id: claude-sonnet-4-5-20250929
+      fallback_model_id: claude-3-5-sonnet-20241022
+    gemini:
+      provider: vertex_ai
+      model_id: gemini-2.5-pro
+      fallback_model_id: gemini-1.5-pro
+    gemini_flash:
+      provider: vertex_ai
+      model_id: gemini-2.5-flash
+      fallback_model_id: gemini-1.5-flash
+    chatgpt:
+      provider: openai
+      model_id: gpt-4.1
+      fallback_model_id: gpt-4o
+
+  defaults:
+    autonomy: true
+    report_events: gateway
+    tenant_required: true
+    retry:
+      on: [429,500,502,503,504,connection_reset]
+      attempts: 5
+      backoff: exponential
+      base_ms: 200
+      max_ms: 3000
+      jitter: full
+
+  # Role→model assignments (use keys from 'models' above)
+  roles:
+    planner:
+      primary: claude
+      fallback: gemini
+    worker:
+      primary: gemini
+      fallback: claude
+    validator:
+      primary: claude
+      fallback: gemini
+    research:
+      web_primary: perplexity_mcp
+      fallback: gemini
+    autopilot:
+      primary: gemini
+      fallback: claude
+
+  fallbacks:
+    - gemini -> claude
+    - claude -> gemini
+    - research -> perplexity_mcp -> gemini
+
+  reporting:
+    required_fields: [rid, task_type, assignee_ai, status, notes, "git_sha?"]
+
+# KB Skills Integration (VTID: DEV-AICOR-0025)
+skills:
+  # Knowledge Base skills for accessing Vitana documentation
+  kb:
+    vitana.kb.get_index:
+      enabled: true
+      roles: [planner, worker]
+      primary_role: planner
+      description: Retrieve KB index to discover available Vitana documentation
+      
+    vitana.kb.get_doc:
+      enabled: true
+      roles: [planner, worker]
+      primary_role: planner
+      description: Fetch specific Vitana document by ID with section filtering
+      
+    vitana.kb.get_bundle:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      description: Create custom documentation bundle for task execution context
+
+  # KB Configuration
+  kb_config:
+    base_url_env: KB_AGENT_BASE_URL
+    oasis_telemetry: true
+    timeout_ms: 10000
+    retry_policy:
+      max_attempts: 3
+      backoff_ms: 1000
+    fallback_mode: continue_without_kb
+
+  # Worker Sub-Agents + Orchestrator Skills (VTID-01163)
+  worker_orchestrator:
+    worker.route_subagent:
+      enabled: true
+      roles: [orchestrator, worker]
+      primary_role: orchestrator
+      description: Route work orders to domain-specialized worker subagents
+
+    worker.frontend.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: frontend
+      description: Apply code changes for frontend domain with CSP compliance
+      guardrails:
+        allowed_paths:
+          - services/gateway/src/frontend/**
+          - services/gateway/dist/frontend/**
+        csp_compliance: true
+
+    worker.backend.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: backend
+      description: Apply code changes for backend domain with route validation
+      guardrails:
+        allowed_paths:
+          - services/gateway/src/**
+          - services/**/src/**
+        route_validation: true
+
+    worker.memory.apply_patch:
+      enabled: true
+      roles: [worker]
+      primary_role: worker
+      domain: memory
+      description: Apply code changes for memory domain with tenant context
+      guardrails:
+        allowed_paths:
+          - supabase/migrations/**
+          - services/agents/memory-indexer/**
+        tenant_validation: true
+
+  # Worker Orchestrator Configuration
+  worker_orchestrator_config:
+    gateway_endpoint: ${GATEWAY_URL}/api/v1/worker/orchestrator/route
+    oasis_telemetry: true
+    subagents:
+      - worker-frontend
+      - worker-backend
+      - worker-memory
+    default_budget:
+      frontend:
+        max_files: 10
+        max_directories: 5
+      backend:
+        max_files: 15
+        max_directories: 8
+      memory:
+        max_files: 5
+        max_directories: 3

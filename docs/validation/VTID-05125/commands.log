@@ -1,0 +1,32 @@
+# VTID-05125 — commands run (worktree fu/VTID-05125, local only; nothing applied to any shared database)
+
+# Live facts, read-only SELECTs against inmkhvwdcuyhnxkgfvsb (2026-10-12 22:42 UTC) → live-before.sql (Q1, Q2 + results)
+SELECT p.oid::regprocedure, prosecdef, owner, proacl, has_function_privilege(<migrate|service_role|authenticated|anon>, oid, 'EXECUTE') … WHERE proname IN (<four>)
+SELECT rolname, rolcanlogin, rolreplication, rolbypassrls, rolsuper, member_of, members FROM pg_roles WHERE rolname = 'migrate'
+
+# SQL test (local PostgreSQL 16, throwaway cluster started with initdb/pg_ctl as the postgres OS user) → outputs/sql-test.txt
+$ PGHOST=<tmp socket dir> PGPORT=55471 PGUSER=postgres bash scripts/ci/sql-tests/run-memory-functions-migrate-revoke-test.sh
+ok 1 … ok 7
+PASS vtid-05125 memory functions migrate revoke
+
+# Mutations (copies of the migration via VTID_05125_MIGRATION) → outputs/mutations.txt
+# mut1: REVOKE replaced by NULL                         → refused: "… still executable by migrate" (harness exit 1)
+# mut2: overload-count check deleted                    → case 6 "applied but should have been refused" (exit 1)
+# mut4: REVOKE removed AND migrate check neutralised    → harness: "migrate EXECUTE … got t, want f" (exit 1)
+
+# Jest (services/gateway; node_modules symlinked from the main checkout)
+$ npx jest <18 suites referencing write_fact/get_current_facts/recall_at_time_range/memory_facts_semantic_search>   # 18 suites, 431 passed → outputs/jest-memory.txt
+$ npm run test:support                                                                                           # 4 suites, 87 passed  → outputs/jest-support.txt
+$ npx jest <163 suites referencing supabase/migrations or .github/workflows>                                    # 152 passed, 11 failed → outputs/jest-migration-guards.txt
+#   The same 11 suites fail identically on origin/main 02a41f019 without this change (git stash -u; 11 failed, 72 passed):
+#   7 are local-Postgres harnesses of other VTIDs that the postgres OS user cannot read from this scratch worktree
+#   ("Permission denied", as already recorded in VTID-05041's commands.log), 4 (04402, 04449, 05057, 05095) are
+#   unrelated pre-existing failures in this environment. vtid-05041-definer-lockdown.test.ts PASSES with this migration.
+$ npx jest <11 suites referencing DATABASE_SCHEMA>                                                                # 11 suites, 219 passed
+
+# Typecheck: no TypeScript changed in this PR (SQL, bash, YAML, docs only); not applicable.
+
+# Rollout (orchestrator, after merge; the only production write, covered by Gate 1):
+#   1. re-run live-before.sql Q1/Q2 read-only; dispatch only if it matches.
+#   2. RUN-MIGRATION.yml with supabase/migrations/20261013090000_vtid_05125_memory_functions_revoke_migrate.sql
+#   3. run post-apply-checks.sql read-only and paste the result here (expect vtid_05125_ok = true).

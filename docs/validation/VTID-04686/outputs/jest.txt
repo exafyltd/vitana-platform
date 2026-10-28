@@ -1,0 +1,22 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+    [VTID-04686] retiring other rows of paul_birthday failed: boom
+      199 |       await retire(options.client as SupabaseClient, input.tenant_id, input.user_id, input.fact_key, result.id);
+      200 |     } catch (err: any) {
+          |               ^
+      202 |     }
+      203 |   }
+      204 |   return { ok: true, fact_id: result.id ?? undefined };
+PASS test/services/memory/vtid-04686-one-current-row-per-key.test.ts
+  VTID-04686 rememberFact retires other current rows of the key
+    ✓ supersedes every other current row of the same key, whatever its entity (10 ms)
+    ✓ keeps the write when retiring fails (11 ms)
+    ✓ does nothing extra when retireOthers is false (1 ms)
+    ✓ does not retire anything when the write failed (1 ms)
+    ✓ uses a PATCH on the REST transport scoped to the key, never the new row (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       5 passed, 5 total
+Snapshots:   0 total
+Time:        0.779 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04686-one-current-row-per-key.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

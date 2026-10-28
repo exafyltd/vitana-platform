@@ -1,0 +1,21 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+PASS test/vtid-04874-jev-community-rate.test.ts
+  VTID-04874 settings
+    ✓ mode: off and enforce exact, anything else shadow (4 ms)
+    ✓ per-task rate: 180 by default (360/min = 30% of 1,200 over 2 tasks), positive integer override (1 ms)
+  VTID-04874 TokenBucket
+    ✓ starts full, empties, refills continuously, never above capacity (10 ms)
+  VTID-04874 limiter
+    ✓ enforce refuses once the bucket is empty (2 ms)
+    ✓ shadow never refuses and reports at most once per 10 minutes, with the count (7 ms)
+    ✓ off admits everything without counting (1 ms)
+  VTID-04874 decide()
+    ✓ a member-spend call refused by the rate share falls back to rules with 429 and no Jev call (4 ms)
+    ✓ internal calls never take a token (2 ms)
+Test Suites: 1 passed, 1 total
+Tests:       8 passed, 8 total
+Snapshots:   0 total
+Time:        0.561 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04874/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,18 @@
+# VTID-04890 — commands run (2026-10-05)
+
+# Read-only diagnosis (production Supabase, SELECT only): the one partner org, typeless draft
+SELECT partner_type, lifecycle_state, commerce_vertical, created_at FROM partner_organizations WHERE id = '<exafy draft>';
+#  -> partner_type NULL, lifecycle_state draft, commerce_vertical general, created 2026-10-02 (via /partner-orgs/register)
+#  -> 1 of 1 partner orgs has a null partner_type
+
+# Pre-change MCP status for that org (as read by Claude through staging):
+#  ready_to_submit false, missing_to_submit [], steps [], next_step null  (outputs/pre-change-status.md)
+
+# Staging change suite validation
+node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD \
+  --title "VTID-04890: Commerce MCP sets a missing business type"
+#  -> outputs/staging-verify-check-pr.txt
+
+# Jest (CI): local npm ci is refused by the registry policy in this container (403 on lockfile packages),
+# so the suites run in the gateway Jest CI job:
+#   npx jest test/vtid-04890-commerce-business-type.test.ts test/commerce-mcp.test.ts

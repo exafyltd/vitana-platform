@@ -1,0 +1,4 @@
+# VTID-04996 — commands run and their results (offline unit and contract tests; no database touched)
+$ cd services/gateway && npx jest test/vtid-04996-calendar-find-a-time.test.ts test/calendar test/vtid-04995-calendar-conflicts.test.ts   (outputs/jest.txt)
+$ cd services/gateway && npx tsc --noEmit -p .   -> no errors
+Mutation checks: dropping external busy fails "skips own commitments, other lenses and external calendars"; ignoring quiet hours fails two quiet-hours tests.

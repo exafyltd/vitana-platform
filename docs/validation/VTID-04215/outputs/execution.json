@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04215",
+  "title": "Dev Autopilot: recognise AWS deploy topics so auto-merged work stops being reverted",
+  "executor": "claude-code-session",
+  "branch": "claude/cool-dijkstra-p9s8vx",
+  "root_cause": "watcher/reconciler queried GCP-era deploy.gateway.* topics; AWS workflows emit staging.deploy.completed / prod.deploy.completed",
+  "observed_reverts": [
+    { "execution": "141c4e4b", "vtid": "VTID-04134", "merged_utc": "2026-09-20T20:06:56Z", "deploy_run": 473, "reverted_utc": "2026-09-20T20:38:02Z" },
+    { "execution": "f64f22e2", "vtid": "VTID-04135", "merged_utc": "2026-09-20T20:11:56Z", "deploy_run": 474, "reverted_utc": "2026-09-20T20:43:05Z" }
+  ],
+  "checks": { "tsc": "clean", "jest_new_suite": "19/19", "jest_sibling_suites": "90/90" }
+}

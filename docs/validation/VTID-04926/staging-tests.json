@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04926",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "name": "group detail is mounted and refuses an unsigned caller (read-only)",
+      "path": "/api/v1/chat/groups/00000000-0000-4000-8000-000000000000",
+      "expect_status": 401,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04926-chat-group-mentions.test.ts test/i18n/catalog-coverage.test.ts test/vtid-04674-notification-controls.test.ts test/chat-vitana-reply.test.ts test/routes/chat-groups-repository.test.ts",
+      "cwd": "services/gateway",
+      "reason": "sending a tagged group message is a write, so it is proven here: only members whose @name is in the text are stored (never the sender, bot, service or test accounts), a tagged member gets exactly one chat_mention push in their language deep-linking to the message, everyone else the unchanged new_chat_message, a failed account lookup fails closed, GET /:id marks unmentionable accounts; the new catalog key is translated in every shipped locale. The signed-in roster check (`mentionable` on GET /chat/groups/:id) runs in the community-app staging suite (exafyltd/vitana-v1 docs/validation/VTID-04926)."
+    }
+  ]
+}

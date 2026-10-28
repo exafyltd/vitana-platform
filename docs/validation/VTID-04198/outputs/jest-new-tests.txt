@@ -1,0 +1,30 @@
+PASS test/frontend/orb-widget-gesture-audio-unlock.test.ts
+    ✓ installs the unlock at script load, not from init() (4 ms)
+    ✓ binds document-level gesture listeners in the capture phase (2 ms)
+    ✓ starts the context with a 1-sample silent buffer, not resume() alone (1 ms)
+    ✓ surfaces blocked audio instead of silently dropping the queue (1 ms)
+    ✓ offers a tap that repairs playback and drains the pipeline (1 ms)
+    ✓ keeps the tap prompt visible through the end-of-turn transition (1 ms)
+    ✓ drops the tap listener when the session tears down
+PASS test/frontend/orb-widget-ios-audio-blocked.test.ts
+    ✓ drives the suspended-context retry from its own timer, not only from resume() settling (1 ms)
+    ✓ no longer discards the queued audio when it gives up
+    ✓ passes the give-up reason to the announcement so it can be reported (1 ms)
+    ✓ cancels the retry tick on give-up, on success, and on teardown (1 ms)
+    ✓ bounds the held queue at the push site, keeping the earliest chunks (1 ms)
+    ✓ keeps the give-up budget bounded and named
+    ✓ beacons the block to the gateway, keyed to the session (1 ms)
+    ✓ carries the fields needed to tell the failure modes apart (1 ms)
+    ✓ fires once per block, from _announceAudioBlocked
+    ✓ distinguishes a real recovery from the user giving up
+    ✓ does not beacon before a session exists (1 ms)
+PASS test/routes/orb-audio-blocked-route.test.ts
+    ✓ is registered with optionalAuth (1 ms)
+    ✓ accepts ANONYMOUS callers — the reported failure is pre-login
+    ✓ emits an OASIS event so the failure is queryable (1 ms)
+    ✓ allowlists `state` instead of echoing client text into a topic
+    ✓ bounds every free-text field it records (1 ms)
+    ✓ never hands the client an error while it is already degraded
+    ✓ carries the diagnostic fields the widget sends
+Test Suites: 3 passed, 3 total
+Tests:       25 passed, 25 total

@@ -1,0 +1,473 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper) route: Supabase env missing 1`] = `
+{
+  "body_text": "{"ok":false,"error":"Supabase not configured"}",
+  "console_error_tags": [],
+  "content_type": "application/json; charset=utf-8",
+  "status": 500,
+  "supabase_requests": [],
+}
+`;
+
+exports[`VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper) route: event loop status throws 1`] = `
+{
+  "body_text": "{"ok":false,"error":"loop exploded"}",
+  "console_error_tags": [
+    "[pipeline/summary] Error:",
+  ],
+  "content_type": "application/json; charset=utf-8",
+  "status": 500,
+  "supabase_requests": [
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.rejected&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?vtid=like.VTID-%25&topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.2026-09-27T12%3A00%3A00.000Z&select=source,vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at,source_type",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.2026-10-04T11%3A55%3A00.000Z&select=id&limit=1",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(rejected,voided)&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+  ],
+}
+`;
+
+exports[`VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper) route: every Supabase query non-ok 1`] = `
+{
+  "body_text": "{"ok":true,"timestamp":"2026-10-04T12:00:00.000Z","funnel":{"scheduled":0,"in_progress":0,"completed":0,"rejected":0,"stuck":0,"broken":0},"entry_points":{"command-hub":0,"orb":0,"operator":0,"email-intake":0,"system":0},"success_rate":0,"attention_queue":[],"recommendations":[],"loop_running":false,"execution_armed":true,"workers_active":false}",
+  "console_error_tags": [],
+  "content_type": "application/json; charset=utf-8",
+  "status": 200,
+  "supabase_requests": [
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.rejected&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?vtid=like.VTID-%25&topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.2026-09-27T12%3A00%3A00.000Z&select=source,vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at,source_type",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.2026-10-04T11%3A55%3A00.000Z&select=id&limit=1",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(rejected,voided)&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+  ],
+}
+`;
+
+exports[`VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper) route: every Supabase query rejects (network error) 1`] = `
+{
+  "body_text": "{"ok":true,"timestamp":"2026-10-04T12:00:00.000Z","funnel":{"scheduled":0,"in_progress":0,"completed":0,"rejected":0,"stuck":0,"broken":0},"entry_points":{"command-hub":0,"orb":0,"operator":0,"email-intake":0,"system":0},"success_rate":0,"attention_queue":[],"recommendations":[],"loop_running":false,"execution_armed":false,"workers_active":false}",
+  "console_error_tags": [],
+  "content_type": "application/json; charset=utf-8",
+  "status": 200,
+  "supabase_requests": [
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.rejected&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?vtid=like.VTID-%25&topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.2026-09-27T12%3A00%3A00.000Z&select=source,vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at,source_type",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.2026-10-04T11%3A55%3A00.000Z&select=id&limit=1",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(rejected,voided)&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+  ],
+}
+`;
+
+exports[`VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper) route: realistic data 1`] = `
+{
+  "body_text": "{"ok":true,"timestamp":"2026-10-04T12:00:00.000Z","funnel":{"scheduled":3,"in_progress":2,"completed":1,"rejected":0,"stuck":1,"broken":1},"entry_points":{"command-hub":2,"orb":2,"operator":1,"email-intake":1,"system":1},"success_rate":60,"attention_queue":[{"vtid":"VTID-10","title":"Long stall","severity":"BROKEN","reason":"Execution stalled for 185 minutes — likely broken","stuck_minutes":185,"status":"in_progress","spec_status":"approved"},{"vtid":"VTID-11","title":"VTID-11","severity":"STUCK","reason":"In progress for 75 minutes with no progress","stuck_minutes":75,"status":"in_progress","spec_status":"approved"},{"vtid":"VTID-20","title":"No spec","severity":"BLOCKED","reason":"No spec generated — cannot activate","stuck_minutes":30,"status":"scheduled","spec_status":"missing"},{"vtid":"VTID-30","title":"Ready","severity":"NEW","reason":"Spec validated — waiting for human approval","stuck_minutes":5,"status":"scheduled","spec_status":"validated"}],"recommendations":[{"id":"r1","title":"Rec","summary":"s","domain":"d","risk_level":"low","impact_score":9,"status":"pending","created_at":"2026-10-04T11:00:00.000Z","source_type":"scanner"}],"loop_running":true,"execution_armed":false,"workers_active":true}",
+  "console_error_tags": [],
+  "content_type": "application/json; charset=utf-8",
+  "status": 200,
+  "supabase_requests": [
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.rejected&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.in_progress&updated_at=lt.2026-10-04T11%3A00%3A00.000Z&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&or=(spec_status.is.null,spec_status.eq.missing)&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(scheduled,pending)&spec_status=eq.validated&select=vtid,title,updated_at,spec_status&limit=20",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?vtid=like.VTID-%25&topic=in.(email.intake.task_created,vtid.task.scheduled,vtid.lifecycle.execution_approved)&created_at=gt.2026-09-27T12%3A00%3A00.000Z&select=source,vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/autopilot_recommendations?status=eq.pending&order=impact_score.desc&limit=5&select=id,title,summary,domain,risk_level,impact_score,status,created_at,source_type",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/oasis_events?topic=eq.vtid.stage.worker_orchestrator.heartbeat&created_at=gt.2026-10-04T11%3A55%3A00.000Z&select=id&limit=1",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=eq.completed&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+    {
+      "headers": {
+        "Authorization": "Bearer test-service-role-key-mock",
+        "Content-Type": "application/json",
+        "apikey": "test-service-role-key-mock",
+      },
+      "url": "http://localhost:54321/rest/v1/vtid_ledger?vtid=like.VTID-%25&status=in.(rejected,voided)&updated_at=gt.2026-09-27T12%3A00%3A00.000Z&select=vtid&limit=500",
+    },
+  ],
+}
+`;

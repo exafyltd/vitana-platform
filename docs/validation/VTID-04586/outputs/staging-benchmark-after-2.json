@@ -1,0 +1,159 @@
+{
+  "summary": {
+    "label": "auth-en-commandhub",
+    "gateway": "https://preview-aws-gateway.vitanaland.com",
+    "lang": "en",
+    "route": "/command-hub",
+    "auth": true,
+    "trials": 6,
+    "with_audio": 6,
+    "no_audio": 0,
+    "first_audio_ms": {
+      "min": 887,
+      "p50": 1337,
+      "p90": 1459,
+      "max": 1459
+    },
+    "first_model_audio_ms": {
+      "min": 3151,
+      "p50": 3820,
+      "p90": 8292,
+      "max": 8292
+    }
+  },
+  "trials": [
+    {
+      "idx": 1,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 173,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409805413,
+      "sessionStartMs": 542,
+      "sessionId": "live-747fbb86-94ab-4290-b251-0ea5a7599951",
+      "sseOpenMs": 745,
+      "firstAudioMs": 1337,
+      "firstAudioSource": "activation_chime",
+      "text": "The Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there’s a pending approval waiting for you. I can pull up the approval queue and the failure details so we can tackle the root cause together. Shall I show you what’s pending?",
+      "firstModelAudioMs": 3820,
+      "turnCompleteMs": 6310
+    },
+    {
+      "idx": 2,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 188,
+        "output_transcript": 2,
+        "turn_complete": 1
+      },
+      "t0": 1790409811900,
+      "sessionStartMs": 739,
+      "sessionId": "live-ae5ba0bc-70e9-4378-9e01-c6792e7aa44d",
+      "sseOpenMs": 1110,
+      "firstAudioMs": 1346,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there’s one waiting for your approval. Let’s dig into that failure and get it moving. I can pull the details of the pending execution and the error logs for you.",
+      "firstModelAudioMs": 3151,
+      "turnCompleteMs": 5739
+    },
+    {
+      "idx": 3,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 227,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409818094,
+      "sessionStartMs": 502,
+      "sessionId": "live-6a5611c0-cf54-4ece-86c4-f97a77c5cb14",
+      "sseOpenMs": 671,
+      "firstAudioMs": 887,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there’s one waiting for your approval. Also, staging and production are on different builds. Want me to pull up the pending approval details and the diff between staging and production builds so we can tackle this together?",
+      "firstModelAudioMs": 3599,
+      "turnCompleteMs": 6817
+    },
+    {
+      "idx": 4,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 183,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409825109,
+      "sessionStartMs": 707,
+      "sessionId": "live-8d748dd0-ab69-4a02-95de-d06cdac08b4a",
+      "sseOpenMs": 1095,
+      "firstAudioMs": 1459,
+      "firstAudioSource": "activation_chime",
+      "text": "The Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there's an execution waiting for your approval. Let's dig into that failure and get it unblocked. Would you like me to pull up the details of the pending execution and the error logs?",
+      "firstModelAudioMs": 3936,
+      "turnCompleteMs": 6509
+    },
+    {
+      "idx": 5,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 231,
+        "output_transcript": 3,
+        "turn_complete": 1
+      },
+      "t0": 1790409832166,
+      "sessionStartMs": 645,
+      "sessionId": "live-99252468-7b4b-449d-bc5e-41fb06fb68e4",
+      "sseOpenMs": 806,
+      "firstAudioMs": 1026,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there’s one waiting for your approval. Also, staging and production are on different builds. Want me to pull up the pending approval details and the diff between staging and production builds so we can get this sorted?",
+      "firstModelAudioMs": 3706,
+      "turnCompleteMs": 6968
+    },
+    {
+      "idx": 6,
+      "lang": "en",
+      "auth": true,
+      "route": "/command-hub",
+      "events": {
+        "ready": 1,
+        "live_api_ready": 1,
+        "audio": 234,
+        "output_transcript": 3,
+        "heartbeat": 1,
+        "turn_complete": 1
+      },
+      "t0": 1790409839360,
+      "sessionStartMs": 623,
+      "sessionId": "live-a5668a6a-693f-4ba5-99f4-1e5a68920192",
+      "sseOpenMs": 809,
+      "firstAudioMs": 1173,
+      "firstAudioSource": "activation_chime",
+      "text": "Hey, I see the Dev Autopilot is struggling —  only 2% of executions succeeded this week, and there’s one waiting for your approval. Also, staging and production are on different builds. I can pull up the pending approval details and the failure breakdown for you. What would you like to tackle first?",
+      "firstModelAudioMs": 8292,
+      "turnCompleteMs": 11562
+    }
+  ]
+}

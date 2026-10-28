@@ -1,0 +1,53 @@
+# VTID-05144 — commands run (local only; nothing against staging or production; no workflow dispatch)
+# base: origin/main 6a44f9a3f   branch: staging-verify-05144
+
+## Runner / workflow unit tests (head)
+$ node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/record-oasis.test.cjs scripts/ci/staging-verify/workflow.test.cjs scripts/ci/staging-verify/confirm-live.test.mjs
+# tests 77 / pass 77 / fail 0                      -> outputs/node-test-head.txt
+
+## Red -> green for the node:test suites (UNIT.yml; PR-GATE red-green covers only gateway Jest)
+# origin/main's scripts/ci/staging-verify + STAGING-VERIFY.yml extracted with `git archive origin/main`
+# into a scratch tree, the four new/changed test files copied over it, then:
+$ node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/record-oasis.test.cjs scripts/ci/staging-verify/workflow.test.cjs scripts/ci/staging-verify/confirm-live.test.mjs
+# tests 72 / pass 53 / fail 19 (exit 1)            -> outputs/node-test-new-tests-on-base-code.txt
+#   fail: every new VTID-05144 case — decideOutcome (superseded + attributed failure -> failed),
+#   attributeResults, deployCutoff x4, buildReadyMessage x2, record-oasis x2, workflow x7,
+#   and confirm-live.test.mjs (base run.mjs exports no confirmLive; its fixture asserts the
+#   job-start clone cannot rev-parse the mid-run commit before the fetch).
+#   pass: all 53 pre-existing cases, incl. the original "superseded beats everything" assertions.
+
+## Whole UNIT.yml set (scripts/**/*.test.cjs|mjs)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs scripts/ci/pr-gate/__tests__/lib.test.mjs scripts/ci/staging-verify/confirm-live.test.mjs scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/record-oasis.test.cjs scripts/ci/staging-verify/workflow.test.cjs scripts/ci/vtid-auto-close.test.cjs scripts/memory-verification/reply-match.test.mjs
+# tests 113 / pass 113 / fail 0
+
+## Gateway Jest
+$ cd services/gateway && npx jest test/services/testing/publish-gate.test.ts test/operator-runs-view.test.ts test/operator-runs.test.ts test/command-hub/vtid-05069-pipeline-tree.test.ts test/vtid-04715-staging-verify-deployed-commit.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts
+# Test Suites: 6 passed / Tests: 100 passed        -> outputs/jest-head.txt
+
+## Gateway typecheck
+$ cd services/gateway && npx tsc --noEmit -p .
+# 3 errors, all TS2307 (libphonenumber-js, libphonenumber-js/max, @aws-sdk/client-pinpoint-sms-voice-v2)
+# in untouched files: the local node_modules predates those dependencies (CI runs npm ci).
+# No error in publish-gate.ts / run-view.ts.          -> outputs/tsc-noemit.txt
+
+## Evidence-pack scope
+$ node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05144 --kind fix --sparring-record docs/validation/VTID-05144/plan-sparring.md --paths "<15 globs>"
+# wrote docs/validation/VTID-05144/scope.json — checked: all 15 paths present; weakens_tests
+# entry added by hand for the planned lib.test.cjs "superseded beats everything" change.
+
+## PR-GATE (VTID-04948) against origin/main
+$ node scripts/ci/pr-gate/gate.mjs {scope,sparring,weakening,red-green} --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+# scope ✅ (23 files) / sparring ✅ / weakening ✅ (6 test files) / red→green ✅ (5 gateway tests fail on base)
+#                                                   -> outputs/pr-gate.txt
+
+## STAGING-TESTS-REQUIRED
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "VTID-05144: STAGING-VERIFY full runs survive a mid-run staging redeploy"
+# ✓ change suite present and valid for VTID-05144
+
+## Plan hash check
+$ node -e "<sha256 of the text between <!-- plan:begin --> and <!-- plan:end --> in plan-sparring.md>"
+# 58a5c086fd9e123e078bddd99e1e2d6139cbb11a9888dce00c5fa4069066ccc1 (matches the approved hash)
+
+## VALIDATOR preflight
+$ node scripts/ci/validate-pr-locally.cjs --title "VTID-05144: …" --body-file <pr-body.md> --base main
+# APPROVED (VTID=VTID-05144, PROFILE=gateway_backend; acceptance mapping OK; OASIS_IMPACT=yes with OASIS_PROOF)

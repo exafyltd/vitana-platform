@@ -1,0 +1,5 @@
+# commands run (local, services/gateway)
+npx tsc --noEmit    # exit 0
+node --check src/frontend/command-hub/orb-widget.js   # ok
+npx jest test/vtid-04385-support-ticket-filed-signal.test.ts test/routes/command-hub-static-cache-headers.test.ts test/frontend   # all passed
+# Not run live: staging ECS is blocked by the AWS account block.

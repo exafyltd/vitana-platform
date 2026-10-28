@@ -1,0 +1,11 @@
+{
+ "ok": true,
+ "vtid": "VTID-03834",
+ "spec_id": "1a8a3865-d265-4ee1-a418-55db6d8b99e9",
+ "spec_status": "approved",
+ "approval_id": "75f78dbc-b0e9-44d6-a936-824f19de7b3a",
+ "approved_by": "unknown",
+ "approved_role": "operator",
+ "approved_at": "2026-09-13T00:14:46.697Z",
+ "message": "Spec approved. Activation is now allowed."
+}

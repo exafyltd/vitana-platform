@@ -1,0 +1,8 @@
+# VTID-04332 — commands run (local, services/gateway)
+npx tsc --noEmit                                           # exit 0
+npx jest                                                   # 1082 suites passed / 1 skipped; 17590 tests passed, 29 skipped, 0 failed (on commit 63be54e)
+npx jest test/vtid-04332-report-to-specialist-status-contract.test.ts \
+         test/command-hub/vtid-04334-feedback-pipeline-links.test.ts \
+         test/routes/orb-live.test.ts                      # 3 suites, 145 tests passed (after merging VTID-04334 + origin/main)
+npx tsc --noEmit                                           # exit 0 after merging origin/main (187c266)
+# Not run: a live spoken hand-off. Staging ECS is blocked by the AWS account block (serves e09eb26).

@@ -1,0 +1,1120 @@
+/**
+ * VTID-01084: Community Personalization v1 (Gateway Routes)
+ *
+ * Longevity-focused community matching using deterministic signals from:
+ * - Diary entries (memory_items)
+ * - Memory Garden nodes (values/goals/habits)
+ * - Longevity signals (sleep/stress/movement/social from vitana_index_scores)
+ *
+ * Endpoints:
+ * - POST /api/v1/community/groups              - Create a community group
+ * - POST /api/v1/community/groups/:id/join     - Join a community group
+ * - POST /api/v1/community/global-groups/:id/view - Track group view (AP-0106 social proof)
+ * - POST /api/v1/community/meetups             - Create a meetup
+ * - POST /api/v1/community/recommendations/recompute - Recompute recommendations
+ * - GET  /api/v1/community/recommendations     - Get recommendations
+ * - GET  /api/v1/community/recommendations/:id/explain - Get recommendation explanation
+ * - GET  /api/v1/community/health              - Health check
+ *
+ * Dependencies:
+ * - VTID-01102 (context bridge)
+ * - VTID-01104 (memory RPC)
+ * - VTID-01078 (health brain)
+ */
+
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { createUserSupabaseClient } from '../lib/supabase-user';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import { notifyUserAsync, notifyUsersAsync } from '../services/notification-service';
+import { dispatchEvent } from '../services/automation-executor';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
+import { resolveActorTenant, jwtSubject } from '../services/jobs/job-tenant-loop';
+import { requireAuth, requireTenant, type AuthenticatedRequest } from '../middleware/auth-supabase-jwt';
+import * as repo from './community-repository';
+
+const router = Router();
+
+// =============================================================================
+// VTID-01084: Constants & Types
+// =============================================================================
+
+const VTID = 'VTID-01084';
+
+/**
+ * Create group request schema
+ */
+const CreateGroupRequestSchema = z.object({
+  name: z.string().min(1, 'Name is required'),
+  topic_key: z.string().min(1, 'Topic key is required'),
+  description: z.string().optional(),
+  is_public: z.boolean().default(true)
+});
+
+/**
+ * Create meetup request schema
+ */
+const CreateMeetupRequestSchema = z.object({
+  group_id: z.string().uuid('Invalid group ID'),
+  title: z.string().min(1, 'Title is required'),
+  starts_at: z.string().datetime('Invalid starts_at datetime'),
+  ends_at: z.string().datetime('Invalid ends_at datetime'),
+  location_text: z.string().optional().nullable(),
+  mode: z.enum(['online', 'in_person']).default('online')
+});
+
+/**
+ * Recompute recommendations request schema
+ */
+const RecomputeRequestSchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD format').optional()
+});
+
+/**
+ * Get recommendations query schema
+ */
+const GetRecommendationsQuerySchema = z.object({
+  date: z.string().regex(/^\d{4}-\d{2}-\d{2}$/, 'Date must be YYYY-MM-DD format').optional(),
+  type: z.enum(['group', 'meetup']).optional()
+});
+
+// =============================================================================
+// VTID-01084: Helper Functions
+// =============================================================================
+
+/**
+ * Extract Bearer token from Authorization header
+ */
+function getBearerToken(req: Request): string | null {
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    return null;
+  }
+  return authHeader.slice(7);
+}
+
+/**
+ * VTID-05267 (mt-jobs/jobs-automation-actor-tenant): run `dispatch` for the
+ * tenant an actor's automation event belongs to.
+ * - MT_RESOLUTION_V2 off ⇒ DEFAULT_TENANT_ID, synchronously (today).
+ * - On ⇒ the actor's real tenant via resolveActorTenant (a known tenant, else
+ *   the user's primary tenant); unresolvable ⇒ nothing is dispatched (the
+ *   resolver logs it), never DEFAULT_TENANT_ID.
+ */
+function dispatchForActorTenant(
+  actor: { tenantId?: string | null; userId?: string | null },
+  dispatch: (tenantId: string) => void
+): void {
+  if (!isMtResolutionV2Enabled()) {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) dispatch(tenantId);
+    return;
+  }
+  resolveActorTenant(actor)
+    .then((tenantId) => {
+      if (tenantId) dispatch(tenantId);
+    })
+    .catch((err) => console.warn(`[VTID-05267] actor tenant resolution failed:`, err?.message || err));
+}
+
+/**
+ * Emit a community-related OASIS event
+ */
+async function emitCommunityEvent(
+  type: string,
+  status: 'info' | 'success' | 'warning' | 'error',
+  message: string,
+  payload: Record<string, unknown>
+): Promise<void> {
+  await emitOasisEvent({
+    vtid: VTID,
+    type: type as any,
+    source: 'community-gateway',
+    status,
+    message,
+    payload: {
+      ...payload,
+      vtid: VTID
+    }
+  }).catch(err => console.warn(`[${VTID}] Failed to emit ${type}:`, err.message));
+}
+
+// =============================================================================
+// VTID-01084: Routes
+// =============================================================================
+
+/**
+ * POST /groups -> POST /api/v1/community/groups
+ *
+ * Create a new community group.
+ */
+router.post('/groups', async (req: Request, res: Response) => {
+  console.log(`[${VTID}] POST /community/groups`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = CreateGroupRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn(`[${VTID}] Validation failed:`, validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.createCommunityGroupRpc(supabase, validation.data);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_create_group RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_create_group RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.group.created',
+      'success',
+      `Group created: ${validation.data.name}`,
+      {
+        group_id: data?.id,
+        name: validation.data.name,
+        topic_key: validation.data.topic_key
+      }
+    );
+
+    console.log(`[${VTID}] Group created: ${data?.id}`);
+
+    return res.status(201).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] create group error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /groups/:id/join -> POST /api/v1/community/groups/:id/join
+ *
+ * Join a community group.
+ */
+router.post('/groups/:id/join', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+  console.log(`[${VTID}] POST /community/groups/${groupId}/join`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate group ID is a valid UUID
+  const uuidSchema = z.string().uuid('Invalid group ID');
+  const uuidValidation = uuidSchema.safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid group ID format'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.joinCommunityGroupRpc(supabase, groupId);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_join_group RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_join_group RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    if (data && !data.ok) {
+      return res.status(400).json(data);
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.membership.joined',
+      'success',
+      `User joined group: ${groupId}`,
+      {
+        group_id: groupId,
+        membership_id: data?.membership_id
+      }
+    );
+
+    // Dispatch automation event for community.member.joined
+    // VTID-05267: actor = the bearer token's `sub` (the RPC above accepted the token).
+    dispatchForActorTenant({ userId: jwtSubject(token) }, (tenantId) => {
+      dispatchEvent(tenantId, 'community.member.joined', {
+        group_id: groupId,
+        membership_id: data?.membership_id,
+      }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
+    });
+
+    console.log(`[${VTID}] User joined group: ${groupId}`);
+
+    // Notify group owner + members about the new join
+    try {
+      let joinerId = '';
+      try { joinerId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+
+      const supabaseUrl = process.env.SUPABASE_URL;
+      const serviceKey = process.env.SUPABASE_SERVICE_ROLE;
+      if (supabaseUrl && serviceKey && joinerId) {
+        const { createClient } = await import('@supabase/supabase-js');
+        const supa = createClient(supabaseUrl, serviceKey);
+
+        // Get group details
+        const { data: group } = await repo.fetchGroupNameTenantCreator(supa, groupId);
+
+        if (group?.tenant_id) {
+          // Notify group owner/creator
+          if (group.created_by && group.created_by !== joinerId) {
+            notifyUserAsync(group.created_by, group.tenant_id, 'someone_joined_your_group', {
+              title: 'New Group Member',
+              body: `Someone joined "${group.name || 'your group'}".`,
+              data: { url: `/community/groups/${groupId}`, group_id: groupId, entity_id: groupId },
+            }, supa);
+          }
+
+          // Notify other group members
+          const { data: members, error: membersErr } = await repo.fetchGroupMembersExcluding(supa, groupId, joinerId);
+          if (membersErr) {
+            console.error(`[community] fetchGroupMembersExcluding failed for group=${groupId}: ${membersErr.message}`);
+          }
+
+          const memberIds = (members || [])
+            .map((m: any) => m.user_id)
+            .filter((id: string) => id !== group.created_by); // owner already notified above
+
+          if (memberIds.length > 0) {
+            notifyUsersAsync(memberIds, group.tenant_id, 'new_member_in_group', {
+              title: 'New Member',
+              body: `Someone new joined "${group.name || 'your group'}".`,
+              data: { url: `/community/groups/${groupId}`, group_id: groupId, entity_id: groupId },
+            }, supa);
+          }
+        }
+      }
+    } catch (err: any) {
+      console.warn(`[Notifications] group join dispatch error: ${err.message}`);
+    }
+
+    // Fire-and-forget milestone check for group join
+    {
+      const _supaUrl = process.env.SUPABASE_URL;
+      const _svcKey = process.env.SUPABASE_SERVICE_ROLE;
+      let _uid = '';
+      try { _uid = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+      if (_uid && _supaUrl && _svcKey) {
+        import('../services/milestone-service').then(async ({ checkMilestonesForAction }) => {
+          const { createClient } = await import('@supabase/supabase-js');
+          const svc = createClient(_supaUrl, _svcKey);
+          const { data: grp } = await repo.fetchGroupTenantId(svc, groupId);
+          if (grp?.tenant_id) await checkMilestonesForAction(svc, _uid, grp.tenant_id, 'group_joined');
+        }).catch(() => {});
+      }
+    }
+
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] join group error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /global-groups/:id/view -> POST /api/v1/community/global-groups/:id/view
+ *
+ * Fire-and-forget view tracking for AP-0106 ("People You Know Are Here"
+ * Social Proof). Called by the frontend when a user opens a group detail
+ * page; dispatches user.group.viewed so the automation can check whether
+ * any of the viewer's connections are already members. Lives under
+ * global-groups (not groups) because global_community_groups is the real,
+ * live groups schema — see the /global-groups/:id/join comment below for
+ * why community_groups (VTID-01084) is never-deployed.
+ */
+router.post('/global-groups/:id/view', requireAuth, async (req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch below IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
+  const groupId = req.params.id;
+
+  const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
+  }
+
+  const userId = req.identity?.user_id;
+  // VTID-05267: actor = the verified identity (requireAuth).
+  if (userId) {
+    dispatchForActorTenant({ tenantId: req.identity?.tenant_id, userId }, (tenantId) => {
+      dispatchEvent(tenantId, 'user.group.viewed', {
+        user_id: userId,
+        group_id: groupId,
+      }).catch(err => console.warn(`[${VTID}] dispatch user.group.viewed failed:`, err.message));
+    });
+  }
+
+  // impact-allow-no-oasis: a page view is telemetry, not a state transition
+  // (CLAUDE.md OASIS rule: "Never mark polling or heartbeats as OASIS
+  // events"). The automation dispatch above IS the meaningful side effect;
+  // automation-executor already emits autopilot.automation.completed/failed
+  // per run, so a second OASIS event here would be a duplicate signal.
+  return res.status(200).json({ ok: true });
+});
+
+/**
+ * POST /global-groups/:id/join -> POST /api/v1/community/global-groups/:id/join
+ *
+ * Join a *global community group* — the real, populated schema
+ * (global_community_groups / global_community_group_members), as opposed to
+ * the never-deployed VTID-01084 community_groups schema used by
+ * /groups/:id/join.
+ *
+ * Writes the membership row under the user's RLS context (the
+ * "Users can join groups" policy permits self-insert), then dispatches the
+ * `community.member.joined` automation event WITH `user_id` so AP-0212
+ * (Welcome Squad) and AP-0203 can fire. member_count and chat participants
+ * are maintained automatically by DB triggers on insert.
+ */
+router.post('/global-groups/:id/join', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+  console.log(`[${VTID}] POST /community/global-groups/${groupId}/join`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const uuidValidation = z.string().uuid('Invalid group ID').safeParse(groupId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({ ok: false, error: 'Invalid group ID format' });
+  }
+
+  // Resolve the authenticated user id from the JWT (matches existing pattern).
+  let userId = '';
+  try {
+    userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub;
+  } catch {
+    /* fall through to the unauth check below */
+  }
+  if (!userId) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  if (!process.env.SUPABASE_URL || !process.env.SUPABASE_ANON_KEY) {
+    return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    // Confirm the group exists (and is visible under RLS) before joining.
+    const { data: group, error: groupErr } = await repo.fetchGlobalGroupById(supabase, groupId);
+    if (groupErr) {
+      return res.status(502).json({ ok: false, error: groupErr.message });
+    }
+    if (!group) {
+      return res.status(404).json({ ok: false, error: 'GROUP_NOT_FOUND' });
+    }
+
+    // Idempotent membership: only insert if not already a member.
+    const { data: existing } = await repo.fetchGlobalGroupMembership(supabase, groupId, userId);
+
+    let alreadyMember = !!existing;
+
+    if (!existing) {
+      const { error: insErr } = await repo.insertGlobalGroupMembership(supabase, groupId, userId);
+      if (insErr) {
+        // Unique-violation => raced with a concurrent join; treat as success.
+        if (insErr.code === '23505') {
+          alreadyMember = true;
+        } else {
+          console.error(`[${VTID}] global group join insert error:`, insErr.message);
+          return res.status(502).json({ ok: false, error: insErr.message });
+        }
+      }
+    }
+
+    // Emit an OASIS event for observability.
+    await emitCommunityEvent(
+      'community.membership.joined',
+      'success',
+      `User joined global group: ${groupId}`,
+      { group_id: groupId, user_id: userId, already_member: alreadyMember }
+    );
+
+    // Dispatch the automation event WITH user_id (only on a genuinely new
+    // join) so AP-0212 (Welcome Squad) / AP-0203 can fire.
+    if (!alreadyMember) {
+      // VTID-05267: actor = the bearer token's `sub` (userId, decoded above;
+      // the user-scoped membership calls above accepted the token).
+      dispatchForActorTenant({ userId }, (tenantId) => {
+        dispatchEvent(tenantId, 'community.member.joined', {
+          group_id: groupId,
+          user_id: userId,
+        }).catch(err => console.warn(`[${VTID}] dispatch community.member.joined failed:`, err.message));
+      });
+    }
+
+    console.log(`[${VTID}] User ${userId.slice(0, 8)}… joined global group ${groupId} (new=${!alreadyMember})`);
+    return res.status(200).json({ ok: true, data: { group_id: groupId, already_member: alreadyMember } });
+  } catch (err: any) {
+    console.error(`[${VTID}] global group join error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /meetups -> POST /api/v1/community/meetups
+ *
+ * Create a new meetup.
+ */
+router.post('/meetups', async (req: Request, res: Response) => {
+  console.log(`[${VTID}] POST /community/meetups`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = CreateMeetupRequestSchema.safeParse(req.body);
+  if (!validation.success) {
+    console.warn(`[${VTID}] Validation failed:`, validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.createCommunityMeetupRpc(supabase, validation.data);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_create_meetup RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_create_meetup RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    if (data && !data.ok) {
+      return res.status(400).json(data);
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.meetup.created',
+      'success',
+      `Meetup created: ${validation.data.title}`,
+      {
+        meetup_id: data?.id,
+        title: validation.data.title,
+        group_id: validation.data.group_id,
+        starts_at: validation.data.starts_at
+      }
+    );
+
+    console.log(`[${VTID}] Meetup created: ${data?.id}`);
+
+    return res.status(201).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] create meetup error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * POST /recommendations/recompute -> POST /api/v1/community/recommendations/recompute
+ *
+ * Recompute recommendations for the current user.
+ */
+router.post('/recommendations/recompute', async (req: Request, res: Response) => {
+  console.log(`[${VTID}] POST /community/recommendations/recompute`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate request body
+  const validation = RecomputeRequestSchema.safeParse(req.body || {});
+  if (!validation.success) {
+    console.warn(`[${VTID}] Validation failed:`, validation.error.errors);
+    return res.status(400).json({
+      ok: false,
+      error: 'Validation failed',
+      details: validation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.recomputeCommunityRecommendationsRpc(supabase, validation.data.date || null);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_recompute_recommendations RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_recompute_recommendations RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.recommendations.recomputed',
+      'success',
+      `Recommendations recomputed: ${data?.groups || 0} groups, ${data?.meetups || 0} meetups`,
+      {
+        rec_date: data?.rec_date,
+        groups_count: data?.groups || 0,
+        meetups_count: data?.meetups || 0
+      }
+    );
+
+    console.log(`[${VTID}] Recommendations recomputed: ${data?.groups || 0} groups, ${data?.meetups || 0} meetups`);
+
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] recompute recommendations error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /recommendations -> GET /api/v1/community/recommendations
+ *
+ * Get recommendations for the current user.
+ */
+router.get('/recommendations', async (req: Request, res: Response) => {
+  console.log(`[${VTID}] GET /community/recommendations`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate query parameters
+  const queryValidation = GetRecommendationsQuerySchema.safeParse(req.query);
+  if (!queryValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid query parameters',
+      details: queryValidation.error.errors.map(e => `${e.path.join('.')}: ${e.message}`).join(', ')
+    });
+  }
+
+  const { date, type } = queryValidation.data;
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.getCommunityRecommendationsRpc(supabase, date || null, type || null);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_get_recommendations RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_get_recommendations RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.recommendations.read',
+      'success',
+      `Recommendations fetched: ${data?.count || 0} items`,
+      {
+        rec_date: data?.rec_date,
+        count: data?.count || 0,
+        type_filter: type || 'all'
+      }
+    );
+
+    console.log(`[${VTID}] Recommendations fetched: ${data?.count || 0} items`);
+
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] get recommendations error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+/**
+ * GET /recommendations/:id/explain -> GET /api/v1/community/recommendations/:id/explain
+ *
+ * Get detailed explanation for a specific recommendation.
+ */
+router.get('/recommendations/:id/explain', async (req: Request, res: Response) => {
+  const recommendationId = req.params.id;
+  console.log(`[${VTID}] GET /community/recommendations/${recommendationId}/explain`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED'
+    });
+  }
+
+  // Validate recommendation ID is a valid UUID
+  const uuidSchema = z.string().uuid('Invalid recommendation ID');
+  const uuidValidation = uuidSchema.safeParse(recommendationId);
+  if (!uuidValidation.success) {
+    return res.status(400).json({
+      ok: false,
+      error: 'Invalid recommendation ID format'
+    });
+  }
+
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseAnonKey = process.env.SUPABASE_ANON_KEY;
+
+  if (!supabaseUrl || !supabaseAnonKey) {
+    return res.status(503).json({
+      ok: false,
+      error: 'Gateway misconfigured'
+    });
+  }
+
+  try {
+    const supabase = createUserSupabaseClient(token);
+
+    const { data, error } = await repo.getCommunityRecommendationExplainRpc(supabase, recommendationId);
+
+    if (error) {
+      if (error.message.includes('function') && error.message.includes('does not exist')) {
+        console.warn(`[${VTID}] community_get_recommendation_explain RPC not found (migration not deployed)`);
+        return res.status(503).json({
+          ok: false,
+          error: 'Community RPC not available (VTID-01084 dependency)'
+        });
+      }
+      console.error(`[${VTID}] community_get_recommendation_explain RPC error:`, error.message);
+      return res.status(502).json({
+        ok: false,
+        error: error.message
+      });
+    }
+
+    if (data && !data.ok) {
+      if (data.error === 'NOT_FOUND') {
+        return res.status(404).json(data);
+      }
+      return res.status(400).json(data);
+    }
+
+    // Emit OASIS event
+    await emitCommunityEvent(
+      'community.recommendation.explain.read',
+      'success',
+      `Recommendation explanation fetched: ${recommendationId}`,
+      {
+        recommendation_id: recommendationId,
+        rec_type: data?.recommendation?.rec_type,
+        matched_rules: data?.evidence?.matched_rules
+      }
+    );
+
+    console.log(`[${VTID}] Recommendation explanation fetched: ${recommendationId}`);
+
+    return res.status(200).json(data);
+  } catch (err: any) {
+    console.error(`[${VTID}] get recommendation explain error:`, err.message);
+    return res.status(502).json({
+      ok: false,
+      error: err.message
+    });
+  }
+});
+
+// =============================================================================
+// Group Invitations
+// =============================================================================
+
+/**
+ * POST /groups/:id/invite -> POST /api/v1/community/groups/:id/invite
+ *
+ * Invite a user to join a community group.
+ */
+router.post('/groups/:id/invite', async (req: Request, res: Response) => {
+  const groupId = req.params.id;
+  console.log(`[${VTID}] POST /community/groups/${groupId}/invite`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  const { user_id: invitedUserId, message: inviteMessage } = req.body || {};
+  if (!invitedUserId) {
+    return res.status(400).json({ ok: false, error: 'user_id is required' });
+  }
+
+  try {
+    // Decode inviter from JWT
+    let inviterId = '';
+    try { inviterId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!inviterId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    // Get group details and verify it exists
+    const { data: group } = await repo.fetchGroupForInvite(supa, groupId);
+
+    if (!group) {
+      return res.status(404).json({ ok: false, error: 'GROUP_NOT_FOUND' });
+    }
+
+    // Insert invitation (will fail on unique constraint if duplicate pending exists)
+    const { data: invitation, error: insertErr } = await repo.insertGroupInvitation(supa, {
+      tenant_id: group.tenant_id,
+      group_id: groupId,
+      invited_by: inviterId,
+      invited_user_id: invitedUserId,
+      message: inviteMessage || null,
+    });
+
+    if (insertErr) {
+      if (insertErr.message?.includes('unique') || insertErr.code === '23505') {
+        return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_PENDING' });
+      }
+      console.error(`[${VTID}] invite insert error:`, insertErr.message);
+      return res.status(502).json({ ok: false, error: insertErr.message });
+    }
+
+    // OASIS event
+    await emitCommunityEvent(
+      'community.group.invitation.sent',
+      'success',
+      `Group invitation sent: ${groupId} → ${invitedUserId}`,
+      { group_id: groupId, invited_user_id: invitedUserId, invitation_id: invitation?.id }
+    );
+
+    console.log(`[${VTID}] Invitation sent: ${invitation?.id}`);
+    return res.status(201).json({ ok: true, invitation_id: invitation?.id });
+  } catch (err: any) {
+    console.error(`[${VTID}] group invite error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /invitations/:id/accept -> POST /api/v1/community/invitations/:id/accept
+ *
+ * Accept a group invitation and join the group.
+ */
+router.post('/invitations/:id/accept', async (req: Request, res: Response) => {
+  const invitationId = req.params.id;
+  console.log(`[${VTID}] POST /community/invitations/${invitationId}/accept`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  try {
+    let userId = '';
+    try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    // Fetch the invitation
+    const { data: inv } = await repo.fetchInvitationForAccept(supa, invitationId);
+
+    if (!inv) {
+      return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
+    }
+    if (inv.invited_user_id !== userId) {
+      return res.status(403).json({ ok: false, error: 'NOT_YOUR_INVITATION' });
+    }
+    if (inv.status !== 'pending') {
+      return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_RESPONDED' });
+    }
+
+    // Update invitation status
+    await repo.updateInvitationStatus(supa, invitationId, 'accepted', new Date().toISOString());
+
+    // Join the group via RPC (uses user token for proper RLS context)
+    const userSupa = createUserSupabaseClient(token);
+    const { data: joinResult, error: joinErr } = await repo.joinCommunityGroupRpc(userSupa, inv.group_id);
+
+    if (joinErr && !joinErr.message?.includes('ALREADY_MEMBER')) {
+      console.error(`[${VTID}] join after accept error:`, joinErr.message);
+      return res.status(502).json({ ok: false, error: joinErr.message });
+    }
+
+    await emitCommunityEvent(
+      'community.group.invitation.accepted',
+      'success',
+      `Invitation accepted: ${invitationId}`,
+      { invitation_id: invitationId, group_id: inv.group_id }
+    );
+
+    console.log(`[${VTID}] Invitation accepted: ${invitationId}`);
+    return res.status(200).json({ ok: true });
+  } catch (err: any) {
+    console.error(`[${VTID}] invitation accept error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * POST /invitations/:id/decline -> POST /api/v1/community/invitations/:id/decline
+ *
+ * Decline a group invitation.
+ */
+router.post('/invitations/:id/decline', async (req: Request, res: Response) => {
+  const invitationId = req.params.id;
+  console.log(`[${VTID}] POST /community/invitations/${invitationId}/decline`);
+
+  const token = getBearerToken(req);
+  if (!token) {
+    return res.status(401).json({ ok: false, error: 'UNAUTHENTICATED' });
+  }
+
+  try {
+    let userId = '';
+    try { userId = JSON.parse(Buffer.from(token.split('.')[1], 'base64').toString()).sub; } catch {}
+    if (!userId) {
+      return res.status(401).json({ ok: false, error: 'INVALID_TOKEN' });
+    }
+
+    const url = process.env.SUPABASE_URL;
+    const key = process.env.SUPABASE_SERVICE_ROLE;
+    if (!url || !key) {
+      return res.status(503).json({ ok: false, error: 'Gateway misconfigured' });
+    }
+    const { createClient } = await import('@supabase/supabase-js');
+    const supa = createClient(url, key);
+
+    const { data: inv } = await repo.fetchInvitationForDecline(supa, invitationId);
+
+    if (!inv) {
+      return res.status(404).json({ ok: false, error: 'INVITATION_NOT_FOUND' });
+    }
+    if (inv.invited_user_id !== userId) {
+      return res.status(403).json({ ok: false, error: 'NOT_YOUR_INVITATION' });
+    }
+    if (inv.status !== 'pending') {
+      return res.status(409).json({ ok: false, error: 'INVITATION_ALREADY_RESPONDED' });
+    }
+
+    await repo.updateInvitationStatus(supa, invitationId, 'declined', new Date().toISOString());
+
+    await emitCommunityEvent(
+      'community.group.invitation.declined',
+      'success',
+      `Invitation declined: ${invitationId}`,
+      { invitation_id: invitationId }
+    );
+
+    console.log(`[${VTID}] Invitation declined: ${invitationId}`);
+    return res.status(200).json({ ok: true });
+  } catch (err: any) {
+    console.error(`[${VTID}] invitation decline error:`, err.message);
+    return res.status(502).json({ ok: false, error: err.message });
+  }
+});
+
+/**
+ * GET /health -> GET /api/v1/community/health
+ *
+ * Health check for community system.
+ */
+router.get('/health', (_req: Request, res: Response) => {
+  const hasSupabaseUrl = !!process.env.SUPABASE_URL;
+  const hasSupabaseKey = !!process.env.SUPABASE_ANON_KEY;
+
+  const status = hasSupabaseUrl && hasSupabaseKey ? 'ok' : 'degraded';
+
+  return res.status(200).json({
+    ok: true,
+    status,
+    service: 'community-gateway',
+    version: '1.0.0',
+    vtid: VTID,
+    timestamp: new Date().toISOString(),
+    capabilities: {
+      create_groups: hasSupabaseUrl && hasSupabaseKey,
+      create_meetups: hasSupabaseUrl && hasSupabaseKey,
+      join_groups: hasSupabaseUrl && hasSupabaseKey,
+      recommendations: hasSupabaseUrl && hasSupabaseKey,
+      explain: hasSupabaseUrl && hasSupabaseKey
+    },
+    dependencies: {
+      'VTID-01102': 'context_bridge',
+      'VTID-01104': 'memory_core',
+      'VTID-01078': 'health_brain'
+    }
+  });
+});
+
+/**
+ * POST /api/v1/community/interactions/notify — DEPRECATED no-op.
+ *
+ * Like/comment author notifications are now created by Postgres AFTER INSERT
+ * triggers on the like/comment tables (vitana-v1 migrations 20260623000000+),
+ * which fire regardless of client and localize + deep-link (/post/<source>/<id>)
+ * server-side. This route is kept only so older deployed frontends that still
+ * POST here get a harmless 200 instead of creating a DUPLICATE (and wrongly
+ * profile-linked) notification — or hitting a 404.
+ */
+router.post('/interactions/notify', requireAuth, requireTenant, async (_req: AuthenticatedRequest, res: Response) => {
+  // impact-allow-no-oasis: deprecated no-op — makes no state transition; the
+  // notification is created by a DB trigger, not here.
+  return res.json({ ok: true, skipped: 'handled_by_db_trigger' });
+});
+
+export default router;

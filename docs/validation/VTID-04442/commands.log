@@ -1,0 +1,3 @@
+$ grep -n "rememberFact" inline-fact-extractor.ts intent-memory-hooks.ts automation-handlers/memory-intelligence.ts   # all three write through remember.ts
+$ grep -n "write_fact\|rpc" preference-facts.ts preference-facts-repository.ts   # read-only; removed from the writer list
+$ grep -n "^export" memory/scope.ts   # memoryRoleForWrite / memoryRoleForRead exist

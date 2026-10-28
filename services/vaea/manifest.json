@@ -1,0 +1,57 @@
+{
+  "name": "vaea",
+  "vtid": "VTID-02401",
+  "version": "0.2.0",
+  "description": "Vitana Autonomous Economic Actor — Phase 1 observe-mode (detect buying intent, match catalog, shadow drafts; no posting).",
+  "layer": "PLATFORM",
+  "module": "VAEA",
+  "type": "service",
+  "runtime": "nodejs",
+  "port": 8080,
+  "healthcheck": {
+    "path": "/alive",
+    "interval": "30s",
+    "timeout": "5s",
+    "retries": 3
+  },
+  "dependencies": [
+    "@supabase/supabase-js",
+    "express",
+    "zod",
+    "typescript"
+  ],
+  "environment": {
+    "required": [
+      "SUPABASE_URL",
+      "SUPABASE_SERVICE_ROLE"
+    ],
+    "optional": [
+      "PORT",
+      "GATEWAY_URL",
+      "LOG_LEVEL",
+      "VAEA_ENABLED",
+      "VAEA_AUTO_EXECUTE_ENABLED",
+      "VAEA_MESH_BOUNDED_NETWORK",
+      "VAEA_PHASE_1_OBSERVE_ENABLED",
+      "VAEA_OBSERVE_INTERVAL_MS"
+    ]
+  },
+  "resources": {
+    "cpu": "1",
+    "memory": "512Mi",
+    "minInstances": 0,
+    "maxInstances": 2
+  },
+  "labels": {
+    "app": "vaea",
+    "component": "economic-actor",
+    "managed-by": "vitana-platform"
+  },
+  "governance": {
+    "respect_execution_gate": true,
+    "phase": 1,
+    "loops_enabled": true,
+    "loops_default_off": true,
+    "auto_execute_default": false
+  }
+}

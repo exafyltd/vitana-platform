@@ -1,0 +1,54 @@
+# VTID-04014 — commands log
+
+## Repro (live, against staging, before this fix, after VTID-04010's 99f4731 deployed)
+
+Authenticated `lang:'sr'` trial, documented test account
+(a27552a3-0257-4305-8ed0-351a80fd3701), via direct gateway API
+(session/start -> audio-ready -> SSE stream -> session/stop), same technique
+used to verify VTID-04010 itself:
+
+  node serbian-orb-api-test-auth.cjs
+  # 3/3 trials: sessionStartHttpStatus 200, sseHttpStatus 200, but every
+  # session's oasis_events show:
+  #   orb.live.diag stage=greeting_sent prompt_len=605..1529
+  #   orb.live.diag stage=upstream_ws_close code=1007
+  #     reason="Request contains an invalid argument."
+  #   orb.live.diag stage=watchdog_fired reason=greeting_timeout
+  #   orb.live.stall_detected reason=greeting_timeout
+
+Confirmed via direct read-only Supabase query that `upstream_ws_close
+code:1007 reason:"Request contains an invalid argument."` has ZERO
+occurrences anywhere in oasis_events in the prior 7 days, and the first-ever
+occurrence lands at 2026-09-17 20:07:34 UTC -- the exact minute
+preview-aws-gateway's build-info first reported VTID-04010's merge commit
+(99f47316405b90dae92c4fd80b8f06315df394b9).
+
+## Root cause identification
+
+Read services/gateway/src/services/conversation/compute-greeting-decision.ts
+rung 8 (override_v2, ~L990-1096) -- its own inline comment documents the
+exact anti-pattern: "a directive to reproduce supplied text verbatim, wrapped
+in a stack of prohibitions... the shape [a] guardrail treats as
+injection-like". VTID-04010's rung-4 directive text
+("Translate the following ... verbatim ... do not leave any part of it in
+English ... do not paraphrase them away") is that same shape.
+
+## Fix + verification
+
+  cd services/gateway
+  # Edit: src/services/conversation/compute-greeting-decision.ts (rung 4 directive)
+  # Edit: test/services/conversation/compute-greeting-decision.golden.test.ts
+
+  npx jest test/services/conversation/compute-greeting-decision.golden.test.ts -u
+  # 61/61 passed, 1 snapshot updated (the rest unchanged)
+
+  npx tsc --noEmit
+  # clean, no output
+
+  npx jest test/services/conversation/compute-greeting-decision.golden.test.ts \
+    test/orb/conversation-flow.contract.test.ts \
+    test/services/assistant-continuation/providers/login-briefing.test.ts -u
+  # 3 suites passed, 116/116 tests, 35/35 snapshots (no new snapshot diffs
+  # in conversation-flow.contract.test.ts)
+
+  npx jest   # full gateway suite, see outputs/test-results.txt

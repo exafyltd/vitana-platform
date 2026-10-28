@@ -1,0 +1,30 @@
+# VTID-04875 — commands run (worktree wt/vtid-04875 off origin/main b206836c). No live endpoint or database was called; every test uses mocks.
+
+# 1. Characterization FIRST, against the untouched inline handlers (route: blocks only; builder blocks skipped, module did not exist yet)
+cd services/gateway && npx jest test/vtid-04875- -t "characterization"          # 17 passed, 17 snapshots WRITTEN (outputs/01-characterization-old.txt)
+sha256sum test/__snapshots__/vtid-04875-*                                       # outputs/snap-sha-old.txt
+
+# 2. Refactor: services/pipeline-summary-builder.ts, services/voice-supervisor-overview.ts, services/health-summary-builder.ts; routes become thin wrappers
+
+# 3. Re-run with --ci (snapshots cannot be rewritten) + builder equivalence tests
+npx jest test/vtid-04875- --ci                                                 # 32 passed, 17/17 snapshots passed (outputs/03-vtid-04875-after.txt)
+sha256sum test/__snapshots__/vtid-04875-*                                       # identical to before (outputs/snap-sha-after.txt)
+
+# 4. Type check
+npx tsc --noEmit                         # exit 2: 20x TS2742 in untouched repository files (outputs/02-tsc.txt)
+git stash -u && npx tsc --noEmit         # origin/main baseline: the SAME 20 TS2742 lines (outputs/02b-tsc-baseline-origin-main.txt) — artifact of the symlinked node_modules in the worktree
+npx tsc --noEmit --preserveSymlinks      # exit 0, no errors (outputs/02c-tsc-preserve-symlinks.txt)
+
+# 5. Existing tests touching these routes
+npx jest --ci test/routes/autopilot.test.ts test/routes/voice-supervisor.test.ts test/vtid-04776-voice-supervisor.test.ts test/vtid-04661-service-health-panel.test.ts test/vtid-04662-service-health-registered-routes.test.ts test/routes/admin-health-registry.test.ts test/routes/admin-aurora-rls-health.test.ts test/routes/admin-feature-flags.test.ts test/vtid-03925-pipeline-summary-loop-fix.test.ts test/command-hub/t12-health-registry-backend-fed.test.ts test/command-hub/vtid-04779-voice-section-rebuild.test.ts test/routes/tenant-admin/health-index.test.ts test/services/admin-awareness-worker.test.ts test/orb/live/upstream/staging-aurora-database-url-pinned.test.ts test/autopilot-pipeline.test.ts
+                                         # 15 suites, 405 tests passed (outputs/04-existing-route-tests.txt)
+npx jest --ci test/vtid-04667-executable-source-types-drift.test.ts test/vtid-04530-autopilot-recommendations-not-behind-service-token.test.ts test/dev-autopilot-plan-diff-coverage.test.ts test/dev-autopilot-synthesis.test.ts
+                                         # 1 failed: vtid-04667 source-text guard still read routes/autopilot.ts for the recommendations select (outputs/05-source-reading-tests.txt)
+                                         # -> repointed the guard to services/pipeline-summary-builder.ts, assertion unchanged: 5 passed (outputs/05b-vtid-04667-after-repoint.txt)
+
+# 6. Standing suites
+npm run test:operator -- --ci            # rule 42e: 30 passed (outputs/06-test-operator.txt)
+npm run test:roles -- --ci               # rule 42h incl. atlas drift guard: 105 passed (outputs/07-test-roles.txt)
+
+# 7. Full gateway suite
+npx jest --ci                            # exit 0: 1486 suites passed, 1 skipped; 23608 tests passed, 29 skipped, 6 todo; 126 snapshots passed (outputs/08-full-suite.summary.txt)

@@ -1,0 +1,12 @@
+# VTID-04805 — commands (services/gateway unless noted)
+python3 add_pin.py JEV_VOICE_SLOW_SESSION_MODE "04805 C3"   (repo root, scratch helper)   # both workflows pinned shadow
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx tsc --noEmit -p .                                                  # clean
+npx jest test/vtid-04805 test/vtid-04465-operator-pipeline-regression test/orb/live/upstream/staging-deploy-workflow-bash-syntax   # outputs/jest-c3.txt
+npx jest (full gateway suite, on C2's tree)                            # 1447 suites, 23206 passed, 0 failed (outputs/jest-full.txt)
+# Fixed during the build: the gate was first named voice_slow_session_cause, which reads
+# JEV_VOICE_SLOW_SESSION_CAUSE_MODE, not the pinned JEV_VOICE_SLOW_SESSION_MODE; renamed to voice_slow_session
+# (the shadow tests caught it: 0 rows written).
+# Evidence (production, read-only SQL, 14 days to 2026-10-01): stalled sessions by reason —
+# greeting_timeout 29 (prewarm missed 1, avg context build 22 ms), forwarding_no_ack 24 (prewarm missed 22,
+# upstream closed 24, avg context 1209 ms), audio_stall 13 (prewarm missed 10), response_timeout 4, text_stall 1.

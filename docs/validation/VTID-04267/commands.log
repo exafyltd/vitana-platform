@@ -1,0 +1,68 @@
+# VTID-04267 — commands run by this Claude Code session (interactive),
+# continuing the take-over task list started with VTID-04264.
+
+$ git checkout -B claude/vtid-04267-dev-autopilot-spend origin/main
+# fresh branch from origin/main (independent of the still-open VTID-04264/
+# 04265/04266 PRs)
+
+$ grep -n "Budget.*today\|daily_budget" services/gateway/src/frontend/command-hub/app.js services/gateway/src/services/dev-autopilot-*.ts
+# found the fake "—/N today" chip and confirmed daily_budget is an
+# APPROVAL-COUNT, not dollars (dev-autopilot-safety.ts's
+# daily_budget_exhausted gate)
+
+$ grep -n "agent_cost_usd_total|agent_runs\b" services/gateway/src -r
+# found the real per-run cost data: dev_autopilot_outcomes.metadata.
+# agent_runs[] (VTID-04017, appendAgentRun in dev-autopilot-outcomes.ts)
+
+$ grep -n "dev_autopilot_outcomes" -A 25 supabase/migrations/20260427100000_BOOTSTRAP_autopilot_realign_substrate.sql
+# confirmed the table has created_at but NO updated_at column — a PATCH
+# appending a run doesn't change created_at, so "today's spend" cannot be
+# a server-side date-filtered query; must fetch a bounded recent window
+# and filter by each run's own recorded_at in application code.
+
+# Added summarizeSpendToday() (pure function) to dev-autopilot-outcomes.ts,
+# GET /spend route to dev-autopilot.ts (bounded/ordered fetch + pass-through),
+# wired into fetchDevAutopilotState() + a new "Spend today" chip in the
+# status strip (reuses TURN_COST_ESTIMATE_NOTE, the same list-price caveat
+# the Operator Console turn-cost badge already discloses). The pre-existing
+# (still fake) "Budget" chip is deliberately untouched — separate axis,
+# separate gap, out of scope here.
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+$ node --check scripts/ci/command-hub-ownership-guard.js
+# SYNTAX OK
+
+$ cd services/gateway && npx tsc --noEmit
+# clean
+
+$ git diff origin/main -- services/gateway/src/frontend/ > /tmp/csp_diff5.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff5.txt
+# No CSP pattern hits in added lines.
+
+# Added scripts/ci/command-hub-ownership-guard.js allowlist entry for
+# VTID-04267 (own branch, own comment block).
+
+# New/updated tests:
+#   services/gateway/test/services/dev-autopilot-outcomes.test.ts — 5 new
+#     cases for summarizeSpendToday (pure function, no Supabase dependency)
+#   services/gateway/test/routes/dev-autopilot.test.ts — GET /spend added
+#     to the requireDevRole governance-gate endpoint list, plus a
+#     dedicated GET /spend describe block (4 cases); the module mock for
+#     dev-autopilot-outcomes now re-exports the REAL summarizeSpendToday
+#     via jest.requireActual, since it's pure and already unit-tested
+#     directly — avoids a second hand-written stub of the same logic
+#   services/gateway/test/vtid-04267-dev-autopilot-spend.test.ts — new
+#     file, frontend wiring pin (fetch + chip render + cache-bust)
+
+$ cd services/gateway && node_modules/.bin/jest \
+    test/vtid-04267-dev-autopilot-spend.test.ts \
+    test/services/dev-autopilot-outcomes.test.ts \
+    test/routes/dev-autopilot.test.ts \
+    test/command-hub/ \
+    test/scripts/command-hub-ownership-guard.test.ts \
+    test/scripts/generate-command-hub-symbol-index.test.ts \
+    test/console-task-17-cost-badge-tooltip.test.ts
+# 24/24 suites, 475/475 tests passing, 0 regressions
+
+$ cd services/gateway && npx tsc --noEmit
+# clean (re-run after all test files added)

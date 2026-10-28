@@ -1,0 +1,305 @@
+=== npx jest test/orb/nova-premature-close-retry.test.ts test/orb/nova-premature-close-fallback.test.ts test/orb/live/upstream/nova-sonic-config.test.ts test/orb/live/upstream/nova-sonic-live-client.test.ts ===
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=persona_swap initiated_locally=true rotation_fired=false ms_since_last_input=0 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=done initiated_locally=true rotation_fired=false ms_since_last_input=0 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=nova_access_denied initiated_locally=false rotation_fired=false ms_since_last_input=-1 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=nova_stream_error initiated_locally=false rotation_fired=false ms_since_last_input=-1 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [VTID-01023] Vertex AI initialized: project=lovable-vitana-vers1, location=us-central1, model=gemini-2.5-pro
+
+      at Object.<anonymous> (src/services/gemini-operator.ts:100:13)
+
+  console.log
+    [VTID-01023] Vertex AI initialized: project=lovable-vitana-vers1, location=us-central1, model=gemini-2.5-pro
+
+      at Object.<anonymous> (src/services/gemini-operator.ts:100:13)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:149:1)
+      at Object.<anonymous> (test/orb/nova-premature-close-fallback.test.ts:14:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:149:1)
+      at Object.<anonymous> (test/orb/nova-premature-close-fallback.test.ts:14:1)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:149:1)
+      at Object.<anonymous> (test/orb/nova-premature-close-retry.test.ts:15:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:149:1)
+      at Object.<anonymous> (test/orb/nova-premature-close-retry.test.ts:15:1)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=session_one_done initiated_locally=true rotation_fired=false ms_since_last_input=1001 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1624:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1631:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1655:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1680:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:1861:11)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1624:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1631:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1655:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1680:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:1861:11)
+
+(node:8134) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/nova-premature-close-fallback.test.ts
+  VTID-03502 shouldFallbackToVertexOnNovaClose
+    ✓ fires on the measured failure: active session, remote close, zero audio out (5 ms)
+    ✓ does NOT fire once any audio has been produced (1 ms)
+    ✓ does NOT fire when we closed the stream ourselves
+    ✓ does NOT fire during a planned rotation, which owns its own reconnect
+    ✓ does NOT fire on an inactive session
+    ✓ does NOT fire twice — a Vertex-side failure cannot bounce back and loop
+    ✓ requires EVERY condition — no single flag can force it on
+
+(node:8132) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/nova-premature-close-retry.test.ts
+  VTID-03557 shouldRetryNovaOnPrematureClose
+    ✓ fires on the measured failure: active session, remote close, zero audio out (5 ms)
+    ✓ does NOT fire once any audio has been produced
+    ✓ does NOT fire when we closed the stream ourselves (1 ms)
+    ✓ does NOT fire during a planned rotation, which owns its own reconnect
+    ✓ does NOT fire on an inactive session (1 ms)
+    ✓ does NOT fire twice — one retry per session, then the Vertex fallback takes over
+    ✓ requires EVERY condition — no single flag can force it on (1 ms)
+    ✓ composes with the Vertex fallback as a two-strike policy: retry flag and fallback flag are independent
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/nova-sonic-config.test.ts
+  getNovaSonicConfig
+    ✓ defaults to disabled with pinned region/model (2 ms)
+    ✓ maxTokens is env-tunable and invalid values are a typed issue (1 ms)
+    ✓ is ready when enabled with a clean environment
+    ✓ a mismatched region/model override fails readiness with typed issues (1 ms)
+    ✓ invalid allowlist entries fail readiness rather than broadening access
+    ✓ non-numeric timers fail readiness with typed issues
+    ✓ VTID-03557: streamInactivityTimeoutMs defaults to 300s (AWS sample value), independent of connectTimeoutMs
+    ✓ streamInactivityTimeoutMs is env-tunable and invalid values are a typed issue, without affecting connectTimeoutMs (1 ms)
+    ✓ keep-warm accepts 0 as an explicit disable (no issue) (1 ms)
+    ✓ model-execution warm-up is env-tunable and accepts 0 as an explicit disable
+    ✓ instruction chunk size is env-tunable and accepts 0 as an explicit disable (10 ms)
+    ✓ non-numeric instruction chunk size fails readiness with a typed issue
+    ✓ defaults to HIGH — the ~1.75s MEDIUM pre-inference wait cannot fit a 2-3s target
+    ✓ endpointing sensitivity is env-tunable (case-insensitive), incl. away from the default (1 ms)
+    ✓ an invalid endpointing sensitivity fails readiness with a typed issue and keeps the safe default
+  parseUuidAllowlist
+    ✓ trims, lowercases, drops empties
+    ✓ returns empty set for blank input
+    ✓ returns null on any invalid entry (1 ms)
+  isNovaSonicLanguageSupported
+    ✓ accepts the four canary languages incl. regional tags
+    ✓ rejects everything else (1 ms)
+  isNovaSonicIdentityAllowed
+    ✓ allows a listed user or tenant (case-insensitive)
+    ✓ denies unlisted identities and anonymous sessions
+    ✓ empty allowlists allow NOBODY (1 ms)
+  buildNovaSonicHealthPayload
+    ✓ reports a disabled-but-clean configuration
+    ✓ reports counts and typed issues without leaking allowlist contents or secrets (1 ms)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=session_two_done initiated_locally=true rotation_fired=false ms_since_last_input=1001 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=done initiated_locally=true rotation_fired=false ms_since_last_input=1001 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=nova_validation initiated_locally=false rotation_fired=false ms_since_last_input=1 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=model_warm_probe_done initiated_locally=true rotation_fired=false ms_since_last_input=-1 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+  console.log
+    [BOOTSTRAP-NOVA-SONIC-VOICE] nova_close reason=nova_validation initiated_locally=false rotation_fired=false ms_since_last_input=4 commit=unknown
+
+      at NovaSonicLiveClient.finalizeClose (src/orb/live/upstream/nova-sonic-live-client.ts:873:13)
+
+PASS test/orb/live/upstream/nova-sonic-live-client.test.ts
+  NovaSonicLiveClient
+    ✓ connect sends the initialization sequence in order and reaches open (28 ms)
+    ✓ rejects a broken tool catalog BEFORE opening the stream (35 ms)
+    ✓ audio is accepted only in open state; passthrough without re-encoding (22 ms)
+    ✓ audio backpressure returns false + one typed nova_backpressure error (2 ms)
+    ✓ normalizes output events (transcripts, audio, interruption, turn, usage) (2 ms)
+    ✓ toolUse + TOOL contentEnd dispatches a tool call; sendToolResult correlates by callId (22 ms)
+    ✓ sendToolResult wraps non-JSON-object outputs — Nova kills the stream on unparseable toolResult content (22 ms)
+    ✓ sendToolResult without callId is a typed protocol error (no un-correlatable result) (1 ms)
+    ✓ close emits audio contentEnd, promptEnd, sessionEnd, then closes the queue — single onClose (24 ms)
+    ✓ close of a session that never sent audio omits the audio contentEnd (Nova rejects ending an empty block) (2 ms)
+    ✓ SDK send failure maps to a typed error + single onClose; no raw AWS text in the thrown error (2 ms)
+    ✓ rotation callback fires exactly once at rotationAfterMs (4 ms)
+    ✓ absent response body is a typed stream error (2 ms)
+  classifyNovaError
+    ✓ maps AWS exception names/statuses to typed categories (1 ms)
+  NovaInputQueue
+    ✓ preserves order and closes cleanly
+    ✓ audio respects the high-water mark; control events never dropped (1 ms)
+  shared Bedrock client (latency: HTTP/2 session reuse)
+    ✓ reuses the shared client across sessions and never destroys it on close (2005 ms)
+    ✓ an injected per-client factory still owns (and destroys) its client (1003 ms)
+  named eventstream exception members
+    ✓ a validationException union member becomes a typed error, never a silent skip (2 ms)
+  warmNovaSonicConnection (zero-cost connection warm)
+    ✓ a 4xx rejection means the path is warm — returns latency (54 ms)
+    ✓ a transport-level failure returns null (typed, no throw) (1 ms)
+  warmNovaSonicModelExecution (BOOTSTRAP-NOVA-SONIC-VOICE latency: real model-execution warm-up)
+    ✓ a real audio output means the model executor ran — returns latency, closes the probe session (1 ms)
+    ✓ a turn-complete with no audio still proves the executor ran — returns latency (1 ms)
+    ✓ a transport-level failure returns null, never throws (2 ms)
+    ✓ a model error (e.g. validation) after connect returns null, never throws (6 ms)
+    ✓ never resolves before a real signal arrives, and times out to null if the model never responds (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 4 passed, 4 total
+Tests:       66 passed, 66 total
+Snapshots:   0 total
+Time:        4.845 s, estimated 7 s
+Ran all test suites matching /test\/orb\/nova-premature-close-retry.test.ts|test\/orb\/nova-premature-close-fallback.test.ts|test\/orb\/live\/upstream\/nova-sonic-config.test.ts|test\/orb\/live\/upstream\/nova-sonic-live-client.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,8 @@
+jest test/routes/voice-tools-catalog.test.ts test/routes/voice-next-action-inspector.test.ts test/vtid-04491-conversation-hub-phase0.test.ts -> 3 suites, 34 tests pass
+jest (full gateway suite) -> 1211 passed, 1 skipped; 19524 passed, 0 failed
+mutation: bearer removed from catalog fetch -> phase0 suite 1 failed
+mutation: gate removed from /catalog/stats -> catalog suite 3 failed
+tsc --noEmit -> exit 0
+npm run build -> exit 0
+command-hub-golden-fingerprint.js -> PASSED
+CSP scan of added Command Hub lines -> no inline style/script

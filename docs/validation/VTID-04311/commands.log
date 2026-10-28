@@ -1,0 +1,6 @@
+# VTID-04311 / VTID-04312 — 2026-09-22
+cd services/gateway
+npx tsc --noEmit                        # clean
+npx jest                                # full suite: 1 failure (ar catalog must stay empty) → ar keys reverted
+npx jest --testPathPattern '(i18n|catalog|locale)'   # 19 passed, 1 skipped
+npx jest test/vtid-04311-* test/vtid-04312-* test/vtid-04308-* test/feedback-pipeline.test.ts test/routes/tenant-specialists.test.ts  # outputs/jest.txt

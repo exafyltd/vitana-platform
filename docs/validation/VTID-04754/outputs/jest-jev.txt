@@ -1,0 +1,187 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/routes/jev-decisions.test.ts
+  VTID-04473 jev routes
+    ✓ unauthenticated → 401
+    ✓ GET /jev/decisions lists only what the role may use
+    ✓ a community member sees no decisions and is refused on use
+    ✓ a role in the request body is ignored — the role comes from user_tenants
+    ✓ POST /jev/documents/classify returns the relevant documents ranked, with cost
+    ✓ classify: not configured answers once with 503, no per-document calls
+    ✓ classify: batch over 500 → 400
+    ✓ GET /jev/admin/stats is exafy_admin only
+    ✓ GET /jev/decisions shows planes, data class and the resolved tenant
+    ✓ an acting role the user does not hold is refused
+    ✓ exafy_admin: tenant data needs a named tenant; an unknown one is 404
+    ✓ GET /jev/admin/stats carries the persisted month spend and the shadow gates
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+  console.warn
+    [jev] permitted-role read failed user=u1 tenant=t1: boom
+      112 |   if (grants.error || memberships.error) {
+      113 |     // Without the permitted set no role can be validated: fail closed.
+    > 114 |     console.warn(`[jev] permitted-role read failed user=${id.user_id} tenant=${tenantId}: ${(grants.error || memberships.error)!.message}`);
+          |             ^
+      115 |     gaps.push('permitted_roles_unavailable');
+      116 |     return done();
+      117 |   }
+      at resolveJevCaller (src/services/jev/jev-caller.ts:114:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:294:15)
+  console.warn
+    [jev] JEV_AGENT_PROGRESS_MODE="Enforce" is not off|shadow|enforce — gate stays off
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:317:23)
+PASS test/vtid-04754-jev-foundation.test.ts
+  VTID-04754 every decision declares planes and a data class
+    ✓ support_ticket_triage
+    ✓ ops_error_triage
+    ✓ ci_failure_bucket
+    ✓ finding_duplicate
+    ✓ document_relevance
+    ✓ account_classification
+    ✓ contract_clause_flag
+    ✓ lead_score
+    ✓ moderation_severity
+    ✓ professional_lead_fit
+    ✓ no decision sends phi today
+    ✓ moderation reads member content; ops/CI/findings are telemetry
+  VTID-04754 plane × data policy
+    ✓ internal may send telemetry and business
+    ✓ phi is refused on every plane, whatever the flags say
+    ✓ patient plane is off
+    ✓ member content needs the env flag, the tenant plane and a budget — in that order
+    ✓ Community Autopilot: telemetry yes, business no, member content by member rules
+    ✓ partner_org needs the tenant flag to list it
+    ✓ a decision only runs on the planes it declares
+    ✓ enabled:false switches a tenant off, internal included
+  VTID-04754 tenant flag parsing
+    ✓ absent → internal default; malformed → null (fail closed)
+    ✓ month key is UTC first-of-month
+  VTID-04754 decide() enforces tenant control before any token is spent
+    ✓ a decided call records spend per tenant and plane
+    ✓ platform telemetry without a tenant is counted under the platform id
+    ✓ business data without a tenant is refused
+    ✓ exafy_admin must name a target tenant for tenant data; the call is marked cross_tenant
+    ✓ a tenant switched off is refused; an exhausted budget falls back with 429 and an event
+    ✓ an unreadable tenant flag or spend fails closed
+    ✓ moderation (member content) stays off for internal callers until the member plane is opened
+    ✓ Community Autopilot may run telemetry decisions only
+  VTID-04754 resolveJevCaller
+    ✓ permitted set mirrors get_my_permitted_roles: grants ∪ memberships ∪ community, switcher order
+    ✓ role_preferences wins over user_tenants.active_role (pickEffectiveRole)
+    ✓ falls back to user_tenants.active_role
+    ✓ a role that is not permitted in the tenant is refused
+    ✓ acting role is accepted only when permitted
+    ✓ no tenant in the JWT → user_tenants primary tenant (requireTenant fallback)
+    ✓ a Cognito token is reported as an identity gap, not papered over
+    ✓ permitted-role read failure fails closed (no role)
+    ✓ a normal user cannot name another tenant
+    ✓ exafy_admin: no tenant unless named; a named tenant (slug) is resolved and marked cross_tenant
+  VTID-04754 shadow framework
+    ✓ mode env var name and exact values; anything else is off
+    ✓ off: no call, no row
+    ✓ shadow: Jev asked, row recorded next to the system action, never enforced
+    ✓ enforce: enforce=true only on a confident decision
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04473-jev-decision-service.test.ts
+  VTID-04473 decide()
+    ✓ decides, interprets every answer, prices input tokens and emits one event
+    ✓ below the threshold it abstains (answers kept, caller keeps its own path)
+    ✓ community is refused before anything else happens
+    ✓ a role not listed on the decision is refused
+    ✓ unknown decision → 404, bad input → 400 with the field named
+    ✓ PII is redacted before the state leaves
+    ✓ not configured → fallback 503, telemetry says fallback not failed
+    ✓ a provider error is reported as failed, never as a silent default
+    ✓ stats split by plane, decision and role
+  VTID-04473 decideMany()
+    ✓ keeps input order and never exceeds the concurrency limit
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04473-jev-access-pii.test.ts
+  VTID-04473 jev access gate
+    ✓ professional is allowed on the internal plane
+    ✓ staff is allowed on the internal plane
+    ✓ backoffice is allowed on the internal plane
+    ✓ admin is allowed on the internal plane
+    ✓ developer is allowed on the internal plane
+    ✓ infra is allowed on the internal plane
+    ✓ community is refused while community is off (owner decision)
+    ✓ patient is refused even with the community flag on
+    ✓ community opens only on the exact flag value
+    ✓ exafy_admin and system are internal; no role and unknown roles are refused
+    ✓ per-decision roles; exafy_admin may use all
+    ✓ registry: every decision is valid, internal-only, and its primary question exists
+  VTID-04473 jev PII policy
+    ✓ redacts emails, phones and IBANs
+    ✓ leaves dates, versions and ids alone
+    ✓ walks nested state; forbid refuses instead of sending
+  VTID-04473 jev PII edge cases
+    ✓ ISO timestamps are not phones; short digit runs are not phones
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04473-jev-client.test.ts
+  VTID-04473 jev-client
+    ✓ activation needs BOTH the exact flag and a key
+    ✓ model is pinned by default, never -latest
+    ✓ not configured → no fetch at all
+    ✓ success posts the documented contract and returns validated answers
+    ✓ 429 is retried once, then succeeds
+    ✓ 401 is not retried and reported as http_error
+    ✓ an answer outside the declared options is malformed, never passed on
+    ✓ abort → timeout; thrown error → network
+    ✓ invalid question sets are refused before any call
+    ✓ answer helpers
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04754-jev-prod-workflow.test.ts
+  VTID-04754 production Jev declaration
+    ✓ pins the full secret ARN in step 2/2 env (the prod deploy role cannot describe secrets)
+    ✓ upserts TYPESAFE_API_KEY as a secret reference, never a plain env value
+    ✓ upserts JEV_DECISIONS_ENABLED=true
+    ✓ runs after the GITHUB_SAFE_MERGE_TOKEN block and before env_overrides (which may still override it)
+    ✓ never opens the member plane
+  VTID-04754 staging probe classifies the AWS error
+    ✓ keeps stderr instead of discarding it
+    ✓ names not-found, access-denied and other failures separately
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/vtid-04473-jev-staging-wiring.test.ts
+  VTID-04473 Jev staging wiring
+    ✓ probes the staging secret with describe-secret and tolerates its absence
+    ✓ the key is a secret reference, never a plain env value
+    ✓ the flag is always written: true with the key, false without
+    ✓ runs after connected-apps.json is written and before the task definition is registered
+    ✓ community stays off everywhere
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+PASS test/command-hub/vtid-04754-jev-card.test.ts
+  VTID-04754 Jev card
+    ✓ no inline script or style; assets are local and cache-busted
+    ✓ reads the exafy_admin stats endpoint with the hub token, builds DOM without innerHTML
+    ✓ shows calls, cost, month spend and shadow agreement per gate
+    ✓ the sidebar and the main hub files are untouched by this card
+Test Suites: 8 passed, 8 total
+Tests:       108 passed, 108 total
+Snapshots:   0 total
+Time:        1.131 s
+Ran all test suites matching /test\/vtid-04754|test\/vtid-04473|test\/routes\/jev-decisions.test.ts|test\/command-hub\/vtid-04754-jev-card.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

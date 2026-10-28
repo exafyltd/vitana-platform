@@ -1,0 +1,4 @@
+$ cd services/gateway && npx tsc --noEmit -p .                 # clean
+$ npx jest test/vtid-04401-connected-apps-auth.test.ts         # 11 passed (first run caught a missing import — fixed)
+$ npx jest test/vtid-04401* test/routes/wearables.test.ts test/services/social-connect-* test/vtid-04372-*   # 50 passed
+$ npx jest                                                     # 1127 suites passed, 1 skipped; 18193 tests passed, 0 failed

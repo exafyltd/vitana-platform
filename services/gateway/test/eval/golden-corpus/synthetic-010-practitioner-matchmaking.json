@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-010-practitioner-matchmaking",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Practitioner matchmaking + response.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Find me the perfect yoga instructor nearby",
+      "expected_tool": "find_perfect_practitioner",
+      "expected_intent": "goal.match_practitioner"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Show my matchmaker results",
+      "expected_tool": "get_matchmaker_result",
+      "expected_intent": "goal.match_result"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Yes, connect me with the first one",
+      "expected_tool": "respond_to_match",
+      "expected_intent": "communication.match_respond"
+    }
+  ]
+}

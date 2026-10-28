@@ -1,0 +1,263 @@
+name: CICDL-CORE-OPENAPI-ENFORCE
+
+on:
+  pull_request:
+    branches: [main, trunk, develop, release/**]
+    paths:
+      - 'specs/**/*.yml'
+      - 'specs/**/*.yaml'
+      - 'packages/openapi/**/*.yml'
+      - 'packages/openapi/**/*.yaml'
+  push:
+    branches: [main, trunk]
+    paths:
+      - 'specs/**/*.yml'
+      - 'specs/**/*.yaml'
+      - 'packages/openapi/**/*.yml'
+      - 'packages/openapi/**/*.yaml'
+
+run-name: 'OpenAPI Enforcement [VTID: DEV-CICDL-0033] (${{ github.ref_name }})'
+
+jobs:
+  validate-openapi:
+    name: Validate OpenAPI Specifications
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout code
+        uses: actions/checkout@v4
+      
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+          cache: 'npm'
+      
+      - name: Install Spectral
+        run: |
+          echo "📦 Installing @stoplight/spectral-cli..."
+          npm install -g @stoplight/spectral-cli
+          spectral --version
+      
+      - name: Find OpenAPI specs
+        id: find-specs
+        run: |
+          echo "🔍 Finding OpenAPI specification files..."
+          
+          # Find all OpenAPI specs
+          SPECS=$(find specs packages/openapi -name "*.yml" -o -name "*.yaml" 2>/dev/null || true)
+          
+          if [ -z "$SPECS" ]; then
+            echo "⚠️  No OpenAPI specifications found"
+            echo "has_specs=false" >> $GITHUB_OUTPUT
+            exit 0
+          fi
+          
+          echo "has_specs=true" >> $GITHUB_OUTPUT
+          echo "Found specifications:"
+          echo "$SPECS" | while read spec; do
+            echo "  - $spec"
+          done
+      
+      - name: Validate with Spectral
+        if: steps.find-specs.outputs.has_specs == 'true'
+        run: |
+          echo "✨ Running Spectral validation..."
+          echo ""
+          
+          violations=0
+          total_specs=0
+          
+          # Validate each spec
+          for spec in $(find specs packages/openapi -name "*.yml" -o -name "*.yaml" 2>/dev/null); do
+            total_specs=$((total_specs + 1))
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            echo "📄 Validating: $spec"
+            echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+            
+            if spectral lint "$spec" --fail-severity=warn; then
+              echo "✅ $spec - PASSED"
+            else
+              echo "❌ $spec - FAILED"
+              violations=$((violations + 1))
+            fi
+            
+            echo ""
+          done
+          
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "📊 Summary"
+          echo "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+          echo "Total specs validated: $total_specs"
+          echo "Passed: $((total_specs - violations))"
+          echo "Failed: $violations"
+          echo ""
+          
+          if [ $violations -gt 0 ]; then
+            echo "❌ FAILURE: $violations OpenAPI specification(s) failed validation"
+            echo ""
+            echo "📘 Common issues:"
+            echo "   - Missing or invalid OpenAPI version"
+            echo "   - Schema validation errors"
+            echo "   - Missing required fields (info, paths, etc.)"
+            echo "   - Invalid references (\$ref)"
+            echo "   - Security scheme issues"
+            echo ""
+            echo "💡 Fix the errors above and commit the changes."
+            echo "   Run locally: spectral lint <spec-file>"
+            exit 1
+          fi
+          
+          echo "✅ All OpenAPI specifications are valid!"
+      
+      - name: Check OpenAPI version
+        if: steps.find-specs.outputs.has_specs == 'true'
+        run: |
+          echo "🔍 Checking OpenAPI versions..."
+          echo ""
+          
+          violations=0
+          
+          for spec in $(find specs packages/openapi -name "*.yml" -o -name "*.yaml" 2>/dev/null); do
+            version=$(grep -E "^openapi:" "$spec" | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+            
+            if [ -z "$version" ]; then
+              echo "❌ $spec - Missing openapi version field"
+              violations=$((violations + 1))
+              continue
+            fi
+            
+            # Check if version is 3.0.x or 3.1.x
+            if echo "$version" | grep -qE "^3\.[01]\.[0-9]+$"; then
+              echo "✅ $spec - OpenAPI $version"
+            else
+              echo "❌ $spec - Unsupported version: $version"
+              echo "   Required: OpenAPI 3.0.x or 3.1.x"
+              violations=$((violations + 1))
+            fi
+          done
+          
+          echo ""
+          
+          if [ $violations -gt 0 ]; then
+            echo "❌ FAILURE: $violations version issue(s)"
+            echo ""
+            echo "📘 All OpenAPI specs must use version 3.0.x or 3.1.x"
+            echo "   Add to spec: openapi: 3.0.3"
+            exit 1
+          fi
+          
+          echo "✅ All specs use supported OpenAPI versions"
+      
+      - name: Check for duplicate operation IDs
+        if: steps.find-specs.outputs.has_specs == 'true'
+        run: |
+          echo "🔍 Checking for duplicate operationIds..."
+          echo ""
+          
+          violations=0
+          
+          for spec in $(find specs packages/openapi -name "*.yml" -o -name "*.yaml" 2>/dev/null); do
+            echo "Checking: $spec"
+            
+            # Extract all operationIds
+            operation_ids=$(grep -oP 'operationId:\s*\K[^\s]+' "$spec" 2>/dev/null || true)
+            
+            if [ -z "$operation_ids" ]; then
+              echo "  ⚠️  No operationIds found (optional)"
+              continue
+            fi
+            
+            # Check for duplicates
+            duplicates=$(echo "$operation_ids" | sort | uniq -d)
+            
+            if [ -n "$duplicates" ]; then
+              echo "  ❌ Duplicate operationIds found:"
+              echo "$duplicates" | while read dup; do
+                echo "     - $dup"
+              done
+              violations=$((violations + 1))
+            else
+              echo "  ✅ No duplicate operationIds"
+            fi
+          done
+          
+          echo ""
+          
+          if [ $violations -gt 0 ]; then
+            echo "❌ FAILURE: Duplicate operationIds detected"
+            echo ""
+            echo "📘 Each operation must have a unique operationId within a spec"
+            exit 1
+          fi
+          
+          echo "✅ No duplicate operationIds found"
+      
+      - name: Verify schemas directory (if present)
+        run: |
+          echo "🔍 Checking for schemas directory..."
+          
+          if [ -d "packages/openapi" ] && [ ! -d "packages/openapi/schemas" ]; then
+            echo "⚠️  Recommendation: Create packages/openapi/schemas/ for shared schemas"
+            echo "   This allows reuse across multiple API specs using \$ref"
+          else
+            echo "✅ Schemas directory structure looks good"
+          fi
+      
+      - name: Summary
+        if: success()
+        run: |
+          echo "✅ OpenAPI Validation Complete"
+          echo ""
+          echo "Checks passed:"
+          echo "  ✅ Spectral validation passed"
+          echo "  ✅ OpenAPI versions valid (3.0.x or 3.1.x)"
+          echo "  ✅ No duplicate operationIds"
+          echo ""
+          echo "All OpenAPI specifications are valid and ready for deployment!"
+      
+      - name: Generate validation report
+        if: success() && steps.find-specs.outputs.has_specs == 'true'
+        run: |
+          echo "📄 Generating validation report..."
+          
+          mkdir -p docs/reports
+          REPORT="docs/reports/openapi-validation-$(date +%Y%m%d).md"
+          
+          cat > "$REPORT" << EOF
+          # OpenAPI Validation Report
+          
+          **Date:** $(date -u +"%Y-%m-%d %H:%M:%S UTC")  
+          **VTID:** DEV-CICDL-0033  
+          **Branch:** ${{ github.ref_name }}
+          
+          ## Validated Specifications
+          
+          EOF
+          
+          for spec in $(find specs packages/openapi -name "*.yml" -o -name "*.yaml" 2>/dev/null); do
+            version=$(grep -E "^openapi:" "$spec" | head -1 | awk '{print $2}' | tr -d '"' | tr -d "'")
+            echo "- ✅ \`$spec\` (OpenAPI $version)" >> "$REPORT"
+          done
+          
+          cat >> "$REPORT" << EOF
+          
+          ## Validation Results
+          
+          - ✅ All specs passed Spectral validation
+          - ✅ All specs use supported OpenAPI versions
+          - ✅ No duplicate operationIds detected
+          
+          ## Next Steps
+          
+          1. Review the validated specifications
+          2. Deploy to API Gateway (if applicable)
+          3. Generate client SDKs (optional)
+          
+          ---
+          
+          **Validation Tool:** Spectral CLI  
+          **CI Workflow:** CICDL-CORE-OPENAPI-ENFORCE
+          EOF
+          
+          echo "✅ Report saved to: $REPORT"

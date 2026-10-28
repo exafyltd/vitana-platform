@@ -1,0 +1,17 @@
+tsc --noEmit --ignoreDeprecations 6.0, full services/gateway package, 2026-09-14
+
+Total diagnostic lines: 11590
+Lines that are the missing-node_modules artifact (Cannot find module /
+Cannot find name / Cannot find namespace / jsx-runtime): 10528
+
+The remainder is other environmental noise from the same missing-
+node_modules condition (implicit-any on untyped Supabase query results,
+etc.) plus zero real errors in this PR's own files after the two fixes
+already committed (see tsc-partner-health-files.txt in this same
+directory — filtered to lines mentioning partner-health/doctorbox/
+admin-partner, all of which are the same environmental class).
+
+This session's services/gateway checkout has no node_modules and no npm
+registry access (`npm install` returns 403), so this is the closest thing
+to a real compile check available here. It is NOT a substitute for the
+real CI Jest/build run.

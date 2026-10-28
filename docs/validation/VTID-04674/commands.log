@@ -1,0 +1,30 @@
+# VTID-04674 — commands run in the session (2026-09-26)
+
+## Local Postgres 16 harness (throwaway cluster, never the shared database)
+initdb -D /tmp/pgtest04674/data ; pg_ctl start -o "-p 55432 -k /tmp/pgtest04674"
+psql -d postgres -c 'CREATE DATABASE g04674'
+psql -d g04674 -v ON_ERROR_STOP=1 -f stubs.sql             # minimal copies of the live tables the migration touches
+psql -d g04674 -v ON_ERROR_STOP=1 -f 20260926190000_vtid_04674_notification_type_controls.sql
+psql -d g04674 -v ON_ERROR_STOP=1 -f 20260926190000_vtid_04674_notification_type_controls.sql   # second run: idempotent
+psql -d g04674 -v ON_ERROR_STOP=1 -f docs/validation/VTID-04674/sql-guard-test.sql
+  → outputs/sql-guard-test.txt : tests 1–10 PASS
+
+## Read-only checks against the shared database (no writes)
+- delivered types, last 30/90 days, and automation_id on those rows (none carry one)
+- automation_runs with actions in the last 30 days (shadow/staging runs; no delivered notification carries an automation id)
+- user_notification_preferences legacy columns: 15 rows, none switched off by a member; memory_notifications=false on 13 (default); push_enabled=false on 6 (still respected)
+- notification_categories: 11 global categories; mapped_types is jsonb; type CHECK (chat|calendar|community)
+- column lists of notification_categories, user_tenants, user_category_preferences, user_notification_preferences
+
+## Gateway
+npx tsc --noEmit -p services/gateway                                  → clean
+npx jest test/vtid-04674-notification-controls.test.ts                 → 23 passed
+npx jest test/vtid-04674-notification-controls-wiring.test.ts          → 12 passed
+npx jest test/routes/admin-notification-controls.test.ts               → 11 passed
+npx jest test/routes/user-category-preferences-vtid-04674.test.ts      → 5 passed
+npx jest test/routes/admin-notifications.test.ts                       → 4 passed (mock gained requireAuth)
+npx jest notification reminder automation scheduled-notif i18n catalog vtid-04560 vtid-04456 vtid-04465 admin-notif category
+                                                                       → 65 suites, 1,349 passed
+node scripts/ci/staging-verify lib validateManifest(staging-tests.json) → ok
+mutation: disabling notifyUser's switch check → wiring suite fails (2 tests); restored → green
+full gateway suite: 1,344 suites passed (1 skipped), 21,626 tests passed, 0 failed

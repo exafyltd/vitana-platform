@@ -1,0 +1,21 @@
+$ curl -s -o /dev/null -w "gateway.vitanaland.com: %{http_code} (%{time_total}s)\n" --max-time 8 https://gateway.vitanaland.com/alive
+gateway.vitanaland.com: 200 (0.711688s)
+
+$ curl -s -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"UIUX","module":"orb-voice"}' \
+    -w "\nHTTP_STATUS:%{http_code}\n" --max-time 15
+{"ok":true,"vtid":"VTID-03824","num":3824,"id":"ce2028ff-f44f-4508-a5ff-807b3756f14f"}
+HTTP_STATUS:201
+
+$ mcp__Supabase__execute_sql (project inmkhvwdcuyhnxkgfvsb)
+UPDATE vtid_ledger
+SET title = 'ORB voice: add end_conversation tool so the assistant stops instead of reopening the mic',
+    summary = 'Fix reported live: user says "turn off now", Vitana speaks a farewell but the widget reopens LISTENING mode instead of closing. Added an end_conversation tool (mirroring end_teaching_session/end_guided_topic_teaching) the model calls after its own farewell; server dispatches an orb_directive; widget suppresses the default listening transition and closes once farewell audio drains.',
+    status = 'in_progress',
+    spec_status = 'approved',
+    metadata = coalesce(metadata, '{}'::jsonb) || jsonb_build_object('source', 'claude-code', 'pr', 'exafyltd/vitana-platform#3270')
+WHERE vtid = 'VTID-03824'
+RETURNING vtid, title, status, spec_status;
+
+[{"vtid":"VTID-03824","title":"ORB voice: add end_conversation tool so the assistant stops instead of reopening the mic","status":"in_progress","spec_status":"approved"}]

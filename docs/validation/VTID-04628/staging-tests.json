@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04628",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway answers on the deployed build", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/vtid-04628-operator-tool-rounds.test.ts test/vtid-04465-operator-pipeline-regression.test.ts", "cwd": "services/gateway",
+      "reason": "runs the real operator turn with several tool rounds (retry after a failed query, budget exhaustion, continuation failure) and the operator pipeline regression suite this change edits" }
+  ]
+}

@@ -1,0 +1,7 @@
+# VTID-04671 commands (services/gateway)
+node node_modules/typescript/bin/tsc --noEmit                              # clean
+node node_modules/.bin/jest test/vtid-04671-recommendation-card.test.ts   # 13/13
+node node_modules/.bin/jest test/vtid-04667-executable-source-types-drift.test.ts command-hub
+node scripts/ci/command-hub-ownership-guard.js                            # from repo root
+node docs/validation/VTID-04671/outputs/harness-server.js &               # local stub server
+node docs/validation/VTID-04671/outputs/harness-shoot.js                  # screenshots, 1400x900 + 390x844

@@ -1,0 +1,66 @@
+# VTID-03605 — commands executed for verification (2026-08-11)
+
+# 0. URL/spec verification BEFORE writing any code (never guess a URL):
+#    fetched the actual HL7 SMART App Launch spec pages.
+#    https://www.hl7.org/fhir/smart-app-launch/app-launch.html
+#    https://www.hl7.org/fhir/smart-app-launch/conformance.html
+#    Confirmed: discovery = GET {fhirBaseUrl}/.well-known/smart-configuration
+#               authorize = GET {authorization_endpoint}?response_type=code&
+#                 client_id=&redirect_uri=&scope=&state=&aud=&code_challenge=&
+#                 code_challenge_method=S256 (standalone — no `launch` param)
+#               token exchange = POST {token_endpoint} grant_type=
+#                 authorization_code&code=&redirect_uri=&code_verifier=&
+#                 client_id= (client_id required for public apps)
+#               token response = access_token, token_type, expires_in, scope,
+#                 patient (optional context)
+#    Two earlier WebFetch attempts 404'd (guessed URL paths); recovered via
+#    WebSearch to find the correct, current doc URLs before re-fetching.
+
+# 1. Schema: no new migration in this PR. Reuses partner_oauth_credential
+#    (endpoint_domain column) from VTID-03603's already-applied,
+#    already-generalized migration (PR #3094, branch
+#    claude/vtid-03603-shopify-oauth-schema) — that table's own header
+#    comment already documents this connector as a second consumer.
+
+# 2. Found and fixed a real latent bug while starting this VTID: the
+#    Shopify callback still wrote `shop_domain` to a column the VTID-03603
+#    follow-up migration renamed to `endpoint_domain` — would have failed
+#    every real Shopify credential write with a column-not-found error.
+grep -n "shop_domain" services/gateway/src/routes/shopify-oauth-callback.ts services/gateway/test/routes/shopify-oauth-callback.test.ts
+# -> before fix: routes/shopify-oauth-callback.ts:81 (upsert payload) and
+#    test/routes/shopify-oauth-callback.test.ts:128 (assertion on the same
+#    payload). Both corrected to endpoint_domain; test/routes/
+#    shopify-oauth-callback.test.ts:126 (JSON response field name) is a
+#    public API field, not the DB column, and was deliberately left as-is.
+
+# 3. New tests
+cd services/gateway && npx jest test/services/smart-fhir-oauth.test.ts test/routes/fhir-oauth-callback.test.ts test/routes/vcaop-portal-my.test.ts
+# -> Test Suites: 3 passed; Tests: 66 passed (captured in ./outputs/fhir-oauth-tests.txt)
+
+# 4. Typecheck of changed files
+cd services/gateway && npx tsc --noEmit -p tsconfig.json | grep -E "smart-fhir-oauth|fhir-oauth-callback|vcaop-portal-my|shopify-oauth-callback|platform-detect"
+# -> zero hits. The only index.ts errors present are the same 3
+#    pre-existing, unrelated compression-module/implicit-any errors already
+#    recorded in VTID-03601/03603's evidence packs (confirmed identical by
+#    running tsc against the unmodified branch tip via `git stash`).
+
+# 5. Route mount
+grep -n "fhirOAuthCallbackRouter\|fhir-oauth" services/gateway/src/index.ts
+# -> const fhirOAuthCallbackRouter = require('./routes/fhir-oauth-callback').default;
+#    mountRouterSync(app, '/api/v1/vcaop/fhir-oauth', fhirOAuthCallbackRouter, ...);
+#    The authorize endpoint rides the existing /api/v1/vcaop/portal/my mount
+#    (unchanged by this PR, added under VTID-03553).
+
+# 6. CSP governance gate — simulated locally against every new/changed file
+#    (app source + tests) with the exact 7 regexes from
+#    gov/validator-rules.yaml's csp_gate.reject_patterns. Zero hits.
+
+# 7. Full local suite
+cd services/gateway && npx jest --silent
+# -> 648/657 suites pass, 12459/12470 tests pass (5 skipped, 6 todo — both
+#    pre-existing). The 9 failing suites fail identically and immediately on
+#    `Cannot find module 'compression'`/`'pg'` at src/index.ts /
+#    aurora-client.ts import time — confirmed pre-existing and unrelated by
+#    running the identical suites against the unmodified branch tip
+#    (`git stash`), same environment/install gap recorded in VTID-03601/
+#    03603's evidence packs.

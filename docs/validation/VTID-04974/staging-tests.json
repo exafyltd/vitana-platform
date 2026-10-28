@@ -1,0 +1,20 @@
+{
+  "vtid": "VTID-04974",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "liveness answers (read-only); this change touches verification manifests only"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04665-dependency-probe.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the 'missing table reads down' behaviour the removed live probes used to show stays proven in-process"
+    }
+  ]
+}

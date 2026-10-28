@@ -1,0 +1,29 @@
+# VTID-04785 — read-only evidence, production oasis_events (Supabase VITANA project), 2026-10-01 12:25 UTC, 24 h window
+# Only SELECTs were run. No writes.
+
+## Starts vs stops by transport (stop joined on metadata->>'session_id')
+transport  | starts | with_stop | no_stop
+sse        |    107 |        25 |      82
+websocket  |      6 |         6 |       0
+ws         |      6 |         6 |       0
+(raw topic counts: 117 vtid.live.session.start, 34 vtid.live.session.stop; 27 stops carried no transport = POST /live/session/stop)
+
+## Which end path the stop-less SSE sessions took (conversation.session.finalized reason)
+has_stop | finalized reason | sessions
+false    | sse_disconnect   | 76     <- GET /live/stream req.on('close'), orb-live.ts (no stop emit)
+false    | (none)           |  6     <- empty transcript (finalize skips), short sessions ending in upstream_closed
+true     | sse_disconnect   | 24     <- POST /live/session/stop arrived first and emitted; SSE closed after
+true     | (none)           |  1
+
+Stop reasons emitted (24 h): <none>/POST client_stop 26+3, idle_no_engagement 2, client_disconnect 1, superseded_by_new_session 1, idle_timeout 1.
+All 107 SSE starts are metadata.env='production'. No production gateway deploy correlates with the 6 residual sessions.
+
+## orb.upstream.* topics
+orb.upstream.* rows, 24 h:                      0
+orb.upstream.provider.selected, 30 days:        0
+orb.upstream.provider.selected, ever (max):     null
+
+## oasis_events constraints
+service  NOT NULL, status NOT NULL (CHECK queued|in_progress|success|failure|cancelled|info|warning|error), message NOT NULL, role NOT NULL.
+The orb.upstream.* emits in routes/orb-live.ts pass only {type, vtid, payload} (cast `as any`), so service/status/message are
+absent from the INSERT body -> not-null violation -> emitOasisEvent returns {ok:false} (does not throw) -> `.catch(() => {})` sees nothing.

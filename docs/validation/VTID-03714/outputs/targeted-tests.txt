@@ -1,0 +1,61 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/scripts/validator-path-guard.test.ts
+  the remit is exactly the workflow trigger
+    ✓ matches the paths: list in VALIDATOR-CHECK.yml (3 ms)
+  gateway_backend — the ordinary cases
+    ✓ approves a PR confined to the gateway source tree (1 ms)
+    ✓ approves evidence docs alongside source
+  the VTID-03696 fix — out-of-remit files are reported, not rejected
+    ✓ approves the mixed PR that previously could not pass under any profile (1 ms)
+    ✓ says out loud which files it did not judge (1 ms)
+    ✓ does not present "not judged" as approval of those trees (1 ms)
+    ✓ .env.example is NOT treated as a committed .env
+  what the guard still rejects
+    ✓ rejects a committed .env anywhere, ignoring remit (1 ms)
+    ✓ rejects a bare .env at the repo root
+    ✓ rejects an unknown profile (1 ms)
+    ✓ rejects an in-remit file outside the declared profile — the check that still has teeth
+    ✓ does not let out-of-remit files mask an in-remit violation (1 ms)
+  dependency changes are declared, not forbidden
+    ✓ rejects an undeclared lockfile change (1 ms)
+    ✓ approves the same change once declared
+    ✓ still reports the dependency change when declared
+    ✓ catches yarn.lock too, not just npm and pnpm (1 ms)
+    ✓ ranks a committed .env above an undeclared lockfile
+  route-mount evidence keys off an ADDED route, not a touched file
+    ✓ requires evidence when a route is actually added (1 ms)
+    ✓ does NOT require evidence for a route file edited without adding a route
+    ✓ ignores removed and context lines (1 ms)
+    ✓ ignores the +++ file header, which is not an added line
+    ✓ requires evidence if any added line registers a route, among many that do not
+    ✓ treats an empty diff as not requiring evidence (1 ms)
+  CSP scanning is scoped to the browser-served surface
+    ✓ scans the command-hub frontend trees
+    ✓ does not scan the validator workflow — which contains the CSP patterns itself (1 ms)
+    ✓ does not scan lockfiles — a registry URL is not a CDN asset
+    ✓ does not scan markdown, CI scripts or migrations
+    ✓ does not scan gateway backend source — it is not served to a browser (1 ms)
+    ✓ picks the frontend files out of a mixed change set
+  CSP scan judges ADDED lines, not whole file content (VTID-03714)
+    ✓ flags a pattern that appears in an ADDED line (5 ms)
+    ✓ does NOT flag the identical pattern in a context (unchanged) line
+    ✓ does NOT flag a pattern in a REMOVED line
+    ✓ ignores the +++ file header, which is not an added line (1 ms)
+    ✓ reproduces the exact PR #3167 false positive and confirms it is now clean
+    ✓ still catches a genuinely NEW CSP violation added by a diff
+    ✓ P2 — an added line that itself starts with "++" is not mistaken for a file header (1 ms)
+    ✓ P2 — a genuine unified-diff file header (with the space) is still skipped
+    ✓ P1 — a pattern split across two consecutive added lines is still caught
+    ✓ P1 — consecutive added lines are joined only when truly contiguous (no context/removed line between)
+    ✓ isDiffFileHeader distinguishes a real header from added content that merely starts with +++
+  degenerate input
+    ✓ ignores blank lines and surrounding whitespace (1 ms)
+    ✓ approves an empty change set rather than throwing
+
+Test Suites: 1 passed, 1 total
+Tests:       42 passed, 42 total
+Snapshots:   0 total
+Time:        0.412 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

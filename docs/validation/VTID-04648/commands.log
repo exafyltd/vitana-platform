@@ -1,0 +1,12 @@
+$ node node_modules/.bin/jest test/scripts/test-catalog-lib.test.ts      # services/gateway
+Test Suites: 1 passed, 1 total — Tests: 28 passed
+$ node scripts/test-catalog/build.mjs --platform . --out cat.json
+test catalog: 1450 files, 18493 cases, 81 suites, 50 workflows (17 scheduled, ~371 runs/day)
+flag ANDROID-DEVICE-E2E.yml: dead_host
+flag MOBILE-DEVICE-E2E.yml: dead_host
+MORNING-SYSTEM-HEALTH-CHECK.yml [ 'staging', 'production' ] []
+SCREEN-LOAD-TIMING.yml [ 'staging' ] []
+$ curl -sS -o /dev/null -w "%{http_code} %{content_type}" https://preview-aws-gateway.vitanaland.com/api/v1/frontend/screen-load/health
+200 application/json; charset=utf-8
+$ node -e 'parseWorkflow(<SCREEN-LOAD-TIMING.yml at origin/main before this change>)'   # the rule still catches the old file
+old SLT flags: [ 'ui_test_touches_production' ]

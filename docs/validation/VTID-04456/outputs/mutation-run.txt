@@ -1,0 +1,15 @@
+Ten deliberate regressions, applied one at a time to services/gateway/src and reverted
+after each run (git checkout -- src). Suite: test/vtid-04456-customer-support-pipeline-regression.test.ts (22 tests).
+
+M1  report_to_specialist drops session_id from the ticket           -> 3 failed, 19 passed
+M2  bridge writes source_ref "feedback:<id>" instead of "feedback_ticket:<id>" -> 7 failed
+M3  reconciler writes status 'closed' instead of 'resolved'          -> 6 failed
+M4  PR title stops carrying the FB ticket number                     -> 7 failed
+M5  approve-and-dispatch no longer moves the ticket to in_progress   -> 7 failed
+M6  Vitana is allowed to append_to_ticket                            -> 1 failed
+M7  placeholder detection misses the SQL auto-triage heading         -> 10 failed
+M8  handoff_created returned even when no hand-off was queued        -> 1 failed
+M9  feedback.ticket.dispatched event no longer emitted               -> 7 failed
+M10 app route drops app_version                                      -> 1 failed
+
+Unmodified source: 22 passed, 22 total.

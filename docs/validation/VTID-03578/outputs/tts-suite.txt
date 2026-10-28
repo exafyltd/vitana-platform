@@ -1,0 +1,55 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [TTS] Unrecognised TTS_PROVIDER='azure' — defaulting to 'google'.
+
+      41 |   if (raw === 'polly') return 'polly';
+      42 |   if (raw !== 'google' && raw !== '') {
+    > 43 |     console.warn(`[TTS] Unrecognised TTS_PROVIDER='${raw}' — defaulting to 'google'.`);
+         |             ^
+      44 |   }
+      45 |   return 'google';
+      46 | }
+
+      at getTtsProvider (src/services/tts/tts-provider.ts:43:13)
+      at Object.<anonymous> (test/tts/polly-provider.test.ts:161:26)
+
+PASS test/tts/polly-provider.test.ts
+  VTID-03495 Polly voice resolution
+    ✓ returns null for Serbian rather than silently substituting another language (4 ms)
+    ✓ resolves the supported languages with an explicit engine (4 ms)
+    ✓ pins Russian to the standard engine (Polly has no neural Russian voice) (1 ms)
+    ✓ covers every release locale, with sr the one declared gap (2 ms)
+    ✓ speaks Brazilian Portuguese, not European, for pt
+    ✓ returns null for a language outside the table instead of English audio (1 ms)
+    ✓ normalizes locale tags down to a base language (1 ms)
+  VTID-03495 speaking-rate → SSML
+    ✓ sends plain text at rate 1.0 (no SSML, no escaping surface)
+    ✓ wraps in prosody SSML for a non-default rate (1 ms)
+    ✓ XML-escapes text when building SSML so ampersands cannot break the payload (1 ms)
+    ✓ treats a non-finite or non-positive rate as 1.0 rather than emitting garbage SSML (1 ms)
+    ✓ escapeSsml covers all five XML entities
+  VTID-03495 PCM sample rate
+    ✓ Polly PCM is 16kHz — NOT the 24kHz Cloud TTS uses (1 ms)
+    ✓ reports the PCM rate of whichever provider is active
+  VTID-03495 provider gating
+    ✓ defaults to google when TTS_PROVIDER is unset — deploying this code flips nothing (1 ms)
+    ✓ falls back to google (loudly) on an unrecognised value rather than failing closed (8 ms)
+    ✓ selects polly only on the exact opt-in value, case-insensitively (1 ms)
+    ✓ strict mode is off unless explicitly set to true
+  VTID-03495 region resolution
+    ✓ defaults to eu-central-1, the only region with Vitana AWS infrastructure (1 ms)
+    ✓ prefers the explicit override over the generic AWS region
+
+Test Suites: 1 passed, 1 total
+Tests:       20 passed, 20 total
+Snapshots:   0 total
+Time:        0.769 s, estimated 1 s
+Ran all test suites matching /test\/tts\//i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

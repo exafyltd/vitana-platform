@@ -1,0 +1,28 @@
+# Root cause — the gate and its coercion
+grep -n "SUPPORTED_LIVE_LANGUAGES" services/gateway/src/orb/live/config.ts
+sed -n '13790,13800p' services/gateway/src/routes/orb-live.ts     # normalizeLang -> 'en'
+grep -n "normalizeLang(\|isNovaSonicLanguageSupported(" services/gateway/src/routes/orb-live.ts
+#   14609: const lang = normalizeLang(body.lang || 'en')   <- session start
+#    6915: languageSupported: isNovaSonicLanguageSupported(session.lang)
+#   => coercion precedes the Nova gate, which is why VTID-03672 was inert.
+
+# Which per-language tables exist at all
+grep -rnE "^\s*(sr|ru|es|fr|pt|pl)\s*:" services/gateway/src/orb --include=*.ts | grep -v test
+
+# decision_policy: are the code Records even reachable in production?
+#   per-language keys are seeded individually and there is NO pt/pl row,
+#   so getValue() returns the code defaultValue -> code changes DO take effect.
+#   voice.neural2.enabled_languages is a single seeded ARRAY row -> DB wins.
+select policy_key, left(value_json::text,140) from decision_policy
+ where policy_key like 'voice.%' order by policy_key;
+
+# Prod telemetry (read-only)
+select metadata->>'lang', metadata->>'voice', count(*)
+  from oasis_events where topic='vtid.live.session.start'
+   and created_at > now() - interval '3 days' group by 1,2;
+
+# Verification
+cd services/gateway && npx tsc --noEmit
+npx jest test/orb/live/language-coverage.test.ts
+npx jest test/orb test/services/decision-contract
+npx jest

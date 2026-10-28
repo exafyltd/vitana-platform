@@ -1,0 +1,1085 @@
+/**
+ * Developer Autopilot — Failure → Self-Healing bridge
+ *
+ * When a Dev Autopilot execution fails (agent couldn't open a PR, CI failed,
+ * deploy failed, or post-deploy verification failed) this module:
+ *
+ *   1. Spawns the Self-Healing triage agent in the appropriate mode
+ *      (post_failure for CI/deploy, verification_failure for post-deploy).
+ *   2. Records the triage report on the execution row.
+ *   3. Attempts an auto-revert (close PR for ci-stage failures, open revert
+ *      PR for deploy/verification failures) so production is restored before
+ *      the retry lands.
+ *   4. Decides the next step based on triage confidence + auto_fix_depth:
+ *        - confidence ≥ 0.5 AND depth < max_auto_fix_depth
+ *             → spawn a child execution (status=cooling) with the original
+ *               plan; depth+1; parent_execution_id set so the UI can draw
+ *               the self-heal lineage
+ *        - confidence ≥ 0.5 AND depth == cap
+ *             → mark failed_escalated; emit escalation event so a human
+ *               can approve the next attempt (no more autonomous retries)
+ *        - confidence < 0.5 OR triage errored
+ *             → mark failed_escalated; surface for human review
+ *
+ * DRY_RUN honors DEV_AUTOPILOT_DRY_RUN=true (opt-in for tests / dev). The
+ * default is 'false' so the bridge actually closes failed PRs in production.
+ * The previous default of 'true' was misaligned with the executor's default
+ * of 'false' and was load-bearing: the bridge logged "reverted via
+ * #closed-dry-run" while leaving the GitHub PR open, then
+ * spawnChildExecution() opened a fresh PR for the same finding. Combined
+ * with autoApproveTick re-picking the still-status='new' finding, that
+ * mechanism produced the 2026-05-07 flood (530 stranded PRs in 4 days).
+ */
+
+import { randomUUID } from 'crypto';
+import {
+  spawnTriageAgent,
+  TriageReport,
+  TriageMode,
+} from './self-healing-triage-service';
+import { emitOasisEvent } from './oasis-event-service';
+import { isEnvironmentalBlocker } from './dev-autopilot-self-heal-log';
+import { createRevertPullRequest, mergePullRequest } from './github-service';
+import { isRealCiClose, isRevertMergedOnMain, PR_CLOSED_UNMERGED_KEY, PR_REVERTED_KEY } from './dev-autopilot-pipeline-guards';
+
+const LOG_PREFIX = '[dev-autopilot-bridge]';
+const BRIDGE_VTID = 'VTID-DEV-AUTOPILOT';
+
+// Default 'false' — match the executor's default. See header doc.
+const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
+const GITHUB_TOKEN =
+  process.env.DEV_AUTOPILOT_GITHUB_TOKEN ||
+  process.env.GITHUB_SAFE_MERGE_TOKEN ||
+  '';
+const GITHUB_REPO =
+  process.env.DEV_AUTOPILOT_GITHUB_REPO || 'exafyltd/vitana-platform';
+
+// Confidence threshold above which we trust the agent to propose an
+// autonomous retry. Lowered from 0.5 → 0.3 (configurable via env var) so
+// the autopilot retries more aggressively by default — the user goal is
+// "self-improving + self-healing autonomously." Failed retries still
+// escalate at the depth cap.
+/**
+ * Parse a confidence-threshold env override, falling back to `fallback` for
+ * missing, empty, or non-finite values. Without the finite guard a typo like
+ * `AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION=false` parses to NaN, and since
+ * `confidence < NaN` is always false the stage would spawn retries regardless
+ * of confidence — silently defeating the calibration. Exported for tests.
+ */
+export function parseThreshold(raw: string | undefined, fallback: number): number {
+  if (raw === undefined || raw.trim() === '') return fallback;
+  const n = Number.parseFloat(raw);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+const CHILD_SPAWN_CONFIDENCE_THRESHOLD = parseThreshold(
+  process.env.AUTOPILOT_RETRY_CONFIDENCE_THRESHOLD,
+  0.3,
+);
+
+/**
+ * Per-stage retry confidence thresholds (Step 4 calibration). A single global
+ * gate is miscalibrated: the odds that an autonomous retry actually fixes the
+ * problem vary a lot by WHERE the fix failed.
+ *   - ci: lint/test/typecheck failures are usually a productive code retry →
+ *     retry aggressively (low bar).
+ *   - deploy: often flaky / infra-ish → medium bar.
+ *   - verification: the fix already deployed but didn't clear the original
+ *     failure (or regressed production) — the riskiest case to retry blindly,
+ *     so demand higher agent confidence before spending another attempt.
+ * Each is overridable via env; unknown stages fall back to the global default.
+ */
+const RETRY_THRESHOLD_BY_STAGE: Record<FailureStage, number> = {
+  ci: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_CI, 0.25),
+  deploy: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_DEPLOY, 0.35),
+  verification: parseThreshold(process.env.AUTOPILOT_RETRY_CONFIDENCE_VERIFICATION, 0.5),
+};
+
+/**
+ * Resolve the confidence bar a triage report must clear to earn an autonomous
+ * retry, given the failure stage/class. Environmental blockers never retry
+ * (defense-in-depth — they are normally short-circuited before triage). When no
+ * stage is supplied we fall back to the global CHILD_SPAWN_CONFIDENCE_THRESHOLD
+ * so prior behavior is preserved. Pure — exported for tests.
+ */
+export function resolveRetryThreshold(failureStage?: FailureStage, failureClass?: string): number {
+  if (failureClass === 'environmental_blocker') return Number.POSITIVE_INFINITY;
+  if (failureStage && Object.prototype.hasOwnProperty.call(RETRY_THRESHOLD_BY_STAGE, failureStage)) {
+    return RETRY_THRESHOLD_BY_STAGE[failureStage];
+  }
+  return CHILD_SPAWN_CONFIDENCE_THRESHOLD;
+}
+
+/**
+ * VTID-04475: where one incident's self_healing_log row lives.
+ *
+ * Before this, every failed stage of every execution in a retry chain wrote
+ * a NEW row under a synthetic `VTID-DA-<exec8>`, and an execution that came
+ * from a self-healing incident got those rows on top of the incident's own
+ * row — one incident, several rows in the Self-Healing screen and in the
+ * orchestrator run list (which projects self_healing_log).
+ *
+ * Now there is one row per incident:
+ *   - execution from a self-healing finding (spec_snapshot.scanner ===
+ *     'self-healing', activated_vtid set by the injector) → the incident's
+ *     own row, keyed by that VTID;
+ *   - any other execution → one row per retry chain, keyed by the ROOT
+ *     execution (`VTID-DA-<root8>`), so a child retry updates its parent's
+ *     row instead of adding one.
+ * Any lookup failure falls back to the old per-execution key — never worse
+ * than before.
+ */
+export interface IncidentLogKey { vtid: string; mode: 'incident' | 'chain' | 'fallback' }
+
+const MAX_CHAIN_WALK = 10;
+
+export async function resolveIncidentLogKey(s: SupaConfig, exec: ExecutionRow): Promise<IncidentLogKey> {
+  const fallback: IncidentLogKey = { vtid: `VTID-DA-${exec.id.slice(0, 8)}`, mode: 'fallback' };
+  try {
+    const f = await supa<Array<{ activated_vtid?: string | null; spec_snapshot?: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=activated_vtid,spec_snapshot&limit=1`,
+    );
+    if (!f.ok) return fallback;
+    const finding = f.data?.[0];
+    const scanner = finding?.spec_snapshot && typeof finding.spec_snapshot === 'object'
+      ? (finding.spec_snapshot as Record<string, unknown>).scanner : undefined;
+    if (scanner === 'self-healing' && typeof finding?.activated_vtid === 'string' && finding.activated_vtid) {
+      return { vtid: finding.activated_vtid, mode: 'incident' };
+    }
+    let rootId = exec.id;
+    let parentId = exec.parent_execution_id || null;
+    const seen = new Set<string>([exec.id]);
+    for (let i = 0; parentId && i < MAX_CHAIN_WALK; i++) {
+      if (seen.has(parentId)) break;
+      seen.add(parentId);
+      const p = await supa<Array<{ id: string; parent_execution_id?: string | null }>>(
+        s,
+        `/rest/v1/dev_autopilot_executions?id=eq.${parentId}&select=id,parent_execution_id&limit=1`,
+      );
+      if (!p.ok) return fallback;
+      const row = p.data?.[0];
+      if (!row) break;
+      rootId = row.id;
+      parentId = row.parent_execution_id || null;
+    }
+    return { vtid: `VTID-DA-${rootId.slice(0, 8)}`, mode: 'chain' };
+  } catch {
+    return fallback;
+  }
+}
+
+interface LogRow { id: string; attempt_number?: number | null; diagnosis?: Record<string, unknown> | null; outcome?: string | null; failure_class?: string | null }
+
+/** Pure: the PATCH body that folds a new stage outcome into an existing incident row. Exported for tests. */
+export function mergeIncidentLogUpdate(
+  existing: LogRow,
+  next: { failure_class: string; confidence: number; diagnosis: Record<string, unknown>; outcome: string; attempt_number: number; endpoint: string },
+): Record<string, unknown> {
+  const prevDiag = existing.diagnosis && typeof existing.diagnosis === 'object' ? existing.diagnosis : {};
+  const prevHistory = Array.isArray((prevDiag as Record<string, unknown>).stage_history)
+    ? ((prevDiag as Record<string, unknown>).stage_history as unknown[]) : [];
+  const entry = {
+    at: new Date().toISOString(),
+    failure_class: next.failure_class,
+    outcome: next.outcome,
+    confidence: next.confidence,
+    summary: typeof next.diagnosis.summary === 'string' ? next.diagnosis.summary : undefined,
+    execution_id: next.diagnosis.execution_id,
+    stage: next.diagnosis.stage,
+  };
+  return {
+    failure_class: next.failure_class,
+    confidence: next.confidence,
+    outcome: next.outcome,
+    attempt_number: Math.max(Number(existing.attempt_number) || 0, next.attempt_number),
+    resolved_at: next.outcome === 'pending' ? null : new Date().toISOString(),
+    diagnosis: {
+      ...prevDiag,
+      ...next.diagnosis,
+      // The class the incident was first recorded with (e.g. the injector's
+      // endpoint failure) survives the bridge's stage updates.
+      original_failure_class: (prevDiag as Record<string, unknown>).original_failure_class ?? existing.failure_class ?? next.failure_class,
+      stage_history: [...prevHistory, entry].slice(-20),
+    },
+  };
+}
+
+/**
+ * Record an autopilot failure/retry on the self-healing log — ONE row per
+ * incident (VTID-04475, see resolveIncidentLogKey). Updates the incident's
+ * latest row when it exists, inserts it otherwise.
+ *
+ * Best-effort: a write failure here must not block the bridge's primary
+ * job (transitioning the execution row + emitting OASIS events). If
+ * self_healing_log isn't writable, log and move on.
+ */
+export async function writeSelfHealingLogEntry(
+  s: SupaConfig,
+  args: {
+    execution_id: string;
+    exec: ExecutionRow;
+    endpoint: string;
+    failure_class: string;
+    confidence: number;
+    diagnosis: Record<string, unknown>;
+    outcome: 'escalated' | 'fixed' | 'failed' | 'rolled_back' | 'pending';
+    attempt_number: number;
+  },
+): Promise<void> {
+  try {
+    const key = await resolveIncidentLogKey(s, args.exec);
+    const diagnosis = { ...args.diagnosis, incident_key_mode: key.mode };
+    const existing = await supa<LogRow[]>(
+      s,
+      `/rest/v1/self_healing_log?vtid=eq.${encodeURIComponent(key.vtid)}&select=id,attempt_number,diagnosis,outcome,failure_class&order=created_at.desc&limit=1`,
+    );
+    const row = existing.ok ? existing.data?.[0] : undefined;
+    if (row) {
+      await supa(s, `/rest/v1/self_healing_log?id=eq.${row.id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify(mergeIncidentLogUpdate(row, { ...args, diagnosis })),
+      });
+      return;
+    }
+    await supa(s, '/rest/v1/self_healing_log', {
+      method: 'POST',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        vtid: key.vtid,
+        endpoint: args.endpoint,
+        failure_class: args.failure_class,
+        confidence: args.confidence,
+        diagnosis,
+        outcome: args.outcome,
+        attempt_number: args.attempt_number,
+        resolved_at: args.outcome === 'pending' ? null : new Date().toISOString(),
+      }),
+    });
+  } catch (err) {
+    console.warn(`${LOG_PREFIX} writeSelfHealingLogEntry failed for ${args.execution_id}:`, err);
+  }
+}
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export type FailureStage = 'ci' | 'deploy' | 'verification';
+
+export interface BridgeInput {
+  execution_id: string;
+  failure_stage: FailureStage;
+  failure_event_id?: string;
+  error?: string;
+  verification_result?: Record<string, unknown>;
+  blast_radius?: unknown;
+}
+
+export type BridgeOutcome =
+  | 'self_heal_injected'
+  | 'escalated'
+  | 'already_bridged'
+  | 'env_blocker'
+  | 'revert_failed'
+  | 'triage_failed'
+  | 'no_execution'
+  | 'no_supabase';
+
+export interface BridgeResult {
+  ok: boolean;
+  outcome: BridgeOutcome;
+  execution_id: string;
+  child_execution_id?: string;
+  self_healing_vtid?: string;
+  revert_pr_url?: string;
+  triage_report?: TriageReport;
+  error?: string;
+}
+
+// =============================================================================
+// Supabase helpers
+// =============================================================================
+
+interface SupaConfig { url: string; key: string; }
+
+function getSupabase(): SupaConfig | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  return { url, key };
+}
+
+async function supa<T>(
+  s: SupaConfig,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ ok: boolean; data?: T; status: number; error?: string }> {
+  try {
+    const res = await fetch(`${s.url}${path}`, {
+      ...init,
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+        ...(init.headers || {}),
+      },
+    });
+    if (!res.ok) return { ok: false, status: res.status, error: `${res.status}: ${await res.text()}` };
+    if (res.status === 204 || res.status === 201) {
+      const text = await res.text();
+      if (!text) return { ok: true, status: res.status };
+      try {
+        return { ok: true, status: res.status, data: JSON.parse(text) as T };
+      } catch { return { ok: true, status: res.status }; }
+    }
+    const data = (await res.json()) as T;
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 500, error: String(err) };
+  }
+}
+
+// =============================================================================
+// Execution loader
+// =============================================================================
+
+interface ExecutionRow {
+  id: string;
+  finding_id: string;
+  plan_version: number;
+  status: string;
+  auto_fix_depth: number;
+  branch?: string | null;
+  pr_url?: string | null;
+  pr_number?: number | null;
+  parent_execution_id?: string | null;
+  self_healing_vtid?: string | null;
+  triage_report?: Record<string, unknown> | null;
+  metadata?: Record<string, unknown> | null;
+}
+
+interface ConfigRow {
+  max_auto_fix_depth: number;
+  cooldown_minutes: number;
+  kill_switch: boolean;
+}
+
+async function loadExecution(s: SupaConfig, id: string): Promise<ExecutionRow | null> {
+  const r = await supa<ExecutionRow[]>(
+    s,
+    `/rest/v1/dev_autopilot_executions?id=eq.${id}&limit=1`,
+  );
+  if (!r.ok || !r.data || r.data.length === 0) return null;
+  return r.data[0];
+}
+
+async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
+  const r = await supa<ConfigRow[]>(
+    s,
+    `/rest/v1/dev_autopilot_config?id=eq.1&limit=1`,
+  );
+  if (!r.ok || !r.data || r.data.length === 0) return null;
+  return r.data[0];
+}
+
+// =============================================================================
+// Auto-revert
+// =============================================================================
+
+/** For CI-stage failures (PR opened but checks failed) we just close the PR.
+ *  For deploy/verification failures the PR has already been merged, so we
+ *  open a revert PR instead. */
+export async function revertExecutionPR(
+  exec: ExecutionRow,
+  stage: FailureStage,
+): Promise<{ ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean }> {
+  if (!exec.pr_url) {
+    return { ok: true }; // Nothing to revert — session never produced a PR
+  }
+
+  if (DRY_RUN || !GITHUB_TOKEN) {
+    const stub = stage === 'ci'
+      ? `${exec.pr_url}#closed-dry-run`
+      : `https://github.com/${GITHUB_REPO}/pull/REVERT-${exec.id.slice(0, 8)}`;
+    console.log(`${LOG_PREFIX} DRY RUN revert (${stage}) → ${stub}`);
+    return { ok: true, revert_pr_url: stub };
+  }
+
+  try {
+    if (stage === 'ci' && exec.pr_number) {
+      // Close the failing PR + delete branch via GitHub API
+      const closeRes = await fetch(
+        `https://api.github.com/repos/${GITHUB_REPO}/pulls/${exec.pr_number}`,
+        {
+          method: 'PATCH',
+          headers: {
+            Authorization: `Bearer ${GITHUB_TOKEN}`,
+            Accept: 'application/vnd.github+json',
+            'X-GitHub-Api-Version': '2022-11-28',
+          },
+          body: JSON.stringify({ state: 'closed' }),
+        },
+      );
+      if (!closeRes.ok) {
+        return { ok: false, error: `close PR failed: ${closeRes.status} ${await closeRes.text()}` };
+      }
+      if (exec.branch) {
+        await fetch(
+          `https://api.github.com/repos/${GITHUB_REPO}/git/refs/heads/${exec.branch}`,
+          {
+            method: 'DELETE',
+            headers: {
+              Authorization: `Bearer ${GITHUB_TOKEN}`,
+              Accept: 'application/vnd.github+json',
+            },
+          },
+        ).catch(() => undefined);
+      }
+      return { ok: true, revert_pr_url: `${exec.pr_url}#closed` };
+    }
+
+    // deploy / verification stage: PR already merged → open a revert PR and
+    // auto-merge it to restore the last-good state. createRevertPullRequest
+    // builds a reverse-tree revert based on the CURRENT main HEAD (it only
+    // overrides the merge's changed files back to their pre-merge blobs), so it
+    // stays correct even if other commits landed after the merge.
+    const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+    if (!mergeSha) {
+      console.warn(`${LOG_PREFIX} cannot auto-revert ${exec.id.slice(0, 8)} (${stage}): no merge_sha on execution metadata`);
+      return { ok: false, error: 'no merge_sha on execution metadata — cannot revert merged PR' };
+    }
+    const revertBranch = `revert/auto-${exec.id.slice(0, 8)}-${Date.now()}`;
+    const title = `Revert: auto-fix ${exec.id.slice(0, 8)} failed ${stage} verification`;
+    const body =
+      `Automated rollback. Execution \`${exec.id}\` (${exec.pr_url}) failed ${stage} ` +
+      `verification after merge; reverting merge commit \`${mergeSha}\` to restore the ` +
+      `last-good state.`;
+    const revertPr = await createRevertPullRequest(GITHUB_REPO, mergeSha, revertBranch, title, body);
+    const merged = await mergePullRequest(GITHUB_REPO, revertPr.number, title, 'squash');
+    if (!merged.merged) {
+      // Revert PR is open but couldn't auto-merge (e.g. required checks pending
+      // or branch protection). Leave it for a human and report its URL — the
+      // rollback is staged, not silently dropped.
+      console.warn(`${LOG_PREFIX} revert PR #${revertPr.number} for ${exec.id.slice(0, 8)} created but auto-merge failed: ${merged.message}`);
+      return { ok: true, revert_pr_url: revertPr.html_url, error: `revert PR open but auto-merge failed: ${merged.message}` };
+    }
+    console.log(`${LOG_PREFIX} auto-reverted ${exec.id.slice(0, 8)} via PR #${revertPr.number} (merged ${merged.sha?.slice(0, 8) || '?'})`);
+    return { ok: true, revert_pr_url: revertPr.html_url, reverted_on_main: true };
+  } catch (err) {
+    return { ok: false, error: String(err) };
+  }
+}
+
+// =============================================================================
+// Child execution spawn
+// =============================================================================
+
+/**
+ * VTID-03843: the subset of a parent execution's metadata a self-heal child
+ * must inherit. Only the on-ramp LLM override keys (VTID-03820) — never the
+ * whole metadata blob, so the child keeps its own `source` and never carries
+ * stale per-attempt fields (bridge_stage, merge_sha, ...) from the parent.
+ *
+ * Without this, a retry child of an operator on-ramp execution silently fell
+ * back to the worker policy model: extractLlmOnRampOverride() (execute.ts)
+ * reads the CHILD row's metadata, and the child was inserted with none of
+ * the parent's override. Observed live on staging 2026-09-13 (execution
+ * fb3d86f8 — child of beeb2c55 — ran without `llm_on_ramp`).
+ */
+export function inheritedOnRampMetadata(
+  parentMetadata: Record<string, unknown> | null | undefined,
+): Record<string, unknown> {
+  const out: Record<string, unknown> = {};
+  if (!parentMetadata || typeof parentMetadata !== 'object') return out;
+  const onRamp = parentMetadata.llm_on_ramp;
+  if (typeof onRamp === 'string' && onRamp.length > 0) out.llm_on_ramp = onRamp;
+  const override = parentMetadata.llm_on_ramp_override;
+  if (override && typeof override === 'object' && !Array.isArray(override)) {
+    out.llm_on_ramp_override = override;
+  }
+  // VTID-04006: a self-heal child runs on the same executor as its parent —
+  // an agent-mode parent's retry must not silently drop back to single-shot.
+  const executor = parentMetadata.executor;
+  if (executor === 'agent' || executor === 'single-shot') out.executor = executor;
+  return out;
+}
+
+/** VTID-04005/04006: cap the failure evidence carried onto a child row. */
+const PARENT_FAILURE_MAX_CHARS = 8000;
+
+/**
+ * VTID-04017 (W3): fix mode. When CI fails on a PR the AGENT executor
+ * opened, the retry does not start over: the PR stays open, and the child
+ * execution is told which branch/PR to continue on. The agent runner clones
+ * that branch, gets the failing jobs' log excerpt (VTID-04005) as its task,
+ * fixes, re-runs tsc/jest, and pushes to the same branch so the same PR
+ * goes green. Rounds are still capped by `max_auto_fix_depth`.
+ *
+ * Only for stage 'ci' (the PR is unmerged — a merged-and-broken change is
+ * still reverted), only for agent-mode parents (the single-shot executor
+ * cannot read a branch), and never in DRY_RUN (there is no real PR).
+ */
+export interface FixModeInfo {
+  branch: string;
+  pr_number: number;
+  pr_url: string;
+  parent_execution_id: string;
+}
+
+export function isFixModeEligible(
+  exec: Pick<ExecutionRow, 'branch' | 'pr_number' | 'pr_url' | 'metadata'>,
+  stage: FailureStage,
+  dryRun: boolean = DRY_RUN,
+): boolean {
+  if (stage !== 'ci' || dryRun) return false;
+  if (!exec.metadata || exec.metadata.executor !== 'agent') return false;
+  return typeof exec.pr_number === 'number' && exec.pr_number > 0
+    && typeof exec.branch === 'string' && exec.branch.length > 0
+    && typeof exec.pr_url === 'string' && exec.pr_url.length > 0;
+}
+
+export function buildFixModeInfo(exec: Pick<ExecutionRow, 'id' | 'branch' | 'pr_number' | 'pr_url'>): FixModeInfo {
+  return { branch: String(exec.branch), pr_number: Number(exec.pr_number), pr_url: String(exec.pr_url), parent_execution_id: exec.id };
+}
+
+/** Read a child row's fix-mode target; null when absent or malformed. */
+export function parseFixMode(metadata: Record<string, unknown> | null | undefined): FixModeInfo | null {
+  const raw = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).fix_mode : null;
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) return null;
+  const o = raw as Record<string, unknown>;
+  const branch = typeof o.branch === 'string' ? o.branch.trim() : '';
+  const prNumber = typeof o.pr_number === 'number' ? o.pr_number : Number.parseInt(String(o.pr_number ?? ''), 10);
+  const prUrl = typeof o.pr_url === 'string' ? o.pr_url : '';
+  const parent = typeof o.parent_execution_id === 'string' ? o.parent_execution_id : '';
+  if (!branch || !Number.isFinite(prNumber) || prNumber <= 0 || !prUrl || !parent) return null;
+  return { branch, pr_number: prNumber, pr_url: prUrl, parent_execution_id: parent };
+}
+
+export async function spawnChildExecution(
+  s: SupaConfig,
+  parent: ExecutionRow,
+  report: TriageReport,
+  cooldownMinutes: number,
+  /** VTID-04005/04006: the parent's failure reason — since VTID-04005 this
+   *  carries the failing CI jobs' real log excerpts. Stored as
+   *  `metadata.parent_failure` so the agent executor's task prompt (and any
+   *  reader of the row) sees the evidence, not only the triage summary. */
+  parentFailure?: string | null,
+  /** VTID-04017: continue on the parent's PR branch instead of starting over. */
+  fixMode?: FixModeInfo | null,
+): Promise<{ ok: boolean; execution_id?: string; error?: string }> {
+  const childId = randomUUID();
+  const now = new Date();
+  const executeAfter = new Date(now.getTime() + cooldownMinutes * 60 * 1000);
+  const ins = await supa(s, `/rest/v1/dev_autopilot_executions`, {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      id: childId,
+      finding_id: parent.finding_id,
+      plan_version: parent.plan_version,
+      status: 'cooling',
+      approved_at: now.toISOString(),
+      execute_after: executeAfter.toISOString(),
+      auto_fix_depth: (parent.auto_fix_depth || 0) + 1,
+      parent_execution_id: parent.id,
+      triage_report: report,
+      metadata: {
+        // VTID-03843: inherited keys first so the bridge's own identity
+        // fields below always win if a parent ever carried a same-named key.
+        ...inheritedOnRampMetadata(parent.metadata),
+        source: 'dev-autopilot-bridge',
+        parent_execution_id: parent.id,
+        triage_session_id: report.session_id,
+        triage_confidence: report.confidence,
+        ...(parentFailure ? { parent_failure: parentFailure.slice(0, PARENT_FAILURE_MAX_CHARS) } : {}),
+        ...(fixMode ? { fix_mode: fixMode } : {}),
+      },
+    }),
+  });
+  if (!ins.ok) {
+    // VTID-AUTOPILOT-RACE: the partial unique index
+    // `dev_autopilot_executions_finding_inflight_uniq` rejects this child
+    // INSERT if the parent's terminal-state transition just raced an
+    // autoApproveTick that approved a fresh fix=0 exec for the same
+    // finding (or another bridge call already spawned a child for the
+    // same parent). The other inflight exec will carry the retry; this
+    // bridge call cleanly skips. Returning ok=true with a sentinel
+    // execution_id lets the caller log the outcome rather than treat the
+    // skip as a hard failure.
+    if (ins.status === 409 && /23505|finding_inflight_uniq/.test(ins.error || '')) {
+      console.log(
+        `${LOG_PREFIX} child insert skipped for parent ${parent.id.slice(0, 8)}: another inflight exec already covers finding ${parent.finding_id.slice(0, 8)}`,
+      );
+      return { ok: false, error: 'inflight_unique_skip' };
+    }
+    return { ok: false, error: `child insert failed: ${ins.error}` };
+  }
+  return { ok: true, execution_id: childId };
+}
+
+// =============================================================================
+// Main entry point
+// =============================================================================
+
+/**
+ * VTID-04378: a `failed_escalated` execution is terminal for its ledger VTID —
+ * nothing will retry it without a human. The bridge writes that status with a
+ * raw PATCH, which bypassed applyExecTerminalSideEffects, so the on-ramp /
+ * auto-approve VTID sat `in_progress` forever. `reverted` is deliberately NOT
+ * closed here: a child execution carries the same finding and VTID onward.
+ * Lazy require: execute already requires this module the same way.
+ */
+function closeLedgerForEscalation(s: SupaConfig, executionId: string): void {
+  try {
+    // eslint-disable-next-line @typescript-eslint/no-var-requires
+    const { applyExecTerminalSideEffects } = require('./dev-autopilot-execute');
+    applyExecTerminalSideEffects(s, executionId, 'failed_escalated');
+  } catch (err) {
+    console.error(`${LOG_PREFIX} ledger close for escalated ${executionId.slice(0, 8)} failed:`, err);
+  }
+}
+
+export async function bridgeFailureToSelfHealing(input: BridgeInput): Promise<BridgeResult> {
+  const s = getSupabase();
+  if (!s) {
+    return { ok: false, outcome: 'no_supabase', execution_id: input.execution_id, error: 'Supabase not configured' };
+  }
+
+  const exec = await loadExecution(s, input.execution_id);
+  if (!exec) {
+    return { ok: false, outcome: 'no_execution', execution_id: input.execution_id, error: 'execution not found' };
+  }
+
+  // Idempotency: if we've already written a triage_report for this execution,
+  // bail rather than spawning another triage session on top.
+  if (exec.triage_report && Object.keys(exec.triage_report).length > 0) {
+    return {
+      ok: true,
+      outcome: 'already_bridged',
+      execution_id: exec.id,
+      self_healing_vtid: exec.self_healing_vtid || undefined,
+    };
+  }
+
+  // ENV-ERROR SHORT-CIRCUIT (2026-04-28 incident): when the failure is
+  // environmental (binary missing, OOM, network, container recycle), running
+  // triage produces a useless report ("install the binary") and the
+  // reconciler then spawns a SELF-HEAL retry VTID per failure. The retry
+  // execution hits the same blocker → infinite loop of stuck in_progress
+  // rows on the operator's Tasks board.
+  //
+  // Skip triage entirely. Mark the execution failed_escalated, write a
+  // self_healing_log entry classified `environmental_blocker` so the
+  // reconciler also short-circuits (see self-healing-reconciler.ts), and
+  // emit an OASIS event so an operator sees the infrastructure problem
+  // instead of a wall of phantom retries.
+  if (isEnvironmentalBlocker(input.error)) {
+    console.warn(`${LOG_PREFIX} environmental blocker for ${exec.id.slice(0, 8)}: ${input.error?.slice(0, 120)} — skipping triage + retry`);
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'failed_escalated',
+        failure_stage: input.failure_stage,
+        failure_event_id: input.failure_event_id || null,
+        metadata: {
+          ...(exec.metadata || {}),
+          bridge_outcome: 'env_blocker_skip_triage',
+          bridge_stage: input.failure_stage,
+          env_error: input.error,
+        },
+        completed_at: new Date().toISOString(),
+      }),
+    });
+    closeLedgerForEscalation(s, exec.id);
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      exec,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'environmental_blocker',
+      confidence: 1.0,
+      diagnosis: {
+        summary: `Environmental blocker — triage + retry skipped to prevent SELF-HEAL retry loop. Fix the host environment, not the code.`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        stage: input.failure_stage,
+        error: input.error,
+      },
+      outcome: 'escalated',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
+    });
+    await emitOasisEvent({
+      vtid: BRIDGE_VTID,
+      type: 'dev_autopilot.execution.escalated',
+      source: 'dev-autopilot-bridge',
+      status: 'error',
+      message: `Execution ${exec.id.slice(0, 8)} env blocker — operator action needed (no autonomous retry)`,
+      payload: { execution_id: exec.id, stage: input.failure_stage, error: input.error, env_blocker: true },
+    });
+    return {
+      ok: false,
+      outcome: 'env_blocker',
+      execution_id: exec.id,
+      error: input.error,
+    };
+  }
+
+  const cfg = await loadConfig(s);
+  const maxDepth = cfg?.max_auto_fix_depth ?? 2;
+  const cooldown = cfg?.cooldown_minutes ?? 10;
+
+  // 1. Run triage in the appropriate mode.
+  const triageMode: TriageMode =
+    input.failure_stage === 'verification' ? 'verification_failure' : 'post_failure';
+  const triageVtid = `VTID-DA-${exec.id.slice(0, 8)}`;
+
+  const triage = await spawnTriageAgent({
+    mode: triageMode,
+    vtid: triageVtid,
+    endpoint: exec.pr_url || `finding:${exec.finding_id}`,
+    failure_class: input.failure_stage,
+    original_diagnosis: {
+      execution_id: exec.id,
+      finding_id: exec.finding_id,
+      plan_version: exec.plan_version,
+      branch: exec.branch,
+      pr_url: exec.pr_url,
+      error: input.error,
+      metadata: exec.metadata,
+    },
+    all_attempts: exec.auto_fix_depth,
+    reconciler_history: {
+      auto_fix_depth: exec.auto_fix_depth,
+      parent_execution_id: exec.parent_execution_id,
+    },
+    verification_result: input.verification_result,
+    blast_radius: input.blast_radius,
+  });
+
+  if (!triage.ok || !triage.report) {
+    // Triage itself failed — mark escalated so a human can take it.
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'failed_escalated',
+        failure_stage: input.failure_stage,
+        failure_event_id: input.failure_event_id || null,
+        metadata: {
+          ...(exec.metadata || {}),
+          bridge_error: triage.error || 'triage failed',
+          bridge_stage: input.failure_stage,
+        },
+        completed_at: new Date().toISOString(),
+      }),
+    });
+    closeLedgerForEscalation(s, exec.id);
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      exec,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'dev_autopilot_triage_failed',
+      confidence: 0,
+      diagnosis: {
+        summary: `Triage failed: ${triage.error || 'unknown error'}`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        stage: input.failure_stage,
+        triage_error: triage.error,
+      },
+      outcome: 'escalated',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
+    });
+    await emitOasisEvent({
+      vtid: BRIDGE_VTID,
+      type: 'dev_autopilot.execution.escalated',
+      source: 'dev-autopilot-bridge',
+      status: 'error',
+      message: `Execution ${exec.id.slice(0, 8)} escalated: triage ${triage.error || 'failed'}`,
+      payload: { execution_id: exec.id, stage: input.failure_stage, error: triage.error },
+    });
+    return {
+      ok: false,
+      outcome: 'triage_failed',
+      execution_id: exec.id,
+      error: triage.error,
+    };
+  }
+
+  const report = triage.report;
+
+  // VTID-04017: fix mode — an agent PR that failed CI is NOT closed; the
+  // child continues on its branch. Escalation (below) also leaves it open,
+  // red, for the human it is escalated to.
+  const fixMode = isFixModeEligible(exec, input.failure_stage) ? buildFixModeInfo(exec) : null;
+
+  // 2. Attempt auto-revert (best-effort — failure here shouldn't block the
+  //    bridge from recording the triage report + escalating).
+  const revert: { ok: boolean; revert_pr_url?: string; error?: string; reverted_on_main?: boolean } = fixMode
+    ? { ok: true }
+    : await revertExecutionPR(exec, input.failure_stage);
+  if (fixMode) console.log(`${LOG_PREFIX} fix mode for ${exec.id.slice(0, 8)}: PR #${fixMode.pr_number} stays open on ${fixMode.branch}`);
+  if (!revert.ok) {
+    // Log-only: revert failure is non-fatal to the bridge, and the escalation
+    // payload below captures the error. No dedicated event type exists for
+    // this case — if it proves common, add `dev_autopilot.execution.revert_failed`
+    // to CicdEventType and emit here.
+    console.warn(`${LOG_PREFIX} revert failed for ${exec.id}: ${revert.error}`);
+  } else if (revert.revert_pr_url) {
+    await emitOasisEvent({
+      vtid: BRIDGE_VTID,
+      type: 'dev_autopilot.execution.reverted',
+      source: 'dev-autopilot-bridge',
+      status: 'info',
+      message: `Execution ${exec.id.slice(0, 8)} reverted via ${revert.revert_pr_url}`,
+      payload: { execution_id: exec.id, stage: input.failure_stage, revert_pr_url: revert.revert_pr_url },
+    });
+  }
+
+  // 3. Decide next action: spawn child vs escalate. Route through the pure
+  //    decideBridgeAction with the failure stage so the per-stage confidence
+  //    bar (Step 4) actually applies in production — previously the live path
+  //    inlined a single global threshold and the helper was only unit-tested.
+  const retryThreshold = resolveRetryThreshold(input.failure_stage);
+  const decision = decideBridgeAction({
+    confidence_numeric: report.confidence_numeric,
+    auto_fix_depth: exec.auto_fix_depth || 0,
+    max_auto_fix_depth: maxDepth,
+    kill_switch: !!cfg?.kill_switch,
+    failure_stage: input.failure_stage,
+  });
+  const canRetry = decision.action === 'spawn_child';
+
+  const patchBase: Record<string, unknown> = {
+    failure_stage: input.failure_stage,
+    failure_event_id: input.failure_event_id || null,
+    self_healing_vtid: triageVtid,
+    triage_report: report,
+    revert_pr_url: revert.revert_pr_url || null,
+    metadata: {
+      ...(exec.metadata || {}),
+      bridge_stage: input.failure_stage,
+      bridge_confidence: report.confidence,
+      bridge_reason_decision: canRetry ? 'child_spawned' : 'escalated',
+      bridge_fix_mode: !!fixMode,
+      // VTID-04280: the bridge closed this PR itself — record it so the
+      // PR-flood guard does not refuse this row's own self-heal child.
+      ...(isRealCiClose(input.failure_stage, revert.revert_pr_url)
+        ? { [PR_CLOSED_UNMERGED_KEY]: new Date().toISOString() }
+        : {}),
+      // VTID-04428: the merged change was reverted on main — its PR no longer
+      // blocks this row's self-heal child (the flood guard used to refuse it).
+      ...(isRevertMergedOnMain(input.failure_stage, revert)
+        ? { [PR_REVERTED_KEY]: new Date().toISOString() }
+        : {}),
+    },
+  };
+
+  if (canRetry) {
+    const child = await spawnChildExecution(s, exec, report, cooldown, input.error, fixMode);
+    if (!child.ok) {
+      // Couldn't spawn child — escalate instead.
+      await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          ...patchBase,
+          status: 'failed_escalated',
+          completed_at: new Date().toISOString(),
+        }),
+      });
+      closeLedgerForEscalation(s, exec.id);
+      await writeSelfHealingLogEntry(s, {
+        execution_id: exec.id,
+        exec,
+        endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+        failure_class: 'dev_autopilot_child_spawn_failed',
+        confidence: report.confidence_numeric,
+        diagnosis: {
+          summary: `Child spawn failed: ${child.error}`,
+          execution_id: exec.id,
+          finding_id: exec.finding_id,
+          stage: input.failure_stage,
+          triage_summary: report.root_cause_hypothesis,
+          spawn_error: child.error,
+        },
+        outcome: 'escalated',
+        attempt_number: (exec.auto_fix_depth || 0) + 1,
+      });
+      await emitOasisEvent({
+        vtid: BRIDGE_VTID,
+        type: 'dev_autopilot.execution.escalated',
+        source: 'dev-autopilot-bridge',
+        status: 'error',
+        message: `Child spawn failed for ${exec.id.slice(0, 8)}: ${child.error}`,
+        payload: { execution_id: exec.id, stage: input.failure_stage, error: child.error },
+      });
+      return {
+        ok: false,
+        outcome: 'escalated',
+        execution_id: exec.id,
+        triage_report: report,
+        error: child.error,
+      };
+    }
+
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        ...patchBase,
+        status: 'reverted',
+        completed_at: new Date().toISOString(),
+      }),
+    });
+
+    // Record the in-flight retry on the self-healing log so the UI shows
+    // the autopilot is actively trying. Outcome 'pending' (the table's
+    // default for in-progress repairs).
+    await writeSelfHealingLogEntry(s, {
+      execution_id: exec.id,
+      exec,
+      endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+      failure_class: 'dev_autopilot_self_heal_in_progress',
+      confidence: report.confidence_numeric,
+      diagnosis: {
+        summary: `Auto-retry: depth ${(exec.auto_fix_depth || 0) + 1}/${maxDepth} — ${report.root_cause_hypothesis || 'no hypothesis'}`,
+        execution_id: exec.id,
+        finding_id: exec.finding_id,
+        child_execution_id: child.execution_id,
+        stage: input.failure_stage,
+        triage_summary: report.root_cause_hypothesis,
+      },
+      outcome: 'pending',
+      attempt_number: (exec.auto_fix_depth || 0) + 1,
+    });
+
+    await emitOasisEvent({
+      vtid: BRIDGE_VTID,
+      type: 'dev_autopilot.execution.self_heal_injected',
+      source: 'dev-autopilot-bridge',
+      status: 'info',
+      message: `Self-heal child ${child.execution_id!.slice(0, 8)} spawned from ${exec.id.slice(0, 8)} (depth=${(exec.auto_fix_depth || 0) + 1}/${maxDepth}, confidence=${report.confidence})`,
+      payload: {
+        parent_execution_id: exec.id,
+        child_execution_id: child.execution_id,
+        depth: (exec.auto_fix_depth || 0) + 1,
+        max_depth: maxDepth,
+        triage_confidence: report.confidence,
+        stage: input.failure_stage,
+        fix_mode: !!fixMode,
+        ...(fixMode ? { fix_branch: fixMode.branch, fix_pr_number: fixMode.pr_number } : {}),
+      },
+    });
+
+    return {
+      ok: true,
+      outcome: 'self_heal_injected',
+      execution_id: exec.id,
+      child_execution_id: child.execution_id,
+      self_healing_vtid: triageVtid,
+      revert_pr_url: revert.revert_pr_url,
+      triage_report: report,
+    };
+  }
+
+  // Escalate: low confidence OR depth cap reached OR kill switch armed.
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      ...patchBase,
+      status: 'failed_escalated',
+      completed_at: new Date().toISOString(),
+    }),
+  });
+  closeLedgerForEscalation(s, exec.id);
+
+  await writeSelfHealingLogEntry(s, {
+    execution_id: exec.id,
+    exec,
+    endpoint: `dev_autopilot.execution.${input.failure_stage}`,
+    failure_class: cfg?.kill_switch ? 'dev_autopilot_kill_switch_blocked'
+      : (exec.auto_fix_depth || 0) >= maxDepth ? 'dev_autopilot_max_retries_reached'
+      : 'dev_autopilot_low_confidence',
+    confidence: report.confidence_numeric,
+    diagnosis: {
+      summary: `Escalated: ${cfg?.kill_switch ? 'kill switch armed'
+        : (exec.auto_fix_depth || 0) >= maxDepth ? `max retries reached (${exec.auto_fix_depth}/${maxDepth})`
+        : `confidence ${report.confidence_numeric.toFixed(2)} below ${input.failure_stage} threshold ${retryThreshold}`}`,
+      execution_id: exec.id,
+      finding_id: exec.finding_id,
+      stage: input.failure_stage,
+      triage_summary: report.root_cause_hypothesis,
+      auto_fix_depth: exec.auto_fix_depth || 0,
+      max_depth: maxDepth,
+      revert_pr_url: revert.revert_pr_url,
+    },
+    outcome: 'escalated',
+    attempt_number: (exec.auto_fix_depth || 0) + 1,
+  });
+
+  const escalationReason =
+    cfg?.kill_switch ? 'kill_switch_armed'
+    : (exec.auto_fix_depth || 0) >= maxDepth ? 'depth_cap_reached'
+    : 'low_confidence';
+
+  await emitOasisEvent({
+    vtid: BRIDGE_VTID,
+    type: 'dev_autopilot.execution.escalated',
+    source: 'dev-autopilot-bridge',
+    status: 'warning',
+    message: `Execution ${exec.id.slice(0, 8)} escalated to human review — ${escalationReason} (depth=${exec.auto_fix_depth || 0}/${maxDepth}, confidence=${report.confidence})`,
+    payload: {
+      execution_id: exec.id,
+      reason: escalationReason,
+      depth: exec.auto_fix_depth || 0,
+      max_depth: maxDepth,
+      triage_confidence: report.confidence,
+      stage: input.failure_stage,
+      ...(fixMode ? { pr_left_open: fixMode.pr_url } : {}),
+    },
+  });
+
+  return {
+    ok: true,
+    outcome: 'escalated',
+    execution_id: exec.id,
+    self_healing_vtid: triageVtid,
+    revert_pr_url: revert.revert_pr_url,
+    triage_report: report,
+  };
+}
+
+// =============================================================================
+// Decision helper (pure — unit-testable)
+// =============================================================================
+
+export interface DecisionInput {
+  confidence_numeric: number;
+  auto_fix_depth: number;
+  max_auto_fix_depth: number;
+  kill_switch: boolean;
+  /** Where the fix failed — selects the per-stage confidence bar (Step 4). */
+  failure_stage?: FailureStage;
+  /** Optional class override (e.g. 'environmental_blocker' never retries). */
+  failure_class?: string;
+}
+
+export type BridgeDecision =
+  | { action: 'spawn_child' }
+  | { action: 'escalate'; reason: 'low_confidence' | 'depth_cap_reached' | 'kill_switch_armed' };
+
+export function decideBridgeAction(input: DecisionInput): BridgeDecision {
+  if (input.kill_switch) return { action: 'escalate', reason: 'kill_switch_armed' };
+  if (input.auto_fix_depth >= input.max_auto_fix_depth) return { action: 'escalate', reason: 'depth_cap_reached' };
+  const threshold = resolveRetryThreshold(input.failure_stage, input.failure_class);
+  if (input.confidence_numeric < threshold) return { action: 'escalate', reason: 'low_confidence' };
+  return { action: 'spawn_child' };
+}
+
+export { CHILD_SPAWN_CONFIDENCE_THRESHOLD, RETRY_THRESHOLD_BY_STAGE, LOG_PREFIX, DRY_RUN };

@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-04600",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive", "path": "/alive" },
+    { "kind": "existing", "ref": "npx jest test/memory-verification-conformance.test.ts", "cwd": "services/gateway",
+      "reason": "VTID-04600 is the verification suite itself: layer A runs as this conformance test, layer B (scripts/memory-verification/run-live.mjs) is a script run by hand against staging and deploys nothing" }
+  ]
+}

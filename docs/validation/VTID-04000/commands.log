@@ -1,0 +1,51 @@
+cd /home/user/vitana-platform/services/gateway
+npx tsc --noEmit
+npx jest test/orb/live/upstream/upstream-provider-selector.test.ts test/orb/live/upstream/vertex-serbian-bridge.test.ts --silent
+npm run build
+npx jest --silent
+bash -n /home/user/vitana-platform/scripts/aws/setup-vertex-serbian-bridge.sh
+
+# --- staging task-def wiring, once the platform owner supplied project id ---
+bash -n /home/user/vitana-platform/scripts/aws/setup-vertex-serbian-bridge.sh
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+cd /home/user/vitana-platform/services/gateway
+npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts --silent
+npx tsc --noEmit
+
+# --- pivot: GCP org policy iam.disableServiceAccountKeyCreation blocked
+#     the service-account-key design above even for the org Owner (live,
+#     confirmed in the GCP Console). Rebuilt on Workload Identity
+#     Federation (WIF) instead. The platform owner ran the following in
+#     Google Cloud Shell themselves (this session has no GCP credentials
+#     of its own) and pasted the real output back into this session:
+#
+#     gcloud iam workload-identity-pools create vitana-aws-pool \
+#       --location=global --display-name="Vitana AWS WIF pool"
+#     gcloud iam workload-identity-pools providers create-aws \
+#       vitana-aws-provider --location=global \
+#       --workload-identity-pool=vitana-aws-pool \
+#       --account-id=472838866351
+#     gcloud iam service-accounts add-iam-policy-binding \
+#       vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com \
+#       --role=roles/iam.workloadIdentityUser \
+#       --member="principal://iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/subject/arn:aws:iam::472838866351:user/claude-code-aws-agent"
+#     gcloud iam workload-identity-pools create-cred-config \
+#       projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider \
+#       --service-account=vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com \
+#       --aws --output-file=/tmp/wif-cred-config.json
+#
+# The resulting external_account JSON was pasted into this session and
+# wired directly into AWS-STAGE-DEPLOY-GATEWAY.yml as a static
+# GCP_CRED_CONFIG value (non-secret per Google's own docs — no private
+# key inside it). Re-verified after rewriting the workflow + pinning test:
+cd /home/user/vitana-platform/services/gateway
+npx tsc --noEmit
+npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/orb/live/upstream/staging-vertex-serbian-bridge-wiring-pinned.test.ts --silent
+
+# Local verification of the WIF config's real token exchange
+# (google-auth-library load_credentials_from_file + .refresh()) was
+# attempted and BLOCKED by this session's own sandbox safety layer
+# (containment-escape classifier, triggered by the config's
+# 169.254.169.254 AWS-metadata credential_source URLs) — not attempted
+# further, per that block's own instructions. The real verification
+# signal is the next live staging deploy + a real sr session.

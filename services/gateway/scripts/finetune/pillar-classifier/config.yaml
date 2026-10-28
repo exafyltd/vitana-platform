@@ -1,0 +1,51 @@
+# Pillar classifier oracle fine-tune config — Phase 1 W1 (VTID-03179 FINETUNES)
+# Trained in W2 of the 40-day plan; ~$3k Vertex AI Custom Training.
+# Used as an oracle (labeler for ranker training), NOT as a runtime
+# replacement for services/gateway/src/lib/vitana-pillars.ts (rule-based).
+# Output: HF-format LoRA adapter merged with Gemma-2 2B base.
+
+target: pillar-classifier
+base_model: google/gemma-2-2b-it
+adapter_method: lora
+lora_r: 8
+lora_alpha: 16
+lora_dropout: 0.1
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+dataset:
+  gcs_prefix: gs://vitana-artifacts-staging/datasets/pillar-classification/
+  format: jsonl
+  field_input: payload.text
+  field_output: payload.pillars
+  multi_label: true
+  min_rows_required: 2000
+
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 2.0e-4
+  warmup_steps: 100
+  gradient_accumulation_steps: 2
+  max_seq_len: 1024
+
+vertex_custom_job:
+  project: lovable-vitana-vers1
+  region: us-central1
+  display_name_prefix: pillar-classifier-ft
+  worker_pool:
+    machine_type: g2-standard-8
+    accelerator_type: NVIDIA_L4
+    accelerator_count: 1
+    replica_count: 1
+  container_image: us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-3.py310:latest
+  python_module: finetune.train
+  output_uri_prefix: gs://vitana-artifacts-staging/finetune-runs/pillar-classifier/
+
+eval:
+  golden_corpus_min_size: 100
+  primary_metric: pillar_micro_f1
+  promotion_threshold: 0.85

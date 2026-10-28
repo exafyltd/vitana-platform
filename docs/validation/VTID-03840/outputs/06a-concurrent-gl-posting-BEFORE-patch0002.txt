@@ -1,0 +1,21 @@
+# 06 — concurrent GL posting: 12 parallel add+submit journal entries (3 lines each: Cash / Sales / Output VAT), separate subprocesses, one PG16
+  0 ok ce2c9194-303  1099ms
+  1 ok eff353d0-93b  1108ms
+  2 add-failed   | rpclaw_lib/db.py", line 273, in _ensure_pg_decimal_sum     cur.execute(   File "/usr/local/lib/python3.11/dist-packages/psycopg2/extras.py", line 146, in execute     return super().execute(query, vars)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ psycopg2.errors.InternalError_: tuple concurrently updated 
+  3 ok 4096d44b-acb  1140ms
+  4 submit-failed 8b61cec9-aa8  | rpclaw_lib/db.py", line 273, in _ensure_pg_decimal_sum     cur.execute(   File "/usr/local/lib/python3.11/dist-packages/psycopg2/extras.py", line 146, in execute     return super().execute(query, vars)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ psycopg2.errors.InternalError_: tuple concurrently updated 658ms
+  5 add-failed   | rpclaw_lib/db.py", line 273, in _ensure_pg_decimal_sum     cur.execute(   File "/usr/local/lib/python3.11/dist-packages/psycopg2/extras.py", line 146, in execute     return super().execute(query, vars)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ psycopg2.errors.InternalError_: tuple concurrently updated 
+  6 submit-failed 16ddc0c4-22f  | rpclaw_lib/db.py", line 273, in _ensure_pg_decimal_sum     cur.execute(   File "/usr/local/lib/python3.11/dist-packages/psycopg2/extras.py", line 146, in execute     return super().execute(query, vars)            ^^^^^^^^^^^^^^^^^^^^^^^^^^^^ psycopg2.errors.InternalError_: tuple concurrently updated 1106ms
+  7 ok 4053ae8f-393  1092ms
+  8 ok 963b49b1-0c6  1098ms
+  9 ok d9c81e53-1a0  1130ms
+  10 ok 6b9edd37-5cf  960ms
+  11 ok 9116675f-7fa  1154ms
+ok=8/12 wall=1221ms (serial estimate ~4320ms from 05-latency p50s)
+gl_entry (count, sum debit, sum credit) before: (42, Decimal('2042.00'), Decimal('2042.00')) after: (66, Decimal('8312.00'), Decimal('8312.00'))
+new gl rows=24 (expected 24); debit-credit delta of new rows = 0.00 (expected 0)
+submitted JEs with 'concurrent2' remark: 8
+duplicate naming_series: none
+unbalanced JEs: 0
+orphan gl rows (any voucher type): 0
+submitted JEs with != 3 GL rows: none

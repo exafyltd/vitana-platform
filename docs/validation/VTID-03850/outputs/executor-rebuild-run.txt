@@ -1,0 +1,10 @@
+AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml — workflow_dispatch from main @ 8131af9248cf1a932ee7cbd27358432a751167a1
+run 34762145357 (https://github.com/exafyltd/vitana-platform/actions/runs/34762145357), conclusion: success, 2026-09-13T14:15:40Z → 14:19:02Z
+reason: VTID-03850: rebuild autopilot-executor on current main (last image 2026-07-24) and upsert BEDROCK_ROLE_ARN + AWS_BEDROCK_REGION + DEEPSEEK_API_KEY ...
+
+Register step log (verbatim):
+  Current: arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-autopilot-executor:5
+  Executor task role (Bedrock activation): arn:aws:iam::472838866351:role/vitana-ecs-task-role
+  DEEPSEEK_API_KEY <- Secrets Manager: vitana/gateway/staging/deepseek-api-key (by name; same region)
+  Registered arn:aws:ecs:eu-central-1:472838866351:task-definition/vitana-autopilot-executor:6 — the next RunTask dispatch (dispatchExecutorJobAws) picks this up automatically.
+  Image: 472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/autopilot-executor:8131af9248cf

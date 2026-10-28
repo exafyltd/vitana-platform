@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04969",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/index.ts",
+    "services/gateway/src/routes/commerce-mcp.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/src/services/delegation-guard.ts",
+    "services/gateway/src/services/mcp-client-allowlist.ts",
+    "services/gateway/src/types/cicd.ts",
+    "services/gateway/test/commerce-mcp.test.ts",
+    "services/gateway/test/vtid-04941-commerce-mcp-automation.test.ts",
+    "services/gateway/test/vtid-04968-*.test.ts",
+    "services/gateway/test/vtid-04969-*.test.ts",
+    "supabase/migrations/20261008100000_vtid_04968_mcp_oauth_client_info.sql",
+    "docs/validation/VTID-04968/**",
+    "docs/validation/VTID-04969/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

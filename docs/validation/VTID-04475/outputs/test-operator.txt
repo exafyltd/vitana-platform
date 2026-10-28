@@ -1,0 +1,8 @@
+    ✓ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (179 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       19 passed, 19 total
+Snapshots:   0 total
+Time:        6.41 s, estimated 10 s
+Ran all test suites matching /test\/vtid-04465-operator-pipeline-regression.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

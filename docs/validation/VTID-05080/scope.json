@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05080",
+  "kind": "fix",
+  "paths": [
+    ".github/workflows/REGEN-SCREENS-CATALOG.yml",
+    "scripts/ci/regen-screens-catalog-pr.sh",
+    "services/gateway/scripts/regen-screens-catalog.mjs",
+    "services/gateway/package.json",
+    "services/gateway/test/vtid-05080-*.test.ts",
+    "docs/validation/VTID-05080/**",
+    "docs/CHANGELOG.md"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

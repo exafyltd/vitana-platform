@@ -1,0 +1,69 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  console.warn
+    [jev] community_intent_kind shadow failed: boom
+      101 |     });
+      102 |   } catch (err: any) {
+    > 103 |     console.warn(`[jev] ${c.gate} shadow failed: ${err?.message || err}`);
+          |             ^
+      104 |     return null;
+      105 |   }
+      106 | }
+      at runShadow (src/services/jev/gates/community-class-a-gates.ts:103:13)
+      at Object.<anonymous> (test/vtid-04879-community-class-a.test.ts:207:15)
+  console.warn
+    [jev] community_intent_kind shadow failed: db down
+      101 |     });
+      102 |   } catch (err: any) {
+    > 103 |     console.warn(`[jev] ${c.gate} shadow failed: ${err?.message || err}`);
+          |             ^
+      104 |     return null;
+      105 |   }
+      106 | }
+      at runShadow (src/services/jev/gates/community-class-a-gates.ts:103:13)
+      at Object.<anonymous> (test/vtid-04879-community-class-a.test.ts:214:5)
+  console.warn
+    [jev] community_worth_remembering outcome failed: db down
+      182 |         await (d.recordOutcome ?? recordJevShadowOutcome)(id, stored ? 'extractor_stored_facts' : 'extractor_stored_nothing', jevWorth === stored);
+      183 |       } catch (err: any) {
+    > 184 |         console.warn(`[jev] ${COMMUNITY_MEMORY_GATE} outcome failed: ${err?.message || err}`);
+          |                 ^
+      185 |       }
+      186 |     },
+      187 |   };
+      at Object.settle (src/services/jev/gates/community-class-a-gates.ts:184:17)
+      at Object.<anonymous> (test/vtid-04879-community-class-a.test.ts:219:5)
+PASS test/vtid-04879-community-class-a.test.ts
+  VTID-04879 decisions
+    ✓ all four are member-content Class A decisions on the internal/autopilot planes, PII redacted (5 ms)
+    ✓ labels match the existing logic exactly (1 ms)
+  VTID-04879 gates skip unless shadow + community + tenant
+    ✓ mode off, community off, or no tenant: no Jev call, no row (2 ms)
+    ✓ the gate helper reads mode and community together (1 ms)
+  VTID-04879 C1 intent kind
+    ✓ records agreement with the classifier, member plane, no text in the row (4 ms)
+    ✓ a classifier answer under 0.7 counts as none (1 ms)
+    ✓ the call runs as a system_autopilot caller and counts as member spend (1 ms)
+    ✓ a tenant without the member plane is denied by policy: a fallback row, no spend (1 ms)
+  VTID-04879 C3 marketplace intent
+    ✓ agreement against the heuristic label (1 ms)
+  VTID-04879 C10 worth remembering
+    ✓ no agreement at first; settled from what the extractor stored (6 ms)
+    ✓ Jev says worth it, the extractor stored nothing → disagreement (1 ms)
+    ✓ an abstention or a skipped gate settles nothing (1 ms)
+    ✓ Jev sees the most recent 2,000 characters (3 ms)
+  VTID-04879 C19 ticket triage
+    ✓ answer_inline vs a filed ticket, compared with the RPC decision (2 ms)
+  VTID-04879 gates never throw
+    ✓ a failing Jev call and a failing shadow insert both resolve to null (16 ms)
+  VTID-04879 wiring
+    ✓ every call site is fire-and-forget with its own catch (5 ms)
+    ✓ the shadow modes are pinned on staging only (1 ms)
+  VTID-04879 extractAndPersistFacts reports what it stored
+    ✓ text too short for a fact returns { persisted: 0 } without calling the LLM (204 ms)
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+Snapshots:   0 total
+Time:        0.756 s, estimated 2 s
+Ran all test suites matching /test\/vtid-04879/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

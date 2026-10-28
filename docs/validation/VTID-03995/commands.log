@@ -1,0 +1,37 @@
+# VTID-03995 — commands run during this change
+
+## Governance
+
+$ select * from public.allocate_global_vtid('claude-code', 'backend', 'role-governance');
+  → VTID-03995 (num 3995). Then UPDATE vtid_ledger SET title/summary/description,
+    status='in_progress', spec_status='approved' (owner instructed the work in
+    conversation). A previously allocated VTID-03994 row was found
+    status='deleted', is_terminal=true (placeholder title) and was left alone
+    per IF-THEN rule 3 — this work carries VTID-03995 instead.
+
+## Investigation (read-only, live Supabase project inmkhvwdcuyhnxkgfvsb)
+
+$ select p.proname, pg_get_function_identity_arguments(p.oid), pg_get_functiondef(p.oid)
+    from pg_proc p join pg_namespace n on n.oid = p.pronamespace
+   where n.nspname = 'public'
+     and p.proname in ('get_my_permitted_roles','set_role_preference','check_role_permitted','current_tenant_id');
+  → saved verbatim to outputs/live-function-defs-before.txt.
+  Confirms: get_my_permitted_roles aggregates ONLY public.user_permitted_roles;
+  set_role_preference's memberships fallback also requires
+  validate_role_assignment(); check_role_permitted reads user_permitted_roles only.
+
+$ select c.relkind from pg_class c join pg_namespace n on n.oid=c.relnamespace
+   where n.nspname='public' and c.relname='user_permitted_roles';
+  → 'r' (base table, not a view over memberships) — earlier in this session.
+
+## Authoring
+
+Wrote supabase/migrations/20260917100000_vtid_03995_role_switch_community_and_membership_roles.sql
+(CREATE OR REPLACE for both functions, COMMENT ON both) mirroring each live
+definition's signature, SECURITY DEFINER and search_path setting exactly;
+diffed by hand against outputs/live-function-defs-before.txt (see acceptance.md).
+
+## Not run
+
+No psql/Supabase execution of the migration (no isolated project; production
+writes forbidden). No gateway build/test needed: zero TypeScript changed.

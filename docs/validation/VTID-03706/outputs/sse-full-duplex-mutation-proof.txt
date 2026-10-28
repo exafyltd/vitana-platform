@@ -1,0 +1,76 @@
+Mutation verification for the VTID-03706 follow-up fix (SSE transport never
+receiving full_duplex). Both new/updated tests fail against the pre-fix
+source and pass against the fix, confirming the tests actually exercise
+the bug rather than passing vacuously.
+
+=== WITHOUT the fix (orb-live.ts + orb-widget.js reverted to origin/main) ===
+    ✕ includes full_duplex: isFullDuplexEnabled() in the live_api_ready SSE payload (4 ms)
+    ✓ DUPLEX_OPEN_RMS matches the TypeScript source of truth (1 ms)
+    ✓ DUPLEX_CLOSE_RMS matches the TypeScript source of truth (1 ms)
+    ✓ DUPLEX_HANGOVER_MS matches the TypeScript source of truth
+    ✓ DUPLEX_AEC_WARMUP_MS matches the TypeScript source of truth
+    ✓ DUPLEX_BARGE_CONFIRM_FRAMES matches the TypeScript source of truth (1 ms)
+    ✓ openRms matches the TypeScript source of truth
+    ✓ closeRms matches the TypeScript source of truth (1 ms)
+    ✓ hangoverMs matches the TypeScript source of truth
+    ✓ aecWarmupMs matches the TypeScript source of truth
+    ✓ bargeConfirmFrames matches the TypeScript source of truth
+    ✓ uses the same getUserMedia constraints as the widget (1 ms)
+    ✓ never routes the mic back to the speaker (that would be feedback, not echo)
+    ✓ emits a silent frame instead of returning early when the gate is shut
+    ✓ defines _silentFrame as real digital silence, not a dropped frame (1 ms)
+    ✓ forwards the captured frame verbatim once the gate is open
+    ✓ sends the interrupt AFTER forwarding audio, not instead of it
+    ✓ reads full duplex from the server, defaulting to false
+    ✕ reads full duplex on BOTH transports, not just WS (2 ms)
+    ✓ still declares fullDuplex:false in the initial state (1 ms)
+    ✓ keeps the pre-roll buffer for flag-off sessions
+    ✓ gates both client cooldowns on the flag rather than deleting them
+    ✓ stamps the start time only on the false->true edge
+    ✓ calls the real gateway TTS route, not a mock (1 ms)
+    ✓ decodes the audio rather than trusting the response envelope
+    ✓ measures peak amplitude, so silent-but-well-formed audio fails
+    ✓ fails when the gateway serves a different language than requested
+    ✓ sweeps every locale the TTS layer claims to serve, including the broken one
+    ✓ treats Serbian as a KNOWN GAP, not a passing test and not a mystery failure
+    ✓ reports it as NEWS when an expected-fail locale starts working
+    ✓ plays languages serially so the measurements stay meaningful
+    ✓ defaults to same-origin so the bench tests the gateway serving it
+Test Suites: 2 failed, 2 total
+Tests:       2 failed, 30 passed, 32 total
+
+=== WITH the fix restored (HEAD) ===
+    ✓ includes full_duplex: isFullDuplexEnabled() in the live_api_ready SSE payload (4 ms)
+    ✓ DUPLEX_OPEN_RMS matches the TypeScript source of truth (1 ms)
+    ✓ DUPLEX_CLOSE_RMS matches the TypeScript source of truth (1 ms)
+    ✓ DUPLEX_HANGOVER_MS matches the TypeScript source of truth
+    ✓ DUPLEX_AEC_WARMUP_MS matches the TypeScript source of truth (1 ms)
+    ✓ DUPLEX_BARGE_CONFIRM_FRAMES matches the TypeScript source of truth
+    ✓ openRms matches the TypeScript source of truth (1 ms)
+    ✓ closeRms matches the TypeScript source of truth
+    ✓ hangoverMs matches the TypeScript source of truth
+    ✓ aecWarmupMs matches the TypeScript source of truth
+    ✓ bargeConfirmFrames matches the TypeScript source of truth (1 ms)
+    ✓ uses the same getUserMedia constraints as the widget
+    ✓ never routes the mic back to the speaker (that would be feedback, not echo) (1 ms)
+    ✓ emits a silent frame instead of returning early when the gate is shut
+    ✓ defines _silentFrame as real digital silence, not a dropped frame (1 ms)
+    ✓ forwards the captured frame verbatim once the gate is open
+    ✓ sends the interrupt AFTER forwarding audio, not instead of it (1 ms)
+    ✓ reads full duplex from the server, defaulting to false
+    ✓ reads full duplex on BOTH transports, not just WS
+    ✓ still declares fullDuplex:false in the initial state
+    ✓ keeps the pre-roll buffer for flag-off sessions
+    ✓ gates both client cooldowns on the flag rather than deleting them
+    ✓ stamps the start time only on the false->true edge
+    ✓ calls the real gateway TTS route, not a mock
+    ✓ decodes the audio rather than trusting the response envelope (1 ms)
+    ✓ measures peak amplitude, so silent-but-well-formed audio fails
+    ✓ fails when the gateway serves a different language than requested
+    ✓ sweeps every locale the TTS layer claims to serve, including the broken one (1 ms)
+    ✓ treats Serbian as a KNOWN GAP, not a passing test and not a mystery failure
+    ✓ reports it as NEWS when an expected-fail locale starts working (1 ms)
+    ✓ plays languages serially so the measurements stay meaningful
+    ✓ defaults to same-origin so the bench tests the gateway serving it
+Test Suites: 2 passed, 2 total
+Tests:       32 passed, 32 total

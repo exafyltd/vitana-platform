@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04133",
+  "source": "claude-code-session",
+  "files": [
+    { "path": "services/gateway/src/services/operator-machine-auth.ts", "action": "create" },
+    { "path": "services/gateway/src/routes/operator.ts", "action": "modify" },
+    { "path": "scripts/aws/setup-operator-machine-auth-secret.sh", "action": "create" },
+    { "path": "services/gateway/test/vtid-04133-operator-machine-auth.test.ts", "action": "create" },
+    { "path": "CLAUDE.md", "action": "modify" }
+  ],
+  "generated_at": "2026-09-20T20:10:00.000Z",
+  "generated_by": "claude-code-session"
+}

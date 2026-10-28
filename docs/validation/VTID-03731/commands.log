@@ -1,0 +1,70 @@
+# VTID-03731 — commands actually run.
+
+# --- Design -----------------------------------------------------------
+# Checked what "test programs" already exist for ORB voice to avoid
+# rebuilding: verify-polly-voices.ts (Polly table vs live DescribeVoices),
+# verify-cascade-audio-timing.ts (real PCM timing for cascade + Nova-
+# baseline languages), and the browser-only orb-voice-bench.html (needs a
+# real speaker/mic, not runnable by this session). None of them alone
+# answers "is voice actually working end-to-end for every language we
+# ship" — routing and real audio are checked separately or not at all
+# across the FULL set.
+
+grep -n "router.post('/tts-pcm-diagnostic'" services/gateway/src/routes/orb-live.ts -A 30
+#   -> confirmed: this route ALWAYS uses Polly (bypasses TTS_PROVIDER),
+#      returns 422 for languages with no Polly voice (sr), and is rate
+#      limited to 20 req/15min per client. Exactly the route
+#      verify-cascade-audio-timing.ts already builds on.
+
+# --- New script ---------------------------------------------------------
+# scripts/tts/verify-all-orb-languages.ts:
+#   - Imports SUPPORTED_LIVE_LANGUAGES directly (orb/live/config.ts) so the
+#     language list self-updates when one is added.
+#   - Reuses testOneLanguage/pacingBoundsFor/loadRealPcmRateFromMime/
+#     verifyWidgetWiringIsConnected from verify-cascade-audio-timing.ts —
+#     no reimplementation of the PCM-timing logic.
+#   - Adds a routing-decision check per language via
+#     GET /api/v1/voice-lab/nova/decision (the VTID-03729-fixed probe) —
+#     asserts provider is never 'vertex' (VTID-03723 invariant), and that
+#     each language's class (Nova-native / cascade-eligible / Serbian's
+#     forced substitute) resolves to the right provider.
+#   - sr is a DECLARED expected-fail on the audio check (422), matching
+#     orb-voice-bench.html's own TTS_EXPECTED_FAIL pattern for the same
+#     documented gap — not a silent skip.
+
+# --- Live verification ---------------------------------------------------
+
+cd services/gateway
+# (--project services/gateway/tsconfig.json is required — the repo root
+#  has no tsconfig, and ts-node's default module resolution otherwise
+#  errors out before ever reaching this script.)
+
+GATEWAY_URL=https://preview-aws-gateway.vitanaland.com \
+  npx ts-node --project services/gateway/tsconfig.json --transpile-only \
+  scripts/tts/verify-all-orb-languages.ts
+#   -> RUN 1: 11/11 languages pass both routing and real-audio checks.
+#      tr confirmed: provider=cascaded, reason=cascaded_language_rescue,
+#      voice=Burcu engine=neural (VTID-03719/03730's already-verified
+#      value), audio pacing/timing all correct.
+#   Output: outputs/live-run.txt (RUN 1 section)
+
+GATEWAY_URL=https://preview-aws-gateway.vitanaland.com \
+  npx ts-node --project services/gateway/tsconfig.json --transpile-only \
+  scripts/tts/verify-all-orb-languages.ts
+#   -> RUN 2, immediately after RUN 1, same 15-min window: hit
+#      /tts-pcm-diagnostic's own real rate limiter (429) on the last two
+#      languages (pl, tr) — the route's OWN documented protection working
+#      as designed (20 req/15min per client), not a defect in this script.
+#      Documented in the script's own header so a future runner doesn't
+#      mistake this for a bug and "fix" it by retrying past the limiter.
+#   Output: outputs/live-run.txt (RUN 2 section)
+
+# --- Unit test + regression check ----------------------------------------
+
+npx jest --testPathPattern="verify-all-orb-languages|verify-cascade-audio-timing"
+#   -> Test Suites: 2 passed, 2 total / Tests: 11 passed, 11 total
+#   Output: outputs/targeted-tests.txt
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt

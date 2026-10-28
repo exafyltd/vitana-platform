@@ -1,0 +1,11 @@
+# VTID-04499 — commands run for this change
+
+# Allocate VTID (governed gateway endpoint); ledger row set in_progress/approved with a real title
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"COMMERCE"}'
+# -> {"ok":true,"vtid":"VTID-04499"}
+
+# Read-only live schema check -> outputs/live-schema-check.txt
+
+# Jest and full tsc: NOT runnable here (npm registry 403, no node_modules). CI is the first real
+# run of test/partner-onboarding-connections.test.ts, the existing vcaop-portal-my suite after the
+# insertConnection() extraction, and the build.

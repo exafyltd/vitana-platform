@@ -1,0 +1,16 @@
+# VTID-04600 — memory verification suite, layer A
+cd services/gateway
+npm run test:memory                         # 129 passed (64 scenarios + 64 id checks + category coverage)
+npx tsc --noEmit -p .                       # clean
+
+# Mutation check: each change applied alone, suite run, change reverted with git checkout.
+#  1 remember-fact-tool: honour confirm_replace without a pending question -> A-CONF-06, A-CONF-07 fail
+#  2 remember-backstop-hook: ignore the tool call this turn             -> A-HON-04 fails
+#  3 forgotten gate: always allow                                       -> A-FORG-03 fails
+#  4 inline extractor: drop the stated-conflict guard                   -> A-CONF-08 fails
+#  5 remember-fact-tool: never route to the profile                     -> A-PROF-01..05 fail
+
+# Live reads used to make the fakes match reality (read-only, shared Supabase project):
+#  system_controls.memory_broker_enabled = true
+#  memory_semantic_search role filter: (p_active_role IS NULL OR mi.active_role = p_active_role OR mi.active_role IS NULL)
+#  profiles.date_of_birth set for 14 members; app_users.profile date_of_birth/dob set for 0  (A-PROF-08)

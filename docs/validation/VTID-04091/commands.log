@@ -1,0 +1,19 @@
+$ npx jest test/command-hub/t10-r4-modal-focus-management.test.ts
+PASS test/command-hub/t10-r4-modal-focus-management.test.ts
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+
+$ node --check src/frontend/command-hub/app.js
+(exit 0 — SYNTAX OK)
+
+$ npx jest test/command-hub/
+Test Suites: 10 passed, 10 total
+Tests:       176 passed, 176 total
+
+$ npx tsc --noEmit
+(no output — clean)
+
+$ npm run build
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+(exit 0)

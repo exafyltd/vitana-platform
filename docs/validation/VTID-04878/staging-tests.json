@@ -1,0 +1,7 @@
+{"vtid":"VTID-04878","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"reward sweep is mounted and refuses an unauthenticated run (JSON 401)","method":"POST","path":"/api/v1/rewards/sweep","rejected_probe":true,"expect_status":401},
+{"kind":"http","name":"Wallet reward rules stay auth-gated (JSON 401)","path":"/api/v1/wallet/reward-rules","expect_status":401},
+{"kind":"http","name":"Autopilot completion stays auth-gated (JSON 401)","method":"POST","path":"/api/v1/autopilot/recommendations/00000000-0000-0000-0000-000000000000/complete","rejected_probe":true,"expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04878-reward-earning.test.ts test/vtid-04878-reward-routes.test.ts test/vtid-04878-capped-reward-migration.test.ts test/vtid-04864-vtna-reward-rules.test.ts","cwd":"services/gateway","reason":"Paying a reward is a write and staging shares the production database, so payouts are proven off staging: the capped claim and sweep candidates by applying the migration twice over a local replica of the live wallet tables with the real credit_wallet (scripts/ci/test-vtid-04878-capped-rewards.sh, run inside the migration suite, mutation-checked), and the sweep, milestone payer, production gate and /complete payout by the gateway suites. On staging the sweep refuses with 409 NOT_PRODUCTION before any query (proven in vtid-04878-reward-routes)."}
+]}

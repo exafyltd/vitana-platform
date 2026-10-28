@@ -1,0 +1,109 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /tmp/vtid-03881/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+  VTID-03850: staging gateway dispatches executions to the ECS executor
+    ✓ pins DEV_AUTOPILOT_USE_JOB to the exact string "true" (2 ms)
+    ✓ pins DEV_AUTOPILOT_JOB_CLOUD to "aws" — the gcp branch is dead code (1 ms)
+    ✓ strips both inherited values first, so a stale one cannot survive a deploy (1 ms)
+    ✓ is deliberately NOT pinned on the prod gateway deploy workflow
+    ✓ the on-ramp flag it feeds is still pinned on staging (VTID-03820) — this change is downstream of it
+  VTID-03850: the executor task definition gets an LLM runtime of its own
+    ✓ sets BEDROCK_ROLE_ARN from the executor task definition's own taskRoleArn (gateway pattern) (1 ms)
+    ✓ sets AWS_BEDROCK_REGION to the deploy region
+    ✓ wires DEEPSEEK_API_KEY from the same Secrets Manager secret the staging gateway resolves (1 ms)
+    ✓ strips inherited copies before upserting, and tolerates a null environment/secrets array (1 ms)
+    ✓ still only builds + registers — no ECS service roll, next RunTask picks the new revision
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.completed for VTID-90001 (be7f01a9-cddc-493f-8de0-0fcc3f24970f)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90001 terminalized success via autopilot execution exec-goo
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:512:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-90002 (4def9017-a124-4cb4-bc35-d3d48cc669ba)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90002 terminalized failed via autopilot execution exec-bad (failed)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:573:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-90003 (cb56bd53-c3e1-489a-90e2-896c78cdf2d8)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-90003 terminalized failed via autopilot execution exec-esc (failed_escalated)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:573:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.completed for VTID-A (1d67d219-9f9b-4f75-ad96-6b514dae0d05)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-A terminalized success via autopilot execution exec-A
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:512:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-C (bc791827-0bf6-4fd0-bd37-d16ab407159e)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-C terminalized failed via autopilot execution exec-C (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:573:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-03862 (b6ca3d5b-9563-4658-b92e-14eeb4cb16b4)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-03862 terminalized failed via autopilot execution exec-onr (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:573:17)
+
+PASS test/self-healing-reconciler-autopilot-link.test.ts
+  reconcileAutopilotLinkedSelfHealingVtids
+    ✓ terminalizes success when execution.status=completed (20 ms)
+    ✓ terminalizes failed when execution.status=failed (2 ms)
+    ✓ terminalizes failed when execution.status=failed_escalated (1 ms)
+    ✓ leaves VTID alone when execution.status=cooling (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=queued (still in flight)
+    ✓ leaves VTID alone when execution.status=running (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=ci (still in flight)
+    ✓ leaves VTID alone when execution.status=merging (still in flight)
+    ✓ leaves VTID alone when execution.status=deploying (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=verifying (still in flight)
+    ✓ handles multiple rows in one scan (success + failure mixed) (3 ms)
+    ✓ VTID-03877: terminalizes a non-self-healing VTID (e.g. operator-onramp) that has a linked execution (1 ms)
+    ✓ no-op when no autopilot-linked self-healing rows exist (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       23 passed, 23 total
+Snapshots:   0 total
+Time:        0.64 s, estimated 1 s
+Ran all test suites matching /test\/self-healing-reconciler-autopilot-link.test.ts|test\/vtid-03850-staging-executor-dispatch-pinned.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

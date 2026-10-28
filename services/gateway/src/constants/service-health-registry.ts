@@ -1,0 +1,203 @@
+/**
+ * VTID-04087 — the single source of truth for the Command Hub Service
+ * Health panel's endpoint list.
+ *
+ * Before this file, the 55-entry list lived only as a hardcoded
+ * `healthEndpoints` array inside `fetchServiceHealth()` in the Command Hub's
+ * static `app.js` — a frontend-only asset with no server-side counterpart,
+ * so a new health route could ship and never appear on the panel unless
+ * someone remembered to hand-edit the array too. This module is now the
+ * canonical list; the gateway serves it via `GET /api/v1/admin/health-registry`
+ * (see `routes/admin-health.ts`), and `app.js` fetches it at runtime,
+ * falling back to its own last-known-good copy only if that fetch fails.
+ *
+ * Keep this list and the frontend's fallback copy in sync when adding or
+ * removing a health check — the frontend fallback exists purely so the
+ * panel still renders something if the registry route itself is
+ * unreachable, not as a second place to maintain routine changes.
+ */
+export interface ServiceHealthEndpoint {
+  name: string;
+  url: string;
+  group: string;
+  /**
+   * VTID-04876: a check on the members' golden path (gateway, auth, ORB voice,
+   * the data stores, the production frontend). The Overview's /ops/attention
+   * service-health adapter ranks a golden-path check failing for >= 2 minutes
+   * as P1 (members impacted now); any other failing check is P2.
+   */
+  golden_path?: boolean;
+}
+
+/**
+ * VTID-04661 — display order of the panel's groups. The panel used to carry
+ * its own hardcoded copy of this list and silently dropped any check whose
+ * group was not in it — which is how 'Screen Load Time' ('Frontend &
+ * Performance') was counted in "54/55" but never drawn. The panel now draws
+ * these first, in this order, and then every other group it finds, so an
+ * entry can never be counted but hidden. A test fails if a registry entry
+ * names a group that is not listed here.
+ */
+export const SERVICE_HEALTH_GROUPS: string[] = [
+  'Core Infrastructure',
+  'AI & Assistant',
+  'Autopilot',
+  'Automation & Scheduling',
+  'Community & Social',
+  'Domain & Context',
+  'Visual & VTID',
+  'Frontend & Performance',
+  'Self-Healing & Ops',
+  'Data & Memory',
+  'Commerce',
+  'Governance & Integrity',
+  'Deploy & Release',
+  'AWS Runtime',
+  'Dev Autopilot',
+  'Voice & Media',
+  'Data & Scheduling',
+  'Business & Support',
+];
+
+/**
+ * VTID-04876: golden-path entries (`golden_path: true`) — Gateway + Gateway
+ * Alive, Auth, ORB Live + Nova Sonic (ORB/Nova), Aurora Memory + Aurora RLS +
+ * Database Latency (the Supabase/Aurora data probes) and Frontend Prod.
+ */
+export const SERVICE_HEALTH_REGISTRY: ServiceHealthEndpoint[] = [
+  { name: 'Gateway', url: '/health', group: 'Core Infrastructure', golden_path: true },
+  { name: 'Gateway Alive', url: '/alive', group: 'Core Infrastructure', golden_path: true },
+  { name: 'Auth', url: '/api/v1/auth/health', group: 'Core Infrastructure', golden_path: true },
+  { name: 'CI/CD', url: '/api/v1/cicd/health', group: 'Core Infrastructure' },
+  { name: 'Execute Runner', url: '/api/v1/execute/health', group: 'Core Infrastructure' },
+  { name: 'Operator', url: '/api/v1/operator/health', group: 'Core Infrastructure' },
+  { name: 'Operator Deploys', url: '/api/v1/operator/deployments/health', group: 'Core Infrastructure' },
+  { name: 'Telemetry', url: '/api/v1/telemetry/health', group: 'Core Infrastructure' },
+  { name: 'Events', url: '/events/health', group: 'Core Infrastructure' },
+  { name: 'Command Hub UI', url: '/command-hub/health', group: 'Core Infrastructure' },
+  { name: 'Assistant', url: '/api/v1/assistant/health', group: 'AI & Assistant' },
+  { name: 'Knowledge Hub', url: '/api/v1/assistant/knowledge/health', group: 'AI & Assistant' },
+  { name: 'ORB Live', url: '/api/v1/orb/health', group: 'AI & Assistant', golden_path: true },
+  { name: 'Voice Lab', url: '/api/v1/voice-lab/health', group: 'AI & Assistant' },
+  { name: 'Conversation', url: '/api/v1/conversation/health', group: 'AI & Assistant' },
+  { name: 'Conversation Tools', url: '/api/v1/conversation/tool-health', group: 'AI & Assistant' },
+  { name: 'Autopilot', url: '/api/v1/autopilot/health', group: 'Autopilot' },
+  { name: 'Autopilot Pipeline', url: '/api/v1/autopilot/pipeline/health', group: 'Autopilot' },
+  { name: 'Autopilot Prompts', url: '/api/v1/autopilot/prompts/health', group: 'Autopilot' },
+  { name: 'Recommendations', url: '/api/v1/autopilot/recommendations/health', group: 'Autopilot' },
+  { name: 'Automations', url: '/api/v1/automations/health', group: 'Automation & Scheduling' },
+  { name: 'Rec. Inbox', url: '/api/v1/recommendations/health', group: 'Automation & Scheduling' },
+  { name: 'Memory', url: '/api/v1/memory/health', group: 'Automation & Scheduling' },
+  { name: 'Semantic Memory', url: '/api/v1/memory/semantic/health', group: 'Automation & Scheduling' },
+  { name: 'Diary', url: '/api/v1/diary/health', group: 'Automation & Scheduling' },
+  { name: 'Health Capacity', url: '/api/v1/capacity/health', group: 'Automation & Scheduling' },
+  { name: 'Scheduler', url: '/api/v1/scheduler/health', group: 'Automation & Scheduling' },
+  { name: 'Sched. Notifications', url: '/api/v1/scheduled-notifications/health', group: 'Automation & Scheduling' },
+  { name: 'Email Intake', url: '/api/v1/intake/email/health', group: 'Automation & Scheduling' },
+  { name: 'Community', url: '/api/v1/community/health', group: 'Community & Social' },
+  { name: 'Relationships', url: '/api/v1/relationships/health', group: 'Community & Social' },
+  { name: 'Matchmaking', url: '/api/v1/match/health', group: 'Community & Social' },
+  { name: 'Personalization', url: '/api/v1/personalization/health', group: 'Community & Social' },
+  { name: 'Live Rooms', url: '/api/v1/live/health', group: 'Community & Social' },
+  { name: 'Social Context', url: '/api/v1/social/health', group: 'Community & Social' },
+  { name: 'Social Connect', url: '/api/v1/social-accounts/health', group: 'Community & Social' },
+  { name: 'Social Alignment', url: '/api/v1/alignment/health', group: 'Community & Social' },
+  { name: 'Topics', url: '/api/v1/topics/health', group: 'Community & Social' },
+  { name: 'Domain Routing', url: '/api/v1/routing/health', group: 'Domain & Context' },
+  { name: 'Locations', url: '/api/v1/locations/health', group: 'Domain & Context' },
+  { name: 'Offers', url: '/api/v1/offers/health', group: 'Domain & Context' },
+  { name: 'Feedback', url: '/api/v1/feedback/health', group: 'Domain & Context' },
+  { name: 'Voice Feedback', url: '/api/v1/voice-feedback/health', group: 'Domain & Context' },
+  { name: 'Situational', url: '/api/v1/situational/health', group: 'Domain & Context' },
+  { name: 'Availability', url: '/api/v1/availability/health', group: 'Domain & Context' },
+  { name: 'Env. Mobility', url: '/api/v1/context/mobility/health', group: 'Domain & Context' },
+  { name: 'User Preferences', url: '/api/v1/user-preferences/health', group: 'Domain & Context' },
+  { name: 'Taste Alignment', url: '/api/v1/taste-alignment/health', group: 'Domain & Context' },
+  { name: 'Overload Detection', url: '/api/v1/overload/health', group: 'Domain & Context' },
+  { name: 'Risk Mitigation', url: '/api/v1/mitigation/health', group: 'Domain & Context' },
+  { name: 'Opportunities', url: '/api/v1/opportunities/health', group: 'Domain & Context' },
+  { name: 'Visual Interactive', url: '/api/v1/visual/health', group: 'Visual & VTID' },
+  { name: 'VTID Terminalize', url: '/api/v1/oasis/vtid/terminalize/health', group: 'Visual & VTID' },
+  { name: 'VTID', url: '/api/v1/vtid/health', group: 'Visual & VTID' },
+  // DEV-COMHU-03401 / VTID-SCREEN-LOAD-01: standard basic test — scheduled
+  // Playwright run (SCREEN-LOAD-TIMING.yml) measures mobile screen load time
+  // against staging and reports here. 'down' means a screen failed to load
+  // or nothing has reported in 12h; 'degraded' means it's slow (p75 over
+  // budget) or the last report is 3-12h old — GitHub runs the 30-minute
+  // cron every 3-5h in practice (VTID-04661).
+  { name: 'Screen Load Time', url: '/api/v1/frontend/screen-load/health', group: 'Frontend & Performance' },
+  // VTID-04662 (Phase 1): health routes that already existed but were never
+  // registered. Admin-gated ones answer through the summary, which forwards the
+  // caller's admin token.
+  { name: 'Nova Sonic', url: '/api/v1/orb/nova-sonic/health', group: 'AI & Assistant', golden_path: true },
+  { name: 'LLM Providers', url: '/api/v1/llm/providers/health', group: 'AI & Assistant' },
+  { name: 'Voice Tools Catalog', url: '/api/v1/voice-tools/health', group: 'AI & Assistant' },
+  { name: 'Self-Healing', url: '/api/v1/self-healing/health', group: 'Self-Healing & Ops' },
+  { name: 'Watcher', url: '/api/v1/watcher/health', group: 'Self-Healing & Ops' },
+  { name: 'Worker Orchestrator', url: '/api/v1/worker/orchestrator/health', group: 'Self-Healing & Ops' },
+  { name: 'Aurora Memory', url: '/api/v1/admin/aurora-memory/health', group: 'Data & Memory', golden_path: true },
+  { name: 'Aurora RLS', url: '/api/v1/admin/aurora-rls-health', group: 'Data & Memory', golden_path: true },
+  { name: 'ORB Session State', url: '/api/v1/admin/orb-session-state-health', group: 'Data & Memory' },
+  { name: 'Reminders', url: '/api/v1/reminders/_health/check', group: 'Automation & Scheduling' },
+  { name: 'Calendar', url: '/api/v1/calendar/health', group: 'Automation & Scheduling' },
+  { name: 'Integrations', url: '/api/v1/integrations/health', group: 'Domain & Context' },
+  { name: 'Pillar Agents', url: '/api/v1/pillar-agents/health', group: 'Domain & Context' },
+  { name: 'Catalog Ingest', url: '/api/v1/catalog/ingest/health', group: 'Commerce' },
+  { name: 'Shop Feed', url: '/api/v1/shop-feed/health', group: 'Commerce' },
+  { name: 'Shopping Agent', url: '/api/v1/shopping-agent/health', group: 'Commerce' },
+  { name: 'Universal Cart', url: '/api/v1/universal-cart/health', group: 'Commerce' },
+  // VTID-04663 (Phase 2): signals the database already computes
+  // (routes/ops-health-checks.ts).
+  { name: 'LLM Routing Policy', url: '/api/v1/ops/health/llm-routing', group: 'AI & Assistant' },
+  { name: 'Anthropic Credit Failures', url: '/api/v1/ops/health/anthropic-credit', group: 'AI & Assistant' },
+  { name: 'Google LLM Fallback', url: '/api/v1/ops/health/google-fallback', group: 'AI & Assistant' },
+  { name: 'Locale Coverage', url: '/api/v1/ops/health/locale-coverage', group: 'Governance & Integrity' },
+  { name: 'Test-Account Guard', url: '/api/v1/ops/health/test-actor-guard', group: 'Governance & Integrity' },
+  { name: 'VTID Ledger Integrity', url: '/api/v1/ops/health/vtid-ledger', group: 'Governance & Integrity' },
+  { name: 'ORB Session Ledger', url: '/api/v1/ops/health/orb-session-ledger', group: 'Data & Memory' },
+  { name: 'Push Dispatch', url: '/api/v1/ops/health/push-dispatch', group: 'Automation & Scheduling' },
+  // VTID-05141: gateway twins of three ALERT-* workflows (same queries and
+  // thresholds), owned by L1 through these groups.
+  { name: 'Welcome Greeting', url: '/api/v1/ops/health/welcome-greeting', group: 'Community & Social' },
+  { name: 'ORB Bootstrap Latency', url: '/api/v1/ops/health/orb-bootstrap-latency', group: 'AI & Assistant' },
+  { name: 'New-Day Briefing Loop', url: '/api/v1/ops/health/newday-briefing-loop', group: 'AI & Assistant' },
+  // VTID-04664 (Phase 3): systems that had no health check at all
+  // (routes/ops-runtime-health.ts).
+  { name: 'STAGING-VERIFY', url: '/api/v1/ops/runtime/deploy/staging-verify', group: 'Deploy & Release' },
+  { name: 'Staging Deploy', url: '/api/v1/ops/runtime/deploy/staging-deploy', group: 'Deploy & Release' },
+  { name: 'Prod Deploy', url: '/api/v1/ops/runtime/deploy/prod-deploy', group: 'Deploy & Release' },
+  { name: 'Prod Gateway Build', url: '/api/v1/ops/runtime/deploy/prod-gateway', group: 'Deploy & Release' },
+  { name: 'Staging Gateway Build', url: '/api/v1/ops/runtime/deploy/staging-gateway', group: 'Deploy & Release' },
+  { name: 'Frontend Prod', url: '/api/v1/ops/runtime/deploy/frontend-prod', group: 'Deploy & Release', golden_path: true },
+  { name: 'Frontend Staging', url: '/api/v1/ops/runtime/deploy/frontend-staging', group: 'Deploy & Release' },
+  { name: 'ECS Gateway Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway-awsdr', group: 'AWS Runtime' },
+  { name: 'ECS Gateway Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-gateway', group: 'AWS Runtime' },
+  { name: 'ECS Community App Prod', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-awsdr', group: 'AWS Runtime' },
+  { name: 'ECS Community App Staging', url: '/api/v1/ops/runtime/aws/ecs/vitana-community-app-staging', group: 'AWS Runtime' },
+  { name: 'ECS OASIS Operator', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-operator-awsdr', group: 'AWS Runtime' },
+  { name: 'ECS OASIS Projector', url: '/api/v1/ops/runtime/aws/ecs/vitana-oasis-projector', group: 'AWS Runtime' },
+  { name: 'ECS Worker Runner', url: '/api/v1/ops/runtime/aws/ecs/vitana-worker-runner', group: 'AWS Runtime' },
+  { name: 'ECS Verification Engine', url: '/api/v1/ops/runtime/aws/ecs/vitana-vitana-verification-engine', group: 'AWS Runtime' },
+  { name: 'ECS ORB Agent', url: '/api/v1/ops/runtime/aws/ecs/vitana-orb-agent', group: 'AWS Runtime' },
+  { name: 'Autopilot Kill Switch', url: '/api/v1/ops/runtime/autopilot/kill-switch', group: 'Dev Autopilot' },
+  { name: 'Autopilot Stuck Runs', url: '/api/v1/ops/runtime/autopilot/stuck-runs', group: 'Dev Autopilot' },
+  { name: 'Autopilot Approval Backlog', url: '/api/v1/ops/runtime/autopilot/approval-backlog', group: 'Dev Autopilot' },
+  { name: 'Autopilot Success Rate', url: '/api/v1/ops/runtime/autopilot/success-rate', group: 'Dev Autopilot' },
+  { name: 'Autopilot Scan Freshness', url: '/api/v1/ops/runtime/autopilot/scan-freshness', group: 'Dev Autopilot' },
+  { name: 'Autopilot Dispatch', url: '/api/v1/ops/runtime/autopilot/dispatch-failures', group: 'Dev Autopilot' },
+  { name: 'Polly TTS', url: '/api/v1/ops/runtime/voice/polly', group: 'Voice & Media' },
+  { name: 'Fish TTS', url: '/api/v1/ops/runtime/voice/fish', group: 'Voice & Media' },
+  { name: 'Serbian Voice Bridge', url: '/api/v1/ops/runtime/voice/serbian-bridge', group: 'Voice & Media' },
+  { name: 'Voice Session Errors', url: '/api/v1/ops/runtime/voice/session-errors', group: 'Voice & Media' },
+  { name: 'Bedrock', url: '/api/v1/ops/runtime/ai/bedrock', group: 'Voice & Media' },
+  { name: 'DeepSeek', url: '/api/v1/ops/runtime/ai/deepseek', group: 'Voice & Media' },
+  { name: 'Titan Images', url: '/api/v1/ops/runtime/media/titan', group: 'Voice & Media' },
+  { name: 'OASIS Write Lag', url: '/api/v1/ops/runtime/data/oasis-write-lag', group: 'Data & Scheduling' },
+  { name: 'Database Latency', url: '/api/v1/ops/runtime/data/db-latency', group: 'Data & Scheduling', golden_path: true },
+  { name: 'Redis', url: '/api/v1/ops/runtime/data/redis', group: 'Data & Scheduling' },
+  { name: 'Code Index', url: '/api/v1/ops/runtime/data/code-index', group: 'Data & Scheduling' },
+  { name: 'Scheduled Workflows', url: '/api/v1/ops/runtime/data/scheduled-workflows', group: 'Data & Scheduling' },
+  { name: 'Support Tickets', url: '/api/v1/ops/runtime/support/stuck-tickets', group: 'Business & Support' },
+  { name: 'ERP Bridge', url: '/api/v1/ops/runtime/business/erp-bridge', group: 'Business & Support' },
+  { name: 'Jev Decisions', url: '/api/v1/ops/runtime/business/jev', group: 'Business & Support' },
+];

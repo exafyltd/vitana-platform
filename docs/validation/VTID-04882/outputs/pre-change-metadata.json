@@ -1,0 +1,1 @@
+{"resource":"https://preview-aws-gateway.vitanaland.com/mcp","resource_name":"Vitanaland Commerce","authorization_servers":["https://inmkhvwdcuyhnxkgfvsb.supabase.co/auth/v1"],"bearer_methods_supported":["header"],"resource_documentation":"https://preview-aws.vitanaland.com/commerce"}

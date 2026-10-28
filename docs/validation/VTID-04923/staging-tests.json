@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04923",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "name": "staging gateway carries DAILY_API_KEY from vitana/gateway/staging/daily-api-key",
+      "path": "/api/v1/live/health",
+      "expect_status": 200,
+      "expect_json": { "daily_configured": true }
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04923-daily-key-wiring.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the staging step is optional and secret-only, runs before the roll; production wires the owner's full ARN strip-then-add; both workflows keep valid bash and stay under the run-size cap. Read-only: no secret value is read or printed."
+    }
+  ]
+}

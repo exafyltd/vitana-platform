@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05148",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "target": "gateway", "name": "Autonomy Pulse still refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/autonomy/pulse", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "Loops catalog API still refuses a caller without an exafy_admin sign-in", "method": "GET", "path": "/api/v1/autonomy/loops", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "target": "gateway", "name": "Command Hub serves the VTID-05148 bundle markers", "path": "/command-hub/", "expect_status": 200, "expect_content_type": "text/html", "expect_body_contains": ["app.js?v=20261121-vtid-05082", "loops-catalog.js?v=20261121-vtid-05153"] },
+    { "kind": "http", "target": "gateway", "name": "served app.js labels the graduation_proposal Pulse source", "path": "/command-hub/app.js?v=20261121-vtid-05082", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["if (s === 'graduation_proposal') return 'GRADUATION';"] },
+    { "kind": "http", "target": "gateway", "name": "served loops-catalog.js shows the L3 metrics on the card", "path": "/command-hub/loops-catalog.js?v=20261121-vtid-05153", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function metricsText(loop, metricsLatest)"] },
+    { "kind": "existing", "ref": "npx jest test/routine-runner test/vtid-05148-autonomy-pulse-graduation.test.ts test/vtid-05148-loops-l3-metrics.test.ts test/vtid-05148-missing-test-insert-export.test.ts test/routes/autonomy-loops.test.ts test/loop-catalog.test.ts", "cwd": "services/gateway", "reason": "learn-outcomes writes (diagnosis.tests_added read-modify-write, the write_test finding, graduation OASIS events), its thresholds, the no-apply source guard, the Pulse fifth source and metrics_latest. The runner never starts on staging (shared database), so its writes are proven here, not there" }
+  ]
+}

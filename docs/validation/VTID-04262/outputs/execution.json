@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04262",
+  "title": "Wire OPERATOR_MACHINE_AUTH_TOKEN into AWS-STAGE-DEPLOY-GATEWAY.yml",
+  "profile": "gateway_backend",
+  "executor": "claude-code-session",
+  "files_changed": [
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    "services/gateway/test/vtid-04262-staging-operator-machine-auth-wiring.test.ts",
+    "docs/validation/VTID-04262/acceptance.md",
+    "docs/validation/VTID-04262/commands.log",
+    "docs/validation/VTID-04262/outputs/execution.json"
+  ],
+  "checks": {
+    "new_test_suite": { "suite": "vtid-04262-staging-operator-machine-auth-wiring.test.ts", "passing": 6, "total": 6 },
+    "regression_suites": { "suites": 13, "passing": 91, "total": 91 },
+    "bash_syntax_guard": { "suite": "staging-deploy-workflow-bash-syntax.test.ts", "passing": 7, "total": 7 },
+    "tsc_noemit": "clean"
+  },
+  "live_verification": "not yet performed — the next staging deploy after this merges is the exercise; a follow-up call to POST /api/v1/operator/chat with X-Operator-Machine-Token is the real end-to-end confirmation",
+  "aws_mutations_from_this_session": "none — secret creation was denied by this session's IAM boundary (AccessDeniedException on secretsmanager:CreateSecret) and was instead performed by the platform owner's own AWS admin session"
+}

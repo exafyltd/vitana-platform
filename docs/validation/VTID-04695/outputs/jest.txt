@@ -1,0 +1,202 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [CORS] Blocked origin: https://evil.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: http://vitanaland.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://vitanaland.com.evil.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://foo.lovable.app.evil.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://xlovable.app
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://community-app-abc.run.app.evil.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://sub.preview.vitanaland.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at Object.origin (src/middleware/cors.ts:62:15)
+      at test/middleware/cors.test.ts:28:17
+      at checkOrigin (test/middleware/cors.test.ts:27:10)
+      at test/middleware/cors.test.ts:73:34
+
+  console.warn
+    [CORS] Blocked origin: https://evil.com
+
+      60 |       callback(null, true);
+      61 |     } else {
+    > 62 |       console.warn(`[CORS] Blocked origin: ${origin}`);
+         |               ^
+      63 |       callback(new Error("Not allowed by CORS"));
+      64 |     }
+      65 |   },
+
+      at origin (src/middleware/cors.ts:62:15)
+      at node_modules/cors/lib/index.js:219:13
+      at optionsCallback (node_modules/cors/lib/index.js:199:9)
+      at corsMiddleware (node_modules/cors/lib/index.js:204:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at Function.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/middleware/cors.test.ts
+  corsOptions.origin callback
+    ✓ allows requests without an Origin header (server-to-server / curl) (9 ms)
+    ✓ allows exact allowlisted origin https://vitanaland.com (4 ms)
+    ✓ allows exact allowlisted origin https://www.vitanaland.com (2 ms)
+    ✓ allows exact allowlisted origin https://preview.vitanaland.com (1 ms)
+    ✓ allows exact allowlisted origin https://preview-gateway.vitanaland.com (1 ms)
+    ✓ allows exact allowlisted origin https://gateway.vitanaland.com (6 ms)
+    ✓ allows exact allowlisted origin https://dr-app.vitanaland.com
+    ✓ allows exact allowlisted origin https://community-app-86804897789.us-central1.run.app
+    ✓ allows dynamic pattern origin https://my-project-preview.lovableproject.com (1 ms)
+    ✓ allows dynamic pattern origin https://some-app-123.lovable.app (1 ms)
+    ✓ allows dynamic pattern origin https://community-app-00030-abc.run.app
+    ✓ allows dynamic pattern origin https://community-app-xyz9.us-central1.run.app
+    ✓ blocks disallowed origin https://evil.com (13 ms)
+    ✓ blocks disallowed origin http://vitanaland.com (4 ms)
+    ✓ blocks disallowed origin https://vitanaland.com.evil.com (2 ms)
+    ✓ blocks disallowed origin https://foo.lovable.app.evil.com (2 ms)
+    ✓ blocks disallowed origin https://xlovable.app (2 ms)
+    ✓ blocks disallowed origin https://community-app-abc.run.app.evil.com (3 ms)
+    ✓ blocks disallowed origin https://sub.preview.vitanaland.com (3 ms)
+    ✓ keeps credentials disabled (VTID-02036 revert regression guard) (1 ms)
+  setupCors (Express integration)
+    ✓ sets Access-Control-Allow-Origin for an allowed origin (34 ms)
+    ✓ answers preflight OPTIONS for an allowed origin (14 ms)
+    ✓ errors (500, no CORS headers) for a blocked origin (38 ms)
+  sseHeaders
+    ✓ sets SSE headers on GET /stream paths (2 ms)
+    ✓ does NOT set SSE headers on the JSON route GET /api/v1/oasis/events (VTID-04695)
+    ✓ does NOT set SSE headers on the JSON route GET /api/v1/calendar/events/window (VTID-04695)
+    ✓ does NOT set SSE headers on the JSON route GET /api/v1/calendar/events (VTID-04695) (3 ms)
+    ✓ does NOT set SSE headers on the JSON route GET /api/v1/universal-cart/events (VTID-04695)
+    ✓ sets SSE headers on GET /events when the client asks for a stream (EventSource) (3 ms)
+    ✓ does NOT set SSE headers on POST /stream/send (JSON route regression) (3 ms)
+    ✓ does NOT set SSE headers on Command Hub page /command-hub/oasis/events/ (VTID-04615) (3 ms)
+    ✓ does NOT set SSE headers on Command Hub page /command-hub/oasis/streams/ (VTID-04615) (1 ms)
+    ✓ does NOT set SSE headers on Command Hub page /command-hub/command-hub/events/ (VTID-04615)
+    ✓ does NOT set SSE headers on Command Hub page /command-hub/events.js (VTID-04615)
+    ✓ still sets SSE headers on the API stream the Command Hub opens (1 ms)
+    ✓ does NOT set SSE headers on unrelated GET paths
+
+Test Suites: 1 passed, 1 total
+Tests:       36 passed, 36 total
+Snapshots:   0 total
+Time:        1.484 s
+Ran all test suites matching /test\/middleware\/cors.test.ts/i.

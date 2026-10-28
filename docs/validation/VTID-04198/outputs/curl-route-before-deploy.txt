@@ -1,0 +1,22 @@
+VTID-04198 — route-mount proof, captured BEFORE this PR deploys
+date: 2026-09-20T21:28:36Z
+
+Per CLAUDE.md §15: an HTML 404 means the route does NOT exist on the
+deployed code. That is the expected result here — the route is new in
+this PR and staging has not deployed it yet.
+
+--- staging: the NEW route (expected: 404 text/html) ---
+$ curl -s -o /dev/null -w '%{http_code} %{content_type}' -X POST .../session/probe-vtid-04198/audio-blocked
+404 text/html; charset=utf-8
+
+--- staging: its ALREADY-LIVE sibling, same router prefix (control) ---
+$ curl ... -X POST .../session/probe-vtid-04198/audio-ready
+{"ok":false,"reason":"anonymous_no_ack"}
+200 application/json; charset=utf-8
+
+The control returning JSON on the same prefix confirms the router is
+mounted and reachable, so the 404 above is the route's absence, not a
+bad prefix or an unreachable host.
+
+--- staging build-info (which commit produced the 404 above) ---
+{"ok":true,"env":"staging","cloud_run_service":null,"cloud_run_revision":null,"git_commit":"f7d761b2fcdafff7f987a08a0c7b8cdf2d0c2e16","booted_at":"2026-09-20T21:17:12.650Z","marker":"f7d761b2fcda"}

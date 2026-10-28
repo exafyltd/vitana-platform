@@ -1,0 +1,7 @@
+# VTID-04641 — commands run
+npx tsc --noEmit -p services/gateway                                   # clean
+npx jest test/services/testing/test-results.test.ts                    # 14 passed (first run found a real race: two concurrent reads both started a sync; fixed by taking the shared promise before the first await)
+npx jest test/routes/testing-results.test.ts test/routes/testing.test.ts test/routes/testing-catalog.test.ts test/services/testing   # 59 passed
+npx jest test/scripts test/routes/testing                              # 239 passed
+Supabase apply_migration vtid_04641_ci_test_results                    # success (additive: two new tables, RLS on, no policy)
+node -e validateManifest(docs/validation/VTID-04641/staging-tests.json) # {"ok":true}

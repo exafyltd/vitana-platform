@@ -1,0 +1,4 @@
+node --test scripts/ci/staging-verify/lib.test.cjs          # 38 pass, 0 fail (baseline on main: 34 pass)
+node --check scripts/ci/staging-verify/run.mjs               # ok
+node -e "new Request(url,{method:'GET',body:'{}'})"          # old init: "Request with GET/HEAD method cannot have body." (the STAGING-VERIFY failure)
+node -e "new Request(url, lib.httpRequestInit(<VTID-05043 GET probe>))"  # new init: OK

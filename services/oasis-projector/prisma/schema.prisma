@@ -1,0 +1,94 @@
+// This is your Prisma schema file,
+// learn more about it in the docs: https://pris.ly/d/prisma-schema
+
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+model OasisEvent {
+  id        String   @id @default(cuid())
+  rid       String? // external request/event id (optional)
+  service   String
+  event     String? // Event name (legacy field)
+  tenant    String? // "system" | "maxina" | "earthlings" | "alkalma" | etc.
+  status    String // "start" | "success" | "fail" | "blocked" | "info" | "warning" | "error"
+  notes     String?  @db.Text
+  gitSha    String?  @map("git_sha")
+  metadata  Json?
+  createdAt DateTime @default(now()) @map("created_at")
+
+  // VTID-0522: Fields for event ingest API (/api/v1/events/ingest)
+  vtid    String? // VTID reference (e.g., "VTID-0521-TEST-0001")
+  topic   String? // Event type (e.g., "deployment_succeeded")
+  message String? @db.Text // Event message
+  role    String? // Role (e.g., "API", "claude")
+  model   String? // Model name (e.g., "event-ingestion-api")
+  link    String? // Optional link
+  source  String? // Event source (alternative to service)
+
+  // Projection tracking (DEV-OASIS-0010)
+  projected Boolean @default(false)
+
+  @@index([projected, createdAt], map: "idx_oasis_events_projected_created")
+  @@index([createdAt], map: "idx_oasis_events_created_at")
+  @@index([service, createdAt], map: "idx_oasis_events_service_created")
+  @@index([tenant, createdAt], map: "idx_oasis_events_tenant_created")
+  @@index([status, createdAt], map: "idx_oasis_events_status_created")
+  @@index([vtid], map: "idx_oasis_events_vtid")
+  @@map("oasis_events")
+}
+
+model VtidLedger {
+  id          String   @id @default(cuid())
+  vtid        String   @unique // VTID-YYYY-NNNN format
+  taskFamily  String   @map("task_family") // e.g., "governance", "deployment", "analysis"
+  taskType    String   @map("task_type") // e.g., "migration", "test", "review"
+  description String   @db.Text
+  status      String // "pending" | "active" | "complete" | "blocked" | "cancelled"
+  assignedTo  String?  @map("assigned_to") // Optional: who/what is executing
+  tenant      String // "system" | "maxina" | "earthlings" | etc.
+  metadata    Json? // Additional task-specific metadata
+  parentVtid  String?  @map("parent_vtid") // For subtasks
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  // VTID-0521: Event tracking columns for automatic ledger sync
+  lastEventId String?   @map("last_event_id") // ID of last OASIS event that updated this VTID
+  lastEventAt DateTime? @map("last_event_at") // Timestamp of last event
+  service     String? // Service that triggered the update (e.g., "gateway", "oasis-projector")
+  environment String?   @default("dev") // Environment (dev, staging, prod)
+
+  // VTID-0522: Additional columns for tasks API compatibility
+  layer   String? // High-level category (maps to taskFamily for compatibility)
+  module  String? // Module name (maps to taskType for compatibility)
+  title   String? // Short display title
+  summary String? @db.Text // Summary text for display
+
+  @@index([createdAt], map: "idx_vtid_created_at")
+  @@index([taskFamily, createdAt], map: "idx_vtid_family_created")
+  @@index([status, createdAt], map: "idx_vtid_status_created")
+  @@index([tenant, createdAt], map: "idx_vtid_tenant_created")
+  @@index([vtid], map: "idx_vtid_lookup")
+  @@index([lastEventAt(sort: Desc)], map: "idx_vtid_last_event_at")
+  @@index([service], map: "idx_vtid_service")
+  @@map("vtid_ledger")
+}
+
+// Projection Offsets - tracks projection progress (DEV-OASIS-0010)
+model ProjectionOffset {
+  id              String    @id @default(cuid())
+  projectorName   String    @unique @map("projector_name")
+  lastEventId     String?   @map("last_event_id")
+  lastEventTime   DateTime? @map("last_event_time")
+  lastProcessedAt DateTime  @default(now()) @updatedAt @map("last_processed_at")
+  eventsProcessed Int       @default(0) @map("events_processed")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  @@index([projectorName], map: "idx_projection_offsets_projector")
+  @@map("projection_offsets")
+}

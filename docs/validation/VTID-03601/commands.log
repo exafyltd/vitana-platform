@@ -1,0 +1,31 @@
+# VTID-03601 — commands executed for verification (2026-08-11)
+
+# 1. New unit tests for the SSRF guard + fingerprint detector
+cd services/gateway && npx jest test/services/platform-detect.test.ts test/routes/vcaop-portal-my.test.ts
+# -> Test Suites: 2 passed; Tests: 34 passed (captured in ./outputs/platform-detect-tests.txt)
+
+# 2. Typecheck of changed files
+cd services/gateway && npx tsc --noEmit -p tsconfig.json
+# -> 0 errors in services/platform-detect.ts, routes/vcaop-portal-my.ts, or
+#    either test file. This checkout has 2 pre-existing, unrelated
+#    module-resolution errors (missing `compression`/`pg` type declarations
+#    at src/index.ts / services/db-i18n/aurora-client.ts) present before this
+#    change — confirmed by grepping tsc output for the changed file paths only.
+
+# 3. Full local suite
+cd services/gateway && npx jest --silent
+# -> 644/653 suites pass, 12381/12392 tests pass. The 9 failing suites all
+#    fail identically and immediately on `Cannot find module 'compression'`
+#    at src/index.ts import time — a pre-existing environment/install gap in
+#    this checkout (declared in package.json, not present in node_modules),
+#    unrelated to this diff. None of the 9 are files this PR touches.
+
+# 4. Route mount — no new route file, no index.ts change needed.
+#    POST /connections/detect-platform is added directly on the existing
+#    router exported by services/gateway/src/routes/vcaop-portal-my.ts,
+#    which is already mounted at /api/v1/vcaop/portal/my in index.ts (see
+#    VTID-03544/03553 evidence packs — that mount predates this PR and is
+#    unchanged by it).
+grep -n "vcaop-portal-my\|portal/my" services/gateway/src/index.ts
+# -> mountRouterSync('/api/v1/vcaop/portal/my', vcaopPortalMyRouter, ...) —
+#    confirms the existing mount this new handler rides on.

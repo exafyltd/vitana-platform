@@ -1,0 +1,64 @@
+# VTID-04236 — commands run during this change
+
+## Trigger: Morning Health Check reported check 11 FAIL
+Morning Health Check: 3/21 FAILED
+| 11 | DB-content locale coverage (GA languages) | FAIL |
+  My Journey short: [{"locale":"tr","complete_rows":253,"expected":254}];
+  Navigator short: [{"locale":"tr","complete_rows":282,"expected":291},
+                     {"locale":"zh","complete_rows":289,"expected":291},
+                     {"locale":"ar","complete_rows":290,"expected":291}]
+
+## Root cause investigation — identified exact missing rows
+$ SELECT canon.topic_id, jct.topic_id IS NOT NULL AS row_exists, ...
+  FROM journey_checklist_translations canon LEFT JOIN ... WHERE locale='tr'
+  -> T178 missing entirely for tr
+
+$ SELECT sl_code, canon.catalog_id, nci.catalog_id IS NOT NULL AS row_exists, ...
+  FROM nav_catalog_i18n canon LEFT JOIN ... WHERE lang IN ('tr','zh','ar')
+  -> 12 missing rows: 766473da (ar+tr+zh), 2eaff461/3bab8e1f/a7f803f5/c588bc7c/
+     c99a06f5/efa294ac/f7dd3022/f8764dac (tr only), ad180ad8 (zh only)
+
+## Root cause of the tooling gap
+$ cat scripts/journey/generate-checklist-translations.mjs
+  -> calls Google Gemini API directly (GEMINI_API_KEY, generativelanguage.
+     googleapis.com) — forbidden per CLAUDE.md ALWAYS 10a/10c, IF-THEN 27
+     (no sanctioned Google dependency for LLM content generation).
+  -> LOCALES allowlist hardcoded to ['en','es','sr'] — would silently drop
+     tr/zh/ar even if invoked.
+$ grep -rl "nav_catalog_i18n" scripts/ services/
+  -> no backfill/translation script exists for nav_catalog_i18n at all.
+
+## Fix 1 — rewrote scripts/journey/generate-checklist-translations.mjs
+Replaced the Gemini HTTPS call with `aws bedrock-runtime invoke-model`
+(model eu.anthropic.claude-sonnet-4-6, region eu-central-1 — the exact
+invocation CLAUDE.md §2b documents as verified-invokable). Extended
+SUPPORTED_LOCALES from ['en','es','sr'] to the full GA target set
+(en,es,sr,fr,pl,pt,ru,tr,zh,ar).
+
+$ node --check scripts/journey/generate-checklist-translations.mjs
+exit: 0 (outputs/node-check-journey.txt)
+
+## Fix 2 — new scripts/nav/generate-nav-catalog-translations.mjs
+Same Bedrock-based approach, analogous to fix 1, for nav_catalog_i18n
+(which has no separate source table — 'en' is used as the translation
+source, per CLAUDE.md §3's own note that nav_catalog_i18n's 'en' rows are
+the reference-coverage locale with full 291/291 parity).
+
+$ node --check scripts/nav/generate-nav-catalog-translations.mjs
+exit: 0 (outputs/node-check-nav.txt)
+
+## Backfill of the exact missing rows (this session has no AWS CLI
+## credentials to run the scripts themselves — see acceptance.md's "Not
+## yet independently run" note) — translated directly and applied via
+## Supabase MCP execute_sql, matching each script's own upsert shape
+## (ON CONFLICT (topic_id, locale) / (catalog_id, lang) DO UPDATE):
+$ INSERT INTO journey_checklist_translations (topic_id='T178', locale='tr', ...)
+$ INSERT INTO nav_catalog_i18n (catalog_id='766473da...', lang='ar', ...)
+$ INSERT INTO nav_catalog_i18n (9 rows, lang='tr', ...)
+$ INSERT INTO nav_catalog_i18n (2 rows, lang='zh', ...)
+
+## Live re-verification — exact same RPC the Morning Health Check calls
+$ SELECT ci_vital_systems_health() -> 'journey_checklist_incomplete_ga_locales',
+         ci_vital_systems_health() -> 'nav_catalog_incomplete_ga_locales';
+{"jct_incomplete":[],"nav_incomplete":[]}
+(both empty — the exact gap check 11 reported is closed)

@@ -1,0 +1,8 @@
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (8 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 792 passed, 792 of 793 total
+Tests:       29 skipped, 6 todo, 14169 passed, 14204 total
+Snapshots:   44 passed, 44 total
+Time:        63.777 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,14 @@
+# VTID-04011 — commands run (Claude Code session, 2026-09-17)
+# Live evidence (staging): dev_autopilot_executions 47a4d6eb metadata after the 19:49:37 watchdog reclaim =
+#   {"error":"watchdog: stuck in 'running' > 20m (container recycled mid-execution)", bridge_*} — executor/claimed_env/llm_on_ramp* gone;
+#   child 8b2bce93 metadata = {source:dev-autopilot-bridge, claimed_env:staging, parent_execution_id, triage_*} — no executor, ran single-shot (PR #3379);
+#   parent after 19:53:47 = {"error":"agent deadline exceeded after 44 turn(s)"} — replaced again by applyExecutionResult.
+#   ECS task dabb2bb6 was RUNNING from 19:29:35 until the deadline; oasis dev_autopilot.agent.* steps continued through 19:53:46.
+npx jest test/vtid-04011-watchdog-heartbeat.test.ts test/autopilot-agent-scope-validate.test.ts \
+         test/self-healing-reconciler-autopilot-link.test.ts test/dev-autopilot-execute.test.ts \
+         test/dev-autopilot-runexec-pr-flood-guard.test.ts test/vtid-04006-selfheal-child-inherits-executor.test.ts
+                                                     -> 6 suites, 56 tests passing (8 new)
+node --max-old-space-size=3072 node_modules/.bin/tsc --noEmit -p tsconfig.json
+                                                     -> exit 0 (clean)
+NOT run here: a real agent execution on the rebuilt image (AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml from this commit) —
+             the re-run of Test Run #4 (VTID-04008) is the first live exercise of the heartbeat.

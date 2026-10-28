@@ -1,0 +1,2 @@
+CSP: no newly added violations on the browser-served surface.
+exit: 0

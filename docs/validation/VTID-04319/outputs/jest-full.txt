@@ -1,0 +1,30 @@
+    ✓ GET /:userId destructures `error` from fetchTenantMembershipCheck and logs it before the fail-closed check
+
+PASS test/orb/context/b0c-user-assistant-state-migration.test.ts
+  B0c — user_assistant_state migration
+    ✓ creates the user_assistant_state table (1 ms)
+    ✓ uses the documented composite primary key
+    ✓ enables RLS for tenant isolation (1 ms)
+    ✓ documents the forbidden ephemeral signals
+    ✓ has a touch trigger so updated_at advances on mutation
+    ✓ indexes expires_at for time-based sweeps
+
+PASS test/voice-synthetic-probe.test.ts
+  VTID-01961: Synthetic Voice Probe
+    ✓ all health flags true → ok=true, no failure_mode_code (1 ms)
+    ✓ gemini_configured=false → gemini_not_configured (1 ms)
+    ✓ tts_client_ready=false → tts_not_ready
+    ✓ voice_conversation_enabled=false → voice_disabled
+    ✓ fallback_chat_tts.available=false → fallback_chat_tts_unavailable
+    ✓ non-2xx response → health_non_2xx (1 ms)
+    ✓ fetch throws → health_unreachable
+    ✓ malformed JSON → health_malformed_json (1 ms)
+    ✓ chime-only would-pass simulation: this v1 probe is config/auth-focused
+    ✓ probe records duration_ms
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 1082 passed, 1082 of 1083 total
+Tests:       29 skipped, 6 todo, 17568 passed, 17603 total
+Snapshots:   42 passed, 42 total
+Time:        87.176 s, estimated 90 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

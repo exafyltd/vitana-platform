@@ -1,0 +1,40 @@
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-C terminalized failed via autopilot execution exec-C (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:566:17)
+
+  console.log
+    [OASIS Event] Emitted: self-healing.execution.failed for VTID-03862 (f7c5c3f3-5960-4777-b0cd-e0352019f742)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [self-healing-reconciler] VTID-03862 terminalized failed via autopilot execution exec-onr (reverted)
+
+      at reconcileAutopilotLinkedSelfHealingVtids (src/services/self-healing-reconciler.ts:566:17)
+
+PASS test/self-healing-reconciler-autopilot-link.test.ts
+  reconcileAutopilotLinkedSelfHealingVtids
+    ✓ terminalizes success when execution.status=completed (26 ms)
+    ✓ terminalizes failed when execution.status=failed (2 ms)
+    ✓ terminalizes failed when execution.status=failed_escalated (2 ms)
+    ✓ leaves VTID alone when execution.status=cooling (still in flight)
+    ✓ leaves VTID alone when execution.status=queued (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=running (still in flight)
+    ✓ leaves VTID alone when execution.status=ci (still in flight) (1 ms)
+    ✓ leaves VTID alone when execution.status=merging (still in flight)
+    ✓ leaves VTID alone when execution.status=deploying (still in flight)
+    ✓ leaves VTID alone when execution.status=verifying (still in flight) (1 ms)
+    ✓ handles multiple rows in one scan (success + failure mixed) (3 ms)
+    ✓ VTID-03877: terminalizes a non-self-healing VTID (e.g. operator-onramp) that has a linked execution (1 ms)
+    ✓ no-op when no autopilot-linked self-healing rows exist (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       25 passed, 25 total
+Snapshots:   0 total
+Time:        0.974 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03820-operator-execution-onramp.test.ts|test\/self-healing-reconciler-autopilot-link.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

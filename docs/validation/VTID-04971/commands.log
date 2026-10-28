@@ -1,0 +1,4 @@
+$ NODE_PATH=/opt/node22/lib/node_modules node -e "typescript.transpileModule(...)"   # syntax check of every changed .ts file
+ok (no diagnostics)
+# jest / tsc cannot run in the session (registry.npmjs.org blocked by the network policy); CI is the first run.
+# provisioning.sql is owner-run and was not executed.

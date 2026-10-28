@@ -1,0 +1,105 @@
+VTID-03823 — commands.log
+==========================
+
+## Syntax checks
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+-> SYNTAX_OK
+
+$ node --check scripts/ci/command-hub-ownership-guard.js
+-> OK
+
+## Type check
+
+$ cd services/gateway && npx tsc --noEmit
+-> exit 0, no output (clean)
+
+## Targeted tests
+
+$ cd services/gateway && npx jest test/vtid-03823-tasks-board-hygiene.test.ts --silent=false
+-> outputs/jest-vtid-03823-filter.txt: 1/1 suite, 15/15 tests passing
+
+## Full suite regression check
+
+$ cd services/gateway && npx jest --silent=false
+-> outputs/jest-full-suite-tail.txt (tail): 752/753 suites (1 pre-existing
+   skip), 13,798/13,833 tests passing, 0 failures, exit code 0
+
+## Real-browser verification
+
+Same technique as VTID-03822 (no live gateway/Supabase credentials in this
+session): served the real, unmodified `services/gateway/src/frontend/
+command-hub/` tree at `/command-hub/*` via a local static file server, and
+drove the real code in headless Chromium (Playwright, /opt/pw-browsers/
+chromium).
+
+### Filter chips + staleness badge + bulk-select (desktop + mobile)
+
+Seeded 5 fake tasks via `state.tasks` (one Scheduled task deliberately
+12 days old, `is_terminal` unset — the "stale" case) and mounted the real
+`renderTasksView()` output outside `#root` (so the app's own auth-gate
+re-render loop can't clobber the harness). Screenshotted at 1400x900 and
+390x844:
+  - /tmp/vtid03823-board-desktop.png
+  - /tmp/vtid03823-board-mobile.png
+  - /tmp/vtid03823-board-stale-filter.png (after clicking the real
+    "Stale (>7d)" chip)
+All three sent to the user directly.
+
+Clicked the real "Stale (>7d)" chip: querying
+`.task-card-vtid-label` afterward showed exactly `["VTID-10002"]` visible
+— the one seeded stale task, across all three columns.
+
+Clicked a real checkbox via `page.click()`: `state.taskMultiSelectIds`
+updated and the bulk-action bar rendered with the correct count (visible
+in the mobile screenshot).
+
+### Drag-and-drop (Scheduled -> In Progress)
+
+Seeded two Scheduled tasks, one `spec_status: 'approved'` one `'draft'`.
+Stubbed `window.fetch` to intercept and record any
+`PATCH /api/v1/oasis/tasks/:vtid` call instead of hitting a live backend,
+then used Playwright's real `locator.dragTo()` (genuine HTML5 drag-and-
+drop, not a synthetic click) to drag each card onto the real "In
+Progress" column's drop zone:
+
+  - Dragging the DRAFT (unapproved) task -> 0 PATCH calls recorded (gate
+    held, no toast-triggering network call).
+  - Dragging the APPROVED task -> the real `confirm()` dialog fired with
+    the exact text "Move VTID-20001 to In Progress for manual work? ...
+    This will NOT trigger autonomous execution — you will work on this
+    task yourself." Accepting it produced exactly one recorded call:
+    `{"url":"/api/v1/oasis/tasks/VTID-20001","body":"{\"status\":\"in_progress\"}"}`.
+
+### Pre-existing zero-height status-row bug (found while verifying the age badge)
+
+Directly measured `getBoundingClientRect()` on `.task-card-status-row`
+and its children for a real card rendered by the real `createTaskCard()`:
+
+  - Against `origin/main` (checked out via `git show origin/main:...` into
+    a separate static root, BEFORE this VTID's own CSS changes): row
+    height measured 0px; status pill/role badge each individually had
+    nonzero size but were clipped to invisible by the 0-height,
+    `overflow:hidden` parent.
+  - After removing `overflow:hidden` + adding `flex-shrink:0` on the row
+    alone: row height became 18px and all three badges (status/age/role)
+    became visible — but `.task-card-spec-row`/`.task-stage-timeline`
+    (which come after the status row in the same flex-column card, capped
+    at `max-height:100px`) now clipped instead, confirmed by the same
+    rect measurement and by screenshot.
+  - After additionally raising `.task-card-enhanced`'s `max-height` from
+    100px to 148px (the measured natural sum of title + vtid-line +
+    3-item status row + spec-row + stage-timeline): every row's rect
+    matched its natural content height, nothing clipped. Re-screenshotted
+    the full board to confirm — all badges, spec pills, and PL/WO/VA/DE
+    stage pills visible simultaneously on every card
+    (/tmp/vtid03823-board-desktop.png, sent to the user).
+
+Cleaned up: removed all ad-hoc Playwright driver scripts (not part of the
+shipped diff) and the temporary static file servers/roots.
+
+## Not run
+
+No live `/api/v1/oasis/tasks/:vtid` DELETE/PATCH request was exercised
+against a real backend (no gateway/Supabase credentials in this session).
+See acceptance.md "Deliberately NOT attempted".

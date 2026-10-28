@@ -1,0 +1,182 @@
+$ npx jest test/i18n test/db-i18n/db-i18n.test.ts
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [db-i18n] batch of 4 failed (Expected property name or '}' in JSON at position 8 (line 1 column 9)) — splitting (depth 0)
+
+      238 |       // batch reproduces it. Halve and recurse.
+      239 |       const mid = Math.ceil(batch.length / 2);
+    > 240 |       console.warn(
+          |               ^
+      241 |         `[db-i18n] batch of ${batch.length} failed (${message.slice(0, 80)}) — splitting (depth ${depth})`,
+      242 |       );
+      243 |       await run(batch.slice(0, mid), depth + 1);
+
+      at run (src/services/db-i18n/translator.ts:240:15)
+      at translateUnits (src/services/db-i18n/translator.ts:256:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:384:17)
+
+  console.warn
+    [db-i18n] batch of 2 failed (Unexpected token 'o', "not json" is not valid JSON) — splitting (depth 0)
+
+      238 |       // batch reproduces it. Halve and recurse.
+      239 |       const mid = Math.ceil(batch.length / 2);
+    > 240 |       console.warn(
+          |               ^
+      241 |         `[db-i18n] batch of ${batch.length} failed (${message.slice(0, 80)}) — splitting (depth ${depth})`,
+      242 |       );
+      243 |       await run(batch.slice(0, mid), depth + 1);
+
+      at run (src/services/db-i18n/translator.ts:240:15)
+      at translateUnits (src/services/db-i18n/translator.ts:256:5)
+      at Object.<anonymous> (test/db-i18n/db-i18n.test.ts:395:17)
+
+PASS test/db-i18n/db-i18n.test.ts
+  target selection
+    ✓ defaults to supabase when unset or empty (3 ms)
+    ✓ selects aurora on the exact value, case/space tolerant (2 ms)
+    ✓ falls back to supabase on an unrecognised value rather than guessing (1 ms)
+  aurora adapter (VTID-03517)
+    ✓ is constructible without a Supabase client (1 ms)
+    ✓ reports a missing connection string as config, not as an empty result (14 ms)
+    ✓ rejects a connection string that is not a postgres URL (22 ms)
+    ✓ redacts the password when describing the target (1 ms)
+    ✓ never silently falls back to supabase (1 ms)
+    ✓ keeps naming the remaining risk rather than decaying to "not implemented"
+    writes are gated separately from connectivity
+      ✓ upsertNavCatalogI18n refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ upsertChecklistTranslations refuses without AURORA_I18N_WRITES (1 ms)
+      ✓ explains WHY, so the flag is not set reflexively (1 ms)
+      ✓ does not gate reads behind the write flag
+  aurora TLS resolution
+    ✓ defaults to verifying certificates (1 ms)
+    ✓ only disables verification on an explicit opt-in, and warns (1 ms)
+    ✓ fails loudly when the CA bundle path is set but absent (1 ms)
+    sslmode=disable is a loopback-only escape hatch
+      ✓ permits plaintext to 127.0.0.1
+      ✓ permits plaintext to localhost (1 ms)
+      ✓ permits plaintext to [::1]
+      ✓ REFUSES plaintext to a remote host (1 ms)
+      ✓ still requires TLS for a loopback host without the flag (1 ms)
+  supabase target requires a client
+    ✓ throws a specific error rather than a null dereference (1 ms)
+  sourceSha
+    ✓ is stable regardless of object key insertion order
+    ✓ changes when any source field changes (1 ms)
+    ✓ does not collide when content shifts between fields
+    ✓ distinguishes an empty field from a missing one consistently
+  placeholder handling
+    ✓ matches non-ASCII token names — the case \w+ misses
+    ✓ does not swallow an embedded JSON example as one token
+    ✓ passes through an already-correct translation
+    ✓ repairs renamed tokens positionally
+    ✓ refuses to guess when the token COUNT changed
+  validateUnit
+    ✓ accepts a well-formed translation (1 ms)
+    ✓ keeps an empty source field empty rather than inventing content
+    ✓ rejects the unit when a REQUIRED field is blank
+    ✓ blanks an OPTIONAL missing field so the read path falls back to German
+    ✓ rejects a unit missing entirely from the response (1 ms)
+    ✓ rejects a substantive field echoed back verbatim
+    ✓ allows a SHORT unchanged string — proper nouns survive translation
+    ✓ rejects a unit whose placeholder count changed
+    ✓ repairs a renamed placeholder rather than failing the unit
+  translateUnits batch splitting
+    ✓ splits a batch that fails to parse, down to units that succeed (15 ms)
+    ✓ reports a genuine per-unit failure once the batch is a single unit (3 ms)
+    ✓ surfaces an HTTP error as a failure rather than an empty success (1 ms)
+  surface registry
+    ✓ exposes both content surfaces
+    ✓ rejects an unknown surface by name, listing the known ones (2 ms)
+    ✓ never treats German as a translation target (1 ms)
+    ✓ builds a nav_catalog_i18n row with the natural key and stamp (1 ms)
+    ✓ writes NULL rather than empty string for untranslated checklist fields
+    ✓ requires a non-empty label on both surfaces
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/i18n/catalog-coverage.test.ts
+  gateway i18n catalog coverage
+    ✓ ships all 9 registered locales (1 ms)
+    ✓ de has every key DE has (1 ms)
+    ✓ en has every key DE has
+    ✓ es has every key DE has
+    ✓ sr has every key DE has
+    ✓ fr has every key DE has
+    ✓ pt has every key DE has
+    ✓ ru has every key DE has
+    ✓ pl has every key DE has
+    ✓ zh has every key DE has
+    ✓ de has no empty values
+    ✓ en has no empty values
+    ✓ es has no empty values (1 ms)
+    ✓ sr has no empty values
+    ✓ fr has no empty values
+    ✓ pt has no empty values (1 ms)
+    ✓ ru has no empty values
+    ✓ pl has no empty values
+    ✓ zh has no empty values (1 ms)
+  gateway i18n catalog fidelity
+    ✓ de is not a copy of the English catalog
+    ✓ es is not a copy of the English catalog (1 ms)
+    ✓ sr is not a copy of the English catalog
+    ✓ fr is not a copy of the English catalog
+    ✓ pt is not a copy of the English catalog (1 ms)
+    ✓ ru is not a copy of the English catalog
+    ✓ pl is not a copy of the English catalog
+    ✓ zh is not a copy of the English catalog
+  gateway i18n placeholder integrity
+    ✓ de preserves every {placeholder} exactly (1 ms)
+    ✓ en preserves every {placeholder} exactly
+    ✓ es preserves every {placeholder} exactly (1 ms)
+    ✓ sr preserves every {placeholder} exactly
+    ✓ fr preserves every {placeholder} exactly
+    ✓ pt preserves every {placeholder} exactly
+    ✓ ru preserves every {placeholder} exactly (1 ms)
+    ✓ pl preserves every {placeholder} exactly (4 ms)
+    ✓ zh preserves every {placeholder} exactly (1 ms)
+  locale resolution
+    ✓ resolves language words whose spelling does not match their ISO code
+    ✓ resolves BCP-47 tags the frontend language picker writes (1 ms)
+    ✓ distinguishes "unknown" from "German" (strict resolver) (1 ms)
+  tt() fallback chain
+    ✓ returns the locale value when present
+    ✓ substitutes placeholders (1 ms)
+    ✓ leaves unknown placeholders untouched rather than printing undefined
+    ✓ falls back to an unknown locale via German, not a raw key
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/i18n/llm-locale.test.ts
+  buildLocalizedSystemPrompt
+    ✓ returns the base prompt unchanged when locale is null/undefined (English-by-design paths) (1 ms)
+    ✓ German: forces German output, du-form register, and the compound-word rule
+    ✓ Spanish: forces Spanish + tú-form, and does NOT inject the German compound rule
+    ✓ Serbian: forces Serbian + ti-form register
+    ✓ English: forces English output but has no register/compound hint (1 ms)
+    ✓ keeps brand names untranslated (does not constrain Vitana/MAXINA/OASIS)
+  buildLocalizedSystemPromptForLang (short-code convenience)
+    ✓ normalizes BCP-47-ish prefixes (de-DE, en-US, …) to the supported set (1 ms)
+    ✓ constrains the four locales added for the 18 Aug release (1 ms)
+    ✓ resolves word-form language names whose spelling does not match their ISO code
+    ✓ gives every supported locale an informal-register directive (2 ms)
+    ✓ passes through unchanged for null / empty / unsupported languages
+
+Test Suites: 3 passed, 3 total
+Tests:       103 passed, 103 total
+Snapshots:   0 total
+Time:        0.975 s, estimated 1 s
+Ran all test suites matching /test\/i18n|test\/db-i18n\/db-i18n.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

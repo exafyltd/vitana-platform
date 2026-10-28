@@ -1,0 +1,218 @@
+# =============================================================================
+# Worker Orchestrator Routing Rules - VTID-01163
+# =============================================================================
+# Deterministic routing configuration for worker subagent dispatch.
+# =============================================================================
+
+routing_version: 1.0.0
+vtid: VTID-01163
+
+# =============================================================================
+# Domain Detection Rules
+# =============================================================================
+domain_detection:
+  # Keywords that indicate frontend domain
+  frontend:
+    keywords:
+      - "Command Hub"
+      - "UI"
+      - "CSS"
+      - "SPA"
+      - "CSP"
+      - "styles"
+      - "orb overlay"
+      - "frontend"
+      - "component"
+      - "layout"
+      - "button"
+      - "modal"
+      - "form"
+      - "input"
+      - "display"
+      - "render"
+      - "view"
+      - "page"
+      - "template"
+      - "tailwind"
+      - "web"
+      - "browser"
+
+    path_patterns:
+      - "services/gateway/src/frontend/**"
+      - "services/gateway/dist/frontend/**"
+      - "**/*.html"
+      - "**/*.css"
+      - "**/frontend/**"
+      - "**/web/**"
+
+  # Keywords that indicate backend domain
+  backend:
+    keywords:
+      - "endpoint"
+      - "api/v1"
+      - "gateway"
+      - "controller"
+      - "route mount"
+      - "SSE"
+      - "operator"
+      - "service"
+      - "middleware"
+      - "handler"
+      - "API"
+      - "REST"
+      - "POST"
+      - "GET"
+      - "PATCH"
+      - "DELETE"
+      - "express"
+      - "router"
+      - "request"
+      - "response"
+      - "authentication"
+      - "authorization"
+      - "CICD"
+      - "deploy"
+
+    path_patterns:
+      - "services/gateway/src/**"
+      - "services/**/src/**"
+      - "**/*.ts"
+      - "**/routes/**"
+      - "**/controllers/**"
+      - "**/services/**"
+      - "**/middleware/**"
+
+    # Exclude frontend paths when backend is detected
+    exclude_patterns:
+      - "services/gateway/src/frontend/**"
+      - "services/gateway/dist/frontend/**"
+
+  # Keywords that indicate memory domain
+  memory:
+    keywords:
+      - "supabase"
+      - "rpc"
+      - "vectors"
+      - "qdrant"
+      - "mem0"
+      - "embedding"
+      - "context"
+      - "memory"
+      - "migration"
+      - "database"
+      - "table"
+      - "schema"
+      - "index"
+      - "query"
+      - "OASIS"
+      - "ledger"
+      - "tenant"
+      - "user context"
+
+    path_patterns:
+      - "supabase/migrations/**"
+      - "services/agents/memory-indexer/**"
+      - "**/memory/**"
+      - "**/*.sql"
+
+# =============================================================================
+# Routing Priority
+# =============================================================================
+# When multiple domains match, use this priority order
+priority_order:
+  - memory    # Memory changes are highest risk, check first
+  - backend   # Backend changes affect API contracts
+  - frontend  # Frontend changes are most isolated
+
+# =============================================================================
+# Mixed Task Handling
+# =============================================================================
+mixed_task_handling:
+  # How to handle tasks that span multiple domains
+  strategy: sequential_split
+
+  # Order of execution for mixed tasks
+  execution_order:
+    - memory    # Database changes first
+    - backend   # API changes second
+    - frontend  # UI changes last
+
+  # Wait for each stage to complete before next
+  wait_between_stages: true
+
+  # Maximum stages for a mixed task
+  max_stages: 3
+
+# =============================================================================
+# Default Target Paths (when not specified)
+# =============================================================================
+default_paths:
+  frontend:
+    - "services/gateway/src/frontend/**"
+
+  backend:
+    - "services/gateway/src/**"
+    - "!services/gateway/src/frontend/**"
+
+  memory:
+    - "supabase/migrations/**"
+    - "services/agents/memory-indexer/**"
+
+# =============================================================================
+# Change Budget Defaults
+# =============================================================================
+default_change_budget:
+  frontend:
+    max_files: 10
+    max_directories: 5
+
+  backend:
+    max_files: 15
+    max_directories: 8
+
+  memory:
+    max_files: 5
+    max_directories: 3
+
+# =============================================================================
+# Subagent Dispatch Configuration
+# =============================================================================
+subagents:
+  worker-frontend:
+    agent_id: worker-frontend
+    dispatch_event: vtid.stage.worker_frontend.start
+    success_event: vtid.stage.worker_frontend.success
+    failed_event: vtid.stage.worker_frontend.failed
+    timeout_ms: 1800000
+
+  worker-backend:
+    agent_id: worker-backend
+    dispatch_event: vtid.stage.worker_backend.start
+    success_event: vtid.stage.worker_backend.success
+    failed_event: vtid.stage.worker_backend.failed
+    timeout_ms: 1800000
+
+  worker-memory:
+    agent_id: worker-memory
+    dispatch_event: vtid.stage.worker_memory.start
+    success_event: vtid.stage.worker_memory.success
+    failed_event: vtid.stage.worker_memory.failed
+    timeout_ms: 1800000
+
+# =============================================================================
+# Validation Rules
+# =============================================================================
+validation:
+  # Required fields for routing
+  required_fields:
+    - vtid
+    - title
+
+  # VTID pattern validation
+  vtid_pattern: "^VTID-\\d{4,}$"
+
+  # Default task_family if not provided
+  default_task_family: DEV
+
+  # Fail if no domain can be determined
+  require_domain_detection: true

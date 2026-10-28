@@ -1,0 +1,20 @@
+$ grep -n "export async function notifyUser\|export function notifyUserAsync\|export function notifyUsersAsync" services/gateway/src/services/notification-service.ts
+684:export async function notifyUser(
+838:export function notifyUserAsync(
+854:export function notifyUsersAsync(
+(confirms notifyUser's real signature: userId, tenantId, type, payload, supabase → Promise<{pushed, inapp, suppressed?}>)
+
+$ git diff -- services/gateway/src/routes/admin-feature-announcements.ts services/gateway/test/admin-feature-announcements.test.ts
+(reviewed manually — notifyUsersAsync import replaced with notifyUser; dispatch loop replaced with
+Promise.allSettled over one notifyUser(...) call per recipient; notified_at write moved after the
+await; response + OASIS payload gained `dispatched`; test file's mock/assertions updated to match)
+
+$ cd services/gateway && npm ci
+npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/jest
+npm error 403 In most cases, you or one of your dependencies are requesting
+npm error 403 a package version that is forbidden by your security policy, or
+npm error 403 on a server you do not have access to.
+(no outbound npm registry access in this sandboxed session — same limitation noted in the
+original PR #2922 that added this route; could not run `tsc --noEmit` or `jest` locally.
+CI's own Build Gate step runs `npm ci && npm run build` for real, with real network access.)

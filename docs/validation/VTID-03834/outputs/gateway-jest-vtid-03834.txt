@@ -1,0 +1,81 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+
+
+PASS test/vtid-03834-erp-capabilities.test.ts
+  VTID-03834 capability catalog
+    ✓ is the design-gate catalog (GOLDEN-WORKFLOWS §3.1): 30 capabilities, <domain>.<level>, unique (8 ms)
+    ✓ hr.* and payroll.* are explicit-only and appear in NO role defaults (2 ms)
+    ✓ role defaults match §3.2: admin lacks finance.pay/accounting.close; developer/infra view-only; backoffice/staff none (3 ms)
+    ✓ effective = defaults ∪ explicit, unknown explicit strings dropped, catalog order kept
+    ✓ who manages access: exafy, tenant admin (erp.admin default), or an explicit erp.admin grant
+    ✓ validateGrant: catalog check, and hr/payroll only by tenant admin or exafy (1 ms)
+    ✓ approver-level set is exactly the §3.1 list
+    ✓ the migration names the same table the route writes and keeps writes to the service role
+
+
+
+  console.error
+    [VTID-03834] explicit grants fetch failed: GRANTS_FETCH_500
+
+      54 |       explicit = (await fetchGrants(auth.tenant_id, auth.user_id)).map((r) => r.capability);
+      55 |     } catch (err: any) {
+    > 56 |       console.error(`[${VTID}] explicit grants fetch failed:`, err.message);
+         |               ^
+      57 |       // fail closed on explicit grants, but role defaults still apply
+      58 |     }
+      59 |   }
+
+      at resolveAccess (src/routes/backoffice-access.ts:56:15)
+      at src/routes/backoffice-access.ts:85:20
+
+    [VTID-03834] Capability granted: sales.draft to u1 by a@x
+
+      at src/routes/backoffice-access.ts:186:13
+
+    [VTID-03834] Capability granted: hr.view to u1 by a@x
+
+      at src/routes/backoffice-access.ts:186:13
+
+    [VTID-03834] Capability revoked: sales.draft from u1 by x@x
+
+      at src/routes/backoffice-access.ts:212:13
+
+PASS test/routes/backoffice-access.test.ts
+  GET /me
+    ✓ 401 without identity (mount proof: JSON, not HTML) (20 ms)
+    ✓ tenant admin: defaults (incl. erp.admin, no finance.pay) ∪ explicit grants (4 ms)
+    ✓ backoffice role with no grants: empty capabilities, cannot manage access (3 ms)
+    ✓ a failing grants read fails closed on explicit grants but keeps role defaults (12 ms)
+  requireErpCapability middleware
+    ✓ 403 names the missing capability; 200 when held via explicit grant (5 ms)
+  GET /access
+    ✓ 403 for a backoffice user without erp.admin; 200 grouped per user for a tenant admin (4 ms)
+    ✓ a non-exafy caller cannot read another tenant via ?tenant_id (3 ms)
+  POST /access/grant
+    ✓ validates the capability against the catalog (9 ms)
+    ✓ tenant admin grants sales.draft: POST to erp_capability_grants with granted_by and tenant scope (3 ms)
+    ✓ duplicate grant is idempotent (200, already granted) (1 ms)
+    ✓ hr.* can be granted by a tenant admin, NOT by a delegated erp.admin holder (3 ms)
+    ✓ target outside the tenant is refused (canManageRoles membership check) (2 ms)
+    ✓ a backoffice user without erp.admin cannot grant at all (1 ms)
+  POST /access/revoke
+    ✓ DELETE scoped to user × tenant × capability (2 ms)
+
+
+
+PASS test/vtid-03832-vitana-roles-constant.test.ts
+  VTID-03832 vitana-roles constant
+    ✓ carries all eight roles in ladder order (backoffice between staff and admin)
+    ✓ backoffice is tenant-admin-grantable: NOT in the super-admin-only list
+    ✓ VALID_ROLES is a mutable mirror and admin-navigator re-exports the same set
+    ✓ isVitanaRole guards (1 ms)
+    ✓ no route file still carries its own hard-coded 7-role list (22 ms)
+    ✓ the DB migrations name the same eight roles as the constant (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       28 passed, 28 total
+Snapshots:   0 total
+Time:        0.97 s, estimated 1 s
+Ran all test suites matching /test\/vtid-03834-erp-capabilities.test.ts|test\/routes\/backoffice-access.test.ts|test\/vtid-03832-vitana-roles-constant.test.ts/i.

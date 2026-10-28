@@ -1,0 +1,554 @@
+// Production defaults. Phase 0 staging build: per-request `env` bindings from
+// wrangler.toml override these so `wrangler deploy --env staging` ships a
+// variant worker pointing at gateway-staging + the staging Supabase branch.
+// Helpers below accept an explicit { gatewayUrl, supabaseFunctions } config so
+// no module-level mutable state is shared across concurrent requests.
+const DEFAULT_SUPABASE_FUNCTIONS = 'https://inmkhvwdcuyhnxkgfvsb.supabase.co/functions/v1';
+// VTID-03419: canonical hostname, not a provider URL. As of 2026-07-27 this
+// resolves to the AWS ALB (vitana-gateway-awsdr); before that it was GCP
+// Cloud Run. Using the canonical name means this worker follows any future
+// infra move via DNS instead of needing another hard-coded-URL edit like
+// the one this line replaced (the old value pinned the raw Cloud Run URL,
+// which would have silently broken OG previews on any GCP shutdown).
+// Same-zone fetch is safe: gateway.vitanaland.com is DNS-only (grey-cloud)
+// and has no Worker route, so no proxy loop is possible.
+const DEFAULT_GATEWAY_URL = 'https://gateway.vitanaland.com';
+
+function resolveConfig(env) {
+  return {
+    gatewayUrl: (env && env.GATEWAY_URL) || DEFAULT_GATEWAY_URL,
+    supabaseFunctions: (env && env.SUPABASE_FUNCTIONS) || DEFAULT_SUPABASE_FUNCTIONS,
+  };
+}
+
+const CRAWLERS = ['whatsapp', 'facebookexternalhit', 'facebot',
+  'twitterbot', 'linkedinbot', 'slackbot', 'telegrambot', 'discordbot'];
+
+function isCrawler(ua) {
+  return CRAWLERS.some(c => ua.toLowerCase().includes(c));
+}
+
+function parseRoute(pathname) {
+  const match = pathname.match(/^\/(events|profiles|rooms|matches|products|shorts)\/(.+)$/);
+  if (match) return { type: match[1], identifier: match[2] };
+  // Handle /pub/events/{id} format
+  const pubMatch = pathname.match(/^\/pub\/events\/(.+)$/);
+  if (pubMatch) return { type: 'events', identifier: pubMatch[1] };
+  // Backward compat: bare /{slug} → events
+  const bare = pathname.replace(/^\//, '');
+  if (bare) return { type: 'events', identifier: bare };
+  return null;
+}
+
+function escapeHtml(s) {
+  return String(s).replace(/[&<>"']/g, c =>
+    ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+}
+
+function formatPrice(cents, currency) {
+  if (cents == null || !currency) return '';
+  try {
+    return new Intl.NumberFormat('en', {
+      style: 'currency',
+      currency: currency.toUpperCase(),
+      minimumFractionDigits: 0,
+      maximumFractionDigits: 2,
+    }).format(cents / 100);
+  } catch {
+    return `${(cents / 100).toFixed(2)} ${currency.toUpperCase()}`;
+  }
+}
+
+// WhatsApp silently refuses to render og:image files larger than ~600 KB
+// (title + description still show, the thumbnail just never appears — the
+// exact "shared without an image" symptom). Facebook's limit is far higher
+// (8 MB), so WhatsApp is the binding constraint. Any candidate above this
+// is treated as unusable so we fall through to the next one.
+const MAX_OG_IMAGE_BYTES = 600_000;
+
+/**
+ * Rewrite a Supabase public-storage object URL to the storage image
+ * transformation endpoint, resized to a WhatsApp-safe 512×512.
+ * User-uploaded avatars are stored at original size (multi-MB phone
+ * photos are common) and would blow past MAX_OG_IMAGE_BYTES.
+ * `format=origin` stops Supabase from auto-serving WebP (negotiated via
+ * Accept), which WhatsApp doesn't reliably render.
+ * Returns null for anything that isn't a Supabase public object URL.
+ */
+function supabaseRenderUrl(url) {
+  if (!url || typeof url !== 'string') return null;
+  const m = url.match(
+    /^(https:\/\/[a-z0-9-]+\.supabase\.co)\/storage\/v1\/object\/public\/(.+)$/i,
+  );
+  if (!m) return null;
+  const path = m[2].split('?')[0];
+  return `${m[1]}/storage/v1/render/image/public/${path}` +
+    '?width=512&height=512&resize=cover&quality=80&format=origin';
+}
+
+/**
+ * Walk a list of candidate image URLs and return the first one that
+ * actually serves image bytes crawlers will render. Falls through to
+ * the supplied default on any miss.
+ *
+ * Some legacy / third-party avatar hosts (Supabase signed URLs, certain
+ * object-storage CDNs) answer HEAD with `application/octet-stream` or
+ * an empty Content-Type while serving correct image bytes on GET. To
+ * avoid silently downgrading those avatars to the branded default —
+ * which then gets cached for 7d by WhatsApp et al. — we fall back to a
+ * tiny `Range: bytes=0-0` GET when HEAD looks ambiguous.
+ *
+ * A candidate that serves image bytes but is larger than
+ * MAX_OG_IMAGE_BYTES is also rejected: WhatsApp fetches the image
+ * itself and silently drops oversized ones, so emitting it would cache
+ * an image-less preview for ~7 days. Size comes from Content-Length on
+ * HEAD, or the Content-Range total on the ranged-GET fallback; when
+ * neither is present we accept the candidate (can't tell, and dropping
+ * valid images is the worse failure).
+ *
+ * Returns the detected content-type so the caller can emit an accurate
+ * `og:image:type`.
+ */
+async function pickUsableImage(candidates, defaultImage) {
+  const probe = async (url, method) => {
+    try {
+      const init = {
+        method,
+        redirect: 'follow',
+        cf: { cacheTtl: 300, cacheEverything: true },
+      };
+      if (method === 'GET') init.headers = { range: 'bytes=0-0' };
+      const r = await fetch(url, init);
+      const ct = (r.headers.get('content-type') || '').toLowerCase();
+      let size = null;
+      if (method === 'GET' && r.status === 206) {
+        // Ranged response: Content-Length is the 1-byte slice; the real
+        // size is the total in `Content-Range: bytes 0-0/<total>`.
+        const total = (r.headers.get('content-range') || '').split('/')[1];
+        if (total && /^\d+$/.test(total)) size = Number(total);
+      } else {
+        const len = r.headers.get('content-length');
+        if (len && /^\d+$/.test(len)) size = Number(len);
+      }
+      return { ok: r.ok, ct, size };
+    } catch {
+      return null;
+    }
+  };
+
+  for (const url of candidates) {
+    if (!url || typeof url !== 'string') continue;
+    if (!/^https?:\/\//i.test(url)) continue;
+
+    let r = await probe(url, 'HEAD');
+    const ambiguous =
+      !r || !r.ok || r.ct === '' || r.ct.startsWith('application/octet-stream');
+    if (ambiguous) {
+      const g = await probe(url, 'GET');
+      if (g) r = g;
+    }
+
+    if (r && r.ok && r.ct.startsWith('image/')) {
+      if (r.size != null && r.size > MAX_OG_IMAGE_BYTES) continue;
+      return { url, contentType: r.ct };
+    }
+  }
+  return { url: defaultImage, contentType: 'image/jpeg' };
+}
+
+// Branded asset used whenever we can't show a real avatar. This bucket
+// (`covers/`) is genuinely public; the older `default-images/` bucket
+// 403'd to crawlers, which is what produced the "no image" cached
+// previews still floating around in WhatsApp.
+const PROFILE_DEFAULT_IMAGE =
+  'https://inmkhvwdcuyhnxkgfvsb.supabase.co/storage/v1/object/public/covers/vitana-og-default.jpg';
+
+// --- Auto-generated default avatar (parity with the in-app placeholder) -----
+//
+// Members who never uploaded a photo have `avatar_url = null`, yet the app
+// still renders a friendly DiceBear avatar for them (see
+// `vitana-v1/src/lib/autoAvatar.ts`, used by `MobileIdentityCard.tsx` — the
+// screen profiles are shared from). Crawlers can't run that client-side JS, so
+// without help they'd only ever see the branded fallback. We regenerate the
+// SAME avatar here so shared previews match what the member sees in-app.
+//
+// SOURCE OF TRUTH: vitana-v1/src/lib/autoAvatar.ts. The arrays + hash below are
+// copied verbatim and MUST stay byte-for-byte identical (same entries, same
+// order) or the style/background picked here won't match the in-app SVG. The
+// only deviation: we request the `/png` raster (crawlers don't preview SVG).
+const DICEBEAR_STYLES = [
+  'lorelei',
+  'lorelei-neutral',
+  'adventurer',
+  'big-ears',
+  'big-smile',
+  'bottts',
+  'bottts-neutral',
+  'croodles',
+  'fun-emoji',
+  'icons',
+  'notionists',
+  'notionists-neutral',
+  'personas',
+  'pixel-art',
+  'shapes',
+  'thumbs',
+];
+
+const BG_COLORS = [
+  'b6e3f4',
+  'c0aede',
+  'd1d4f9',
+  'ffd5dc',
+  'ffdfbf',
+  'a3e7c5',
+  'fde68a',
+  'fca5a5',
+  '9ecbff',
+  'fbcfe8',
+];
+
+function djb2(s) {
+  let h = 5381;
+  for (let i = 0; i < s.length; i++) {
+    h = ((h << 5) + h + s.charCodeAt(i)) | 0;
+  }
+  return h >>> 0; // unsigned
+}
+
+// Deterministic DiceBear PNG URL for the given seed. Mirrors autoAvatar.ts'
+// getAutoAvatarUrl(), but emits a 512×512 PNG so WhatsApp/Facebook/etc. can
+// actually render it as an og:image.
+function autoAvatarPngUrl(seed) {
+  const safeSeed = (seed && String(seed).trim().length > 0) ? String(seed) : 'vitana';
+  const h = djb2(safeSeed);
+  const style = DICEBEAR_STYLES[h % DICEBEAR_STYLES.length];
+  const bg = BG_COLORS[(h >>> 8) % BG_COLORS.length];
+  const params = new URLSearchParams({
+    seed: safeSeed,
+    backgroundType: 'gradientLinear',
+    backgroundColor: bg,
+    radius: '50',
+    size: '512',
+  });
+  return `https://api.dicebear.com/9.x/${style}/png?${params.toString()}`;
+}
+
+/**
+ * Build a minimal-but-valid OG response for cases where the gateway
+ * lookup failed (404, 5xx, network blip, or empty body). Returning a
+ * bare 404 with no OG meta would let WhatsApp/Facebook/Telegram cache
+ * "no preview" for this URL for ~7 days — which is exactly how the
+ * current "some profiles share without an image" bug got created. Emit
+ * a branded card with a short cache so a transient gateway issue
+ * doesn't lock the URL out of rich previews.
+ */
+function renderProfileFallback(canonicalUrl, destinationUrl) {
+  const title = 'MAXINA member · MAXINA';
+  const description = 'Tap to view this profile on MAXINA.';
+  const image = PROFILE_DEFAULT_IMAGE;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+
+  <meta property="og:type" content="profile">
+  <meta property="og:site_name" content="MAXINA">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  <meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:secure_url" content="${escapeHtml(image)}">
+  <meta property="og:image:type" content="image/jpeg">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="630">
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${escapeHtml(image)}">
+
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <p>${escapeHtml(description)}</p>
+  <p><img src="${escapeHtml(image)}" alt="MAXINA" style="max-width:100%"></p>
+  <p><a href="${escapeHtml(destinationUrl)}">Open on MAXINA</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      // Short cache so a recovering profile shows up within a minute,
+      // and so any per-URL crawler cache that picked this fallback up
+      // gets a fresh chance soon.
+      'Cache-Control': 'public, max-age=60, s-maxage=60',
+    },
+  });
+}
+
+/**
+ * Build an HTML page with OG meta tags for a profile. Served to crawlers only.
+ * Queries the gateway's public profile endpoint — no auth required.
+ */
+async function renderProfileOg(id, canonicalUrl, destinationUrl, config) {
+  const DEFAULT_IMAGE = PROFILE_DEFAULT_IMAGE;
+  const { gatewayUrl } = config;
+
+  let p = null;
+  try {
+    const resp = await fetch(
+      `${gatewayUrl}/api/v1/public/profile/${encodeURIComponent(id)}`,
+    );
+    if (resp.ok) {
+      const body = await resp.json().catch(() => null);
+      p = body && body.profile;
+    }
+  } catch { /* fall through to branded fallback */ }
+
+  // Gateway lookup failed (404, 5xx, network, or empty body) — emit a
+  // branded card instead of a bare 404 so crawlers don't cache "no
+  // preview" for this URL.
+  if (!p) {
+    return renderProfileFallback(canonicalUrl, destinationUrl);
+  }
+
+  const composedName =
+    [p.first_name, p.last_name].filter(Boolean).join(' ').trim() ||
+    p.display_name ||
+    (p.handle ? `@${p.handle}` : 'MAXINA member');
+  const handlePart = p.handle ? `@${p.handle}` : '';
+  const archetype = p.longevity_archetype || p.bio || 'Longevity community member';
+  const title = `${composedName}${handlePart ? ` (${handlePart})` : ''} · MAXINA`;
+  const description = `${handlePart ? handlePart + ' · ' : ''}${archetype}. Tap to view on MAXINA.`
+    .replace(/\s+/g, ' ')
+    .trim()
+    .slice(0, 200);
+  // Preview tracks the current profile picture (avatar_url). cover_url is
+  // intentionally NOT in the candidate list: there is no user-facing UI to
+  // update it, so legacy rows drift out of sync with the in-app avatar and
+  // produce surprising previews (e.g. an unrelated old photo for a user
+  // whose current avatar is a headshot).
+  //
+  // When avatar_url is missing/unfetchable we fall back to the SAME
+  // auto-generated DiceBear avatar the app renders in-app (seeded by handle,
+  // matching MobileIdentityCard) — NOT straight to the branded hero — so an
+  // avatar-less member still shares a personal-looking card. The branded
+  // DEFAULT_IMAGE remains the last resort if DiceBear is unreachable.
+  //
+  // Avatars are stored at original upload size — multi-MB phone photos are
+  // common, and WhatsApp silently drops og:image files over ~600 KB (the
+  // "profile shared without an image" regression). So the FIRST candidate is
+  // the Supabase-transformed 512×512 rendition (~tens of KB); the raw
+  // avatar_url stays second for non-Supabase hosts or if the render endpoint
+  // is unavailable, guarded by pickUsableImage's size check.
+  const autoAvatar = autoAvatarPngUrl(p.handle || p.display_name || p.user_id || id);
+  const picked = await pickUsableImage(
+    [supabaseRenderUrl(p.avatar_url), p.avatar_url, autoAvatar],
+    DEFAULT_IMAGE,
+  );
+  const image = picked.url;
+  const imageType = picked.contentType;
+  // avatar_url is square (512×512); DEFAULT_IMAGE is landscape (1200×630).
+  const isLandscape = image === DEFAULT_IMAGE;
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+
+  <meta property="og:type" content="profile">
+  <meta property="og:site_name" content="MAXINA">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  <meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:secure_url" content="${escapeHtml(image)}">
+  <meta property="og:image:type" content="${escapeHtml(imageType)}">
+  <meta property="og:image:alt" content="${escapeHtml(composedName)}">
+  <meta property="og:image:width" content="${isLandscape ? 1200 : 512}">
+  <meta property="og:image:height" content="${isLandscape ? 630 : 512}">
+  ${p.handle ? `<meta property="profile:username" content="${escapeHtml(p.handle)}">` : ''}
+  ${p.first_name ? `<meta property="profile:first_name" content="${escapeHtml(p.first_name)}">` : ''}
+  ${p.last_name ? `<meta property="profile:last_name" content="${escapeHtml(p.last_name)}">` : ''}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  <meta name="twitter:image" content="${escapeHtml(image)}">
+
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  <p>${escapeHtml(description)}</p>
+  <p><img src="${escapeHtml(image)}" alt="${escapeHtml(composedName)}" style="max-width:100%"></p>
+  <p><a href="${escapeHtml(destinationUrl)}">Open on MAXINA</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300, s-maxage=300',
+    },
+  });
+}
+
+/**
+ * Build an HTML page with OG meta tags for a product. Served to crawlers only.
+ * Queries the gateway's public product endpoint — no auth required.
+ */
+async function renderProductOg(id, canonicalUrl, config) {
+  const { gatewayUrl } = config;
+  const resp = await fetch(`${gatewayUrl}/api/v1/discover/product/${encodeURIComponent(id)}`);
+  if (!resp.ok) {
+    return new Response('Product not found', { status: 404 });
+  }
+  const { product: p } = await resp.json();
+  if (!p) return new Response('Product not found', { status: 404 });
+
+  const title = `${p.title}${p.brand ? ` — ${p.brand}` : ''}`;
+  const priceLine = formatPrice(p.price_cents, p.currency);
+  const rawDesc = p.description || p.description_long || `${p.title} on Vitana`;
+  // Single-line, ~200 char description for OG description meta
+  const description = rawDesc.replace(/\s+/g, ' ').trim().slice(0, 200) +
+    (priceLine ? ` — ${priceLine}` : '');
+  const image = (Array.isArray(p.images) && p.images[0]) || '';
+
+  const html = `<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>${escapeHtml(title)}</title>
+  <meta name="description" content="${escapeHtml(description)}">
+  <link rel="canonical" href="${escapeHtml(canonicalUrl)}">
+
+  <meta property="og:site_name" content="VITANA">
+  <meta property="og:type" content="product">
+  <meta property="og:title" content="${escapeHtml(title)}">
+  <meta property="og:description" content="${escapeHtml(description)}">
+  <meta property="og:url" content="${escapeHtml(canonicalUrl)}">
+  ${image ? `<meta property="og:image" content="${escapeHtml(image)}">
+  <meta property="og:image:width" content="1200">
+  <meta property="og:image:height" content="1200">
+  <meta property="og:image:alt" content="${escapeHtml(p.title)}">` : ''}
+
+  <meta name="twitter:card" content="summary_large_image">
+  <meta name="twitter:title" content="${escapeHtml(title)}">
+  <meta name="twitter:description" content="${escapeHtml(description)}">
+  ${image ? `<meta name="twitter:image" content="${escapeHtml(image)}">` : ''}
+
+  ${priceLine ? `<meta property="product:price:amount" content="${escapeHtml((p.price_cents / 100).toFixed(2))}">
+  <meta property="product:price:currency" content="${escapeHtml((p.currency || 'USD').toUpperCase())}">` : ''}
+  ${p.availability ? `<meta property="product:availability" content="${escapeHtml(p.availability)}">` : ''}
+  ${p.brand ? `<meta property="product:brand" content="${escapeHtml(p.brand)}">` : ''}
+</head>
+<body>
+  <h1>${escapeHtml(title)}</h1>
+  ${priceLine ? `<p><strong>${escapeHtml(priceLine)}</strong></p>` : ''}
+  <p>${escapeHtml(description)}</p>
+  <p><a href="${escapeHtml(canonicalUrl)}">View on Vitana</a></p>
+</body>
+</html>`;
+
+  return new Response(html, {
+    headers: {
+      'Content-Type': 'text/html; charset=utf-8',
+      'Cache-Control': 'public, max-age=300, s-maxage=300',
+    },
+  });
+}
+
+function getOgFunctionUrl(type, identifier, config) {
+  const { supabaseFunctions } = config;
+  switch (type) {
+    case 'events':
+      const isUUID = /^[0-9a-f]{8}-/.test(identifier);
+      return `${supabaseFunctions}/og-event?${isUUID ? 'id' : 'slug'}=${encodeURIComponent(identifier)}`;
+    case 'profiles':
+      return `${supabaseFunctions}/og-profile?id=${encodeURIComponent(identifier)}`;
+    case 'rooms':
+      return `${supabaseFunctions}/og-room?id=${encodeURIComponent(identifier)}`;
+    case 'matches':
+      return `${supabaseFunctions}/og-match?id=${encodeURIComponent(identifier)}`;
+    case 'shorts':
+      return `${supabaseFunctions}/og-short?id=${encodeURIComponent(identifier)}`;
+    // products handled inline below via renderProductOg() — no Supabase Function needed
+    default:
+      return null;
+  }
+}
+
+function getRedirectUrl(type, identifier) {
+  switch (type) {
+    case 'events':
+      const isUUID = /^[0-9a-f]{8}-/.test(identifier);
+      if (isUUID) {
+        return `https://vitanaland.com/?share=event&id=${encodeURIComponent(identifier)}`;
+      }
+      return `https://vitanaland.com/?share=event&slug=${encodeURIComponent(identifier)}`;
+    case 'profiles':
+      return `https://vitanaland.com/?share=profile&id=${encodeURIComponent(identifier)}`;
+    case 'rooms':
+      return `https://vitanaland.com/?share=room&id=${encodeURIComponent(identifier)}`;
+    case 'matches':
+      return `https://vitanaland.com/discover?m=${encodeURIComponent(identifier)}`;
+    case 'products':
+      return `https://vitanaland.com/discover/product/${encodeURIComponent(identifier)}`;
+    case 'shorts':
+      return `https://vitanaland.com/comm/media-hub?short=${encodeURIComponent(identifier)}`;
+    default:
+      return 'https://vitanaland.com';
+  }
+}
+
+export default {
+  async fetch(request, env) {
+    const config = resolveConfig(env);
+    const url = new URL(request.url);
+    const ua = request.headers.get('user-agent') || '';
+    const route = parseRoute(url.pathname);
+
+    if (!route) {
+      return Response.redirect('https://vitanaland.com', 302);
+    }
+
+    if (isCrawler(ua)) {
+      // Products: generate OG HTML inline from the gateway product endpoint.
+      if (route.type === 'products') {
+        const canonical = getRedirectUrl('products', route.identifier);
+        return renderProductOg(route.identifier, canonical, config);
+      }
+
+      // Profiles: same pattern. Gateway has the profile row; we render the
+      // OG HTML here so WhatsApp/Telegram see rich meta. The og-profile
+      // Supabase function was never implemented — this supersedes that path.
+      if (route.type === 'profiles') {
+        const canonical = `https://e.vitanaland.com/profiles/${encodeURIComponent(route.identifier)}`;
+        const destination = getRedirectUrl('profiles', route.identifier);
+        return renderProfileOg(route.identifier, canonical, destination, config);
+      }
+
+      const ogUrl = getOgFunctionUrl(route.type, route.identifier, config);
+      if (ogUrl) {
+        const ogResp = await fetch(ogUrl, {
+          headers: { 'User-Agent': ua }
+        });
+        const html = await ogResp.text();
+        return new Response(html, {
+          headers: { 'Content-Type': 'text/html; charset=utf-8' }
+        });
+      }
+    }
+
+    return Response.redirect(getRedirectUrl(route.type, route.identifier), 302);
+  }
+};

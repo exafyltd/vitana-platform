@@ -1,0 +1,182 @@
+# =============================================================================
+# Skill: Worker Backend Security Scan - VTID-01164
+# =============================================================================
+# Catches obvious OWASP issues in changed code. Static scan for known risky
+# patterns like unvalidated request bodies, raw SQL, missing auth middleware.
+# =============================================================================
+
+skill_id: worker.backend.security_scan
+name: Backend Security Scan
+description: |
+  Static security scan of diff or specified file paths for known risky patterns.
+  Detects input validation gaps, auth bypass patterns, SQL injection risks,
+  and other OWASP top 10 vulnerabilities. Returns findings with severity levels.
+version: 1.0.0
+category: worker
+domain: backend
+vtid: VTID-01164
+
+provider:
+  type: internal
+  module: services/agents/workforce/skills/securityScan
+  function: securityScan
+  timeout_ms: 60000
+
+parameters:
+  vtid:
+    type: string
+    required: true
+    description: Task identifier
+    pattern: "^VTID-\\d{4,}$"
+
+  target_paths:
+    type: array
+    required: true
+    description: File paths to scan for security issues
+    items:
+      type: string
+    examples:
+      - ["services/gateway/src/routes/auth.ts"]
+      - ["services/gateway/src/services/user-service.ts"]
+
+  diff_content:
+    type: string
+    required: false
+    description: Git diff content to scan (alternative to file paths)
+
+  scan_depth:
+    type: string
+    required: false
+    default: standard
+    description: Depth of security scan
+    enum:
+      - quick
+      - standard
+      - deep
+
+  categories:
+    type: array
+    required: false
+    description: Security categories to check
+    items:
+      type: string
+      enum:
+        - injection
+        - auth_bypass
+        - input_validation
+        - sensitive_data
+        - xss
+        - csrf
+        - path_traversal
+    default:
+      - injection
+      - auth_bypass
+      - input_validation
+
+response_schema:
+  ok:
+    type: boolean
+    description: Whether scan completed successfully
+
+  findings:
+    type: array
+    description: Security issues found
+    items:
+      type: object
+      properties:
+        id:
+          type: string
+        severity:
+          type: string
+          enum: [critical, high, medium, low, info]
+        category:
+          type: string
+        file_path:
+          type: string
+        line_number:
+          type: integer
+        code_snippet:
+          type: string
+        description:
+          type: string
+        recommendation:
+          type: string
+
+  summary:
+    type: object
+    properties:
+      total_findings:
+        type: integer
+      critical:
+        type: integer
+      high:
+        type: integer
+      medium:
+        type: integer
+      low:
+        type: integer
+      files_scanned:
+        type: integer
+
+  passed:
+    type: boolean
+    description: Whether scan passed (no critical/high findings)
+
+  error:
+    type: string
+    description: Error message if scan failed
+
+guardrails:
+  # Only scan backend paths
+  allowed_paths:
+    - "services/gateway/src/**"
+    - "services/**/src/**"
+    - "config/**"
+    - "scripts/**"
+
+  # Don't scan frontend or migrations
+  forbidden_paths:
+    - "services/gateway/src/frontend/**"
+    - "supabase/migrations/**"
+
+telemetry:
+  emit_events: true
+  event_types:
+    - vtid.stage.worker_backend.security_scan.start
+    - vtid.stage.worker_backend.security_scan.success
+    - vtid.stage.worker_backend.security_scan.failed
+    - vtid.stage.worker_backend.security_scan.finding
+  oasis_endpoint: ${OASIS_API_URL}/events/ingest
+  include_metadata:
+    - files_scanned
+    - total_findings
+    - severity_summary
+
+usage:
+  roles:
+    - worker
+    - validator
+  primary_role: worker
+  use_cases:
+    - Scan new code for security vulnerabilities
+    - Validate patches before applying
+    - Pre-merge security gate
+    - Audit existing code
+
+error_handling:
+  retry_attempts: 1
+  retry_backoff_ms: 2000
+  fallback_strategy: return_error_with_details
+
+  error_codes:
+    FILE_NOT_FOUND:
+      description: Target file does not exist
+      recoverable: false
+
+    SCAN_TIMEOUT:
+      description: Security scan exceeded timeout
+      recoverable: true
+
+    PARSE_ERROR:
+      description: Could not parse file for scanning
+      recoverable: false

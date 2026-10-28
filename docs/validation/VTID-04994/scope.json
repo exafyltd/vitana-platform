@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-04994",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261009090000_vtid_04994_subscription_dates_in_calendar.sql",
+    "scripts/ci/sql-tests/*subscription-dates-in-calendar*",
+    ".github/workflows/SQL-SUBSCRIPTION-DATES-IN-CALENDAR.yml",
+    "services/gateway/src/types/calendar.ts",
+    "services/gateway/test/vtid-04994-*.test.ts",
+    "services/gateway/test/vtid-04978-reminders-in-calendar-migration.test.ts",
+    "services/gateway/test/vtid-04331-calendar-data-model.test.ts",
+    "services/gateway/test/calendar/__golden__/calendar-logic.json",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04994/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

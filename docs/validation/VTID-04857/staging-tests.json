@@ -1,0 +1,6 @@
+{"vtid":"VTID-04857","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"jev decision route still auth-gated","path":"/api/v1/jev/decisions/moderation_severity","method":"POST","expect_status":401,"rejected_probe":true},
+{"kind":"http","name":"jev admin stats still auth-gated","path":"/api/v1/jev/admin/stats","expect_status":401},
+{"kind":"existing","ref":"npx jest test/vtid-04857-jev-community-budget.test.ts test/vtid-04754-jev-foundation.test.ts","cwd":"services/gateway","reason":"The budget only bites on a paid Jev call that writes jev_spend_counters, and the member plane is closed on every gateway (JEV_COMMUNITY_ENABLED unset), so a read-only staging probe cannot reach it. Budget scope, the 429 rule fallback, the 80%/100% pages, their dedupe and the internal-is-uncapped rule are proven by these suites."}
+]}

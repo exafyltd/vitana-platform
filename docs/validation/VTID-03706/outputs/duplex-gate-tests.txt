@@ -1,0 +1,50 @@
+    ✓ passes real speech on the VERY FIRST frame (no confirmation delay) (2 ms)
+    ✓ passes quiet speech that the legacy 0.06 threshold discarded forever
+    ✓ keeps the gate open through a mid-word amplitude dip (hysteresis)
+    ✓ holds the gate open across a short silent gap, then closes after the hangover
+  VTID-03706 evaluateDuplexGateFrame — echo does NOT get through
+    ✓ blocks sustained AEC residue across the whole band (0.01-0.04) (1 ms)
+    ✓ never fires barge-in on echo alone, however long playback runs (1 ms)
+    ✓ holds shut during the AEC warm-up even if residue spikes above openRms
+    ✓ does not let warm-up frames accumulate toward barge confirmation (1 ms)
+    ✓ opens normally once the warm-up window has elapsed
+  VTID-03706 evaluateDuplexGateFrame — barge confirmation
+    ✓ confirms barge-in within the sub-200ms budget (1 ms)
+    ✓ rejects a single-frame transient (cough, door slam)
+    ✓ forwards audio from frame 1 even though barge confirms later (1 ms)
+    ✓ does not re-fire barge-in once already sent for this burst
+  VTID-03706 shouldDropMicWhileModelSpeaking
+    ✓ LEGACY: drops mic audio while the model speaks (unchanged) (1 ms)
+    ✓ LEGACY: forwards when the model is silent (unchanged)
+    ✓ FULL DUPLEX: forwards even while the model speaks — this is the fix (4 ms)
+  VTID-03706 shouldDropMicForPostTurnCooldown
+    ✓ LEGACY: drops inside the cooldown window (unchanged)
+    ✓ LEGACY: forwards once the window has elapsed (unchanged)
+    ✓ LEGACY: forwards when no turn has completed yet
+    ✓ FULL DUPLEX: never drops — the per-frame gate replaces the time window
+  VTID-03706 constants stay physically coherent
+    ✓ open threshold sits above the measured AEC residue band
+    ✓ open threshold sits below conversational speech (1 ms)
+    ✓ close threshold is strictly below open (Schmitt trigger, not a single edge)
+    ✓ barge confirmation stays inside the sub-200ms budget
+    ✓ AEC warm-up is short enough not to create a perceptible dead zone (1 ms)
+  VTID-03706 isFullDuplexEnabled — exact-true opt-in
+    ✓ is ON only for the exact string "true"
+    ✓ is OFF for "false"
+    ✓ is OFF for "TRUE"
+    ✓ is OFF for "True"
+    ✓ is OFF for "1"
+    ✓ is OFF for "yes" (1 ms)
+    ✓ is OFF for "on"
+    ✓ is OFF for "staging-only"
+    ✓ is OFF for ""
+    ✓ is OFF for "  true  " (1 ms)
+    ✓ is OFF when unset
+    ✓ reads the env at call time, so an operator flip needs no restart
+
+Test Suites: 3 passed, 3 total
+Tests:       107 passed, 107 total
+Snapshots:   0 total
+Time:        0.896 s, estimated 1 s
+Ran all test suites matching /test\/orb\/full-duplex-session-gate|test\/scripts\/validator-path-guard.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

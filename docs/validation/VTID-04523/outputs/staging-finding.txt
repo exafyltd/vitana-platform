@@ -1,0 +1,5 @@
+Staging test 2026-09-24 22:40 UTC (read-only SQL, BEGIN READ ONLY ... ROLLBACK):
+users_with_open_community = 33
+users_over_cap_community  = 33   (all of them)
+open community rows       = 276  (max 15 for one member)
+Read path served up to 20 per role (app: use-autopilot.ts limit=20).

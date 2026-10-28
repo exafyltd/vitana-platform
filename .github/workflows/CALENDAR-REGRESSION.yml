@@ -1,0 +1,80 @@
+name: CALENDAR-REGRESSION
+# VTID-04458: the calendar regression gate. Runs on every change that can
+# touch calendar behaviour and fails when any existing calendar rule moves:
+#   - golden scenarios over the pure calendar logic (recurrence, lenses and
+#     busy blocks, reminders and quiet hours, move rules, Google / Outlook /
+#     iCloud / .ics mapping, work lenses, maintenance, request schemas);
+#   - the /api/v1/calendar HTTP contract (routes, auth, validation, shapes);
+#   - every feature suite listed in services/gateway/test/calendar/manifest.json;
+#   - a guard that fails when a calendar file has no covering test.
+# An intended behaviour change re-records the golden files
+# (UPDATE_CALENDAR_GOLDEN=1 pnpm run test:calendar) in the same PR, so the
+# change is visible line by line in review. Runs without network or secrets.
+
+run-name: 'Calendar regression (${{ github.event_name }} on ${{ github.ref_name }})'
+
+on:
+  pull_request:
+    paths:
+      - 'services/gateway/src/**/*calendar*'
+      - 'services/gateway/src/**/*calendar*/**'
+      - 'services/gateway/src/services/calendar-*.ts'
+      - 'services/gateway/src/services/connected-apps/**'
+      - 'services/gateway/src/services/guide/user-timezone.ts'
+      - 'services/gateway/src/connectors/productivity/**'
+      - 'services/gateway/src/i18n/**'
+      - 'services/gateway/test/calendar/**'
+      - 'services/gateway/test/**/*calendar*'
+      - 'services/gateway/package.json'
+      - 'supabase/migrations/*calendar*'
+      - '.github/workflows/CALENDAR-REGRESSION.yml'
+  push:
+    branches: [ main ]
+    paths:
+      - 'services/gateway/src/**/*calendar*'
+      - 'services/gateway/src/**/*calendar*/**'
+      - 'services/gateway/src/services/calendar-*.ts'
+      - 'services/gateway/src/services/connected-apps/**'
+      - 'services/gateway/src/services/guide/user-timezone.ts'
+      - 'services/gateway/src/connectors/productivity/**'
+      - 'services/gateway/src/i18n/**'
+      - 'services/gateway/test/calendar/**'
+      - 'services/gateway/test/**/*calendar*'
+      - 'services/gateway/package.json'
+      - 'supabase/migrations/*calendar*'
+      - '.github/workflows/CALENDAR-REGRESSION.yml'
+  workflow_dispatch: {}
+
+concurrency:
+  group: calendar-regression-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+permissions:
+  contents: read
+
+jobs:
+  gateway-calendar:
+    name: Calendar regression (gateway)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    defaults:
+      run:
+        working-directory: services/gateway
+    steps:
+      - uses: actions/checkout@v4
+      # pnpm version comes from the root package.json packageManager field.
+      - uses: pnpm/action-setup@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20.x'
+      - name: Install
+        run: pnpm install --frozen-lockfile
+      - name: Run calendar regression suite
+        # TZ is fixed so a runner's local zone can never change a result;
+        # every calendar computation names its zone explicitly.
+        run: npm run test:calendar -- --silent
+        env:
+          NODE_ENV: test
+          TZ: UTC
+      - name: Golden files were not re-recorded by the run
+        run: git diff --exit-code -- test/calendar/__golden__

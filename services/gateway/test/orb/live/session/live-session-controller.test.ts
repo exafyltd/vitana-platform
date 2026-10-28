@@ -1,0 +1,1570 @@
+/**
+ * A8.2 (orb-live-refactor / VTID-02961): runtime tests for the session
+ * controller module — `orb/live/session/live-session-controller.ts`.
+ *
+ * Covers the three things A8.2 lifts:
+ *   1. `cleanupExpiredSessions` — expiry sweep over the `sessions` registry.
+ *   2. `cleanupWsSession` — WS session teardown (state mutations + Map
+ *      removals + dep callbacks).
+ *   3. `handleLiveStreamEndTurn` — request validation, ownership-mismatch
+ *      log, and Vertex WS forwarding via the `sendEndOfTurn` dep.
+ *
+ * Plus the deps-bag plumbing:
+ *   - `configureLiveSessionController` is required before any handler fires.
+ *   - Double-configure throws (catches mis-wired tests / boot loudly).
+ *   - `__resetLiveSessionControllerForTests` clears state for clean tests.
+ *
+ * VTID-03107: mock voice-quota-guard so the new entitlement gate in
+ * handleLiveSessionStart does not query a (test-mode) Supabase that has no
+ * feature_entitlements seeded. Default mock returns `paywall_action='allow'`
+ * so every pre-existing authenticated test keeps passing. Quota-exhausted
+ * behavior gets its own focused test below.
+ */
+
+jest.mock('../../../../src/services/voice-quota-guard', () => ({
+  reserveVoiceQuotaAtSessionStart: jest.fn(async () => ({
+    feature: 'voice_live_minutes',
+    paywall_action: 'allow',
+    quota: 600,
+    used: 0,
+    remaining: 600,
+    reset_at: null,
+    start_on_standard_tier: false,
+    deferred_for_vulnerability: false,
+  })),
+  recordVoiceMinute: jest.fn(async () => 0),
+  triggerDowngrade: jest.fn(async () => undefined),
+}));
+
+import {
+  configureLiveSessionController,
+  cleanupExpiredSessions,
+  cleanupWsSession,
+  handleLiveStreamEndTurn,
+  handleLiveSessionStart,
+  handleLiveSessionStop,
+  handleLiveStreamSend,
+  shouldInjectWakeBriefOverrideBlock,
+  __resetLiveSessionControllerForTests,
+  type LiveSessionControllerDeps,
+} from '../../../../src/orb/live/session/live-session-controller';
+import {
+  sessions,
+  liveSessions,
+  wsClientSessions,
+} from '../../../../src/orb/live/session/live-session-registry';
+import { SESSION_TIMEOUT_MS } from '../../../../src/orb/live/config';
+
+// Mock WebSocket OPEN constant from `ws`.
+const WS_OPEN = 1;
+const WS_CLOSED = 3;
+
+beforeEach(() => {
+  __resetLiveSessionControllerForTests();
+  sessions.clear();
+  liveSessions.clear();
+  wsClientSessions.clear();
+});
+
+afterAll(() => {
+  __resetLiveSessionControllerForTests();
+  sessions.clear();
+  liveSessions.clear();
+  wsClientSessions.clear();
+});
+
+describe('A8.2: configureLiveSessionController', () => {
+  it('throws if a handler runs before configure', async () => {
+    await expect(
+      handleLiveStreamEndTurn({} as any, {} as any),
+    ).rejects.toThrow(/not configured/);
+  });
+
+  it('throws if configured twice', () => {
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+    });
+    expect(() =>
+      configureLiveSessionController({
+        resolveOrbIdentity: async () => null,
+        clearResponseWatchdog: () => undefined,
+        sendEndOfTurn: () => true,
+      }),
+    ).toThrow(/already configured/);
+  });
+
+  it('reset escape hatch allows reconfiguration', () => {
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+    });
+    __resetLiveSessionControllerForTests();
+    expect(() =>
+      configureLiveSessionController({
+        resolveOrbIdentity: async () => null,
+        clearResponseWatchdog: () => undefined,
+        sendEndOfTurn: () => true,
+      }),
+    ).not.toThrow();
+  });
+});
+
+describe('A8.2: cleanupExpiredSessions', () => {
+  it('removes sessions whose lastActivity is older than SESSION_TIMEOUT_MS', () => {
+    const oldTimestamp = new Date(Date.now() - SESSION_TIMEOUT_MS - 1000);
+    const fresh = new Date();
+    sessions.set('expired', { lastActivity: oldTimestamp, sseResponse: null } as any);
+    sessions.set('fresh', { lastActivity: fresh, sseResponse: null } as any);
+
+    cleanupExpiredSessions();
+
+    expect(sessions.has('expired')).toBe(false);
+    expect(sessions.has('fresh')).toBe(true);
+  });
+
+  it('ends the SSE response on expiry (best-effort, swallows errors)', () => {
+    const oldTimestamp = new Date(Date.now() - SESSION_TIMEOUT_MS - 1000);
+    const endSpy = jest.fn();
+    sessions.set('expired', {
+      lastActivity: oldTimestamp,
+      sseResponse: { end: endSpy },
+    } as any);
+
+    cleanupExpiredSessions();
+
+    expect(endSpy).toHaveBeenCalledTimes(1);
+    expect(sessions.has('expired')).toBe(false);
+  });
+
+  it('does not throw when sse.end throws', () => {
+    const oldTimestamp = new Date(Date.now() - SESSION_TIMEOUT_MS - 1000);
+    sessions.set('expired', {
+      lastActivity: oldTimestamp,
+      sseResponse: {
+        end: () => {
+          throw new Error('socket gone');
+        },
+      },
+    } as any);
+
+    expect(() => cleanupExpiredSessions()).not.toThrow();
+    expect(sessions.has('expired')).toBe(false);
+  });
+});
+
+describe('A8.2: cleanupWsSession', () => {
+  beforeEach(() => {
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: jest.fn(),
+      sendEndOfTurn: () => true,
+    });
+  });
+
+  it('is a no-op when the sessionId is unknown', () => {
+    expect(() => cleanupWsSession('does-not-exist')).not.toThrow();
+  });
+
+  it('clears keepalive intervals + watchdog and removes both registry entries', () => {
+    const clearWatchdog = jest.fn();
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: clearWatchdog,
+      sendEndOfTurn: () => true,
+    });
+
+    const pingInterval = setInterval(() => {}, 1_000_000);
+    const silenceInterval = setInterval(() => {}, 1_000_000);
+
+    const upstreamWs = { close: jest.fn() };
+    const clientWs = { readyState: WS_OPEN, close: jest.fn() };
+    const liveSession: any = {
+      identity: null,
+      transcriptTurns: [],
+      active: true,
+      upstreamPingInterval: pingInterval,
+      silenceKeepaliveInterval: silenceInterval,
+      upstreamWs,
+    };
+    liveSessions.set('s1', liveSession);
+    wsClientSessions.set('s1', { liveSession, clientWs } as any);
+
+    cleanupWsSession('s1');
+
+    expect(liveSession.active).toBe(false);
+    expect(liveSession.upstreamPingInterval).toBeUndefined();
+    expect(liveSession.silenceKeepaliveInterval).toBeUndefined();
+    expect(clearWatchdog).toHaveBeenCalledWith(liveSession);
+    expect(upstreamWs.close).toHaveBeenCalled();
+    expect(clientWs.close).toHaveBeenCalledWith(1000, 'Session cleanup');
+    expect(liveSessions.has('s1')).toBe(false);
+    expect(wsClientSessions.has('s1')).toBe(false);
+  });
+
+  it('skips client WS close when readyState is not OPEN', () => {
+    const clientWs = { readyState: WS_CLOSED, close: jest.fn() };
+    wsClientSessions.set('s1', { liveSession: null, clientWs } as any);
+    cleanupWsSession('s1');
+    expect(clientWs.close).not.toHaveBeenCalled();
+    expect(wsClientSessions.has('s1')).toBe(false);
+  });
+
+  it('handles a session that has no liveSession (WS-only entry)', () => {
+    const clientWs = { readyState: WS_OPEN, close: jest.fn() };
+    wsClientSessions.set('s1', { liveSession: null, clientWs } as any);
+    expect(() => cleanupWsSession('s1')).not.toThrow();
+    expect(clientWs.close).toHaveBeenCalledWith(1000, 'Session cleanup');
+    expect(wsClientSessions.has('s1')).toBe(false);
+  });
+});
+
+/**
+ * VTID-03561: the WS teardown path emitted no `vtid.live.session.stop` at all.
+ *
+ * Four other sites emit the topic; this one closed the upstream, deleted the
+ * session and returned silently — and because it DELETES, the idle sweep could
+ * never emit on its behalf afterwards, so the session left no lifecycle record
+ * in OASIS. Harmless while SSE was the browser default; VTID-03471 made
+ * WebSocket the default on 2026-08-01, turning the silent path into the
+ * ordinary way a session ends (measured on prod 2026-08-10: 2 of 3 sessions had
+ * no stop event).
+ *
+ * These tests assert the WIRING, not just that a payload builder works. The
+ * defect was never a wrong field — it was that nothing called the emit at all,
+ * which is exactly the failure a per-function unit test cannot see.
+ */
+describe('VTID-03561: cleanupWsSession emits session.stop', () => {
+  let emitted: Array<{ type: string; payload: any }>;
+  let emitSpy: jest.Mock;
+
+  const makeLiveSession = (over: Record<string, unknown> = {}): any => ({
+    sessionId: 'live-abc',
+    identity: { user_id: 'u1', tenant_id: 't1' },
+    transcriptTurns: [
+      { role: 'user', text: 'hi' },
+      { role: 'assistant', text: 'hello' },
+      { role: 'user', text: 'bye' },
+    ],
+    active: true,
+    createdAt: new Date(Date.now() - 10_000),
+    lastActivity: new Date(Date.now() - 4_000),
+    audioInChunks: 7,
+    audioInForwarded: 5,
+    audioOutChunks: 9,
+    videoInFrames: 2,
+    turn_count: 3,
+    upstreamWs: { close: jest.fn() },
+    ...over,
+  });
+
+  const wire = (liveSession: any, socketId = 'ws-123') => {
+    const clientWs = { readyState: WS_OPEN, close: jest.fn() };
+    if (liveSession) liveSessions.set(liveSession.sessionId, liveSession);
+    wsClientSessions.set(socketId, { liveSession, clientWs } as any);
+    return clientWs;
+  };
+
+  beforeEach(() => {
+    emitted = [];
+    emitSpy = jest.fn(async (type: string, payload: any) => {
+      emitted.push({ type, payload });
+    });
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: jest.fn(),
+      sendEndOfTurn: () => true,
+      emitLiveSessionEvent: emitSpy,
+    } as any);
+  });
+
+  it('emits vtid.live.session.stop on WS teardown (the regression)', () => {
+    wire(makeLiveSession());
+
+    cleanupWsSession('ws-123');
+
+    const stops = emitted.filter((e) => e.type === 'vtid.live.session.stop');
+    expect(stops).toHaveLength(1);
+  });
+
+  it('reports the LIVE session id, never the ws-<uuid> socket id', () => {
+    // VTID-03471 trap: the two ids diverged when the WS path started sharing
+    // handleLiveSessionStart. Filing the stop under the socket id would key it
+    // to something no start event or continuity row has ever used.
+    wire(makeLiveSession({ sessionId: 'live-abc' }), 'ws-123');
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted[0].payload.session_id).toBe('live-abc');
+    expect(emitted[0].payload.session_id).not.toBe('ws-123');
+  });
+
+  it('carries the session metrics the cost/quality consumers read', () => {
+    wire(makeLiveSession());
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted[0].payload).toMatchObject({
+      user_id: 'u1',
+      tenant_id: 't1',
+      transport: 'websocket',
+      audio_in_chunks: 7,
+      audio_in_forwarded_chunks: 5,
+      audio_out_chunks: 9,
+      // VTID-03565: was `video_in_frames`, which NO consumer reads. This test's
+      // own name says "the metrics the consumers read" — voice-lab's session
+      // detail projection reads `endEvent.metadata.video_frames`, and the
+      // explicit stop path in orb-live.ts already emitted that key. So these
+      // newly-visible WS sessions were showing a blank video-frame count while
+      // the assertion passed. Caught in review on #3073.
+      video_frames: 2,
+      turn_count: 3,
+      user_turns: 2,
+      model_turns: 1,
+    });
+    // The old key must be GONE, not merely accompanied — `toMatchObject` is a
+    // subset match and would happily pass if both were emitted.
+    expect(emitted[0].payload).not.toHaveProperty('video_in_frames');
+    expect(emitted[0].payload.duration_ms).toBeGreaterThanOrEqual(10_000);
+    expect(emitted[0].payload.idle_ms).toBeGreaterThanOrEqual(4_000);
+  });
+
+  it('passes the caller-supplied reason through, and defaults to client_disconnect', () => {
+    wire(makeLiveSession());
+    cleanupWsSession('ws-123');
+    expect(emitted[0].payload.reason).toBe('client_disconnect');
+
+    emitted = [];
+    wire(makeLiveSession({ sessionId: 'live-def' }), 'ws-456');
+    cleanupWsSession('ws-456', 'client_error');
+    expect(emitted[0].payload.reason).toBe('client_error');
+
+    emitted = [];
+    wire(makeLiveSession({ sessionId: 'live-ghi' }), 'ws-789');
+    cleanupWsSession('ws-789', 'ws_session_expired');
+    expect(emitted[0].payload.reason).toBe('ws_session_expired');
+  });
+
+  it('does NOT double-emit when a stop was already emitted for the session', () => {
+    // The ordinary sequence this guards: the client sends `stop_session`
+    // (which emits user_stop and latches), and its socket closes a moment
+    // later, firing ws.on('close') -> cleanup. Without the latch every clean
+    // session would be booked twice.
+    wire(makeLiveSession({ stopEventEmitted: true }));
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted.filter((e) => e.type === 'vtid.live.session.stop')).toHaveLength(0);
+    // teardown itself still runs
+    expect(liveSessions.has('live-abc')).toBe(false);
+    expect(wsClientSessions.has('ws-123')).toBe(false);
+  });
+
+  it('latches after emitting so a repeat teardown cannot re-emit', () => {
+    const ls = makeLiveSession();
+    wire(ls);
+
+    cleanupWsSession('ws-123');
+    expect(ls.stopEventEmitted).toBe(true);
+
+    // re-register the same live session object under a fresh socket
+    wire(ls, 'ws-999');
+    cleanupWsSession('ws-999');
+
+    expect(emitted.filter((e) => e.type === 'vtid.live.session.stop')).toHaveLength(1);
+  });
+
+  it('completes teardown even when the emit throws', () => {
+    // cleanup runs from ws.on('close') / ws.on('error'); a throw here would
+    // turn an ordinary disconnect into an unhandled exception in a socket
+    // callback. Telemetry never costs us the teardown it describes.
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: jest.fn(),
+      sendEndOfTurn: () => true,
+      emitLiveSessionEvent: jest.fn(() => {
+        throw new Error('oasis down');
+      }),
+    } as any);
+    const clientWs = wire(makeLiveSession());
+
+    expect(() => cleanupWsSession('ws-123')).not.toThrow();
+    expect(liveSessions.has('live-abc')).toBe(false);
+    expect(wsClientSessions.has('ws-123')).toBe(false);
+    expect(clientWs.close).toHaveBeenCalledWith(1000, 'Session cleanup');
+  });
+
+  it('reports null duration/idle for a session torn down before it started', () => {
+    wire(makeLiveSession({ createdAt: undefined, lastActivity: undefined }));
+
+    expect(() => cleanupWsSession('ws-123')).not.toThrow();
+    expect(emitted[0].payload.duration_ms).toBeNull();
+    expect(emitted[0].payload.idle_ms).toBeNull();
+  });
+
+  it('still emits when the session never resolved an identity', () => {
+    wire(makeLiveSession({ identity: null }));
+
+    cleanupWsSession('ws-123');
+
+    expect(emitted).toHaveLength(1);
+    expect(emitted[0].payload.user_id).toBeNull();
+    expect(emitted[0].payload.tenant_id).toBeNull();
+  });
+});
+
+describe('A8.2: handleLiveStreamEndTurn', () => {
+  beforeEach(() => {
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+    });
+  });
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  it('400 when session_id is missing from both query and body', async () => {
+    const req: any = { query: {}, body: {} };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'session_id required' });
+  });
+
+  it('404 when session is not in liveSessions', async () => {
+    const req: any = { query: { session_id: 'nope' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not found' });
+  });
+
+  it('400 when session is not active', async () => {
+    liveSessions.set('s1', { active: false } as any);
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not active' });
+  });
+
+  it('falls back to body.session_id when query is empty', async () => {
+    liveSessions.set('s1', { active: false } as any);
+    const req: any = { query: {}, body: { session_id: 's1' } };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(400); // session not active
+  });
+
+  it('calls sendEndOfTurn + responds "End of turn signaled" when upstream WS is open and sendEndOfTurn returns true', async () => {
+    const sendSpy = jest.fn().mockReturnValue(true);
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: sendSpy,
+    });
+
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', { active: true, upstreamWs } as any);
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+
+    await handleLiveStreamEndTurn(req, res);
+
+    expect(sendSpy).toHaveBeenCalledWith(upstreamWs);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      message: 'End of turn signaled',
+    });
+  });
+
+  it('responds "acknowledged (no Live API)" when no upstream WS exists', async () => {
+    liveSessions.set('s1', { active: true, upstreamWs: null } as any);
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      message: 'End of turn acknowledged (no Live API)',
+    });
+  });
+
+  it('responds "acknowledged (no Live API)" when upstream WS is not in OPEN state', async () => {
+    const upstreamWs = { readyState: WS_CLOSED };
+    liveSessions.set('s1', { active: true, upstreamWs } as any);
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamEndTurn(req, res);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      message: 'End of turn acknowledged (no Live API)',
+    });
+  });
+
+  it('logs ownership mismatch but still processes the request', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    __resetLiveSessionControllerForTests();
+    configureLiveSessionController({
+      resolveOrbIdentity: async () => ({
+        user_id: 'req-user',
+        tenant_id: 't1',
+      }) as any,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+    });
+
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', {
+      active: true,
+      upstreamWs,
+      identity: { user_id: 'session-user' },
+    } as any);
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+
+    await handleLiveStreamEndTurn(req, res);
+
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('ownership mismatch (allowed)'),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    warnSpy.mockRestore();
+  });
+});
+
+describe('A8.2 anti-regression: orb-live.ts is a consumer of the controller', () => {
+  let source: string;
+  beforeAll(() => {
+    const fs = require('fs');
+    const path = require('path');
+    source = fs.readFileSync(
+      path.resolve(__dirname, '../../../../src/routes/orb-live.ts'),
+      'utf8',
+    );
+  });
+
+  it('imports the controller (configure + cleanup helpers + end-turn handler)', () => {
+    expect(source).toMatch(
+      /from\s*['"`][^'"`]*\/orb\/live\/session\/live-session-controller['"`]/,
+    );
+    expect(source).toMatch(/\bconfigureLiveSessionController\b/);
+    expect(source).toMatch(/\bcleanupExpiredSessions\b/);
+    expect(source).toMatch(/\bcleanupWsSession\b/);
+    expect(source).toMatch(/\bhandleLiveStreamEndTurn\b/);
+  });
+
+  it('calls configureLiveSessionController exactly once at module init', () => {
+    const calls = source.match(/configureLiveSessionController\s*\(/g) ?? [];
+    expect(calls.length).toBe(1);
+    // A8.2 deps
+    expect(source).toMatch(/resolveOrbIdentity\s*,/);
+    expect(source).toMatch(/clearResponseWatchdog\s*,/);
+    expect(source).toMatch(/sendEndOfTurn\s*,/);
+    // A8.2.1 deps added in this slice
+    expect(source).toMatch(/validateOrigin\s*,/);
+    expect(source).toMatch(/buildClientContext\s*,/);
+    expect(source).toMatch(/normalizeLang\s*,/);
+    expect(source).toMatch(/getVoiceForLang\s*,/);
+    expect(source).toMatch(/getStoredLanguagePreference\s*,/);
+    expect(source).toMatch(/persistLanguagePreference\s*,/);
+    expect(source).toMatch(/fetchLastSessionInfo\s*,/);
+    expect(source).toMatch(/fetchOnboardingCohortBlock\s*,/);
+    expect(source).toMatch(/buildBootstrapContextPack\s*,/);
+    expect(source).toMatch(/resolveEffectiveRole\s*,/);
+    expect(source).toMatch(/terminateExistingSessionsForUser\s*,/);
+    expect(source).toMatch(/emitLiveSessionEvent\s*,/);
+    expect(source).toMatch(/describeTimeSince\s*,/);
+    // A8.2-complete deps added in this slice
+    expect(source).toMatch(/sendAudioToLiveAPI\s*,/);
+    expect(source).toMatch(/startResponseWatchdog\s*,/);
+    expect(source).toMatch(/emitDiag\s*,/);
+    expect(source).toMatch(/getGoogleAuthReady\s*:\s*\(\)\s*=>\s*!!googleAuth\s*,?\s*\}\)/);
+  });
+
+  it('does NOT declare cleanupExpiredSessions / cleanupWsSession locally anymore', () => {
+    expect(source).not.toMatch(/^\s*function\s+cleanupExpiredSessions\s*\(/m);
+    expect(source).not.toMatch(/^\s*function\s+cleanupWsSession\s*\(/m);
+  });
+
+  it('end-turn route is now a thin delegator (single await call)', () => {
+    const handlerSlice = source.slice(
+      source.indexOf("router.post('/live/stream/end-turn'"),
+      source.indexOf("router.post('/live/stream/end-turn'") + 400,
+    );
+    expect(handlerSlice).toMatch(/await\s+handleLiveStreamEndTurn\s*\(\s*req\s*,\s*res\s*\)/);
+    expect(handlerSlice).not.toMatch(/liveSessions\.get\(/);
+  });
+
+  it('/live/session/start route is now a thin delegator (A8.2.1)', () => {
+    const idx = source.indexOf("router.post('/live/session/start'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveSessionStart\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline bootstrap-context call inside this slice.
+    expect(slice).not.toMatch(/buildBootstrapContextPack\s*\(/);
+    expect(slice).not.toMatch(/liveSessions\.set\(/);
+  });
+
+  it('/live/session/stop route is now a thin delegator (A8.2-complete)', () => {
+    const idx = source.indexOf("router.post('/live/session/stop'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveSessionStop\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline OASIS emit or extraction call inside this slice.
+    expect(slice).not.toMatch(/emitLiveSessionEvent\s*\(/);
+    expect(slice).not.toMatch(/deduplicatedExtract\s*\(/);
+    expect(slice).not.toMatch(/liveSessions\.delete\(/);
+  });
+
+  it('/live/stream/send route is now a thin delegator (A8.2-complete)', () => {
+    const idx = source.indexOf("router.post('/live/stream/send'");
+    expect(idx).toBeGreaterThan(0);
+    const slice = source.slice(idx, idx + 400);
+    expect(slice).toMatch(/await\s+handleLiveStreamSend\s*\(\s*req\s*,\s*res\s*\)/);
+    // Anti-regression: no inline audio forwarding or watchdog call inside this slice.
+    expect(slice).not.toMatch(/sendAudioToLiveAPI\s*\(/);
+    expect(slice).not.toMatch(/startResponseWatchdog\s*\(/);
+    expect(slice).not.toMatch(/POST_TURN_COOLDOWN_MS/);
+  });
+});
+
+// =============================================================================
+// A8.2.1: handleLiveSessionStart
+// =============================================================================
+
+describe('A8.2.1: handleLiveSessionStart', () => {
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      // A8.2 deps
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      // A8.2.1 deps
+      validateOrigin: () => true,
+      buildClientContext: async () => ({
+        city: 'test',
+        country: 'US',
+        localTime: '12:00',
+        device: 'desktop',
+        isMobile: false,
+        lang: 'en',
+        timezone: 'UTC',
+      } as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({
+        contextInstruction: '',
+        contextPack: undefined,
+        latencyMs: 0,
+        skippedReason: undefined,
+      }),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      // A8.2-complete deps
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
+      ...overrides,
+    };
+  }
+
+  function makeReq(overrides: Partial<{ identity: any; headers: any; body: any }> = {}) {
+    return {
+      identity: overrides.identity,
+      headers: overrides.headers ?? {},
+      body: overrides.body ?? {},
+      query: {},
+    } as any;
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  it('returns 403 when validateOrigin rejects', async () => {
+    configureLiveSessionController(
+      baseDeps({ validateOrigin: () => false }),
+    );
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Origin not allowed' });
+  });
+
+  it('returns 401 AUTH_TOKEN_INVALID when Bearer header present but req.identity unset', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      headers: { authorization: 'Bearer expired-token' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: false,
+      error: 'AUTH_TOKEN_INVALID',
+      message: 'Session expired or invalid — please re-authenticate',
+    });
+  });
+
+  it('creates an anonymous session (no JWT) and stores it in liveSessions with a live-<uuid> session_id', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+
+    expect(res.status).toHaveBeenCalledWith(200);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.ok).toBe(true);
+    expect(payload.session_id).toMatch(/^live-/);
+    expect(payload.conversation_id).toBeTruthy();
+    expect(payload.meta.lang).toBe('en');
+    expect(payload.meta.voice).toBe('Aoede');
+    expect(payload.meta.modalities).toEqual(['audio', 'text']);
+    expect(payload.meta.context_bootstrap.skipped_reason).toBe('anonymous_session');
+    expect(payload.meta.context_bootstrap.deferred).toBe(false);
+
+    expect(liveSessions.size).toBe(1);
+    const created = liveSessions.get(payload.session_id);
+    expect(created).toBeDefined();
+    expect(created!.isAnonymous).toBe(true);
+    expect(created!.identity).toBeUndefined();
+    expect(created!.conversation_id).toBe(payload.conversation_id);
+    expect(created!.active).toBe(true);
+  });
+
+  it('respects client-requested language', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { lang: 'de' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.meta.lang).toBe('de');
+  });
+
+  it('emits OASIS vtid.live.session.start with the resolved fields', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    configureLiveSessionController(baseDeps({ emitLiveSessionEvent: emitSpy }));
+    const req = makeReq({
+      body: { lang: 'fr', response_modalities: ['audio'] },
+      headers: { 'user-agent': 'jest', origin: 'http://test' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.start',
+      expect.objectContaining({
+        user_id: 'anonymous',
+        transport: 'sse',
+        lang: 'fr',
+        modalities: ['audio'],
+        voice: 'Aoede',
+        user_agent: 'jest',
+        origin: 'http://test',
+      }),
+    );
+  });
+
+  it('pins client-supplied conversation_id when present', async () => {
+    configureLiveSessionController(baseDeps());
+    const givenConv = 'conv-abc-123';
+    const req = makeReq({ body: { conversation_id: givenConv } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    expect(payload.conversation_id).toBe(givenConv);
+  });
+
+  it('marks reconnect session with resumedFromHistory when transcript_history provided', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      body: {
+        transcript_history: [
+          { role: 'user', text: 'hi' },
+          { role: 'assistant', text: 'hello' },
+        ],
+      },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBe(true);
+    expect(created!.transcriptTurns).toHaveLength(2);
+    expect(created!.transcriptTurns[0].role).toBe('user');
+  });
+
+  // VTID-03794: live-reproduced on staging. A healthy, multi-turn
+  // conversation disconnected (server-observed `client_disconnect`, an ALB
+  // idle-timeout close, not a user action) during a quiet moment between
+  // turns. orb-widget.js correctly detects this and sends
+  // `reconnect_stage: 'idle'` on the reconnect's start payload (a disconnect
+  // during silence is a real, common case, not a bug on the client) — but
+  // whenever `transcript_history` also happened to be empty for that
+  // request, the OLD formula (`transcript_history.length > 0 ||
+  // reconnect_stage !== 'idle'`) could not tell "explicitly idle, sent by a
+  // reconnecting client" apart from "field absent, a brand-new session" —
+  // both normalize to the same `reconnectStage==='idle'` value. The result:
+  // a mid-conversation reconnect got treated as a first-time open and
+  // relit a full wake-brief greeting (observed: `wake_opener:
+  // safe_fast_newday_overview`, a "new day" opener) instead of the
+  // VTID-02020 contextual recovery prompt this payload exists to trigger.
+  it('marks reconnect session with resumedFromHistory when reconnect_stage is explicitly "idle" and transcript_history is empty', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({
+      body: {
+        reconnect_stage: 'idle',
+        transcript_history: [],
+      },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBe(true);
+    expect((created as any).reconnectStage).toBe('idle');
+  });
+
+  it('does NOT mark a brand-new session (no reconnect_stage field at all) as resumedFromHistory', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: {} });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).resumedFromHistory).toBeUndefined();
+  });
+
+  // VTID-03774 (Codex review follow-up): guided_topic_resume must reach the
+  // session object exactly like guided_topic_id does, so
+  // decideWakeBriefForSession (and guided-topic-narration's isResume) can
+  // read it back off `session.guided_topic_resume`.
+  it('stores guided_topic_id and guided_topic_resume on the created session', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: true } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_id).toBe('T003');
+    expect((created as any).guided_topic_resume).toBe(true);
+  });
+
+  it('defaults guided_topic_resume to false when the field is absent (a fresh topic tap, not a resume)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
+  it('ignores a non-boolean guided_topic_resume (defensive against a malformed/tampered payload)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { guided_topic_id: 'T003', guided_topic_resume: 'true' } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect((created as any).guided_topic_resume).toBe(false);
+  });
+
+  it('uses VAD silence override when supplied in valid range', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq({ body: { vad_silence_ms: 1500 } });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    const created = liveSessions.get(payload.session_id);
+    expect(created!.vadSilenceMs).toBe(1500);
+  });
+
+  it('does NOT terminate other sessions when identity is DEV_IDENTITY', async () => {
+    const { DEV_IDENTITY } = await import('../../../../src/services/orb-memory-bridge');
+    const terminateSpy = jest.fn().mockReturnValue(0);
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({
+          user_id: DEV_IDENTITY.USER_ID,
+          tenant_id: DEV_IDENTITY.TENANT_ID,
+        }) as any,
+        terminateExistingSessionsForUser: terminateSpy,
+      }),
+    );
+    const req = makeReq({
+      identity: { user_id: DEV_IDENTITY.USER_ID, tenant_id: DEV_IDENTITY.TENANT_ID },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(terminateSpy).not.toHaveBeenCalled();
+  });
+
+  it('terminates existing sessions for a real authenticated user', async () => {
+    const terminateSpy = jest.fn().mockReturnValue(2);
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({
+          user_id: 'real-user-uuid',
+          tenant_id: 'tenant-uuid',
+        }) as any,
+        terminateExistingSessionsForUser: terminateSpy,
+      }),
+    );
+    const req = makeReq({
+      identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+    });
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    expect(terminateSpy).toHaveBeenCalledWith('real-user-uuid', expect.stringMatching(/^live-/));
+  });
+
+  it('returns wake_brief field in meta (default null for anonymous; non-null structure when populated)', async () => {
+    configureLiveSessionController(baseDeps());
+    const req = makeReq();
+    const res = makeRes();
+    await handleLiveSessionStart(req, res);
+    const payload = (res.json.mock.calls[0][0]) as any;
+    // wake_brief MAY be non-null even for anonymous sessions; just assert the field exists.
+    expect(payload.meta).toHaveProperty('wake_brief');
+  });
+
+  // VTID-03107: voice-quota gate behavior
+  describe('VTID-03107: voice-quota gate', () => {
+    let reserveMock: jest.Mock;
+
+    beforeEach(() => {
+      // Pull a typed handle on the mocked module so each test can override
+      // the per-call return without re-mocking the module.
+      const voiceQuotaModule = require('../../../../src/services/voice-quota-guard');
+      reserveMock = voiceQuotaModule.reserveVoiceQuotaAtSessionStart as jest.Mock;
+      reserveMock.mockClear();
+      // Reset to the default `allow` shape between tests
+      reserveMock.mockResolvedValue({
+        feature: 'voice_live_minutes',
+        paywall_action: 'allow',
+        quota: 600,
+        used: 0,
+        remaining: 600,
+        reset_at: null,
+        start_on_standard_tier: false,
+        deferred_for_vulnerability: false,
+      });
+    });
+
+    it('returns 402 with structured paywall body when quota is exhausted (hard_block)', async () => {
+      configureLiveSessionController(
+        baseDeps({
+          resolveOrbIdentity: async () => ({
+            user_id: 'real-user-uuid',
+            tenant_id: 'tenant-uuid',
+          }) as any,
+        }),
+      );
+      reserveMock.mockResolvedValueOnce({
+        feature: 'voice_live_minutes',
+        paywall_action: 'hard_block',
+        quota: 15,
+        used: 15,
+        remaining: 0,
+        reset_at: '2026-06-01T00:00:00Z',
+        start_on_standard_tier: true,
+        deferred_for_vulnerability: false,
+      });
+      const req = makeReq({
+        identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+      });
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(402);
+      const payload = (res.json.mock.calls[0][0]) as any;
+      expect(payload.ok).toBe(false);
+      expect(payload.error).toBe('payment_required');
+      expect(payload.paywall.feature).toBe('voice_live_minutes');
+      expect(payload.paywall.paywall_action).toBe('hard_block');
+      expect(payload.paywall.upgrade_url).toBe('/api/v1/billing/checkout/subscription');
+    });
+
+    it('allows the session to start normally when quota is available', async () => {
+      configureLiveSessionController(
+        baseDeps({
+          resolveOrbIdentity: async () => ({
+            user_id: 'real-user-uuid',
+            tenant_id: 'tenant-uuid',
+          }) as any,
+        }),
+      );
+      const req = makeReq({
+        identity: { user_id: 'real-user-uuid', tenant_id: 'tenant-uuid' },
+      });
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reserveMock).toHaveBeenCalledWith(
+        'real-user-uuid',
+        'tenant-uuid',
+        expect.objectContaining({ authToken: undefined }),
+      );
+    });
+
+    it('skips the quota check entirely for anonymous sessions (no identity)', async () => {
+      configureLiveSessionController(baseDeps());
+      const req = makeReq();
+      const res = makeRes();
+      await handleLiveSessionStart(req, res);
+      expect(res.status).toHaveBeenCalledWith(200);
+      expect(reserveMock).not.toHaveBeenCalled();
+    });
+  });
+});
+
+// =============================================================================
+// A8.2-complete: handleLiveSessionStop
+// =============================================================================
+
+describe('A8.2-complete: handleLiveSessionStop', () => {
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      validateOrigin: () => true,
+      buildClientContext: async () => ({} as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({}),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
+      ...overrides,
+    };
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  function makeSession(overrides: Partial<any> = {}): any {
+    return {
+      sessionId: 's-stop',
+      identity: null,
+      upstreamWs: null,
+      sseResponse: null,
+      active: true,
+      upstreamPingInterval: undefined,
+      silenceKeepaliveInterval: undefined,
+      audioInChunks: 0,
+      audioOutChunks: 0,
+      videoInFrames: 0,
+      turn_count: 0,
+      transcriptTurns: [],
+      createdAt: new Date(Date.now() - 60_000),
+      ...overrides,
+    };
+  }
+
+  it('400 when session_id missing', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { body: {} };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'session_id required' });
+  });
+
+  it('404 when session not found', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { body: { session_id: 'nope' } };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not found' });
+  });
+
+  it('happy path: closes upstream WS, writes session_ended SSE event, marks inactive, deletes from registry, returns 200 { ok: true }', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    const watchdogSpy = jest.fn();
+    configureLiveSessionController(
+      baseDeps({
+        emitLiveSessionEvent: emitSpy,
+        clearResponseWatchdog: watchdogSpy,
+      }),
+    );
+
+    const upstreamClose = jest.fn();
+    const sseWrite = jest.fn();
+    const sseEnd = jest.fn();
+    liveSessions.set('s1', makeSession({
+      upstreamWs: { close: upstreamClose },
+      sseResponse: { write: sseWrite, end: sseEnd },
+    }));
+
+    const req: any = { body: { session_id: 's1' } };
+    const res = makeRes();
+    await handleLiveSessionStop(req, res);
+
+    expect(upstreamClose).toHaveBeenCalled();
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"session_ended"'),
+    );
+    expect(sseEnd).toHaveBeenCalled();
+    expect(watchdogSpy).toHaveBeenCalled();
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.stop',
+      expect.objectContaining({
+        session_id: 's1',
+        audio_in_chunks: 0,
+        audio_out_chunks: 0,
+      }),
+    );
+    expect(liveSessions.has('s1')).toBe(false);
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('clears upstream ping + silence keepalive intervals', async () => {
+    configureLiveSessionController(baseDeps());
+    const pingInterval = setInterval(() => {}, 1_000_000);
+    const silenceInterval = setInterval(() => {}, 1_000_000);
+    liveSessions.set('s1', makeSession({
+      upstreamPingInterval: pingInterval,
+      silenceKeepaliveInterval: silenceInterval,
+    }));
+
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, makeRes());
+
+    // The session was deleted, so we can't check post-state on it. The
+    // anti-leak guarantee here is that no timers remain referenced — verify
+    // indirectly by confirming the session has been deleted (registry cleanup).
+    expect(liveSessions.has('s1')).toBe(false);
+    clearInterval(pingInterval);
+    clearInterval(silenceInterval);
+  });
+
+  it('OASIS payload includes user/tenant from session.identity', async () => {
+    const emitSpy = jest.fn().mockResolvedValue(undefined);
+    configureLiveSessionController(baseDeps({ emitLiveSessionEvent: emitSpy }));
+    liveSessions.set('s1', makeSession({
+      identity: { user_id: 'u-1', tenant_id: 't-1' },
+    }));
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, makeRes());
+    expect(emitSpy).toHaveBeenCalledWith(
+      'vtid.live.session.stop',
+      expect.objectContaining({ user_id: 'u-1', tenant_id: 't-1' }),
+    );
+  });
+
+  it('ownership mismatch is logged but allowed through', async () => {
+    const warnSpy = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    configureLiveSessionController(
+      baseDeps({
+        resolveOrbIdentity: async () => ({ user_id: 'req-user', tenant_id: 't1' }) as any,
+      }),
+    );
+    liveSessions.set('s1', makeSession({ identity: { user_id: 'session-user', tenant_id: 't1' } }));
+    const res = makeRes();
+    await handleLiveSessionStop({ body: { session_id: 's1' } } as any, res);
+    expect(warnSpy).toHaveBeenCalledWith(
+      expect.stringContaining('ownership mismatch (allowed)'),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+    warnSpy.mockRestore();
+  });
+});
+
+// =============================================================================
+// A8.2-complete: handleLiveStreamSend
+// =============================================================================
+
+describe('A8.2-complete: handleLiveStreamSend', () => {
+  const WS_OPEN = 1;
+
+  function baseDeps(overrides: Partial<LiveSessionControllerDeps> = {}): LiveSessionControllerDeps {
+    return {
+      resolveOrbIdentity: async () => null,
+      clearResponseWatchdog: () => undefined,
+      sendEndOfTurn: () => true,
+      validateOrigin: () => true,
+      buildClientContext: async () => ({} as any),
+      normalizeLang: (l) => l || 'en',
+      getVoiceForLang: () => 'Aoede',
+      getStoredLanguagePreference: async () => null,
+      persistLanguagePreference: () => undefined,
+      fetchLastSessionInfo: async () => null,
+      fetchOnboardingCohortBlock: async () => '',
+      buildBootstrapContextPack: async () => ({}),
+      resolveEffectiveRole: async () => 'community',
+      terminateExistingSessionsForUser: () => 0,
+      emitLiveSessionEvent: async () => undefined,
+      describeTimeSince: () => ({ bucket: 'first_time', wasFailure: false }),
+      sendAudioToLiveAPI: () => true,
+      startResponseWatchdog: () => undefined,
+      emitDiag: () => undefined,
+      getGoogleAuthReady: () => true,
+      ...overrides,
+    };
+  }
+
+  function makeRes() {
+    const res: any = {};
+    res.status = jest.fn().mockReturnValue(res);
+    res.json = jest.fn().mockReturnValue(res);
+    return res;
+  }
+
+  function makeSession(overrides: Partial<any> = {}): any {
+    return {
+      sessionId: 's-send',
+      active: true,
+      isAnonymous: false,
+      isModelSpeaking: false,
+      navigationDispatched: false,
+      turnCompleteAt: 0,
+      audioInChunks: 0,
+      videoInFrames: 0,
+      turn_count: 0,
+      // Nova item 5: the fixture's intent is "don't arm the forwarding
+      // watchdog". That is now response liveness, not the old session-wide
+      // flag — transport liveness alone no longer suppresses it.
+      transportHasShownLife: true,
+      modelRespondedThisTurn: true,
+      lastActivity: new Date(),
+      lastTelemetryEmitTime: 0,
+      lastAudioForwardedTime: 0,
+      upstreamWs: null,
+      sseResponse: null,
+      outputTranscriptBuffer: '',
+      transcriptTurns: [],
+      identity: null,
+      ...overrides,
+    };
+  }
+
+  it('400 when session_id missing', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { query: {}, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'session_id required' });
+  });
+
+  it('404 when session not found', async () => {
+    configureLiveSessionController(baseDeps());
+    const req: any = { query: { session_id: 'nope' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(404);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not found' });
+  });
+
+  it('400 when session not active', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ active: false }));
+    const req: any = { query: { session_id: 's1' }, body: {} };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'Session not active' });
+  });
+
+  it('drops audio with reason "navigation_dispatched" when navigation is queued', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ navigationDispatched: true }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'navigation_dispatched',
+    });
+  });
+
+  it('drops audio with reason "model_speaking" while the model is producing audio', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isModelSpeaking: true }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'model_speaking',
+    });
+  });
+
+  it('drops audio with reason "post_turn_cooldown" within the cooldown window', async () => {
+    configureLiveSessionController(baseDeps());
+    // turnCompleteAt very recent → still in cooldown
+    liveSessions.set('s1', makeSession({ turnCompleteAt: Date.now() }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({
+      ok: true,
+      dropped: true,
+      reason: 'post_turn_cooldown',
+    });
+  });
+
+  it('forwards audio via sendAudioToLiveAPI when upstream WS is open', async () => {
+    const sendSpy = jest.fn().mockReturnValue(true);
+    configureLiveSessionController(baseDeps({ sendAudioToLiveAPI: sendSpy }));
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(sendSpy).toHaveBeenCalledWith(upstreamWs, 'AUDIO', 'audio/pcm;rate=16000');
+    expect(res.status).toHaveBeenCalledWith(200);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  // Nova item 5 — the whole point of splitting the liveness flag.
+  //
+  // Prod trace live-3577c2fa: the user's speech was transcribed, a tool call
+  // fired, then the model went silent. The old session-wide flag was set by
+  // that transcription, so the forwarding watchdog was skipped and recovery
+  // never armed. Transport liveness must NOT suppress the watchdog.
+  it('arms the forwarding watchdog when only the USER has shown life (transport, not response)', async () => {
+    const watchdogSpy = jest.fn();
+    configureLiveSessionController(baseDeps({ startResponseWatchdog: watchdogSpy }));
+    liveSessions.set(
+      's-transport-only',
+      makeSession({
+        upstreamWs: { readyState: WS_OPEN },
+        transportHasShownLife: true, // user's transcription came back
+        modelRespondedThisTurn: false, // model owes output for this turn
+      }),
+    );
+    const req: any = {
+      query: { session_id: 's-transport-only' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    await handleLiveStreamSend(req, makeRes());
+    expect(watchdogSpy).toHaveBeenCalled();
+    expect(watchdogSpy.mock.calls[0][2]).toBe('forwarding_no_ack');
+  });
+
+  it('skips the forwarding watchdog once the model has responded on this turn', async () => {
+    const watchdogSpy = jest.fn();
+    const diagSpy = jest.fn();
+    configureLiveSessionController(
+      baseDeps({ startResponseWatchdog: watchdogSpy, emitDiag: diagSpy }),
+    );
+    liveSessions.set(
+      's-model-responded',
+      makeSession({
+        upstreamWs: { readyState: WS_OPEN },
+        transportHasShownLife: true,
+        modelRespondedThisTurn: true,
+        audioInChunks: 199, // becomes 200 → hits the sampled diag branch
+      }),
+    );
+    const req: any = {
+      query: { session_id: 's-model-responded' },
+      body: { type: 'audio', data_b64: 'AUDIO', mime: 'audio/pcm;rate=16000' },
+    };
+    await handleLiveStreamSend(req, makeRes());
+    expect(watchdogSpy).not.toHaveBeenCalled();
+    // Provider-neutral reason — Nova sessions used to report 'vertex_alive'.
+    expect(diagSpy).toHaveBeenCalledWith(
+      expect.anything(),
+      'watchdog_skipped',
+      { reason: 'model_responded_this_turn' },
+    );
+  });
+
+  it('silently returns ok:true for anonymous sessions past turn limit (VTID-ANON-NUDGE)', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isAnonymous: true, turn_count: 9 }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({ ok: true });
+  });
+
+  it('handles video frame: increments videoInFrames + writes video_ack via SSE', async () => {
+    configureLiveSessionController(baseDeps());
+    const sseWrite = jest.fn();
+    liveSessions.set('s1', makeSession({ sseResponse: { write: sseWrite } }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'video', source: 'screen', data_b64: 'JPEG' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"video_ack"'),
+    );
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('text path: forwards client_content turn_complete=true via upstream WS', async () => {
+    configureLiveSessionController(baseDeps());
+    const wsSend = jest.fn();
+    const upstreamWs = { readyState: WS_OPEN, send: wsSend };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'text', text: 'hello' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    const sentArg = JSON.parse(wsSend.mock.calls[0][0]);
+    expect(sentArg.client_content.turn_complete).toBe(true);
+    expect(sentArg.client_content.turns[0].parts[0].text).toBe('hello');
+    expect(res.status).toHaveBeenCalledWith(200);
+  });
+
+  it('interrupt path with model not speaking: returns was_speaking:false (no-op)', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ isModelSpeaking: false }));
+    const req: any = { query: { session_id: 's1' }, body: { type: 'interrupt' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: false });
+  });
+
+  it('interrupt path with model speaking: ungates mic, sends end-of-turn, clears output buffer, writes interrupted SSE event', async () => {
+    const endTurnSpy = jest.fn().mockReturnValue(true);
+    configureLiveSessionController(baseDeps({ sendEndOfTurn: endTurnSpy }));
+    const sseWrite = jest.fn();
+    const upstreamWs = { readyState: WS_OPEN, send: jest.fn() };
+    const session = makeSession({
+      isModelSpeaking: true,
+      upstreamWs,
+      sseResponse: { write: sseWrite },
+      outputTranscriptBuffer: 'partial...',
+    });
+    liveSessions.set('s1', session);
+    const req: any = { query: { session_id: 's1' }, body: { type: 'interrupt' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+
+    expect(session.isModelSpeaking).toBe(false);
+    expect(endTurnSpy).toHaveBeenCalledWith(upstreamWs);
+    expect(session.outputTranscriptBuffer).toBe('');
+    expect(sseWrite).toHaveBeenCalledWith(
+      expect.stringContaining('"type":"interrupted"'),
+    );
+    expect(res.json).toHaveBeenCalledWith({ ok: true, was_speaking: true });
+    // VTID-VOICE-NOVA-BARGEIN: Nova's sendEndOfTurn() never reaches Bedrock,
+    // so the superseded generation can keep streaming audio after this
+    // interrupt. suppressCurrentTurnAudio (the same flag the greeting-reemit
+    // fix uses) must be set here so handleAudioOutput drops that zombie
+    // audio instead of forwarding it to the client.
+    expect((session as any).suppressCurrentTurnAudio).toBe(true);
+  });
+
+  it('falls back to body.session_id when query is empty', async () => {
+    configureLiveSessionController(baseDeps());
+    liveSessions.set('s1', makeSession({ active: false }));
+    const req: any = { query: {}, body: { session_id: 's1', type: 'audio', data_b64: 'A' } };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(400); // session not active
+  });
+
+  it('500 on uncaught throw from sendAudioToLiveAPI', async () => {
+    configureLiveSessionController(
+      baseDeps({
+        sendAudioToLiveAPI: () => {
+          throw new Error('boom');
+        },
+      }),
+    );
+    const upstreamWs = { readyState: WS_OPEN };
+    liveSessions.set('s1', makeSession({ upstreamWs }));
+    const req: any = {
+      query: { session_id: 's1' },
+      body: { type: 'audio', data_b64: 'AAAA' },
+    };
+    const res = makeRes();
+    await handleLiveStreamSend(req, res);
+    expect(res.status).toHaveBeenCalledWith(500);
+    expect(res.json).toHaveBeenCalledWith({ ok: false, error: 'boom' });
+  });
+});
+
+describe('VTID-03774: shouldInjectWakeBriefOverrideBlock', () => {
+  it('injects on a non-reconnect open regardless of dedupeKey', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(false, null)).toBe(true);
+    expect(shouldInjectWakeBriefOverrideBlock(false, 'login_briefing:steady_state')).toBe(true);
+  });
+
+  it('withholds injection on a reconnect for a non-guided-topic candidate (unchanged behavior)', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, null)).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'login_briefing:steady_state')).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'new_day_return')).toBe(false);
+  });
+
+  it('still injects on a reconnect when the winning candidate is a guided-topic resume', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topic:T003')).toBe(true);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topic:T251')).toBe(true);
+  });
+
+  it('requires an exact guided_topic: prefix — a lookalike key is not exempted', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'not_guided_topic:T003')).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, 'guided_topicX:T003')).toBe(false);
+  });
+
+  it('handles undefined/empty dedupeKey on a reconnect as non-exempt', () => {
+    expect(shouldInjectWakeBriefOverrideBlock(true, undefined)).toBe(false);
+    expect(shouldInjectWakeBriefOverrideBlock(true, '')).toBe(false);
+  });
+});

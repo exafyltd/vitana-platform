@@ -1,0 +1,5 @@
+cd services/gateway
+npx jest test/vtid-04485-specialist-voice-ack-window.test.ts test/services/orchestrator   # 10 suites, 160 tests passed
+npx jest <all 31 suites touching delegation-tools / specialists / dispatcher>            # 31 suites, 625 tests passed
+npx tsc --noEmit -p .                                                                    # exit 0
+npm run test:support                                                                     # 4 suites, 82 tests passed (rule 42c)

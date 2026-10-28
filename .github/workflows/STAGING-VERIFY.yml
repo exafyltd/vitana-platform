@@ -1,0 +1,297 @@
+# STAGING-VERIFY — the automatic test run after every staging deploy
+# (VTID-04613; process: docs/DEPLOYMENT-PIPELINE.md, CLAUDE.md Part 1
+# rules 46–50).
+#
+# One workflow, both services:
+#   gateway        ← workflow_run: "AWS Stage Deploy Gateway (ECS)" succeeded
+#   community-app  ← repository_dispatch `community-app-staging-deployed`,
+#                    sent by exafyltd/vitana-v1 AWS-STAGE-DEPLOY-FRONTEND.yml
+#                    (same cross-repo pattern as REGEN-SCREENS-CATALOG), so
+#                    the test-user and OASIS credentials live in one repo.
+#   manual         ← workflow_dispatch (re-verify a commit by hand)
+#
+# What it does (scripts/ci/staging-verify/run.mjs):
+#   1. confirm staging serves the deployed commit (sampled — ECS rollouts
+#      serve old and new side by side for a minute);
+#   2. run the service smoke suite + the change suite
+#      (docs/validation/<VTID>/staging-tests.json) of every commit between
+#      production and that commit — READ-ONLY, never against production;
+#   3. re-confirm the commit, write the ready message;
+#   4. record staging.verify.passed | failed | superseded in OASIS — the
+#      record the Claude Code session and the Operator Chat read.
+#
+# VTID-05144: when staging moves to a descendant mid-run (a merge redeployed
+# it), only results that ended before the deploy cutoff count; an attributed
+# failure still fails the run, otherwise it is `superseded` (commit status
+# `error`, never a pass), and a superseded FULL run re-dispatches a full run
+# on the newer commit (at most 3 in a row).
+#
+# It never deploys and never promotes. A "yes" to the ready message goes to
+# PUBLISH (rule 50); this workflow only produces the evidence for it.
+
+name: STAGING-VERIFY
+
+run-name: >-
+  STAGING-VERIFY ${{
+    github.event_name == 'repository_dispatch' && 'community-app' ||
+    github.event_name == 'workflow_dispatch' && inputs.service ||
+    'gateway' }} @ ${{
+    github.event_name == 'repository_dispatch' && github.event.client_payload.sha ||
+    github.event_name == 'workflow_dispatch' && inputs.commit_sha ||
+    github.event.workflow_run.head_sha }} (VTID-04613)
+
+on:
+  workflow_run:
+    workflows: ['AWS Stage Deploy Gateway (ECS)']
+    types: [completed]
+  repository_dispatch:
+    types: [community-app-staging-deployed]
+  workflow_dispatch:
+    inputs:
+      service:
+        description: 'Service to verify'
+        required: true
+        type: choice
+        options: [gateway, community-app]
+      commit_sha:
+        description: 'Full commit SHA staging is expected to serve'
+        required: true
+        type: string
+      full:
+        description: 'VTID-04949: also run every other change suite of the service (nightly full run)'
+        required: false
+        type: boolean
+        default: false
+      chain:
+        description: 'VTID-05144: how many superseded full runs led to this one (automatic re-dispatch stops at 3)'
+        required: false
+        type: number
+        default: 0
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  # One verification per service at a time; a newer deploy queues behind the
+  # running one (never cancels it mid-run — a half-run proves nothing).
+  # VTID-05144: full runs (22–45 min) have their own `-full` group, so they no
+  # longer delay per-deploy verifications. GitHub keeps at most one PENDING run
+  # per group: a newer queued run replaces an older still-pending one in the
+  # same group, never a running one.
+  group: staging-verify-${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}${{ inputs.full && '-full' || '' }}
+  cancel-in-progress: false
+
+jobs:
+  verify:
+    # A failed or cancelled deploy has nothing to verify.
+    if: github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success'
+    # staging-verify-runner-fix: pinned. ubuntu-latest became ubuntu-26.04, where Playwright 1.51 cannot
+    # install Chromium ("Playwright does not support chromium on ubuntu26.04-x64"), so no browser test ran.
+    runs-on: ubuntu-24.04
+    # VTID-05129: a full community-app run (every docs/validation suite) takes
+    # ~45 min on its own; 45 cancelled the proof run during its final deploy check.
+    timeout-minutes: 75
+    env:
+      SERVICE: ${{ github.event_name == 'repository_dispatch' && 'community-app' || github.event_name == 'workflow_dispatch' && inputs.service || 'gateway' }}
+      # The commit the event names. For a gateway deploy this is the deploy
+      # run's head_sha — main HEAD even when a commit_sha pin (VTID-04709)
+      # deployed an older commit; the next two steps replace it with the
+      # commit the deploy recorded. SHA itself is set once, in GITHUB_ENV.
+      EVENT_SHA: ${{ github.event_name == 'repository_dispatch' && github.event.client_payload.sha || github.event_name == 'workflow_dispatch' && inputs.commit_sha || github.event.workflow_run.head_sha }}
+    outputs:
+      outcome: ${{ steps.verify.outputs.outcome }}
+      # VTID-05144: the full sha staging moved to mid-run (superseded only).
+      superseded_by: ${{ steps.verify.outputs.superseded_by }}
+      sha: ${{ steps.inputs.outputs.sha }}
+      service: ${{ env.SERVICE }}
+    steps:
+      # VTID-04715: deploys since then upload `deployed-commit`; an older
+      # deploy run has none, and its head_sha is what it deployed.
+      - name: Fetch the commit the deploy recorded (VTID-04715)
+        if: github.event_name == 'workflow_run'
+        continue-on-error: true
+        uses: actions/download-artifact@v4
+        with:
+          name: deployed-commit
+          run-id: ${{ github.event.workflow_run.id }}
+          github-token: ${{ github.token }}
+          path: ${{ runner.temp }}/deployed-commit
+
+      - name: Resolve commit under test (VTID-04715)
+        env:
+          RECORDED: ${{ runner.temp }}/deployed-commit/sha
+        run: |
+          SHA="$EVENT_SHA"
+          if [ -f "$RECORDED" ]; then
+            DEPLOYED=$(tr -d '[:space:]' < "$RECORDED")
+            if echo "$DEPLOYED" | grep -Eq '^[0-9a-f]{40}$'; then
+              if [ "$DEPLOYED" != "$EVENT_SHA" ]; then
+                echo "::notice::deploy recorded $DEPLOYED (pinned), not its head_sha $EVENT_SHA — verifying $DEPLOYED"
+              fi
+              SHA="$DEPLOYED"
+            else
+              echo "::error::deployed-commit artifact holds '$DEPLOYED', not a full sha"; exit 1
+            fi
+          fi
+          echo "SHA=$SHA" >> "$GITHUB_ENV"
+
+      - name: Validate inputs
+        id: inputs
+        run: |
+          echo "sha=$SHA" >> "$GITHUB_OUTPUT"
+          case "$SERVICE" in gateway|community-app) ;; *) echo "::error::unknown service '$SERVICE'"; exit 1;; esac
+          if ! echo "$SHA" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::error::commit sha '$SHA' is not a full 40-char sha"; exit 1
+          fi
+          echo "Verifying $SERVICE @ $SHA"
+
+      # The runner always comes from vitana-platform main — the version that
+      # passed review — never from the commit under test.
+      - name: Checkout runner (vitana-platform main)
+        uses: actions/checkout@v4
+        with:
+          ref: main
+          path: runner
+          sparse-checkout: scripts/ci/staging-verify
+
+      - name: Checkout commit under test (gateway)
+        if: env.SERVICE == 'gateway'
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ env.SHA }}
+          path: target
+          fetch-depth: 0
+
+      - name: Checkout commit under test (community-app)
+        if: env.SERVICE == 'community-app'
+        uses: actions/checkout@v4
+        with:
+          repository: exafyltd/vitana-v1
+          token: ${{ secrets.VITANA_V1_READ_TOKEN || secrets.GITHUB_TOKEN }}
+          ref: ${{ env.SHA }}
+          path: target
+          fetch-depth: 0
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Run STAGING-VERIFY
+        id: verify
+        env:
+          # Read-only sign-in for browser tests that need a session. Never the
+          # service role: nothing in this step may write (rule 48).
+          TEST_USER_EMAIL: ${{ secrets.TEST_USER_EMAIL }}
+          TEST_USER_PASSWORD: ${{ secrets.TEST_USER_PASSWORD }}
+          # VTID-05144: read-only listing of the service's staging deploy runs
+          # (the attribution cutoff after a mid-run redeploy). Never passed to
+          # the test processes — run.mjs builds their env explicitly.
+          GITHUB_TOKEN: ${{ github.token }}
+          VITANA_V1_READ_TOKEN: ${{ secrets.VITANA_V1_READ_TOKEN }}
+        run: |
+          node runner/scripts/ci/staging-verify/run.mjs verify \
+            --service "$SERVICE" --sha "$SHA" \
+            --repo-root target --out "$RUNNER_TEMP/staging-verify" \
+            --full "${{ github.event_name == 'workflow_dispatch' && inputs.full || false }}" \
+            --chain "${{ github.event_name == 'workflow_dispatch' && inputs.chain || 0 }}"
+
+      - name: Record result in OASIS
+        if: always() && steps.verify.outcome != 'skipped'
+        env:
+          # VTID-05023 part 9: REST base; repo variable DATA_REST_URL (unset = Supabase as before)
+          # is https://data.vitanaland.com (Aurora) after the flip.
+          SUPABASE_URL: ${{ vars.DATA_REST_URL || secrets.SUPABASE_URL }}
+          SUPABASE_SVC: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          RESULTS: ${{ runner.temp }}/staging-verify/results.json
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        # VTID-05128: the body goes to OASIS from a file (curl --data-binary @file);
+        # a full run's body is over Linux's 128 KiB per-argument limit.
+        run: bash runner/scripts/ci/staging-verify/record-oasis.sh
+
+      - name: Keep the evidence
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: staging-verify-${{ env.SERVICE }}-${{ github.run_id }}
+          path: ${{ runner.temp }}/staging-verify
+          if-no-files-found: ignore
+          retention-days: 30
+
+  # VTID-04949 (plan C1): put the result where the merging session and the PR
+  # author look: a commit status on the verified commit, and one comment on the
+  # PR that merged it. Best-effort: verification itself never depends on it.
+  # vitana-v1 needs the VITANA_V1_STATUS_TOKEN secret (statuses + pull
+  # requests write); without it the report is skipped with a notice.
+  report:
+    needs: verify
+    if: always() && needs.verify.outputs.sha != ''
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    # Job-level permissions replace the workflow-level set for this job.
+    # actions: write is for the VTID-05144 re-dispatch of a superseded full run.
+    permissions:
+      statuses: write
+      pull-requests: write
+      actions: write
+    env:
+      SERVICE: ${{ needs.verify.outputs.service }}
+      SHA: ${{ needs.verify.outputs.sha }}
+      OUTCOME: ${{ needs.verify.outputs.outcome || 'failed' }}
+      SUPERSEDED_BY: ${{ needs.verify.outputs.superseded_by }}
+      RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+      FULL: ${{ github.event_name == 'workflow_dispatch' && inputs.full || false }}
+      CHAIN: ${{ github.event_name == 'workflow_dispatch' && inputs.chain || 0 }}
+    steps:
+      - name: Commit status + PR comment
+        env:
+          GH_TOKEN: ${{ needs.verify.outputs.service == 'community-app' && secrets.VITANA_V1_STATUS_TOKEN || github.token }}
+          HAVE_TOKEN: ${{ needs.verify.outputs.service != 'community-app' || secrets.VITANA_V1_STATUS_TOKEN != '' }}
+        run: |
+          REPO=$([ "$SERVICE" = "community-app" ] && echo exafyltd/vitana-v1 || echo exafyltd/vitana-platform)
+          if [ "$HAVE_TOKEN" != "true" ]; then
+            echo "::notice::VITANA_V1_STATUS_TOKEN not set — result stays in OASIS + this run; no status on $REPO."
+            exit 0
+          fi
+          # VTID-05144: superseded is never a pass. `error` = "could not verify"
+          # (not a test failure). The status sits on the deployed commit, which
+          # is already on main, so PR-head branch protection is unaffected.
+          DESCRIPTION="STAGING-VERIFY $OUTCOME"
+          case "$OUTCOME" in
+            passed) STATE=success;;
+            superseded) STATE=error; DESCRIPTION="superseded — staging moved to ${SUPERSEDED_BY:0:12}; not verified";;
+            *) STATE=failure;;
+          esac
+          CONTEXT=$([ "$FULL" = "true" ] && echo "staging-verify/full" || echo "staging-verify")
+          gh api -X POST "repos/$REPO/statuses/$SHA" -f state="$STATE" -f context="$CONTEXT" \
+            -f description="$DESCRIPTION" -f target_url="$RUN_URL" >/dev/null && echo "status $STATE on $REPO@${SHA:0:12}"
+          [ "$FULL" = "true" ] && exit 0
+          PR=$(gh api "repos/$REPO/commits/$SHA/pulls" --jq '.[0].number // empty' 2>/dev/null || true)
+          if [ -n "$PR" ]; then
+            case "$STATE" in success) ICON="✅";; error) ICON="ℹ️";; *) ICON="❌";; esac
+            gh api -X POST "repos/$REPO/issues/$PR/comments" -f body="$ICON **$DESCRIPTION** for \`${SHA:0:12}\` ($SERVICE). Run: $RUN_URL
+
+          ---
+          _Generated by STAGING-VERIFY (VTID-04949)_" >/dev/null && echo "commented on $REPO#$PR"
+          fi
+
+      # VTID-05144: a full run superseded by a mid-run redeploy proves nothing,
+      # so verify the commit staging moved to with a new full run. A
+      # workflow_dispatch created with GITHUB_TOKEN does start a run (GitHub's
+      # documented exception). Capped at 3 in a row; after that the nightly
+      # full run is the evidence. Both runs are read-only (rule 48).
+      - name: Re-run the full verification on the newer commit (VTID-05144)
+        if: always() && env.FULL == 'true' && env.OUTCOME == 'superseded'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if ! echo "$SUPERSEDED_BY" | grep -Eq '^[0-9a-f]{40}$'; then
+            echo "::warning::superseded but no full sha for the newer commit ('$SUPERSEDED_BY') — not re-dispatching"; exit 0
+          fi
+          if [ "$CHAIN" -lt 3 ]; then
+            gh workflow run STAGING-VERIFY.yml --repo exafyltd/vitana-platform --ref main -f service="$SERVICE" -f commit_sha="$SUPERSEDED_BY" -f full=true -f chain=$((CHAIN+1))
+            echo "dispatched full STAGING-VERIFY $SERVICE @ ${SUPERSEDED_BY:0:12} (chain $((CHAIN+1)))"
+          else
+            echo "::notice::chain=$CHAIN: 3 superseded full runs in a row — not re-dispatching; the nightly full run is the evidence"
+          fi
+

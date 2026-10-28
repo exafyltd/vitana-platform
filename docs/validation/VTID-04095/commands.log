@@ -1,0 +1,65 @@
+VTID-04095 — commands run
+
+# Discovered while live-verifying VTID-04094 (W0-W5c against staging)
+$ curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info"
+{"ok":true,"env":"staging","git_commit":"0b74cb56fcec",...}
+
+$ curl -s -X POST "https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat" \
+    -d '{"message":"What VTID was just merged, and what commit is this staging gateway serving right now?"}'
+# 200 OK, real DeepSeek reply, tool_calls:1, threadId returned
+
+# Confirmed operator_threads has rows but operator_messages does not
+$ select to_regclass('public.operator_threads'), to_regclass('public.operator_messages'),
+    (select count(*) from operator_threads), (select count(*) from operator_messages);
+threads_tbl=operator_threads messages_tbl=operator_messages thread_rows=40 message_rows=0
+
+# Ruled out DB-level blockers: raw SQL insert into operator_messages succeeds
+$ insert into operator_messages (thread_id, role, content, meta)
+    values ('dd249090-...', 'user', 'diagnostic probe - VTID-04094', '{}'::jsonb) returning id;
+-- succeeds
+$ delete from operator_messages where content = 'diagnostic probe - VTID-04094';
+-- cleaned up
+
+# Confirmed grants/RLS identical between operator_threads (works) and operator_messages (doesn't)
+$ select table_name, grantee, privilege_type from information_schema.role_table_grants
+    where table_name in ('operator_messages','operator_threads') and grantee in ('service_role','anon','authenticated');
+-- identical grant sets on both tables
+$ select polname, polcmd, polroles::regrole[], pg_get_expr(polqual,polrelid), pg_get_expr(polwithcheck,polrelid)
+    from pg_policy where polrelid = 'public.operator_messages'::regclass;
+operator_messages_service_role | * | {service_role} | true | true
+
+# Root cause: real PostgREST rejects heterogeneous bulk-insert object keys
+$ curl -X POST "https://inmkhvwdcuyhnxkgfvsb.supabase.co/rest/v1/operator_messages" \
+    -H "apikey: <anon>" -H "Authorization: Bearer <anon>" -H "Prefer: return=minimal" \
+    -d '[{"thread_id":"...","role":"user","content":"hi","meta":{}},
+         {"thread_id":"...","role":"tool","tool_name":"x","content":"hi","meta":{}},
+         {"thread_id":"...","role":"assistant","content":"hi","meta":{}}]'
+{"code":"PGRST102","details":null,"hint":null,"message":"All object keys must match"}
+HTTP_STATUS:400
+
+# Fix: services/gateway/src/services/operator-threads.ts
+#   tool_name: null added to the user/assistant message objects so every
+#   object in the bulk array carries the same key set.
+
+# Test: services/gateway/test/vtid-04022-operator-threads.test.ts
+#   installFakeRest's operator_messages POST handler now emulates the real
+#   PGRST102 same-keys constraint (400 on mismatched key sets across the
+#   array), so the pre-existing "creates the thread..." test now actually
+#   exercises the real-world failure shape instead of a too-lenient fake.
+
+$ cd services/gateway && npx jest test/vtid-04022-operator-threads.test.ts test/vtid-03960-operator-thread-menu.test.ts
+Test Suites: 2 passed, 2 total
+Tests:       40 passed, 40 total
+
+# Mutation verification: stash the source fix, re-run, confirm red
+$ git stash push -- services/gateway/src/services/operator-threads.ts
+$ npx jest test/vtid-04022-operator-threads.test.ts
+Test Suites: 1 failed, 1 total
+Tests:       1 failed, 14 passed, 15 total
+  expect(r1).toEqual({ recorded: true, turns: 1 });
+  Received: { recorded: false, turns: 1 }
+$ git stash pop
+# fix restored
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, no output)

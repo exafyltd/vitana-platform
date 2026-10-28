@@ -1,0 +1,40 @@
+# 11 — CRM module (erpclaw-growth) vendored install from a LOCAL pinned tree, no network
+init_db.py rc 0 ERPClaw Growth (CRM Advanced tables) schema created in /tmp/erpclaw-home/data.sqlite
+  Tables: 32
+  Indexes: 107
+  Postgres: crm_contact / crm_company / crm_contact_role ensured.
+  Postgres: crm_task / crm_task_link ensured.
+  Postgres: crm_pipeline / crm_pipeline_stage ensured + default pipeline seeded.
+  Postgres: crm_saved_view ensured.
+  Postgres: anomaly.anomaly_type CHECK extended (+2 Wave 2 types).
+  Postgres: anomaly.anomaly_type CHECK extended (+1 Wave F type).
+  elimination_rule / elimination_entry absent (already retired, or growth never installed). Nothing to do.
+module migrations applied: ['001_crm_contact_company_tables', '002_crm_tasks', '003_crm_pipelines', '004_crm_saved_view', '005_wave2_anomaly_types', '006_wavef_usage_anomaly_type', '007_retire_legacy_elimination_tables']
+{"module": "erpclaw-growth", "version": "2.10.0", "actions_cached": 164, "install_path": "/tmp/erpclaw-home/modules/erpclaw-growth"}
+## module tables now present: 248 (was 216)
+## foundation router -> add-lead (module action) BEFORE patch 0003:
+{"status": "error", "error": "Unknown action: list-leads", "hint": "Run --action available-modules --search <keyword> to find modules, or --action list-all-actions to see available actions"}
+## FINDING: foundation router lookup_module_for_action() opens the SQLite file directly (sqlite3.connect(DB_PATH)), so on Postgres every installed-module action is 'Unknown action'. Patched (0003) to resolve via ERPCLAW_DB_URL under the postgresql dialect.
+## foundation router -> list-leads AFTER patch 0003:
+{
+  "leads": [],
+  "total": 0,
+  "limit": 20,
+  "offset": 0,
+  "has_more": false,
+## add-lead through the router (CRM write, not in DANGEROUS_ACTIONS):
+{
+  "lead": {
+    "id": "716a27e3-cbbe-4492-99a2-c87d4cb776e3",
+    "naming_series": "LEAD-2026-00001",
+    "lead_name": "Spike Lead",
+    "company_name": null,
+    "email": "spike@example.invalid",
+    "phone": null,
+    "source": "website",
+    "lead_source_id": null,
+    "status": "new"
+  },
+## list-leads count: 1
+## list-modules (foundation) sees the vendored module:
+[('erpclaw-growth', '2.10.0', 'installed')]

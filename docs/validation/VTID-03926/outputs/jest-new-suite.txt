@@ -1,0 +1,17 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+(node:1252) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/vtid-03926-operator-chat-userrole.test.ts
+  VTID-03926: POST /api/v1/operator/chat threads real userRole into processWithGemini
+    ✓ passes userRole: undefined for an unauthenticated caller (no identity) (40 ms)
+    ✓ passes userRole: 'admin' for a verified exafy_admin identity (8 ms)
+    ✓ does NOT grant admin tools for a verified but non-admin identity (5 ms)
+    ✓ never trusts the client-supplied x-operator-role header for tool authorization (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        3.024 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

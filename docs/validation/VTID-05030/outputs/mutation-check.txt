@@ -1,0 +1,11 @@
+Mutations applied temporarily, then restored:
+  - wearables.ts: store result.tokens.access_token raw instead of sealedAccess
+  - wearables.ts: put the exception message in the callback redirect
+  - wearables-repository.ts + connector-webhooks.ts: drop `access_token: null` from the wipe
+$ npx jest test/vtid-05030-connection-tokens.test.ts
+    ✕ stores only sealed tokens
+    ✕ an exchange failure redirects with a fixed code, never the exception text
+    ✕ the repository wipe clears all three token columns
+    ✕ wipes the stored tokens
+    ✕ the OAuth callback only writes sealed values
+Tests:       5 failed, 23 passed, 28 total

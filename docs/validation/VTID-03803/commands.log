@@ -1,0 +1,90 @@
+# VTID-03803 — commands actually run.
+
+# --- Investigation ---------------------------------------------------------
+# User reported: "Spanish and French general Orb communication is in
+# English. Investigate why and fix it! All other languages are correct!"
+
+grep -n "languageSupported: isNovaSonicLanguageSupported" services/gateway/src/routes/orb-live.ts
+grep -n "cascade" services/gateway/src/routes/orb-live.ts
+#   -> confirmed the upstream selection object: `languageBlocked =
+#      ctx.nova.languageSupported !== true`, and `tryCascadeRescue()`
+#      returns null immediately whenever `!languageBlocked` — i.e. a
+#      Nova-supported language can NEVER be cascade-rescued, by design.
+
+grep -n "NOVA_SONIC_SUPPORTED_LANGUAGES" services/gateway/src/orb/live/upstream/nova-sonic-config.ts
+#   -> confirmed `['en', 'de', 'fr', 'es']` — es/fr are Nova-native and
+#      therefore structurally excluded from the cascade.
+
+# Read the VTID-03704 precedent (pt): identical reported symptom
+# ("a pt user was answered in ENGLISH"), fixed by removing pt from
+# NOVA_SONIC_SUPPORTED_LANGUAGES so it falls through to the cascade.
+
+grep -n "languageNames" services/gateway/src/orb/live/instruction/live-system-instruction.ts
+#   -> ruled out a missing/mistranslated language-name map: 'fr': 'French'
+#      and 'es': 'Spanish' are both already present and correct, so the
+#      system instruction already correctly says "Respond ONLY in
+#      French"/"Respond ONLY in Spanish". This is a Nova model-reliability
+#      gap, not a prompt-construction bug.
+
+# Read-only production query (Supabase MCP, execute_sql — SELECT only,
+# no writes, per the absolute production-write ban):
+#   select count(*), max(created_at) from oasis_events
+#   where metadata->>'reason' = 'cascaded_language_rescue' ...
+#   -> 0 events in 30 days. The cascade has NEVER fired in production.
+#
+#   select ... where message ilike '%cascade%' order by created_at desc
+#   -> confirmed the cascade was deliberately left OFF after an
+#      2026-08-24 emergency rollback (chipmunk-audio widget bug), and the
+#      follow-up dispatch to re-enable it never happened (matches this
+#      session's own open task list: "#22 PUBLISH the voice chain to
+#      production, THEN re-enable the cascade" — still pending).
+#
+# CONCLUSION: removing fr/es from NOVA_SONIC_SUPPORTED_LANGUAGES is the
+# correct, proven fix (identical mechanism to the pt fix), but is INERT in
+# production today because ORB_CASCADED_VOICE_ENABLED is not live. That
+# caveat is recorded in the code comment and reported to the user rather
+# than silently claimed as a closed loop.
+
+# --- Fix ---------------------------------------------------------------
+
+# services/gateway/src/orb/live/upstream/nova-sonic-config.ts
+#   NOVA_SONIC_SUPPORTED_LANGUAGES: ['en','de','fr','es'] -> ['en','de']
+#   (comment added documenting the report, the mechanism, and the
+#   production-caveat above)
+
+# services/gateway/src/orb/live/upstream/cascaded-config.ts
+#   Header comment corrected: was stale since VTID-03704 (still claimed
+#   Nova is "routed" for `en de fr es pt`, when pt had already been
+#   removed months earlier); now states the real routed set (en/de) and
+#   names all three languages found live-answering in English despite
+#   AWS's documented support (pt, fr, es).
+
+# services/gateway/src/orb/live/voice/nova-sonic-voice.ts
+#   Header comment: fr/es voice entries (ambre/lupe) explicitly KEPT,
+#   same as pt kept carolina — routing and voice are separate questions.
+
+# scripts/tts/verify-all-orb-languages.ts
+#   NOVA_NATIVE literal (deliberately duplicated from
+#   NOVA_SONIC_SUPPORTED_LANGUAGES so the standing live-verification
+#   script cross-checks against, not imports, the routing table):
+#   {'en','de','fr','es'} -> {'en','de'}
+
+# services/gateway/src/routes/voice-lab.ts
+#   Comment-only: the cascaded_language_rescue example list extended to
+#   include fr/es (no logic change; voice-lab.ts already imports the
+#   live config it now correctly documents).
+
+# --- Verification --------------------------------------------------------
+
+npx jest test/orb/live/upstream/nova-sonic-config.test.ts \
+         test/orb/live/upstream/cascaded-voice.test.ts \
+         test/orb/live/voice/voice-routing-policy.test.ts \
+         test/scripts/verify-all-orb-languages.test.ts \
+         test/orb/routes/session-start-voice-telemetry.test.ts
+#   -> 5 suites, 53 tests passing. (outputs/targeted-tests.txt)
+
+npx tsc --noEmit
+#   -> clean. (outputs/tsc.txt)
+
+npx jest
+#   -> full suite. (outputs/full-suite.txt)

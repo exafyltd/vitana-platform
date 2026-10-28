@@ -1,0 +1,386 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_ROOT_CAUSE_ROLLUP_MODE="true" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isRootCauseRollupOn (src/services/jev/gates/root-cause-rollup-gate.ts:86:21)
+      at Object.<anonymous> (test/vtid-04825-root-cause-rollup.test.ts:93:33)
+
+PASS test/vtid-04825-root-cause-rollup.test.ts
+  VTID-04825 decision, input and rule
+    ✓ execution_root_cause: telemetry, internal + autopilot planes, redacted, the ten classes (8 ms)
+    ✓ input: status, stage and the failure texts, cut; nothing else from metadata (1 ms)
+    ✓ rule: 0 (1 ms)
+    ✓ rule: 1 (1 ms)
+    ✓ rule: 2 (2 ms)
+    ✓ rule: 3
+    ✓ rule: 4
+    ✓ rule: 5 (1 ms)
+    ✓ rule: 6
+    ✓ rule: 7
+    ✓ rule: 8
+    ✓ rule: 9 (1 ms)
+  VTID-04825 daily classification
+    ✓ off (default, typo): nothing read, asked or written (35 ms)
+    ✓ one row per execution; agreement with the rule where it names a class; already-classified skipped (5 ms)
+    ✓ Jev down → fallback row with the rule class; never throws (1 ms)
+  VTID-04825 weekly roll-up
+    ✓ classOfRow: Jev class first, rule class when Jev did not decide; incident causes, unknown dropped (1 ms)
+    ✓ classes seen at least three times become would_open_finding rows, once per week (2 ms)
+    ✓ off: no roll-up
+  VTID-04825 wiring and pins
+    ✓ the gateway starts the scheduler, off unless the mode is set (2 ms)
+    ✓ both gateways pin shadow, never enforce (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] JEV_LESSON_NOVELTY_MODE="on" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at isLessonNoveltyOn (src/services/jev/gates/lesson-novelty-gate.ts:52:21)
+      at Object.<anonymous> (test/vtid-04818-lesson-novelty.test.ts:66:31)
+
+  console.warn
+    [jev] lesson_novelty failed for t6: db
+
+      126 |     );
+      127 |   } catch (err: any) {
+    > 128 |     console.warn(`[jev] ${LESSON_NOVELTY_GATE} failed for ${a.threadId}: ${err?.message || err}`);
+          |             ^
+      129 |     return null;
+      130 |   }
+      131 | }
+
+      at runLessonNoveltyCheck (src/services/jev/gates/lesson-novelty-gate.ts:128:13)
+      at Object.<anonymous> (test/vtid-04818-lesson-novelty.test.ts:104:5)
+
+PASS test/vtid-04818-lesson-novelty.test.ts
+  VTID-04818 decision and rule
+    ✓ lesson_novelty: telemetry, redacted, new_and_durable + kind (2 ms)
+    ✓ the rule is certain only at the edges (1 ms)
+  VTID-04818 gate
+    ✓ off (default, typo): nothing recalled, asked or written (6 ms)
+    ✓ shadow: candidate judged next to the three most similar stored lessons; agreement against the rule (3 ms)
+    ✓ stored [], Jev keep p=0.9 → agreed true (1 ms)
+    ✓ stored [{"category":"gotcha","title":"Opus 4.7 on Bedrock is unsubscribed","content":"AccessDenied on invoke","similarity":0.5,"created_at":"2026-09-21T12:00:00Z"}], Jev keep p=0.1 → agreed false (1 ms)
+    ✓ stored [{"category":"gotcha","title":"Opus 4.7 on Bedrock is unsubscribed","content":"AccessDenied on invoke","similarity":0.85,"created_at":"2026-09-21T12:00:00Z"}], Jev keep p=0.9 → agreed null (1 ms)
+    ✓ recall failure → nothing; Jev down → fallback row; never throws (3 ms)
+  VTID-04818 wiring and pins
+    ✓ every extracted lesson is checked before its write, never awaited; the write is unchanged (1 ms)
+    ✓ both gateways pin shadow, never enforce (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts
+  VTID-03788: every run: step in the gateway deploy workflows is valid bash
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (24 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: every run: step passes bash -n (123 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (5 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: YAML parses and has at least one bash run: step (6 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: every run: step passes bash -n (236 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml: no single run: step exceeds 20,000 characters (GitHub Actions workflow-file size limit) (3 ms)
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml: the task-definition update step has no apostrophe inside its jq program (VTID-03787/VTID-03788 regression) (5 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [jev] permitted-role read failed user=u1 tenant=t1: boom
+
+      112 |   if (grants.error || memberships.error) {
+      113 |     // Without the permitted set no role can be validated: fail closed.
+    > 114 |     console.warn(`[jev] permitted-role read failed user=${id.user_id} tenant=${tenantId}: ${(grants.error || memberships.error)!.message}`);
+          |             ^
+      115 |     gaps.push('permitted_roles_unavailable');
+      116 |     return done();
+      117 |   }
+
+      at resolveJevCaller (src/services/jev/jev-caller.ts:114:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:294:15)
+
+  console.warn
+    [jev] JEV_AGENT_PROGRESS_MODE="Enforce" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at Object.<anonymous> (test/vtid-04754-jev-foundation.test.ts:317:23)
+
+PASS test/vtid-04754-jev-foundation.test.ts
+  VTID-04754 every decision declares planes and a data class
+    ✓ support_ticket_triage (2 ms)
+    ✓ ops_error_triage (1 ms)
+    ✓ ci_failure_bucket (1 ms)
+    ✓ finding_duplicate (2 ms)
+    ✓ document_relevance (6 ms)
+    ✓ account_classification
+    ✓ account_duplicate (1 ms)
+    ✓ payment_invoice_match
+    ✓ company_doc_relevance (15 ms)
+    ✓ execution_root_cause (1 ms)
+    ✓ document_type (1 ms)
+    ✓ partner_onboarding_triage
+    ✓ approval_risk
+    ✓ contract_clause_flag (1 ms)
+    ✓ lead_score
+    ✓ moderation_severity (1 ms)
+    ✓ professional_lead_fit (1 ms)
+    ✓ agent_progress_check
+    ✓ execution_feasibility (4 ms)
+    ✓ backstop_cluster_defect (1 ms)
+    ✓ fix_verification (1 ms)
+    ✓ commit_cause_score
+    ✓ execution_repeat (1 ms)
+    ✓ voice_session_outcome
+    ✓ slow_session_cause
+    ✓ finding_plannable (1 ms)
+    ✓ test_suite_relevance
+    ✓ pr_clash (2 ms)
+    ✓ change_risk (4 ms)
+    ✓ operator_route
+    ✓ opener_effectiveness (1 ms)
+    ✓ lesson_novelty
+    ✓ no decision sends phi today (1 ms)
+    ✓ moderation reads member content; ops/CI/findings are telemetry
+  VTID-04754 plane × data policy
+    ✓ internal may send telemetry and business
+    ✓ phi is refused on every plane, whatever the flags say (1 ms)
+    ✓ patient plane is off (1 ms)
+    ✓ member content needs the env flag, the tenant plane and a budget — in that order (1 ms)
+    ✓ Community Autopilot: telemetry yes, business no, member content by member rules
+    ✓ partner_org needs the tenant flag to list it
+    ✓ a decision only runs on the planes it declares
+    ✓ enabled:false switches a tenant off, internal included
+  VTID-04754 tenant flag parsing
+    ✓ absent → internal default; malformed → null (fail closed) (2 ms)
+    ✓ month key is UTC first-of-month
+  VTID-04754 decide() enforces tenant control before any token is spent
+    ✓ a decided call records spend per tenant and plane (2 ms)
+    ✓ platform telemetry without a tenant is counted under the platform id (1 ms)
+    ✓ business data without a tenant is refused (1 ms)
+    ✓ exafy_admin must name a target tenant for tenant data; the call is marked cross_tenant (6 ms)
+    ✓ a tenant switched off is refused; an exhausted budget falls back with 429 and an event (2 ms)
+    ✓ an unreadable tenant flag or spend fails closed (1 ms)
+    ✓ moderation (member content) stays off for internal callers until the member plane is opened (1 ms)
+    ✓ Community Autopilot may run telemetry decisions only (1 ms)
+  VTID-04754 resolveJevCaller
+    ✓ permitted set mirrors get_my_permitted_roles: grants ∪ memberships ∪ community, switcher order (1 ms)
+    ✓ role_preferences wins over user_tenants.active_role (pickEffectiveRole) (1 ms)
+    ✓ falls back to user_tenants.active_role
+    ✓ a role that is not permitted in the tenant is refused
+    ✓ acting role is accepted only when permitted (1 ms)
+    ✓ no tenant in the JWT → user_tenants primary tenant (requireTenant fallback) (1 ms)
+    ✓ a Cognito token is reported as an identity gap, not papered over
+    ✓ permitted-role read failure fails closed (no role) (7 ms)
+    ✓ a normal user cannot name another tenant (1 ms)
+    ✓ exafy_admin: no tenant unless named; a named tenant (slug) is resolved and marked cross_tenant
+  VTID-04754 shadow framework
+    ✓ mode env var name and exact values; anything else is off (3 ms)
+    ✓ off: no call, no row (1 ms)
+    ✓ shadow: Jev asked, row recorded next to the system action, never enforced (1 ms)
+    ✓ enforce: enforce=true only on a confident decision (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04754-jev-prod-workflow.test.ts
+  VTID-04754 production Jev declaration
+    ✓ pins the full secret ARN in the Jev step env (the prod deploy role cannot describe secrets) (1 ms)
+    ✓ upserts TYPESAFE_API_KEY as a secret reference, never a plain env value (1 ms)
+    ✓ upserts JEV_DECISIONS_ENABLED=true (strip, then add)
+    ✓ reads and writes back the partial task definition, after step 1/2 and before step 2/2 (whose env_overrides may still override it) (1 ms)
+    ✓ never opens the member plane (1 ms)
+  VTID-04754 staging probe classifies the AWS error
+    ✓ keeps stderr instead of discarding it
+    ✓ names not-found, access-denied and other failures separately (1 ms)
+
+  console.warn
+    [jev] JEV_SELFHEAL_PROVIDER_FAILURE_MODE="Enforce" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:170:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+
+  console.warn
+    [jev] JEV_SELFHEAL_INCIDENT_DEDUPE_MODE="true" is not off|shadow|enforce — gate stays off
+
+      40 |   if (!warned.has(name)) {
+      41 |     warned.add(name);
+    > 42 |     console.warn(`[jev] ${name}=${JSON.stringify(raw)} is not off|shadow|enforce — gate stays off`);
+         |             ^
+      43 |   }
+      44 |   return 'off';
+      45 | }
+
+      at jevGateMode (src/services/jev/jev-shadow.ts:42:13)
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:171:28)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:158:37)
+
+  console.warn
+    [jev] self-heal gates failed, triage proceeds: db down
+
+      295 |   } catch (err: any) {
+      296 |     // A gate must never break triage: on any error, triage runs as before.
+    > 297 |     console.warn(`[jev] self-heal gates failed, triage proceeds: ${err?.message || err}`);
+          |             ^
+      298 |     result.skip = null;
+      299 |   }
+      300 |   return result;
+
+      at runSelfHealGates (src/services/jev/gates/selfheal-gates.ts:297:13)
+      at Object.<anonymous> (test/vtid-04759-selfheal-jev-gates.test.ts:192:15)
+
+PASS test/vtid-04759-selfheal-jev-gates.test.ts
+  VTID-04759 B2 provider-failure classifier (production strings)
+    ✓ bedrockDenied → permission / stop_and_alert (3 ms)
+    ✓ deepseek402 → credit / stop_and_alert (1 ms)
+    ✓ bothFailed → credit / stop_and_alert
+    ✓ dailyTokens → quota / stop_and_alert (1 ms)
+    ✓ promptTooLong → input_too_large / triage
+    ✓ badGateway → transient / retry_once
+    ✓ timeout → transient / retry_once (1 ms)
+    ✓ throttled → throttle / back_off
+    ✓ both providers are named on a two-provider failure (1 ms)
+    ✓ every message the retry breaker calls an outage is a stop class here too (8 ms)
+    ✓ our own endpoint failing with 403/502 is not a provider failure — triage it
+    ✓ an unrecognised provider failure is unknown (Jev is asked), empty text is none
+    ✓ failure text is read from whichever field the caller used
+  VTID-04759 B1 incident key
+    ✓ one outage is one incident whatever execution hit it
+    ✓ anything else keys on the endpoint, else the vtid (never deduped) (1 ms)
+  VTID-04759 gate modes
+    ✓ off (default): no row, no skip (1 ms)
+    ✓ shadow: rows recorded for both gates, triage never skipped — even on a duplicate outage (1 ms)
+    ✓ enforce: a provider outage skips triage
+    ✓ enforce: a transient or code failure still triages (1 ms)
+    ✓ enforce dedupe: the second triage of the same outage within 30 min is skipped; after 30 min it runs (1 ms)
+    ✓ a typo in the mode is off, never enforce (20 ms)
+    ✓ an unrecognised provider failure asks Jev (ops_error_triage) and records its verdict (4 ms)
+    ✓ a known class never calls Jev (1 ms)
+    ✓ a failing gate store never blocks triage (2 ms)
+  VTID-04759 outcome write-back (agreement)
+    ✓ predicted stop + triage then died on the outage → agreed (1 ms)
+    ✓ predicted stop but triage succeeded → disagreed (1 ms)
+    ✓ predicted proceed (transient) and triage succeeded → agreed
+  VTID-04759 deploy pins: both gates run in shadow, never enforce
+    ✓ staging pins shadow for both gates (1 ms)
+    ✓ prod pins shadow for both gates
+    ✓ the generated pin registry agrees (3 ms)
+
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.765 s)
+  Golden path: an operator request becomes a merged, deployed, verified change
+    ✓ console turn → VTID → execution → agent → held PR → approve → CI → merge → deploy → verify → ledger closed (681 ms)
+  Safety: only a verified exafy_admin (or the machine credential) can queue an execution
+    ✓ an anonymous console request is refused before any VTID, finding or execution exists (83 ms)
+    ✓ a signed-in member who is not an exafy admin is refused (autopilot_run_task and autopilot_execute_task) (134 ms)
+    ✓ an anonymous request that reuses an admin's thread does not inherit the admin marker (129 ms)
+    ✓ a wrong machine token is not a credential (80 ms)
+    ✓ a verified exafy_admin JWT queues the same execution the machine credential does (87 ms)
+  Safety: an LLM provider outage stops the loop instead of feeding it
+    ✓ both providers failing on the first call fails the execution with the outage error (136 ms)
+    ✓ after one outage failure the next tick claims at most one execution (a probe) (284 ms)
+    ✓ three outage failures in a row: the next tick claims nothing — no retry storm (291 ms)
+  Safety: a run that exhausts the turn cap is snoozed, not re-approved
+    ✓ auto-approve → agent reads until the cap → failure → the next auto-approve pass snoozes the finding (219 ms)
+  CI failure on an agent PR: the fix continues on the same PR
+    ✓ red CI → triage → fix-mode child on the SAME branch → no second PR → green → merged → parent self_healed (383 ms)
+    ✓ VTID-04472 — the VTID of a fix-mode lineage closes as success when the fix lands (it used to close as failed at the first red CI) (375 ms)
+  VTID-04636 — the self-healing reconciler judges a fix-mode VTID by its lineage
+    ✓ leaves the VTID open while the child is in CI, then closes it success (live: VTID-04608/04614 closed failed) (368 ms)
+  Safety: an execution claimed by one environment is left alone by the other
+    ✓ staging's CI watcher ignores a production-claimed PR; production's merges it (118 ms)
+    ✓ a legacy row with no claim stamp stays visible to every environment (79 ms)
+    ✓ staging's running-watchdog does not reclaim a stale run production owns; it does reclaim its own (86 ms)
+    ✓ the production gateway does not claim a queued execution; staging does (187 ms)
+    ✓ production claims only with DEV_AUTOPILOT_PROD_CLAIM_ENABLED=true (exact) (39 ms)
+  Safety: cancelling a running execution stops it — nothing pushed, nothing retried
+    ✓ the operator cancels from the console mid-run; the agent stops at its next boundary (223 ms)
+  Safety: a prior PR the bridge closed unmerged does not block the finding's retry
+    ✓ red CI on a single-shot PR → bridge closes it and stamps pr_closed_unmerged_at → the retry runs and opens a new PR (136 ms)
+  Safety: the kill switch stops claiming and the watchers
+    ✓ an armed kill switch: a queued execution is not claimed and a green PR is not merged (155 ms)
+  Merge: a green PR while main keeps moving (VTID-04612)
+    ✓ main moved but touched none of the PR files → merged on its green CI, no branch update (80 ms)
+    ✓ main touched a file the PR changes → the branch is updated and the PR waits for CI on the new head (81 ms)
+  Console turn: several rounds of tools until the model answers (VTID-04628)
+    ✓ a failed tool call is corrected in the next round and the answer comes from the second result (129 ms)
+    ✓ OPERATOR_MAX_TOOL_ROUNDS=1 keeps the single round: tools once, then the tool-less final call (86 ms)
+    ✓ the round budget ends a model that keeps calling tools: the tool-less final call answers (85 ms)
+  Verification: sporadic unrelated errors do not revert a deployed change (VTID-04625)
+    ✓ the 2026-09-26 revert case: telemetry and two stray errors → completed, not reverted (155 ms)
+    ✓ a new error type firing 3 times after the deploy still fails verification (159 ms)
+  Runner checks: a Command Hub frontend change runs the suites that read the asset (VTID-04617)
+    ✓ the runner jest targets include every suite that names app.js, not only the paired ones (141 ms)
+  Contract: the emulated one-in-flight-execution index matches the migration
+    ✓ the fake refuses a second in-flight execution for a finding with the same statuses the real index covers (68 ms)
+
+Test Suites: 7 passed, 7 total
+Tests:       170 passed, 170 total
+Snapshots:   0 total
+Time:        7.462 s, estimated 8 s
+Ran all test suites matching /test\/vtid-04825|test\/vtid-04759|test\/vtid-04754|test\/vtid-04465-operator-pipeline-regression|test\/orb\/live\/upstream\/staging-deploy-workflow-bash-syntax|test\/vtid-04818/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

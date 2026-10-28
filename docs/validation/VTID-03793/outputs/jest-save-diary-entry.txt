@@ -1,0 +1,29 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+(node:1744) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/save-diary-entry-shared.test.ts
+  VTID-03042 — save_diary_entry lifted to shared dispatcher
+    ✓ 1. happy path: inserts diary_entries + calls index RPC + returns ok (7 ms)
+    ✓ 2. diary_entries insert failure is non-fatal — RPC still runs, result still ok (2 ms)
+    ✓ 3. empty raw_text returns ok:false without touching the DB (1 ms)
+    ✓ 4. missing user_id returns ok:false without touching the DB (12 ms)
+    ✓ 10. bare consent phrases ("ja", "hilf mir", "yes", "help me") are rejected, DB untouched (3 ms)
+    ✓ 11. real content that happens to start with "ja"/"yes" is NOT treated as bare consent (1 ms)
+    ✓ 5. text is voice-friendly and mentions the entry_date (1 ms)
+    ✓ 6. entry_date arg passes through when valid; otherwise defaults to today (1 ms)
+    ✓ 8. no same-day baseline → index_delta is null and text claims NO increase (1 ms)
+    ✓ 9. WITH a same-day baseline → honest positive delta is still announced (1 ms)
+    ✓ 7. registered in ORB_TOOL_REGISTRY and routes via dispatchOrbTool (1 ms)
+    VTID-03793 — coalesce rapid-fire voice diary fragments
+      ✓ 12. a second voice call within the coalesce window UPDATES the recent row instead of inserting a new one (1 ms)
+      ✓ 13. a voice call OUTSIDE the coalesce window inserts a new row instead of merging (1 ms)
+      ✓ 14. no prior voice entry at all inserts a fresh row (no crash on null recent entry)
+      ✓ 15. a coalesce-update failure is non-fatal — RPC still runs, result still ok
+
+Test Suites: 1 passed, 1 total
+Tests:       15 passed, 15 total
+Snapshots:   0 total
+Time:        3.888 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

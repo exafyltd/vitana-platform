@@ -1,0 +1,50 @@
+# Voice tool router fine-tune config — Phase 1 W1 (VTID-03179 FINETUNES)
+# Trained first in W1 (per the 40-day plan); ~$4k Vertex AI Custom Training.
+# Output: HF-format LoRA adapter. Keep the default base model ungated so
+# unattended weekly Vertex jobs do not fail before training starts. Gated
+# Gemma runs require a separate HF-authenticated trainer path.
+
+target: voice-tool-router
+base_model: Qwen/Qwen2.5-1.5B-Instruct
+adapter_method: lora
+lora_r: 16
+lora_alpha: 32
+lora_dropout: 0.05
+target_modules:
+  - q_proj
+  - k_proj
+  - v_proj
+  - o_proj
+
+dataset:
+  gcs_prefix: gs://vitana-artifacts-staging/datasets/voice-tool-routing/
+  format: jsonl
+  field_input: payload.user_input
+  field_output: payload.tool_chosen
+  min_rows_required: 1000
+
+training:
+  epochs: 3
+  batch_size: 16
+  learning_rate: 2.0e-4
+  warmup_steps: 50
+  gradient_accumulation_steps: 2
+  max_seq_len: 512
+
+vertex_custom_job:
+  project: lovable-vitana-vers1
+  region: us-central1
+  display_name_prefix: voice-tool-router-ft
+  worker_pool:
+    machine_type: g2-standard-8
+    accelerator_type: NVIDIA_L4
+    accelerator_count: 1
+    replica_count: 1
+  container_image: us-docker.pkg.dev/vertex-ai/training/pytorch-gpu.2-3.py310:latest
+  python_module: finetune.train
+  output_uri_prefix: gs://vitana-artifacts-staging/finetune-runs/voice-tool-router/
+
+eval:
+  golden_corpus_min_size: 50
+  primary_metric: tool_choice_accuracy
+  promotion_threshold: 0.92

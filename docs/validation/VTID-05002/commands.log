@@ -1,0 +1,30 @@
+# VTID-05002 — commands run (2026-10-08, Claude Code session, cwd services/gateway unless noted)
+
+# Evidence (read-only)
+aws ecs describe-services --cluster Vitana-ECS-Cluster --services vitana-gateway-awsdr --region eu-central-1
+  -> desiredCount 1, deploymentConfiguration min 100 % / max 200 %, ROLLING
+aws elbv2 describe-target-group-attributes --target-group-arn <vitana-tg-gateway-awsdr>
+  -> stickiness.enabled false, load_balancing round_robin, deregistration_delay 300
+aws ecs describe-task-definition --task-definition vitana-gateway-awsdr:166
+  -> no REDIS_URL
+aws secretsmanager describe-secret --secret-id vitana/gateway/{staging,prod}/internal-token   # both exist (metadata only)
+aws ecs describe-task-definition --task-definition vitana-gateway   # staging carries GATEWAY_INTERNAL_TOKEN
+# Security-group self-ingress on 8080: recorded in docs/validation/VTID-03840/outputs/19-staging-bootstrap.txt:5
+# (this session's IAM user is denied ec2:DescribeSecurityGroups)
+
+# Implementation checks
+npx jest test/orb/vtid-05002-sse-cross-task-forward.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts
+  -> outputs/jest-targeted.txt (39 passed)
+npx jest test/orb test/routes
+  -> outputs/jest-orb-routes.txt (418 suites passed, 6706 tests passed)
+node scripts/conversation/generate-flag-pins.mjs        # (repo root) regenerated conversation-flag-pins.generated.ts
+npx tsc --noEmit -p .                                     # clean in the main checkout (worktree only shows TS2742 from its symlinked node_modules)
+
+# Workflow size: the task-definition run step reached 20,075 chars with the new pin (limit 20,000, test
+# staging-deploy-workflow-bash-syntax). Fixed by joining three strip-list names onto one line and the new
+# pin onto the WS pin's line (whitespace only; the jq program is unchanged).
+
+# Staging, read-only, before merge (baseline — same answer expected after the change)
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(require('./docs/validation/VTID-05002/staging-tests.json'))"   # (repo root) {"ok":true}
+curl -s "https://preview-aws-gateway.vitanaland.com/api/v1/orb/live/stream?session_id=live-00000000-0000-0000-0000-000000000000.AAAA…"
+  -> 404 {"ok":false,"error":"Session not found"}

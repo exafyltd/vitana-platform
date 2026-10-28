@@ -1,0 +1,47 @@
+# VTID-03569 — verification commands, in the order run.
+
+cd services/gateway
+
+# --- the catalog itself ------------------------------------------------------
+# Keys, placeholders, register and script, checked directly against en.json
+# rather than trusting the translation. Output: outputs/zh-catalog-validation.txt
+python3 - <<'PY'
+import json,re
+en=json.load(open('src/i18n/locales/en.json')); zh=json.load(open('src/i18n/locales/zh.json'))
+# ...keys / extras / placeholders / 您 count / Traditional-only chars
+PY
+# -> 112/112 keys, 0 missing, 0 extra, 0 placeholder mismatches,
+#    0 occurrences of 您, 0 Traditional-only characters, 19 Simplified-only forms
+
+# NOTE: the first version of the Traditional check reported 7 hits and was
+# WRONG — its probe set included 步 and 迎, which are identical in Simplified
+# and Traditional. A character shared by both scripts is not evidence of
+# anything. The corrected set contains only forms whose Simplified counterpart
+# actually differs, and finds none.
+
+# --- the type system finds the half-add --------------------------------------
+npx tsc --noEmit
+# -> exit 0 AFTER filling the three maps.
+#    BEFORE that it failed in exactly three places, which is the point:
+#      src/i18n/catalog.ts            LOCALE_ENGLISH_NAME
+#      src/i18n/llm-locale.ts         LANGUAGE_NAMES
+#      src/services/orb-tools/…       SUPPORTED_LANGUAGES  (ORB voice)
+#    Record<GatewayLocale, ...> refuses to let a locale be added to the union
+#    without being added everywhere it is consumed.
+
+# --- suites ------------------------------------------------------------------
+npx jest test/i18n test/db-i18n/db-i18n.test.ts
+# -> 103 passed   (outputs/jest-i18n.txt)
+
+# The coverage suite failed 3 tests first, with RAW['zh'] undefined: its own
+# RAW map is Record<GatewayLocale, ...> but tsc does not cover test/, so the
+# compiler caught the three SOURCE maps and not the test's. Added the entry.
+
+# --- merge hygiene -----------------------------------------------------------
+git merge origin/main
+# The branch was 18 commits behind, which made `git diff origin/main...HEAD`
+# list ~48 files — lockfiles, .github/, CLAUDE.md, a migration — none of which
+# this PR actually changes. After the merge the diff is the 5 zh files, all
+# inside the gateway_backend allowlist. Four conflicts, all the same shape
+# (ours has zh, main's side is the identical text without it); verified by
+# diffing both sides with zh lines stripped before resolving to ours.

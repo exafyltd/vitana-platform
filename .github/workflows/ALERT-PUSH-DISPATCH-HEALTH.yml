@@ -1,0 +1,82 @@
+name: Alert — Push Dispatch Health
+
+# VTID-03656.
+#
+# WHY THIS EXISTS: /push-dispatch is the ONLY delivery path for FCM/Appilix
+# push on notifications a DB trigger writes directly (new community post/
+# video, like, comment, follow, mention — see vitana-v1 migrations
+# 20260630120000 / 20260805160000). It runs off a Cloud Scheduler job that
+# was never registered anywhere in this repo (scripts/setup-cloud-scheduler.sh
+# didn't list it until this VTID) — it lived only in live GCP state, so when
+# it silently stopped succeeding around 2026-08-15 ~18:52 UTC, nothing
+# noticed for 40+ hours: 782+ "new post" notifications sat with
+# push_sent_at IS NULL and were never delivered. A live user report
+# ("no one is getting push notifications for posts") was the only signal.
+#
+# This checks the thing that actually matters — are unsent rows piling up —
+# rather than trying to infer scheduler health indirectly. VTID-03480's
+# standing lesson: a degradation nobody alerts on is not detected, it is
+# merely recorded.
+#
+# VTID-05141 — TRANSPORT CHANGED: this workflow is now a thin GET of the
+# production gateway's public, read-only ops health route
+# (services/gateway/src/routes/ops-health-checks.ts), which runs the same
+# query and thresholds this workflow used to run inline. One implementation
+# per check; the panel and this alert can no longer disagree. A non-JSON
+# answer, an HTTP 404/5xx or any status other than "ok" fails the job
+# (never silently green).
+#
+# Route: /api/v1/ops/health/push-dispatch (unsent push-eligible rows in the
+# dispatcher's 48 h window: oldest > 15 min or > 25 unsent is degraded,
+# oldest > 60 min is down; since VTID-04962/05027 it also degrades on FCM
+# send errors and low active-member reach).
+
+on:
+  schedule:
+    - cron: '*/20 * * * *'   # every 20 minutes — catch an outage within an hour, not a day
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  push-dispatch-health:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check push-dispatch health
+        env:
+          HEALTH_URL: https://gateway.vitanaland.com/api/v1/ops/health/push-dispatch
+        run: |
+          set -euo pipefail
+          HTTP=$(curl -sS -o health.json -w '%{http_code}' --max-time 60 "$HEALTH_URL") || HTTP="000"
+          echo "GET $HEALTH_URL -> HTTP $HTTP"
+          head -c 2000 health.json 2>/dev/null || true
+          echo
+          if [ "$HTTP" != "200" ]; then
+            echo "::error::$HEALTH_URL answered HTTP $HTTP. A 404 means the route is not deployed to production; 5xx or 000 means the gateway did not answer. The check itself failed."
+            exit 1
+          fi
+          if ! jq -e 'type == "object"' health.json >/dev/null 2>&1; then
+            echo "::error::$HEALTH_URL did not answer a JSON object (an HTML page means the route does not exist on the deployed gateway). The check itself failed."
+            exit 1
+          fi
+          STATUS=$(jq -r '.status // "missing"' health.json)
+          REASON=$(jq -r '.reason // ""' health.json)
+          if [ "$STATUS" != "ok" ]; then
+            echo "::error::push-dispatch is not healthy (backlog growing, dispatch stalled, FCM send errors or low active-member reach — check the vitana-push-dispatch Lambda schedule, VTID-03656 / VTID-03676): status=$STATUS reason=$REASON (see the JSON above)."
+            exit 1
+          fi
+          echo "OK: status=$STATUS"
+
+      # VTID-05103: a failed check reaches the one self-healing intake (loop L1),
+      # not just a red run in Actions. Reporting never changes this job's result.
+      - name: Check out the report script
+        if: failure()
+        uses: actions/checkout@v4
+        with:
+          sparse-checkout: scripts/ci
+      - name: Report failure to self-healing
+        if: failure()
+        env:
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+        run: bash scripts/ci/report-to-self-healing.sh "alert-push-dispatch-health" "alert-workflow://ALERT-PUSH-DISPATCH-HEALTH" "push-dispatch backlog — unsent push-eligible notifications piling up"

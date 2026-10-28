@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05018",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "the thread history the Kiro restore reads is mounted and admin-only",
+      "path": "/api/v1/operator/threads/a5018000-0000-4000-8000-000000000001/messages",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "read-only GET of the operator_messages transcript route (requireAdminAuth). Replaces the first version's POST /operator/chat probe, which wrongly expected 401: that route allows anonymous callers by design (optionalAuth) and answers 400 to an empty body."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05018-kiro-thread-memory.test.ts test/vtid-04465-operator-pipeline-regression.test.ts test/vtid-04975-kiro-engine.test.ts test/vtid-05005-kiro-dev-tools-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "restored-history block, new-session-only loading, failure tolerance, and the end-to-end restore through the real chat route over the fake database"
+    }
+  ]
+}

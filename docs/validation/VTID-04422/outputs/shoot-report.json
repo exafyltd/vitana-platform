@@ -1,0 +1,32 @@
+[
+ {
+  "tag": "desktop",
+  "tiles": [
+   "OPENINGS RANKED | 40 | of 40 sessions in 7 day(s)",
+   "AGREEMENT | 60% | 24 same winner",
+   "WOULD DIFFER | 16 | the shadow score picks another provider"
+  ],
+  "rows": [
+   "login_briefing | unread_messages_announce | 16",
+   "login_briefing | 40 | 24",
+   "unread_messages_announce | 0 | 16"
+  ],
+  "horizontalOverflow": false,
+  "errors": []
+ },
+ {
+  "tag": "mobile",
+  "tiles": [
+   "OPENINGS RANKED | 40 | of 40 sessions in 7 day(s)",
+   "AGREEMENT | 60% | 24 same winner",
+   "WOULD DIFFER | 16 | the shadow score picks another provider"
+  ],
+  "rows": [
+   "login_briefing | unread_messages_announce | 16",
+   "login_briefing | 40 | 24",
+   "unread_messages_announce | 0 | 16"
+  ],
+  "horizontalOverflow": false,
+  "errors": []
+ }
+]

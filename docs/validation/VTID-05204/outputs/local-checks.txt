@@ -1,0 +1,15 @@
+$ gate.mjs scope (vitana-platform)
+✅ **scope** — 4 changed file(s), all inside the scope of VTID-05204
+$ gate.mjs sparring (vitana-platform)
+✅ **sparring record** — present and approved for VTID-05204
+$ gate.mjs weakening (vitana-platform)
+✅ **test weakening** — 0 changed test file(s), none weakened without a declaration
+$ gate.mjs scope (vitana-v1)
+✅ **scope** — 4 changed file(s), all inside the scope of VTID-05204
+$ gate.mjs sparring (vitana-v1)
+✅ **sparring record** — present and approved for VTID-05204
+$ gate.mjs weakening (vitana-v1)
+✅ **test weakening** — 0 changed test file(s), none weakened without a declaration
+$ grep -n "VTID-05204" .claude/rules/backend.md (platform) / CLAUDE.md (v1)
+1121:9. **The API serves the AI-led, low-friction onboarding UX (VTID-05204, owner rule 2026-10-15).** The
+360:## Commerce UX contract — supplier onboarding (VTID-05204)

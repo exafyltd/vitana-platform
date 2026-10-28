@@ -1,0 +1,6 @@
+$ node --check e2e/mobile-sim/android/run.mjs
+ok
+$ node --check e2e/mobile-sim/run.mjs
+ok
+$ node --check scripts/aws-staging-validation/authenticated-smoke.mjs
+ok

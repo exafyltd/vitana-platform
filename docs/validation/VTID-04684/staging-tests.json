@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04684",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after the change", "path": "/alive" },
+    { "kind": "http", "name": "Memory Garden route answers and requires auth", "path": "/api/v1/memory/garden/entries", "expect_status": 401 },
+    { "kind": "existing", "ref": "npx jest test/services/memory", "cwd": "services/gateway",
+      "reason": "the change is in the memory write/forget paths and is pinned by unit tests; a read-only staging suite cannot write or forget facts (the live voice suite, scripts/memory-verification/run-live.mjs, is run by hand on staging)" }
+  ]
+}

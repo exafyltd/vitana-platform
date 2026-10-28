@@ -1,0 +1,21 @@
+PASS test/vtid-04466-exploration-budget.test.ts
+    ✓ 120-turn runner cap → 42 / 96 / 108 (5 ms)
+    ✓ 60-turn default → 21 / 48 / 54 (1 ms)
+    ✓ short loops (fix rounds) get no budget (1 ms)
+    ✓ stop always leaves the last turn and sits after the hand-off (2 ms)
+    ✓ commit and hand-off fire once each once delivered, then stop (1 ms)
+    ✓ an undelivered nudge repeats on the next turn; a hand-off supersedes a pending commit (1 ms)
+    ✓ an edit disarms the budget for the rest of the run (1 ms)
+    ✓ the stop error trips the retry breaker like a turn-cap exit
+    ✓ a run that never edits is nudged, handed off, then stopped at 90% (3 ms)
+    ✓ a run that edits late (turn 50) is not stopped and reaches finish (1 ms)
+    ✓ a hand-off finish with no edits ends ok and carries the findings
+    ✓ without the option the loop runs to the turn cap exactly as before (1 ms)
+    ✓ the stall ledger keeps priority over the budget on the same turn (1 ms)
+    ✓ query uses the referenced files and the task text without markdown noise (1 ms)
+    ✓ builds a prompt section from the index answer (1 ms)
+    ✓ empty without an index or a match (1 ms)
+    ✓ starting map only on non-fix runs (1 ms)
+    ✓ budget only on round 0 of a non-fix run, with a kill switch
+    ✓ an empty-diff finish keeps the agent findings on the error
+Tests:       19 passed, 19 total

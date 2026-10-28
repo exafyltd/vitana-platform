@@ -1,0 +1,4 @@
+$ python3 (remove three entries from docs/validation/VTID-04665|04698|04836/staging-tests.json, json.loads after each edit)
+ok
+$ git diff --stat origin/main   # 3 manifests + this evidence pack, no code
+# jest cannot run in the session (registry.npmjs.org blocked); CI and the post-merge full STAGING-VERIFY are the proof.

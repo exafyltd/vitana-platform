@@ -1,0 +1,68 @@
+VTID-04087 — commands log
+
+1. Self-allocated VTID via direct Supabase RPC (gateway not reachable from
+   this session):
+     SELECT allocate_global_vtid('claude-code', 'gateway', 'command-hub-health-registry');
+   -> VTID-04087
+   UPDATE vtid_ledger SET title=..., summary=..., status='in_progress',
+   spec_status='approved' WHERE vtid='VTID-04087';
+
+2. Read the existing hardcoded healthEndpoints array in
+   services/gateway/src/frontend/command-hub/app.js (fetchServiceHealth(),
+   line 29165) and confirmed the count matches T12's "55" via:
+     awk '/var healthEndpoints = \[/,/^    \];/' app.js | grep -c "name:"
+   -> 55
+
+3. Read services/gateway/src/routes/admin-health.ts in full to find the
+   established pattern for an unauthenticated diagnostic route (/health,
+   /build-info) vs. an admin-gated one (/feature-flags,
+   /orb-session-state-health, /aurora-rls-health).
+
+4. Created services/gateway/src/constants/service-health-registry.ts —
+   SERVICE_HEALTH_REGISTRY, the exact 55-entry list moved server-side.
+
+5. Added GET /api/v1/admin/health-registry to admin-health.ts, sourced
+   from SERVICE_HEALTH_REGISTRY, unauthenticated (matches /health,
+   /build-info).
+
+6. Edited app.js's fetchServiceHealth(): fetch the registry at runtime
+   (4s timeout via the existing fetchWT() helper), fall back to a new
+   module-scope FALLBACK_HEALTH_ENDPOINTS constant (the exact former
+   inline array, moved above the function) on any failure. Removed the
+   now-dead inline array literal from inside the function body.
+
+7. node --check services/gateway/src/frontend/command-hub/app.js
+   -> syntax OK
+
+8. Bumped index.html's cache-bust on both styles.css and app.js to
+   ?v=20260918-vtid-04087-health-registry (identical value on both tags,
+   per repo convention — verified by grep before and after).
+
+9. Wrote two new test files:
+   - services/gateway/test/routes/admin-health-registry.test.ts (4 tests,
+     supertest against the real router)
+   - services/gateway/test/command-hub/t12-health-registry-backend-fed.test.ts
+     (6 tests, static-source-check pattern matching this repo's
+     established app.js-testing convention)
+
+10. cd services/gateway && npx jest test/command-hub/t12-health-registry-backend-fed.test.ts \
+      test/routes/admin-health-registry.test.ts test/routes/admin-feature-flags.test.ts --silent
+    -> 3 suites, 16 tests, all passing
+
+11. cd services/gateway && npx tsc --noEmit
+    -> 0 errors
+
+12. cd services/gateway && npx jest test/command-hub/ test/routes/admin-health --silent
+    -> 11 suites, 169 tests, all passing (full command-hub + admin-health
+       regression sweep, re-run again after the cache-bust bump)
+
+13. cd services/gateway && npm run build
+    -> exit 0 (tsc + copy-frontend + copy-data all succeeded)
+
+14. Branch created from fresh origin/main: claude/vtid-04087-t12-health-registry
+    git fetch origin main; git log --oneline origin/main -3 matched local
+    main before branching (0be3951, 1af32f3, f8d73c3).
+
+15. Committed and pushed; PR opened with VTID/VALIDATION_PROFILE/marker
+    block per this repo's VALIDATOR-CHECK.yml contract; subscribed to
+    PR activity.

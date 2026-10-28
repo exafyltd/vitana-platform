@@ -1,0 +1,173 @@
+"""Thin async HTTP client for calling gateway endpoints from inside tool wrappers.
+
+One-call pattern: every tool body in tools.py is a single
+`await GatewayClient.post(...)` / `.get(...)`. The gateway is the source
+of truth for tool behaviour; the agent only marshals the call.
+"""
+from __future__ import annotations
+
+import logging
+from typing import Any
+
+import httpx
+
+logger = logging.getLogger(__name__)
+
+DEFAULT_TIMEOUT_S = 30.0  # VTID-02863: bumped from 10s. /api/v1/intents POST
+                          # used to time out at 10s while embedding/match-compute
+                          # ran inline; the agent then reported a failure to the
+                          # LLM ("there was a problem creating your post") even
+                          # though the row was already in user_intents. Server-
+                          # side, those phases are now fire-and-forget so the
+                          # response returns in well under a second — but 30s
+                          # gives transient slowness room without ever surfacing
+                          # a fake "post failed" to the user.
+SLOW_TIMEOUT_S = 30.0  # for tools that may hit external APIs (search_web, consult_external_ai)
+
+
+class GatewayClient:
+    """Per-session HTTP client. Holds the user's JWT for ALL requests so the
+    gateway can authenticate every tool call as the user, never as the agent."""
+
+    def __init__(
+        self,
+        base_url: str,
+        user_jwt: str | None,
+        service_token: str | None = None,
+        *,
+        timeout_s: float = DEFAULT_TIMEOUT_S,
+        user_id: str | None = None,
+        tenant_id: str | None = None,
+        active_role: str | None = None,
+    ) -> None:
+        self._base = base_url.rstrip("/")
+        self._user_jwt = user_jwt
+        self._service_token = service_token
+        self._user_id = user_id
+        self._tenant_id = tenant_id
+        self._active_role = active_role
+        self._client = httpx.AsyncClient(timeout=timeout_s)
+        # The live LiveKit Room handle is stashed by session.py after the
+        # AgentSession spins up. Tool wrappers that receive a structured
+        # `directive` payload from the gateway use this to call
+        # publish_orb_directive() and the data-channel listener on the
+        # frontend handles the redirect / open-url. Optional — typed Any
+        # here so unit tests on machines without livekit installed don't
+        # need to import rtc just to construct a stub.
+        self.room: Any = None
+        # PR 1.B-3 (VTID-NAV-TIMEJOURNEY): the user's LIVE current screen +
+        # recent-routes ring buffer. session.py seeds these from the
+        # /orb/context-bootstrap response at session start; later PRs (1.B-4
+        # navigate, 1.B-5 navigator gates) eagerly mutate them after every
+        # navigate*-tool call so the next get_current_screen call sees fresh
+        # values without an extra round-trip to the gateway. Mirrors how
+        # Vertex's session.current_route + session.recent_routes track state
+        # between turns.
+        self.current_route: str | None = None
+        self.recent_routes: list[str] = []
+        # PR 1.B-5 — identity facts the navigator gates need at dispatch
+        # time. session.py seeds is_mobile + is_anonymous from the resolved
+        # Identity. tool_navigate_to_screen reads them through the args
+        # payload to enforce the viewport gate (VTID-02789), the anonymous
+        # gate, and the mobile_route override.
+        self.is_mobile: bool = False
+        self.is_anonymous: bool = False
+        # VTID-04881: the member's language (session.py sets it from the
+        # resolved Identity) is sent with every /orb/tool call, and the last
+        # FINAL user transcript travels with navigation calls as
+        # transcript_excerpt — the same signals orb-live.ts injects for Vertex.
+        self.identity_lang: str | None = None
+        self.orb_session_id: str | None = None
+        self.last_user_text: str | None = None
+        # BOOTSTRAP-VOICE-DATASET-EMITTER: last tool dispatched this turn, set by
+        # tools._dispatch / _dispatch_with_directive and read+cleared by
+        # session.py's orb.turn.responded emit to carry the tool-routing signal.
+        self.last_tool_name: str | None = None
+        self.last_tool_args: dict[str, Any] | None = None
+
+    def _headers(self) -> dict[str, str]:
+        h = {"Content-Type": "application/json"}
+        if self._user_jwt:
+            h["Authorization"] = f"Bearer {self._user_jwt}"
+        elif self._service_token:
+            h["Authorization"] = f"Bearer {self._service_token}"
+        # Defense-in-depth: some gateway routes still read X-User-ID /
+        # X-Vitana-Active-Role / X-Tenant-ID rather than the JWT identity
+        # (legacy middleware predates auth-supabase-jwt). Send them when we
+        # have the values from room metadata so those routes also resolve
+        # the right user.
+        if self._user_id:
+            h["X-User-ID"] = self._user_id
+        if self._tenant_id:
+            h["X-Tenant-ID"] = self._tenant_id
+        if self._active_role:
+            h["X-Vitana-Active-Role"] = self._active_role
+        return h
+
+    async def get(self, path: str, params: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            r = await self._client.get(self._base + path, params=params, headers=self._headers())
+            return _to_dict(r)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway GET %s failed: %s", path, exc)
+            return {"ok": False, "error": str(exc), "transport": "exception"}
+
+    async def post(self, path: str, body: dict[str, Any] | None = None) -> dict[str, Any]:
+        try:
+            r = await self._client.post(self._base + path, json=body or {}, headers=self._headers())
+            return _to_dict(r)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway POST %s failed: %s", path, exc)
+            return {"ok": False, "error": str(exc), "transport": "exception"}
+
+    async def put(self, path: str, body: dict[str, Any]) -> dict[str, Any]:
+        try:
+            r = await self._client.put(self._base + path, json=body, headers=self._headers())
+            return _to_dict(r)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway PUT %s failed: %s", path, exc)
+            return {"ok": False, "error": str(exc), "transport": "exception"}
+
+    async def delete(self, path: str) -> dict[str, Any]:
+        try:
+            r = await self._client.delete(self._base + path, headers=self._headers())
+            return _to_dict(r)
+        except Exception as exc:  # noqa: BLE001
+            logger.warning("gateway DELETE %s failed: %s", path, exc)
+            return {"ok": False, "error": str(exc), "transport": "exception"}
+
+    async def aclose(self) -> None:
+        await self._client.aclose()
+
+
+def _to_dict(r: httpx.Response) -> dict[str, Any]:
+    try:
+        body = r.json()
+    except Exception:  # noqa: BLE001
+        body = {"raw": r.text[:1000]}
+    body.setdefault("_status", r.status_code)
+    return body
+
+
+def summarize(body: dict[str, Any], *, limit_chars: int = 4000) -> str:
+    """Render a gateway response into the string the LLM sees as the tool output.
+
+    Strategy: if `body.text` or `body.summary` exists, use it. Otherwise
+    return a compact JSON summary truncated to `limit_chars` (matches
+    MAX_TOOL_RESPONSE_CHARS from orb-live.ts).
+    """
+    if isinstance(body.get("text"), str):
+        return body["text"][:limit_chars]
+    if isinstance(body.get("summary"), str):
+        return body["summary"][:limit_chars]
+    if body.get("ok") is False and body.get("error"):
+        return f"[error] {body['error']}"
+    import json
+
+    try:
+        s = json.dumps(body, ensure_ascii=False, default=str)
+    except (TypeError, ValueError):
+        s = repr(body)
+    if len(s) > limit_chars:
+        s = s[: limit_chars - 50] + "… [truncated]"
+    return s

@@ -1,0 +1,39 @@
+{
+  "vtid": "VTID-04274",
+  "title": "Dev Autopilot finding dedup excludes activated findings — real duplicates confirmed",
+  "profile": "gateway_backend",
+  "executor": "claude-code-session",
+  "duplicate_findings_confirmed": {
+    "signal_fingerprint": "42c32f9e7e689576",
+    "rows": ["9e1bdb97-d4ec-449d-a00b-5ec70428cada", "7a93bca4-d753-428d-a24e-229c164df723"],
+    "vtids": ["VTID-04250", "VTID-04261"],
+    "gap_hours": 21
+  },
+  "files_changed": [
+    "services/gateway/src/services/dev-autopilot-synthesis.ts",
+    "services/gateway/src/routes/dev-autopilot.ts",
+    "services/gateway/test/dev-autopilot-synthesis.test.ts",
+    "services/gateway/test/routes/dev-autopilot.test.ts",
+    "docs/validation/VTID-04274/acceptance.md",
+    "docs/validation/VTID-04274/commands.log",
+    "docs/validation/VTID-04274/outputs/execution.json"
+  ],
+  "checks": {
+    "new_tests": { "count": 4, "passing": 4, "total": 4, "mutation_verified": true },
+    "full_gateway_suite": {
+      "suites_passing": 1059,
+      "suites_total": 1060,
+      "suites_pre_existing_skip": 1,
+      "tests_passing": 17293,
+      "tests_total": 17328,
+      "tests_skipped_pre_existing": 29,
+      "tests_todo_pre_existing": 6,
+      "snapshots_passing": 42,
+      "snapshots_total": 42,
+      "failures": 0
+    },
+    "tsc_noemit": "clean"
+  },
+  "supabase_mutations_from_this_session": "autopilot_recommendations rows 9e1bdb97 and 7a93bca4 set status='completed' (the duplicate findings this bug produced, already fixed under VTID-04272/VTID-04261)",
+  "live_verification": "not yet performed — the next scheduled scan while a dev_autopilot finding is status='activated' is the exercise: seen_count/last_seen_at should advance on the existing row, no second VTID allocated for the same signal_fingerprint"
+}

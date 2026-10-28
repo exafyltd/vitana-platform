@@ -1,0 +1,14 @@
+    ✓ latest event: pass is ok, fail uses the check-specific status, nothing is degraded (7 ms)
+    ✓ ECS: running == desired is ok; zero running is down; rollouts and shortfalls are degraded (4 ms)
+    ✓ autopilot evaluators (2 ms)
+    ✓ voice, AI and media configuration (2 ms)
+    ✓ data, scheduling and support (2 ms)
+    ✓ every registered /ops/runtime URL has a handler, and every handler is registered (1 ms)
+    ✓ one DescribeServices call serves all nine ECS checks (104 ms)
+    ✓ an AWS AccessDenied is no_access (grey), not an outage (4 ms)
+    ✓ a deliberately-off capability is not_configured and counted as not checked (3 ms)
+    ✓ dev autopilot success rate reads the 7-day terminal rows (3 ms)
+    ✓ voice/fish reports not_configured without a key (3 ms)
+Test Suites: 1 passed, 1 total
+Tests:       11 passed, 11 total
+pre-merge GET /api/v1/ops/runtime/deploy/staging-verify on staging: 404 text/html; charset=utf-8

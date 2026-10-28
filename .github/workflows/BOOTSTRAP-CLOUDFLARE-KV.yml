@@ -1,0 +1,176 @@
+name: Bootstrap Cloudflare KV Namespace
+
+# One-shot bootstrap: creates a Cloudflare KV namespace for a worker that ships
+# with REPLACE_WITH_KV_ID_AFTER_FIRST_DEPLOY as the kv_namespaces[].id placeholder
+# in its wrangler.toml. Prints the new namespace id; the operator pastes it into
+# wrangler.toml and commits. We do NOT auto-commit — keeping bootstrap separate
+# from deploy avoids tangling a one-time setup action with the auto-deploy path
+# in DEPLOY-CLOUDFLARE-WORKERS.yml.
+#
+# Typical usage:
+#   1. Add cloudflare/<worker>/wrangler.toml with a kv_namespaces entry whose
+#      id = "REPLACE_WITH_KV_ID_AFTER_FIRST_DEPLOY".
+#   2. Run this workflow via the Actions UI with worker_dir + binding_name + env.
+#   3. Copy the printed namespace id from the run summary into wrangler.toml.
+#   4. Commit + push; DEPLOY-CLOUDFLARE-WORKERS.yml will pick it up.
+
+on:
+  workflow_dispatch:
+    inputs:
+      worker_dir:
+        description: 'Worker directory (e.g. cloudflare/community-cache)'
+        required: true
+        type: string
+      binding_name:
+        description: 'KV binding name (must match wrangler.toml kv_namespaces[].binding)'
+        required: true
+        default: 'COMMUNITY_CACHE_KV'
+        type: string
+      env:
+        description: 'Wrangler env (staging|production)'
+        required: true
+        default: 'staging'
+        type: choice
+        options:
+          - staging
+          - production
+
+permissions:
+  contents: read
+
+concurrency:
+  group: cloudflare-kv-bootstrap-${{ inputs.worker_dir }}-${{ inputs.env }}
+  cancel-in-progress: false
+
+jobs:
+  bootstrap:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+      PLACEHOLDER: 'REPLACE_WITH_KV_ID_AFTER_FIRST_DEPLOY'
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Validate inputs
+        id: validate
+        run: |
+          set -euo pipefail
+          WORKER_DIR='${{ inputs.worker_dir }}'
+          BINDING='${{ inputs.binding_name }}'
+          ENV_NAME='${{ inputs.env }}'
+
+          # Path-traversal & shape guard
+          case "$WORKER_DIR" in
+            cloudflare/*) : ;;
+            *) echo "::error::worker_dir must start with 'cloudflare/' (got '$WORKER_DIR')"; exit 1 ;;
+          esac
+          case "$WORKER_DIR" in
+            *..*) echo "::error::worker_dir must not contain '..'"; exit 1 ;;
+          esac
+          case "$BINDING" in
+            ''|*[^A-Za-z0-9_]*) echo "::error::binding_name must be [A-Za-z0-9_]+ (got '$BINDING')"; exit 1 ;;
+          esac
+
+          TOML="$WORKER_DIR/wrangler.toml"
+          if [ ! -f "$TOML" ]; then
+            echo "::error::$TOML not found"
+            exit 1
+          fi
+          echo "toml=$TOML"          >> "$GITHUB_OUTPUT"
+          echo "binding=$BINDING"    >> "$GITHUB_OUTPUT"
+          echo "env_name=$ENV_NAME"  >> "$GITHUB_OUTPUT"
+          echo "::notice::Validated $TOML (binding=$BINDING, env=$ENV_NAME)"
+
+      - name: Refuse if namespace id already set
+        run: |
+          set -euo pipefail
+          TOML='${{ steps.validate.outputs.toml }}'
+          BINDING='${{ steps.validate.outputs.binding }}'
+
+          # Sanity: binding must appear in the toml.
+          if ! grep -q "binding *= *\"$BINDING\"" "$TOML"; then
+            echo "::error::binding=\"$BINDING\" not found in $TOML"
+            echo '::error::Add a [[kv_namespaces]] (or [env.<env>.kv_namespaces]) entry with id="'"$PLACEHOLDER"'" first.'
+            exit 1
+          fi
+
+          # If the placeholder is gone, this worker has already been bootstrapped — bail out.
+          if ! grep -q "$PLACEHOLDER" "$TOML"; then
+            echo "::error::No '$PLACEHOLDER' marker in $TOML — namespace appears to already be set."
+            echo '::error::Refusing to create a duplicate namespace. Remove this check manually if you really want a new one.'
+            exit 1
+          fi
+
+          echo "::notice::Placeholder present — proceeding to create namespace for binding=$BINDING"
+
+      - name: Create KV namespace
+        id: create
+        working-directory: ${{ inputs.worker_dir }}
+        run: |
+          set -euo pipefail
+          BINDING='${{ steps.validate.outputs.binding }}'
+          ENV_NAME='${{ steps.validate.outputs.env_name }}'
+
+          if [ -z "${CLOUDFLARE_API_TOKEN:-}" ] || [ -z "${CLOUDFLARE_ACCOUNT_ID:-}" ]; then
+            echo "::error::CLOUDFLARE_API_TOKEN and CLOUDFLARE_ACCOUNT_ID secrets must be set on the repo."
+            exit 1
+          fi
+
+          # Wrangler 3 syntax. Capture both streams; the id appears in stdout as
+          # either `id = "<hex>"` (toml suggestion) or `"id": "<hex>"` (json-ish).
+          set +e
+          OUTPUT=$(npx --yes wrangler@3 kv:namespace create "$BINDING" --env "$ENV_NAME" 2>&1)
+          RC=$?
+          set -e
+          echo "----- wrangler output -----"
+          echo "$OUTPUT"
+          echo "---------------------------"
+          if [ $RC -ne 0 ]; then
+            echo "::error::wrangler kv:namespace create failed (exit $RC)"
+            exit $RC
+          fi
+
+          # Parse: try toml-form first, then json-form. Namespace ids are 32 hex chars.
+          NS_ID=$(echo "$OUTPUT" | grep -oE 'id *= *"[a-f0-9]{32}"'   | head -n1 | grep -oE '[a-f0-9]{32}' || true)
+          if [ -z "$NS_ID" ]; then
+            NS_ID=$(echo "$OUTPUT" | grep -oE '"id" *: *"[a-f0-9]{32}"' | head -n1 | grep -oE '[a-f0-9]{32}' || true)
+          fi
+          if [ -z "$NS_ID" ]; then
+            echo "::error::Could not parse a 32-hex namespace id out of wrangler output above."
+            exit 1
+          fi
+
+          echo "namespace_id=$NS_ID" >> "$GITHUB_OUTPUT"
+
+      - name: Print copy-paste instructions
+        run: |
+          set -euo pipefail
+          NS_ID='${{ steps.create.outputs.namespace_id }}'
+          TOML='${{ steps.validate.outputs.toml }}'
+          BINDING='${{ steps.validate.outputs.binding }}'
+          ENV_NAME='${{ steps.validate.outputs.env_name }}'
+
+          echo "::notice::Created namespace id=$NS_ID — paste this into $TOML"
+
+          {
+            echo "## Cloudflare KV namespace created"
+            echo ""
+            echo "| field        | value |"
+            echo "| ------------ | ----- |"
+            echo "| worker_dir   | \`${{ inputs.worker_dir }}\` |"
+            echo "| binding      | \`$BINDING\` |"
+            echo "| env          | \`$ENV_NAME\` |"
+            echo "| namespace id | \`$NS_ID\` |"
+            echo ""
+            echo "### Next steps (manual)"
+            echo "1. Open \`$TOML\`."
+            echo "2. Replace \`$PLACEHOLDER\` on the \`$BINDING\` entry with \`$NS_ID\`."
+            echo "3. Commit + push to main — \`DEPLOY-CLOUDFLARE-WORKERS.yml\` will deploy."
+            echo ""
+            echo "If you also need a preview namespace, rerun this workflow against the other env."
+          } >> "$GITHUB_STEP_SUMMARY"

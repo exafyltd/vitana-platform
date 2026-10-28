@@ -1,0 +1,10 @@
+# VTID-04005 — commands run (Claude Code session, 2026-09-17)
+curl -X POST https://gateway.vitanaland.com/api/v1/vtid/allocate  -> VTID-04005 / VTID-04006 / VTID-04007 (allocated; titles/status set via ledger UPDATE)
+gh (MCP) merge_pull_request exafyltd/vitana-platform#3374 (squash)  -> f897403 (VTID-04004, dry-run watcher skips real PRs)
+git checkout -B claude/awesome-goodall-03qkqi origin/main (f897403)
+supabase execute_sql: UPDATE dev_autopilot_config SET allow_scope = allow_scope ∪ [...]  WHERE id=1  -> applied; deny_scope unchanged (RETURNING checked)
+npx tsc --noEmit -p tsconfig.json                                   -> exit 0
+npx jest test/dev-autopilot-ci-logs.test.ts test/dev-autopilot-env-ownership.test.ts test/vtid-04005-onramp-vtid-self-allocate.test.ts \
+         test/vtid-03820-operator-execution-onramp.test.ts test/vtid-03820-execution-onramp-metadata.test.ts test/dev-autopilot-watcher.test.ts \
+         test/dev-autopilot-watcher-failure-reason.test.ts test/dev-autopilot-execute.test.ts test/dev-autopilot-runexec-pr-flood-guard.test.ts
+                                                                   -> 9 suites, 106 tests passing (after fixing one test's mock-call destructuring)

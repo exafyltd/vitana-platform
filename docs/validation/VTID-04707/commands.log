@@ -1,0 +1,3 @@
+cd services/gateway
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory test/orb/live/session test/vitana-brain-cache.test.ts test/services/guide   # 91 suites, 1226 passed

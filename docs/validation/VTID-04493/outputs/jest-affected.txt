@@ -1,0 +1,408 @@
+    ✓ AC-1: both tools are on the shared registry (every transport) (6 ms)
+    ✓ policy: activation of the member's own item is a self commit (voice may confirm it) (2 ms)
+    ✓ AC-2: listing stores the read-out ids; activating with no args runs exactly those (6 ms)
+    ✓ AC-3: "the second one" resolves by position against the read-out list (1 ms)
+    ✓ explicit ids win, are de-duplicated and capped (2 ms)
+    ✓ nothing listed → no activation, a pointer to list first (1 ms)
+    ✓ a per-item failure is reported, the rest still activate (1 ms)
+    ✓ anonymous callers are refused on both tools (1 ms)
+    ✓ 1. dispatches by name and delegates with the caller, tenant and skipReplenish (162 ms)
+    ✓ 2. already-activated is idempotent (2 ms)
+    ✓ 3. canonical 403 "Recommendation belongs to another user" → recommendation_belongs_to_another_user (1 ms)
+    ✓ 3. canonical 403 "Not a community recommendation" → not_a_community_recommendation (1 ms)
+    ✓ 3. canonical 404 "Recommendation not found" → recommendation_not_found
+    ✓ 3. canonical 400 "Cannot activate recommendation in status: rejected" → recommendation_not_activatable:rejected (1 ms)
+    ✓ 3. canonical 401 "Authentication required" → not_signed_in (1 ms)
+    ✓ 4. anonymous caller never reaches the activation (1 ms)
+    ✓ 5. missing id and no pending offer → "id is required" (3 ms)
+    ✓ 6. empty id resolves the pending offer and consumes it only after success (23 ms)
+    ✓ 7. a failed activation keeps the pending offer for a retry (25 ms)
+    ✓ renders a stable system instruction for persona "day-1-anonymous-landing" (14 ms)
+    ✓ renders a stable system instruction for persona "day-30-warm-german" (4 ms)
+    ✓ renders a stable system instruction for persona "day-180-veteran-reconnect" (3 ms)
+    ✓ produces a different instruction when isReconnect flips (2 ms)
+    ✓ produces a different instruction when activeRole changes (2 ms)
+    ✓ produces a different instruction when language changes (2 ms)
+      ✓ Command Hub route swaps the identity-lock role line (16 ms)
+      ✓ Command Hub route swaps base_identity to the engineering co-pilot framing (2 ms)
+      ✓ Command Hub route swaps tools_section to drop community-surface tools (1 ms)
+      ✓ mobile + Command Hub route still resolves to community (mobile override wins) (1 ms)
+      ✓ Command Hub route drops the EVENT LINK SHARING and Devon-handoff trailing blocks (1 ms)
+      ✓ Community route STILL contains the trailing community blocks (no regression) (1 ms)
+      ✓ is present in the rendered instruction (1 ms)
+      ✓ is positioned AFTER the navigator marker, not inside bootstrapContext (2 ms)
+      ✓ decomposeInstructionSections classifies it as scaffold (preserved), not bootstrap (trimmed first) (1 ms)
+      ✓ survives enforceInstructionBudget even when a heavy bootstrapContext forces trimming (the actual production bug) (11 ms)
+      ✓ "undefined" returns first-bucket sentinel (1 ms)
+      ✓ "null" returns first-bucket sentinel (1 ms)
+      ✓ "no-time-field" returns first-bucket sentinel
+      ✓ "invalid-time-string" returns first-bucket sentinel (1 ms)
+      ✓ "5s-ago" lands in bucket "reconnect" (15 ms)
+      ✓ "29s-ago" lands in bucket "reconnect"
+      ✓ "60s-ago" lands in bucket "reconnect" (1 ms)
+      ✓ "119s-ago" lands in bucket "reconnect"
+      ✓ "120s-ago" lands in bucket "recent"
+      ✓ "14m-ago" lands in bucket "recent"
+      ✓ "15m-ago" lands in bucket "same_day"
+      ✓ "1h-ago" lands in bucket "same_day"
+      ✓ "7h-ago" lands in bucket "same_day"
+      ✓ "8h-ago" lands in bucket "today" (1 ms)
+      ✓ "23h-ago" lands in bucket "today"
+      ✓ "25h-ago" lands in bucket "yesterday"
+      ✓ "47h-ago" lands in bucket "yesterday"
+      ✓ "2d-ago" lands in bucket "week"
+      ✓ "6d-ago" lands in bucket "week"
+      ✓ "7d-ago" lands in bucket "long" (1 ms)
+      ✓ "30d-ago" lands in bucket "long"
+      ✓ snapshots describeTimeSince across the bucket grid (3 ms)
+      ✓ preserves wasFailure=true regardless of bucket
+      ✓ preserves wasFailure=false regardless of bucket (1 ms)
+      ✓ anonymous on landing route returns no tools (4 ms)
+      ✓ anonymous on /maxina (also a landing route) returns no tools
+      ✓ anonymous on a community route gets navigator tools only (token-expired path) (1 ms)
+      ✓ authenticated community user gets the full community tool set (1 ms)
+      ✓ authenticated admin user gets community tools PLUS admin tools (38 ms)
+      ✓ snapshots full catalog for anonymous-landing (1 ms)
+      ✓ snapshots full catalog for anonymous-community-route (1 ms)
+      ✓ snapshots full catalog for authenticated-community (28 ms)
+      ✓ snapshots full catalog for authenticated-admin (24 ms)
+      ✓ snapshots the entire pool table (1 ms)
+      ✓ declares the languages the orb officially supports for short-gap greetings (1 ms)
+      ✓ pool for "en" has at least 8 phrases (variety floor)
+      ✓ pool for "de" has at least 8 phrases (variety floor)
+      ✓ pool for "fr" has at least 8 phrases (variety floor)
+      ✓ pool for "es" has at least 8 phrases (variety floor)
+      ✓ pool for "ar" has at least 8 phrases (variety floor) (1 ms)
+      ✓ pool for "zh" has at least 8 phrases (variety floor)
+      ✓ pool for "ru" has at least 8 phrases (variety floor)
+      ✓ pool for "sr" has at least 8 phrases (variety floor)
+      ✓ pool for "pt" has at least 8 phrases (variety floor)
+      ✓ pool for "pl" has at least 8 phrases (variety floor)
+      ✓ pool for "tr" has at least 8 phrases (variety floor)
+      ✓ pool for "en" has no empty / whitespace-only phrases (7 ms)
+      ✓ pool for "de" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "fr" has no empty / whitespace-only phrases (4 ms)
+      ✓ pool for "es" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "ar" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "zh" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "ru" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "sr" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "pt" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "pl" has no empty / whitespace-only phrases (1 ms)
+      ✓ pool for "tr" has no empty / whitespace-only phrases (6 ms)
+      ✓ pool for "en" has no duplicate phrases (1 ms)
+      ✓ pool for "de" has no duplicate phrases (1 ms)
+      ✓ pool for "fr" has no duplicate phrases
+      ✓ pool for "es" has no duplicate phrases
+      ✓ pool for "ar" has no duplicate phrases
+      ✓ pool for "zh" has no duplicate phrases
+      ✓ pool for "ru" has no duplicate phrases
+      ✓ pool for "sr" has no duplicate phrases
+      ✓ pool for "pt" has no duplicate phrases (1 ms)
+      ✓ pool for "pl" has no duplicate phrases
+      ✓ pool for "tr" has no duplicate phrases
+      ✓ returns at most `count` items (1 ms)
+      ✓ caps `count` at the size of the pool (never returns more than the pool has) (1 ms)
+      ✓ every returned phrase is a member of the requested language pool (5 ms)
+      ✓ falls back to "en" pool for an unknown language
+      ✓ does not mutate the underlying pool (1 ms)
+      ✓ returns deterministic-shape output: an array of strings
+      ✓ returns empty array when count is 0 (1 ms)
+    ✓ orb-live.ts declares the dedicated wakeBriefOverrideBlock field on the session interface (2 ms)
+    ✓ writes the picked block to session.wakeBriefOverrideBlock (1 ms)
+    ✓ does NOT mutate session.contextInstruction with the override block (1 ms)
+    ✓ orb-live.ts concatenates session.wakeBriefOverrideBlock into the bootstrap arg passed to buildLiveSystemInstruction (1 ms)
+    ✓ does NOT assert this block overrides every other rule
+    ✓ does NOT quote hypothetical spoken example phrases (1 ms)
+    ✓ still instructs the model to speak the wake-brief line verbatim as its first turn
+    ✓ orb-livekit.ts does NOT assert the directive overrides every other rule (1 ms)
+    ✓ orb-livekit.ts does NOT quote a hypothetical "How can I help?" example (1 ms)
+    ✓ is mounted with optionalAuth — stateless, no session required
+    ✓ is rate-limited — unauthenticated callers cannot repeatedly trigger paid Polly synthesis (Codex P1) (1 ms)
+    ✓ normalizes the requested language with the Polly-shape normalizer, not the live-session allowlist one (Codex P2)
+    ✓ calls synthesizePolly with format:"pcm" unconditionally — the same call CascadedLiveClient makes (1 ms)
+    ✓ does not gate on TTS_PROVIDER — imports synthesizePolly directly, not the tts-provider wrapper
+    ✓ returns sample_rate_hz and a matching audio/pcm;rate= mime — the exact fields the widget fix reads
+    ✓ rejects empty text with 400, not a silent empty-audio synthesis attempt (1 ms)
+    ✓ rejects oversized text with 400 before calling Polly (cost/latency guard)
+    ✓ reports a Polly-unsupported language distinctly (422), not a generic 500
+    ✓ the import is the direct, unconditional Polly module, not the gated provider wrapper (1 ms)
+    ✓ imports express-rate-limit for the diagnostic limiter
+    ✓ is a one-shot: short-circuits once guidedTopicAudioDelivered has been set (1 ms)
+    ✓ reads the pre-synthesized audio off session.guidedTopicNarrationContent.narrationAudio (1 ms)
+    ✓ does nothing (marks delivered=false) when there is no audio to send
+    ✓ sends on BOTH transports — SSE write and WS message — with the same message shape
+    ✓ tags the message with source: guided_topic_narration so the client/telemetry can distinguish it (1 ms)
+    ✓ marks delivered=true only after a successful send, never before
+    ✓ emits diag + OASIS telemetry tagged VTID-03650 on a successful send (11 ms)
+    ✓ never throws out of a failed send — catches and marks delivered=false
+    ✓ SSE session-start path calls the bridge right after the greeting bridge, before connectToLiveAPI (2 ms)
+    ✓ WS audio_ready primary path calls the bridge after the chime, before the greeting is sent (1 ms)
+    ✓ WS audio_ready 1s-timeout fallback path also calls the bridge before the greeting (1 ms)
+    ✓ the bridge call itself is NOT awaited (synchronous — the audio was already synthesized during wake-brief decision) (1 ms)
+    ✓ resendGreetingIfStuckAtZeroTurns sets the fresh-open override before resending (2 ms)
+    ✓ the sync opening decision honours the fresh-open override and clears it (one-shot) (2 ms)
+    ✓ _reconnectCount itself is untouched by the override (still used for MAX_RECONNECTS) (1 ms)
+    ✓ silenceOnSkipEnabled is gated by the same _freshOpenAfterZeroTurnRecovery flag (1 ms)
+    ✓ the flag capture happens before the reset, so both use sites read the SAME value (1 ms)
+    ✓ schedulePersistDayCloseStamp only persists when transportHasShownLife is true (8 ms)
+    ✓ every stampDayCloseDate call site routes through schedulePersistDayCloseStamp, not an immediate write (2 ms)
+    ✓ the plain/legacy sync ladder (_syncDecision) and the recovery path (_recoverNS) now stamp day-close too (1 ms)
+    ✓ compute-greeting-decision.ts exports tryDayCloseRung (pure, no I/O, safe to call as a pre-check) (1 ms)
+    ✓ both shouldAttemptNewdayOverview gather guards are gated on !tryDayCloseRung(...) (4 ms)
+    ✓ tryDayCloseRung genuinely outranks tryNewDayOverviewRung inside computeGreetingDecision (the fact that justifies the pre-check)
+      ✓ isReconnect=true forces "skip" regardless of bucket "recent" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "same_day" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "today"
+      ✓ isReconnect=true forces "skip" regardless of bucket "yesterday"
+      ✓ isReconnect=true forces "skip" regardless of bucket "week" (1 ms)
+      ✓ isReconnect=true forces "skip" regardless of bucket "long"
+      ✓ isReconnect=true forces "skip" regardless of bucket "first"
+      ✓ bucket=reconnect with {} → skip
+      ✓ bucket=recent with {} → brief_resume
+      ✓ bucket=recent with {"wasFailure":true} → warm_return
+      ✓ bucket=same_day with {} → brief_resume
+      ✓ bucket=today with {} → warm_return
+      ✓ bucket=yesterday with {} → warm_return
+      ✓ bucket=week with {} → warm_return
+      ✓ bucket=long with {} → fresh_intro (1 ms)
+      ✓ bucket=first with {} → fresh_intro
+      ✓ unknown bucket "unknown" → fresh_intro (conservative default)
+      ✓ unknown bucket "" → fresh_intro (conservative default) (1 ms)
+      ✓ unknown bucket "totally-not-a-bucket" → fresh_intro (conservative default) (1 ms)
+      ✓ unknown bucket "reconnects" → fresh_intro (conservative default)
+      ✓ always returns one of the four declared policies (10 ms)
+    ✓ no role: uses the RPC fallback path and returns annotated recommendations (81 ms)
+    ✓ no role: computes has_more when RPC returns more than limit+1 rows (22 ms)
+    ✓ no role: RPC transport failure returns 400 (10 ms)
+    ✓ role=developer: queries by role directly (system-wide, non-community source) (10 ms)
+    ✓ role=community, no user id: rejected by the router-level auth gate before reaching the handler (4 ms)
+    ✓ role=community with user id: returns the community rec with wave/horizon enrichment (8 ms)
+    ✓ role=community: retired-action recs (unknown source_ref) are filtered out (11 ms)
+    ✓ role=community: falls back to the no-source_type query when the primary query is empty, then dedups (20 ms)
+    ✓ role=community: auto-generates when queue has zero "new" recs, and re-fetches on success (17 ms)
+    ✓ role-based: RPC-equivalent transport failure returns 400 (9 ms)
+    ✓ clamps limit to [1,100] and offset to >=0 (8 ms)
+    ✓ no role: returns the RPC count (6 ms)
+    ✓ no role: RPC failure returns 400 (5 ms)
+    ✓ role-based: returns count derived from the content-range header (7 ms)
+    ✓ role-based: transport failure degrades to count=0, not an error (11 ms)
+    ✓ 401 when no user id is present (22 ms)
+    ✓ 503 when Supabase is not configured (11 ms)
+    ✓ 400 when the user has no resolvable tenant (6 ms)
+    ✓ happy path: resolves tenant then delegates to generatePersonalRecommendations (5 ms)
+    ✓ falls back to DEFAULT_TENANT_ID when no primary tenant row exists (5 ms)
+    ✓ returns 500 when generation itself fails (20 ms)
+      ✓ 503 when Supabase is not configured (7 ms)
+      ✓ 404 when the recommendation does not exist (5 ms)
+      ✓ 403 when the rec is not a community-sourced recommendation (5 ms)
+      ✓ 403 when the rec belongs to another user (cross-user isolation) (4 ms)
+      ✓ VTID-04464: 403 when the rec has no owner (user_id null) — no ownership bypass (4 ms)
+      ✓ 400 when the rec is not in an activatable state (4 ms)
+      ✓ 200 idempotent when already activated (11 ms)
+      ✓ happy path: patches status, emits OASIS, and returns the navigate action (6 ms)
+      ✓ creates a calendar event for actions that declare calendar_event metadata (6 ms)
+      ✓ auto-replenishes when this was the last "new" recommendation (7 ms)
+      ✓ 400 when the RPC transport fails (4 ms)
+      ✓ 400 when the RPC reports a business-logic failure (4 ms)
+      ✓ happy path: creates a VTID, emits OASIS event, and returns vtid_ref (5 ms)
+      ✓ already_activated: skips alignment/spec/bridge side effects (4 ms)
+      ✓ creates an oasis_specs draft from the recommendation snapshot on fresh activation (5 ms)
+      ✓ dispatches to the executor bridge for dev_autopilot-sourced recs (7 ms)
+    ✓ happy path: passes reason through to the RPC (4 ms)
+    ✓ 400 on RPC transport failure (11 ms)
+    ✓ 400 when the RPC reports a business-logic failure (4 ms)
+    ✓ community role: fires a fire-and-forget guarded regeneration (5 ms)
+    ✓ happy path: defaults to 24 hours (5 ms)
+    ✓ clamps hours to [1,168] (7 ms)
+    ✓ 400 on RPC transport failure (4 ms)
+    ✓ 400 when the RPC reports a business-logic failure (10 ms)
+      ✓ 401 when no user id present (3 ms)
+      ✓ 500 when regeneration fails (3 ms)
+      ✓ 200 with generated=0 and a reason when the guard fires (2 ms)
+      ✓ 200 with a fresh batch on success (5 ms)
+      ✓ 400 when no valid sources are given (2 ms)
+      ✓ happy path: runs generation, emits start/completion OASIS events (4 ms)
+      ✓ 500 when generation fails, emits a failure OASIS event (5 ms)
+      ✓ notifies the triggering user and surfaces a high-impact rec when generated>0 (7 ms)
+    ✓ happy path: maps analyzer source rows (6 ms)
+    ✓ 400 on RPC failure (13 ms)
+    ✓ happy path: paginates and strips the lookahead row (5 ms)
+    ✓ passes trigger_type through to the RPC (5 ms)
+    ✓ 400 on RPC failure (5 ms)
+    ✓ 401 when no user id is present (2 ms)
+    ✓ happy path: completes and returns the reward (6 ms)
+    ✓ emits a milestone event when the last onboarding rec is completed (5 ms)
+    ✓ 404 when the RPC reports the recommendation was not found (6 ms)
+    ✓ 403 when the RPC reports the rec belongs to another user (cross-user isolation) (4 ms)
+    ✓ 403 when the RPC reports the rec is system-wide (not user-scoped) (5 ms)
+    ✓ 400 when the rec is not in a completable state (7 ms)
+    ✓ 500 on RPC transport failure (23 ms)
+    ✓ always returns ok:true with the endpoint inventory (5 ms)
+    ✓ the exact regression sentence is gone, in every language it shipped in (3 ms)
+    ✓ the recovery path no longer carries per-language finished sentences
+    ✓ the recovery path hands the model an INTENT, not a script (1 ms)
+    ✓ the recovery prompt explicitly forbids a memorised line (1 ms)
+    ✓ no German second-person sentence is handed to the model as speech (1 ms)
+    ✓ compute-greeting-decision.ts never instructs the model to use a menu VERBATIM
+    ✓ compute-greeting-decision.ts hands the short-gap rungs an INTENT instead (1 ms)
+    ✓ voice-wake-brief.ts never instructs the model to use a menu VERBATIM
+    ✓ the old literal German and English scripts are gone, in full (2 ms)
+    ✓ the anonymous intro now hands the model material to paraphrase, not a script to recite (1 ms)
+    ✓ the language directive is explicit that the material is reference content, not a translation target
+    ✓ every required talking point survives as material, not as finished prose (3 ms)
+    ✓ the silenced_on_cadence rung + the cadence-skip reason whitelist are in the brain (15 ms)
+    ✓ a silent decision renders no directive (null) and arms no watchdog — modelled in the brain (1 ms)
+    ✓ orb-live.ts no longer carries the inline cadence-silence branch (1 ms)
+    ✓ _hasPendingGuidedTopicAtOpen is declared exactly once in the whole file (hoisted, not duplicated) (3 ms)
+    ✓ the safe-fast branch's own `if` is gated on !_hasPendingGuidedTopicAtOpen (3 ms)
+    ✓ _hasPendingGuidedTopicAtOpen is declared BEFORE the safe-fast branch's `if`, not after (2 ms)
+    ✓ the flag still requires BOTH a pending topic AND this session having spoken nothing yet (unchanged condition, just relocated) (1 ms)
+    ✓ the normal ladder's decideOpening() call still reuses the flag correctly (no regression to the VTID-03727 fix) (1 ms)
+    ✓ a session with NO pending guided topic still takes the safe-fast branch when context is unresolved (no regression to the original DEV-COMHU-0513 B2 fast path) (1 ms)
+    ✓ the user_journey SELECT includes both last_full_briefing_date AND last_day_close_date (2 ms)
+    ✓ greetingLastDayCloseDate is read from the fetched row and applied onto the session (1 ms)
+    ✓ the safe-fast greeting context hardcodes dayCloseReduced: true (1 ms)
+    ✓ the normal/sync greeting context hardcodes dayCloseReduced: true (1 ms)
+    ✓ the retry flag is still consumed and cleared (no stale leak into a later close) (1 ms)
+    ✓ exports the factory `createUpstreamLiveMessageHandler` (2 ms)
+    ✓ declares the inner handler with the canonical name + signature
+    ✓ still handles every event path (setup_complete, server_content, tool_call, interruption, turn_complete, transcripts) (1 ms)
+    ✓ invokes user callbacks via ctx.callbacks (audio, interrupted, turn-complete) (1 ms)
+    ✓ uses ctx.onSetupComplete() on the setup_complete branch (replaces inline setupComplete / clearTimeout / resolve)
+    ✓ uses writeSseEvent for SSE output (A9.2 wire helper) (1 ms)
+    ✓ routes all orb-live.ts-local helpers through ctx.deps.* (1 ms)
+    ✓ imports createUpstreamLiveMessageHandler from the new module
+    ✓ builds the handler via the factory with session, ws, callbacks, onSetupComplete, isSetupComplete, deps
+    ✓ still registers via ws.on("message", handleUpstreamLiveMessage) (1 ms)
+    ✓ does NOT declare the message-handler body locally anymore (1 ms)
+    ✓ preserves the connectToLiveAPI Promise-closure state semantics (setupComplete + clearTimeout + resolve) (2 ms)
+    ✓ does NOT inline `new WebSocket(wsUrl, { headers: ... })` anymore (1 ms)
+    ✓ A8.3b.2: legacy raw-WebSocket scaffolding is removed from connectToLiveAPI (2 ms)
+    ✓ L1: connectToLiveAPI calls selectUpstreamProvider before constructing the upstream client (1 ms)
+    ✓ L2.1: connectToLiveAPI passes canary config + identity to the selector and emits canary OASIS events (1 ms)
+    ✓ calls attachSseHeaders(res) for the SSE upgrade (1 ms)
+    ✓ does NOT inline raw res.setHeader calls for the SSE headers (1 ms)
+    ✓ starts the heartbeat through startSseHeartbeat (NOT setInterval) (1 ms)
+    ✓ writes the ready event through writeSseEvent (NOT raw res.write)
+    ✓ emits an event with type: "ready" (1 ms)
+    ✓ includes session_id in the ready payload
+    ✓ includes live_api_connected boolean in the ready payload (1 ms)
+    ✓ includes meta.model in the ready payload
+    ✓ includes meta.lang in the ready payload
+    ✓ includes meta.voice in the ready payload (1 ms)
+    ✓ declares audio_out_rate (server → client TTS sample rate)
+    ✓ declares audio_in_rate (client → server mic sample rate)
+    ✓ reads session_id from query string
+    ✓ rejects request with 400 when session_id is missing
+    ✓ imports the SSE helpers from the transport module (11 ms)
+    ✓ gates only on turn_count === 0, not on greetingSent (1 ms)
+    ✓ still sets the one-shot fresh-open override before resending (VTID-03634 mechanism intact) (1 ms)
+    ✓ all three call sites (guided-topic fallback, same-provider retry, generic fallback) still reach this function (1 ms)
+    ✓ all 6 safe-fast rungs are emitted by the brain (2 ms)
+    ✓ the lazy-gather guards are single-sourced from the brain (no divergent inline guard) (2 ms)
+    ✓ orb-live.ts delegates the safe-fast opening to the brain and renders effects (2 ms)
+    ✓ orb-live.ts no longer carries any inline safe-fast / conv_resume decision branch (3 ms)
+    ✓ orb-live.ts carries ZERO inline wake_opener emits (full transport delegation) (1 ms)
+      ✓ dispatcher recognises tool name "get_current_screen" (1 ms)
+      ✓ dispatcher recognises tool name "navigate" (1 ms)
+      ✓ dispatcher recognises tool name "navigate_to_screen"
+      ✓ dispatcher recognises tool name "search_memory" (1 ms)
+      ✓ dispatcher recognises tool name "save_diary_entry"
+      ✓ "get_current_screen" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "navigate" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "navigate_to_screen" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "search_memory" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "save_diary_entry" appears as an if-branch OR a switch-case keyed by toolName (1 ms)
+      ✓ "get_current_screen" routes to its dedicated handler (1 ms)
+      ✓ "navigate" routes to its dedicated handler
+      ✓ "navigate_to_screen" routes to its dedicated handler (1 ms)
+      ✓ navigator tools are dispatched before the auth gate
+      ✓ "search_memory" has a case body in the dispatcher (1 ms)
+      ✓ "save_diary_entry" has a case body in the dispatcher
+    ✓ is exported (so the gateway entrypoint can wire it) (1 ms)
+    ✓ accepts an HttpServer parameter (Express HTTP server instance) (1 ms)
+    ✓ delegates WSS setup to mountOrbWebSocketTransport
+    ✓ passes a handleConnection wrapper that forwards to handleWebSocketConnection (1 ms)
+    ✓ passes an onServerError hook for server-level WebSocket errors
+    ✓ does NOT inline `new WebSocketServer(`, `wss.on(`, or a literal mount path
+    ✓ orb-live.ts imports wsClientSessions from the registry module (not a local declaration) (1 ms)
+    ✓ orb-live.ts no longer declares wsClientSessions = new Map(...) locally (2 ms)
+    ✓ imports mountOrbWebSocketTransport from the transport module (4 ms)
+    ✓ the override_v2 rung + its trigger shape are in the brain (2 ms)
+    ✓ the brain does NOT re-introduce the VTID-03102 phrasing that broke audio (1 ms)
+    ✓ the legacy default fallback likewise lives in the brain
+    ✓ orb-live.ts delegates the sync opening rungs to the brain (2 ms)
+    ✓ orb-live.ts no longer carries the inline override / silent / cadence branches (1 ms)
+    ✓ the pre-guard does NOT gate on any pre-fetch-owned fact (2 ms)
+    ✓ the branch awaits greetingFactsReady BEFORE building the new-day context
+    ✓ the new-day context RE-READS the facts rather than inheriting the sync snapshot (1 ms)
+    ✓ both bounded waits use the same env budgets the safe-fast path uses (1 ms)
+    ✓ every non-firing outcome emits a distinguishable newday_briefing_eval (2 ms)
+      ✓ registers a req.on('close', ...) handler (1 ms)
+      ✓ controller removes sessions from wsClientSessions on cleanup (1 ms)
+      ✓ controller clears intervals on cleanup (upstream ping + silence keepalive)
+      ✓ controller attempts to close the upstream websocket on cleanup (1 ms)
+      ✓ controller attempts to close the client websocket on cleanup (if still OPEN)
+      ✓ orb-live.ts runs a periodic timeout sweep over the WS session map (interval-only; body in controller) (1 ms)
+      ✓ uses a session timeout constant (not an inline magic number)
+      ✓ both SSE and WS cleanup paths exist (parity; WS body now in controller) (1 ms)
+    ✓ kicks off the upstream connect non-blocking and greets in its .then() resolve (2 ms)
+    ✓ routes first-time sessions to the greeting and reconnects to recovery — both server-side (1 ms)
+    ✓ greeting send is idempotent on greetingSent so a stray client trigger cannot double-greet (1 ms)
+    ✓ does NOT gate the connect-time greeting behind an inbound client message type (2 ms)
+    ✓ BOOTSTRAP-NOVA-GREETING-CADENCE: the real decideOpening() call wires wakeCadenceSkip from a fresh-open reconnect-bucket check (1 ms)
+    ✓ _hasPendingGuidedTopicAtOpen requires BOTH a pending topic AND this session having spoken nothing yet (2 ms)
+    ✓ isReconnect is suppressed by the pending-guided-topic flag (1 ms)
+    ✓ wakeCadenceSkip is suppressed by the SAME flag, not a separate/independent one (1 ms)
+    ✓ the flag is computed from THIS session's own turn_count, not carried over from a prior session object
+    ✓ does not touch silenceOnSkipEnabled (rung 9) — that stays gated on the pre-existing zero-turn-recovery flag only (1 ms)
+      ✓ handler reads "body.lang" (2 ms)
+      ✓ handler reads "body.voice_style"
+      ✓ handler reads "body.response_modalities" (1 ms)
+      ✓ handler reads "body.conversation_summary"
+      ✓ handler reads "body.transcript_history"
+      ✓ handler reads "body.reconnect_stage" (1 ms)
+      ✓ handler reads "body.conversation_id"
+      ✓ declares isReconnectStart based on transcript_history length OR reconnect_stage (1 ms)
+      ✓ valid reconnect_stage values are exactly {idle, listening_user_speaking, thinking, speaking} (1 ms)
+      ✓ truncates transcript_history to the last 20 turns
+      ✓ rejects malformed transcript history entries (role + text type guard) (1 ms)
+      ✓ validates origin before doing any work
+      ✓ rejects bearer tokens that failed JWT verification with 401 (VTID-AUTH-BACKEND-REJECT)
+    ✓ reads session.teacherModeContent before composing the recovery prompt (1 ms)
+    ✓ Teacher branch references the active capability by display name AND key
+    ✓ Teacher branch tells Gemini to RESUME, not restart (1 ms)
+    ✓ Teacher branch emits the VTID-03128 diagnostic log + diag event (1 ms)
+    ✓ Teacher branch returns before the legacy generic recovery code runs
+    ✓ Teacher branch sets greetingSent so stall-recovery does not re-send (1 ms)
+    ✓ legacy VTID-02020 recovery path still exists for non-Teacher sessions
+    ✓ guards on greetingSent + the "user never spoke" counter relation (1 ms)
+    ✓ flips session.suppressCurrentTurnAudio so the existing forward gate drops the turn
+    ✓ emits a [BOOTSTRAP-ORB-GREETING-REEMIT] warn + greeting_reemit_suppressed diag
+    ✓ sets the flag inside the new-turn-start (isModelSpeaking) block, before audio is forwarded (2 ms)
+    ✓ exposes one template per temporal bucket (2 ms)
+    ✓ today bucket substitutes greetingTimeOfDay verbatim
+    ✓ reconnect bucket renders the "do not speak" guardrail verbatim (1 ms)
+    ✓ recent bucket expands the short-gap phrase menu into an INTENT, not a VERBATIM script (VTID-03630)
+    ✓ wake-brief override suppresses the short-gap phrase list
+    ✓ expandShortGapPhraseMenu hands the model an intent, never a finished sentence to recite (VTID-03630) (1 ms)
+    ✓ every bucket renders with no surviving placeholder tokens (2 ms)
+    ✓ audio-chunk path checks session.suppressCurrentTurnAudio BEFORE forwarding (1 ms)
+    ✓ output_transcription handler compares prefix to session.recentAssistantTexts
+    ✓ detection emits [VTID-03143] log + diag event (1 ms)
+    ✓ turn_complete snapshots the transcript into recentAssistantTexts ring buffer (capped at 3)
+    ✓ turn_complete does NOT snapshot a suppressed (duplicate) turn (1 ms)
+    ✓ turn_complete resets suppressCurrentTurnAudio + chunk counter
+    ✓ suppression diag emitted at turn_complete when it fired (1 ms)
+    ✓ declares the four establishment phases in the LatencyPhase union (2 ms)
+    ✓ creates a turn-0 establishment tracker before opening the upstream (1 ms)
+    ✓ marks the establishment phases in path order (1 ms)
+    ✓ finalizes on first audio-out chunk and clears the tracker (1 ms)
+    ✓ finalizes with error on connect failure so no tracker dangles (1 ms)
+    ✓ computes a turn_count===0 signal alongside the existing persona-swap/rotation gates (1 ms)
+    ✓ the reconnecting message is gated on all three suppression signals (1 ms)
+    ✓ does not touch MAX_RECONNECTS / _reconnectCount bookkeeping
+    ✓ resendGreetingIfStuckAtZeroTurns (the actual recovery) still gates on turn_count===0 (1 ms)
+Test Suites: 34 passed, 34 total
+Tests:       406 passed, 406 total

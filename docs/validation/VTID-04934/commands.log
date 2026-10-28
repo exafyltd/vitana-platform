@@ -1,0 +1,4 @@
+node scripts/conversation/generate-flag-pins.mjs   # prod FEATURE_ORB_WS_TRANSPORT_ENV -> "off"
+cd services/gateway && npx jest test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts --verbose   # 25 passed (outputs/jest-targeted.txt)
+npx jest test/orb/live/upstream test/services/conversation <every suite reading AWS-PROD-DEPLOY-GATEWAY.yml>   # 161 suites, 2284 tests passed (outputs/jest-workflow-guards.txt)
+curl -s https://gateway.vitanaland.com/api/v1/orb/live/transport   # {"ok":true,"transport":"sse"} (read-only, after env-only rollback run #374)

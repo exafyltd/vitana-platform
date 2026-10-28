@@ -1,0 +1,81 @@
+{
+ "schema_version": 1,
+ "id": "scored-opening-serves-relevant",
+ "description": "Scored opening live (VTID-04454): the member who takes journey steps and turns down briefings is opened with the journey step, not the higher-priority briefing.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "greeting": {
+   "openDecision": {
+    "mode": "speak",
+    "source": "wake_brief",
+    "line": "You have two things on today: a walk at noon and your diary."
+   },
+   "wakeBriefHasSelectedContinuation": true
+  },
+  "providers": [
+   {
+    "providerKey": "login_briefing",
+    "status": "returned",
+    "candidate": {
+     "id": "c-lb",
+     "kind": "wake_brief",
+     "dedupeKey": "login_briefing:today",
+     "priority": 90,
+     "userFacingLine": "You have two things on today.",
+     "privacyMode": "safe_to_speak"
+    }
+   },
+   {
+    "providerKey": "journey_guide",
+    "status": "returned",
+    "candidate": {
+     "id": "c-jg",
+     "kind": "wake_brief",
+     "dedupeKey": "journey_guide:step3",
+     "priority": 60,
+     "userFacingLine": "The next step on your journey is setting a sleep target.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/health/sleep"
+     }
+    }
+   }
+  ],
+  "winner": "login_briefing"
+ },
+ "outcomes": {
+  "journey_guide": {
+   "accepted": 28,
+   "declined": 1,
+   "ignored": 1
+  },
+  "login_briefing": {
+   "accepted": 0,
+   "declined": 20,
+   "ignored": 10
+  }
+ },
+ "turns": [
+  {
+   "user": "What should I focus on today to feel better"
+  }
+ ],
+ "expect": {
+  "opener_kind": "override_v2",
+  "candidate_provider": "journey_guide",
+  "candidate_spoken": true,
+  "shadow_winner": "journey_guide",
+  "turns": [
+   {
+    "top_lead_provider": "journey_guide",
+    "advisor_eligible": true
+   }
+  ],
+  "ranking_mode": "scored"
+ },
+ "personal_weights_live": true,
+ "scored_opening_live": true
+}

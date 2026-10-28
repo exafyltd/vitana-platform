@@ -1,0 +1,9 @@
+# CSP patterns run against origin/main's OWN copies of the two files.
+# Proves the whole-file gate was unpassable before this branch existed.
+
+REJECTED: CSP pattern hit in /tmp/base/orb-widget.js :: /<script(?![^>]*\bsrc=)/
+REJECTED: CSP pattern hit in /tmp/base/orb-widget.js :: /style\s*=/
+REJECTED: CSP pattern hit in /tmp/base/orb-widget.js :: /\.style\b/
+REJECTED: CSP pattern hit in /tmp/base/orb-widget.js :: /https?://[^\s"']+\.(js|css)/
+REJECTED: CSP pattern hit in /tmp/base/index.html :: /<script(?![^>]*\bsrc=)/
+CSP FAIL=1

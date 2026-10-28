@@ -1,0 +1,191 @@
+/**
+ * Batch 1.B1: Tenant-Admin RBAC Middleware
+ *
+ * Allows access if the caller is:
+ *   (a) exafy_admin (super-admin, all tenants), OR
+ *   (b) has active_role = 'admin' in the route's target tenant AND 'admin' is
+ *       in their permitted roles there (VTID-05147: user_permitted_roles or an
+ *       active memberships admin — active_role alone was member-writable)
+ *
+ * Expects the route to have :tenantId in the path (e.g. /api/v1/admin/tenants/:tenantId/...).
+ * Rejects if:
+ *   - No valid JWT (401)
+ *   - No tenant_id in JWT (400)
+ *   - Caller is not exafy_admin AND caller's tenant doesn't match :tenantId (403)
+ *   - Caller is not exafy_admin AND caller's active_role is not 'admin' (403)
+ *
+ * Must be used on routes that accept :tenantId as a param.
+ * For routes without :tenantId, uses the caller's own tenant_id from the JWT.
+ */
+
+import { Response, NextFunction } from 'express';
+import {
+  AuthenticatedRequest,
+  verifyAndExtractIdentity,
+} from './auth-supabase-jwt';
+import { createClient } from '@supabase/supabase-js';
+import * as repo from './require-tenant-admin-repository';
+
+const supabaseUrl = process.env.SUPABASE_URL || process.env.VITE_SUPABASE_URL || '';
+// VTID-04674: the task definitions set SUPABASE_SERVICE_ROLE (not _KEY), so
+// without the fallback every non-exafy tenant admin was refused.
+const supabaseServiceKey = process.env.SUPABASE_SERVICE_ROLE_KEY || process.env.SUPABASE_SERVICE_ROLE || '';
+
+/**
+ * Lookup the caller's active_role for a given tenant from user_tenants.
+ * Returns the role string or null if not found.
+ */
+async function getCallerRole(userId: string, tenantId: string): Promise<{ role: string | null; permitted: string[] | null }> {
+  if (!supabaseUrl || !supabaseServiceKey) {
+    console.error('[require-tenant-admin] Missing SUPABASE_URL or SUPABASE_SERVICE_ROLE_KEY');
+    return { role: null, permitted: null };
+  }
+  const supabase = createClient(supabaseUrl, supabaseServiceKey);
+  // VTID-05147: the permitted set is read in parallel; a read error fails closed.
+  const [{ data, error }, permitted] = await Promise.all([
+    repo.fetchCallerActiveRoleForTenant(supabase, userId, tenantId),
+    repo.fetchCallerPermittedRoles(supabase, userId, tenantId),
+  ]);
+  if (permitted.error) {
+    console.warn(`[require-tenant-admin] permitted-role read failed for user ${userId}: ${permitted.error}`);
+  }
+
+  return { role: error || !data ? null : data.active_role, permitted: permitted.roles };
+}
+
+/**
+ * Middleware: require tenant-admin access.
+ *
+ * Usage:
+ *   router.get('/api/v1/admin/tenants/:tenantId/members', requireTenantAdmin, handler);
+ *   router.get('/api/v1/admin/members', requireTenantAdmin, handler); // uses JWT tenant_id
+ */
+export async function requireTenantAdmin(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): Promise<void> {
+  // Step 1: Verify JWT
+  const authHeader = req.headers.authorization;
+  if (!authHeader || !authHeader.startsWith('Bearer ')) {
+    res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Missing or invalid Authorization header. Expected: Bearer <token>',
+    });
+    return;
+  }
+
+  const token = authHeader.slice(7);
+  const result = await verifyAndExtractIdentity(token);
+
+  if (!result) {
+    res.status(401).json({
+      ok: false,
+      error: 'UNAUTHENTICATED',
+      message: 'Invalid or expired token',
+    });
+    return;
+  }
+
+  req.identity = result.identity;
+  req.auth_raw_claims = result.claims;
+  req.auth_source = result.auth_source;
+
+  // Step 2: Exafy super-admin bypasses all tenant checks
+  if (req.identity.exafy_admin) {
+    next();
+    return;
+  }
+
+  // Step 3: Determine target tenant (from route param or JWT)
+  const targetTenantId = (req.params.tenantId as string) || req.identity.tenant_id;
+
+  if (!targetTenantId) {
+    res.status(400).json({
+      ok: false,
+      error: 'TENANT_REQUIRED',
+      message: 'No tenant_id in route params or JWT. Cannot determine target tenant.',
+    });
+    return;
+  }
+
+  // Step 4: Caller's JWT tenant must match the target tenant
+  if (req.identity.tenant_id !== targetTenantId) {
+    console.warn(
+      `[require-tenant-admin] Cross-tenant access denied: user ${req.identity.user_id} ` +
+      `(tenant ${req.identity.tenant_id}) tried to access tenant ${targetTenantId}`
+    );
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'You can only manage your own tenant.',
+    });
+    return;
+  }
+
+  // Step 5: Caller must have active_role = 'admin' in their tenant
+  const { role: callerRole, permitted } = await getCallerRole(req.identity.user_id, targetTenantId);
+
+  if (callerRole !== 'admin') {
+    console.warn(
+      `[require-tenant-admin] Admin role required: user ${req.identity.user_id} ` +
+      `has role '${callerRole}' in tenant ${targetTenantId}`
+    );
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'This action requires the admin role within your tenant.',
+    });
+    return;
+  }
+
+  // Step 6 (VTID-05147): active_role is a claim, not a grant — until the
+  // S-M migration a member could write it themself. 'admin' must also be in
+  // the caller's permitted roles (user_permitted_roles or active memberships).
+  if (!permitted || !permitted.includes('admin')) {
+    console.warn(
+      `[require-tenant-admin] admin_not_permitted: user ${req.identity.user_id} ` +
+      `has active_role 'admin' without a permitted admin role in tenant ${targetTenantId}`
+    );
+    res.status(403).json({
+      ok: false,
+      error: 'FORBIDDEN',
+      message: 'This action requires the admin role within your tenant.',
+    });
+    return;
+  }
+
+  // Attach the resolved target tenant for downstream handlers
+  (req as any).targetTenantId = targetTenantId;
+  next();
+}
+
+/**
+ * VTID-05042: platform-scope guard for tenant-admin routes whose data has no
+ * tenant_id column yet (oasis_events, global_community_*, creator_profiles,
+ * media_uploads). Such a route cannot be filtered to one tenant, so it is
+ * exafy_admin-only until WS3 adds the column. Must run AFTER
+ * requireTenantAdmin (reuses the identity it attached); a tenant admin gets
+ * 403 PLATFORM_SCOPE_ONLY and the handler — and therefore every query — is
+ * never reached.
+ */
+export function requirePlatformScope(
+  req: AuthenticatedRequest,
+  res: Response,
+  next: NextFunction
+): void {
+  if (req.identity?.exafy_admin === true) {
+    next();
+    return;
+  }
+  console.warn(
+    `[require-tenant-admin] Platform scope required: user ${req.identity?.user_id ?? 'unknown'} ` +
+    `(tenant ${req.identity?.tenant_id ?? 'none'}) on ${req.method} ${req.originalUrl}`
+  );
+  res.status(403).json({
+    ok: false,
+    error: 'PLATFORM_SCOPE_ONLY',
+    message: 'This data is not tenant-scoped yet and is available to platform administrators only.',
+  });
+}

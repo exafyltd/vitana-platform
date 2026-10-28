@@ -1,0 +1,77 @@
+{
+  "openapi": "3.0.3",
+  "info": { "title": "Sandbox Supplier API", "version": "1.2.0" },
+  "components": {
+    "securitySchemes": { "ApiKeyAuth": { "type": "apiKey", "in": "header", "name": "X-Api-Key" } },
+    "schemas": {
+      "Product": {
+        "type": "object",
+        "required": ["id", "title"],
+        "properties": {
+          "id": { "type": "string" },
+          "title": { "type": "string" },
+          "price_amount": { "type": "number" },
+          "price_currency": { "type": "string" },
+          "stock_qty": { "type": "integer" }
+        }
+      },
+      "ProductList": {
+        "type": "object",
+        "required": ["items"],
+        "properties": { "items": { "type": "array", "items": { "$ref": "#/components/schemas/Product" } } }
+      },
+      "OrderRequest": {
+        "type": "object",
+        "required": ["sku", "quantity"],
+        "properties": {
+          "sku": { "type": "string" },
+          "quantity": { "type": "integer" },
+          "customer_email": { "type": "string" }
+        }
+      },
+      "Order": {
+        "type": "object",
+        "required": ["id", "status"],
+        "properties": {
+          "id": { "type": "string" },
+          "status": { "type": "string" },
+          "total_amount": { "type": "number" },
+          "currency": { "type": "string" },
+          "created_at": { "type": "string" }
+        }
+      }
+    }
+  },
+  "paths": {
+    "/products": {
+      "get": {
+        "operationId": "listProducts",
+        "summary": "List products",
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ProductList" } } } } }
+      }
+    },
+    "/products/{id}": {
+      "get": {
+        "operationId": "getProduct",
+        "summary": "Get one product",
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Product" } } } } }
+      }
+    },
+    "/orders": {
+      "post": {
+        "operationId": "createOrder",
+        "summary": "Create an order",
+        "requestBody": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OrderRequest" } } } },
+        "responses": { "201": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } } }
+      }
+    },
+    "/orders/{id}": {
+      "delete": {
+        "operationId": "cancelOrder",
+        "summary": "Cancel an order",
+        "responses": { "200": { "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Order" } } } } }
+      }
+    }
+  },
+  "webhooks": { "order.updated": { "post": { "summary": "Order status changed" } } }
+}

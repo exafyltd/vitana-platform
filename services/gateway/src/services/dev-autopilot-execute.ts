@@ -1,0 +1,4543 @@
+/**
+ * Developer Autopilot — Execution service
+ *
+ * Takes an approved-and-cooled execution row and drives it through:
+ *
+ *   cooling   → running   (claim + routed LLM call starts, see callRoutedLlm)
+ *   running   → ci        (edits applied, PR opened)
+ *   ci        → merging   (PR-9 watcher: CI green)
+ *   merging   → deploying (PR-9: merged; AUTO-DEPLOY fires)
+ *   deploying → verifying (PR-9: deploy.gateway.success received)
+ *   verifying → completed (PR-9: verification window passed clean)
+ *
+ * This module handles the cooling→running→ci stages plus kill-switch /
+ * concurrency checks. CI + deploy + verification watchers land in PR-9.
+ *
+ * History / why NOT Managed Agents:
+ *   The earlier implementation wired this through the Managed Agents API with
+ *   a GitHub repo mount + a prompt that asked the agent to "write files and
+ *   open a PR". Managed Agents with the triage agent don't have file-write
+ *   or open_pr tools provisioned, so the session always ended without a PR
+ *   URL — and provisioning a dedicated agent with those tools is a large
+ *   operational bet. The routed-LLM + GitHub Contents API path below is
+ *   deterministic, faster (~30-90s), and uses the same plumbing the planning
+ *   service uses (dev-autopilot-planning.ts, PR #753). "Routed" means
+ *   callViaRouter() against the DB-backed llm_routing_policy — this stopped
+ *   being a literal, hardcoded call to Anthropic's Messages API at VTID-02686
+ *   (see callRoutedLlm below); a per-execution override (VTID-03820) can also
+ *   force a specific provider regardless of policy.
+ *
+ * Dry-run mode (DEV_AUTOPILOT_DRY_RUN=true) skips the LLM + GitHub writes
+ * and produces a synthetic PR URL so the UI and pipeline can be exercised
+ * without touching repo state. Default is FALSE — live PRs are opened.
+ */
+
+import { randomUUID } from 'crypto';
+import type { LLMProvider } from '../constants/llm-defaults';
+import { emitOasisEvent, cicdEvents } from './oasis-event-service';
+import {
+  evaluateSafetyGate,
+  newFileCandidates,
+  SafetyContext,
+  SafetyPlan,
+  SafetyDecision,
+} from './dev-autopilot-safety';
+import { extractFilePaths, generatePlanVersion } from './dev-autopilot-planning';
+import { isWorkerQueueEnabled, isWorkerOwnsPrEnabled, runWorkerTask, reclaimStuckWorkerTasks, reclaimStuckPendingWorkerTasks, type WorkerAttemptFailure } from './dev-autopilot-worker-queue';
+import { writeAutopilotFailure, writeAutopilotSuccess } from './dev-autopilot-self-heal-log';
+import { recordOutcome, recordExecOutcome } from './dev-autopilot-outcomes';
+import { loadAutopilotContext } from './dev-autopilot/context-loader';
+// VTID-04002: deterministic validator-compliant PR title/body + evidence pack.
+import { applyPrContract } from './dev-autopilot-pr-contract';
+import { resolveFeedbackTicketRef } from './feedback-ticket-ref';
+// VTID-02984 (PR-M1.x): shared allowlist for executable source_types so
+// test-contract scanner recommendations (PR-L2/L3) reach the executor.
+import {
+  isExecutableSourceType,
+  executableSourceTypesPostgrestIn,
+  isManuallyBridgeableSourceType,
+} from './autopilot-executable-source-types';
+// VTID-03415: AWS RunTask dispatch path, parallel to the GCP Cloud Run Job
+// dispatch below. Only exercised when DEV_AUTOPILOT_JOB_CLOUD=aws.
+import { dispatchExecutorJobAws, stopExecutorTaskAws } from './aws-ecs-admin';
+import { deployTopicsInFilter, normalizeDeployEvent, resolveDeployOutcome } from './dev-autopilot-deploy-topics';
+import { gatewayBaseUrl } from '../env';
+// VTID-04005: claim-time environment stamp + ownership filter (shared table, two gateways).
+import { claimStamp, filterOwnedExecutions, currentEnv, executorClaimsHere } from './dev-autopilot-env-ownership';
+// VTID-05146 (C1a, C2): no claim while an open PR shares the plan's files; frozen_scope at approval.
+import { guardFiles, holdExecution, loadPlanFiles, frozenHits } from './dev-autopilot-overlap';
+import { describeLoopOwnership, LOOP_OWNER_ENV_VAR } from './dev-autopilot-loop-owner';
+// VTID-04006: single-shot vs agent executor selection.
+import { resolveExecutorMode, claimExecutorStamp } from './autopilot-agent/executor-mode';
+import { allocateAndRegisterFindingVtid, buildFindingVtidTitle } from './dev-autopilot-vtid-allocate';
+import { decideRetryBreaker, detectProviderOutage, slotsUnderOutage, type OutageState } from './dev-autopilot-retry-breaker';
+// VTID-04667: P4 — stop spending tokens on work that does not land.
+import { loadScannerBreakers, isFindingBreakerOpen, type LoadedBreakers } from './dev-autopilot-scanner-breaker';
+import {
+  isNeverAutoExecuteSignal,
+  summarizeFindingSpend,
+  isOverFindingBudget,
+  resolveFindingBudget,
+  inOutageRequeueCooldown,
+  resolveOutageRequeueCooldownMs,
+  planFilesMissingFromIndex,
+  isPlanFileCheckEnabled,
+} from './dev-autopilot-approval-gates';
+import { loadCodeIndex, type CodeIndexBundle } from './codeintel-index';
+import { isClaimFeasibilityOn, runClaimFeasibilityCheck, recordClaimFeasibilityOutcome, type FeasibilityContext } from './jev/gates/claim-feasibility-gate';
+import { isRepeatRunGuardOn, runRepeatRunCheck, recordRepeatRunOutcome, FAILED_EXECUTION_STATUSES, REPEAT_LOOKBACK_DAYS, type RepeatContext } from './jev/gates/repeat-run-gate';
+import { rescoreTick } from './recommendation-quality/scoring-service';
+import { qualityReviewTick } from './recommendation-quality/quality-review';
+import { weeklySummaryTick } from './recommendation-quality/acceptance';
+// VTID-04467: agent runs are requeued, never run in-process without a toolchain.
+import { agentToolchainPresent, decideDispatchFallback, dispatchFailureError, priorDispatchFailures, requeueDelayMs, resolveMaxDispatchAttempts } from './dev-autopilot-dispatch-fallback';
+
+import { buildReminders, remindersEnabled, renderRemindersBlock } from './watcher/reminder';
+import { isWorkerMemoryRecallEnabled, buildFileScopedMemoryBlock } from './dev-agent-memory-file-recall';
+import { recordShown } from './watcher/feedback';
+import { recordExecutionOutcomeMemory } from './operator-turn-memory';
+import {
+  LEGACY_STUCK_EXECUTION_MS,
+  acquireDevRunLease,
+  decideWatchdogReclaim,
+  isRunLeaseEnabled,
+  readDevRunLeases,
+  releaseDevRunLease,
+  runPhaseOutcome,
+  sweepOrphanDevRunLeases,
+  watchdogCandidateWindowMs,
+  type LeaseRest,
+} from './orchestrator/run-lease';
+import { isAwaitingApprovalResult, stageExecutionForApproval } from './dev-autopilot-approval';
+import {
+  STRANDED_PR_FILTER,
+  INFLIGHT_EXECUTION_FILTER,
+  PR_CLOSED_UNMERGED_KEY,
+  PR_STATE_CHECKED_KEY,
+  selectPlanlessCandidates,
+  selectPlannedCandidates,
+  classifyPrState,
+  chunkIds,
+  prNumberOf,
+  POST_MERGE_TAIL_STATUSES,
+  countPipelineStatuses,
+  pipelineSlots,
+  resolveTailCap,
+  type PipelineCounts,
+} from './dev-autopilot-pipeline-guards';
+
+const LOG_PREFIX = '[dev-autopilot-execute]';
+const EXEC_VTID = 'VTID-DEV-AUTOPILOT';
+
+// VTID-03852: ANTHROPIC_API_KEY/ANTHROPIC_BASE ('https://api.anthropic.com')
+// used to live here as module-level constants for a direct fetch() to
+// Anthropic's Messages API. VTID-02686 rewired every real call to go through
+// callRoutedLlm() → callViaRouter('worker', ...), which resolves the actual
+// provider from the DB-backed llm_routing_policy (bedrock/deepseek/etc, never
+// a hardcoded Anthropic key) — see CLAUDE.md §1b, which also confirms
+// ANTHROPIC_API_KEY is never populated in AWS Secrets Manager, so the old
+// constants could not have worked even if some path still read them. Removed
+// rather than left as harmless-looking dead code implying an Anthropic-direct
+// path exists here.
+// LLM call timeout — Cloud Run's request timeout is 300s; we run in a
+// background ticker so that's not the constraint. Still cap at 8 minutes so
+// a pathological stuck call doesn't hold a concurrency slot forever.
+// 12 min. Was 8 min; bumped after PR #846 added jest validation in the
+// worker which can add 60-90s on the first attempt and ~5-15s on retries
+// — combined with up to 3 retry attempts and an initial npm-install on
+// a cold clone, the worker can legitimately hold a task for ~10 min on
+// a hard case. The execute path is background-ticker scoped, so there's
+// no Cloud Run request-wall constraint here.
+const MESSAGES_TIMEOUT_MS = 720_000; // 12 min
+const EXECUTION_MODEL = process.env.DEV_AUTOPILOT_EXECUTION_MODEL || 'claude-sonnet-4-6';
+// Upper bound for total output tokens. One plan may touch up to ~5 files;
+// ~3000 tokens/file is a generous budget. Sonnet 4.6 supports 16k out.
+//
+// 2026-05-04 (VTID-AUTOPILOT-TOKENS): bumped 16k → 32k after the smoke
+// run on PR #1615 surfaced output truncation as the dominant first-attempt
+// failure mode. The new conventions+imports-surface context block adds
+// ~7-8k input tokens; combined with file content + plan, the model now
+// frequently runs out of output budget mid-emit and produces a half-
+// closed `<<<FILE …>>>` block. The bridge's depth-1 retry recovers
+// (PRs #1618, #1619 in smoke), but each retry costs another full Vertex
+// call. Gemini 3.1 Pro Preview supports 32k output; using it reduces
+// the truncation rate to near-zero for typical 1-5 file plans.
+const MESSAGES_MAX_TOKENS = 32000;
+// Safety cap — refuse to execute plans that cite more files than this. Protects
+// against a misbehaving plan trying to rewrite the world. The safety gate
+// already enforces allow_scope but this adds a quantitative limit.
+const MAX_FILES_PER_EXECUTION = 8;
+// Per-file maximum content size (bytes) that we'll include in the prompt OR
+// write back to GitHub. Plans that need larger files should be split. 200 KB
+// is ~50k tokens — well inside Sonnet's 200k context.
+const MAX_FILE_BYTES = 200_000;
+
+const DRY_RUN = (process.env.DEV_AUTOPILOT_DRY_RUN || 'false').toLowerCase() === 'true';
+const BACKGROUND_TICK_MS = 30_000;
+
+// VTID-02703: Cloud Run Job runtime for the executor.
+//   USE_JOB_RUNTIME    — when true, the gateway dispatches each claimed
+//                        execution to the Cloud Run Job
+//                        (autopilot-executor) instead of running
+//                        runExecutionSession in-process. The Job survives
+//                        container churn that kills long-running fire-and-
+//                        forget Promises in the gateway service.
+//   JOB_NAME / JOB_REGION / JOB_PROJECT — addressing the Job for the
+//                        Cloud Run Admin API. Defaults match the deploy
+//                        workflow (.github/workflows/DEPLOY-AUTOPILOT-JOB.yml).
+const USE_JOB_RUNTIME = (process.env.DEV_AUTOPILOT_USE_JOB || 'false').toLowerCase() === 'true';
+const JOB_NAME = process.env.DEV_AUTOPILOT_JOB_NAME || 'autopilot-executor';
+const JOB_REGION = process.env.DEV_AUTOPILOT_JOB_REGION || 'us-central1';
+const JOB_PROJECT = process.env.GCP_PROJECT_ID || process.env.GOOGLE_CLOUD_PROJECT || 'lovable-vitana-vers1';
+// VTID-03415: which cloud's Job/Task runtime to dispatch to when
+// USE_JOB_RUNTIME is on. Defaults to 'gcp' so this is purely additive —
+// GCP gateway instances never set this var and see zero behavior change.
+// Only the AWS-DR gateway (vitana-gateway-awsdr) should ever set 'aws'.
+const JOB_CLOUD = (process.env.DEV_AUTOPILOT_JOB_CLOUD || 'gcp').toLowerCase();
+
+const GITHUB_OWNER = process.env.DEV_AUTOPILOT_REPO_OWNER || 'exafyltd';
+const GITHUB_REPO = process.env.DEV_AUTOPILOT_REPO_NAME || 'vitana-platform';
+const GITHUB_BASE_BRANCH = process.env.DEV_AUTOPILOT_REPO_REF || 'main';
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export interface ApprovalInput {
+  finding_id: string;
+  /** Approving user's id. MUST be a UUID — it is written verbatim to
+   *  `dev_autopilot_executions.approved_by` (uuid) and
+   *  `dev_autopilot_outcomes.approver_user_id`. Omit for system approvals
+   *  (autoApproveTick) — NULL is the documented sentinel there. */
+  approved_by?: string;
+  /** VTID-03839: the caller is a person (or a session acting for one)
+   *  waiting synchronously on the result, but has no user UUID to put in
+   *  `approved_by` — the operator on-ramp's requester is a chat-thread
+   *  label, not a user. Keeps the human-approval semantics that used to
+   *  ride on `approved_by` being set: a safety-gate rejection is returned
+   *  to the caller instead of 7-day-snoozing the finding, and the outcome
+   *  is recorded as `approved`, not `auto_exec`. Never changes what is
+   *  written to `approved_by`. */
+  interactive?: boolean;
+  /** VTID-04108: widen the source_type check below from
+   *  isExecutableSourceType() to isManuallyBridgeableSourceType()
+   *  (adds community/health) for THIS call only. Only
+   *  bridgeActivationToExecution() (the human-triggered
+   *  POST /:id/activate path) sets this. Never set it from an
+   *  autonomous polling loop (autoApproveTick()) - that loop's own
+   *  source_type query is intentionally a separate, narrower constant
+   *  (executableSourceTypesPostgrestIn()) so widening what a human can
+   *  manually activate never also widens what gets auto-approved with no
+   *  human in the loop. */
+  allowManualSourceTypes?: boolean;
+  /** VTID-04657: accept a finding in status 'activated' as well as 'new'.
+   *  `activate_autopilot_recommendation` flips the row to 'activated'
+   *  BEFORE the route bridges it, so without this every Activate click and
+   *  every activation-reaper retry was refused by the status guard below
+   *  and no execution was ever created. Only bridgeActivationToExecution()
+   *  sets it; 'completed'/'rejected'/'snoozed' stay refused, and the
+   *  stranded-PR and in-flight guards still apply. */
+  allowActivatedStatus?: boolean;
+}
+
+export interface ApprovalResult {
+  ok: boolean;
+  execution?: ExecutionRow;
+  decision?: SafetyDecision;
+  error?: string;
+}
+
+export interface ExecutionRow {
+  id: string;
+  finding_id: string;
+  plan_version: number;
+  status: string;
+  approved_by?: string;
+  approved_at?: string;
+  execute_after?: string;
+  branch?: string;
+  pr_url?: string;
+  pr_number?: number;
+  auto_fix_depth: number;
+  parent_execution_id?: string;
+  /** VTID-03820: read for llm_on_ramp_override; not otherwise used here. */
+  metadata?: Record<string, unknown> | null;
+}
+
+/**
+ * VTID-03820: per-invocation LLM provider/model override for an operator-
+ * triggered execution (e.g. the DeepSeek-powered execution on-ramp),
+ * stamped into dev_autopilot_executions.metadata by the caller that queued
+ * the execution — never set by the autonomous self-healing path, so its
+ * own executions are provably unaffected.
+ *
+ * Deliberately permissive about malformed input: this reads untrusted-ish
+ * jsonb, and a bad shape must fall through to normal policy-driven
+ * behavior, never crash the execution.
+ */
+export function extractLlmOnRampOverride(
+  metadata: Record<string, unknown> | null | undefined
+): { provider: LLMProvider; model: string } | undefined {
+  const raw = metadata?.llm_on_ramp_override;
+  if (!raw || typeof raw !== 'object') return undefined;
+  const provider = (raw as Record<string, unknown>).provider;
+  const model = (raw as Record<string, unknown>).model;
+  if (typeof provider !== 'string' || typeof model !== 'string' || model.length === 0) {
+    return undefined;
+  }
+  const KNOWN_PROVIDERS: LLMProvider[] = ['anthropic', 'openai', 'vertex', 'deepseek', 'claude_subscription', 'bedrock'];
+  if (!KNOWN_PROVIDERS.includes(provider as LLMProvider)) return undefined;
+  return { provider: provider as LLMProvider, model };
+}
+
+// =============================================================================
+// Supabase helpers
+// =============================================================================
+
+export interface SupaConfig { url: string; key: string; }
+// VTID-02703: exported so the Cloud Run Job entry point reuses the same
+// SupaConfig + env-read logic without duplication.
+export function getSupabase(): SupaConfig | null {
+  const url = process.env.SUPABASE_URL;
+  const key = process.env.SUPABASE_SERVICE_ROLE;
+  if (!url || !key) return null;
+  return { url, key };
+}
+
+// VTID-03820: exported so operator-execution-onramp.ts can reuse the same
+// REST helper instead of duplicating it.
+export async function supa<T>(
+  s: SupaConfig,
+  path: string,
+  init: RequestInit = {},
+): Promise<{ ok: boolean; data?: T; status: number; error?: string }> {
+  try {
+    const res = await fetch(`${s.url}${path}`, {
+      ...init,
+      headers: {
+        apikey: s.key,
+        Authorization: `Bearer ${s.key}`,
+        'Content-Type': 'application/json',
+        Prefer: 'return=representation',
+        ...(init.headers || {}),
+      },
+    });
+    if (!res.ok) return { ok: false, status: res.status, error: `${res.status}: ${await res.text()}` };
+    if (res.status === 204 || res.status === 201) {
+      const text = await res.text();
+      if (!text) return { ok: true, status: res.status };
+      try {
+        return { ok: true, status: res.status, data: JSON.parse(text) as T };
+      } catch { return { ok: true, status: res.status }; }
+    }
+    const data = (await res.json()) as T;
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 500, error: String(err) };
+  }
+}
+
+/** VTID-04446: bind the REST helper for the run-lease module (which cannot import this file). */
+export function leaseRest(s: SupaConfig): LeaseRest {
+  return <T,>(path: string, init?: RequestInit) => supa<T>(s, path, init);
+}
+
+// =============================================================================
+// Safety context loader
+// =============================================================================
+
+interface ConfigRow {
+  kill_switch: boolean;
+  daily_budget: number;
+  concurrency_cap: number;
+  cooldown_minutes: number;
+  max_auto_fix_depth: number;
+  allow_scope: string[];
+  deny_scope: string[];
+  // Auto-approve gate for BASELINE scanner findings (dev_autopilot).
+  // Defaults to disabled — opt-in per environment.
+  auto_approve_enabled?: boolean;
+  auto_approve_max_effort?: number;
+  auto_approve_risk_classes?: string[];
+  auto_approve_scanners?: string[];
+  // Auto-approve gate for IMPACT rule findings (dev_autopilot_impact).
+  // Independent toggle + allowlist so baseline and impact auto-approval
+  // evolve separately. See Command Hub → Autopilot → Auto-Approve.
+  auto_approve_impact_enabled?: boolean;
+  auto_approve_impact_rules?: string[];
+  // VTID-05146 (C2): temporary never-touch globs while people work an area.
+  frozen_scope?: unknown;
+}
+
+async function loadConfig(s: SupaConfig): Promise<ConfigRow | null> {
+  const r = await supa<ConfigRow[]>(s, `/rest/v1/dev_autopilot_config?id=eq.1&limit=1`);
+  if (!r.ok || !r.data || r.data.length === 0) return null;
+  return r.data[0];
+}
+
+/**
+ * Upsert worker validation failures into watcher_lessons (VTID-03461;
+ * was dev_autopilot_prompt_learnings, migrated and dropped).
+ * Scoped by the finding's scanner so retrieval can target lessons from the
+ * same scanner class (e.g. only pull missing-tests lessons for missing-tests
+ * findings).
+ *
+ * The scanner is looked up once from the finding's spec_snapshot. A null
+ * scanner is allowed (legacy rows without a scanner field still write, just
+ * with scanner IS NULL) — the ON CONFLICT index treats (pattern_type,
+ * pattern_key, NULL) as a distinct bucket.
+ */
+async function persistAttemptFailures(
+  s: SupaConfig,
+  failures: WorkerAttemptFailure[],
+  ctx: { finding_id: string; execution_id?: string },
+): Promise<void> {
+  // Look up the finding's scanner once.
+  const findingR = await supa<Array<{ spec_snapshot: { scanner?: string } | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${ctx.finding_id}&select=spec_snapshot&limit=1`,
+  );
+  const scanner: string | null = findingR.ok && findingR.data && findingR.data[0]?.spec_snapshot?.scanner
+    ? String(findingR.data[0].spec_snapshot.scanner)
+    : null;
+
+  const now = new Date().toISOString();
+  for (const f of failures) {
+    const pattern_type = f.stage === 'tsc'
+      ? 'tsc_error'
+      : f.stage === 'jest'
+        ? 'jest_failure'
+        : f.stage === 'parse' || f.stage === 'apply'
+          ? 'parse_error'
+          : 'validation_other';
+    // VTID-03461: writes watcher_lessons; dev_autopilot_prompt_learnings was
+    // migrated into it and dropped. stage='execute' preserves the old table's
+    // implicit meaning — every row it held was a pre-PR validation failure.
+    // The old flat `scanner` column becomes scope.scanner.
+    const body = {
+      stage: 'execute',
+      pattern_type,
+      pattern_key: f.pattern_key.slice(0, 200),
+      example_message: (f.example_message || '').slice(0, 500),
+      // `lesson` is required (NOT NULL) and is what actually gets injected.
+      // Without a distilled sentence the best available text is the
+      // signature itself — still better prompt material than nothing.
+      lesson: `A previous attempt failed pre-PR validation: ${pattern_type} — ${f.pattern_key}`.slice(0, 500),
+      scope: scanner ? { scanner } : {},
+      source_finding_id: ctx.finding_id,
+      source_execution_id: ctx.execution_id || null,
+      last_seen_at: now,
+    };
+    // PostgREST upsert against the UNIQUE (stage, pattern_type, pattern_key)
+    // index. As before, frequency stays at its default on conflict — the
+    // aggregator counts rows, not the column, so an undercount of duplicates
+    // is acceptable here.
+    await supa(s,
+      `/rest/v1/watcher_lessons?on_conflict=stage,pattern_type,pattern_key`,
+      {
+        method: 'POST',
+        headers: { Prefer: 'resolution=merge-duplicates,return=minimal' },
+        body: JSON.stringify(body),
+      },
+    );
+  }
+}
+
+/**
+ * Load up to 5 recent validation lessons for a scanner. Used by the
+ * execution prompt builder so Claude's output avoids repeating known
+ * traps. Best-effort — returns [] on any DB issue so execute flow never
+ * blocks on this.
+ */
+async function loadExecutionLessons(
+  s: SupaConfig,
+  scanner: string,
+): Promise<ExecutionLesson[]> {
+  const since = new Date(Date.now() - 14 * 24 * 60 * 60 * 1000).toISOString();
+  try {
+    // VTID-03461: reads watcher_lessons (see the write path above). Still
+    // best-effort — the Phase 2 migration's deploy-order safety argument
+    // relies on this returning [] rather than throwing when the table is
+    // momentarily absent on either side of the cutover.
+    const r = await supa<Array<ExecutionLesson & { lesson?: string }>>(
+      s,
+      `/rest/v1/watcher_lessons?scope->>scanner=eq.${encodeURIComponent(scanner)}`
+      + `&stage=in.(execute,any)`
+      + `&status=eq.active`
+      + `&last_seen_at=gte.${since}`
+      + `&order=last_seen_at.desc&limit=5`
+      + `&select=pattern_type,pattern_key,example_message,mitigation_note,lesson`,
+    );
+    if (!r.ok || !Array.isArray(r.data)) return [];
+    // Prefer the distilled imperative sentence over the raw signature; the
+    // existing formatter already favours mitigation_note when set.
+    return r.data.map((l) => ({
+      ...l,
+      mitigation_note: l.mitigation_note || l.lesson || null,
+    }));
+  } catch {
+    return [];
+  }
+}
+
+async function countApprovedToday(s: SupaConfig): Promise<number> {
+  const todayUTC = new Date();
+  todayUTC.setUTCHours(0, 0, 0, 0);
+  const r = await supa<unknown[]>(
+    s,
+    `/rest/v1/dev_autopilot_executions?approved_at=gte.${todayUTC.toISOString()}&select=id`,
+  );
+  return r.ok && Array.isArray(r.data) ? r.data.length : 0;
+}
+
+// VTID-04376: one read for the cap and the post-merge tail bound.
+async function countPipeline(s: SupaConfig): Promise<PipelineCounts> {
+  const r = await supa<Array<{ status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?status=in.(cooling,running,${POST_MERGE_TAIL_STATUSES.join(',')})&select=status`,
+  );
+  return countPipelineStatuses(r.ok && Array.isArray(r.data) ? r.data : []);
+}
+
+// =============================================================================
+// Approval entry point
+// =============================================================================
+
+// VTID-03839: shape check for `ApprovalInput.approved_by`. Any RFC-4122
+// variant/version — Supabase auth ids are v4, but the column accepts any.
+const UUID_STRING_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+export function isUuidString(value: string): boolean {
+  return UUID_STRING_RE.test(value);
+}
+
+export async function approveAutoExecute(input: ApprovalInput): Promise<ApprovalResult> {
+  // VTID-03839: fail loudly, before any DB work, on a non-UUID approver.
+  // `dev_autopilot_executions.approved_by` is a uuid column; a label here
+  // (the operator on-ramp used to pass `operator-chat:<threadId>`) only
+  // surfaced as a Postgres 22P02 on the execution INSERT — after the
+  // finding + plan rows were already written and the safety gate had
+  // already passed. Name the real constraint instead.
+  if (input.approved_by !== undefined && !isUuidString(input.approved_by)) {
+    return {
+      ok: false,
+      error: `approved_by must be a user UUID (dev_autopilot_executions.approved_by is uuid) — got "${input.approved_by}". `
+        + `Pass interactive:true and omit approved_by when the requester is not a user.`,
+    };
+  }
+
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+
+  // 1. Load finding
+  const recR = await supa<Array<{
+    id: string;
+    risk_class: 'low' | 'medium' | 'high' | null;
+    source_type: string;
+    source_ref: string | null;
+    spec_snapshot: Record<string, unknown>;
+    status: string;
+  }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&select=id,risk_class,source_type,source_ref,spec_snapshot,status&limit=1`,
+  );
+  if (!recR.ok || !recR.data) return { ok: false, error: recR.error || 'finding lookup failed' };
+  const rec = recR.data[0];
+  if (!rec) return { ok: false, error: 'finding not found' };
+  // Accept any source_type from the shared executor allowlist
+  // (autopilot-executable-source-types.ts). Reject anything else
+  // (community, system, or future scanner shapes that haven't been
+  // code-reviewed into the allowlist) - UNLESS this call explicitly
+  // opted into the wider, manual-only allowlist (VTID-04108).
+  const sourceTypeOk = input.allowManualSourceTypes
+    ? isManuallyBridgeableSourceType(rec.source_type)
+    : isExecutableSourceType(rec.source_type);
+  if (!sourceTypeOk) {
+    return { ok: false, error: `not an executable source_type (source_type=${rec.source_type})` };
+  }
+  // VTID-02639 defense-in-depth: refuse to re-approve a finding that has
+  // already shipped (status='completed') or been manually closed
+  // (status='rejected'/'snoozed'/'activated'). autoApproveTick() now filters
+  // by status='new' upstream, but a manual call here could still hit a
+  // stale finding_id. Without this guard, the same finding can produce N
+  // duplicate PRs — exactly the failure mode that forced the 2026-04-30
+  // sweep (6 identical admin-notification-categories middleware refactors
+  // closed in one batch).
+  const statusOk = rec.status === 'new'
+    || (input.allowActivatedStatus === true && rec.status === 'activated');
+  if (!statusOk) {
+    return {
+      ok: false,
+      error: `finding status is '${rec.status}' — only 'new' findings can be approved`,
+    };
+  }
+
+  // VTID-AUTOPILOT-PR-FLOOD: refuse to approve a finding that already has
+  // a PR opened by an earlier execution where the PR was never merged.
+  // The pre-existing in-flight check (autoApproveTick line ~2487) only
+  // skips findings whose execution status is in
+  // (cooling,running,ci,merging,deploying,verifying) — it does NOT cover
+  // failed/reverted executions. The executor never closes the GitHub PR
+  // on failure (see reconciler line ~1812 — it only OBSERVES PR state),
+  // so each failed execution leaves a stranded open PR. autoApproveTick
+  // then re-picks the still-status='new' finding, opens another PR, and
+  // the cycle repeats. The 2026-05-07 sweep had to close 530 PRs from
+  // a handful of findings (one had 290 stranded PRs alone) because the
+  // retry cap (5 failures / 24h) wasn't enough to outrun a 30s tick
+  // running for days. This guard makes "PR opened, not merged, prior
+  // execution didn't reach 'completed' or 'self_healed'" a hard block
+  // at approval time. Operator must close/merge the existing PR (which
+  // flips its execution to 'completed' or 'auto_archived') before any
+  // new attempt is approved.
+  const openPrR = await supa<Array<{ id: string; pr_url: string | null; pr_number: number | null; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${input.finding_id}`
+    // VTID-04280: a PR recorded as closed-unmerged no longer blocks.
+    + STRANDED_PR_FILTER
+    + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
+  );
+  if (openPrR.ok && openPrR.data && openPrR.data.length > 0) {
+    const stranded = openPrR.data[0];
+    return {
+      ok: false,
+      error: `finding ${input.finding_id.slice(0, 8)} already has an unmerged PR `
+        + `(${stranded.pr_url || `#${stranded.pr_number}`}) from a prior execution `
+        + `(status=${stranded.status}) — close or merge it before re-approving`,
+    };
+  }
+
+  // VTID-04293: one live execution per finding. The partial unique index
+  // excludes awaiting_approval, and only the baseline autoApproveTick pass
+  // checked for it — the impact pass and the manual approve routes did not,
+  // so a finding held for review was re-approved on the next tick.
+  const inflightR = await supa<Array<{ id: string; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${input.finding_id}`
+    + INFLIGHT_EXECUTION_FILTER
+    + `&select=id,status&limit=1`,
+  );
+  if (!inflightR.ok) {
+    return { ok: false, error: `in-flight execution lookup failed: ${inflightR.error || 'unknown'}` };
+  }
+  if (inflightR.data && inflightR.data.length > 0) {
+    const live = inflightR.data[0];
+    return {
+      ok: false,
+      error: `finding ${input.finding_id.slice(0, 8)} already has execution ${live.id.slice(0, 8)} `
+        + `(status=${live.status}) — decide or finish it before approving another`,
+    };
+  }
+
+  // 2. Load latest plan version
+  const planR = await supa<Array<{ version: number; files_referenced: string[]; plan_markdown: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${input.finding_id}&order=version.desc&limit=1`,
+  );
+  if (!planR.ok || !planR.data || planR.data.length === 0) {
+    return { ok: false, error: 'plan version required — generate a plan before approving' };
+  }
+  const plan = planR.data[0];
+
+  // 3. Load config + stats
+  const cfg = await loadConfig(s);
+  if (!cfg) return { ok: false, error: 'dev_autopilot_config missing' };
+  const approvedToday = await countApprovedToday(s);
+
+  // 4. Evaluate safety gate
+  // Re-extract files_referenced from the stored plan_markdown rather than
+  // trusting the cached column. Plans generated before the extractFilePaths
+  // fix (PR #778) have a dirty files_referenced list that includes prose
+  // noise like `services/gateway/package.json` / `jest.config.ts` / `tsconfig.json`
+  // — those aren't in the plan's "Files to modify" section but got slurped
+  // in by the old fallback scan and then tripped the safety gate's
+  // file_outside_allow_scope rule forever. Re-extracting here makes the fix
+  // retroactive for every existing plan without a regeneration pass.
+  const freshFiles = extractFilePaths(plan.plan_markdown);
+  // VTID-02693: for feedback findings, ALWAYS prefer the stored
+  // files_referenced (= bridge's pre-validated proposed_files) over
+  // freshFiles. The planner's plan_markdown sometimes lists only the
+  // source file and omits the co-located test file in its "Files to
+  // modify" section even though Devon's spec has both — that misses the
+  // tests_missing safety check. proposed_files is the authoritative list
+  // because the bridge already validated it against allow_scope.
+  const isFeedbackFinding = rec.source_type === 'dev_autopilot'
+    && typeof rec.source_ref === 'string'
+    && rec.source_ref.startsWith('feedback_ticket:');
+  let files = isFeedbackFinding && (plan.files_referenced || []).length > 0
+    ? (plan.files_referenced || []).map(String)
+    : (freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []).map(String));
+  // VTID-02687: fallback for stale plan_versions where neither
+  // freshFiles nor files_referenced has anything — read proposed_files
+  // off the recommendation directly.
+  if (files.length === 0) {
+    const proposed = (rec.spec_snapshot as { proposed_files?: unknown })?.proposed_files;
+    if (Array.isArray(proposed)) {
+      files = proposed.filter((p): p is string => typeof p === 'string' && p.includes('/'));
+    }
+  }
+  const deletions = extractDeletions(plan.plan_markdown);
+  const safetyPlan: SafetyPlan = {
+    risk_class: (rec.risk_class || 'medium') as 'low' | 'medium' | 'high',
+    files_to_modify: files,
+    files_to_delete: deletions,
+  };
+  // VTID-02676: feedback-bridged findings bypass the kill_switch only.
+  // All other gate rules still apply.
+  const isFeedbackLane = rec.source_type === 'dev_autopilot'
+    && typeof rec.source_ref === 'string'
+    && rec.source_ref.startsWith('feedback_ticket:');
+
+  // Pass the scanner identifier so the safety gate can apply per-scanner
+  // scope overrides (e.g. npm-audit-scanner-v1 → allow package.json).
+  // See dev-autopilot-safety.ts:applyScannerOverrides for the full list.
+  const scannerForSafety = (rec.spec_snapshot as { scanner?: string } | null)?.scanner;
+  // VTID-04132: an open-ended operator-onramp plan (spec_snapshot.intake ===
+  // 'open_ended', stamped by operator-execution-onramp.ts's triggerOperatorExecution)
+  // has no authoritative file list yet — the agent discovers files and the
+  // safety gate's scope/tests_missing rules are re-checked post-hoc against
+  // its real diff (agent-scope.ts). Evaluating those two rules pre-flight
+  // against extractFilePaths()'s incidental scan of raw prose rejected real
+  // requests before the agent ever ran (confirmed live 2026-09-20).
+  const isOpenEndedPlan = (rec.spec_snapshot as { intake?: string } | null)?.intake === 'open_ended';
+  const safetyCtx: SafetyContext = {
+    config: {
+      kill_switch: cfg.kill_switch,
+      daily_budget: cfg.daily_budget,
+      concurrency_cap: cfg.concurrency_cap,
+      max_auto_fix_depth: cfg.max_auto_fix_depth,
+      allow_scope: cfg.allow_scope,
+      deny_scope: cfg.deny_scope,
+    },
+    approved_today: approvedToday,
+    auto_fix_depth: 0,
+    is_feedback_lane: isFeedbackLane,
+    scanner: scannerForSafety,
+    is_open_ended: isOpenEndedPlan,
+    // VTID-04790: new test files named e.g. "...-auth-...test.ts" are exempt
+    // from name-only deny rules; existence is checked on the base branch.
+    new_files: isOpenEndedPlan ? [] : await confirmNewFiles(files, cfg.deny_scope),
+  };
+  // VTID-05146 (C2): a plan that touches frozen_scope is never approved —
+  // people are working there. (An open-ended plan has no file list yet; the
+  // merge-time check holds its PR instead.) Not snoozed: the freeze is
+  // temporary, and the finding is approvable again once it is lifted.
+  const frozen = isOpenEndedPlan ? [] : frozenHits(files, cfg.frozen_scope);
+  if (frozen.length > 0) {
+    console.log(`${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] plan touches frozen_scope (${frozen.join(', ')}); not approved`);
+    return { ok: false, error: `plan touches frozen_scope: ${frozen.join(', ')} (dev_autopilot_config.frozen_scope — people are working there)` };
+  }
+  const decision = evaluateSafetyGate(safetyPlan, safetyCtx);
+  if (!decision.ok) {
+    // Surface safety-gate rejections on the Self-Healing screen so the
+    // operator sees WHY the autopilot didn't proceed (allow_scope mismatch,
+    // deny_scope hit, file count exceeds cap, etc.). Without this, blocked
+    // approvals rot in silence — exactly what we just fixed for plan-gen.
+    await writeAutopilotFailure(s, {
+      stage: 'approve_safety',
+      vtid: `VTID-DA-FIND-${input.finding_id.slice(0, 8)}`,
+      endpoint: rec.spec_snapshot?.file_path
+        ? String(rec.spec_snapshot.file_path)
+        : 'autopilot.approve_safety',
+      failure_class: 'dev_autopilot_safety_gate_blocked',
+      confidence: 0,
+      diagnosis: {
+        summary: `Safety gate blocked approval: ${decision.violations?.map((v: { rule?: string; message?: string }) => v.rule || v.message).join(', ') || 'unknown reason'}`,
+        finding_id: input.finding_id,
+        approved_by: input.approved_by || null,
+        risk_class: rec.risk_class,
+        scanner: rec.spec_snapshot?.scanner,
+        file_path: rec.spec_snapshot?.file_path,
+        violations: decision.violations || [],
+        files_to_modify: files,
+        files_to_delete: deletions,
+      },
+      outcome: 'escalated',
+      attempt_number: 1,
+    });
+    // VTID-AUTOPILOT-SAFETY-SPIN: when called from autoApproveTick (no
+    // approved_by), snooze the recommendation for 7 days so the picker
+    // doesn't re-evaluate it on every 30s tick. Without this, a blocked
+    // finding generates ~120 safety-gate-eval cycles per hour AND ~120
+    // self_healing_log escalation rows — 90k rows/day of pure noise per
+    // blocked finding. The 7d snooze gives the operator a week to either
+    // regenerate the plan or unsnooze; after that, autoApproveTick re-
+    // evaluates (in case the plan or scope policy changed in the
+    // meantime). Human-approved calls (approved_by present) skip this:
+    // the human sees the violations in the API response and decides.
+    // Feedback findings also skip — they get human triage attention.
+    // VTID-03839: an interactive caller (operator on-ramp) is waiting on
+    // this rejection synchronously — it is not an unattended tick either.
+    const isAutoApprove = !input.approved_by && !input.interactive;
+    if (isAutoApprove && !isFeedbackLane) {
+      const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+      const violationSummary = (decision.violations || [])
+        .map((v: { rule?: string; message?: string }) => v.rule || v.message)
+        .filter(Boolean)
+        .slice(0, 3)
+        .join('; ');
+      await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${input.finding_id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'snoozed',
+            snoozed_until: snoozedUntil,
+            updated_at: new Date().toISOString(),
+          }),
+        },
+      );
+      console.log(
+        `${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] safety gate blocked auto-approve — snoozed 7d (${violationSummary})`,
+      );
+    }
+    return { ok: false, decision, error: 'safety gate blocked approval' };
+  }
+
+  // 5. Create execution row (status=cooling, execute_after = now + cooldown)
+  const now = new Date();
+  const executeAfter = new Date(now.getTime() + cfg.cooldown_minutes * 60 * 1000);
+  const execId = randomUUID();
+  const ins = await supa(s, `/rest/v1/dev_autopilot_executions`, {
+    method: 'POST',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      id: execId,
+      finding_id: input.finding_id,
+      plan_version: plan.version,
+      status: 'cooling',
+      approved_by: input.approved_by || null,
+      approved_at: now.toISOString(),
+      execute_after: executeAfter.toISOString(),
+      auto_fix_depth: 0,
+    }),
+  });
+  if (!ins.ok) {
+    // VTID-AUTOPILOT-RACE: the partial unique index
+    // `dev_autopilot_executions_finding_inflight_uniq` rejects a second
+    // concurrent INSERT for a finding that already has an inflight exec.
+    // PostgREST surfaces this as HTTP 409 + Postgres SQLSTATE 23505 in
+    // the body. Treat it as a benign skip — another gateway instance got
+    // there first; its exec is already cooling/running for this finding.
+    // Without this, every Cloud Run multi-instance race produces a "execution
+    // insert failed" autoApproveTick warning AND a stranded inflight row in
+    // the loser's view, even though the winner is already making progress.
+    if (ins.status === 409 && /23505|finding_inflight_uniq/.test(ins.error || '')) {
+      console.log(
+        `${LOG_PREFIX} [${input.finding_id.slice(0, 8)}] inflight-unique violation — another instance picked first, skipping`,
+      );
+      return { ok: false, error: 'inflight_unique_skip' };
+    }
+    return { ok: false, error: `execution insert failed: ${ins.error}` };
+  }
+
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.approved',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: `Execution ${execId.slice(0, 8)} approved — cooldown until ${executeAfter.toISOString()}`,
+    payload: {
+      execution_id: execId,
+      finding_id: input.finding_id,
+      plan_version: plan.version,
+      execute_after: executeAfter.toISOString(),
+    },
+  });
+
+  // Outcomes substrate: one row per decision. approved_by present → human
+  // approval; absent → auto-exec via autoApproveTick. exec_outcome is
+  // backfilled later when the worker reports completion/failure.
+  await recordOutcome({
+    finding_id: input.finding_id,
+    // VTID-03839: an interactive request is a human decision even when no
+    // user UUID is available for approver_user_id.
+    decision: input.approved_by || input.interactive ? 'approved' : 'auto_exec',
+    approver_user_id: input.approved_by || null,
+  });
+
+  return {
+    ok: true,
+    decision,
+    execution: {
+      id: execId,
+      finding_id: input.finding_id,
+      plan_version: plan.version,
+      status: 'cooling',
+      approved_by: input.approved_by,
+      approved_at: now.toISOString(),
+      execute_after: executeAfter.toISOString(),
+      auto_fix_depth: 0,
+    },
+  };
+}
+
+// =============================================================================
+// Bridge: operator-driven activation → execution row
+// =============================================================================
+//
+// When a user clicks "Activate" on a dev_autopilot* recommendation in the
+// Command Hub Autopilot popup, the activate route writes a vtid_ledger row
+// and kicks this bridge fire-and-forget. We:
+//   1. Generate a plan if none exists yet (dev_autopilot findings always
+//      have one eventually via lazyPlanTick, but the operator just said
+//      "go" — don't make them wait for the next 30s tick).
+//   2. Skip if an in-flight execution already exists (idempotent — a
+//      double-click or the reaper tick won't double-enqueue).
+//   3. Call approveAutoExecute + immediately patch execute_after to NOW
+//      so the next backgroundExecutorTick picks it up without a cooldown
+//      wait. The cooldown exists to give the operator a chance to cancel
+//      auto-approved findings; an explicit Activate click already IS the
+//      operator's go-ahead.
+//
+// Returns a discriminated result so the caller can log success/failure but
+// the activate-route response itself isn't gated on this — it's all
+// fire-and-forget. The reaper tick later catches any failures here and
+// retries them.
+export async function bridgeActivationToExecution(
+  findingId: string,
+  approvedBy: string | null = null,
+): Promise<{ ok: boolean; execution_id?: string; error?: string; skipped?: string; decision?: unknown }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+
+  // 1. Verify this source_type is in the MANUAL activation allowlist
+  //    (VTID-04108) — wider than the executor's own autonomous-polling
+  //    allowlist (isExecutableSourceType), since this function is only
+  //    ever reached via a human clicking Activate on one named
+  //    recommendation, never via autoApproveTick's autonomous loop.
+  const recR = await supa<Array<{ id: string; source_type: string; status: string }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&select=id,source_type,status&limit=1`,
+  );
+  if (!recR.ok || !recR.data || !recR.data[0]) {
+    return { ok: false, error: 'finding lookup failed' };
+  }
+  const rec = recR.data[0];
+  if (!isManuallyBridgeableSourceType(rec.source_type)) {
+    return { ok: false, skipped: `source_type=${rec.source_type} not bridgeable` };
+  }
+
+  // 2. Skip if any in-flight execution already exists for this finding.
+  //    Statuses we consider in-flight: cooling, running, ci, merging,
+  //    deploying, verifying. Terminal states (completed, failed, *) are fine
+  //    to re-enqueue from — but only the reaper does that, never this path
+  //    (operator activation should be a no-op on re-click).
+  const inflightR = await supa<Array<{ id: string; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}` +
+    // VTID-04029: a row waiting for a human decision still owns its finding.
+    `&status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)` +
+    `&select=id,status&limit=1`,
+  );
+  if (inflightR.ok && inflightR.data && inflightR.data[0]) {
+    return { ok: true, execution_id: inflightR.data[0].id, skipped: `existing ${inflightR.data[0].status} execution` };
+  }
+
+  // 3. Generate plan if none exists. lazyPlanTick would do this within 30s
+  //    but the operator clicked Activate — we owe them a faster path.
+  const planR = await supa<Array<{ version: number }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&select=version&limit=1`,
+  );
+  if (!planR.ok || !planR.data || planR.data.length === 0) {
+    const planResult = await generatePlanVersion(findingId);
+    if (!planResult.ok) {
+      return { ok: false, error: `plan generation failed: ${planResult.error}` };
+    }
+  }
+
+  // 4. Approve. approveAutoExecute creates the execution row with
+  //    execute_after = now + cooldown_minutes; we immediately patch
+  //    execute_after back to now so the next tick claims it.
+  const approval = await approveAutoExecute({
+    finding_id: findingId,
+    approved_by: approvedBy || undefined,
+    // VTID-04108: this is the one caller allowed to activate
+    // community/health recommendations — see isManuallyBridgeableSourceType's
+    // own doc comment for why this must never be set from an autonomous path.
+    allowManualSourceTypes: true,
+    // VTID-04657: the activate RPC has already set status='activated'.
+    allowActivatedStatus: true,
+  });
+  if (!approval.ok || !approval.execution) {
+    // VTID-02669: surface decision.violations[] so the caller (and the UI)
+    // can show exactly which gate rule blocked. Previously this swallowed
+    // the array and only returned a generic message.
+    return {
+      ok: false,
+      error: approval.error || 'approval failed',
+      decision: approval.decision,
+    };
+  }
+  const execId = approval.execution.id;
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ execute_after: new Date().toISOString() }),
+  });
+
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.bridged',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: `Operator activation bridged finding ${findingId.slice(0, 8)} → execution ${execId.slice(0, 8)} (cooldown skipped)`,
+    // VTID-04108: source_type added so this event doubles as the durable,
+    // queryable activation-audit trail for community/health activations
+    // (oasis_events, not the mismatched autopilot_actions table — see
+    // this VTID's acceptance doc).
+    payload: { execution_id: execId, finding_id: findingId, approved_by: approvedBy, source: 'operator_activate', source_type: rec.source_type },
+  });
+
+  return { ok: true, execution_id: execId };
+}
+
+/** Extract "delete" intent from the plan markdown — best-effort heuristic.
+ *  Looks for bullet lines like "- delete services/.../foo.ts" in the Files
+ *  section. Used by the safety gate to allow dead-code deletions without a
+ *  test-file addition. */
+export function extractDeletions(markdown: string): string[] {
+  const out = new Set<string>();
+  const deleteLinePattern = /(?:delete|remove|drop)\s+[`]?((?:services|supabase|scripts|\.github|specs|src)\/[a-zA-Z0-9_./\-]+\.(?:ts|tsx|js|jsx|sql|yml|yaml|json|md))[`]?/gi;
+  for (const m of markdown.matchAll(deleteLinePattern)) {
+    out.add(m[1]);
+  }
+  return Array.from(out);
+}
+
+// =============================================================================
+// VTID-02641: plan-vs-diff coverage validator
+// =============================================================================
+
+/**
+ * Minimum fraction of the plan's files the executor diff must touch before
+ * we consider the diff "honest." Below this, the executor wandered off the
+ * plan and we'd rather fail loudly than ship dead code.
+ *
+ * 0.6 picked deliberately:
+ *   - 5/5  -> 1.00  pass
+ *   - 4/5  -> 0.80  pass
+ *   - 3/5  -> 0.60  pass (skip-test-file class)
+ *   - 2/5  -> 0.40  fail
+ *   - 1/4  -> 0.25  fail (PR #1102: 4-file plan, 1-file diff)
+ */
+const PLAN_DIFF_COVERAGE_THRESHOLD = 0.6;
+
+export interface PlanDiffCoverage {
+  ok: boolean;
+  coverage: number;
+  planCount: number;
+  coveredCount: number;
+  missing: string[];
+}
+
+/**
+ * Pure function: given the plan's files_referenced and the executor diff's
+ * file paths, decide whether enough of the plan was actually written.
+ *
+ * Returns ok=true when:
+ *   - the plan listed 0 files (nothing to validate; defer to the existing
+ *     "executor emitted zero files" check upstream); or
+ *   - covered/plan >= threshold.
+ *
+ * Otherwise returns ok=false with the missing-file list so the caller can
+ * surface a useful error to self-healing.
+ */
+export function validatePlanDiffCoverage(
+  planFiles: string[],
+  diffFiles: string[],
+  threshold: number = PLAN_DIFF_COVERAGE_THRESHOLD,
+): PlanDiffCoverage {
+  if (!planFiles || planFiles.length === 0) {
+    return { ok: true, coverage: 1, planCount: 0, coveredCount: 0, missing: [] };
+  }
+  const diffSet = new Set(diffFiles);
+  const covered = planFiles.filter(p => diffSet.has(p));
+  const missing = planFiles.filter(p => !diffSet.has(p));
+  const coverage = covered.length / planFiles.length;
+  return {
+    ok: coverage >= threshold,
+    coverage,
+    planCount: planFiles.length,
+    coveredCount: covered.length,
+    missing,
+  };
+}
+
+// =============================================================================
+// Cancel (during cooldown only)
+// =============================================================================
+
+/**
+ * VTID-04032: record the dispatched ECS task on the row (metadata merged,
+ * never replaced — VTID-04011) so a later cancel can stop it.
+ */
+export async function recordDispatchedTask(s: SupaConfig, execId: string, taskArn: string): Promise<void> {
+  const cur = await supa<Array<{ metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=metadata&limit=1`,
+  );
+  const existing = cur.ok && cur.data && cur.data[0] ? cur.data[0].metadata || {} : {};
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ metadata: { ...existing, ecs_task_arn: taskArn, dispatched_at: new Date().toISOString() } }),
+  });
+}
+
+/** VTID-04032: what a cancel may act on. */
+export const CANCELLABLE_STATUSES = ['cooling', 'running'] as const;
+
+/**
+ * Cancel an execution. `cooling` rows are cancelled as before. VTID-04032:
+ * a `running` row is cancelled too — marked `cancelled` right away (so the
+ * agent's own result can never land as `failed`/self-heal afterwards, see
+ * applyExecutionResult), its ECS task stopped best effort when the row
+ * remembers one, and the agent itself stops at its next turn boundary
+ * because its heartbeat reads the row back (agent-heartbeat.ts).
+ */
+export async function cancelExecution(
+  executionId: string,
+  opts: { actor?: string; reason?: string; stopTask?: (taskArn: string, reason: string) => Promise<{ ok: boolean; error?: string }> } = {},
+): Promise<{ ok: boolean; error?: string; was?: string; ecs_task_stopped?: boolean; ecs_task_error?: string }> {
+  const s = getSupabase();
+  if (!s) return { ok: false, error: 'Supabase not configured' };
+  const actor = (opts.actor || 'gateway-internal').slice(0, 200);
+  const reason = (opts.reason || '').trim().slice(0, 500) || null;
+  const cur = await supa<Array<{ id: string; status: string; metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=id,status,metadata&limit=1`,
+  );
+  const row = cur.ok && cur.data && cur.data[0] ? cur.data[0] : null;
+  if (!row) return { ok: false, error: 'execution not found' };
+  if (!(CANCELLABLE_STATUSES as readonly string[]).includes(row.status)) {
+    return { ok: false, error: `execution is ${row.status}, only ${CANCELLABLE_STATUSES.join('/')} can be cancelled` };
+  }
+  const now = new Date().toISOString();
+  const was = row.status;
+  const taskArn = typeof row.metadata?.ecs_task_arn === 'string' ? (row.metadata.ecs_task_arn as string) : null;
+
+  // Running: stop the ECS task first (best effort) so the decision and its
+  // outcome land on the row in one PATCH.
+  let ecsStopped: boolean | undefined;
+  let ecsError: string | undefined;
+  if (was === 'running' && taskArn) {
+    const stop = await (opts.stopTask ?? stopExecutorTaskAws)(taskArn, `cancelled by ${actor}${reason ? `: ${reason}` : ''}`);
+    ecsStopped = stop.ok;
+    ecsError = stop.ok ? undefined : (stop.error || 'unknown').slice(0, 300);
+    if (!stop.ok) console.warn(`${LOG_PREFIX} cancel ${executionId.slice(0, 8)}: StopTask failed (${ecsError}) — relying on the agent's own cancel read-back`);
+  }
+
+  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&status=eq.${was}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      status: 'cancelled',
+      cancelled_at: now,
+      metadata: {
+        ...(row.metadata || {}),
+        cancelled: {
+          by: actor, at: now, reason, was,
+          ...(taskArn ? { ecs_task_arn: taskArn, ecs_task_stopped: ecsStopped === true, ...(ecsError ? { ecs_task_error: ecsError } : {}) } : {}),
+        },
+      },
+    }),
+  });
+  if (!r.ok) return { ok: false, error: r.error };
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.cancelled',
+    source: 'dev-autopilot',
+    status: 'info',
+    message: was === 'running'
+      ? `Execution ${executionId.slice(0, 8)} cancelled by ${actor} while running${taskArn ? (ecsStopped ? ' — ECS task stopped' : ' — ECS task NOT stopped, agent stops on its next heartbeat') : ''}`
+      : `Execution ${executionId.slice(0, 8)} cancelled during cooldown`,
+    payload: { execution_id: executionId, actor, reason, was, ecs_task_arn: taskArn, ecs_task_stopped: ecsStopped ?? null },
+  });
+  // VTID-03895: this PATCHes dev_autopilot_executions directly rather than
+  // through patchExecution() above, so it needs its own call to pick up the
+  // shared terminal side effects (vtid_ledger terminalization included).
+  applyExecTerminalSideEffects(s, executionId, 'cancelled');
+  return { ok: true, was, ...(taskArn ? { ecs_task_stopped: ecsStopped === true, ...(ecsError ? { ecs_task_error: ecsError } : {}) } : {}) };
+}
+
+// =============================================================================
+// GitHub Contents + Refs helpers — write files, create branches, open PRs
+// =============================================================================
+
+function getGithubToken(): string {
+  return process.env.DEV_AUTOPILOT_GITHUB_TOKEN
+      || process.env.GITHUB_SAFE_MERGE_TOKEN
+      || process.env.GITHUB_TOKEN
+      || '';
+}
+
+async function githubRequest<T>(
+  path: string,
+  init: { method?: string; body?: unknown; accept?: string } = {},
+): Promise<{ ok: boolean; status: number; data?: T; error?: string }> {
+  const token = getGithubToken();
+  if (!token) return { ok: false, status: 0, error: 'GITHUB_SAFE_MERGE_TOKEN not set' };
+  try {
+    const res = await fetch(`https://api.github.com${path}`, {
+      method: init.method || 'GET',
+      headers: {
+        Authorization: `Bearer ${token}`,
+        Accept: init.accept || 'application/vnd.github+json',
+        'Content-Type': 'application/json',
+        'User-Agent': 'vitana-dev-autopilot-executor',
+        'X-GitHub-Api-Version': '2022-11-28',
+      },
+      body: init.body != null ? JSON.stringify(init.body) : undefined,
+    });
+    if (!res.ok) {
+      const body = (await res.text()).slice(0, 500);
+      return { ok: false, status: res.status, error: `${res.status}: ${body}` };
+    }
+    // 204 No Content responses have no body
+    if (res.status === 204) return { ok: true, status: 204 };
+    const data = (await res.json()) as T;
+    return { ok: true, status: res.status, data };
+  } catch (err) {
+    return { ok: false, status: 0, error: String(err) };
+  }
+}
+
+async function fetchFileContent(
+  path: string,
+  ref: string,
+): Promise<{ exists: boolean; content?: string; sha?: string; error?: string }> {
+  const encoded = path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  const r = await githubRequest<{ content: string; encoding: string; sha: string }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}?ref=${encodeURIComponent(ref)}`,
+  );
+  if (!r.ok) {
+    if (r.status === 404) return { exists: false };
+    return { exists: false, error: r.error };
+  }
+  if (!r.data) return { exists: false };
+  // GitHub returns base64-encoded content
+  const decoded = Buffer.from(r.data.content || '', r.data.encoding as BufferEncoding || 'base64').toString('utf-8');
+  return { exists: true, content: decoded, sha: r.data.sha };
+}
+
+/**
+ * VTID-04790: of `paths`, the test files caught only by name-only deny rules
+ * that do NOT exist on the base branch yet. Fails closed: a lookup error
+ * counts as "exists", so the deny rule keeps applying.
+ */
+export async function confirmNewFiles(
+  paths: string[],
+  deny: string[],
+  lookup: (path: string) => Promise<{ exists: boolean; error?: string }> = (p) => fetchFileContent(p, GITHUB_BASE_BRANCH),
+): Promise<string[]> {
+  const out: string[] = [];
+  for (const p of newFileCandidates(paths, deny)) {
+    try {
+      const r = await lookup(p);
+      if (!r.exists && !r.error) out.push(p);
+    } catch { /* fail closed */ }
+  }
+  return out;
+}
+
+async function getBranchSha(branch: string): Promise<{ ok: boolean; sha?: string; error?: string }> {
+  const r = await githubRequest<{ object: { sha: string } }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/ref/heads/${encodeURIComponent(branch)}`,
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error || 'ref lookup failed' };
+  return { ok: true, sha: r.data.object.sha };
+}
+
+async function createBranch(branch: string, baseBranch: string): Promise<{ ok: boolean; error?: string }> {
+  const base = await getBranchSha(baseBranch);
+  if (!base.ok || !base.sha) return { ok: false, error: `base branch lookup: ${base.error}` };
+
+  // If the branch already exists (prior failed run), delete it first so we get
+  // a clean tree. Safe because these branches are always autopilot-prefixed.
+  const existing = await getBranchSha(branch);
+  if (existing.ok) {
+    const del = await githubRequest(
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs/heads/${encodeURIComponent(branch)}`,
+      { method: 'DELETE' },
+    );
+    if (!del.ok) return { ok: false, error: `could not delete stale branch ${branch}: ${del.error}` };
+  }
+
+  const create = await githubRequest(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/git/refs`,
+    { method: 'POST', body: { ref: `refs/heads/${branch}`, sha: base.sha } },
+  );
+  if (!create.ok) return { ok: false, error: `create branch ${branch}: ${create.error}` };
+  return { ok: true };
+}
+
+async function putFileToBranch(
+  branch: string,
+  path: string,
+  content: string,
+  message: string,
+  existingSha?: string,
+): Promise<{ ok: boolean; error?: string }> {
+  const encoded = path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+  // GitHub's PUT contents API needs base64-encoded content.
+  const base64 = Buffer.from(content, 'utf-8').toString('base64');
+  const body: Record<string, unknown> = {
+    message,
+    content: base64,
+    branch,
+  };
+  if (existingSha) body.sha = existingSha;
+  const r = await githubRequest(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}`,
+    { method: 'PUT', body },
+  );
+  if (!r.ok) return { ok: false, error: r.error };
+  return { ok: true };
+}
+
+async function openPullRequest(
+  branch: string,
+  baseBranch: string,
+  title: string,
+  body: string,
+): Promise<{ ok: boolean; url?: string; number?: number; error?: string }> {
+  const r = await githubRequest<{ html_url: string; number: number }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls`,
+    {
+      method: 'POST',
+      body: {
+        title: title.slice(0, 240),
+        head: branch,
+        base: baseBranch,
+        body,
+        maintainer_can_modify: true,
+        draft: false,
+      },
+    },
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error };
+  return { ok: true, url: r.data.html_url, number: r.data.number };
+}
+
+// VTID-AUTOPILOT-NOEMPTY: count files that actually changed on `branch`
+// vs `baseBranch`. The model occasionally emits a <<<FILE …>>> block whose
+// content is byte-identical to the file already on main — `putFileToBranch`
+// then writes a no-op commit (parent tree == new tree) and `openPullRequest`
+// happily produces an empty PR that passes every CI check vacuously
+// (tsc on a 0-line diff is trivially green, naming has no new files,
+// tests don't run on unchanged code). Branch protection's `validate` is
+// satisfied, the v3 merge gate fires, and the autopilot reports "merged"
+// while shipping nothing. PRs #1626, #1630, #1634, #1635 (4 of 7 in the
+// 2026-05-04 14:48 drain) were no-op merges of this kind. Adding this guard
+// pre-PR means the bridge sees a real failure and can feed back to the
+// LLM as "your output produced no actual diff — review the spec or surface
+// the gap" instead of silently shipping nothing.
+async function compareBranchFiles(
+  branch: string,
+  baseBranch: string,
+): Promise<{ ok: boolean; changedFiles?: number; error?: string }> {
+  const r = await githubRequest<{ files?: Array<unknown>; total_commits?: number }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/compare/${encodeURIComponent(baseBranch)}...${encodeURIComponent(branch)}`,
+  );
+  if (!r.ok || !r.data) return { ok: false, error: r.error || 'compare failed' };
+  return { ok: true, changedFiles: (r.data.files || []).length };
+}
+
+// =============================================================================
+// Routed LLM call — ask the configured provider to produce the file contents
+// =============================================================================
+
+interface ExecutionLlmOutput {
+  files: Array<{ path: string; action: 'create' | 'modify' | 'delete'; content?: string }>;
+  pr_title: string;
+  pr_body: string;
+}
+
+// Delimiter-based format. Before: we asked the model to emit JSON with source
+// code inside string values. That forced correct escaping of every quote,
+// backslash, and newline across thousands of characters of TypeScript. In
+// practice the model occasionally emitted unescaped characters that broke
+// JSON.parse with errors like "SyntaxError: Expected ',' or ']' after array
+// element in JSON at position 46866" (execution 265fbf0f). Source code
+// inside verbatim delimiter blocks sidesteps all of that.
+function parseExecutionOutput(raw: string): ExecutionLlmOutput | { error: string } {
+  const text = raw.trim();
+
+  // pr_title: single line
+  const titleMatch = text.match(/<<<PR_TITLE>>>\s*([\s\S]*?)\s*<<<END>>>/);
+  if (!titleMatch) return { error: 'Missing <<<PR_TITLE>>>…<<<END>>> block' };
+  const pr_title = titleMatch[1].trim();
+
+  // pr_body: multi-line markdown
+  const bodyMatch = text.match(/<<<PR_BODY>>>\s*([\s\S]*?)\s*<<<END>>>/);
+  if (!bodyMatch) return { error: 'Missing <<<PR_BODY>>>…<<<END>>> block' };
+  const pr_body = bodyMatch[1];
+
+  // files: each block wraps raw content. Match header, then consume until the
+  // NEAREST matching <<<END>>> that's followed by a recognised boundary
+  // (another <<<FILE…>>> header, end of text, or whitespace to EOF).
+  // Using non-greedy match is fine for clean files, but source may contain
+  // "<<<END>>>" as a literal string; guard by requiring it at start of line.
+  const fileRe = /<<<FILE\s+(create|modify|delete)\s+([^\s>]+)\s*>>>\s*\r?\n([\s\S]*?)\r?\n<<<END>>>/g;
+  const files: ExecutionLlmOutput['files'] = [];
+  let m: RegExpExecArray | null;
+  while ((m = fileRe.exec(text)) !== null) {
+    const action = m[1] as 'create' | 'modify' | 'delete';
+    const path = m[2].trim();
+    const content = action === 'delete' ? undefined : m[3];
+    files.push({ path, action, content });
+  }
+  if (files.length === 0) {
+    return { error: 'No <<<FILE …>>>…<<<END>>> blocks found' };
+  }
+
+  // VTID-02652 — Check 1: detect truncated output. Count every FILE header
+  // (regardless of whether it has a closing <<<END>>>) and compare to the
+  // count of complete blocks we consumed above. If the model started a
+  // FILE block and then ran out of MESSAGES_MAX_TOKENS before emitting
+  // <<<END>>>, the regex above silently skipped it and the worker would
+  // open a PR claiming changes that aren't in the diff. PR #1102 was the
+  // first observed example: PR_BODY listed 5 files, output truncated
+  // mid-second-file, parser returned 1 block, PR opened with placeholder
+  // code + a body that lied about wiring it up everywhere.
+  const headerRe = /<<<FILE\s+(?:create|modify|delete)\s+\S+\s*>>>/g;
+  const headerCount = (text.match(headerRe) || []).length;
+  if (headerCount !== files.length) {
+    return {
+      error:
+        `Truncated output: ${headerCount} <<<FILE …>>> headers found but only ${files.length} ` +
+        `closed blocks. The model likely hit its token budget mid-file. Reject this attempt — ` +
+        `the worker's PR-opener would otherwise file a PR whose body promises work the diff doesn't deliver.`,
+    };
+  }
+
+  // VTID-02652 — Check 2: PR_BODY-vs-FILE-blocks consistency. The body
+  // sometimes lists files in a bullet structure; if the model truncated
+  // FILE-block emission OR hallucinated wire-ups, the body promises more
+  // than was emitted. Heuristic: extract path-like tokens (containing '/'
+  // and ending in a known code/data extension) from the body, compare
+  // against the set of paths emitted in FILE blocks. If the body claims
+  // a path that no FILE block touches and we have at least 2 such orphan
+  // claims, reject — the autopilot has lied. We allow up to 1 orphan to
+  // tolerate prose like "similar to the pattern in services/foo.ts".
+  const bodyPathRe = /\b([\w./-]+\.(?:ts|tsx|js|jsx|sql|md|json|yml|yaml))\b/g;
+  const claimedPaths = new Set<string>();
+  let pm: RegExpExecArray | null;
+  while ((pm = bodyPathRe.exec(pr_body)) !== null) {
+    const candidate = pm[1];
+    // Skip pure filenames without a directory — too generic to attribute.
+    if (!candidate.includes('/')) continue;
+    claimedPaths.add(candidate);
+  }
+  const emittedPaths = new Set(files.map((f) => f.path));
+  const orphanClaims: string[] = [];
+  for (const claim of claimedPaths) {
+    // Match if any emitted path equals the claim OR ends with it (lets
+    // body shorthand like "approvals.ts" match "src/routes/approvals.ts"
+    // — except we filtered shorthand above by requiring '/').
+    let matched = false;
+    for (const emitted of emittedPaths) {
+      if (emitted === claim || emitted.endsWith(`/${claim}`) || claim.endsWith(`/${emitted}`)) {
+        matched = true;
+        break;
+      }
+    }
+    if (!matched) orphanClaims.push(claim);
+  }
+  if (orphanClaims.length >= 2) {
+    return {
+      error:
+        `PR_BODY claims work on ${orphanClaims.length} files that no FILE block emits: ` +
+        `${orphanClaims.slice(0, 5).join(', ')}. Either the model truncated mid-emission or ` +
+        `hallucinated the wire-up. Reject this attempt rather than opening a PR with a lying body.`,
+    };
+  }
+
+  return { files, pr_title, pr_body };
+}
+
+// Back-compat export name for existing tests / callers. Now points to the
+// new delimiter parser.
+const parseExecutionJson = parseExecutionOutput;
+
+interface FileCtx { path: string; exists: boolean; content?: string; sha?: string }
+
+interface ExecutionLesson {
+  pattern_type: string;
+  pattern_key: string;
+  example_message: string;
+  mitigation_note: string | null;
+}
+
+function buildExecutionPrompt(
+  findingId: string,
+  planVersion: number,
+  planMarkdown: string,
+  fileCtx: FileCtx[],
+  branch: string,
+  lessons?: ExecutionLesson[],
+  /**
+   * VTID-03462: pre-rendered Watcher reminder block. Passed in rather than
+   * fetched here so this builder stays pure and synchronous.
+   */
+  watcherRemindersBlock?: string,
+  /**
+   * VTID-04224 Phase 2: pre-rendered file-scoped dev_agent_memory block
+   * (see dev-agent-memory-file-recall.ts). Passed in, not fetched here, for
+   * the same reason as watcherRemindersBlock -- keeps this builder pure.
+   * '' when the flag is off or nothing was recalled -- byte-identical to
+   * before this phase in that case.
+   */
+  devMemoryBlock?: string,
+): string {
+  const lines: string[] = [];
+  // VTID-02692: LOCKED file list at the very top. The executor LLM (Gemini
+  // 3.1 Pro Preview, Sonnet 4 fallback) was hallucinating Python paths
+  // like services/agents/voice/*.py despite the plan listing the correct
+  // TypeScript files. The validator caught it ("LLM emitted files outside
+  // the plan's files_referenced") but only AFTER the LLM had spent a full
+  // call producing garbage. Hard-anchoring the file list here, BEFORE the
+  // plan, eliminates the ambiguity. Validator still acts as a safety net.
+  const lockedFiles = fileCtx.map(f => f.path);
+  lines.push(
+    `# Developer Autopilot — Execute plan ${findingId} (plan v${planVersion})`,
+    ``,
+    `## Codebase conventions + imports surface`,
+    ``,
+    `READ THIS FIRST. Apply these rules to every file you emit. Common`,
+    `hallucinations the autopilot has made before are listed at the bottom`,
+    `of the conventions block.`,
+    ``,
+    loadAutopilotContext(),
+    ``,
+    `---`,
+    ``,
+    `## LOCKED FILE LIST — DO NOT DEVIATE`,
+    ``,
+    `You MUST emit a \`<<<FILE …>>>\` block for ONLY these exact paths`,
+    `(verbatim — copy them character-for-character):`,
+    ``,
+    ...lockedFiles.map(p => `- \`${p}\``),
+    ``,
+    `Hard rules:`,
+    `- Do NOT emit any file outside this list — the post-LLM validator`,
+    `  rejects the entire diff if it sees a path not in this list, and the`,
+    `  ticket falls into self-heal.`,
+    `- Do NOT translate paths (e.g. .ts ↔ .py). The codebase is TypeScript`,
+    `  + Node only; Python paths are always hallucinations.`,
+    `- If the plan implies an additional file you'd want to touch, do NOT`,
+    `  add it. Instead, narrow the change to fit the locked list, or write`,
+    `  the missing-file note in the PR_BODY for the operator to follow up.`,
+    ``,
+    `You are producing the exact file contents for a new branch \`${branch}\` that`,
+    `will be opened as a pull request. Follow the plan **exactly**. Do not expand`,
+    `scope — only touch the files in the LOCKED list above.`,
+    ``,
+    `## Plan`,
+    ``,
+    planMarkdown.slice(0, 60_000),
+    ``,
+  );
+  // Inject recent validation-failure patterns scoped to the same scanner so
+  // Claude's output avoids repeating known traps (wrong import paths,
+  // jest shape mistakes, parse errors). Best-effort — missing lessons are
+  // a no-op, the base prompt is unchanged.
+  if (lessons && lessons.length > 0) {
+    lines.push(
+      `## Lessons from prior attempts`,
+      ``,
+      `These validation failures occurred on similar recent plans. Do NOT`,
+      `repeat them:`,
+      ``,
+    );
+    for (const l of lessons) {
+      const header = l.mitigation_note && l.mitigation_note.trim().length > 0
+        ? l.mitigation_note.trim()
+        : `${l.pattern_type}: ${l.pattern_key}`;
+      lines.push(`- **${header}**`);
+      const example = (l.example_message || '').trim().split('\n')[0].slice(0, 240);
+      if (example) lines.push(`  Example: ${example}`);
+    }
+    lines.push(``);
+  }
+
+  // VTID-03462 (Watcher Phase 3): authored governance rules + cross-stage
+  // lessons, ranked and hard-budgeted. Distinct from the scanner-scoped
+  // validation history above. Empty string when the flag is off, so the
+  // prompt is byte-identical to before.
+  if (watcherRemindersBlock) lines.push(watcherRemindersBlock);
+
+  if (devMemoryBlock) lines.push(devMemoryBlock, ``);
+
+  if (fileCtx.length > 0) {
+    lines.push(
+      `## Current state of each file the plan touches`,
+      ``,
+      `Each block below is the file as it currently exists on \`${GITHUB_BASE_BRANCH}\``,
+      `(or a notice that it doesn't exist yet). Produce the **full new content** for`,
+      `each file — not a diff.`,
+      ``,
+    );
+    for (const f of fileCtx) {
+      lines.push(`### \`${f.path}\``);
+      if (f.exists) {
+        lines.push(
+          `State: exists on ${GITHUB_BASE_BRANCH}. Current content (${(f.content || '').length} chars):`,
+          '```',
+          (f.content || '').slice(0, MAX_FILE_BYTES),
+          '```',
+          ``,
+        );
+      } else {
+        lines.push(`State: does NOT exist on ${GITHUB_BASE_BRANCH} — create it.`, ``);
+      }
+    }
+  }
+  lines.push(
+    `## Output format — delimiter blocks, NOT JSON`,
+    ``,
+    `Emit output in this exact shape (and nothing else, no surrounding prose or`,
+    `fences). File contents go VERBATIM between the markers — no escaping, no`,
+    `quoting, newlines are literal:`,
+    ``,
+    `<<<PR_TITLE>>>`,
+    `DEV-AUTOPILOT: short descriptive title (<=70 chars)`,
+    `<<<END>>>`,
+    ``,
+    `<<<PR_BODY>>>`,
+    `Markdown body that describes what this PR does and why. Can span many lines.`,
+    `Reference the finding; summarise the plan; list the files touched.`,
+    `<<<END>>>`,
+    ``,
+    `<<<FILE create services/gateway/src/routes/example.test.ts>>>`,
+    `// full file contents go here, verbatim`,
+    `import { foo } from 'bar';`,
+    ``,
+    `describe('example', () => {`,
+    `  it('works', () => {`,
+    `    expect(1).toBe(1);`,
+    `  });`,
+    `});`,
+    `<<<END>>>`,
+    ``,
+    `Rules:`,
+    `- Allowed actions in the FILE header: "create", "modify", "delete". For`,
+    `  "delete" emit the header + immediately <<<END>>> with no content in`,
+    `  between.`,
+    `- Emit one <<<FILE …>>>…<<<END>>> block per file in the plan's`,
+    `  Files-to-modify list. Do not emit files outside that list.`,
+    `- File content is written verbatim — do NOT wrap it in Markdown code`,
+    `  fences, do NOT escape quotes, do NOT use \\n; just write the actual`,
+    `  characters.`,
+    `- Never emit the literal string "<<<END>>>" inside a file's content;`,
+    `  it terminates the block. In the extremely rare case you need to, split`,
+    `  the string across lines or concatenation.`,
+    `- Produce all PR_TITLE, PR_BODY, and FILE blocks in a single response.`,
+    ``,
+    `Start now.`,
+  );
+  return lines.join('\n');
+}
+
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase E): execute direct-API call now goes through
+ * the provider router. The router reads llm_routing_policy.policy.worker
+ * and dispatches to the configured fallback provider (default Vertex /
+ * gemini-2.5-pro with Anthropic / claude-opus-4-7 secondary fallback).
+ *
+ * This path only fires when the worker queue is unavailable (worker daemon
+ * dead, binary missing) — the worker queue path at runExecutionSession()
+ * remains the primary, free Claude-subscription route. Code generation
+ * quality matters most here, which is why the worker (Claude subscription)
+ * stays primary; Gemini 3.1 Pro is the fallback floor.
+ */
+// VTID-03852: renamed from callMessagesApi — the old name implied a direct
+// call to Anthropic's Messages API (api.anthropic.com), which this function
+// has not done since VTID-02686. It calls callViaRouter('worker', ...),
+// which resolves the real provider (bedrock/deepseek/etc) from the DB-backed
+// llm_routing_policy 'worker' stage, or from `override` when one is passed
+// (VTID-03820's operator on-ramp forces one — see extractLlmOnRampOverride).
+async function callRoutedLlm(
+  prompt: string,
+  vtid?: string | null,
+  override?: { provider: LLMProvider; model: string },
+): Promise<{ ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; provider?: string; model?: string }> {
+  const { callViaRouter } = await import('./llm-router');
+  const r = await callViaRouter('worker', prompt, {
+    vtid: vtid ?? null,
+    service: 'dev-autopilot-execute',
+    allowFallback: true,
+    maxTokens: MESSAGES_MAX_TOKENS,
+    ...(override ? { providerOverride: override.provider, modelOverride: override.model } : {}),
+  });
+  if (!r.ok) {
+    return { ok: false, error: r.error || 'router returned ok=false' };
+  }
+  return {
+    ok: true,
+    text: r.text,
+    usage: r.usage
+      ? { input_tokens: r.usage.inputTokens, output_tokens: r.usage.outputTokens }
+      : undefined,
+    // VTID-04002: recorded in the PR's evidence pack (commands.log / outputs/).
+    provider: r.provider ? String(r.provider) : undefined,
+    model: r.model ? String(r.model) : undefined,
+  };
+}
+
+// VTID-02703: exported so the Cloud Run Job (services/gateway/src/job-entry.ts)
+// can invoke the same logic out-of-process. The Job runtime survives
+/**
+ * VTID-04017: the PR-flood guard's one exception. A fix-mode child
+ * (`metadata.fix_mode`) exists precisely to continue the prior open PR —
+ * that PR is its target, not a duplicate. Any other open PR still blocks.
+ */
+export function priorPrBlocksExecution(
+  metadata: Record<string, unknown> | null | undefined,
+  prior: { pr_number: number | null; pr_url: string | null },
+): boolean {
+  const fix = metadata && typeof metadata === 'object' ? (metadata as Record<string, unknown>).fix_mode : null;
+  if (!fix || typeof fix !== 'object') return true;
+  const target = (fix as Record<string, unknown>).pr_number;
+  const n = typeof target === 'number' ? target : Number.parseInt(String(target ?? ''), 10);
+  if (Number.isFinite(n) && n > 0 && prior.pr_number === n) return false;
+  const url = (fix as Record<string, unknown>).pr_url;
+  if (typeof url === 'string' && url && prior.pr_url === url) return false;
+  return true;
+}
+
+// container churn that kills long-running fire-and-forget LLM calls inside
+// the gateway service.
+export async function runExecutionSession(
+  s: SupaConfig,
+  executionId: string,
+): Promise<{ ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string }> {
+  // Load execution + finding + plan
+  const execR = await supa<Array<ExecutionRow & { finding_id: string; plan_version: number }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&limit=1`,
+  );
+  if (!execR.ok || !execR.data || execR.data.length === 0) {
+    return { ok: false, error: 'execution row not found' };
+  }
+  const exec = execR.data[0];
+
+  // VTID-AUTOPILOT-PR-FLOOD: final defense — refuse to start an execution
+  // session if the same finding already has an OPEN GitHub PR from a prior
+  // (non-terminal) execution. The earlier guard in approveAutoExecute /
+  // autoApproveTick covers the auto-approve path, but the bridge's
+  // spawnChildExecution() inserts directly into dev_autopilot_executions
+  // for self-heal retries — bypassing both. Combined with the bridge's
+  // DRY_RUN default of 'true' (revertExecutionPR is a no-op stub when
+  // DEV_AUTOPILOT_DRY_RUN is unset), the parent's PR stays open while
+  // the child execution opens a fresh one. The 2026-05-07 live test
+  // reproduced this in 9 minutes (PRs #1964 + #1968 both open against
+  // finding 709356c3). This check catches all paths regardless of how
+  // the execution row got inserted, and it runs before any LLM/GitHub
+  // cost is spent.
+  const priorOpenR = await supa<Array<{ id: string; pr_url: string | null; pr_number: number | null; status: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${exec.finding_id}`
+    + `&id=neq.${executionId}`
+    // VTID-04280: a PR recorded as closed-unmerged no longer blocks — the
+    // bridge closes a CI-failed parent's PR itself, and this guard used to
+    // refuse that parent's own self-heal child.
+    + STRANDED_PR_FILTER
+    + `&select=id,pr_url,pr_number,status&order=approved_at.desc&limit=1`,
+  );
+  if (priorOpenR.ok && priorOpenR.data && priorOpenR.data.length > 0 && priorPrBlocksExecution(exec.metadata, priorOpenR.data[0])) {
+    const prior = priorOpenR.data[0];
+    const reason = `finding ${exec.finding_id.slice(0, 8)} already has an unmerged PR `
+      + `${prior.pr_url || `#${prior.pr_number}`} from execution ${prior.id.slice(0, 8)} `
+      + `(status=${prior.status}); refusing to open a duplicate. `
+      + `Close or merge the prior PR before retrying.`;
+    return {
+      ok: false,
+      error: reason,
+      session_id: `pr-flood-block-${executionId.slice(0, 8)}`,
+    };
+  }
+
+  // VTID-04006: the agent executor (real clone, tool loop, local tsc/jest,
+  // post-hoc scope) is selected per row (`metadata.executor`) or per process
+  // (`DEV_AUTOPILOT_EXECUTOR=agent`). Default stays this single-shot path.
+  // Placed after the PR-flood guard above so both executors share it.
+  if (resolveExecutorMode(exec.metadata) === 'agent') {
+    const { runAgentExecutionSession } = await import('./autopilot-agent/run-agent-execution');
+    return runAgentExecutionSession(s, exec);
+  }
+
+  const planR = await supa<Array<{ plan_markdown: string; files_referenced: string[] }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&limit=1`,
+  );
+  if (!planR.ok || !planR.data || planR.data.length === 0) {
+    return { ok: false, error: 'plan version not found' };
+  }
+  const plan = planR.data[0];
+
+  const branch = `dev-autopilot/${executionId.slice(0, 8)}`;
+  const sessionId = `msg_${randomUUID().slice(0, 12)}`;
+
+  // VTID-02686: only DRY_RUN should short-circuit. The executor now routes
+  // through callViaRouter('worker', ...) which can use any provider in the
+  // active llm_routing_policy (Vertex/Gemini, DeepSeek, Anthropic). The
+  // previous `!ANTHROPIC_API_KEY` short-circuit forced DRY_RUN even when
+  // Vertex was the configured provider — silently producing stub PRs.
+  if (DRY_RUN) {
+    console.log(`${LOG_PREFIX} DRY RUN — skipping real session for ${executionId} (files: ${plan.files_referenced.length})`);
+    const stubPr = `https://github.com/${GITHUB_OWNER}/${GITHUB_REPO}/pull/DRY-RUN-${executionId.slice(0, 8)}`;
+    return {
+      ok: true,
+      pr_url: stubPr,
+      pr_number: 0,
+      branch,
+      session_id: `dry_${executionId.slice(0, 8)}`,
+    };
+  }
+
+  // Re-extract files_referenced from plan_markdown (see note in
+  // approveAutoExecute). Falls back to the stored column for pathological
+  // plans that lack a well-formed Files-to-modify section. VTID-02687:
+  // for feedback-bridged findings, also fall back to the bridge-validated
+  // spec_snapshot.proposed_files — that list is authoritative even when
+  // the planner LLM produced markdown without parseable file paths AND
+  // the stored files_referenced column is empty (stale plan_versions from
+  // before VTID-02680).
+  const freshFiles = extractFilePaths(plan.plan_markdown);
+  let planFiles = freshFiles.length > 0 ? freshFiles : (plan.files_referenced || []);
+  if (planFiles.length === 0) {
+    const findR = await supa<Array<{ source_ref: string | null; spec_snapshot: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=source_ref,spec_snapshot&limit=1`,
+    );
+    const snap = findR.ok && findR.data && findR.data[0]?.spec_snapshot;
+    const proposed = snap && Array.isArray((snap as { proposed_files?: unknown }).proposed_files)
+      ? ((snap as { proposed_files?: unknown }).proposed_files as unknown[]).filter(
+          (p): p is string => typeof p === 'string' && p.includes('/'),
+        )
+      : [];
+    if (proposed.length > 0) {
+      console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] plan.files_referenced empty — falling back to spec_snapshot.proposed_files (${proposed.length} files)`);
+      planFiles = proposed;
+    }
+  }
+  if (planFiles.length === 0) {
+    return { ok: false, error: 'plan has no files_referenced — cannot execute', session_id: sessionId };
+  }
+  if (planFiles.length > MAX_FILES_PER_EXECUTION) {
+    return {
+      ok: false,
+      error: `plan references ${planFiles.length} files — exceeds MAX_FILES_PER_EXECUTION (${MAX_FILES_PER_EXECUTION})`,
+      session_id: sessionId,
+    };
+  }
+
+  // 1. Gather current file contents from the base branch
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] fetching ${planFiles.length} files from ${GITHUB_OWNER}/${GITHUB_REPO}@${GITHUB_BASE_BRANCH}`);
+  const fileCtx: FileCtx[] = [];
+  for (const p of planFiles) {
+    const got = await fetchFileContent(p, GITHUB_BASE_BRANCH);
+    fileCtx.push({ path: p, exists: got.exists, content: got.content, sha: got.sha });
+  }
+
+  // Pull prior-attempt lessons for the finding's scanner so Claude avoids
+  // repeating known traps. Best-effort — no rows / failed query just skips
+  // the optional prompt section.
+  //
+  // VTID-03821: also select activated_vtid here (no extra round trip —
+  // this query already runs unconditionally) so the LLM-call telemetry
+  // below can be tagged with the REAL task VTID a human looks at, instead
+  // of only the synthetic VTID-DA-<execId> id. Before this fix, every
+  // dev-autopilot execution's `llm.call.*` telemetry (provider, model,
+  // latency — exactly "which LLM served this run") was invisible on the
+  // task's own OASIS Event Tracking panel / Agents Control Plane trace
+  // view, because it was never tagged with the vtid either of those
+  // already reads events by.
+  const findingMetaR = await supa<Array<{ spec_snapshot: { scanner?: string } | null; activated_vtid: string | null; source_ref?: string | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot,activated_vtid,source_ref&limit=1`,
+  );
+  const findingScanner: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.spec_snapshot?.scanner
+    ? String(findingMetaR.data[0].spec_snapshot.scanner)
+    : null;
+  const activatedVtid: string | null = findingMetaR.ok && findingMetaR.data && findingMetaR.data[0]?.activated_vtid
+    ? String(findingMetaR.data[0].activated_vtid)
+    : null;
+  // Telemetry vtid: prefer the real task VTID (makes LLM calls observable
+  // on the task itself); fall back to the synthetic per-execution id when
+  // no activated_vtid is set (older/unlinked findings) — never blank.
+  const telemetryVtid = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
+  const lessons = findingScanner ? await loadExecutionLessons(s, findingScanner) : [];
+
+  // 2. Ask an LLM to produce the new file contents. Routes through the
+  // worker queue when DEV_AUTOPILOT_USE_WORKER=true (a local daemon shelling
+  // out to `claude -p` against a Claude Pro/Max subscription — see
+  // services/autopilot-worker/README.md); otherwise routes per-request via
+  // callRoutedLlm() → callViaRouter('worker', ...), i.e. the DB-backed
+  // llm_routing_policy 'worker' stage (pay-per-token, whichever provider
+  // that stage is configured for — not necessarily Anthropic).
+  //
+  // When AUTOPILOT_WORKER_OWNS_PR=true, ALSO delegate the post-LLM work
+  // (parse output, create branch, write files, open PR) to the worker.
+  // The worker's local clone + GitHub token mean it can do the whole
+  // sequence in a single long-lived process, sidestepping the Cloud Run
+  // recycle-mid-flight problem that kept stranding executions.
+  const ownsPr = isWorkerQueueEnabled() && isWorkerOwnsPrEnabled();
+  // VTID-03462: flag-gated + best-effort. A Watcher fault must never be able
+  // to stall an execution, so every failure path resolves to ''.
+  let watcherBlock = '';
+  if (remindersEnabled()) {
+    try {
+      const bundle = await buildReminders({
+        stage: 'execute',
+        scanner: findingScanner || undefined,
+      });
+      watcherBlock = renderRemindersBlock(bundle);
+      await recordShown(bundle.reminders.map((r) => r.reminder_id));
+    } catch {
+      watcherBlock = '';
+    }
+  }
+  // VTID-04224 Phase 2: flag-gated file-scoped dev_agent_memory recall,
+  // same fail-open posture as the Watcher block above — a recall failure
+  // must never stall or fail an execution.
+  let devMemoryBlock = '';
+  if (isWorkerMemoryRecallEnabled()) {
+    try {
+      devMemoryBlock = await buildFileScopedMemoryBlock(planFiles, 'vitana-platform');
+    } catch {
+      devMemoryBlock = '';
+    }
+  }
+  const prompt = buildExecutionPrompt(exec.finding_id, exec.plan_version, plan.plan_markdown, fileCtx, branch, lessons, watcherBlock, devMemoryBlock);
+  const startedAt = Date.now();
+  // VTID-03820: an execution queued with an llm_on_ramp_override (e.g. the
+  // operator DeepSeek execution on-ramp) ALWAYS takes the callRoutedLlm
+  // path, bypassing the worker queue entirely — the worker queue dispatches
+  // to services/autopilot-worker's `claude -p` (Claude Code CLI against a
+  // Claude subscription), which has no way to honor a per-call provider
+  // override, so an override could never actually take effect through it.
+  // Every other execution (no override set) is completely unaffected by
+  // this branch. Note: even without an override, this branch is ALSO taken
+  // whenever isWorkerQueueEnabled() is false (DEV_AUTOPILOT_USE_WORKER
+  // unset) — true on both AWS_STAGE/PROD-DEPLOY-GATEWAY.yml as of VTID-03852,
+  // since neither pins that var — so the worker-queue/Claude-Code path is
+  // dead in practice on the deployed gateway, override or not.
+  const onRampOverride = extractLlmOnRampOverride(exec.metadata);
+  // Widen the inline type so both call shapes satisfy the union we destructure
+  // below (worker-queue path may carry pr_url/pr_number/branch from the
+  // worker-owned-PR mode; callRoutedLlm never does).
+  const llm: { ok: boolean; text?: string; usage?: { input_tokens?: number; output_tokens?: number }; error?: string; pr_url?: string; pr_number?: number; branch?: string; attempt_failures?: WorkerAttemptFailure[]; provider?: string; model?: string } =
+    (isWorkerQueueEnabled() && !onRampOverride)
+      ? await runWorkerTask(
+          {
+            kind: 'execute',
+            finding_id: exec.finding_id,
+            execution_id: executionId,
+            prompt,
+            model: EXECUTION_MODEL,
+            max_tokens: MESSAGES_MAX_TOKENS,
+            notes: `execute ${executionId.slice(0, 8)}`,
+            worker_owns_pr: ownsPr,
+            branch_name: branch,
+            base_branch: GITHUB_BASE_BRANCH,
+            vtid_like: telemetryVtid,
+          },
+          { timeoutMs: MESSAGES_TIMEOUT_MS },
+        )
+      : await callRoutedLlm(prompt, telemetryVtid, onRampOverride);
+  const elapsed = Math.round((Date.now() - startedAt) / 1000);
+
+  // Prompt-gap feedback loop: the worker reports per-attempt validation
+  // failures via output_payload.attempt_failures. Upsert each into
+  // watcher_lessons (VTID-03461) so future plan/execute prompts can
+  // reference them. Best-effort — a learnings-persist failure must not
+  // block the execution outcome. Runs even on LLM failure so we capture
+  // exhausted-validation cases too.
+  if (llm.attempt_failures && llm.attempt_failures.length > 0) {
+    await persistAttemptFailures(s, llm.attempt_failures, {
+      finding_id: exec.finding_id,
+      execution_id: executionId,
+    }).catch(err => console.error(`${LOG_PREFIX} persist learnings error:`, err));
+  }
+
+  if (!llm.ok || !llm.text) {
+    return { ok: false, error: `LLM call failed after ${elapsed}s: ${llm.error || 'unknown'}`, session_id: sessionId, branch };
+  }
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] LLM returned in ${elapsed}s via ${isWorkerQueueEnabled() ? 'worker-queue' : 'messages-api'} (${llm.usage?.input_tokens || '?'} in / ${llm.usage?.output_tokens || '?'} out)`);
+
+  // Worker-owned-PR path: the worker already created the branch + wrote
+  // files + opened the PR. We just record what it did and hand control to
+  // the watcher.
+  if (ownsPr && llm.pr_url) {
+    console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] worker published PR ${llm.pr_url} (${llm.branch || branch})`);
+    return {
+      ok: true,
+      pr_url: llm.pr_url,
+      pr_number: llm.pr_number,
+      branch: llm.branch || branch,
+      session_id: sessionId,
+    };
+  }
+
+  const parsed = parseExecutionJson(llm.text);
+  if ('error' in parsed) {
+    return { ok: false, error: `LLM output parse: ${parsed.error}`, session_id: sessionId, branch };
+  }
+
+  // 3a. Validate: every emitted file path was in the plan's files_referenced
+  const allowedSet = new Set(planFiles);
+  const outOfScope: string[] = [];
+  for (const f of parsed.files) {
+    if (!allowedSet.has(f.path)) outOfScope.push(f.path);
+  }
+  if (outOfScope.length > 0) {
+    return {
+      ok: false,
+      error: `LLM emitted files outside the plan's files_referenced: ${outOfScope.join(', ')}`,
+      session_id: sessionId,
+      branch,
+    };
+  }
+  if (parsed.files.length === 0) {
+    return { ok: false, error: 'LLM emitted zero files', session_id: sessionId, branch };
+  }
+
+  // 3b. VTID-02641: validate the executor's diff covers ENOUGH of the plan.
+  // The existing 3a check only catches files in the diff that are NOT in
+  // the plan. It's silent when the diff covers a SUBSET of the plan — e.g.
+  // closed PR #1102 had a 4-file plan (approvals.ts, autopilot.ts,
+  // admin/index.ts, safety-gap.ts) but the diff only created the empty
+  // safety-gap.ts placeholder. The PR opened anyway as dead code.
+  // This check fails the execution when coverage falls below
+  // PLAN_DIFF_COVERAGE_THRESHOLD so the LLM-shipped-half-the-plan failure
+  // mode surfaces to self-healing instead of becoming a noisy PR.
+  const coverage = validatePlanDiffCoverage(planFiles, parsed.files.map(f => f.path));
+  if (!coverage.ok) {
+    return {
+      ok: false,
+      error:
+        `executor diff covers only ${Math.round(coverage.coverage * 100)}% of the plan's files `
+        + `(${coverage.coveredCount}/${coverage.planCount}). `
+        + `Missing: ${coverage.missing.slice(0, 5).join(', ')}`
+        + (coverage.missing.length > 5 ? `, +${coverage.missing.length - 5} more` : ''),
+      session_id: sessionId,
+      branch,
+    };
+  }
+  for (const f of parsed.files) {
+    if (f.action !== 'delete' && (!f.content || f.content.length === 0)) {
+      return { ok: false, error: `LLM emitted empty content for ${f.path}`, session_id: sessionId, branch };
+    }
+    if (f.content && Buffer.byteLength(f.content, 'utf-8') > MAX_FILE_BYTES) {
+      return {
+        ok: false,
+        error: `content for ${f.path} exceeds MAX_FILE_BYTES (${MAX_FILE_BYTES})`,
+        session_id: sessionId,
+        branch,
+      };
+    }
+  }
+
+  // 4. Create branch
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] creating branch ${branch} off ${GITHUB_BASE_BRANCH}`);
+  const br = await createBranch(branch, GITHUB_BASE_BRANCH);
+  if (!br.ok) return { ok: false, error: br.error, session_id: sessionId, branch };
+
+  // 5. Write each file
+  // VTID-04002: commit under the real task VTID when the finding carries one
+  // (operator on-ramp always does); the synthetic VTID-DA-<exec> id stays the
+  // fallback for unlinked findings.
+  const vtidLike = activatedVtid || `VTID-DA-${executionId.slice(0, 8)}`;
+  for (const f of parsed.files) {
+    const existing = fileCtx.find(x => x.path === f.path);
+    if (f.action === 'delete') {
+      if (!existing?.sha) {
+        console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] delete skipped — ${f.path} doesn't exist`);
+        continue;
+      }
+      const encoded = f.path.replace(/^\/+/, '').split('/').map(encodeURIComponent).join('/');
+      const delR = await githubRequest(
+        `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/contents/${encoded}`,
+        {
+          method: 'DELETE',
+          body: { message: `${vtidLike}: delete ${f.path}`, sha: existing.sha, branch },
+        },
+      );
+      if (!delR.ok) return { ok: false, error: `delete ${f.path}: ${delR.error}`, session_id: sessionId, branch };
+      continue;
+    }
+    const shaArg = f.action === 'modify' ? existing?.sha : undefined;
+    const msg = `${vtidLike}: ${f.action} ${f.path}`;
+    const wr = await putFileToBranch(branch, f.path, f.content!, msg, shaArg);
+    if (!wr.ok) return { ok: false, error: `write ${f.path}: ${wr.error}`, session_id: sessionId, branch };
+  }
+
+  // 5b. VTID-AUTOPILOT-NOEMPTY — refuse to open a PR with a 0-file diff.
+  // See compareBranchFiles() for the failure mode this prevents.
+  const cmp = await compareBranchFiles(branch, GITHUB_BASE_BRANCH);
+  if (!cmp.ok) {
+    return { ok: false, error: `compare ${branch}..${GITHUB_BASE_BRANCH}: ${cmp.error}`, session_id: sessionId, branch };
+  }
+  if ((cmp.changedFiles ?? 0) === 0) {
+    return {
+      ok: false,
+      error: 'LLM output produced no actual diff — every emitted file matched main byte-for-byte. '
+        + 'Either the model judged no change was needed (surface the gap in the plan instead of '
+        + 'echoing existing content) or the diff was lost in serialization. Refusing to open an '
+        + 'empty PR.',
+      session_id: sessionId,
+      branch,
+    };
+  }
+
+  // 6. VTID-04002: apply the validator-compliant PR contract. VALIDATOR-CHECK.yml
+  // rejects any PR touching services/gateway/src/** that lacks the VTID in
+  // its title, the `VTID:`/`VALIDATION_PROFILE:`/marker lines in its body, and
+  // a docs/validation/<VTID>/ evidence pack IN THE DIFF (PR #3351, execution
+  // 0643b701, was reverted on exactly that — exit 10 — after every functional
+  // check had passed). The model is never asked for any of this; it is
+  // derived deterministically from what the executor already knows. The
+  // evidence files are written AFTER the empty-diff guard above so that guard
+  // still measures the model's own diff, never the pack.
+  const rawTitle = parsed.pr_title || `DEV-AUTOPILOT: execute plan ${executionId.slice(0, 8)}`;
+  const rawBody = parsed.pr_body || `Automated PR from Dev Autopilot execution \`${executionId}\`.\n\n---\n\n${plan.plan_markdown.slice(0, 40_000)}`;
+  // VTID-04333: a finding that came from a member's feedback ticket carries
+  // the ticket number (FB-…) on the PR title and body, next to the VTID.
+  const ticketRef = await resolveFeedbackTicketRef(s, findingMetaR.ok && findingMetaR.data ? findingMetaR.data[0] as Record<string, unknown> : null);
+  const contract = applyPrContract({
+    vtid: activatedVtid,
+    ticketNumber: ticketRef?.ticket_number ?? null,
+    title: rawTitle,
+    body: rawBody,
+    files: parsed.files.map(f => ({ path: f.path, action: f.action })),
+    executionId,
+    findingId: exec.finding_id,
+    planVersion: exec.plan_version,
+    branch,
+    baseBranch: GITHUB_BASE_BRANCH,
+    provider: llm.provider || onRampOverride?.provider || null,
+    model: llm.model || onRampOverride?.model || null,
+  });
+  if (contract.skipped_reason) {
+    console.warn(`${LOG_PREFIX} [${executionId.slice(0, 8)}] PR contract NOT applied: ${contract.skipped_reason} — VALIDATOR-CHECK will reject this PR`);
+  }
+  for (const ef of contract.evidenceFiles) {
+    const existingEv = await fetchFileContent(ef.path, branch);
+    const evR = await putFileToBranch(branch, ef.path, ef.content, `${vtidLike}: evidence pack ${ef.path}`, existingEv.exists ? existingEv.sha : undefined);
+    if (!evR.ok) return { ok: false, error: `write evidence ${ef.path}: ${evR.error}`, session_id: sessionId, branch };
+  }
+  const prTitle = contract.title;
+  const prBody = contract.body;
+  console.log(`${LOG_PREFIX} [${executionId.slice(0, 8)}] opening PR "${prTitle}"`);
+  const pr = await openPullRequest(branch, GITHUB_BASE_BRANCH, prTitle, prBody);
+  if (!pr.ok) return { ok: false, error: `open PR: ${pr.error}`, session_id: sessionId, branch };
+
+  return {
+    ok: true,
+    pr_url: pr.url,
+    pr_number: pr.number,
+    branch,
+    session_id: sessionId,
+  };
+}
+
+// Exported for unit tests.
+export { parseExecutionJson, buildExecutionPrompt };
+
+// =============================================================================
+// State reconciler — guarantees end-to-end execution
+// =============================================================================
+// The original watchdog only covered status='running' (20 min timeout). After
+// a few real-world stuck executions (PRs #854 #798 sat in 'deploying' /
+// 'merging' for 2+ days because the gateway missed an OASIS event), this
+// reconciler covers every non-terminal stage:
+//
+//   ci         → query GitHub PR check status
+//   merging    → query GitHub PR.merged
+//   deploying  → query oasis_events for deploy.gateway.success on this branch
+//   verifying  → curl /alive on the live gateway + check verification event
+//
+// For each stuck execution past its per-state timeout, the reconciler asks
+// "what's actually true?" (GitHub + OASIS + HTTP probe). If reality says the
+// stage is done, transition the row forward. If reality says the stage
+// failed, mark failed + bridge to self-heal. If reality is genuinely still
+// in flight (e.g. CI is slow), leave it alone.
+//
+// Cadence: runs every BACKGROUND_TICK_MS alongside the existing executor.
+// Bounded: ≤10 rows reconciled per tick per state to cap GitHub API spend.
+
+interface StuckExecRow {
+  id: string;
+  finding_id: string;
+  status: string;
+  pr_url: string | null;
+  pr_number: number | null;
+  branch: string | null;
+  updated_at: string;
+  metadata: Record<string, unknown> | null;
+}
+
+/** Per-state timeout. Beyond this, the state is considered "stuck" and
+ *  the reconciler asks reality.
+ *
+ * VTID-02698: bumped `verifying` from 15m → 60m. The watcher's
+ * `verificationWatcherTick` owns the verifying state with a 30m
+ * window of error-event analysis; the executor's `reconcileVerifying`
+ * was firing FIRST (at 15m) with a brittle single `/alive` probe and
+ * marking healthy execs failed when the probe hit a 429 from a deploy-
+ * churn rate-limit. Bumping past the watcher's window lets the proper
+ * owner advance the state; the executor only steps in if the watcher
+ * is genuinely broken. */
+const RECONCILE_TIMEOUT_MS: Record<string, number> = {
+  ci:        30 * 60 * 1000,  // 30 min
+  merging:   15 * 60 * 1000,  // 15 min
+  deploying: 30 * 60 * 1000,  // 30 min
+  verifying: 60 * 60 * 1000,  // 60 min — must exceed watcher's 30m window
+};
+
+const RECONCILE_BATCH_SIZE = 10;
+
+/**
+ * VTID-AUTOPILOT-DUPMERGE: shared side-effect handler for any terminal
+ * execution-status transition (regardless of which subsystem owns the
+ * transition). Records outcome bookkeeping for both success/failure, AND on
+ * SUCCESS flips the source recommendation `new → completed` so the next
+ * autoApproveTick() doesn't re-pick the same finding.
+ *
+ * Bug history: this block originally lived inline in `patchExecution` only,
+ * which meant it fired for the reconciler-owned terminal transitions but
+ * NOT for the watcher-owned `verifying → completed` transition (the
+ * normal happy path). Result: 2026-05-04 drain produced 4 separate merged
+ * PRs for finding 4bc912a4 (#1629/#1648/#1653/#1667 all touching
+ * services/gateway/src/routes/telemetry.ts) — the watcher merged each one
+ * cleanly, but never flipped the recommendation, so autoApproveTick re-
+ * approved the same finding on the next 30s tick. Centralizing here lets
+ * `dev-autopilot-watcher.ts:transitionStatus` call the same path.
+ *
+ * Exported (not just internal) so the watcher can import it without a
+ * circular dependency (watcher → execute is the only direction in use).
+ *
+ * Fire-and-forget by design: outcome bookkeeping must never fail the
+ * primary status patch. Errors are logged, not thrown.
+ */
+export function applyExecTerminalSideEffects(
+  s: SupaConfig,
+  executionId: string,
+  status: string,
+  opts: { deferLedger?: boolean } = {},
+): void {
+  // VTID-03895: propagate to vtid_ledger regardless of which of the three
+  // terminal outcomes this is — separate from the completed/failed-only
+  // outcome-bookkeeping block below, which has its own narrower, historical
+  // reason for excluding 'cancelled' (see its own docstring).
+  // VTID-04378: `failed_escalated` (the bridge's give-up state) closes the
+  // ledger as failed; `reverted` does not — a self-heal child continues it.
+  // VTID-04472: a watcher failure that is handed to the self-heal bridge
+  // defers the ledger to the bridge — its child continues the VTID, or it
+  // escalates and closes it (closeLedgerForEscalation). Closing here made a
+  // fix-mode lineage's VTID `failed` at the first red CI, permanently.
+  const ledgerStatus = opts.deferLedger ? null : ledgerStatusForExecution(status);
+  if (ledgerStatus) {
+    void terminalizeVtidLedgerForExecution(s, executionId, ledgerStatus);
+  }
+  if (status !== 'completed' && status !== 'failed') return;
+  void (async () => {
+    try {
+      const lookupR = await supa<Array<{ finding_id: string; pr_url: string | null; pr_number: number | null }>>(
+        s,
+        `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=finding_id,pr_url,pr_number&limit=1`,
+      );
+      if (!lookupR.ok) return;
+      const exec = lookupR.data?.[0];
+      if (!exec || !exec.finding_id) return;
+      const finding_id = exec.finding_id;
+
+      await recordExecOutcome(
+        finding_id,
+        status === 'completed' ? 'success' : 'failure',
+      );
+
+      if (status !== 'completed') return;
+
+      // Only flip findings that are still 'new' — preserves any human
+      // override (rejected/snoozed/activated) the operator may have set.
+      const findingPatchR = await supa(
+        s,
+        `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&status=eq.new`,
+        {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            status: 'completed',
+            merged_pr_url: exec.pr_url ?? null,
+            merged_pr_number: exec.pr_number ?? null,
+            completed_at: new Date().toISOString(),
+          }),
+        },
+      );
+      if (findingPatchR.ok) {
+        await emitOasisEvent({
+          vtid: EXEC_VTID,
+          type: 'dev_autopilot.finding.completed',
+          source: 'dev-autopilot',
+          status: 'success',
+          message: `Finding ${finding_id.slice(0, 8)} completed via execution ${executionId.slice(0, 8)}`
+            + (exec.pr_number ? ` (PR #${exec.pr_number})` : ''),
+          payload: {
+            finding_id,
+            execution_id: executionId,
+            pr_url: exec.pr_url ?? null,
+            pr_number: exec.pr_number ?? null,
+          },
+        });
+      } else {
+        // Don't propagate — outcome bookkeeping is best-effort.
+        console.warn(
+          `${LOG_PREFIX} finding completion patch failed for ${finding_id.slice(0, 8)}: ${findingPatchR.error}`,
+        );
+      }
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} outcome / finding-completion backfill error for ${executionId.slice(0, 8)}:`, err);
+    }
+  })();
+}
+
+/**
+ * VTID-03895: close the loop from a terminal dev_autopilot_executions status
+ * back to the vtid_ledger row the Operator on-ramp activated it for.
+ *
+ * Before this, nothing ever wrote is_terminal/terminal_outcome for an
+ * on-ramp execution's own VTID — the activation reaper comment a few
+ * hundred lines up already names the user-visible symptom this produces
+ * ("the vtid_ledger card sits in IN PROGRESS forever"), but that reaper only
+ * recovers executions that never started; one that runs to completion,
+ * merges, and deploys cleanly was *still* left stuck, because nothing on
+ * the happy path ever flipped the ledger. Task Management's board reads
+ * is_terminal/the COMPLETED column directly, so this alone is what makes a
+ * finished execution actually show as Completed there.
+ *
+ * Only fires for executions with a real activated_vtid (i.e. ones the
+ * Operator on-ramp created for a named VTID) — autonomous-plane findings
+ * with no activated_vtid have no vtid_ledger row of their own to close, and
+ * are correctly left to their own accounting (recordExecOutcome above,
+ * self_healing_log, etc). Guarded on is_terminal=eq.false so this can never
+ * overwrite a task a human already terminalized, or double-fire on a status
+ * that's somehow patched twice — per IF-THEN rule 3 ("is_terminal=true →
+ * do not modify task"), not just as a defensive habit.
+ */
+/**
+ * VTID-04378: which execution statuses close the finding's ledger VTID, and
+ * as what. Pure; exported for tests.
+ */
+export function ledgerStatusForExecution(status: string): 'completed' | 'failed' | 'cancelled' | null {
+  if (status === 'completed' || status === 'failed' || status === 'cancelled') return status;
+  if (status === 'failed_escalated') return 'failed';
+  return null;
+}
+
+export async function terminalizeVtidLedgerForExecution(
+  s: SupaConfig,
+  executionId: string,
+  status: 'completed' | 'failed' | 'cancelled',
+): Promise<void> {
+  try {
+    const execR = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?id=eq.${executionId}&select=finding_id&limit=1`,
+    );
+    const finding_id = execR.ok ? execR.data?.[0]?.finding_id : null;
+    if (!finding_id) return;
+
+    const findingR = await supa<Array<{ activated_vtid: string | null }>>(
+      s,
+      `/rest/v1/autopilot_recommendations?id=eq.${finding_id}&select=activated_vtid&limit=1`,
+    );
+    const vtid = findingR.ok ? findingR.data?.[0]?.activated_vtid : null;
+    if (!vtid) return; // autonomous-plane finding — no vtid_ledger row to close
+
+    const terminal_outcome = status === 'completed' ? 'success' : status;
+    const patchLedger = () => supa(
+      s,
+      `/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(vtid)}&is_terminal=eq.false`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({ is_terminal: true, terminal_outcome, status }),
+      },
+    );
+    let patchR = await patchLedger();
+    if (!patchR.ok) {
+      // VTID-04429: one retry. The PATCH is idempotent (is_terminal=eq.false
+      // guard), and a transient PostgREST blip was the whole failure mode.
+      console.warn(
+        `${LOG_PREFIX} vtid_ledger terminalize retry for ${vtid} after: ${patchR.error}`,
+      );
+      patchR = await patchLedger();
+    }
+    if (!patchR.ok) {
+      // VTID-04378: loud, not a warning — a failed write leaves the task
+      // IN PROGRESS on the board with nothing else that will ever close it.
+      console.error(
+        `${LOG_PREFIX} vtid_ledger terminalize FAILED for ${vtid} (execution ${executionId.slice(0, 8)}, ${status}): ${patchR.error}`,
+      );
+      return;
+    }
+
+    if (status === 'completed') {
+      await cicdEvents.vtidLifecycleCompleted(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} completed`,
+      );
+    } else {
+      await cicdEvents.vtidLifecycleFailed(
+        vtid,
+        'operator',
+        `Operator on-ramp execution ${executionId.slice(0, 8)} ${status}`,
+      );
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} vtid_ledger terminalize error for execution ${executionId.slice(0, 8)}:`, err);
+  }
+}
+
+async function patchExecution(
+  s: SupaConfig,
+  id: string,
+  fields: Record<string, unknown>,
+): Promise<{ ok: boolean; error?: string }> {
+  const r = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${id}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({ ...fields, updated_at: new Date().toISOString() }),
+  });
+  if (r.ok && typeof fields.status === 'string') {
+    applyExecTerminalSideEffects(s, id, fields.status);
+  }
+
+  // VTID-02001: surface successful auto-fixes to the Self-Healing screen.
+  // self_healing_log was a failure-only log; without this the screen shows
+  // 100% escalation and the user can't tell autonomy is actually closing
+  // findings. We record `fixed` for `completed` and `rolled_back` for
+  // `reverted`. `failed_escalated` is already covered by the bridge writer
+  // and `failed`/`cancelled` aren't healing outcomes worth surfacing as
+  // distinct rows.
+  if (
+    r.ok &&
+    (fields.status === 'completed' || fields.status === 'reverted')
+  ) {
+    void (async () => {
+      try {
+        const lookupR = await supa<
+          Array<{
+            finding_id: string;
+            plan_version: number | null;
+            pr_url: string | null;
+            completed_at: string | null;
+            created_at: string | null;
+          }>
+        >(
+          s,
+          `/rest/v1/dev_autopilot_executions?id=eq.${id}` +
+            `&select=finding_id,plan_version,pr_url,completed_at,created_at&limit=1`,
+        );
+        const exec = lookupR.ok ? lookupR.data?.[0] : null;
+        if (!exec) return;
+
+        let endpoint = `autopilot.execute`;
+        if (exec.finding_id) {
+          const fR = await supa<Array<{ spec_snapshot: { file_path?: string } | null }>>(
+            s,
+            `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=spec_snapshot&limit=1`,
+          );
+          const fp = fR.ok && fR.data?.[0]?.spec_snapshot?.file_path;
+          if (fp) endpoint = String(fp);
+        }
+
+        const outcome: 'fixed' | 'rolled_back' =
+          fields.status === 'completed' ? 'fixed' : 'rolled_back';
+
+        await writeAutopilotSuccess(s, {
+          vtid: `VTID-DA-${id.slice(0, 8)}`,
+          endpoint,
+          outcome,
+          diagnosis: {
+            summary:
+              outcome === 'fixed'
+                ? `Auto-fix applied via ${exec.pr_url || 'PR'} (plan v${exec.plan_version ?? '?'})`
+                : `Auto-fix reverted via ${exec.pr_url || 'PR'} (plan v${exec.plan_version ?? '?'}) — verifier or watchdog rolled back`,
+            execution_id: id,
+            finding_id: exec.finding_id,
+            plan_version: exec.plan_version ?? null,
+            pr_url: exec.pr_url ?? null,
+            completed_at: exec.completed_at ?? null,
+          },
+          createdAtIso: exec.created_at || undefined,
+          resolvedAtIso: exec.completed_at || undefined,
+        });
+      } catch (err) {
+        console.warn(
+          `${LOG_PREFIX} self_healing_log success-write error for ${id.slice(0, 8)}:`,
+          err,
+        );
+      }
+    })();
+  }
+  return { ok: r.ok, error: r.error };
+}
+
+async function bridgeFailure(executionId: string, stage: string, error: string): Promise<void> {
+  try {
+    const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+    await bridgeFailureToSelfHealing({ execution_id: executionId, failure_stage: stage, error });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} bridge load error for ${executionId}:`, err);
+  }
+}
+
+/**
+ * VTID-04218: the squash-merge commit GitHub reports on a merged PR
+ * (`merge_commit_sha`), or null when absent/unset. Pure; exported for tests.
+ */
+export function mergedShaFromPr(pr: { merged?: boolean; merge_commit_sha?: string | null } | null | undefined): string | null {
+  if (!pr || !pr.merged) return null;
+  const sha = typeof pr.merge_commit_sha === 'string' ? pr.merge_commit_sha.trim() : '';
+  return /^[0-9a-f]{7,40}$/i.test(sha) ? sha : null;
+}
+
+/** Reconcile status='ci'. Source of truth: GitHub PR check runs. */
+async function reconcileCi(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  if (!exec.pr_number) {
+    console.warn(`${LOG_PREFIX} reconcile/ci: ${exec.id.slice(0, 8)} has no pr_number — leaving alone`);
+    return;
+  }
+  // GET /repos/{owner}/{repo}/commits/{ref}/check-runs gives the PR head sha's
+  // checks. Simpler: GET /pulls/{n} gives mergeable_state which summarizes.
+  const prR = await githubRequest<{
+    state: 'open' | 'closed';
+    merged: boolean;
+    merge_commit_sha?: string | null;
+    mergeable_state: 'clean' | 'unstable' | 'dirty' | 'blocked' | 'behind' | 'has_hooks' | 'unknown';
+    head: { sha: string };
+  }>(`/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`);
+  if (!prR.ok || !prR.data) {
+    console.warn(`${LOG_PREFIX} reconcile/ci: PR lookup failed for ${exec.id.slice(0, 8)}: ${prR.error}`);
+    return;
+  }
+
+  if (prR.data.merged) {
+    // Already merged (CI green and watcher merged) — advance to deploying.
+    // VTID-04218: stamp merge_sha exactly as the watcher's own merge path
+    // does, so the deploy stage can match the deploy event by commit
+    // (VTID-04215) and a failure there can still be reverted. Observed
+    // 2026-09-21: 11 rows reached here after a DB write outage swallowed the
+    // watcher's transitions; without the SHA they could only match by
+    // recency, and a later `deploying` failure could not be auto-reverted.
+    const mergeSha = mergedShaFromPr(prR.data);
+    await patchExecution(s, exec.id, {
+      status: 'deploying',
+      ...(mergeSha ? { metadata: { ...(exec.metadata || {}), merge_sha: mergeSha } } : {}),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_merged',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} already merged — advancing to deploying`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'ci', merge_sha: mergeSha },
+    });
+    return;
+  }
+
+  if (prR.data.state === 'closed' && !prR.data.merged) {
+    // PR closed without merge — terminal "PR was handled" state. Mark
+    // status='auto_archived' (NOT 'failed') so the runExecutionSession +
+    // approveAutoExecute PR-flood guards stop treating this finding as
+    // stranded. Without auto_archived, the operator's manual close keeps
+    // the finding blocked forever — the original bug that forced the
+    // 2026-05-07 cleanup. Skip bridgeFailure too: spawning a self-heal
+    // child here would burn an LLM call to re-fix a finding whose
+    // proposed PR was just closed (operator/CI rejected it). If the
+    // finding is still actionable, autoApproveTick will pick it up on
+    // its next sweep — bounded by the per-finding retry cap.
+    await patchExecution(s, exec.id, {
+      status: 'auto_archived',
+      completed_at: new Date().toISOString(),
+      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge (auto_archived)' },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.auto_archived',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} closed without merge — auto_archived`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reason: 'pr_closed_unmerged' },
+    });
+    return;
+  }
+
+  // CI may be still running (mergeable_state='unstable') or blocked.
+  // 'dirty' or 'blocked' for >timeout means CI failed or the PR has unresolved
+  // conflicts — failure. 'unstable' typically means a check is still running;
+  // leave alone.
+  if (prR.data.mergeable_state === 'dirty' || prR.data.mergeable_state === 'blocked') {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { ...(exec.metadata || {}), error: `reconciler: PR mergeable_state=${prR.data.mergeable_state} after ${RECONCILE_TIMEOUT_MS.ci / 60_000}m` },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.ci_failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} mergeable_state=${prR.data.mergeable_state}`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, mergeable_state: prR.data.mergeable_state },
+    });
+    bridgeFailure(exec.id, 'ci', `PR mergeable_state=${prR.data.mergeable_state}`).catch(() => {});
+  }
+  // else: CI still in flight, leave alone.
+}
+
+/** Reconcile status='merging'. Source of truth: GitHub PR.merged. */
+async function reconcileMerging(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  if (!exec.pr_number) return;
+  const prR = await githubRequest<{ state: string; merged: boolean; merge_commit_sha?: string | null }>(
+    `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${exec.pr_number}`,
+  );
+  if (!prR.ok || !prR.data) return;
+  if (prR.data.merged) {
+    // VTID-04218: same merge_sha stamp as reconcileCi — see there.
+    const mergeSha = mergedShaFromPr(prR.data);
+    await patchExecution(s, exec.id, {
+      status: 'deploying',
+      ...(mergeSha ? { metadata: { ...(exec.metadata || {}), merge_sha: mergeSha } } : {}),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_merged',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} PR #${exec.pr_number} merged — advancing to deploying`,
+      payload: { execution_id: exec.id, pr_number: exec.pr_number, reconciled_from: 'merging', merge_sha: mergeSha },
+    });
+  } else if (prR.data.state === 'closed') {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { ...(exec.metadata || {}), error: 'reconciler: PR closed without merge while in merging' },
+    });
+    bridgeFailure(exec.id, 'merging', 'PR closed without merge').catch(() => {});
+  }
+  // else: stuck on auto-merge — leave to watcher one more cycle.
+}
+
+/** Reconcile status='deploying'. Source of truth: oasis_events for
+ *  deploy.gateway.success or any event tagged with the merge SHA / branch. */
+async function reconcileDeploying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  // VTID-02697: Two bugs in the previous version:
+  //   1. Filtered on `type=in.(...)` but the column is `topic` — the request
+  //      400'd, returned empty, and we always concluded "no deploy event"
+  //      regardless of reality.
+  //   2. Even when the column was right, it took ANY recent deploy event
+  //      across the platform as proof that THIS exec deployed. False
+  //      positive risk during concurrent autopilot runs.
+  //
+  // VTID-04215: a third, and the one that reverted real merges. The topic
+  // list was the GCP-era `deploy.gateway.success` family, which no AWS
+  // workflow emits — `AWS-STAGE-DEPLOY-GATEWAY.yml` writes
+  // `staging.deploy.completed` (`prod.deploy.completed` on the prod
+  // workflow). So the query below always came back empty, this function
+  // always reached the failure branch at the 30-minute mark, and
+  // `bridgeFailure(…, 'deploying', …)` reverted the merge from main
+  // (141c4e4b / f64f22e2 on 2026-09-20, both with a green staging deploy).
+  // The list now comes from `deployTopicsForEnv` (this process's own env
+  // plus legacy), rows are normalized, and `resolveDeployOutcome` applies
+  // the exact `git_commit === merge_sha` match first and then the same
+  // queued-merge fallback the watcher has had since VTID-02700 — a later
+  // successful `main` deploy after the merge carries the merge.
+  const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.deploying * 2).toISOString();
+  const deployR = await supa<Array<{ id: string; topic: string; created_at: string; status?: string; metadata?: Record<string, unknown> }>>(s,
+    `/rest/v1/oasis_events?topic=${deployTopicsInFilter(currentEnv())}`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=50&select=id,topic,created_at,status,metadata`);
+  const events = deployR.ok && deployR.data ? deployR.data.map(normalizeDeployEvent) : [];
+  const mergeSha = (exec.metadata as { merge_sha?: string } | null | undefined)?.merge_sha;
+  const resolved = resolveDeployOutcome(events, { mergeSha, sinceIso: exec.updated_at });
+  if (resolved.outcome === 'success' && resolved.matched) {
+    await patchExecution(s, exec.id, { status: 'verifying' });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.deployed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} deploy success event observed — advancing to verifying`,
+      payload: { execution_id: exec.id, deploy_event_id: resolved.matched.id, deploy_topic: resolved.matched.topic, reconciled_from: 'deploying', matched_by: resolved.matched_by },
+    });
+    return;
+  }
+  if (resolved.outcome === 'failed' && resolved.matched) {
+    await patchExecution(s, exec.id, {
+      status: 'failed',
+      completed_at: new Date().toISOString(),
+      metadata: { ...(exec.metadata || {}), error: `reconciler: deploy failure event ${resolved.matched.topic} observed in deploying (matched_by=${resolved.matched_by})` },
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.deploy_failed',
+      source: 'dev-autopilot',
+      status: 'error',
+      message: `Reconciler: ${exec.id.slice(0, 8)} deploy failure event observed`,
+      payload: { execution_id: exec.id, reason: 'deploy_failure_event', deploy_event_id: resolved.matched.id, deploy_topic: resolved.matched.topic, matched_by: resolved.matched_by },
+    });
+    bridgeFailure(exec.id, 'deploying', `deploy failure event ${resolved.matched.topic} observed`).catch(() => {});
+    return;
+  }
+
+  // No deploy event seen within the look-back window — fail.
+  await patchExecution(s, exec.id, {
+    status: 'failed',
+    completed_at: new Date().toISOString(),
+    metadata: { ...(exec.metadata || {}), error: `reconciler: no deploy success event observed after ${RECONCILE_TIMEOUT_MS.deploying / 60_000}m in deploying` },
+  });
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.deploy_failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Reconciler: ${exec.id.slice(0, 8)} stuck in deploying with no observed deploy event`,
+    payload: { execution_id: exec.id, reason: 'no_deploy_event_observed' },
+  });
+  bridgeFailure(exec.id, 'deploying', 'No deploy event observed').catch(() => {});
+}
+
+/** Reconcile status='verifying'. Source of truth: HTTP /alive probe + any
+ *  recent verification-passed event. */
+async function reconcileVerifying(s: SupaConfig, exec: StuckExecRow): Promise<void> {
+  // Look for a verification event tagged for this execution.
+  // VTID-02697: same fix as reconcileDeploying — column is `topic`, not
+  // `type`. The previous query 400'd silently.
+  const since = new Date(Date.now() - RECONCILE_TIMEOUT_MS.verifying * 2).toISOString();
+  const verifyR = await supa<Array<{ id: string; topic: string }>>(s,
+    `/rest/v1/oasis_events?topic=in.(dev_autopilot.execution.verification_passed,vtid.lifecycle.completed)`
+    + `&created_at=gte.${since}&order=created_at.desc&limit=10&select=id,topic`);
+  if (verifyR.ok && verifyR.data && verifyR.data.length > 0) {
+    await patchExecution(s, exec.id, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.completed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} verification observed — completing`,
+      payload: { execution_id: exec.id, reconciled_from: 'verifying' },
+    });
+    return;
+  }
+
+  // No verification event — best-effort: probe /alive ourselves. If 200,
+  // call it good.
+  //
+  // VTID-02698: probe up to 3 times with 5s spacing. A single transient
+  // 429 (rate-limited during deploy churn) or 503 (Cloud Run cold start)
+  // shouldn't fail an execution that's otherwise healthy. Only treat
+  // 4xx-non-429 / 5xx-non-503 / network errors as definitive failure.
+  // VTID-04220: this environment's own gateway (staging probes staging), never
+  // the dead GCP host this line used to default to.
+  const gatewayUrl = gatewayBaseUrl();
+  let alive = false;
+  let lastStatus: number | null = null;
+  for (let attempt = 0; attempt < 3 && !alive; attempt++) {
+    if (attempt > 0) await new Promise((res) => setTimeout(res, 5000));
+    try {
+      const r = await fetch(`${gatewayUrl}/alive`);
+      lastStatus = r.status;
+      if (r.ok) { alive = true; break; }
+      // 429/503 = transient, retry. Anything else = definitive non-alive.
+      if (r.status !== 429 && r.status !== 503) break;
+    } catch { /* network error — retry */ }
+  }
+
+  if (alive) {
+    await patchExecution(s, exec.id, {
+      status: 'completed',
+      completed_at: new Date().toISOString(),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.completed',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Reconciler: ${exec.id.slice(0, 8)} /alive ok — completing`,
+      payload: { execution_id: exec.id, reconciled_from: 'verifying', via: 'alive_probe' },
+    });
+    return;
+  }
+
+  // VTID-02698: spread existing metadata so we don't blow away merge_sha
+  // (set by the watcher at merge) or other fields the reconciler may
+  // need on subsequent passes / for postmortem.
+  await patchExecution(s, exec.id, {
+    status: 'failed',
+    completed_at: new Date().toISOString(),
+    metadata: {
+      ...(exec.metadata || {}),
+      error: `reconciler: /alive failed after ${RECONCILE_TIMEOUT_MS.verifying / 60_000}m in verifying (last_status=${lastStatus})`,
+    },
+  });
+  bridgeFailure(exec.id, 'verifying', '/alive probe failed').catch(() => {});
+}
+
+/** Top-level reconciler. Iterates each non-terminal status with a per-state
+ *  timeout and queries reality to transition or fail. Bounded per tick. */
+export async function reconcileStuckExecutions(s: SupaConfig): Promise<void> {
+  for (const status of Object.keys(RECONCILE_TIMEOUT_MS)) {
+    const cutoff = new Date(Date.now() - RECONCILE_TIMEOUT_MS[status]).toISOString();
+    const stuckR = await supa<StuckExecRow[]>(s,
+      `/rest/v1/dev_autopilot_executions?status=eq.${status}&updated_at=lt.${cutoff}`
+      + `&select=id,finding_id,status,pr_url,pr_number,branch,updated_at,metadata`
+      + `&order=updated_at.asc&limit=${RECONCILE_BATCH_SIZE}`);
+    if (!stuckR.ok || !stuckR.data || stuckR.data.length === 0) continue;
+    // VTID-04005: never reconcile another environment's execution.
+    const owned = filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} reconciler`);
+    if (owned.length === 0) continue;
+    console.log(`${LOG_PREFIX} reconciler: ${owned.length} execution(s) stuck in '${status}'`);
+    for (const exec of owned) {
+      try {
+        if (status === 'ci')         await reconcileCi(s, exec);
+        else if (status === 'merging')   await reconcileMerging(s, exec);
+        else if (status === 'deploying') await reconcileDeploying(s, exec);
+        else if (status === 'verifying') await reconcileVerifying(s, exec);
+      } catch (err) {
+        console.error(`${LOG_PREFIX} reconciler error on ${exec.id} [${status}]:`, err);
+      }
+    }
+  }
+}
+
+/** Main tick — called every BACKGROUND_TICK_MS. Idempotent. */
+/**
+ * VTID-04011: the PATCH `applyExecutionResult` writes when an execution
+ * fails. Same merge rule as the watchdog reclaim (see below) — the row's
+ * existing metadata survives, only `error` (+ timestamp) is added.
+ */
+export function buildExecutionFailurePatch(
+  existing: Record<string, unknown> | null | undefined,
+  error: string | undefined,
+  now: Date = new Date(),
+): { status: 'failed'; completed_at: string; metadata: Record<string, unknown> } {
+  return {
+    status: 'failed',
+    completed_at: now.toISOString(),
+    metadata: {
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      error: error || 'unknown execution failure',
+      failed_at: now.toISOString(),
+    },
+  };
+}
+
+/**
+ * VTID-04011: the running-watchdog's reclaim PATCH. Merges the row's existing
+ * metadata instead of replacing it — Test Run #4 showed the replace wiping
+ * `executor`, `claimed_env` and `llm_on_ramp_override` off a live agent
+ * execution, so the self-heal child inherited nothing and ran single-shot.
+ * Pure so it can be pinned by a test without driving the whole tick.
+ */
+export function buildWatchdogReclaimPatch(
+  existing: Record<string, unknown> | null | undefined,
+  stuckMs: number,
+  now: Date = new Date(),
+  basis: 'legacy_stale' | 'lease_expired' = 'legacy_stale',
+): { status: 'failed'; completed_at: string; metadata: Record<string, unknown> } {
+  return {
+    status: 'failed',
+    completed_at: now.toISOString(),
+    metadata: {
+      ...(existing && typeof existing === 'object' ? existing : {}),
+      // VTID-04446: an expired run lease is its own, faster reason.
+      error: basis === 'lease_expired'
+        ? `watchdog: run lease expired (no heartbeat for longer than the lease TTL) — task presumed dead`
+        : `watchdog: stuck in 'running' > ${stuckMs / 60_000}m (container recycled mid-execution)`,
+      watchdog_reclaimed_at: now.toISOString(),
+      ...(basis === 'lease_expired' ? { watchdog_basis: 'lease_expired' } : {}),
+    },
+  };
+}
+
+let claimGateLogged = false;
+
+/**
+ * VTID-05146 (C1a): 'clear' → claim; 'held' → moved to held_overlap (the CI
+ * watcher re-checks it every tick); 'retry' → the check could not run, so
+ * nothing is claimed this tick. An open-ended plan has no file list yet: the
+ * merge-time check judges its real diff.
+ */
+async function overlapBeforeClaim(s: SupaConfig, exec: Pick<ExecutionRow, 'id' | 'finding_id' | 'plan_version' | 'metadata'>): Promise<'clear' | 'held' | 'retry'> {
+  const files = await loadPlanFiles(s, exec.finding_id, exec.plan_version);
+  if (files === null) {
+    console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] plan files unreadable; not claiming this tick`);
+    return 'retry';
+  }
+  if (files.length === 0) return 'clear';
+  const guard = await guardFiles(`${GITHUB_OWNER}/${GITHUB_REPO}`, files);
+  if (!guard.ok) {
+    console.warn(`${LOG_PREFIX} [${exec.id.slice(0, 8)}] open-PR overlap check failed (${guard.error}); not claiming this tick`);
+    return 'retry';
+  }
+  if (guard.blocks.length === 0) return 'clear';
+  const moved = await holdExecution(s, exec, 'cooling', guard.blocks, [], claimStamp());
+  return moved ? 'held' : 'retry';
+}
+
+export async function backgroundExecutorTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  // 0. Reclaim worker-queue rows stuck in 'running' or 'pending' past their
+  // watchdog windows. Pending rows accumulate when no worker daemon is alive
+  // to claim them — the running-watchdog can't see those. Each pending
+  // reclaim writes a self_healing_log row directly so the Self-Healing
+  // screen surfaces queue jams even when no caller is left waiting.
+  if (isWorkerQueueEnabled()) {
+    const reclaimRunning = await reclaimStuckWorkerTasks();
+    const reclaimPending = await reclaimStuckPendingWorkerTasks();
+    if (reclaimRunning.reclaimed > 0 || reclaimPending.reclaimed > 0) {
+      console.log(
+        `${LOG_PREFIX} watchdog reclaimed ${reclaimRunning.reclaimed} running + ${reclaimPending.reclaimed} pending worker task(s)`,
+      );
+    }
+  }
+
+  // 0b. Reclaim execution rows stuck in 'running'. Cloud Run recycles
+  // containers every few minutes, killing in-flight fire-and-forget
+  // runExecutionSession promises. The row never gets updated and sits in
+  // 'running' forever. Anything that's been running > STUCK_EXECUTION_MS
+  // and has no branch/pr_url yet is almost certainly abandoned — mark it
+  // failed and bridge it into self-heal.
+  // VTID-04011: an agent execution (AGENT_DEADLINE_MS is 22 min by default)
+  // heartbeats its row's updated_at every AGENT_HEARTBEAT_MS while alive, so
+  // this cutoff only ever catches a task that actually died.
+  const STUCK_EXECUTION_MS = LEGACY_STUCK_EXECUTION_MS; // 20 min — plenty of slack for a normal execute (5-10 min)
+  try {
+    // VTID-04446: with run leases on, candidates are rows quiet for longer
+    // than the lease TTL, and the lease — not the clock — decides. Off, the
+    // window is the legacy 20 minutes and every candidate is reclaimed.
+    const leasesOn = isRunLeaseEnabled();
+    const cutoff = new Date(Date.now() - watchdogCandidateWindowMs()).toISOString();
+    const stuckR = await supa<Array<{ id: string; finding_id: string; updated_at: string; metadata?: Record<string, unknown> | null }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?status=eq.running&updated_at=lt.${cutoff}&select=id,finding_id,updated_at,metadata&limit=10`,
+    );
+    if (stuckR.ok && stuckR.data && stuckR.data.length > 0) {
+      // VTID-04005: a gateway only reclaims what it (or a legacy unstamped
+      // claim) owns — the other environment's executor task may be alive.
+      const owned = filterOwnedExecutions(stuckR.data, `${LOG_PREFIX} watchdog`);
+      const leases = leasesOn ? await readDevRunLeases(leaseRest(s), owned.map((r) => r.id)) : null;
+      for (const stuck of owned) {
+        const decision = leasesOn
+          ? decideWatchdogReclaim(stuck, leases?.get(stuck.id) ?? null)
+          : { action: 'reclaim' as const, reason: 'legacy_stale' as const };
+        if (decision.action === 'skip') {
+          if (decision.reason === 'lease_live') console.log(`${LOG_PREFIX} watchdog: ${stuck.id.slice(0, 8)} quiet but its lease is live — not reclaimed`);
+          continue;
+        }
+        const reclaim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${stuck.id}&status=eq.running`, {
+          method: 'PATCH',
+          headers: { Prefer: 'return=minimal' },
+          body: JSON.stringify({
+            ...buildWatchdogReclaimPatch(stuck.metadata, STUCK_EXECUTION_MS, new Date(), decision.reason),
+          }),
+        });
+        if (reclaim.ok) {
+          console.log(`${LOG_PREFIX} watchdog reclaimed stuck execution ${stuck.id.slice(0, 8)} (${decision.reason})`);
+          if (leasesOn) void releaseDevRunLease(leaseRest(s), stuck.id, 'failed', `watchdog reclaim: ${decision.reason}`);
+          await emitOasisEvent({
+            vtid: EXEC_VTID,
+            type: 'dev_autopilot.execution.failed',
+            source: 'dev-autopilot',
+            status: 'error',
+            message: `Execution ${stuck.id.slice(0, 8)} reclaimed by watchdog (stuck in running)`,
+            payload: { execution_id: stuck.id, finding_id: stuck.finding_id, reason: 'stuck_in_running', reclaim_basis: decision.reason },
+          });
+          try {
+            const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+            bridgeFailureToSelfHealing({ execution_id: stuck.id, failure_stage: 'ci', error: 'watchdog reclaim: stuck in running' })
+              .catch((err: unknown) => console.error(`${LOG_PREFIX} bridge error for reclaimed ${stuck.id}:`, err));
+          } catch (err) {
+            console.error(`${LOG_PREFIX} bridge load error for reclaimed ${stuck.id}:`, err);
+          }
+        }
+      }
+    }
+    // VTID-04446: close expired leases whose execution already moved on.
+    if (leasesOn) {
+      const swept = await sweepOrphanDevRunLeases(leaseRest(s));
+      if (swept > 0) console.log(`${LOG_PREFIX} run-lease sweep closed ${swept} orphan lease(s)`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} execution watchdog error:`, err);
+  }
+
+  // 0c. State reconciler — for executions stuck in ci / merging / deploying /
+  // verifying past their per-state timeout, query reality (GitHub + OASIS +
+  // /alive probe) and either advance them or mark them failed + bridge to
+  // self-heal. Bounded per tick so GitHub API spend is capped.
+  try {
+    await reconcileStuckExecutions(s);
+  } catch (err) {
+    console.error(`${LOG_PREFIX} reconciler error:`, err);
+  }
+
+  // 0c-bis. VTID-02669: feedback ticket completion reconciler. Closes
+  // feedback_tickets whose linked dev_autopilot_executions reached a
+  // terminal state (completed → resolved + playwright_verified stamp;
+  // failed → needs_more_info with note). Without this, a completed run
+  // leaves the ticket in_progress forever and the supervisor never gets
+  // a "shipped" signal.
+  try {
+    const { reconcileCompletedFeedbackTickets } = await import('./feedback-completion-reconciler');
+    const r = await reconcileCompletedFeedbackTickets(s);
+    if (r.closed > 0 || r.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-completion: closed=${r.closed} failed=${r.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-completion reconciler error:`, err);
+  }
+
+  // 0c-bis. VTID-04311: replace placeholder specs on spec_ready bug/ux
+  // tickets with a real Devon draft (triage stage). Self-throttled (5 min),
+  // FEEDBACK_SPEC_DRAFT_ENABLED=false disables it. VTID-04333: the same pass
+  // auto-dispatches tickets with a real spec when
+  // FEEDBACK_AUTO_DISPATCH_ENABLED=true (kill switch checked inside).
+  try {
+    const { draftPlaceholderSpecsTick } = await import('./feedback-spec-drafter');
+    const d = await draftPlaceholderSpecsTick(s);
+    if (d.drafted > 0 || d.failed > 0 || d.dispatched > 0 || d.dispatch_failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-spec-draft: drafted=${d.drafted} failed=${d.failed} auto_dispatched=${d.dispatched} auto_dispatch_failed=${d.dispatch_failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-spec-draft error:`, err);
+  }
+
+  // 0c-ter. VTID-04384: replace placeholder Sage answers on answer_ready
+  // support questions with a real draft for supervisor review. Never sends
+  // anything to the member. Self-throttled (5 min),
+  // FEEDBACK_ANSWER_DRAFT_ENABLED=false disables it.
+  try {
+    const { draftPlaceholderAnswersTick } = await import('./feedback-answer-drafter');
+    const a = await draftPlaceholderAnswersTick(s);
+    if (a.drafted > 0 || a.failed > 0) {
+      console.log(`${LOG_PREFIX} feedback-answer-draft: drafted=${a.drafted} failed=${a.failed}`);
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} feedback-answer-draft error:`, err);
+  }
+
+  // 0d. Auto-archive watchdog: any execution in a terminal-failure state
+  // (failed / failed_escalated / reverted / cancelled) whose updated_at is
+  // older than AUTO_ARCHIVE_DAYS gets moved to status='auto_archived' so
+  // the queue + Self-Healing UI don't accumulate stale entries forever.
+  // The escalation event already wrote to self_healing_log; archiving here
+  // doesn't lose context.
+  const AUTO_ARCHIVE_DAYS = Number.parseInt(process.env.AUTOPILOT_AUTO_ARCHIVE_DAYS || '7', 10);
+  try {
+    const cutoff = new Date(Date.now() - AUTO_ARCHIVE_DAYS * 86_400_000).toISOString();
+    const archR = await supa(s,
+      `/rest/v1/dev_autopilot_executions?status=in.(failed,failed_escalated,reverted,cancelled)`
+      + `&updated_at=lt.${cutoff}`,
+      {
+        method: 'PATCH',
+        headers: { Prefer: 'return=minimal' },
+        body: JSON.stringify({
+          status: 'auto_archived',
+          updated_at: new Date().toISOString(),
+        }),
+      });
+    if (archR.ok) {
+      // PATCH return=minimal doesn't give us a count; log when the query
+      // actually matched anything by re-querying — cheap and only fires on
+      // archival activity.
+      const sampleR = await supa<Array<{ id: string }>>(s,
+        `/rest/v1/dev_autopilot_executions?status=eq.auto_archived&updated_at=gte.${new Date(Date.now() - 60_000).toISOString()}&select=id&limit=20`);
+      if (sampleR.ok && sampleR.data && sampleR.data.length > 0) {
+        console.log(`${LOG_PREFIX} auto-archive: ${sampleR.data.length} terminal-failure execution(s) archived (>${AUTO_ARCHIVE_DAYS}d old)`);
+      }
+    }
+  } catch (err) {
+    console.error(`${LOG_PREFIX} auto-archive error:`, err);
+  }
+
+  // 1. Honor kill switch — every lane. VTID-04308 removed the VTID-02676
+  //    feedback-lane exemption: a support ticket is one more intake source
+  //    and stops with the rest when the kill switch is armed.
+  const cfg = await loadConfig(s);
+  if (!cfg) return;
+  if (cfg.kill_switch) return;
+
+  // 1b. VTID-04497: only the staging gateway claims new executions — a merge
+  //     to main deploys staging, so only staging can see the lifecycle end.
+  if (!executorClaimsHere()) {
+    if (!claimGateLogged) {
+      claimGateLogged = true;
+      console.log(`${LOG_PREFIX} env=${currentEnv()}: not claiming new executions (DEV_AUTOPILOT_PROD_CLAIM_ENABLED != 'true'); owned rows are still watched`);
+    }
+    return;
+  }
+
+  // 2. Concurrency cap — and VTID-04368: claim nothing during an LLM
+  //    provider outage (cooling rows wait), one at a time while probing.
+  const pipeline = await countPipeline(s);
+  const slots = slotsUnderOutage(await loadOutageState(s), pipelineSlots('claim', pipeline, cfg.concurrency_cap, resolveTailCap()));
+  if (slots === 0) return;
+
+  // 3. Pick cooling executions past execute_after, oldest first.
+  const now = new Date().toISOString();
+  const readyR = await supa<ExecutionRow[]>(
+    s,
+    `/rest/v1/dev_autopilot_executions?status=eq.cooling&execute_after=lte.${encodeURIComponent(now)}&order=execute_after.asc&limit=${slots}`
+    + `&select=id,finding_id,plan_version,auto_fix_depth,metadata`,
+  );
+  if (!readyR.ok || !readyR.data || readyR.data.length === 0) return;
+  const filteredRows = readyR.data;
+
+  for (const exec of filteredRows) {
+    // VTID-05146 (C1a): before the claim, the plan's files against every open
+    // PR in the repository (any author, drafts included). A shared file holds
+    // the execution (held_overlap) instead of running it; a failed check
+    // claims nothing this tick.
+    const overlap = await overlapBeforeClaim(s, exec);
+    if (overlap !== 'clear') continue;
+
+    // Atomic claim: transition cooling → running only if still cooling
+    // VTID-04005: stamp the claiming environment onto the row so the other
+    // gateway's watcher/reconciler (shared table) leaves it alone.
+    const claim = await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.cooling`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=representation' },
+      body: JSON.stringify({
+        status: 'running',
+        updated_at: new Date().toISOString(),
+        // VTID-04247: record the executor this row will run on (from the
+        // process pin) so the bridge's fix-mode gate can see it later.
+        metadata: { ...(exec.metadata || {}), ...claimStamp(), ...claimExecutorStamp(exec.metadata) },
+      }),
+    });
+    if (!claim.ok) {
+      console.warn(`${LOG_PREFIX} claim failed for ${exec.id}: ${claim.error}`);
+      continue;
+    }
+    // VTID-04446: the run lease (flag-gated, fail-open). Written with the
+    // legacy 20-minute window; the agent heartbeat renews it to the TTL.
+    await acquireDevRunLease(leaseRest(s), exec);
+
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.running',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Execution ${exec.id.slice(0, 8)} running`,
+      payload: { execution_id: exec.id, finding_id: exec.finding_id },
+    });
+
+    // VTID-04774 (Jev P1 A2): feasibility check in shadow — fire-and-forget,
+    // never delays the claim or changes the dispatch below.
+    if (isClaimFeasibilityOn()) {
+      void runClaimFeasibilityCheck({
+        executionId: exec.id,
+        findingId: exec.finding_id,
+        load: () => loadFeasibilityContext(s, exec),
+      });
+    }
+    // VTID-04801 (Jev P2 A4): is this the previous failed attempt again?
+    // Shadow, fire-and-forget, beside A2.
+    if (isRepeatRunGuardOn()) {
+      void runRepeatRunCheck({
+        executionId: exec.id,
+        findingId: exec.finding_id,
+        load: () => loadRepeatContext(s, exec),
+      });
+    }
+
+    // VTID-02703: dispatch path — Cloud Run Job (durable) or in-process (fast).
+    // The Job runtime survives container churn that kills long-running
+    // fire-and-forget Promises. Used for orb-live.ts and any execution
+    // expected to take >3 min. Falls back to in-process when the Job
+    // dispatch isn't configured or fails to enqueue.
+    let dispatchError: string | null = null;
+    if (USE_JOB_RUNTIME) {
+      try {
+        // VTID-03415: AWS RunTask and GCP Cloud Run Job are the two
+        // interchangeable dispatch targets; JOB_CLOUD picks which one this
+        // gateway instance should use. Both write back via job-entry.ts /
+        // applyExecutionResult, so the caller-side handling is identical.
+        const dispatched = JOB_CLOUD === 'aws'
+          ? await dispatchExecutorJobAws(exec.id)
+          : await dispatchExecutorJob(exec.id);
+        if (dispatched.ok) {
+          // VTID-04032: remember the ECS task so a cancel can stop it.
+          if (JOB_CLOUD === 'aws' && dispatched.operation) {
+            recordDispatchedTask(s, exec.id, dispatched.operation).catch((err) =>
+              console.warn(`${LOG_PREFIX} could not record task arn for ${exec.id}:`, err instanceof Error ? err.message : err));
+          }
+          // The Job/Task calls runExecutionSession + applyExecutionResult on
+          // its own. The gateway's job is done for this exec — return so we
+          // don't double-fire.
+          continue;
+        }
+        dispatchError = String(dispatched.error || 'dispatch returned not ok');
+        console.warn(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) failed for ${exec.id}: ${dispatched.error}`);
+      } catch (err) {
+        dispatchError = err instanceof Error ? err.message : String(err);
+        console.error(`${LOG_PREFIX} Job dispatch (${JOB_CLOUD}) threw for ${exec.id}:`, err);
+      }
+      // VTID-04467: an agent run never falls back into a process that cannot
+      // run its checks (the gateway image has no tsc) — requeue, then fail.
+      const claimedMeta = { ...(exec.metadata || {}), ...claimExecutorStamp(exec.metadata) };
+      const fallback = decideDispatchFallback({
+        mode: resolveExecutorMode(claimedMeta),
+        toolchainPresent: agentToolchainPresent(),
+        priorDispatchFailures: priorDispatchFailures(exec.metadata),
+        maxAttempts: resolveMaxDispatchAttempts(),
+      });
+      if (fallback !== 'in_process') {
+        await handleDispatchFailure(s, exec, fallback, dispatchError || 'unknown dispatch error');
+        continue;
+      }
+      console.warn(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: running in-process after dispatch failure`);
+    }
+
+    // In-process fallback (existing behaviour). Fire-and-forget so one
+    // long-running session doesn't block sibling claims.
+    runExecutionSession(s, exec.id).then(async (result) => {
+      await applyExecutionResult(s, exec.id, result);
+    }).catch((err) => {
+      console.error(`${LOG_PREFIX} unhandled executor error for ${exec.id}:`, err);
+    });
+  }
+}
+
+/**
+ * VTID-04467: an agent execution whose executor task could not be started.
+ * `requeue` puts the row back to `cooling` with a growing delay; `fail`
+ * closes it with an outage-class reason (never bridged to self-healing — the
+ * finding did nothing wrong). Both release the run lease the claim took.
+ */
+async function handleDispatchFailure(
+  s: SupaConfig,
+  exec: ExecutionRow,
+  decision: 'requeue' | 'fail',
+  dispatchError: string,
+): Promise<void> {
+  const attempts = priorDispatchFailures(exec.metadata) + 1;
+  const nowIso = new Date().toISOString();
+  const baseMeta = { ...(exec.metadata || {}), ...claimStamp(), ...claimExecutorStamp(exec.metadata) };
+  if (isRunLeaseEnabled()) {
+    await releaseDevRunLease(leaseRest(s), exec.id, decision === 'fail' ? 'failed' : 'cancelled', `dispatch failed: ${dispatchError.slice(0, 200)}`);
+  }
+  if (decision === 'requeue') {
+    const executeAfter = new Date(Date.now() + requeueDelayMs(attempts)).toISOString();
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.running`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'cooling',
+        execute_after: executeAfter,
+        updated_at: nowIso,
+        metadata: { ...baseMeta, dispatch_failures: attempts, last_dispatch_error: dispatchError.slice(0, 500), last_dispatch_at: nowIso },
+      }),
+    });
+    console.warn(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: executor task not started (attempt ${attempts}); requeued until ${executeAfter}`);
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.dispatch_deferred',
+      source: 'dev-autopilot',
+      status: 'warning',
+      message: `Execution ${exec.id.slice(0, 8)}: executor task not started (attempt ${attempts}); requeued`,
+      payload: { execution_id: exec.id, attempt: attempts, execute_after: executeAfter, error: dispatchError.slice(0, 500) },
+    });
+    return;
+  }
+  const error = dispatchFailureError(attempts, dispatchError);
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${exec.id}&status=eq.running`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      ...buildExecutionFailurePatch({ ...baseMeta, dispatch_failures: attempts, last_dispatch_error: dispatchError.slice(0, 500), last_dispatch_at: nowIso }, error),
+    }),
+  });
+  console.error(`${LOG_PREFIX} ${exec.id.slice(0, 8)}: ${error}`);
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.dispatch_failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Execution ${exec.id.slice(0, 8)} failed: ${error}`,
+    payload: { execution_id: exec.id, attempts, error },
+  });
+}
+
+/**
+ * VTID-02703: dispatch a Cloud Run Job execution for the given exec_id.
+ *
+ * Uses the Cloud Run Admin REST API:
+ *   POST /v2/projects/{project}/locations/{region}/jobs/{job}:run
+ *   body: { overrides: { containerOverrides: [{ env: [{name:'EXEC_ID', value:execId}] }] } }
+ *
+ * Authentication: relies on the gateway's GCP service account (auto-mounted
+ * via google-github-actions/auth in CI; in production the Cloud Run service
+ * uses the workload identity bound to its runtime SA, which has
+ * roles/run.invoker on the Job).
+ *
+ * Returns immediately after triggering — the Job runs asynchronously and
+ * writes back to the DB itself via job-entry.ts → applyExecutionResult.
+ */
+async function dispatchExecutorJob(execId: string): Promise<{ ok: boolean; error?: string; operation?: string }> {
+  try {
+    // Get an OAuth token from the metadata server (works on Cloud Run / GKE).
+    // Falls back to gcloud-printed creds in dev (GOOGLE_APPLICATION_CREDENTIALS).
+    const token = await getGcpAccessToken();
+    if (!token) {
+      return { ok: false, error: 'no GCP access token (metadata server unreachable)' };
+    }
+    const url = `https://run.googleapis.com/v2/projects/${JOB_PROJECT}/locations/${JOB_REGION}/jobs/${JOB_NAME}:run`;
+    const res = await fetch(url, {
+      method: 'POST',
+      headers: {
+        'Authorization': `Bearer ${token}`,
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({
+        overrides: {
+          containerOverrides: [{
+            env: [{ name: 'EXEC_ID', value: execId }],
+          }],
+        },
+      }),
+    });
+    if (!res.ok) {
+      const detail = await res.text().catch(() => '?');
+      return { ok: false, error: `${res.status}: ${detail.slice(0, 300)}` };
+    }
+    const body = await res.json().catch(() => ({})) as { name?: string };
+    console.log(`${LOG_PREFIX} dispatched Job ${JOB_NAME} for exec=${execId.slice(0, 8)} op=${body.name || '?'}`);
+    return { ok: true, operation: body.name };
+  } catch (err) {
+    return { ok: false, error: err instanceof Error ? err.message : String(err) };
+  }
+}
+
+/**
+ * VTID-02703: get an access token for the Cloud Run Admin API.
+ * On Cloud Run / GKE: read from the metadata server (default SA).
+ * On dev / local: rely on GOOGLE_APPLICATION_CREDENTIALS being set.
+ */
+async function getGcpAccessToken(): Promise<string | null> {
+  try {
+    // Cloud Run mounts the metadata server at this fixed address.
+    const res = await fetch(
+      'http://metadata.google.internal/computeMetadata/v1/instance/service-accounts/default/token',
+      { headers: { 'Metadata-Flavor': 'Google' } as any },
+    );
+    if (!res.ok) return null;
+    const body = await res.json() as { access_token?: string };
+    return body.access_token ?? null;
+  } catch {
+    return null;
+  }
+}
+
+/**
+ * VTID-02703: writes the outcome of a runExecutionSession invocation back
+ * to the DB and emits the appropriate OASIS event. Shared between the
+ * gateway's in-process executor tick and the Cloud Run Job entry point so
+ * both runtimes converge on identical post-execution state.
+ */
+export async function applyExecutionResult(
+  s: SupaConfig,
+  execId: string,
+  result: { ok: boolean; pr_url?: string; branch?: string; pr_number?: number; session_id?: string; error?: string; awaiting_approval?: boolean; cancelled?: boolean },
+): Promise<void> {
+  // VTID-04774: the A2 feasibility row (if any) learns how the run ended.
+  // Fire-and-forget; no row when the gate was off.
+  void recordClaimFeasibilityOutcome(execId, result);
+  void recordRepeatRunOutcome(execId, result); // VTID-04801 (Jev A4)
+  // VTID-04446: the running phase is over, whatever the result — close its
+  // lease so the watchdog has nothing to decide. Idempotent, fail-open.
+  if (isRunLeaseEnabled()) await releaseDevRunLease(leaseRest(s), execId, runPhaseOutcome(result), result.ok ? null : (result.error || null));
+  // VTID-04032: the agent stopped because an operator cancelled it. The
+  // cancel route normally moved the row to `cancelled` already (in which
+  // case there is nothing to write); if the flag was raised another way,
+  // close the row as cancelled — never as failed, never into self-heal.
+  if (!result.ok && result.cancelled) {
+    const curC = await supa<Array<{ status: string; metadata?: Record<string, unknown> | null }>>(
+      s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=status,metadata&limit=1`,
+    );
+    const rowC = curC.ok && curC.data && curC.data[0] ? curC.data[0] : null;
+    if (!rowC || rowC.status === 'cancelled') {
+      console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: agent reported cancelled; row already ${rowC?.status ?? 'missing'} — nothing to apply`);
+      return;
+    }
+    const nowC = new Date().toISOString();
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&status=eq.${rowC.status}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'cancelled', cancelled_at: nowC, execution_session_id: result.session_id || null,
+        metadata: { ...(rowC.metadata || {}), cancelled: { by: 'agent', at: nowC, reason: result.error || 'cancelled by operator', was: rowC.status } },
+      }),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.cancelled',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Execution ${execId.slice(0, 8)} stopped by the agent after an operator cancel`,
+      payload: { execution_id: execId, was: rowC.status, reason: result.error || null },
+    });
+    applyExecTerminalSideEffects(s, execId, 'cancelled');
+    return;
+  }
+  // VTID-04029: the agent pushed its branch and stopped before opening a PR
+  // — record the hold + diff preview; approve/reject come back through
+  // dev-autopilot-approval.ts (approve re-enters this function with pr_url).
+  if (result.ok && result.awaiting_approval) {
+    if (!isAwaitingApprovalResult(result)) {
+      console.error(`${LOG_PREFIX} ${execId.slice(0, 8)}: awaiting_approval result without branch/head_sha — treating as failure`);
+      return applyExecutionResult(s, execId, { ok: false, error: 'awaiting_approval result missing branch/head_sha', session_id: result.session_id });
+    }
+    const staged = await stageExecutionForApproval(s, execId, result);
+    if (!staged.ok) {
+      return applyExecutionResult(s, execId, { ok: false, error: `could not stage for approval: ${staged.error}`, session_id: result.session_id });
+    }
+    return;
+  }
+  if (result.ok && result.pr_url) {
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'ci',
+        pr_url: result.pr_url,
+        pr_number: result.pr_number || null,
+        branch: result.branch || null,
+        execution_session_id: result.session_id || null,
+      }),
+    });
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.pr_opened',
+      source: 'dev-autopilot',
+      status: 'success',
+      message: `Execution ${execId.slice(0, 8)} opened ${result.pr_url}`,
+      payload: { execution_id: execId, pr_url: result.pr_url, branch: result.branch },
+    });
+    // VTID-04025: task_outcome row so the next session recalls what happened.
+    recordExecutionOutcomeMemory({ executionId: execId, ok: true, prUrl: result.pr_url, branch: result.branch })
+      .catch((err: unknown) => console.warn(`${LOG_PREFIX} outcome memory error for ${execId}:`, err));
+    return;
+  }
+
+  // VTID-04011: merge, never replace — the row's metadata carries executor,
+  // claimed_env and the llm_on_ramp override that a self-heal child inherits
+  // (Test Run #4 lost all three here and the child ran single-shot).
+  const curR = await supa<Array<{ status?: string; metadata?: Record<string, unknown> | null }>>(
+    s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}&select=status,metadata&limit=1`,
+  );
+  const existingMeta = curR.ok && curR.data && curR.data[0] ? curR.data[0].metadata : null;
+  // VTID-04032: an operator cancelled this row while the agent ran (StopTask
+  // may have killed it mid-turn, or its own cancel check fired late) — the
+  // decision on the row stands; do not flip it to failed or bridge it.
+  if (curR.ok && curR.data && curR.data[0]?.status === 'cancelled') {
+    console.log(`${LOG_PREFIX} ${execId.slice(0, 8)}: result ignored — the execution was cancelled by an operator`);
+    return;
+  }
+  await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${execId}`, {
+    method: 'PATCH',
+    headers: { Prefer: 'return=minimal' },
+    body: JSON.stringify({
+      execution_session_id: result.session_id || null,
+      ...buildExecutionFailurePatch(existingMeta, result.error),
+    }),
+  });
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.execution.failed',
+    source: 'dev-autopilot',
+    status: 'error',
+    message: `Execution ${execId.slice(0, 8)} failed: ${result.error || 'unknown'}`,
+    payload: { execution_id: execId, error: result.error },
+  });
+  // VTID-04025: gotcha row carrying the failure reason (the W0 CI excerpt
+  // rides inside result.error when the failure came from CI).
+  recordExecutionOutcomeMemory({
+    executionId: execId,
+    ok: false,
+    error: result.error,
+    vtid: typeof existingMeta?.activated_vtid === 'string' ? existingMeta.activated_vtid : (typeof existingMeta?.vtid === 'string' ? existingMeta.vtid : undefined),
+    executor: typeof existingMeta?.executor === 'string' ? existingMeta.executor : undefined,
+  }).catch((err: unknown) => console.warn(`${LOG_PREFIX} outcome memory error for ${execId}:`, err));
+  try {
+    const { bridgeFailureToSelfHealing } = require('./dev-autopilot-bridge');
+    bridgeFailureToSelfHealing({
+      execution_id: execId,
+      failure_stage: 'ci',
+      error: result.error,
+    }).catch((err: unknown) => {
+      console.error(`${LOG_PREFIX} bridge error for ${execId}:`, err);
+    });
+  } catch (err) {
+    console.error(`${LOG_PREFIX} bridge load error for ${execId}:`, err);
+  }
+}
+
+/**
+ * Auto-approve tick — picks eligible `status='new'` findings and calls
+ * approveAutoExecute on their behalf. Runs alongside backgroundExecutorTick.
+ *
+ * Eligibility is gated by dev_autopilot_config:
+ *   - auto_approve_enabled must be true (default false, opt-in per env).
+ *   - kill_switch must be false (same gate as manual approval).
+ *   - finding's risk_class must be in auto_approve_risk_classes.
+ *   - finding's effort_score must be <= auto_approve_max_effort.
+ *   - finding's scanner must be in auto_approve_scanners.
+ *   - A plan version must already exist (approveAutoExecute enforces this
+ *     too; we filter here to avoid calling approveAutoExecute on findings
+ *     that would just error).
+ *
+ * Budget / concurrency caps are respected up-front so we don't burn through
+ * the daily budget in a single burst. The per-tick cap (5) is deliberate:
+ * it prevents a backlog flush if auto-approve is freshly enabled.
+ *
+ * The safety gate (evaluateSafetyGate inside approveAutoExecute) still runs
+ * on every finding — this function only automates the "click Approve" step.
+ */
+/**
+ * VTID-04246: give an auto-approved finding a real VTID before its execution
+ * exists. Without one the PR contract (VTID-04002) skips itself and the PR
+ * ships titled `VTID-DA-<exec8>`, which VALIDATOR-CHECK rejects on exit 10 —
+ * every one of the six owner-approved PRs of 2026-09-21 (#3543–#3548) died
+ * that way inside a minute and was reverted. Returns false (and logs) when
+ * allocation fails so the caller skips the approval: an execution that
+ * cannot produce a mergeable PR only burns tokens.
+ */
+async function ensureFindingVtid(
+  s: SupaConfig,
+  f: { id: string; risk_class: string | null; effort_score: number | null; spec_snapshot: { scanner?: string } | null; activated_vtid: string | null },
+): Promise<boolean> {
+  if (f.activated_vtid) return true;
+  const scanner = f.spec_snapshot?.scanner ?? null;
+  const alloc = await allocateAndRegisterFindingVtid(s, {
+    findingId: f.id,
+    title: buildFindingVtidTitle(f.spec_snapshot as Record<string, unknown> | null, f.id, scanner),
+    summary: `Auto-approved Dev Autopilot finding ${f.id} (${scanner || 'unknown scanner'}, risk ${f.risk_class || 'n/a'}, effort ${f.effort_score ?? 'n/a'})`,
+    scanner,
+  });
+  if (!alloc.ok) {
+    console.warn(`${LOG_PREFIX} auto-approve skipped ${f.id.slice(0, 8)}: ${alloc.error}`);
+    return false;
+  }
+  f.activated_vtid = alloc.vtid;
+  return true;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-04667: P4 gates for AUTONOMOUS approvals (never a human Activate).
+// ---------------------------------------------------------------------------
+
+/** Scanner / rule circuit breaker, with one OASIS event per transition. */
+export async function loadTickBreakers(s: SupaConfig): Promise<LoadedBreakers> {
+  return loadScannerBreakers(<T>(p: string) => supa<T>(s, p), { emitTransitions: true });
+}
+
+/**
+ * VTID-04667: an outage-class failure never re-queues the same finding more
+ * than once an hour. Fails open on a read error.
+ */
+async function outageRequeueAdmits(s: SupaConfig, findingId: string): Promise<boolean> {
+  const r = await supa<Array<{ status: string; updated_at: string; metadata: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}&order=updated_at.desc&limit=1&select=status,updated_at,metadata`,
+  );
+  if (!r.ok || !Array.isArray(r.data)) return true;
+  if (!inOutageRequeueCooldown(r.data[0])) return true;
+  console.log(`${LOG_PREFIX} auto-approve skipped ${findingId.slice(0, 8)}: last execution died on a provider outage < ${Math.round(resolveOutageRequeueCooldownMs() / 60000)} min ago (VTID-04667)`);
+  return false;
+}
+
+/**
+ * VTID-04667: per-finding token budget across every recorded agent run.
+ * Over budget → snooze 7 d with dev_autopilot.finding.snoozed. Fails open.
+ */
+async function findingBudgetAdmits(s: SupaConfig, findingId: string, pass: 'baseline' | 'impact'): Promise<boolean> {
+  const r = await supa<Array<{ metadata: unknown }>>(
+    s,
+    `/rest/v1/dev_autopilot_outcomes?finding_id=eq.${findingId}&select=metadata&limit=50`,
+  );
+  if (!r.ok || !Array.isArray(r.data)) return true;
+  const spend = summarizeFindingSpend(r.data);
+  const budget = resolveFindingBudget();
+  if (!isOverFindingBudget(spend, budget)) return true;
+  const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+  await supa(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&status=eq.new`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'snoozed', snoozed_until: snoozedUntil, updated_at: new Date().toISOString() }),
+    },
+  );
+  const why = `agent spend $${spend.cost_usd.toFixed(2)} / ${spend.input_tokens} input tokens over ${spend.runs} run(s) reached the per-finding budget`;
+  console.log(`${LOG_PREFIX} auto-approve (${pass}) refused ${findingId.slice(0, 8)}: ${why} — snoozed 7d (VTID-04667)`);
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.finding.snoozed',
+    source: 'dev-autopilot',
+    status: 'warning',
+    message: `Finding ${findingId.slice(0, 8)} snoozed 7d (${pass} pass): ${why}`,
+    payload: { finding_id: findingId, pass, reason: 'token_budget', spend, budget, snoozed_until: snoozedUntil },
+  });
+  return false;
+}
+
+// VTID-04667: the codebase index for the plan-file check — loaded at most
+// once per TTL, never retried for PLAN_INDEX_RETRY_MS after a failure, and
+// bounded in time so a slow S3 never stalls the tick.
+const PLAN_INDEX_TIMEOUT_MS = 3000;
+const PLAN_INDEX_RETRY_MS = 10 * 60 * 1000;
+let planIndexUnavailableUntil = 0;
+async function loadPlanIndex(): Promise<CodeIndexBundle | null> {
+  if (!isPlanFileCheckEnabled() || Date.now() < planIndexUnavailableUntil) return null;
+  try {
+    const loaded = await Promise.race([
+      loadCodeIndex('exafyltd/vitana-platform'),
+      new Promise<never>((_, reject) => setTimeout(() => reject(new Error('code index load timed out')), PLAN_INDEX_TIMEOUT_MS).unref?.()),
+    ]);
+    return loaded.bundle;
+  } catch (err) {
+    planIndexUnavailableUntil = Date.now() + PLAN_INDEX_RETRY_MS;
+    console.log(`${LOG_PREFIX} plan-file check skipped: code index unavailable (${err instanceof Error ? err.message : String(err)})`);
+    return null;
+  }
+}
+
+/**
+ * VTID-04667: the plan's non-test code files must exist in the codebase
+ * index. No index → no block. Skips (no snooze) so a plan fixed later, or an
+ * index that catches up with a recent merge, is picked up on a later tick.
+ */
+async function planFilesExistAdmits(s: SupaConfig, findingId: string, index: CodeIndexBundle | null): Promise<boolean> {
+  if (!index) return true;
+  const planR = await supa<Array<{ plan_markdown: string | null; files_referenced: string[] | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${findingId}&order=version.desc&limit=1&select=plan_markdown,files_referenced`,
+  );
+  if (!planR.ok || !Array.isArray(planR.data) || !planR.data[0]) return true;
+  const plan = planR.data[0];
+  const fresh = extractFilePaths(plan.plan_markdown || '');
+  const files = fresh.length > 0 ? fresh : (plan.files_referenced || []).map(String);
+  const missing = planFilesMissingFromIndex(files, index);
+  if (missing.length === 0) return true;
+  console.log(`${LOG_PREFIX} auto-approve skipped ${findingId.slice(0, 8)}: plan names file(s) not in the codebase index @${index.sha.slice(0, 7)}: ${missing.slice(0, 5).join(', ')} (VTID-04667)`);
+  return false;
+}
+
+// VTID-04368: global LLM-provider outage state (see dev-autopilot-retry-breaker.ts).
+// Latched per process so the OASIS event fires on the transition, not every tick.
+let lastOutageState: OutageState = 'clear';
+export async function loadOutageState(s: SupaConfig): Promise<OutageState> {
+  const r = await supa<Array<{ id: string; updated_at: string; metadata: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?status=in.(failed,failed_escalated,reverted)`
+    + `&updated_at=gte.${encodeURIComponent(new Date(Date.now() - 6 * 3600 * 1000).toISOString())}`
+    + `&order=updated_at.desc&limit=3&select=id,updated_at,metadata`,
+  );
+  if (!r.ok || !r.data) return lastOutageState === 'outage' ? 'outage' : 'clear';
+  const state = detectProviderOutage(r.data);
+  if ((state === 'outage') !== (lastOutageState === 'outage')) {
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: state === 'outage' ? 'dev_autopilot.provider_outage.detected' : 'dev_autopilot.provider_outage.cleared',
+      source: 'dev-autopilot',
+      status: state === 'outage' ? 'warning' : 'info',
+      message: state === 'outage'
+        ? 'LLM providers failing for every execution — autopilot stops approving and claiming, probing one at a time'
+        : 'LLM provider outage cleared — autopilot resumes normal approval and claiming',
+      payload: { state, last_error: String(r.data[0]?.metadata?.error ?? '').slice(0, 300) },
+    });
+  }
+  lastOutageState = state;
+  return state;
+}
+
+/**
+ * VTID-04368: one retry breaker for both auto-approve passes. The IMPACT pass
+ * had none and re-approved a finding 461 times in 12 h. Outage failures are
+ * excluded from the count (decideRetryBreaker).
+ */
+async function retryBreakerAdmits(s: SupaConfig, findingId: string, pass: 'baseline' | 'impact'): Promise<boolean> {
+  const failureWindow = new Date(Date.now() - 24 * 3600 * 1000).toISOString();
+  const failuresR = await supa<Array<{ id: string; metadata: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${findingId}`
+    + `&status=in.(failed,reverted,failed_escalated)`
+    + `&updated_at=gte.${encodeURIComponent(failureWindow)}`
+    + `&select=id,metadata&limit=50`,
+  );
+  if (!failuresR.ok) return false;
+  const decision = decideRetryBreaker(failuresR.data);
+  if (decision === 'admit') return true;
+  const snoozedUntil = new Date(Date.now() + 7 * 24 * 3600 * 1000).toISOString();
+  await supa(
+    s,
+    `/rest/v1/autopilot_recommendations?id=eq.${findingId}&status=eq.new`,
+    {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ status: 'snoozed', snoozed_until: snoozedUntil, updated_at: new Date().toISOString() }),
+    },
+  );
+  const why = decision === 'snooze_turn_cap'
+    ? 'a prior execution hit the agent turn cap (VTID-04243)'
+    : `${failuresR.data?.length ?? 0} terminal failures in 24h reached the retry cap`;
+  console.log(`${LOG_PREFIX} auto-approve (${pass}) refused ${findingId.slice(0, 8)}: ${why} — snoozed 7d`);
+  await emitOasisEvent({
+    vtid: EXEC_VTID,
+    type: 'dev_autopilot.finding.snoozed',
+    source: 'dev-autopilot',
+    status: 'warning',
+    message: `Finding ${findingId.slice(0, 8)} snoozed 7d (${pass} pass): ${why}`,
+    payload: { finding_id: findingId, pass, reason: decision === 'snooze_turn_cap' ? 'turn_cap_failure' : 'retry_cap', snoozed_until: snoozedUntil },
+  });
+  return false;
+}
+
+export async function autoApproveTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  const cfg = await loadConfig(s);
+  if (!cfg) return;
+  if (cfg.kill_switch) return;
+  if (!cfg.auto_approve_enabled) return;
+
+  const riskClasses = (cfg.auto_approve_risk_classes && cfg.auto_approve_risk_classes.length > 0)
+    ? cfg.auto_approve_risk_classes
+    : ['low', 'medium'];
+  const scanners = (cfg.auto_approve_scanners && cfg.auto_approve_scanners.length > 0)
+    ? cfg.auto_approve_scanners
+    : [];
+  if (scanners.length === 0) return; // no scanner opted-in — nothing to pick
+  const maxEffort = cfg.auto_approve_max_effort ?? 5;
+
+  const approvedToday = await countApprovedToday(s);
+  const budgetSlots = Math.max(0, cfg.daily_budget - approvedToday);
+  const concurrencySlots = pipelineSlots('approve', await countPipeline(s), cfg.concurrency_cap, resolveTailCap());
+  // Cap per-tick to avoid bursts when auto-approve is flipped on after a
+  // backlog has accumulated.
+  const PER_TICK_CAP = 5;
+  // VTID-04368: no approvals while every execution dies on the LLM providers.
+  const slots = slotsUnderOutage(await loadOutageState(s), Math.min(budgetSlots, concurrencySlots, PER_TICK_CAP));
+  if (slots === 0) return;
+
+  // PostgREST in.(...) expects comma-separated values; quote strings for
+  // safety. scanners/riskClasses come from the config row (operator-controlled),
+  // but still encode to avoid breaking on stray punctuation.
+  const riskList = riskClasses.map(r => `"${encodeURIComponent(r)}"`).join(',');
+  const scannerList = scanners.map(r => `"${encodeURIComponent(r)}"`).join(',');
+  const findingsR = await supa<Array<{
+    id: string;
+    risk_class: 'low' | 'medium' | 'high' | null;
+    effort_score: number | null;
+    impact_score: number | null;
+    spec_snapshot: { scanner?: string; title?: string } | null;
+    activated_vtid: string | null;
+  }>>(
+    s,
+    // VTID-02984 (PR-M1.x): widen the source_type filter from
+    // `eq.dev_autopilot` to the shared executor allowlist so PR-L2 /
+    // PR-L3 / M1 test-contract scanners flow through. Unknown
+    // source_types stay rejected via the executor's per-row guards.
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})&status=eq.new`
+      + `&risk_class=in.(${riskList})`
+      + `&effort_score=lte.${maxEffort}`
+      + `&spec_snapshot->>scanner=in.(${scannerList})`
+      // VTID-04280: a window of slots*2 (≤10) was filled by blocked
+      // higher-impact rows, so eligible findings further down were never
+      // considered. Read a wide window and pre-filter to planned rows in
+      // one batch query instead of one lookup per candidate.
+      + `&order=impact_score.desc.nullslast,created_at.asc&limit=${AUTO_APPROVE_CANDIDATE_WINDOW}`
+      + `&select=id,risk_class,effort_score,impact_score,spec_snapshot,activated_vtid`,
+  );
+  if (!findingsR.ok || !findingsR.data || findingsR.data.length === 0) return;
+
+  // Only approve findings that already have a plan (approveAutoExecute
+  // errors otherwise). The lazy planner fills in the rest.
+  const plannedIds = await fetchPlannedFindingIds(s, findingsR.data.map(f => f.id));
+  if (plannedIds === null) return;
+  const plannedFindings = selectPlannedCandidates(findingsR.data, plannedIds);
+
+  // VTID-04667: one breaker read per tick (cached 60 s), shared by both
+  // passes. The plan index is loaded lazily, only if a finding gets that far.
+  const breakers = await loadTickBreakers(s);
+  let planIndex: Promise<CodeIndexBundle | null> | null = null;
+  const tickPlanIndex = () => (planIndex ??= loadPlanIndex());
+
+  let approved = 0;
+  for (const f of plannedFindings) {
+    if (approved >= slots) break;
+
+    // VTID-04667: scanner breaker open → this scanner's work does not land.
+    if (isFindingBreakerOpen(breakers, f)) continue;
+    // VTID-04667: large_file refactors are never auto-executed.
+    if (isNeverAutoExecuteSignal(f.spec_snapshot as { signal_type?: unknown } | null)) continue;
+
+    // Dedup: skip findings that already have a non-terminal execution.
+    // Without this, every tick approves a NEW execution row even though
+    // the prior one is still cooling/running — N concurrent executions
+    // for the same finding all racing the same plan. Discovered while
+    // running v1 autonomy: a single eligible finding produced 5 cooling
+    // executions in 3 minutes after auto-approve flipped on.
+    const inflightR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
+      + `&status=in.(cooling,running,awaiting_approval,held_overlap,ci,merging,deploying,verifying)`
+      + `&select=id&limit=1`,
+    );
+    if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
+
+    // VTID-AUTOPILOT-PR-FLOOD: also skip findings whose prior execution
+    // opened a PR that was never merged. The status-based inflight check
+    // above misses failed/reverted executions whose GitHub PR is still
+    // open — the executor never closes a PR on failure. See the matching
+    // guard in approveAutoExecute() for the full root-cause writeup.
+    const strandedPrR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${f.id}`
+      + STRANDED_PR_FILTER
+      + `&select=id&limit=1`,
+    );
+    if (strandedPrR.ok && strandedPrR.data && strandedPrR.data.length > 0) continue;
+
+    // VTID-AUTOPILOT-RETRY-CAP + VTID-04243 turn-cap snooze, shared with the
+    // impact pass since VTID-04368 (retryBreakerAdmits above). The 2026-05-04
+    // drain (452 execs on 6 findings) and the 2026-09-21 npm-audit chain are
+    // the history; outage failures no longer count toward the cap.
+    if (!(await retryBreakerAdmits(s, f.id, 'baseline'))) continue;
+    // VTID-04667: outage requeue cap, per-finding token budget, plan files exist.
+    if (!(await outageRequeueAdmits(s, f.id))) continue;
+    if (!(await findingBudgetAdmits(s, f.id, 'baseline'))) continue;
+    if (!(await planFilesExistAdmits(s, f.id, await tickPlanIndex()))) continue;
+
+    // Pass undefined so the INSERT writes approved_by=NULL.
+    // Earlier code passed the string literal 'auto', but approved_by is a
+    // UUID column — Postgres rejected every autonomous approval with
+    // "invalid input syntax for type uuid". Net: auto-approve has been
+    // silently no-op since the feature shipped. NULL is a valid sentinel
+    // for "approved by the system" — the OASIS event below is the audit
+    // trail for non-human approvals.
+    // VTID-04246: a real VTID before the execution exists (see ensureFindingVtid).
+    if (!(await ensureFindingVtid(s, f))) continue;
+    const result = await approveAutoExecute({ finding_id: f.id });
+    if (!result.ok || !result.execution) {
+      // A safety-gate rejection here is EXPECTED for findings that cite
+      // files outside allow_scope — just log and move on. The operator
+      // will still see those findings in the queue with status='new'.
+      console.log(`${LOG_PREFIX} auto-approve skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
+      continue;
+    }
+
+    approved++;
+    await emitOasisEvent({
+      vtid: EXEC_VTID,
+      type: 'dev_autopilot.execution.auto_approved',
+      source: 'dev-autopilot',
+      status: 'info',
+      message: `Auto-approved execution ${result.execution.id.slice(0, 8)} for finding ${f.id.slice(0, 8)}`,
+      payload: {
+        finding_id: f.id,
+        execution_id: result.execution.id,
+        trigger: {
+          risk_class: f.risk_class,
+          effort_score: f.effort_score,
+          impact_score: f.impact_score,
+          scanner: f.spec_snapshot?.scanner ?? null,
+        },
+      },
+    });
+  }
+
+  // =============================================================
+  // Second pass: IMPACT findings.
+  // Independent gate — auto_approve_impact_enabled + explicit allowlist of
+  // rule ids. Unlike baseline, we don't filter by risk_class/effort — if
+  // the operator named the rule in auto_approve_impact_rules, that IS the
+  // approval signal. Shares the same daily_budget + concurrency_cap as
+  // baseline (one bucket), and the same PER_TICK_CAP.
+  // =============================================================
+  if (cfg.auto_approve_impact_enabled) {
+    const impactRules = cfg.auto_approve_impact_rules || [];
+    const remainingSlots = slots - approved;
+    if (remainingSlots > 0 && impactRules.length > 0) {
+      const ruleList = impactRules.map(r => `"${encodeURIComponent(r)}"`).join(',');
+      const impactR = await supa<Array<{
+        id: string;
+        risk_class: 'low' | 'medium' | 'high' | null;
+        effort_score: number | null;
+        impact_score: number | null;
+        spec_snapshot: { rule?: string; severity?: string; category?: string; scanner?: string; title?: string } | null;
+        activated_vtid: string | null;
+      }>>(
+        s,
+        `/rest/v1/autopilot_recommendations?source_type=eq.dev_autopilot_impact&status=eq.new`
+          + `&spec_snapshot->>rule=in.(${ruleList})`
+          + `&order=impact_score.desc.nullslast,created_at.asc&limit=${remainingSlots * 2}`
+          + `&select=id,risk_class,effort_score,impact_score,spec_snapshot,activated_vtid`,
+      );
+      if (impactR.ok && impactR.data && impactR.data.length > 0) {
+        for (const f of impactR.data) {
+          if (approved >= slots) break;
+
+          // VTID-04667: rule breaker (key impact:<rule>) and large_file skip.
+          if (isFindingBreakerOpen(breakers, f)) continue;
+          if (isNeverAutoExecuteSignal(f.spec_snapshot as { signal_type?: unknown } | null)) continue;
+
+          // VTID-04368: the same retry breaker as the baseline pass.
+          if (!(await retryBreakerAdmits(s, f.id, 'impact'))) continue;
+          // VTID-04667: outage requeue cap + per-finding token budget.
+          if (!(await outageRequeueAdmits(s, f.id))) continue;
+          if (!(await findingBudgetAdmits(s, f.id, 'impact'))) continue;
+
+          // Plan must exist — approveAutoExecute requires it. Impact
+          // findings don't get eager plans by default, so we generate one
+          // on the fly if none exists. Keep this best-effort: a plan-gen
+          // failure just means this finding waits for the next tick.
+          const planR = await supa<Array<{ version: number }>>(
+            s,
+            `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${f.id}&select=version&order=version.desc&limit=1`,
+          );
+          if (!planR.ok || !planR.data || planR.data.length === 0) {
+            console.log(`${LOG_PREFIX} auto-approve (impact) skipping ${f.id.slice(0, 8)}: no plan yet — will retry after eager-plan runs`);
+            continue;
+          }
+          // VTID-04667: the plan's files must exist (skipped when the index is unavailable).
+          if (!(await planFilesExistAdmits(s, f.id, await tickPlanIndex()))) continue;
+
+          // Pass undefined so the INSERT writes approved_by=NULL.
+    // Earlier code passed the string literal 'auto', but approved_by is a
+    // UUID column — Postgres rejected every autonomous approval with
+    // "invalid input syntax for type uuid". Net: auto-approve has been
+    // silently no-op since the feature shipped. NULL is a valid sentinel
+    // for "approved by the system" — the OASIS event below is the audit
+    // trail for non-human approvals.
+    // VTID-04246: a real VTID before the execution exists (see ensureFindingVtid).
+    if (!(await ensureFindingVtid(s, f))) continue;
+    const result = await approveAutoExecute({ finding_id: f.id });
+          if (!result.ok || !result.execution) {
+            console.log(`${LOG_PREFIX} auto-approve (impact) skipped ${f.id.slice(0, 8)}: ${result.error || 'safety gate'}`);
+            continue;
+          }
+
+          approved++;
+          await emitOasisEvent({
+            vtid: EXEC_VTID,
+            type: 'dev_autopilot.execution.auto_approved',
+            source: 'dev-autopilot',
+            status: 'info',
+            message: `Auto-approved impact execution ${result.execution.id.slice(0, 8)} for finding ${f.id.slice(0, 8)} (rule: ${f.spec_snapshot?.rule})`,
+            payload: {
+              finding_id: f.id,
+              execution_id: result.execution.id,
+              trigger: {
+                source: 'impact',
+                rule: f.spec_snapshot?.rule ?? null,
+                severity: f.spec_snapshot?.severity ?? null,
+                category: f.spec_snapshot?.category ?? null,
+                risk_class: f.risk_class,
+              },
+            },
+          });
+        }
+      }
+    }
+  }
+
+  if (approved > 0) {
+    console.log(`${LOG_PREFIX} auto-approved ${approved} finding(s) this tick`);
+  }
+}
+
+/**
+ * Lazy plan generator — fills in plans for backlog findings that the
+ * eager top-K planner missed.
+ *
+ * Why this exists: eagerlyPlanTopK() only fires from synthesis ingest
+ * with brand-new signals. Once the scanner reaches steady state
+ * (0 new findings per run, all duplicates), no planning ever happens
+ * for the backlog. autoApproveTick() then silently does nothing because
+ * it only approves findings WITH plans. Net effect: an empty queue
+ * sitting on top of dozens of plannable findings.
+ *
+ * This tick picks up to 3 plannable findings per cycle (status=new,
+ * risk_class IN ('low','medium'), no plan_versions row) and calls
+ * generatePlanVersion. Bounded so a hung worker never wedges the loop.
+ */
+const LAZY_PLAN_BATCH_SIZE = 3;
+const LAZY_PLAN_RISK_CLASSES = ['low', 'medium'];
+/** VTID-04280: candidate rows read per lazy-plan tick before the plan filter. */
+const LAZY_PLAN_CANDIDATE_WINDOW = 200;
+/** VTID-04280: candidate rows read per auto-approve tick before the plan filter. */
+const AUTO_APPROVE_CANDIDATE_WINDOW = 50;
+
+/**
+ * VTID-04280: which of `ids` already have at least one plan version. One
+ * query per 50 ids. Returns null on a read failure so callers skip the tick
+ * rather than act on a wrong answer.
+ */
+async function fetchPlannedFindingIds(s: SupaConfig, ids: string[]): Promise<Set<string> | null> {
+  const planned = new Set<string>();
+  for (const chunk of chunkIds(ids)) {
+    if (chunk.length === 0) continue;
+    const r = await supa<Array<{ finding_id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_plan_versions?finding_id=in.(${chunk.join(',')})&select=finding_id`,
+    );
+    if (!r.ok || !r.data) return null;
+    for (const row of r.data) planned.add(row.finding_id);
+  }
+  return planned;
+}
+
+// ---------------------------------------------------------------------------
+// VTID-03579: retry backoff for plan generation.
+//
+// The only thing that used to stop a finding being re-planned was the EXISTENCE
+// of a plan_versions row. So a finding whose plan generation FAILED was
+// indistinguishable from one nobody had tried yet, and came straight back on
+// the next 30s tick — forever, with no record on the finding itself.
+//
+// Measured on prod 2026-08-10/11: 12 findings, 19-38 consecutive plan_gen
+// failures each over ~40 hours, 990 planner LLM calls in a single day, 863 of
+// them billed to Gemini. Not one produced a plan.
+//
+// The symptom was already known and half-treated: writeAutopilotFailure() has a
+// 10-minute dedup window whose comment names "lazyPlanTick re-firing the same
+// plan_gen failure every ~30s" as the thing it exists to suppress. That
+// silenced the LOG and left the LOOP running — which is why this went unnoticed
+// while costing money. Deduping a symptom is not the same as bounding a retry.
+//
+// Base interval is deliberately the dedup window, not something smaller: prod
+// records at most one failure row per 10 minutes per finding, so a backoff
+// shorter than that cannot be observed in the data it reads.
+const PLAN_RETRY_BASE_MS = 10 * 60 * 1000;
+const PLAN_RETRY_CAP_MS = 6 * 60 * 60 * 1000;
+/** Distinct 10-minute failure windows before a finding is left alone. */
+const PLAN_RETRY_MAX_ATTEMPTS = 6;
+/** How far back to read failure history when computing backoff. */
+const PLAN_RETRY_LOOKBACK_MS = 24 * 60 * 60 * 1000;
+
+export interface PlanRetryDecision {
+  attempt: boolean;
+  /** Populated when attempt=false — why this finding was skipped. */
+  reason?: 'backoff' | 'exhausted';
+  /** Backoff the decision used, for logging. Absent when attempt=true. */
+  waitMs?: number;
+}
+
+/**
+ * Decide whether a finding may be re-planned, given its recent plan_gen
+ * failures. Pure so the policy is testable without a database — the bug this
+ * replaces was invisible precisely because the decision lived inline in a tick.
+ *
+ * failureCount is a count of failure ROWS, which (given the writer's 10-minute
+ * dedup) approximates "distinct 10-minute windows in which this failed", not
+ * raw attempts. That is the right unit: raw attempts would be inflated by every
+ * extra Cloud Run instance running its own copy of the tick.
+ */
+export function planRetryDecision(
+  failureCount: number,
+  lastFailureMs: number | null,
+  nowMs: number,
+): PlanRetryDecision {
+  if (failureCount <= 0 || lastFailureMs === null) return { attempt: true };
+  // Stop entirely rather than backing off forever. A finding that has failed
+  // this consistently needs a human or a code change, and continuing to pay an
+  // LLM to rediscover that is the exact waste this whole change is about.
+  if (failureCount >= PLAN_RETRY_MAX_ATTEMPTS) {
+    return { attempt: false, reason: 'exhausted' };
+  }
+  const waitMs = Math.min(PLAN_RETRY_BASE_MS * 2 ** (failureCount - 1), PLAN_RETRY_CAP_MS);
+  if (nowMs - lastFailureMs < waitMs) return { attempt: false, reason: 'backoff', waitMs };
+  return { attempt: true };
+}
+
+/** finding.id → the vtid writeAutopilotFailure() records against it. */
+export function findingVtid(findingId: string): string {
+  return `VTID-DA-FIND-${findingId.slice(0, 8)}`;
+}
+
+export async function lazyPlanTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  // Honor the kill switch so this can't run away when ops disables autonomy.
+  const cfg = await loadConfig(s);
+  if (!cfg) return;
+  if (cfg.kill_switch) return;
+
+  // Global queue-pressure guard: if the worker queue already has any plan
+  // tasks pending OR running, skip this tick entirely. Without this, every
+  // 30s tick (and every Cloud Run instance running its own copy) keeps
+  // enqueueing more tasks faster than the worker can drain them — leading
+  // to dozens of duplicate plans per finding and starving execute tasks.
+  const pendingR = await supa<Array<{ id: string }>>(
+    s,
+    `/rest/v1/dev_autopilot_worker_queue?kind=eq.plan&status=in.(pending,running)&select=id&limit=1`,
+  );
+  if (pendingR.ok && pendingR.data && pendingR.data.length > 0) return;
+
+  // Find planless findings ordered by impact_score desc.
+  // VTID-02988 (PR-M1.x'): filter through the shared executor-source-type
+  // allowlist so test-contract-failure-scanner / missing-test-scanner recs
+  // also receive lazy plans. Without this, autoApproveTick can never approve
+  // them — they sit at status='new' with no plan forever.
+  const riskFilter = `(${LAZY_PLAN_RISK_CLASSES.map(r => `"${r}"`).join(',')})`;
+  const candidatesR = await supa<Array<{ id: string; source_type?: string | null; spec_snapshot?: { scanner?: string; rule?: string } | null }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})`
+    + `&status=eq.new&risk_class=in.${riskFilter}`
+    // VTID-04280: the window used to be 12 rows and planned rows were
+    // skipped inside it, so once 12 higher-impact rows were planned the
+    // planless ones below were never reached. Wide window + one batch
+    // plan lookup; nullslast so an unscored finding is still planned.
+    + `&order=impact_score.desc.nullslast,created_at.asc&limit=${LAZY_PLAN_CANDIDATE_WINDOW}&select=id,source_type,spec_snapshot`,
+  );
+  if (!candidatesR.ok || !candidatesR.data) return;
+  // VTID-04667: no planner LLM spend on a scanner whose breaker is open.
+  const breakers = await loadTickBreakers(s);
+  const breakerSkipped = candidatesR.data.filter((f) => isFindingBreakerOpen(breakers, f)).length;
+  if (breakerSkipped > 0) {
+    console.log(`${LOG_PREFIX} lazy-plan skipped ${breakerSkipped} finding(s) whose scanner breaker is open (VTID-04667)`);
+    candidatesR.data = candidatesR.data.filter((f) => !isFindingBreakerOpen(breakers, f));
+  }
+  const alreadyPlanned = await fetchPlannedFindingIds(s, candidatesR.data.map(f => f.id));
+  if (alreadyPlanned === null) return;
+  const findingsR = { data: selectPlanlessCandidates(candidatesR.data, alreadyPlanned) };
+
+  // VTID-03579: read plan_gen failure history ONCE per tick, not once per
+  // finding — this loop already costs 2 round-trips per candidate and the whole
+  // point of the change is to spend less, not more.
+  const sinceIso = new Date(Date.now() - PLAN_RETRY_LOOKBACK_MS).toISOString();
+  const failuresR = await supa<Array<{ vtid: string; created_at: string }>>(
+    s,
+    `/rest/v1/self_healing_log?vtid=like.VTID-DA-FIND-*`
+    + `&failure_class=in.(dev_autopilot_plan_gen_failed,dev_autopilot_worker_binary_missing)`
+    + `&created_at=gte.${sinceIso}&select=vtid,created_at`,
+  );
+  const failureHistory = new Map<string, { count: number; lastMs: number }>();
+  for (const row of failuresR.data ?? []) {
+    const prev = failureHistory.get(row.vtid);
+    const ts = Date.parse(row.created_at);
+    if (!prev) failureHistory.set(row.vtid, { count: 1, lastMs: ts });
+    else failureHistory.set(row.vtid, { count: prev.count + 1, lastMs: Math.max(prev.lastMs, ts) });
+  }
+  // Fail OPEN if the history read fails: a Supabase blip must not silently
+  // freeze all planning. The pre-existing behaviour was unbounded retry, so
+  // degrading to that for one tick is no worse than before — whereas failing
+  // closed would turn a transient DB error into a stalled autopilot.
+  const historyOk = failuresR.ok;
+  const nowMs = Date.now();
+
+  let generated = 0;
+  let skippedBackoff = 0;
+  let skippedExhausted = 0;
+  for (const f of findingsR.data) {
+    if (generated >= LAZY_PLAN_BATCH_SIZE) break;
+    // Skip if a plan task for this finding is already pending/running
+    // (defense in depth — the global guard above usually covers this,
+    // but a tick mid-claim could still race).
+    const inflightR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_worker_queue?finding_id=eq.${f.id}&kind=eq.plan&status=in.(pending,running)&select=id&limit=1`,
+    );
+    if (inflightR.ok && inflightR.data && inflightR.data.length > 0) continue;
+    // VTID-03579: the guards above only ask "does a plan exist yet?", which a
+    // FAILED generation never changes. Consult failure history before spending
+    // another LLM call on a finding that has been failing for hours.
+    if (historyOk) {
+      const hist = failureHistory.get(findingVtid(f.id));
+      const decision = planRetryDecision(hist?.count ?? 0, hist?.lastMs ?? null, nowMs);
+      if (!decision.attempt) {
+        if (decision.reason === 'exhausted') skippedExhausted++;
+        else skippedBackoff++;
+        continue;
+      }
+    }
+    try {
+      const result = await generatePlanVersion(f.id);
+      if (result.ok) {
+        generated++;
+        console.log(`${LOG_PREFIX} lazy-plan generated for ${f.id.slice(0, 8)}`);
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} lazy-plan error for ${f.id.slice(0, 8)}:`, err);
+    }
+  }
+  // Visible, or this becomes the next silent thing: an operator seeing "no
+  // plans generated" must be able to tell "nothing to plan" from "everything is
+  // failing and being held back".
+  if (skippedBackoff > 0 || skippedExhausted > 0) {
+    console.log(
+      `${LOG_PREFIX} lazy-plan skipped ${skippedBackoff} in backoff, `
+      + `${skippedExhausted} exhausted (>=${PLAN_RETRY_MAX_ATTEMPTS} failures)`,
+    );
+  }
+  if (generated > 0) {
+    console.log(`${LOG_PREFIX} lazy-plan tick: generated ${generated} plan(s)`);
+  }
+}
+
+// =============================================================================
+// Activation reaper — recover dev_autopilot* recs activated but never executed
+// =============================================================================
+//
+// Operator clicks Activate → vtid_ledger row goes to IN_PROGRESS, the bridge
+// fires fire-and-forget, the user moves on. If the bridge call crashed (Cloud
+// Run container recycle, Supabase blip, Anthropic 5xx during plan
+// generation), the recommendation is left "activated" but no execution row
+// exists. The vtid_ledger card sits in IN PROGRESS forever — exactly what
+// the user reported (cards stuck for 2+ weeks).
+//
+// This tick scans for activated dev_autopilot* recs where:
+//   - autopilot_recommendations.status = 'activated'
+//   - source_type IN (dev_autopilot, dev_autopilot_impact)
+//   - activated_at < now - GRACE
+//   - no dev_autopilot_executions row exists for this finding (any status)
+// and re-runs the bridge for them. GRACE keeps the reaper from racing the
+// initial fire-and-forget bridge call from the activate route.
+const REAPER_GRACE_MS = 5 * 60 * 1000; // 5 min — well past plan-gen latency
+
+async function activationReaperTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  const cfg = await loadConfig(s);
+  if (!cfg || cfg.kill_switch) return;
+
+  const cutoff = new Date(Date.now() - REAPER_GRACE_MS).toISOString();
+  // Pull a small batch — we want to recover steadily, not flood the LLM
+  // budget with weeks of accumulated activations on the first tick.
+  // VTID-02988 (PR-M1.x'): scope through the shared executor-source-type
+  // allowlist so orphaned activations from any executable scanner can be
+  // recovered, not just dev_autopilot lineage.
+  const orphanedR = await supa<Array<{ id: string; activated_vtid: string | null; activated_at: string }>>(
+    s,
+    `/rest/v1/autopilot_recommendations?source_type=in.(${executableSourceTypesPostgrestIn()})` +
+    `&status=eq.activated&activated_at=lt.${cutoff}` +
+    `&select=id,activated_vtid,activated_at&order=activated_at.asc&limit=5`,
+  );
+  if (!orphanedR.ok || !orphanedR.data || orphanedR.data.length === 0) return;
+
+  for (const orphan of orphanedR.data) {
+    // Confirm no execution row exists (any status — a completed exec means
+    // the work was done and we shouldn't redo it; a failed/archived exec
+    // means self-heal has already had its turn).
+    const execR = await supa<Array<{ id: string }>>(
+      s,
+      `/rest/v1/dev_autopilot_executions?finding_id=eq.${orphan.id}&select=id&limit=1`,
+    );
+    if (execR.ok && execR.data && execR.data.length > 0) continue;
+
+    console.log(`${LOG_PREFIX} reaper: recovering activated ${orphan.id.slice(0, 8)} (vtid=${orphan.activated_vtid}, age=${Math.round((Date.now() - new Date(orphan.activated_at).getTime()) / 60000)}m)`);
+    try {
+      const result = await bridgeActivationToExecution(orphan.id, null);
+      if (result.ok) {
+        await emitOasisEvent({
+          vtid: orphan.activated_vtid || EXEC_VTID,
+          type: 'dev_autopilot.execution.reaped',
+          source: 'dev-autopilot',
+          status: 'info',
+          message: `Reaper bridged orphaned activation ${orphan.id.slice(0, 8)} → execution ${result.execution_id?.slice(0, 8) || '?'}`,
+          payload: { finding_id: orphan.id, execution_id: result.execution_id, vtid: orphan.activated_vtid },
+        });
+      } else {
+        console.warn(`${LOG_PREFIX} reaper: bridge failed for ${orphan.id.slice(0, 8)}: ${result.error}`);
+      }
+    } catch (err) {
+      console.error(`${LOG_PREFIX} reaper: error on ${orphan.id.slice(0, 8)}:`, err);
+    }
+  }
+}
+
+// =============================================================================
+// Allocated-orphan reaper — tombstone stale "Allocated - Pending Title" shells
+// =============================================================================
+//
+// VTID-0542 allocator creates a placeholder row (status='allocated',
+// title='Allocated - Pending Title') as the first leg of a 2-step
+// allocate→update sequence. Normally the second leg lands within 1 second.
+// When it doesn't (caller crash, supabase write race, broken self-heal
+// triage path), the shell sits forever and pollutes the operator's Tasks
+// board. The board adapter hides these from view, but rows still accumulate
+// in the database. This tick promotes stale shells to status='deleted' so
+// they fall out of the ledger entirely.
+const ALLOCATED_REAPER_GRACE_MS = 10 * 60 * 1000; // 10 min — well past the
+// happy-path allocate→update latency, even on a slow Supabase day.
+const SPARRING_BOUND_WARN_AGE_MS = 60 * 60 * 1000; // 1 h
+
+// VTID-05061: a shell allocated with a Plan Sparring binding is a deliberate,
+// owner-approved allocation, never an orphan — the reaper tombstoned
+// VTID-05045/05046 while their title UPDATE was still timing out. Both keys
+// are excluded on purpose (an unverified binding still references a sparring
+// record). plan_hash always travels with sparring_id (routes/vtid.ts
+// parseSparringBinding), so filtering on the two sparring keys is sufficient.
+const REAPER_NOT_SPARRING_BOUND =
+  `&metadata->>sparring_id=is.null&metadata->>sparring_id_unverified=is.null`;
+const REAPER_PLACEHOLDER_TITLE =
+  `&or=(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title)`;
+
+async function allocatedOrphanReaperTick(): Promise<void> {
+  const s = getSupabase();
+  if (!s) return;
+
+  // VTID-05061: sparring-bound shells are skipped, not reaped; surface the
+  // ones that stay untitled for over an hour (log only, no OASIS event).
+  const warnCutoff = new Date(Date.now() - SPARRING_BOUND_WARN_AGE_MS).toISOString();
+  const boundR = await supa<Array<{ vtid: string }>>(
+    s,
+    `/rest/v1/vtid_ledger?status=eq.allocated&created_at=lt.${warnCutoff}` +
+    // Two OR groups (binding present, placeholder title) ANDed in one tree.
+    `&and=(or(metadata->>sparring_id.not.is.null,metadata->>sparring_id_unverified.not.is.null),` +
+    `or(title.is.null,title.eq.Allocated%20-%20Pending%20Title,title.eq.Pending%20Title))` +
+    `&select=vtid&limit=50`,
+  );
+  if (boundR.ok && boundR.data && boundR.data.length > 0) {
+    console.warn(`${LOG_PREFIX} reaper: skipped ${boundR.data.length} sparring-bound shell(s) older than 1h`);
+  }
+
+  const cutoff = new Date(Date.now() - ALLOCATED_REAPER_GRACE_MS).toISOString();
+  const orphansR = await supa<Array<{ vtid: string; created_at: string; title: string | null }>>(
+    s,
+    `/rest/v1/vtid_ledger?status=eq.allocated&created_at=lt.${cutoff}` +
+    REAPER_PLACEHOLDER_TITLE +
+    REAPER_NOT_SPARRING_BOUND +
+    `&select=vtid,created_at,title&limit=50`,
+  );
+  if (!orphansR.ok || !orphansR.data || orphansR.data.length === 0) return;
+
+  for (const orphan of orphansR.data) {
+    const ageMin = Math.round((Date.now() - new Date(orphan.created_at).getTime()) / 60_000);
+    console.log(`${LOG_PREFIX} reaper: tombstoning orphan ${orphan.vtid} (age=${ageMin}min, title='${orphan.title}')`);
+    // VTID-03818: this PATCH used to set only status='deleted', never
+    // is_terminal/terminal_outcome — the Command Hub's own manual delete
+    // endpoint (routes/oasis-tasks.ts) sets both alongside status, and this
+    // reaper was the one write site in the repo that didn't match it,
+    // leaving reaper-deleted rows permanently non-terminal.
+    const now = new Date().toISOString();
+    // VTID-05061: same binding guard on the write, so a row that gained a
+    // sparring binding between SELECT and PATCH is never tombstoned.
+    await supa(s, `/rest/v1/vtid_ledger?vtid=eq.${orphan.vtid}&status=eq.allocated${REAPER_NOT_SPARRING_BOUND}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({
+        status: 'deleted',
+        is_terminal: true,
+        terminal_outcome: 'deleted',
+        deleted_at: now,
+        deleted_by: 'allocated-orphan-reaper',
+        delete_reason: `allocated-orphan-reaper: shell never received title (age=${ageMin}min)`,
+        updated_at: now,
+      }),
+    });
+  }
+}
+
+// =============================================================================
+// VTID-04280: closed-PR reconciler
+// =============================================================================
+// The PR-flood guard excludes executions stamped `pr_closed_unmerged_at`.
+// The bridge stamps it when it closes a CI-failed PR itself; this tick
+// backfills rows that predate that stamp (and PRs a human closed after the
+// row went terminal) by asking GitHub. A still-open PR is re-checked after
+// CLOSED_PR_RECHECK_MS; a merged PR is recorded but never stamped as closed
+// — a merged change still blocks a duplicate attempt.
+const CLOSED_PR_RECONCILE_EVERY_MS = 5 * 60 * 1000;
+const CLOSED_PR_RECHECK_MS = 60 * 60 * 1000;
+const CLOSED_PR_BATCH = 10;
+let lastClosedPrReconcileMs = 0;
+
+export async function closedPrReconcileTick(nowMs: number = Date.now()): Promise<{ checked: number; stamped: number }> {
+  if (nowMs - lastClosedPrReconcileMs < CLOSED_PR_RECONCILE_EVERY_MS) return { checked: 0, stamped: 0 };
+  lastClosedPrReconcileMs = nowMs;
+  const s = getSupabase();
+  if (!s || !getGithubToken()) return { checked: 0, stamped: 0 };
+
+  const recheckBefore = new Date(nowMs - CLOSED_PR_RECHECK_MS).toISOString();
+  const rowsR = await supa<Array<{ id: string; pr_number: number | null; pr_url: string | null; metadata: Record<string, unknown> | null }>>(
+    s,
+    // pr_url, not pr_number: some rows (e.g. a self-heal parent) carry only the URL.
+    `/rest/v1/dev_autopilot_executions?pr_url=not.is.null`
+    + `&status=in.(failed,reverted,failed_escalated,cancelled)`
+    + `&metadata->>${PR_CLOSED_UNMERGED_KEY}=is.null`
+    + `&or=(metadata->>${PR_STATE_CHECKED_KEY}.is.null,metadata->>${PR_STATE_CHECKED_KEY}.lt.${encodeURIComponent(recheckBefore)})`
+    + `&select=id,pr_number,pr_url,metadata&order=updated_at.desc&limit=${CLOSED_PR_BATCH}`,
+  );
+  if (!rowsR.ok || !rowsR.data) return { checked: 0, stamped: 0 };
+
+  let stamped = 0;
+  for (const row of rowsR.data) {
+    const prNumber = prNumberOf(row);
+    if (!prNumber) continue;
+    const prR = await githubRequest<{ state: string; merged: boolean; closed_at: string | null }>(
+      `/repos/${GITHUB_OWNER}/${GITHUB_REPO}/pulls/${prNumber}`,
+    );
+    if (!prR.ok || !prR.data) continue;
+    const lifecycle = classifyPrState(prR.data);
+    const nowIso = new Date(nowMs).toISOString();
+    const metadata: Record<string, unknown> = { ...(row.metadata || {}), [PR_STATE_CHECKED_KEY]: nowIso, pr_state: lifecycle };
+    if (lifecycle === 'closed_unmerged') {
+      metadata[PR_CLOSED_UNMERGED_KEY] = prR.data.closed_at || nowIso;
+      stamped++;
+    }
+    // Metadata only; status and updated_at are left alone (the status is
+    // the execution's own outcome, not the PR's).
+    await supa(s, `/rest/v1/dev_autopilot_executions?id=eq.${row.id}`, {
+      method: 'PATCH',
+      headers: { Prefer: 'return=minimal' },
+      body: JSON.stringify({ metadata }),
+    });
+    if (lifecycle === 'closed_unmerged') {
+      await emitOasisEvent({
+        vtid: EXEC_VTID,
+        type: 'dev_autopilot.execution.pr_closed_reconciled',
+        source: 'dev-autopilot',
+        status: 'info',
+        message: `Execution ${row.id.slice(0, 8)} PR #${prNumber} is closed unmerged — no longer blocks its finding`,
+        payload: { execution_id: row.id, pr_number: prNumber },
+      });
+    }
+  }
+  if (stamped > 0) console.log(`${LOG_PREFIX} closed-PR reconcile: ${stamped}/${rowsR.data.length} rows unblocked`);
+  return { checked: rowsR.data.length, stamped };
+}
+
+let backgroundTickerStarted = false;
+export function startBackgroundExecutor(): void {
+  if (backgroundTickerStarted) return;
+  backgroundTickerStarted = true;
+  // VTID-04363: one loop owner across the shared table. The other gateway
+  // runs no claim / auto-approve / plan / reaper tick; its watchers still
+  // finish anything it claimed before (VTID-04005 ownership filter).
+  const loop = describeLoopOwnership();
+  if (!loop.active_here) {
+    console.log(`${LOG_PREFIX} background loop NOT started: env=${loop.this_env}, loop owner=${loop.owner_env} (${LOOP_OWNER_ENV_VAR})`);
+    return;
+  }
+  console.log(`${LOG_PREFIX} starting background executor (tick=${BACKGROUND_TICK_MS}ms, dry_run=${DRY_RUN})`);
+  setInterval(() => {
+    backgroundExecutorTick().catch((err) => {
+      console.error(`${LOG_PREFIX} tick error:`, err);
+    });
+    autoApproveTick().catch((err) => {
+      console.error(`${LOG_PREFIX} auto-approve tick error:`, err);
+    });
+    lazyPlanTick().catch((err) => {
+      console.error(`${LOG_PREFIX} lazy-plan tick error:`, err);
+    });
+    activationReaperTick().catch((err) => {
+      console.error(`${LOG_PREFIX} activation-reaper tick error:`, err);
+    });
+    allocatedOrphanReaperTick().catch((err) => {
+      console.error(`${LOG_PREFIX} allocated-orphan-reaper tick error:`, err);
+    });
+    closedPrReconcileTick().catch((err) => {
+      console.error(`${LOG_PREFIX} closed-PR reconcile tick error:`, err);
+    });
+    // VTID-04668: keep developer recommendation priority current (self-throttled to 30 min).
+    rescoreTick(Date.now(), { loadIndex: loadPlanIndex }).catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation rescore tick error:`, err);
+    });
+    // VTID-04669: one bounded quality review per card before it is shown
+    // (self-throttled to 15 min, <= 5 rows, daily cap, kill switch).
+    qualityReviewTick().catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation quality-review tick error:`, err);
+    });
+    // VTID-04670: one OASIS weekly summary of recommendation acceptance
+    // (checks hourly; sends when the newest summary event is ≥ 7 days old).
+    weeklySummaryTick().catch((err) => {
+      console.error(`${LOG_PREFIX} recommendation weekly-summary tick error:`, err);
+    });
+  }, BACKGROUND_TICK_MS);
+}
+
+export { LOG_PREFIX, DRY_RUN, BACKGROUND_TICK_MS };
+
+/**
+ * VTID-04774: what the A2 feasibility check sees — the finding's title, the
+ * plan version's excerpt and file paths, and whether this is a fix-mode or
+ * self-heal child. Two reads, the same ones the agent runner makes.
+ */
+/** VTID-04801: the new attempt's plan and the newest failed attempt of the same finding (7 days). */
+async function loadRepeatContext(
+  s: SupaConfig,
+  exec: { id: string; finding_id: string; plan_version: number; metadata?: Record<string, unknown> | null },
+): Promise<RepeatContext | null> {
+  const since = new Date(Date.now() - REPEAT_LOOKBACK_DAYS * 24 * 60 * 60 * 1000).toISOString();
+  const prevR = await supa<Array<{ id: string; plan_version: number; metadata?: Record<string, unknown> | null }>>(
+    s,
+    `/rest/v1/dev_autopilot_executions?finding_id=eq.${exec.finding_id}&id=neq.${exec.id}&status=in.(${FAILED_EXECUTION_STATUSES.join(',')})&created_at=gte.${since}&select=id,plan_version,metadata&order=created_at.desc&limit=1`,
+  );
+  const prev = prevR.ok && prevR.data && prevR.data[0] ? prevR.data[0] : null;
+  const ctx = await loadFeasibilityContext(s, exec);
+  if (!ctx) return null;
+  if (!prev) return { title: ctx.title || null, plan_version: exec.plan_version, plan: ctx.plan, fix_mode: ctx.fix_mode, previous: null };
+  let prevPlan = ctx.plan;
+  if (prev.plan_version !== exec.plan_version) {
+    const pr = await supa<Array<{ plan_markdown: string }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${prev.plan_version}&select=plan_markdown&limit=1`,
+    );
+    prevPlan = pr.ok && pr.data && pr.data[0] ? pr.data[0].plan_markdown || '' : '';
+  }
+  const pm = prev.metadata || {};
+  const failure = [pm.error, pm.failure_reason, pm.gate_reason].find((v): v is string => typeof v === 'string' && v.trim().length > 0) || '';
+  return {
+    title: ctx.title || null,
+    plan_version: exec.plan_version,
+    plan: ctx.plan,
+    fix_mode: ctx.fix_mode,
+    previous: { execution_id: prev.id, plan_version: prev.plan_version, plan: prevPlan, failure },
+  };
+}
+
+async function loadFeasibilityContext(
+  s: SupaConfig,
+  exec: { finding_id: string; plan_version: number; metadata?: Record<string, unknown> | null },
+): Promise<FeasibilityContext | null> {
+  const [planR, findR] = await Promise.all([
+    supa<Array<{ plan_markdown: string; files_referenced: string[] | null }>>(
+      s, `/rest/v1/dev_autopilot_plan_versions?finding_id=eq.${exec.finding_id}&version=eq.${exec.plan_version}&select=plan_markdown,files_referenced&limit=1`,
+    ),
+    supa<Array<{ title?: string | null; risk_class?: string | null; source_type?: string | null; spec_snapshot?: Record<string, unknown> | null }>>(
+      s, `/rest/v1/autopilot_recommendations?id=eq.${exec.finding_id}&select=title,risk_class,source_type,spec_snapshot&limit=1`,
+    ),
+  ]);
+  const plan = planR.ok && planR.data && planR.data[0] ? planR.data[0] : null;
+  if (!plan) return null;
+  const rec = findR.ok && findR.data && findR.data[0] ? findR.data[0] : null;
+  const md = exec.metadata || {};
+  const title = (rec?.title as string) || (typeof rec?.spec_snapshot?.title === 'string' ? (rec.spec_snapshot.title as string) : '') || '';
+  const prior = typeof md.parent_failure === 'string' ? (md.parent_failure as string) : typeof md.failure_reason === 'string' ? (md.failure_reason as string) : null;
+  return {
+    title,
+    plan: plan.plan_markdown || '',
+    files: plan.files_referenced || [],
+    fix_mode: !!md.fix_mode,
+    prior_failure: prior,
+    risk_class: rec?.risk_class ?? null,
+    source_type: rec?.source_type ?? null,
+  };
+}

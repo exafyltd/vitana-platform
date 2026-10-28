@@ -1,0 +1,35 @@
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/latency-tracker.test.ts
+  LatencyTracker.setProvider
+    ✓ emits the constructor-time provider when setProvider is never called (1 ms)
+    ✓ overrides the provider label before finalize — the Nova-vs-Vertex mislabel fix
+    ✓ setProvider after finalize is a no-op — the emitted event is already sent
+    ✓ feature-flag off: setProvider is harmless and finalize never emits
+
+PASS test/journey-foundation-delta.test.ts
+  applyJourneyAnswer — write + delta
+    ✓ writes the goal to life_compass and reports the next move (4 ms)
+    ✓ passes the dual-axis gate once both the goal AND economic intent exist (9 ms)
+    ✓ normalizes a free-text weakest-habit answer into a pillar (1 ms)
+    ✓ records a teacher-moment acknowledgment
+    ✓ maps a business answer to build_business and surfaces a screen message (1 ms)
+    ✓ VTID-03270: teach mode never writes data (no junk goal from a teaching beat) (1 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 740 passed, 740 of 741 total
+Tests:       29 skipped, 6 todo, 13689 passed, 13724 total
+Snapshots:   44 passed, 44 total
+Time:        63.473 s
+Ran all test suites.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+EXIT=0
+
+NOTE: this file is the tail of the full `npx jest` run for services/gateway,
+matching the same truncation convention as prior VTIDs' jest-full-suite.txt
+in this directory. Full untruncated output was reviewed locally before
+committing this trimmed version.

@@ -1,0 +1,26 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+PASS test/vtid-04872-jev-member-quota.test.ts
+  VTID-04872 settings
+    ✓ mode: off and enforce are exact; unset or anything else is shadow (counts, never refuses) (5 ms)
+    ✓ limit: 300 by default, a positive integer override, anything else 300 (1 ms)
+    ✓ only member-spend Class B (or unclassified) non-safety calls are limited (1 ms)
+    ✓ moderation is a safety decision; every member-content decision is classified (1 ms)
+  VTID-04872 checkMemberQuota
+    ✓ within the limit: allowed and counted
+    ✓ shadow over the limit: allowed, one would_refuse event on the first call over, none after (3 ms)
+    ✓ enforce over the limit: refused (1 ms)
+    ✓ an unreadable counter: shadow lets it through, enforce fails closed
+    ✓ a member id that is not a user uuid is never counted
+    ✓ off: nothing counted (1 ms)
+  VTID-04872 decide()
+    ✓ a safety decision is never counted, even over the limit in enforce (4 ms)
+    ✓ a Class B member decision over the limit falls back to rules with 429 in enforce, and is decided in shadow (5 ms)
+    ✓ Class C is refused on the member plane before any token is spent (1 ms)
+    ✓ internal decisions are never counted (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       14 passed, 14 total
+Snapshots:   0 total
+Time:        0.499 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04872/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

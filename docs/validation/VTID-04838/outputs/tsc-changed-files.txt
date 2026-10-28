@@ -1,0 +1,1 @@
+exit-filtered: 1 (1 = no type errors in the changed files)

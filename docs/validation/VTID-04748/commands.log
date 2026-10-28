@@ -1,0 +1,4 @@
+# Local verification (services/gateway)
+npx tsc --noEmit -p .   -> exit 0
+npx jest test/services/memory/vtid-04748-loeschen-forget.test.ts   -> passed
+npx jest --silent   -> 1409 suites passed (1 skipped), 22602 tests passed

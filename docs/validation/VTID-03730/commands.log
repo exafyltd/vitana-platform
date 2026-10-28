@@ -1,0 +1,132 @@
+# VTID-03730 — commands actually run.
+
+# --- Discovery -----------------------------------------------------------
+# Found the exact checklist of files that must agree by following the
+# VTID-03681 precedent (the pt/pl expansion), which documents itself as the
+# authoritative "when adding a language, these tables must all be updated
+# together" note across 8 files.
+
+grep -rln "VTID-03681" services/gateway/src
+#   -> orb/live/config.ts, orb/live/instruction/live-system-instruction.ts,
+#      routes/orb-live.ts, services/decision-contract/types.ts,
+#      orb/live/voice/live-api-voice.ts, orb/live/voice/voice-mapping.ts,
+#      orb/live/upstream/cascaded-config.ts, orb/instruction/greeting-pools.ts
+
+grep -n "POLLY_VOICES\|POLLY_UNSUPPORTED_LANGS" -A 15 \
+  services/gateway/src/services/tts/polly.ts
+#   -> POLLY_UNSUPPORTED_LANGS = new Set(['sr']) only; POLLY_VOICES had no
+#      'tr' entry — a genuine gap, not a documented "unsupported" language.
+
+# --- Edits -----------------------------------------------------------------
+# Added a `tr` entry to every table the VTID-03681 note names as load-bearing:
+#   1. SUPPORTED_LIVE_LANGUAGES (orb/live/config.ts)
+#   2. languageNames map (orb/live/instruction/live-system-instruction.ts)
+#   3-5. two languageNames maps + nameToCode reverse map (routes/orb-live.ts)
+#   6. SupportedLanguage / SUPPORTED_LANGUAGES invariant (decision-contract/types.ts)
+#   7. LIVE_API_VOICE_FALLBACKS (orb/live/voice/live-api-voice.ts)
+#   8. LIVE_LANGUAGE_VOICE_FALLBACKS / GEMINI_TTS_VOICE_FALLBACKS /
+#      NEURAL2_TTS_VOICE_FALLBACKS (orb/live/voice/voice-mapping.ts) —
+#      NEURAL2_ENABLED_LANGUAGES_FALLBACK deliberately left untouched,
+#      matching the pt/pl precedent (single seeded DB array row)
+#   9. SHORT_GAP_GREETING_PHRASES (orb/instruction/greeting-pools.ts) — 8
+#      informal-register Turkish phrases
+#   10. TRANSCRIBE_LANGUAGE_CODES (orb/live/upstream/cascaded-config.ts) — tr-TR
+#   11. POLLY_VOICES (services/tts/polly.ts) — Filiz/standard/tr-TR
+#       (UNVERIFIED against the live Polly API — no AWS credentials in this
+#       session; also added to scripts/tts/verify-polly-voices.ts for the
+#       next session that has them)
+#
+# Deliberately did NOT add a Turkish entry to NOVA_VOICES
+# (orb/live/voice/nova-sonic-voice.ts) — unlike the tables above, these ids
+# are sent to the REAL live Nova/Bedrock API, and the only precedent for
+# adding one (`pt` -> `carolina`) was confirmed live under VTID-03672. No
+# live Nova credentials here to confirm a Turkish id the same way, so `tr`
+# correctly falls through to null -> the documented `tina` substitution,
+# same as ru/pl/ar/zh/sr.
+
+# --- Rebase onto latest main, and a real course correction --------------------
+#
+# On first push, `git push -u origin claude/vitanaland-language-expansion-fivoly`
+# reported "new branch" (the prior VTID-03723/03729 PRs on this same branch
+# name had already merged and their remote branch was deleted) and the
+# resulting PR showed mergeable_state:"dirty", 9 commits, 73 files — this
+# branch's LOCAL history still carried the old, already-merged VTID-03723/
+# VTID-03729 commits (never rebased after those PRs merged), duplicating
+# content `main` already had under different squash-merge SHAs.
+
+git fetch origin main
+git log --oneline origin/main -5
+#   -> origin/main HEAD (c9300f6d) already contains VTID-03729 and VTID-03723
+#      as its own commits — confirming the branch's local copies were stale,
+#      redundant history, not genuinely unmerged work.
+
+git log --oneline origin/main | grep -iE "turkish|VTID-037(1[5-9]|2[0-9])"
+#   -> surfaced VTID-03719 (#3175, "add Turkish Polly voice + CJK-aware
+#      audio-timing pacing bounds"), already merged to main — a live-verified
+#      Burcu/neural Polly voice for tr that this session did not know about
+#      when it wrote its own unverified Filiz/standard guess.
+
+git show origin/main:services/gateway/src/orb/live/config.ts | grep -A11 "SUPPORTED_LIVE_LANGUAGES: string\[\]"
+#   -> confirms `tr` is STILL absent from the gate on main — VTID-03719 fixed
+#      only the Polly voice table, not the session-start gate, so this VTID's
+#      core defect is still real and still needed.
+
+git show b44f54fd --stat
+#   -> VTID-03719's file list: services/tts/polly.ts +
+#      scripts/tts/verify-cascade-audio-timing.ts + tests only. Confirms none
+#      of the other 8 must-agree tables were touched by it.
+
+for f in orb/instruction/greeting-pools.ts services/decision-contract/types.ts \
+         orb/live/instruction/live-system-instruction.ts orb/live/voice/voice-mapping.ts \
+         orb/live/voice/live-api-voice.ts orb/live/voice/nova-sonic-voice.ts \
+         services/voice-lab/nova-sonic-test-runner.ts; do
+  git show origin/main:services/gateway/src/$f | grep -c "'tr'\|tr:"
+done
+#   -> 0 for every file: confirms the remaining 7 tables (all but polly.ts)
+#      are genuinely still missing tr on main, exactly as originally planned.
+
+# Fix: reset the branch to origin/main, keep ONLY the genuinely unmerged
+# Turkish-support commit, cherry-pick it on top.
+
+git checkout -B claude/vitanaland-language-expansion-fivoly origin/main
+git cherry-pick <original-commit-sha>
+#   -> 2 conflicts, both expected and both in favor of main:
+#      services/gateway/src/services/tts/polly.ts and
+#      services/gateway/test/tts/polly-provider.test.ts — main's version
+#      (Burcu/neural, already covering `tr` in every list/assertion) is
+#      strictly better than this session's unverified Filiz/standard guess.
+#      Resolved via `git checkout --ours` on both (keep main's content,
+#      discard this branch's), `git add`, `git cherry-pick --continue`.
+#      Every other file (config.ts, live-system-instruction.ts, orb-live.ts,
+#      decision-contract/types.ts, voice-mapping.ts, live-api-voice.ts,
+#      greeting-pools.ts, cascaded-config.ts, nova-sonic-test-runner.ts, and
+#      all their tests) auto-merged cleanly — genuinely new, non-overlapping
+#      content.
+
+# Also corrected scripts/tts/verify-polly-voices.ts's EXPECTED.tr entry by
+# hand afterward (Filiz/standard -> Burcu/neural) — it isn't part of any
+# VTID-03719 file and so wasn't touched by the cherry-pick/conflict, but was
+# still carrying this session's original wrong guess.
+
+# --- Verification (re-run after the rebase) -----------------------------------
+
+cd services/gateway
+
+npx jest --testPathPattern="language-coverage|polly-provider|cascaded-voice|voice-routing-policy|greeting-pools.characterization|voice-lab-nova-decision-cascade|nova-sonic-test-runner|session-start-voice-telemetry"
+#   -> first run: 1 snapshot failure (greeting-pools pool-table snapshot,
+#      expected — it now includes tr), all else green.
+
+npx jest --testPathPattern="greeting-pools.characterization" -u
+#   -> snapshot updated, 42/42 tests pass.
+
+npx jest --testPathPattern="language-coverage|polly-provider|cascaded-voice|voice-routing-policy|greeting-pools.characterization|voice-lab-nova-decision-cascade|nova-sonic-test-runner|session-start-voice-telemetry"
+#   -> Test Suites: 8 passed, 8 total / Tests: 115 passed, 115 total
+#   Output: outputs/targeted-tests.txt
+
+npx tsc --noEmit
+#   -> exit 0, empty output
+#   Output: outputs/tsc.txt
+
+npx jest
+#   -> full gateway suite
+#   Output: outputs/full-suite.txt

@@ -1,0 +1,59 @@
+/**
+ * Audit & Compliance section: Tenant Admin Audit Log API
+ *
+ * Mounted at /api/v1/admin/tenants/:tenantId/audit
+ *
+ * Endpoints:
+ *   GET /actions   — Admin action audit trail (grants, revokes, invites, settings changes)
+ *   GET /access    — Access log (OASIS auth events). VTID-05042: platform-only
+ *                    (exafy_admin) — oasis_events has no tenant_id column, so
+ *                    this cannot be filtered to one tenant.
+ */
+
+import { Router, Response } from 'express';
+import { requireTenantAdmin, requirePlatformScope } from '../../middleware/require-tenant-admin';
+import { AuthenticatedRequest } from '../../middleware/auth-supabase-jwt';
+import { getSupabase } from '../../lib/supabase';
+import * as repo from './audit-log-repository';
+
+const router = Router({ mergeParams: true });
+
+// GET /actions — admin action audit trail
+router.get('/actions', requireTenantAdmin, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const tenantId = req.params.tenantId || (req as any).targetTenantId;
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+    const action = (req.query.action as string || '').trim();
+
+    const { data, error } = await repo.fetchTenantAdminAuditLog(supabase, { tenantId, limit, action });
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+
+    return res.json({ ok: true, actions: data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+// GET /access — access log (OASIS auth events; platform-wide, so exafy_admin only — VTID-05042)
+router.get('/access', requireTenantAdmin, requirePlatformScope, async (req: AuthenticatedRequest, res: Response) => {
+  try {
+    const supabase = getSupabase();
+    if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+    const limit = Math.min(parseInt(req.query.limit as string) || 50, 200);
+
+    // Query OASIS events for auth-related topics
+    const { data, error } = await repo.fetchAuthOasisEvents(supabase, limit);
+
+    if (error) return res.status(500).json({ ok: false, error: error.message });
+
+    return res.json({ ok: true, access_log: data || [] });
+  } catch (err: any) {
+    return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
+  }
+});
+
+export default router;

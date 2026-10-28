@@ -1,0 +1,5 @@
+NOT JUDGED — 1 file(s) outside this gate's remit:
+  CLAUDE.md
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 5 in-remit file(s) match the gateway_backend allowlist

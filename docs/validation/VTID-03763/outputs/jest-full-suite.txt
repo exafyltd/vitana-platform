@@ -1,0 +1,42 @@
+  VTID-03706 legacy behaviour is preserved when the flag is off
+    ✓ reads full duplex from the server, defaulting to false
+    ✓ reads full duplex on BOTH transports, not just WS
+    ✓ still declares fullDuplex:false in the initial state
+    ✓ keeps the pre-roll buffer for flag-off sessions (1 ms)
+    ✓ gates both client cooldowns on the flag rather than deleting them
+  VTID-03706 AEC warm-up is anchored to the playback burst
+    ✓ stamps the start time only on the false->true edge
+  VTID-03706 TTS bench checks what a status code cannot
+    ✓ calls the real gateway TTS route, not a mock
+    ✓ decodes the audio rather than trusting the response envelope
+    ✓ measures peak amplitude, so silent-but-well-formed audio fails (1 ms)
+    ✓ fails when the gateway serves a different language than requested
+    ✓ sweeps every locale the TTS layer claims to serve, including the broken one (1 ms)
+    ✓ treats Serbian as a KNOWN GAP, not a passing test and not a mystery failure (7 ms)
+    ✓ reports it as NEWS when an expected-fail locale starts working
+    ✓ plays languages serially so the measurements stay meaningful
+    ✓ defaults to same-origin so the bench tests the gateway serving it
+
+PASS test/worker-orchestrator-await-autopilot.test.ts (60.699 s)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — auth
+    ✓ 400 when vtid is missing (27 ms)
+    ✓ 400 when autopilot_execution_id is missing (5 ms)
+    ✓ 401 when worker_id is missing (3 ms)
+    ✓ 401 when worker is NOT in worker_registry (4 ms)
+    ✓ 403 when worker does not hold the claim (4 ms)
+    ✓ 403 when claim has expired (claim_expires_at in the past) (3 ms)
+  POST /api/v1/worker/orchestrator/await-autopilot-execution — four-state contract
+    ✓ returns completed with files_changed from PR diff when status=completed (4 ms)
+    ✓ returns pr_ready with files when status=ci (PR opened, CI in flight) (3 ms)
+    ✓ returns failed when status=failed (10 ms)
+    ✓ returns deferred (NOT failed) when timeout elapses while status=running (60047 ms)
+    ✓ returns failed (NOT deferred) when execution row is missing entirely (6 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 1 skipped, 712 passed, 712 of 713 total
+Tests:       29 skipped, 6 todo, 13421 passed, 13456 total
+Snapshots:   44 passed, 44 total
+Time:        61.983 s, estimated 63 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+[exited with code 0]

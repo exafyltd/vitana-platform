@@ -1,0 +1,35 @@
+diff --git a/services/gateway/src/frontend/command-hub/orb-widget.js b/services/gateway/src/frontend/command-hub/orb-widget.js
+index e9d2eb3..0b68ccf 100644
+--- a/services/gateway/src/frontend/command-hub/orb-widget.js
++++ b/services/gateway/src/frontend/command-hub/orb-widget.js
+@@ -46,6 +46,20 @@
+       : _AUDIO_PLAYBACK_RATE;
+   }
+ 
++  // VTID-03711: every PCM chunk's mime carries its ACTUAL encoding rate
++  // (server-side: 'audio/pcm;rate=24000' for Nova, 'audio/pcm;rate=16000'
++  // for Polly — greeting bridge, guided-topic narration, and the cascade
++  // voice client all set this correctly). The playback path used to ignore
++  // it entirely and hardcode 24000 into createBuffer() regardless, so any
++  // 16kHz Polly audio decoded as if it were 24kHz played back at 1.5x
++  // speed/pitch — a "chipmunk" voice. Falls back to 24000 (Nova's rate,
++  // the historical default) only when the mime is missing or unparseable.
++  function _pcmRateFromMime(mime) {
++    var m = /rate=(\d+)/.exec(mime || '');
++    var rate = m ? parseInt(m[1], 10) : NaN;
++    return (rate > 0) ? rate : 24000;
++  }
++
+   // Prevent double-load
+   if (window.VitanaOrb && window.VitanaOrb._loaded) return;
+ 
+@@ -1512,7 +1526,8 @@
+         var floats = new Float32Array(int16.length);
+         for (var j = 0; j < int16.length; j++) floats[j] = int16[j] / 32768.0;
+ 
+-        var buf = ctx.createBuffer(1, floats.length, 24000);
++        var pcmRate = _pcmRateFromMime(chunk.mime);
++        var buf = ctx.createBuffer(1, floats.length, pcmRate);
+         buf.copyToChannel(floats, 0);
+ 
+         // Snapshot once per chunk so the schedule-gap compensation below

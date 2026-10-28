@@ -1,0 +1,69 @@
+# VTID-03929 — commands run during this change
+
+## Investigation
+Read services/gateway/src/services/aws-ecs-readonly.ts's own header comment
+in full before touching anything: OPERATOR_AWS_READONLY_ENABLED ships
+default-off deliberately, because this client runs under the gateway's
+existing broad IAM role rather than a dedicated narrow one.
+
+## Attempted narrow-role approach (abandoned on explicit owner instruction)
+$ cd services/gateway && npm install @aws-sdk/credential-providers@^3.1094.0 --save
+(added 2 packages)
+Interrupted by the platform owner: "Who told you to build a narrow AWS
+role? I want a broad AWS role... No way to do a narrow role. It must have
+the maximum broad one."
+
+$ npm uninstall @aws-sdk/credential-providers
+$ git status --short package.json package-lock.json
+(clean — no diff, dependency fully reverted)
+
+## Fix
+Rewrote aws-ecs-readonly.ts's header comment to record the explicit
+decision. Added OPERATOR_AWS_READONLY_ENABLED=true to
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml's task-def jq block
+(strip list + set list), same pattern as its two already-enabled
+siblings OPERATOR_CODEBASE_READ_ENABLED / OPERATOR_DB_READONLY_ENABLED.
+
+## AWS IAM permission check (informational — this session's own creds)
+$ aws iam get-user
+AccessDenied — explicit deny in permissions boundary
+arn:aws:iam::472838866351:policy/claude-code-aws-agent-boundary
+(This session's own IAM user cannot create/inspect IAM roles or policies
+at all — confirmed this is a hard AWS-side deny, not a judgment call.
+Irrelevant to the final approach since no new role is being created —
+recorded here only because it was checked before the owner's broad-role
+instruction made it moot.)
+
+## YAML validation
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+YAML OK
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt; comment-only source change)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 905 passed, 905 of 906 total
+Tests:       29 skipped, 6 todo, 14978 passed, 15013 total
+0 failures.
+(full output: outputs/jest-full-suite.txt — captured before the separate
+VTID-03930 codebase-overview change landed in the same working tree)
+
+## VTID allocation
+$ curl -sS -X POST "https://gateway.vitanaland.com/api/v1/vtid/allocate" \
+    -H "Content-Type: application/json" \
+    -d '{"source":"claude-code","layer":"gateway","module":"operator-aws-broad-access"}'
+{"ok":true,"vtid":"VTID-03929","num":3929,"id":"2856aaa8-3b68-46b5-ae53-18b5af4a65d0"}
+
+Followed with a direct Supabase UPDATE (project inmkhvwdcuyhnxkgfvsb, the
+platform's own VTID ledger) to set title/summary recording the owner's
+explicit decision verbatim, status='in_progress', spec_status='approved'.
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+Changed files: services/gateway/src/services/aws-ecs-readonly.ts,
+.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml,
+docs/validation/VTID-03929/**. The workflow file is under .github/ — per
+VTID-03696, this path has "no governance gate of their own" under either
+the command_hub_frontend or gateway_backend profile (NOT JUDGED, not
+rejected).

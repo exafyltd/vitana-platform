@@ -1,0 +1,5 @@
+cd services/gateway
+npx jest test/services/memory/vtid-04884-voice-diary-episode.test.ts   # 8 passed
+git stash -- src && npx jest test/services/memory/vtid-04884-voice-diary-episode.test.ts   # old code: 4 failed (the behaviour tests)
+npx tsc --noEmit -p .   # clean
+npx jest test/services/memory test/orb <diary tests>   # 340 suites; 1 failure in save-diary-entry-shared (mock lacked the supabase-js insert().select() chain) -> mock fixed, 25/25 pass

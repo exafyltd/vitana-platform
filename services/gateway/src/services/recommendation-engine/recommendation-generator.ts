@@ -1,0 +1,1216 @@
+/**
+ * Recommendation Generator - VTID-01185
+ *
+ * Orchestrates analyzers and generates recommendations using Claude AI.
+ * Handles deduplication, scoring, and persistence.
+ */
+
+import { createHash } from 'crypto';
+import {
+  analyzeCodebase,
+  CodebaseSignal,
+  generateCodebaseFingerprint,
+} from './analyzers/codebase-analyzer';
+import {
+  analyzeOasisEvents,
+  OasisSignal,
+  generateOasisFingerprint,
+} from './analyzers/oasis-analyzer';
+import {
+  analyzeSystemHealth,
+  HealthSignal,
+  generateHealthFingerprint,
+} from './analyzers/health-analyzer';
+import {
+  analyzeRoadmap,
+  RoadmapSignal,
+  generateRoadmapFingerprint,
+} from './analyzers/roadmap-analyzer';
+import {
+  analyzeLLM,
+  LLMSignal,
+  generateLLMFingerprint,
+} from './analyzers/llm-analyzer';
+import {
+  analyzeUserBehavior,
+  UserBehaviorSignal,
+  generateUserBehaviorFingerprint,
+} from './analyzers/user-behavior-analyzer';
+import {
+  analyzeCommunityUser,
+  CommunityUserSignal,
+  generateCommunityUserFingerprint,
+} from './analyzers/community-user-analyzer';
+import { analyzeLifeCompass } from './analyzers/life-compass-analyzer';
+import { analyzeIndexGaps } from './analyzers/index-gap-analyzer';
+import { buildRankerContext, rankBatch } from './ranking/index-pillar-weighter';
+// VTID-03133 (Phase C.4): replace direct `rankBatch` with the
+// PolicyResolver-backed strategy so each recommendation gets a
+// RankProvenance trail persisted to autopilot_recommendations.provenance.
+// The legacy `rankBatch` import stays for the fallback path inside the
+// try/catch below — if the strategy bombs, we silently fall back to the
+// pre-C.4 scoring path so production keeps working.
+import {
+  rankBatchWithProvenance,
+  type RankProvenance,
+} from '../decision-contract';
+import { deriveEconomicAxis } from './economic-axis';
+import { scoreNewDeveloperRecommendations, SCORING_CLOCK_SKEW_MS } from '../recommendation-quality/scoring-service';
+import {
+  analyzeMarketplace,
+  MarketplaceSignal,
+  generateMarketplaceFingerprint,
+} from './analyzers/marketplace-analyzer';
+import {
+  analyzeWearables,
+  WearableSignal,
+  generateWearableFingerprint,
+} from './analyzers/wearable-analyzer';
+// BOOTSTRAP-AUTOPILOT-EXPANSION: calendar prep analyzer (flag-gated, OFF by default).
+import {
+  analyzeCalendarPrep,
+  CalendarPrepSignal,
+  generateCalendarPrepFingerprint,
+} from './analyzers/calendar-prep-analyzer';
+import { isFeatureLive } from '../feature-flags';
+// VTID-03140 (Phase C.6): per-signal-type impact maps live in
+// `decision_policy` now; this module owns the typed lookups.
+import {
+  getCodebaseSignalImpact,
+  getOasisSignalImpact,
+  getHealthSignalImpact,
+  getLLMSignalImpact,
+  getMarketplaceSignalImpact,
+  getWearableSignalImpact,
+} from './signal-impact';
+import { shadowSuggestionPick } from '../jev/gates/community-ranking-gates';
+
+const LOG_PREFIX = '[VTID-01185:Generator]';
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export type SourceType = 'codebase' | 'oasis' | 'health' | 'roadmap' | 'llm' | 'behavior' | 'community' | 'marketplace' | 'wearable' | 'calendar_prep';
+
+export interface GeneratedRecommendation {
+  title: string;
+  summary: string;
+  domain: string;
+  impact_score: number;
+  effort_score: number;
+  risk_level: 'low' | 'medium' | 'high' | 'critical';
+  source_type: SourceType;
+  source_ref: string;
+  fingerprint: string;
+  suggested_files: string[];
+  suggested_endpoints: string[];
+  suggested_tests: string[];
+  user_id?: string;
+  time_estimate_seconds?: number;
+}
+
+export interface GenerationResult {
+  ok: boolean;
+  run_id: string;
+  generated: number;
+  duplicates_skipped: number;
+  errors: Array<{ source: string; error: string }>;
+  duration_ms: number;
+  analysis_summary: Record<string, unknown>;
+}
+
+export interface GenerationConfig {
+  sources: SourceType[];
+  limit: number;
+  force: boolean;
+  triggered_by?: string;
+  trigger_type?: 'manual' | 'scheduled' | 'pr_merge' | 'webhook' | 'first_login' | 'auto_replenish';
+}
+
+// =============================================================================
+// Default Configuration
+// =============================================================================
+
+const DEFAULT_CONFIG: GenerationConfig = {
+  sources: ['codebase', 'oasis', 'health', 'roadmap'],
+  limit: 20,
+  force: false,
+  trigger_type: 'manual',
+};
+
+// =============================================================================
+// Supabase RPC Helpers
+// =============================================================================
+
+async function callRpc<T>(
+  functionName: string,
+  params: Record<string, unknown>
+): Promise<{ ok: boolean; data?: T; error?: string }> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return { ok: false, error: 'Missing Supabase credentials' };
+  }
+
+  try {
+    const response = await fetch(`${supabaseUrl}/rest/v1/rpc/${functionName}`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify(params),
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+
+    const data = (await response.json()) as T;
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+// =============================================================================
+// Signal to Recommendation Converter
+// =============================================================================
+
+function convertCodebaseSignal(signal: CodebaseSignal): GeneratedRecommendation {
+  const domainMap: Record<string, string> = {
+    todo: 'dev',
+    large_file: 'dev',
+    missing_tests: 'dev',
+    dead_code: 'dev',
+    duplication: 'dev',
+    missing_docs: 'dev',
+  };
+
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.codebase`).
+
+  const effortMap: Record<string, number> = {
+    todo: 3,
+    large_file: 7,
+    missing_tests: 5,
+    dead_code: 4,
+    duplication: 6,
+    missing_docs: 2,
+  };
+
+  const severityToRisk: Record<string, 'low' | 'medium' | 'high'> = {
+    low: 'low',
+    medium: 'medium',
+    high: 'high',
+  };
+
+  return {
+    title: signal.suggested_action.substring(0, 100),
+    summary: signal.message,
+    domain: domainMap[signal.type] || 'dev',
+    impact_score: getCodebaseSignalImpact(signal.type),
+    effort_score: effortMap[signal.type] || 5,
+    risk_level: severityToRisk[signal.severity] || 'low',
+    source_type: 'codebase',
+    source_ref: `${signal.file_path}${signal.line_number ? ':' + signal.line_number : ''}`,
+    fingerprint: generateCodebaseFingerprint(signal),
+    suggested_files: [signal.file_path],
+    suggested_endpoints: [],
+    suggested_tests: signal.type === 'missing_tests' ? ['unit'] : [],
+  };
+}
+
+function convertOasisSignal(signal: OasisSignal): GeneratedRecommendation {
+  const typeToTitle: Record<string, string> = {
+    error_pattern: 'Fix recurring error',
+    slow_endpoint: 'Optimize slow endpoint',
+    failed_deploy: 'Investigate deploy failure',
+    anomaly: 'Investigate anomaly',
+    underused_feature: 'Review underused feature',
+  };
+
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.oasis`).
+
+  return {
+    title: `${typeToTitle[signal.type] || 'Address issue'}: ${signal.source.substring(0, 50)}`,
+    summary: signal.message,
+    domain: signal.type === 'failed_deploy' ? 'infra' : 'dev',
+    impact_score: getOasisSignalImpact(signal.type),
+    effort_score: signal.type === 'slow_endpoint' ? 6 : 5,
+    risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
+    source_type: 'oasis',
+    source_ref: signal.source,
+    fingerprint: generateOasisFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: signal.type === 'slow_endpoint' ? [signal.source] : [],
+    suggested_tests: ['integration'],
+  };
+}
+
+function convertHealthSignal(signal: HealthSignal): GeneratedRecommendation {
+  const typeToTitle: Record<string, string> = {
+    missing_index: 'Add database index',
+    large_table: 'Implement data archival',
+    missing_rls: 'Add RLS policy',
+    env_gap: 'Configure environment variable',
+    stale_migration: 'Apply pending migration',
+  };
+
+  // VTID-03140 (Phase C.6): impactMap moved to decision_policy
+  // (`recommendation.signal_impact.health`).
+
+  return {
+    title: `${typeToTitle[signal.type] || 'Fix issue'}: ${signal.resource}`,
+    summary: signal.message,
+    domain: signal.type === 'missing_rls' ? 'security' : 'infra',
+    impact_score: getHealthSignalImpact(signal.type),
+    effort_score: signal.type === 'large_table' ? 8 : 4,
+    risk_level: signal.severity === 'critical' ? 'critical' : signal.severity as 'low' | 'medium' | 'high',
+    source_type: 'health',
+    source_ref: signal.resource,
+    fingerprint: generateHealthFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+  };
+}
+
+function convertRoadmapSignal(signal: RoadmapSignal): GeneratedRecommendation {
+  return {
+    title: signal.suggested_action.substring(0, 100),
+    summary: signal.message,
+    domain: 'dev',
+    impact_score: signal.days_pending && signal.days_pending > 60 ? 8 : 6,
+    effort_score: signal.type === 'unimplemented_spec' ? 7 : 5,
+    risk_level: signal.severity as 'low' | 'medium' | 'high',
+    source_type: 'roadmap',
+    source_ref: signal.reference,
+    fingerprint: generateRoadmapFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+  };
+}
+
+function convertLLMSignal(signal: LLMSignal): GeneratedRecommendation {
+  return {
+    title: signal.title.substring(0, 100),
+    summary: signal.message,
+    domain: signal.type === 'security' ? 'security' : signal.type === 'architecture' ? 'infra' : 'dev',
+    // VTID-03140 (Phase C.6): confidence ladder moved to decision_policy
+    // (`recommendation.signal_impact.llm`).
+    impact_score: getLLMSignalImpact(signal.confidence),
+    effort_score: signal.type === 'architecture' ? 7 : 5,
+    risk_level: signal.severity,
+    source_type: 'llm',
+    source_ref: signal.source_ref,
+    fingerprint: generateLLMFingerprint(signal),
+    suggested_files: signal.suggested_files || [],
+    suggested_endpoints: [],
+    suggested_tests: ['integration'],
+  };
+}
+
+function convertWearableSignal(signal: WearableSignal): GeneratedRecommendation {
+  // VTID-03140 (Phase C.6): severity ladder moved to decision_policy
+  // (`recommendation.signal_impact.wearable`).
+  const impact = getWearableSignalImpact(signal.severity);
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: impact,
+    effort_score: 2,
+    risk_level: signal.severity,
+    source_type: 'wearable',
+    source_ref: `wearable:${signal.condition_key}:${signal.user_id}`,
+    fingerprint: generateWearableFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+/**
+ * BOOTSTRAP-AUTOPILOT-EXPANSION: map a calendar-prep signal into a community
+ * recommendation. source_ref reuses the existing `pillar_template_<pillar>`
+ * keys so COMMUNITY_ACTIONS already knows how to schedule a wellness prep block
+ * on activation — no new action wiring required.
+ */
+function convertCalendarPrepSignal(signal: CalendarPrepSignal): GeneratedRecommendation {
+  const severityToImpact: Record<CalendarPrepSignal['severity'], number> = {
+    low: 45,
+    medium: 60,
+    high: 72,
+  };
+  return {
+    title: signal.summary.substring(0, 100),
+    summary: signal.summary,
+    domain: 'health',
+    impact_score: severityToImpact[signal.severity],
+    effort_score: 2,
+    risk_level: 'low',
+    source_type: 'calendar_prep',
+    source_ref: `pillar_template_${signal.pillar}`,
+    fingerprint: generateCalendarPrepFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+function convertMarketplaceSignal(signal: MarketplaceSignal): GeneratedRecommendation {
+  const priceText =
+    signal.price_cents !== null && signal.currency
+      ? ` (${(signal.price_cents / 100).toFixed(2)} ${signal.currency})`
+      : '';
+  const conditionText = signal.condition_key ? ` for ${signal.condition_key.replace(/-/g, ' ')}` : '';
+  const reasonsText = signal.match_reasons
+    .slice(0, 3)
+    .map((r) => r.text)
+    .join('. ');
+  return {
+    title: `Try: ${signal.product_title}${priceText}`.substring(0, 100),
+    summary: `Recommended${conditionText}. ${reasonsText}`,
+    domain: 'marketplace',
+    // VTID-03140 (Phase C.6): match_score ladder moved to decision_policy
+    // (`recommendation.signal_impact.marketplace`).
+    impact_score: getMarketplaceSignalImpact(signal.match_score),
+    effort_score: 2, // easy to act on — just review + click
+    risk_level: signal.severity,
+    source_type: 'marketplace',
+    source_ref: `product:${signal.product_id}|condition:${signal.condition_key ?? 'none'}`,
+    fingerprint: generateMarketplaceFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: signal.user_id,
+  };
+}
+
+function convertUserBehaviorSignal(signal: UserBehaviorSignal): GeneratedRecommendation {
+  const impactMap: Record<string, number> = {
+    unmet_need: 7,
+    feature_gap: 5,
+    high_dismiss_rate: 4,
+    recurring_topic: 6,
+    low_engagement: 5,
+  };
+
+  return {
+    title: signal.suggested_action.substring(0, 100),
+    summary: signal.message,
+    domain: 'dev',
+    impact_score: impactMap[signal.type] || 5,
+    effort_score: signal.type === 'feature_gap' ? 7 : 4,
+    risk_level: signal.severity,
+    source_type: 'behavior',
+    source_ref: signal.source,
+    fingerprint: generateUserBehaviorFingerprint(signal),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+  };
+}
+
+// =============================================================================
+// Main Generator Function
+// =============================================================================
+
+export async function generateRecommendations(
+  basePath: string,
+  config: Partial<GenerationConfig> = {}
+): Promise<GenerationResult> {
+  const startTime = Date.now();
+  const fullConfig = { ...DEFAULT_CONFIG, ...config };
+  const errors: Array<{ source: string; error: string }> = [];
+  const recommendations: GeneratedRecommendation[] = [];
+  const analysisSummary: Record<string, unknown> = {};
+
+  console.log(`${LOG_PREFIX} Starting recommendation generation...`);
+  console.log(`${LOG_PREFIX} Sources: ${fullConfig.sources.join(', ')}`);
+
+  // Create run record
+  const runResult = await callRpc<{ run_id: string }>('create_autopilot_recommendation_run', {
+    p_sources: fullConfig.sources,
+    p_trigger_type: fullConfig.trigger_type,
+    p_triggered_by: fullConfig.triggered_by || null,
+  });
+
+  if (!runResult.ok || !runResult.data?.run_id) {
+    console.error(`${LOG_PREFIX} Failed to create run record:`, runResult.error);
+    return {
+      ok: false,
+      run_id: 'unknown',
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: runResult.error || 'Failed to create run' }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: {},
+    };
+  }
+
+  const runId = runResult.data.run_id;
+  console.log(`${LOG_PREFIX} Run ID: ${runId}`);
+
+  try {
+    // Run analyzers for selected sources
+    const analyzerPromises: Promise<void>[] = [];
+
+    if (fullConfig.sources.includes('codebase')) {
+      analyzerPromises.push(
+        (async () => {
+          await callRpc('update_autopilot_analyzer_source', {
+            p_source_type: 'codebase',
+            p_status: 'scanning',
+          });
+
+          const result = await analyzeCodebase(basePath);
+          analysisSummary.codebase = result.summary;
+
+          if (result.ok) {
+            for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+              recommendations.push(convertCodebaseSignal(signal));
+            }
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'codebase',
+              p_status: 'ready',
+              p_items_scanned: result.summary.files_scanned,
+              p_items_found: result.signals.length,
+              p_last_scan_run_id: runId,
+              p_last_scan_duration_ms: result.summary.duration_ms,
+            });
+          } else {
+            errors.push({ source: 'codebase', error: result.error || 'Unknown error' });
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'codebase',
+              p_status: 'error',
+              p_last_error: result.error,
+            });
+          }
+        })()
+      );
+    }
+
+    if (fullConfig.sources.includes('oasis')) {
+      analyzerPromises.push(
+        (async () => {
+          await callRpc('update_autopilot_analyzer_source', {
+            p_source_type: 'oasis',
+            p_status: 'scanning',
+          });
+
+          const result = await analyzeOasisEvents();
+          analysisSummary.oasis = result.summary;
+
+          if (result.ok) {
+            for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+              recommendations.push(convertOasisSignal(signal));
+            }
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'oasis',
+              p_status: 'ready',
+              p_items_scanned: result.summary.events_analyzed,
+              p_items_found: result.signals.length,
+              p_last_scan_run_id: runId,
+              p_last_scan_duration_ms: result.summary.duration_ms,
+            });
+          } else {
+            errors.push({ source: 'oasis', error: result.error || 'Unknown error' });
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'oasis',
+              p_status: 'error',
+              p_last_error: result.error,
+            });
+          }
+        })()
+      );
+    }
+
+    if (fullConfig.sources.includes('health')) {
+      analyzerPromises.push(
+        (async () => {
+          await callRpc('update_autopilot_analyzer_source', {
+            p_source_type: 'health',
+            p_status: 'scanning',
+          });
+
+          const result = await analyzeSystemHealth();
+          analysisSummary.health = result.summary;
+
+          if (result.ok) {
+            for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+              recommendations.push(convertHealthSignal(signal));
+            }
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'health',
+              p_status: 'ready',
+              p_items_scanned: result.summary.checks_run,
+              p_items_found: result.summary.issues_found,
+              p_last_scan_run_id: runId,
+              p_last_scan_duration_ms: result.summary.duration_ms,
+            });
+          } else {
+            errors.push({ source: 'health', error: result.error || 'Unknown error' });
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'health',
+              p_status: 'error',
+              p_last_error: result.error,
+            });
+          }
+        })()
+      );
+    }
+
+    if (fullConfig.sources.includes('roadmap')) {
+      analyzerPromises.push(
+        (async () => {
+          await callRpc('update_autopilot_analyzer_source', {
+            p_source_type: 'roadmap',
+            p_status: 'scanning',
+          });
+
+          const result = await analyzeRoadmap(basePath);
+          analysisSummary.roadmap = result.summary;
+
+          if (result.ok) {
+            for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+              recommendations.push(convertRoadmapSignal(signal));
+            }
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'roadmap',
+              p_status: 'ready',
+              p_items_scanned: result.summary.specs_found,
+              p_items_found: result.signals.length,
+              p_last_scan_run_id: runId,
+              p_last_scan_duration_ms: result.summary.duration_ms,
+            });
+          } else {
+            errors.push({ source: 'roadmap', error: result.error || 'Unknown error' });
+            await callRpc('update_autopilot_analyzer_source', {
+              p_source_type: 'roadmap',
+              p_status: 'error',
+              p_last_error: result.error,
+            });
+          }
+        })()
+      );
+    }
+
+    // LLM-powered analyzer (Phase 3A)
+    if (fullConfig.sources.includes('llm')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeLLM();
+            analysisSummary.llm = result.summary;
+
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+                recommendations.push(convertLLMSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'llm', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'llm', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // VTID-02100: Wearable analyzer (reads wearable_rollup_7d, emits condition signals)
+    if (fullConfig.sources.includes('wearable')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeWearables({});
+            analysisSummary.wearable = result.summary;
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 2))) {
+                recommendations.push(convertWearableSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'wearable', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'wearable', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // BOOTSTRAP-AUTOPILOT-EXPANSION: Calendar Prep analyzer.
+    // Double-gated: must be in the requested sources AND the feature flag must
+    // be live (FEATURE_AUTOPILOT_CALENDAR_PREP_ENV). Default = OFF, and
+    // 'calendar_prep' is not in DEFAULT_CONFIG.sources, so there is no behavior
+    // change unless an operator both requests the source and flips the flag.
+    if (fullConfig.sources.includes('calendar_prep') && isFeatureLive('AUTOPILOT_CALENDAR_PREP')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeCalendarPrep({});
+            analysisSummary.calendar_prep = result.summary;
+            if (result.ok) {
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertCalendarPrepSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'calendar_prep', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'calendar_prep', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // VTID-02000: Marketplace analyzer (per-user product recommendations)
+    if (fullConfig.sources.includes('marketplace')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeMarketplace({});
+            analysisSummary.marketplace = result.summary;
+
+            if (result.ok) {
+              // Marketplace signals are per-user; allow more than 1/4 share of limit
+              // because each signal is user-scoped not system-wide.
+              const cap = Math.ceil(fullConfig.limit / 2);
+              for (const signal of result.signals.slice(0, cap)) {
+                recommendations.push(convertMarketplaceSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'marketplace', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'marketplace', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // User behavior analyzer (Phase 3C)
+    if (fullConfig.sources.includes('behavior')) {
+      analyzerPromises.push(
+        (async () => {
+          try {
+            const result = await analyzeUserBehavior();
+            analysisSummary.behavior = result.summary;
+
+            if (result.ok) {
+              for (const signal of result.signals.slice(0, Math.ceil(fullConfig.limit / 4))) {
+                recommendations.push(convertUserBehaviorSignal(signal));
+              }
+            } else {
+              errors.push({ source: 'behavior', error: result.error || 'Unknown error' });
+            }
+          } catch (err) {
+            errors.push({ source: 'behavior', error: String(err) });
+          }
+        })()
+      );
+    }
+
+    // Wait for all analyzers
+    await Promise.all(analyzerPromises);
+
+    console.log(`${LOG_PREFIX} Analysis complete. ${recommendations.length} raw recommendations.`);
+
+    // Insert recommendations with deduplication
+    let generated = 0;
+    let duplicatesSkipped = 0;
+
+    for (const rec of recommendations.slice(0, fullConfig.limit)) {
+      const insertResult = await callRpc<{ duplicate?: boolean }>('insert_autopilot_recommendation', {
+        p_title: rec.title,
+        p_summary: rec.summary,
+        p_domain: rec.domain,
+        p_risk_level: rec.risk_level,
+        p_impact_score: rec.impact_score,
+        p_effort_score: rec.effort_score,
+        p_source_type: rec.source_type,
+        p_source_ref: rec.source_ref,
+        p_fingerprint: rec.fingerprint,
+        p_run_id: runId,
+        p_suggested_files: rec.suggested_files,
+        p_suggested_endpoints: rec.suggested_endpoints,
+        p_suggested_tests: rec.suggested_tests,
+        p_expires_days: 30,
+        p_user_id: rec.user_id || null,
+        p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
+      });
+
+      if (insertResult.ok) {
+        if (insertResult.data?.duplicate) {
+          duplicatesSkipped++;
+        } else {
+          generated++;
+        }
+      } else {
+        errors.push({ source: rec.source_type, error: insertResult.error || 'Insert failed' });
+      }
+    }
+
+    // VTID-04668: the insert RPC takes no score fields, so the system-wide
+    // (developer) rows this run created are scored right after insert.
+    // Community rows are never touched. Never throws.
+    if (generated > 0) {
+      await scoreNewDeveloperRecommendations(new Date(startTime - SCORING_CLOCK_SKEW_MS).toISOString());
+    }
+
+    // Complete the run
+    const duration = Date.now() - startTime;
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: errors.length > 0 ? 'completed' : 'completed',
+      p_recommendations_generated: generated,
+      p_duplicates_skipped: duplicatesSkipped,
+      p_errors: JSON.stringify(errors),
+      p_analysis_summary: JSON.stringify(analysisSummary),
+    });
+
+    console.log(
+      `${LOG_PREFIX} Generation complete. Generated: ${generated}, Duplicates: ${duplicatesSkipped}, Duration: ${duration}ms`
+    );
+
+    return {
+      ok: true,
+      run_id: runId,
+      generated,
+      duplicates_skipped: duplicatesSkipped,
+      errors,
+      duration_ms: duration,
+      analysis_summary: analysisSummary,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Generation failed:`, errorMessage);
+
+    // Mark run as failed
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: 'failed',
+      p_recommendations_generated: 0,
+      p_duplicates_skipped: 0,
+      p_errors: JSON.stringify([{ source: 'system', error: errorMessage }]),
+      p_analysis_summary: JSON.stringify(analysisSummary),
+    });
+
+    return {
+      ok: false,
+      run_id: runId,
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: errorMessage }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: analysisSummary,
+    };
+  }
+}
+
+// =============================================================================
+// Community User Signal Converter
+// =============================================================================
+
+function convertCommunityUserSignal(
+  signal: CommunityUserSignal,
+  userId: string
+): GeneratedRecommendation {
+  return {
+    title: signal.title,
+    summary: signal.summary,
+    domain: signal.domain,
+    impact_score: signal.impact_score,
+    effort_score: signal.effort_score,
+    risk_level: signal.priority === 'critical' ? 'critical' : signal.priority as 'low' | 'medium' | 'high',
+    source_type: 'community',
+    source_ref: signal.signal_type,
+    fingerprint: generateCommunityUserFingerprint(userId, signal.signal_type),
+    suggested_files: [],
+    suggested_endpoints: [],
+    suggested_tests: [],
+    user_id: userId,
+    time_estimate_seconds: signal.time_estimate_seconds,
+  };
+}
+
+/**
+ * One-off (set-once) community actions that should NOT be regenerated once the
+ * user has activated or completed them — onboarding steps only make sense the
+ * first time. Everything else (engagement, weakness nudges, pillar templates)
+ * is repeatable and may re-surface after expiry. VTID-03201.
+ */
+function isOneOffSourceRef(sourceRef: string | null): boolean {
+  if (!sourceRef) return false;
+  return sourceRef.startsWith('onboarding_');
+}
+
+/** How long a rejected recommendation stays suppressed before it may re-surface. */
+export const REJECTED_COOLDOWN_DAYS = 14;
+
+/** A historical autopilot_recommendations row, as read for the dedupe pre-check. */
+export interface FingerprintHistoryRow {
+  fingerprint: string;
+  source_ref: string | null;
+  status: string;
+  updated_at: string | null;
+  expires_at: string | null;
+}
+
+/**
+ * Graded dedupe decision (VTID-03201): does this existing row block
+ * regeneration of the same fingerprint?
+ *
+ *   - expired (expires_at < now)         → allow  (stale, replaceable)
+ *   - new / snoozed (not expired)        → block  (live duplicate)
+ *   - rejected within cooldown window    → block  (don't re-nag instantly)
+ *   - rejected older than cooldown       → allow
+ *   - activated/completed one-off ref    → block  (set-once actions)
+ *   - activated/completed repeatable ref → allow  (re-surface periodically)
+ *
+ * Pure and side-effect free so it can be unit-tested without the network.
+ */
+export function isFingerprintBlocked(row: FingerprintHistoryRow, nowMs: number = Date.now()): boolean {
+  // A stale (expired) row never blocks regeneration — replacing it is the
+  // whole point of replenishment.
+  const expired = row.expires_at != null && new Date(row.expires_at).getTime() < nowMs;
+  if (expired) return false;
+
+  switch (row.status) {
+    case 'new':
+    case 'snoozed':
+      return true;
+    case 'rejected': {
+      const updatedMs = row.updated_at ? new Date(row.updated_at).getTime() : 0;
+      return nowMs - updatedMs < REJECTED_COOLDOWN_DAYS * 86400000;
+    }
+    case 'activated':
+    case 'completed':
+      return isOneOffSourceRef(row.source_ref);
+    default:
+      return false;
+  }
+}
+
+// =============================================================================
+// Per-User Personal Recommendation Generator
+// =============================================================================
+
+export async function generatePersonalRecommendations(
+  userId: string,
+  tenantId: string,
+  config?: Partial<GenerationConfig>
+): Promise<GenerationResult> {
+  const startTime = Date.now();
+  const errors: Array<{ source: string; error: string }> = [];
+
+  console.log(`${LOG_PREFIX} Generating personal recommendations for user ${userId.slice(0, 8)}...`);
+
+  // Create run record
+  const runResult = await callRpc<{ run_id: string }>('create_autopilot_recommendation_run', {
+    p_sources: ['community'],
+    p_trigger_type: config?.trigger_type || 'manual',
+    p_triggered_by: userId,
+  });
+
+  if (!runResult.ok || !runResult.data?.run_id) {
+    console.error(`${LOG_PREFIX} Failed to create personal run record:`, runResult.error);
+    return {
+      ok: false,
+      run_id: 'unknown',
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: runResult.error || 'Failed to create run' }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: {},
+    };
+  }
+
+  const runId = runResult.data.run_id;
+
+  try {
+    // Get Supabase client
+    const supabaseUrl = process.env.SUPABASE_URL;
+    const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+    if (!supabaseUrl || !supabaseKey) {
+      throw new Error('Missing Supabase credentials');
+    }
+
+    const { createClient } = await import('@supabase/supabase-js');
+    const supabase = createClient(supabaseUrl, supabaseKey);
+
+    // Run community + Life Compass + Index Gap analyzers in parallel, plus
+    // build the ranker context once so we can re-score the emitted signals
+    // before they hit the fingerprint dedup. Same ranker context the voice
+    // ORB and morning brief call into (G4 invariant: one ranking function,
+    // three surfaces, one top pick).
+    const [result, compassResult, gapResult, rankerCtx] = await Promise.all([
+      analyzeCommunityUser(userId, tenantId, supabase),
+      analyzeLifeCompass(userId, supabase),
+      analyzeIndexGaps(userId, supabase),
+      buildRankerContext(supabase, userId),
+    ]);
+
+    if (!result.ok) {
+      errors.push({ source: 'community', error: result.error || 'Analysis failed' });
+    }
+    if (!compassResult.ok) {
+      errors.push({ source: 'life_compass', error: compassResult.error || 'Analysis failed' });
+    }
+    if (!gapResult.ok) {
+      errors.push({ source: 'index_gap', error: gapResult.error || 'Analysis failed' });
+    }
+
+    // Merge all signals (compass first for priority, then gap-driven, then
+    // the broader community set).
+    const allSignals = [...compassResult.signals, ...gapResult.signals, ...result.signals];
+    let recommendations: GeneratedRecommendation[] = allSignals.map((s) =>
+      convertCommunityUserSignal(s, userId)
+    );
+
+    // G4: re-rank by pillar-gap + compass + journey_mode BEFORE fingerprint
+    // dedup so the highest-rank_score candidates survive when they collide.
+    // rankBatch also applies the G6 per-pillar quota + balance guard.
+    // VTID-03133 (Phase C.4): use `rankBatchWithProvenance` so each
+    // ranked rec carries a `RankProvenance` trail. We key the trail by
+    // the rec's index-id and persist it after the corresponding row is
+    // inserted in autopilot_recommendations.
+    const provenanceByIndex = new Map<string, RankProvenance>();
+    try {
+      const rankerInputs = recommendations.map((r, idx) => ({
+        id: String(idx),
+        source_ref: (r as any).source_ref ?? null,
+        impact_score: (r as any).impact_score ?? null,
+        contribution_vector: (r as any).contribution_vector ?? null,
+        economic_axis: deriveEconomicAxis(r.source_type, r.source_ref),
+      }));
+      let rankedOrder: Array<{ rec: { id?: string } }>;
+      try {
+        const rankedWithProv = rankBatchWithProvenance(rankerInputs, rankerCtx);
+        for (const r of rankedWithProv) {
+          const idxId = (r.ranked.rec as { id?: string }).id;
+          if (idxId) provenanceByIndex.set(idxId, r.provenance);
+        }
+        rankedOrder = rankedWithProv.map((r) => ({ rec: r.ranked.rec }));
+      } catch (stratErr: any) {
+        // Strategy bombed → fall back to the pre-C.4 scoring path so
+        // production isn't blocked by a Phase C wiring bug. Provenance
+        // is auxiliary; rank order is critical.
+        console.warn(
+          `${LOG_PREFIX} rankBatchWithProvenance failed — falling back to legacy rankBatch (non-fatal): ${stratErr?.message}`,
+        );
+        rankedOrder = rankBatch(rankerInputs, rankerCtx).map((r) => ({ rec: r.rec }));
+      }
+      // Apply rank order back onto recommendations[].
+      const indexById = new Map<string, GeneratedRecommendation>(
+        recommendations.map((r, idx) => [String(idx), r]),
+      );
+      // VTID-03133: stash the new ranker index back onto each rec so we
+      // can recover its provenance in the insert loop below. Map's key
+      // is `rec` reference for stability across the re-ordering.
+      const recToProvenance = new Map<GeneratedRecommendation, RankProvenance>();
+      for (const r of rankedOrder) {
+        const idxId = (r.rec as { id?: string }).id;
+        if (!idxId) continue;
+        const matched = indexById.get(idxId);
+        const prov = provenanceByIndex.get(idxId);
+        if (matched && prov) recToProvenance.set(matched, prov);
+      }
+      // Stamp provenance onto the rec object (untyped — picked up below
+      // in the insert loop). Done before `recommendations` is rewritten
+      // by the .filter so references survive.
+      for (const [rec, prov] of recToProvenance) {
+        (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance = prov;
+      }
+      recommendations = rankedOrder
+        .map(r => indexById.get((r.rec as { id?: string }).id as string))
+        .filter((r): r is GeneratedRecommendation => !!r);
+      // VTID-04883 (D5): Jev shadow of the member's ranked suggestions. Fire-and-forget.
+      void shadowSuggestionPick({
+        tenantId,
+        userId,
+        runId: runResult.data?.run_id ?? null,
+        suggestions: recommendations.map((r) => ({
+          domain: r.domain,
+          source_type: String(r.source_type),
+          impact_score: r.impact_score,
+          effort_score: r.effort_score,
+          risk_level: r.risk_level,
+          time_estimate_seconds: r.time_estimate_seconds ?? null,
+        })),
+      }).catch(() => undefined);
+    } catch (rankErr: any) {
+      console.warn(`${LOG_PREFIX} rankBatch failed (non-fatal):`, rankErr?.message);
+    }
+
+    // Pre-check: fetch existing fingerprints + their state and apply the GRADED
+    // dedupe policy (VTID-03201). The previous implementation blocked any
+    // fingerprint that had EVER existed in any status, so a user whose recs had
+    // all expired or been rejected could never get fresh ones — the popup
+    // permanently emptied out. The RPC already blocks live duplicates (status
+    // new/snoozed); isFingerprintBlocked() adds the guards the RPC can't (see
+    // its docstring for the full policy).
+    const blockedFingerprints = new Set<string>();
+    try {
+      const fpResp = await fetch(
+        `${supabaseUrl}/rest/v1/autopilot_recommendations?user_id=eq.${userId}&select=fingerprint,source_ref,status,updated_at,expires_at&fingerprint=not.is.null`,
+        { headers: { apikey: supabaseKey, Authorization: `Bearer ${supabaseKey}` } }
+      );
+      if (fpResp.ok) {
+        const fpRows = await fpResp.json() as FingerprintHistoryRow[];
+        const now = Date.now();
+        for (const row of fpRows) {
+          if (!row.fingerprint) continue;
+          // Block wins across duplicate fingerprints with mixed history.
+          if (isFingerprintBlocked(row, now)) blockedFingerprints.add(row.fingerprint);
+        }
+        console.log(`${LOG_PREFIX} Graded dedupe: ${blockedFingerprints.size}/${fpRows.length} fingerprints blocked for user ${userId.slice(0, 8)}`);
+      }
+    } catch (fpErr) {
+      console.warn(`${LOG_PREFIX} Pre-check fingerprint query failed (non-fatal):`, fpErr);
+    }
+
+    // Insert with deduplication (graded policy above + RPC active-dup guard)
+    let generated = 0;
+    let duplicatesSkipped = 0;
+
+    for (const rec of recommendations) {
+      // Skip only if the graded policy says this fingerprint is still blocked.
+      if (rec.fingerprint && blockedFingerprints.has(rec.fingerprint)) {
+        duplicatesSkipped++;
+        continue;
+      }
+
+      const insertResult = await callRpc<{ duplicate?: boolean; id?: string }>('insert_autopilot_recommendation', {
+        p_title: rec.title,
+        p_summary: rec.summary,
+        p_domain: rec.domain,
+        p_risk_level: rec.risk_level,
+        p_impact_score: rec.impact_score,
+        p_effort_score: rec.effort_score,
+        p_source_type: rec.source_type,
+        p_source_ref: rec.source_ref,
+        p_fingerprint: rec.fingerprint,
+        p_run_id: runId,
+        p_suggested_files: rec.suggested_files,
+        p_suggested_endpoints: rec.suggested_endpoints,
+        p_suggested_tests: rec.suggested_tests,
+        p_expires_days: 7, // Personal recs expire faster
+        p_user_id: rec.user_id || null,
+        p_time_estimate_seconds: rec.time_estimate_seconds || null,
+        p_economic_axis: deriveEconomicAxis(rec.source_type, rec.source_ref),
+      });
+
+      if (insertResult.ok) {
+        if (insertResult.data?.duplicate) {
+          duplicatesSkipped++;
+        } else {
+          generated++;
+          // VTID-03133 (Phase C.4): persist the RankProvenance trail to
+          // the autopilot_recommendations row created by the RPC above.
+          // Best-effort: UPDATE failure NEVER blocks generation (the row
+          // already exists; provenance is auxiliary). Without an
+          // id-returning RPC, we'd have to update by fingerprint —
+          // luckily the RPC's JSONB return includes `id` when not a
+          // duplicate.
+          const insertedId = insertResult.data?.id;
+          const prov = (rec as unknown as { __rank_provenance?: RankProvenance }).__rank_provenance;
+          if (insertedId && prov) {
+            try {
+              const supabaseUrl = process.env.SUPABASE_URL;
+              const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+              if (supabaseUrl && supabaseKey) {
+                const upd = await fetch(
+                  `${supabaseUrl}/rest/v1/autopilot_recommendations?id=eq.${insertedId}`,
+                  {
+                    method: 'PATCH',
+                    headers: {
+                      'Content-Type': 'application/json',
+                      apikey: supabaseKey,
+                      Authorization: `Bearer ${supabaseKey}`,
+                      Prefer: 'return=minimal',
+                    },
+                    body: JSON.stringify({ provenance: prov }),
+                  },
+                );
+                if (!upd.ok) {
+                  console.warn(
+                    `${LOG_PREFIX} provenance UPDATE failed (non-fatal): ${upd.status} for id=${insertedId.slice(0, 8)}`,
+                  );
+                }
+              }
+            } catch (provErr: any) {
+              console.warn(
+                `${LOG_PREFIX} provenance UPDATE threw (non-fatal): ${provErr?.message}`,
+              );
+            }
+          }
+        }
+      } else {
+        errors.push({ source: 'community', error: insertResult.error || 'Insert failed' });
+      }
+    }
+
+    // Complete the run
+    const duration = Date.now() - startTime;
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: 'completed',
+      p_recommendations_generated: generated,
+      p_duplicates_skipped: duplicatesSkipped,
+      p_errors: JSON.stringify(errors),
+      p_analysis_summary: JSON.stringify({
+        community: result.user_context,
+      }),
+    });
+
+    console.log(
+      `${LOG_PREFIX} Personal generation complete for ${userId.slice(0, 8)}. ` +
+      `Generated: ${generated}, Duplicates: ${duplicatesSkipped}, Duration: ${duration}ms`
+    );
+
+    return {
+      ok: true,
+      run_id: runId,
+      generated,
+      duplicates_skipped: duplicatesSkipped,
+      errors,
+      duration_ms: duration,
+      analysis_summary: { community: result.user_context },
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : String(error);
+    console.error(`${LOG_PREFIX} Personal generation failed:`, errorMessage);
+
+    await callRpc('complete_autopilot_recommendation_run', {
+      p_run_id: runId,
+      p_status: 'failed',
+      p_recommendations_generated: 0,
+      p_duplicates_skipped: 0,
+      p_errors: JSON.stringify([{ source: 'system', error: errorMessage }]),
+      p_analysis_summary: '{}',
+    });
+
+    return {
+      ok: false,
+      run_id: runId,
+      generated: 0,
+      duplicates_skipped: 0,
+      errors: [{ source: 'system', error: errorMessage }],
+      duration_ms: Date.now() - startTime,
+      analysis_summary: {},
+    };
+  }
+}

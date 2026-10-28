@@ -1,0 +1,5 @@
+tsc --noEmit (services/gateway): exit 0
+jest: PASS vtid-05027-push-reach-health (10), vtid-04962-push-health (6), vtid-04663-ops-health-checks (17) — 33 passed
+pr-gate: scope ✅ (8 files in scope), sparring ✅, weakening ✅, migrations lint ✅ (parser checked separately), red-green ➖ (feature)
+libpg-query: 20261010120000_vtid_05027_push_reach_active.sql parses OK, 7 statements
+read-only dry run of the function body on 2026-10-10: {"active":16,"eligible":15,"reached":14}

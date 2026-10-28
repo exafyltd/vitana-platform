@@ -1,0 +1,491 @@
+{
+ "snapshot_version": 1,
+ "server_version_num": 160004,
+ "database": "vitana",
+ "table_grants": [
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "authenticated",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "authenticated",
+   "privilege": "INSERT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "authenticated",
+   "privilege": "UPDATE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "DELETE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "INSERT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "REFERENCES",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "TRIGGER",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "TRUNCATE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "UPDATE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "VtidLedger",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "INSERT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "VtidLedger",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "authenticated",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "DELETE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "INSERT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "REFERENCES",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "TRIGGER",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "TRUNCATE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "relkind": "r",
+   "grantee": "service_role",
+   "privilege": "UPDATE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "user",
+   "relkind": "r",
+   "grantee": "authenticated",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles_id_seq",
+   "relkind": "S",
+   "grantee": "authenticated",
+   "privilege": "SELECT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles_id_seq",
+   "relkind": "S",
+   "grantee": "authenticated",
+   "privilege": "USAGE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "VtidLedger",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "INSERT",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "DELETE",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "INSERT",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "REFERENCES",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "SELECT",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "TRIGGER",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "TRUNCATE",
+   "extension": "postgis"
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "relkind": "r",
+   "grantee": "anon",
+   "privilege": "UPDATE",
+   "extension": "postgis"
+  }
+ ],
+ "column_grants": [
+  {
+   "schema": "public",
+   "table": "profiles",
+   "column": "displayName",
+   "grantee": "anon",
+   "privilege": "UPDATE",
+   "extension": null
+  }
+ ],
+ "routine_grants": [
+  {
+   "schema": "public",
+   "routine_signature": "increment_wallet_balance(uuid, numeric, text)",
+   "routine_name": "increment_wallet_balance",
+   "routine_args": "uuid, numeric, text",
+   "prokind": "f",
+   "grantee": "PUBLIC",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "increment_wallet_balance(uuid, numeric, text)",
+   "routine_name": "increment_wallet_balance",
+   "routine_args": "uuid, numeric, text",
+   "prokind": "f",
+   "grantee": "anon",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "increment_wallet_balance(uuid, numeric, text)",
+   "routine_name": "increment_wallet_balance",
+   "routine_args": "uuid, numeric, text",
+   "prokind": "f",
+   "grantee": "authenticated",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "increment_wallet_balance(uuid, numeric, text)",
+   "routine_name": "increment_wallet_balance",
+   "routine_args": "uuid, numeric, text",
+   "prokind": "f",
+   "grantee": "service_role",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "get_my_profile()",
+   "routine_name": "get_my_profile",
+   "routine_args": "",
+   "prokind": "f",
+   "grantee": "PUBLIC",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "get_my_profile()",
+   "routine_name": "get_my_profile",
+   "routine_args": "",
+   "prokind": "f",
+   "grantee": "anon",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "get_my_profile()",
+   "routine_name": "get_my_profile",
+   "routine_args": "",
+   "prokind": "f",
+   "grantee": "authenticated",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "get_my_profile()",
+   "routine_name": "get_my_profile",
+   "routine_args": "",
+   "prokind": "f",
+   "grantee": "service_role",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "GetVtid(text)",
+   "routine_name": "GetVtid",
+   "routine_args": "text",
+   "prokind": "f",
+   "grantee": "authenticated",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "GetVtid(text)",
+   "routine_name": "GetVtid",
+   "routine_args": "text",
+   "prokind": "f",
+   "grantee": "service_role",
+   "privilege": "EXECUTE",
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "routine_signature": "vector_dims(vector)",
+   "routine_name": "vector_dims",
+   "routine_args": "vector",
+   "prokind": "f",
+   "grantee": "PUBLIC",
+   "privilege": "EXECUTE",
+   "extension": "vector"
+  }
+ ],
+ "rls": [
+  {
+   "schema": "public",
+   "table": "VtidLedger",
+   "rls_enabled": true,
+   "rls_forced": false,
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "profiles",
+   "rls_enabled": true,
+   "rls_forced": false,
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "user",
+   "rls_enabled": true,
+   "rls_forced": false,
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "wallet_transactions",
+   "rls_enabled": false,
+   "rls_forced": false,
+   "extension": null
+  },
+  {
+   "schema": "public",
+   "table": "spatial_ref_sys",
+   "rls_enabled": false,
+   "rls_forced": false,
+   "extension": "postgis"
+  }
+ ],
+ "default_acl": [
+  {
+   "role": "vitana_admin",
+   "schema": "public",
+   "objtype": "r",
+   "grantee": "anon",
+   "privileges": [
+    "SELECT"
+   ]
+  },
+  {
+   "role": "vitana_admin",
+   "schema": "public",
+   "objtype": "r",
+   "grantee": "authenticated",
+   "privileges": [
+    "INSERT",
+    "SELECT",
+    "UPDATE"
+   ]
+  },
+  {
+   "role": "vitana_admin",
+   "schema": "public",
+   "objtype": "f",
+   "grantee": "service_role",
+   "privileges": [
+    "EXECUTE"
+   ]
+  }
+ ],
+ "role_settings": [
+  {
+   "role": "authenticated",
+   "setting": "statement_timeout=8000",
+   "database": null
+  }
+ ],
+ "role_attributes": [
+  {
+   "role": "anon",
+   "rolsuper": false,
+   "rolbypassrls": false,
+   "rolinherit": true,
+   "rolcanlogin": false
+  },
+  {
+   "role": "authenticated",
+   "rolsuper": false,
+   "rolbypassrls": false,
+   "rolinherit": true,
+   "rolcanlogin": false
+  },
+  {
+   "role": "service_role",
+   "rolsuper": false,
+   "rolbypassrls": true,
+   "rolinherit": true,
+   "rolcanlogin": false
+  }
+ ],
+ "role_memberships": [],
+ "roles": [
+  "anon",
+  "authenticated",
+  "authenticator",
+  "service_role",
+  "vitana_admin"
+ ]
+}

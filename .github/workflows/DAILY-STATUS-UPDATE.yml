@@ -1,0 +1,69 @@
+name: Hourly Status Check
+on:
+  schedule:
+    # Run every hour at :00 (was daily at 08:00 — too slow for self-healing)
+    - cron: '0 * * * *'
+  workflow_dispatch:
+    inputs:
+      confirmation_message:
+        description: >-
+          Optional: post this text to Google Chat regardless of check
+          outcome. collect-status.py is silent-by-design when all 54
+          services are live (only posts on failures), so use this to force
+          a visible confirmation ping after a fix — e.g. verifying VTID-03598.
+        required: false
+        default: ''
+
+jobs:
+  update-status:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v4
+        with:
+          python-version: '3.11'
+      - run: pip install requests
+      - env:
+          WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
+          SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
+          # VTID-03598: gateway.vitanaland.com is AWS ECS/ALB, sole production
+          # since the VTID-03419 cutover. The old GCP Cloud Run URL is a
+          # scaled-to-zero rollback target (VTID-03508) that never answers.
+          GATEWAY_URL: https://gateway.vitanaland.com
+        run: python3 scripts/ci/collect-status.py
+      - name: Post manual confirmation message
+        if: ${{ inputs.confirmation_message != '' }}
+        env:
+          WEBHOOK_URL: ${{ secrets.VITANA_CHAT_WEBHOOK }}
+          MSG: ${{ inputs.confirmation_message }}
+        run: |
+          set -euo pipefail
+          if [ -z "${WEBHOOK_URL:-}" ]; then
+            echo "::error::VITANA_CHAT_WEBHOOK secret missing"
+            exit 1
+          fi
+          TEXT=$(python3 -c "import json,os; print(json.dumps({'text': os.environ['MSG']}))")
+          curl -sS -X POST "$WEBHOOK_URL" -H 'Content-Type: application/json' -d "$TEXT"
+      - name: Commit + publish status snapshot
+        run: |
+          set -euo pipefail
+          git config user.name "Vitana Automation"
+          git config user.email "automation@vitana.dev"
+          git add docs/STATUS.md
+          if git diff --quiet --cached; then
+            echo "No changes"
+          else
+            git commit -m "chore: hourly status - $(date -u +'%Y-%m-%d %H:%M:%S UTC')"
+            # Publish to a dedicated, unprotected branch instead of `main`.
+            # `main` requires the "validate" status check (the `validate` job
+            # in ENFORCE-FRONTEND-CANONICAL-SOURCE.yml), which only ever runs
+            # on pull_request — a direct push here can never satisfy it, so
+            # every push to main was rejected with GH006 (protected branch).
+            # docs/STATUS.md is a generated report, not frontend source, so it
+            # doesn't need that check at all; publishing it to its own branch
+            # keeps the report flowing without touching branch protection or
+            # the validator gate.
+            git push --force origin "HEAD:refs/heads/automation/status-report"
+          fi

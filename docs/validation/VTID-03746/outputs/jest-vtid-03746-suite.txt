@@ -1,0 +1,32 @@
+$ npx jest test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (2 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case) (1 ms)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (1 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic (1 ms)
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when guidedTopic was already cleared (1 ms)
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.501 s, estimated 1 s
+
+Mutation verification (backup/revert/restore, one fix at a time):
+- Reverting fix #1 (_announceDisconnect gating) alone: exactly 3 tests fail
+  (does not call _playAlert unconditionally / gates the spoken alert clip /
+  still plays the alert once heard — the else-branch assertion), all other
+  6 tests stay green.
+- Reverting fix #2 (_guidedTopicInFlight) alone: exactly 1 test fails
+  (_attemptReconnect re-arms _s.guidedTopic ...), all other 8 tests stay
+  green (the "declared in initial state" / "armed in focusGuidedTopic" /
+  "not cleared at turn-complete" / "_hide clears it" checks pass on source
+  presence alone, since they check the field's OTHER call sites, not the
+  reconnect re-arm itself).
+- Both fixes restored: full 9/9 green (see PASS output above).

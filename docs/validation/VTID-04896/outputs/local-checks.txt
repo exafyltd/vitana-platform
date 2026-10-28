@@ -1,0 +1,13 @@
+$ node scripts/conversation/generate-flag-pins.mjs
+wrote services/gateway/src/services/conversation/conversation-flag-pins.generated.ts
+$ node scripts/conversation/generate-flag-pins.mjs --check
+services/gateway/src/services/conversation/conversation-flag-pins.generated.ts is current.
+$ python3 (yaml.safe_load + bash -n on every run step of AWS-PROD-DEPLOY-GATEWAY.yml)
+12 Build task-definition (reward sweep off)
+13 Build task-definition (2/2 — optional overrides) + register + roll the service
+14 Smoke — env=production + deployed commit live
+15 Verify reward sweep setting (live task definition)
+16 Post-deploy verification (read-only)
+17 Roll back to the previous task definition
+ok
+# jest runs in CI (the npm registry is unreachable from this session)

@@ -1,0 +1,5 @@
+Read-only GETs against current staging (pre-change build), 2026-10-13 15:56 UTC:
+$ curl https://preview-aws-gateway.vitanaland.com/alive
+200 application/json; charset=utf-8  {"status":"ok","service":"gateway",...}
+$ curl https://preview-aws-gateway.vitanaland.com/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/settings
+401 application/json; charset=utf-8  {"ok":false,"error":"UNAUTHENTICATED",...}

@@ -1,0 +1,69 @@
+$ git log --oneline -3
+65853a36 VTID-03966: Fix rename input closing itself when renaming the active thread (#3354)
+da5ec5e5 Evidence pack for Commerce Partner Onboarding Phase A (VTID-03957)
+0680f563 VTID-03965: fix VTID-03964 regressions found in live staging re-verification (#3352)
+
+$ git diff --stat
+ .../gateway/src/routes/admin-partner-health.ts     | 40 ++++++++++-
+ services/gateway/src/routes/partner-orgs.ts        | 66 ++++++++++++++++--
+ services/gateway/src/types/cicd.ts                 |  3 +-
+ services/gateway/test/admin-partner-health.test.ts | 81 ++++++++++++++++++++++
+ services/gateway/test/partner-orgs.test.ts         | 78 +++++++++++++++++++--
+ 5 files changed, 257 insertions(+), 11 deletions(-)
+(full diffstat: outputs/diffstat.txt)
+
+$ npm install (services/gateway)
+npm error code E403
+npm error 403 403 Forbidden - GET https://registry.npmjs.org/zod/-/zod-...
+(sandbox network policy blocks package tarball downloads; same limitation
+documented for every prior phase of this VTID family — Phase A/Phase 2/
+Phase 3 evidence packs. Worked around below via a standalone tsc
+syntax-only check, matching those prior phases' established fallback.)
+
+$ mkdir -p /tmp/tsc-check-b
+$ cp services/gateway/src/routes/partner-orgs.ts services/gateway/src/routes/admin-partner-health.ts /tmp/tsc-check-b/
+$ cd /tmp/tsc-check-b
+$ /opt/node22/bin/tsc --noEmit --skipLibCheck --target es2020 --module commonjs \
+    --moduleResolution bundler --esModuleInterop --resolveJsonModule \
+    partner-orgs.ts admin-partner-health.ts
+(full output: outputs/tsc-check.txt)
+Result: every reported error is TS2307 "Cannot find module" (expected —
+no node_modules in this sandbox) or TS2591 "Cannot find name 'crypto'"
+(pre-existing, unrelated Node-builtin typing gap already present before
+this diff — partner-orgs.ts's existing randomBytes import). Zero new
+syntax/type errors introduced by this diff.
+
+$ grep -n "commerce_vertical\|health.*commerce\|isCommerceVertical" services/gateway/src/routes/partner-orgs.ts
+(full output: outputs/partner-orgs-commerce-vertical-grep.txt)
+Confirms: COMMERCE_VERTICALS/isCommerceVertical type guard; POST /register
+requires and validates commerce_vertical, stores + selects it back; the
+activate handler's orgRow type includes commerce_vertical and branches on
+=== 'health' before creating the partner_registry bridge row.
+
+$ grep -n "inbox/manual\|quarantineUnmatchedResult\|registry_linked" \
+    services/gateway/src/routes/admin-partner-health.ts \
+    services/gateway/src/routes/partner-orgs.ts \
+    services/gateway/src/types/cicd.ts
+(full output: outputs/manual-inbox-and-event-grep.txt)
+Confirms: POST /inbox/manual route exists, gated by requireAuth +
+requirePartnerHealthAccess, calls quarantineUnmatchedResult() (the
+pre-existing DoctorBox write path, reused verbatim — no new write path);
+partner_org.registry_linked OASIS event type registered in cicd.ts and
+emitted from partner-orgs.ts's activate handler.
+
+$ ls supabase/migrations/20260916130000_vtid_03974_commerce_vertical.sql
+(file present, not yet applied to live Supabase — file-only migration,
+same convention as this VTID family's other migrations; application is a
+separate step for the platform owner or a later explicit instruction, per
+this repo's "verify BEFORE deployment" protocol which applies to applying
+a migration exactly as much as to deploying a service.)
+
+$ (follow-up) validate-pr check failed on first push: "REJECTED: VALIDATION_PROFILE
+    missing in PR body" (exit 11) — VALIDATOR-CHECK.yml requires an explicit
+    VALIDATION_PROFILE: <profile> line, not just the SCOPE_ALLOWLIST/ACCEPTANCE/
+    MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT tokens. Added "VALIDATION_PROFILE:
+    gateway_backend" to the PR body (this PR touches services/gateway/src/routes,
+    services/gateway/test, services/gateway/src/types only) and pushed this
+    follow-up commit to get a genuine new `synchronize` webhook event, since a
+    bare PR-body edit replays the stale payload on a re-run rather than
+    re-triggering the check with the current body.

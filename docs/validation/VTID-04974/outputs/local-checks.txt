@@ -1,0 +1,2 @@
+- Each edited manifest parses as valid JSON (python json.loads).
+- Diff against origin/main: 3 manifests (20 lines removed, 1 line rewritten) plus the evidence pack; no source file touched.

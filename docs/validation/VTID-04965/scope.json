@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-04965",
+  "kind": "feature",
+  "paths": [
+    "supabase/migrations/20261007200000_vtid_04965_live_room_reminder_calendar.sql",
+    "scripts/ci/sql-tests/*live-room-calendar*",
+    ".github/workflows/SQL-LIVE-ROOM-CALENDAR.yml",
+    "services/gateway/test/vtid-04965-*.test.ts",
+    "DATABASE_SCHEMA.md",
+    "docs/validation/VTID-04965/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

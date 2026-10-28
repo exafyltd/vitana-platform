@@ -1,0 +1,14 @@
+## Live, read-only
+select active_role, count(*) from memory_items where active_role is not null group by 1
+-> authenticated = 1   (id 46940d10…, source orb_voice, 2026-09-24 12:49:25 UTC, "Vitana navigated to Wallet …")
+memory_transcript_turns with a non-null active_role -> 0
+
+## Repair (live)
+update memory_items set active_role = null where active_role in ('authenticated','anon','service_role','supabase_admin')
+-> 1 row (46940d10…)
+
+## Local
+npx jest test/vtid-04495-memory-role-not-jwt-role.test.ts test/services/memory test/orb/live/navigation-turn-scope.test.ts
+-> 25 suites, 311 tests passed
+npx jest test/orb -> 234 suites, 3965 passed (6 todo)
+npx tsc --noEmit -> 0

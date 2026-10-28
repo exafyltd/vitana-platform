@@ -1,0 +1,6 @@
+VTID-04436 local verification (branch claude/vitanaland-calendar-redesign-ryfg1l)
+- tsc --noEmit (services/gateway): clean
+- jest test/vtid-04436-calendar-push.test.ts: pass
+- jest test/vtid-04402-connected-apps.test.ts: pass (Outlook pull test runs with CONNECTED_APPS_CALENDAR_PUSH=false)
+- impact scan (IMPACT_SCAN_DRY_RUN=true, from repo root): 0 findings
+Not run against a live Outlook or iCloud account (no registered Microsoft OAuth client, no Apple test account).

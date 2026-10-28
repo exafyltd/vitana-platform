@@ -1,0 +1,47 @@
+# 15 — patch 0004: decimal_sum returns numeric on PostgreSQL (+ two HAVING-alias sites)
+# Rehearsal 2026-09-14 on the VTID-03840 spike DB (local PG16, port 54329, company f1de441f…),
+# worktree /tmp/claude-0/erpclaw-0004 = pin 4d32db6 + patches 0001-0003 committed as base,
+# ERPCLAW_HOME pointed at the worktree lib (the module scripts import erpclaw_lib from $ERPCLAW_HOME/lib).
+
+## Why
+Every report/GL action that does arithmetic on decimal_sum() failed on Postgres. Root causes (two, not seven):
+  (a) the 0002 aggregate's finalfunc returned TEXT, so `COALESCE(decimal_sum(a),'0') - COALESCE(decimal_sum(b),'0')`
+      is text - text, and `COALESCE(decimal_sum(x), 0)` is text vs integer. SQLite coerces; Postgres does not.
+      51 COALESCE(decimal_sum(…)) call sites (reports 34, gl 9, selling 5, inventory 2, buying 1).
+  (b) `si."outstanding_amount" + 0 > 0` (reports check-overdue) — raw text column in arithmetic. Upstream already
+      replaced the same idiom elsewhere with CAST(... AS NUMERIC) (party_ledger_residual), so the fix follows precedent.
+  (c) surfaced only once (a) was fixed: `HAVING d != 0 OR c != 0` (reports cash-flow) and
+      `HAVING total_debit != 0 OR total_credit != 0` (gl _close_pl_accounts) — output-column aliases in HAVING,
+      which Postgres disallows. Fixed by repeating the aggregates, again per upstream's own precedent.
+
+## Before (0001-0003 only), same inputs
+validate-period-close  → operator does not exist: text - text  (LINE 1: SELECT COALESCE(decimal_sum(g.credit), '0') - COALESCE(…)
+general-ledger         → operator does not exist: text - text
+cash-flow              → operator does not exist: text - text
+comparative-pl         → operator does not exist: text - text
+check-credit-limit     → COALESCE types text and integer cannot be matched  (SELECT COALESCE(decimal_sum("outstanding_amount"),0) …)
+check-overdue          → operator does not exist: text + integer  (si."outstanding_amount" + 0 > 0)
+submit-sales-invoice   → (not reached: user_confirmation_required is the first gate; with --user-confirmed it hits (a) in check-credit-limit)
+aggregate before: SELECT prorettype::regtype FROM pg_proc WHERE proname='decimal_sum' AND prokind='a'  → text
+
+## After (0004 applied; the FIRST connection open upgrades the existing aggregate in place)
+validate-period-close  → status ok  keys: expense_total, fiscal_year, income_total, net_income, trial_balance_balanced
+general-ledger         → status ok  keys: closing_balance, entries, opening_balance, total_credit, total_debit
+cash-flow              → status ok  operating 7175.00, net_change 54820.50, details [Trade Receivables 5000.00, Output VAT Payable (5%) 2175.00]
+comparative-pl         → status ok  keys: accounts, totals   (periods H1/H2)
+check-credit-limit     → status ok  keys: available_credit, credit_limit, credit_status, limit_enforced, outstanding_ar
+check-overdue          → status ok  keys: buckets, invoices, overdue_count, total_overdue
+submit-sales-invoice   → status ok  INV-2026-00001, gl_entries_created 2  (draft 581f87fe…, --user-confirmed)
+aggregate after:  prorettype → numeric ; erpclaw_decimal_sum_ffunc count → 0 (old finalfunc dropped)
+gl _close_pl_accounts HAVING query executed directly via psql → 2 rows (expense 42.00/12.50, income 0.00/49425.00), no error
+
+## Upgrade semantics
+Fast path: `SELECT prorettype = 'numeric'::regtype FROM pg_proc WHERE proname='decimal_sum' AND prokind='a'` → return.
+Slow path (advisory lock, as 0002): DROP AGGREGATE only when the existing one is not numeric; DROP FUNCTION IF EXISTS
+the old finalfunc; CREATE AGGREGATE without a finalfunc (stype numeric ⇒ result numeric). Idempotent; a second open is a no-op.
+Python contract unchanged: psycopg2 returns Decimal; call sites do to_decimal(str(row[...])) and str(Decimal) == the old text.
+SQL-level CAST at the 51 call sites was rejected: SQLite NUMERIC affinity loses exactness, and 51 edits vs 1 installer.
+
+## Patch hygiene
+git apply --check on the original 0001-0003 checkout (/home/user/avansaber/erpclaw) → clean.
+Router (scripts/db_query.py) untouched by 0004. Patch: services/erp-bridge/vendor/patches/0004-decimal-sum-numeric-postgres.patch (147 lines, 3 files).

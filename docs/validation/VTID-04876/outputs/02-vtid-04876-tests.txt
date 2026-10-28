@@ -1,0 +1,302 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04876/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04661-service-health-panel.test.ts
+  classifyHealthResponse (server)
+    ✓ HTTP null null -> down (4 ms)
+    ✓ HTTP 200 {"ok":true} -> healthy
+    ✓ HTTP 200 null -> healthy
+    ✓ HTTP 200 {"status":"ok"} -> ok (1 ms)
+    ✓ HTTP 200 {"status":"healthy"} -> healthy
+    ✓ HTTP 200 {"status":"ok_governance_limited"} -> ok_governance_limited
+    ✓ HTTP 200 {"status":"down","reason":"no_recent_runs"} -> down
+    ✓ HTTP 200 {"status":"degraded"} -> degraded
+    ✓ HTTP 200 {"ok":false} -> down (1 ms)
+    ✓ HTTP 200 {"ok":false,"error":"x"} -> down
+    ✓ HTTP 200 {"ok":false,"status":"healthy"} -> down
+    ✓ HTTP 200 {"ok":false,"status":"degraded"} -> degraded
+    ✓ HTTP 401 {"ok":false} -> no_access
+    ✓ HTTP 403 null -> no_access (1 ms)
+    ✓ HTTP 404 null -> down
+    ✓ HTTP 500 {"ok":false} -> down
+    ✓ HTTP 503 {"status":"degraded"} -> degraded
+    ✓ HTTP 503 {"status":"healthy"} -> down (1 ms)
+    ✓ HTTP 200 {"status":"not_configured"} -> not_configured
+    ✓ HTTP 200 {"status":"no_access"} -> no_access
+  classifyHealthProbe (browser copy) matches the server
+    ✓ HTTP null null -> down
+    ✓ HTTP 200 {"ok":true} -> healthy (1 ms)
+    ✓ HTTP 200 null -> healthy
+    ✓ HTTP 200 {"status":"ok"} -> ok
+    ✓ HTTP 200 {"status":"healthy"} -> healthy (1 ms)
+    ✓ HTTP 200 {"status":"ok_governance_limited"} -> ok_governance_limited
+    ✓ HTTP 200 {"status":"down","reason":"no_recent_runs"} -> down
+    ✓ HTTP 200 {"status":"degraded"} -> degraded
+    ✓ HTTP 200 {"ok":false} -> down (1 ms)
+    ✓ HTTP 200 {"ok":false,"error":"x"} -> down
+    ✓ HTTP 200 {"ok":false,"status":"healthy"} -> down
+    ✓ HTTP 200 {"ok":false,"status":"degraded"} -> degraded
+    ✓ HTTP 401 {"ok":false} -> no_access (1 ms)
+    ✓ HTTP 403 null -> no_access
+    ✓ HTTP 404 null -> down (1 ms)
+    ✓ HTTP 500 {"ok":false} -> down
+    ✓ HTTP 503 {"status":"degraded"} -> degraded
+    ✓ HTTP 503 {"status":"healthy"} -> down
+    ✓ HTTP 200 {"status":"not_configured"} -> not_configured (1 ms)
+    ✓ HTTP 200 {"status":"no_access"} -> no_access
+  every check is drawn
+    ✓ orderedHealthGroups never drops a group and keeps registry order first
+    ✓ every group in the registry is drawn by the panel (7 ms)
+    ✓ every registry group is listed in SERVICE_HEALTH_GROUPS (5 ms)
+    ✓ the browser fallback lists match the registry (1 ms)
+    ✓ the popup and the overview no longer carry a hardcoded group list (3 ms)
+    ✓ no_access is grey and not counted as down
+    ✓ the yellow and grey dots have styles (2 ms)
+    ✓ fetchServiceHealth prefers the server summary and falls back to browser probing (2 ms)
+  probeAllHealthEndpoints
+    ✓ classifies each response, times out to down, and caps huge details (2 ms)
+  GET /api/v1/admin/health/summary
+    ✓ refuses a caller that is not an admin, without probing anything (89 ms)
+    ✓ probes every registry entry once, forwards the token, and serves the cache after (61 ms)
+    ✓ the registry route now also serves the group order (45 ms)
+  VTID-04876: golden-path registry entries
+    ✓ exactly the members' golden path is flagged golden_path: true (1 ms)
+    ✓ golden_path is only ever true or absent (6 ms)
+    ✓ the golden-path entries are the gateway, auth, ORB/Nova, data and prod-frontend probes (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-route.test.ts
+  GET /api/v1/ops/attention — real auth middleware
+    ✓ 401 JSON without an Authorization header (never reaches the aggregator) (98 ms)
+  GET /api/v1/ops/attention — admin (middleware mocked)
+    ✓ 200 {ok, data} with the contract shape for an exafy_admin (30 ms)
+    ✓ a non-admin is refused by the gate (44 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/attention with owner ops-attention (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/ops-action-required.test.ts
+  GET /api/v1/ops/action-required — self-heal live re-probe
+    ✓ drops a self-heal escalation whose endpoint now probes healthy (42 ms)
+    ✓ keeps a self-heal escalation whose endpoint is still down (29 ms)
+  VTID-04876: GET /api/v1/ops/action-required is exafy_admin only
+    ✓ the route file wires requireAdminAuth on GET / (1 ms)
+    ✓ 401 JSON without an admin token, before any Supabase read (38 ms)
+    ✓ 401 from the real requireAdminAuth when no Authorization header is sent (37 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04875-health-summary-builder.test.ts
+  VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper)
+    ✓ route: first call probes over loopback with the caller token, mixed outcomes (71 ms)
+    ✓ route: PORT env overrides the loopback port; a different admin token is forwarded verbatim (48 ms)
+    ✓ route: concurrent callers share one run; a later call within 30s is served from cache; after 30s re-probes (48 ms)
+    ✓ route: unauthenticated caller → 401, nothing probed (35 ms)
+    ✓ route: a probe run that rejects → 500 summary_failed, and the next call retries (47 ms)
+  VTID-04875 buildHealthSummary() — in-process, no req/res
+    ✓ returns exactly what the route serves and shares the route cache (58 ms)
+    ✓ without authHeader probes with no Authorization header (44 ms)
+    ✓ `now` decides cache freshness: within 30s cached, at 30s re-probed (46 ms)
+    ✓ the route module still exports resetHealthSummaryCacheForTests and it clears the builder cache (44 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-adapters.test.ts
+  service_health adapter (N5 golden path)
+    ✓ golden-path failing → P1, other failing → P2, degraded → P3; all held 2 min via state (2 ms)
+    ✓ an unmeasured golden-path check (no_access) makes the source UNKNOWN, never green (1 ms)
+    ✓ an unmeasured non-golden check is skipped silently
+  release adapter
+    ✓ P1 when the newest prod deploy failed < 2 h ago; not after 2 h; not when completed (1 ms)
+    ✓ P2 when STAGING-VERIFY failed on the latest staging deploy, not when a newer deploy landed
+    ✓ P3 STAGING-VERIFY stale only beyond 72 h
+    ✓ commit drift is a P3 candidate held 48 h via state; unreadable build-info → source UNKNOWN (1 ms)
+    ✓ a legacy deploy-failure topic within 24 h is P3 (1 ms)
+  voice_supervisor adapter
+    ✓ system_wide → P1, segment critical → P2, warning → P3
+    ✓ carries quarantines and open architecture reports over from /ops/action-required (P3) (1 ms)
+    ✓ insufficient_data is no item; a failing overview read throws (→ UNKNOWN) (26 ms)
+  autonomy adapter
+    ✓ critical alert → P2, warning → P3, info dropped, kill switch and approvals owned elsewhere (N7)
+    ✓ alert keys ignore the changing numbers in the text
+    ✓ self-heal rolled_back → P2, escalated → P3, grouped per endpoint, blocklist applied (1 ms)
+  operator_pipeline adapter (N4)
+    ✓ stuck = no heartbeat > 60 min by claim_expires_at - 60 min, never updated_at (1 ms)
+    ✓ only isAutonomousExecutionTask() rows count; session VTIDs are never flagged
+    ✓ broken (pipeline summary) autonomous task → P2 even when unclaimed; no 30–60 min band (1 ms)
+    ✓ pipeline summary failure → partial (UNKNOWN), heartbeat items still reported
+  governance adapter
+    ✓ a disarmed governance kill-switch control → P2 with who/when (1 ms)
+    ✓ Dev Autopilot kill switch engaged → one P2 fingerprint with the activation time (N7) (1 ms)
+    ✓ critical violations → one P2 item, others → one P3 item (grouped with count)
+    ✓ unreadable controls throw (→ UNKNOWN) (2 ms)
+  decisions_waiting adapter
+    ✓ waiting > 4 h → P2, > 1 h → P3, ≤ 1 h not shown; grouped per kind with count (1 ms)
+    ✓ one failing kind → partial (UNKNOWN); all failing → throws
+  registry
+    ✓ has exactly the seven Phase 1 adapters (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-aggregator.test.ts
+  verdict
+    ✓ CRITICAL beats UNKNOWN; UNKNOWN beats ATTENTION/OK; OK only with all sources fresh and no items (2 ms)
+  buildOpsAttention
+    ✓ response shape, env-scoped fingerprints, ranking by severity then age (2 ms)
+    ✓ an adapter that exceeds the 3 s timeout is UNKNOWN; the verdict is UNKNOWN, not OK (2 ms)
+    ✓ a throwing adapter is UNKNOWN; a P1 elsewhere still makes the verdict CRITICAL (1 ms)
+    ✓ a partial adapter is UNKNOWN but still shows its candidates
+    ✓ the full default registry runs over all-healthy fakes: OK with 8 fresh sources
+  hysteresis (time-based, N2/N5/N8)
+    ✓ a source-timestamped candidate is stateless: shown once held long enough, no state write (1 ms)
+    ✓ a stateless-source candidate opens only after 2 min of consecutive observation (2 ms)
+    ✓ a gap longer than the clear grace (90 s) resets first_seen; a shorter one keeps it (1 ms)
+    ✓ staging and production state never mix: the fingerprint and the store call carry env
+    ✓ a state READ failure never breaks the response: logged, first seen at this request, attention_state UNKNOWN (1 ms)
+    ✓ a state WRITE failure never breaks the response: logged, source stays ok with the error noted (1 ms)
+  getOpsAttention — single-flight + cache
+    ✓ concurrent callers share one computation; within 25 s the cache answers; after, it recomputes (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    ✓ polls every 30 s and goes blind after 2x the poll interval (4 ms)
+    ✓ any fetch error, or no answer yet, is UNKNOWN — never OK (3 ms)
+    ✓ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (3 ms)
+    ✓ labels staging as "Staging build · production data" (3 ms)
+    ✓ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (2 ms)
+  VTID-04876: ranked queue
+    ✓ severity is icon + text label + colour class (5 ms)
+    ✓ the queue body is aria-live="polite" and has a "Needs attention now" heading (1 ms)
+    ✓ domain filters are data-action buttons with aria-pressed (1 ms)
+    ✓ an empty queue with unknown sources is explicitly not an all-clear (1 ms)
+    ✓ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (2 ms)
+  VTID-04876: no inline handlers
+    ✓ no 'onclick=' anywhere in the Overview region (2 ms)
+    ✓ the cockpit assigns no on* handler properties; one delegated listener reads data-action (3 ms)
+    ✓ the cockpit block is CSP-clean (no inline style or eval) (2 ms)
+    ✓ says why its strings are English (admin-facing by design) (1 ms)
+  VTID-04876: polling and the /ops/attention migration
+    ✓ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (5 ms)
+    ✓ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    ✓ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (2 ms)
+    ✓ keeps showing the last good answer on error but marks the cockpit blind (1 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    ✓ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (1 ms)
+    ✓ params are read on navigation: navigateToScreen, back/forward and page load (2 ms)
+    ✓ applyDeepLinkParams keys on the real router state
+    ✓ ?vtid= on command-hub/tasks opens the task drawer (5 ms)
+    ✓ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (5 ms)
+    ✓ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (10 ms)
+    ✓ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (9 ms)
+    ✓ a param on a screen outside the contract is ignored (5 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    ✓ every section/tab exists, every query key is one its screen reads, every screen is dispatched (5 ms)
+    ✓ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (1 ms)
+  VTID-04876: styles and asset version
+    ✓ the cockpit styles exist (UNKNOWN is grey) and use logical properties (2 ms)
+    ✓ index.html loads app.js and styles.css at the VTID-04876 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04662-service-health-registered-routes.test.ts
+  VTID-04662: existing health routes are registered
+    ✓ Nova Sonic is on the panel at /api/v1/orb/nova-sonic/health in AI & Assistant (1 ms)
+    ✓ LLM Providers is on the panel at /api/v1/llm/providers/health in AI & Assistant
+    ✓ Voice Tools Catalog is on the panel at /api/v1/voice-tools/health in AI & Assistant (1 ms)
+    ✓ Self-Healing is on the panel at /api/v1/self-healing/health in Self-Healing & Ops (1 ms)
+    ✓ Watcher is on the panel at /api/v1/watcher/health in Self-Healing & Ops (1 ms)
+    ✓ Worker Orchestrator is on the panel at /api/v1/worker/orchestrator/health in Self-Healing & Ops (1 ms)
+    ✓ Aurora Memory is on the panel at /api/v1/admin/aurora-memory/health in Data & Memory
+    ✓ Aurora RLS is on the panel at /api/v1/admin/aurora-rls-health in Data & Memory (1 ms)
+    ✓ ORB Session State is on the panel at /api/v1/admin/orb-session-state-health in Data & Memory (1 ms)
+    ✓ Reminders is on the panel at /api/v1/reminders/_health/check in Automation & Scheduling (1 ms)
+    ✓ Calendar is on the panel at /api/v1/calendar/health in Automation & Scheduling
+    ✓ Integrations is on the panel at /api/v1/integrations/health in Domain & Context
+    ✓ Pillar Agents is on the panel at /api/v1/pillar-agents/health in Domain & Context (1 ms)
+    ✓ Catalog Ingest is on the panel at /api/v1/catalog/ingest/health in Commerce (1 ms)
+    ✓ Shop Feed is on the panel at /api/v1/shop-feed/health in Commerce (1 ms)
+    ✓ Shopping Agent is on the panel at /api/v1/shopping-agent/health in Commerce (1 ms)
+    ✓ Universal Cart is on the panel at /api/v1/universal-cart/health in Commerce
+    ✓ Nova Sonic is declared by its router (1 ms)
+    ✓ LLM Providers is declared by its router
+    ✓ Voice Tools Catalog is declared by its router
+    ✓ Self-Healing is declared by its router (1 ms)
+    ✓ Watcher is declared by its router
+    ✓ Worker Orchestrator is declared by its router (1 ms)
+    ✓ Aurora Memory is declared by its router
+    ✓ Aurora RLS is declared by its router (1 ms)
+    ✓ ORB Session State is declared by its router
+    ✓ Reminders is declared by its router
+    ✓ Calendar is declared by its router (1 ms)
+    ✓ Integrations is declared by its router
+    ✓ Pillar Agents is declared by its router (1 ms)
+    ✓ Catalog Ingest is declared by its router
+    ✓ Shop Feed is declared by its router
+    ✓ Shopping Agent is declared by its router (1 ms)
+    ✓ Universal Cart is declared by its router
+    ✓ the panel now carries 117 checks and no duplicate URL or name (1 ms)
+    ✓ the Memory Broker dashboard feed is not polled as a health check (15 table counts per call)
+    ✓ the Nova Sonic route reports a status that follows readiness, not its always-true ok (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-reads.test.ts
+  in-process wiring (no HTTP self-calls)
+    ✓ service health → buildHealthSummary with the caller auth header (1 ms)
+    ✓ voice → buildVoiceOverview({window:"1h", scope:{is_platform_admin:true}})
+    ✓ release build-info → the cached ops-runtime checks
+    ✓ operator → buildPipelineSummary BROKEN vtids + isAutonomousExecutionTask (1 ms)
+    ✓ autonomy → buildSupervisorSnapshot alerts
+    ✓ PR approvals → the /approvals/pending helpers, only rows with a PR or branch (1 ms)
+    ✓ nothing above used fetch
+  bounded supabase reads
+    ✓ oasis_events latestEvent: topic IN + created_at >= + newest first + LIMIT 1 (1 ms)
+    ✓ a read error throws instead of returning an empty list (14 ms)
+    ✓ in-progress ledger: VTID-% in_progress non-terminal, LIMIT 500
+    ✓ self-heal pending approval drops human-decided rows (1 ms)
+    ✓ system controls: an empty list is unreadable; a missing allocator row is disabled unless the env var is set (1 ms)
+    ✓ kill switch: row → engaged flag; no row → null
+  ops_attention_state store
+    ✓ loads by env + fingerprints and upserts (env, fingerprint) (1 ms)
+    ✓ a write error throws (the aggregator logs it and carries on) (1 ms)
+
+Test Suites: 9 passed, 9 total
+Tests:       193 passed, 193 total
+Snapshots:   5 passed, 5 total
+Time:        2.421 s
+Ran all test suites matching /test\/vtid-04876-ops-attention-adapters.test.ts|test\/vtid-04876-ops-attention-aggregator.test.ts|test\/vtid-04876-ops-attention-reads.test.ts|test\/vtid-04876-ops-attention-route.test.ts|test\/command-hub\/vtid-04876-overview-cockpit.test.ts|test\/ops-action-required.test.ts|test\/vtid-04661-service-health-panel.test.ts|test\/vtid-04662-service-health-registered-routes.test.ts|test\/vtid-04875-health-summary-builder.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

@@ -1,0 +1,87 @@
+# oasis_events trace, user 0adc6ff6…, 2026-09-17 23:05-23:20 UTC (read-only)
+# columns: time | session tail | turn | topic | stage | selected metadata
+
+23:06:59.545 | d8aa2ed7ecf7 | turn 0 | orb.live.diag | vertex_tool_catalog_trimmed | {"audio_in": 0, "audio_out": 0, "declarations_before": 290, "declarations_after": 28, "bytes_before": 226316, "bytes_after": 49139}
+23:07:04.861 | d8aa2ed7ecf7 | turn 0 | orb.live.diag | model_start_speaking | {"audio_in": 0, "audio_out": 1}
+23:07:13.695 | d8aa2ed7ecf7 | turn 0 | orb.live.diag | turn_complete | {"audio_in": 0, "audio_out": 199}
+23:07:17.023 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 48, "audio_out": 199, "text_preview": " Ne"}
+23:07:17.336 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 53, "audio_out": 199, "text_preview": " nego"}
+23:07:17.478 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 55, "audio_out": 199, "text_preview": " ho"}
+23:07:17.648 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 58, "audio_out": 199, "text_preview": "ć"}
+23:07:17.793 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 60, "audio_out": 199, "text_preview": "u da"}
+23:07:17.966 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 63, "audio_out": 199, "text_preview": " znam"}
+23:07:18.145 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 66, "audio_out": 199, "text_preview": " kako"}
+23:07:18.296 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 68, "audio_out": 199, "text_preview": " mi"}
+23:07:18.446 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 71, "audio_out": 199, "text_preview": " sto"}
+23:07:18.593 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 73, "audio_out": 199, "text_preview": "ji"}
+23:07:18.773 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 76, "audio_out": 199, "text_preview": " Vi"}
+23:07:18.774 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | input_transcription | {"audio_in": 76, "audio_out": 199, "text_preview": "tana indeks."}
+23:07:20.722 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | model_start_speaking | {"audio_in": 106, "audio_out": 199}
+23:07:22.958 | d8aa2ed7ecf7 | turn 1 | orb.live.diag | turn_complete | {"audio_in": 141, "audio_out": 232}
+23:07:27.137 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 206, "audio_out": 232, "text_preview": " Na"}
+23:07:27.469 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 211, "audio_out": 232, "text_preview": " ko"}
+23:07:27.626 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 214, "audio_out": 232, "text_preview": "joj"}
+23:07:27.779 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 216, "audio_out": 232, "text_preview": " bro"}
+23:07:27.964 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 219, "audio_out": 232, "text_preview": "j"}
+23:07:28.123 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 222, "audio_out": 232, "text_preview": "ci"}
+23:07:28.282 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 224, "audio_out": 232, "text_preview": "? Ko"}
+23:07:28.449 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 227, "audio_out": 232, "text_preview": "ji"}
+23:07:28.611 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 229, "audio_out": 232, "text_preview": " bro"}
+23:07:28.763 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 232, "audio_out": 232, "text_preview": "j"}
+23:07:28.921 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 234, "audio_out": 232, "text_preview": " tre"}
+23:07:29.075 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 236, "audio_out": 232, "text_preview": "nut"}
+23:07:29.230 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 239, "audio_out": 232, "text_preview": "no"}
+23:07:29.392 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 241, "audio_out": 232, "text_preview": " sto"}
+23:07:29.543 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 244, "audio_out": 232, "text_preview": "ji"}
+23:07:29.858 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 249, "audio_out": 232, "text_preview": " vi"}
+23:07:30.045 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 252, "audio_out": 232, "text_preview": " mo"}
+23:07:30.205 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 254, "audio_out": 232, "text_preview": "j"}
+23:07:30.360 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 257, "audio_out": 232, "text_preview": " vita"}
+23:07:30.549 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | input_transcription | {"audio_in": 260, "audio_out": 232, "text_preview": "na indeksa?"}
+23:07:31.861 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | tool_call | {"audio_in": 280, "audio_out": 232, "tools": ["get_day_summary"]}
+23:07:32.425 | d8aa2ed7ecf7 | turn None | orb.live.tool.executed | None | {"tool_name": "get_day_summary", "response_sent": true, "elapsed_ms": 562, "result_preview": "Day summary (compose your own sentence from this — do NOT read it as a list):\nVitana Index today: 72 (7-day trend: +0)\nToday's autopilot checkpoint: \"Attend a meetup\"\nUnread messages: 59\nUnread matche
+23:07:42.470 | d8aa2ed7ecf7 | turn 2 | orb.live.diag | turn_complete | {"audio_in": 446, "audio_out": 232}
+23:07:43.635 | d8aa2ed7ecf7 | turn 3 | orb.live.diag | input_transcription | {"audio_in": 464, "audio_out": 232, "text_preview": " Da me čuješ."}
+23:07:45.476 | d8aa2ed7ecf7 | turn 3 | orb.live.diag | tool_call | {"audio_in": 493, "audio_out": 232, "tools": ["get_current_screen"]}
+23:07:45.479 | d8aa2ed7ecf7 | turn None | orb.live.tool.executed | None | {"tool_name": "get_current_screen", "response_sent": true, "elapsed_ms": 1, "result_preview": "{\"title\":\"Join the Maxina Community\",\"description\":\"Registration and sign-in for the Maxina community on Vitanaland.\",\"category\":\"auth\",\"screen_id\":\"AUTH.MAXINA_PORTAL\",\"route\":\"/maxina\
+23:07:49.618 | d8aa2ed7ecf7 | turn 3 | orb.live.diag | turn_complete | {"audio_in": 557, "audio_out": 232}
+23:07:50.775 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 575, "audio_out": 232, "text_preview": " Ha"}
+23:07:50.923 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 578, "audio_out": 232, "text_preview": "lo"}
+23:07:51.103 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 581, "audio_out": 232, "text_preview": ","}
+23:07:51.254 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 583, "audio_out": 232, "text_preview": " je"}
+23:07:51.406 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 585, "audio_out": 232, "text_preview": " me"}
+23:07:51.407 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | input_transcription | {"audio_in": 585, "audio_out": 232, "text_preview": " čuješ?"}
+23:07:52.442 | d8aa2ed7ecf7 | turn 4 | orb.live.diag | turn_complete | {"audio_in": 601, "audio_out": 232}
+23:07:53.651 | d8aa2ed7ecf7 | turn 5 | orb.live.diag | input_transcription | {"audio_in": 620, "audio_out": 232, "text_preview": " <noise>"}
+23:07:56.999 | d8aa2ed7ecf7 | turn 5 | orb.live.diag | model_start_speaking | {"audio_in": 673, "audio_out": 232}
+23:08:02.844 | d8aa2ed7ecf7 | turn 5 | orb.live.diag | upstream_ws_close | {"audio_in": 764, "audio_out": 591, "code": 1007, "reason": "Request contains an invalid argument."}
+23:08:05.251 | 114a805af7dc | turn 0 | orb.live.diag | vertex_tool_catalog_trimmed | {"audio_in": 0, "audio_out": 0, "declarations_before": 290, "declarations_after": 28, "bytes_before": 226316, "bytes_after": 49139}
+23:08:07.139 | 114a805af7dc | turn 0 | orb.live.diag | model_start_speaking | {"audio_in": 0, "audio_out": 1}
+23:08:11.412 | 114a805af7dc | turn 0 | orb.live.diag | turn_complete | {"audio_in": 0, "audio_out": 85}
+23:08:15.912 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 58, "audio_out": 85, "text_preview": " Pi"}
+23:08:16.065 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 60, "audio_out": 85, "text_preview": "tam"}
+23:08:16.247 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 63, "audio_out": 85, "text_preview": " te"}
+23:08:16.399 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 66, "audio_out": 85, "text_preview": " kako"}
+23:08:16.765 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 71, "audio_out": 85, "text_preview": " sto"}
+23:08:16.883 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 73, "audio_out": 85, "text_preview": "ji"}
+23:08:17.033 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 75, "audio_out": 85, "text_preview": " ko"}
+23:08:17.184 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 78, "audio_out": 85, "text_preview": "ji"}
+23:08:17.366 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 81, "audio_out": 85, "text_preview": " bro"}
+23:08:17.519 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 83, "audio_out": 85, "text_preview": "j"}
+23:08:17.822 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 88, "audio_out": 85, "text_preview": "."}
+23:08:17.979 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 90, "audio_out": 85, "text_preview": " Na"}
+23:08:18.156 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 93, "audio_out": 85, "text_preview": " kom"}
+23:08:18.488 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 98, "audio_out": 85, "text_preview": " bro"}
+23:08:18.641 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 101, "audio_out": 85, "text_preview": "ju"}
+23:08:18.793 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 103, "audio_out": 85, "text_preview": " mo"}
+23:08:18.944 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 105, "audio_out": 85, "text_preview": "j"}
+23:08:19.125 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 108, "audio_out": 85, "text_preview": " Vi"}
+23:08:19.275 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 111, "audio_out": 85, "text_preview": "tana"}
+23:08:19.609 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 116, "audio_out": 85, "text_preview": " inde"}
+23:08:19.759 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 118, "audio_out": 85, "text_preview": "ks"}
+23:08:19.911 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 120, "audio_out": 85, "text_preview": " tre"}
+23:08:20.033 | 114a805af7dc | turn 1 | orb.live.diag | input_transcription | {"audio_in": 122, "audio_out": 85, "text_preview": "nutno stoji?"}
+
+# Serbian sessions with a tool_call in the last 3 days — spoke after the tool response?
+# 114a805af7dc first_tool_call 09-17 23:08:21 speaks_after_tool=0 close=1000
+# d8aa2ed7ecf7 first_tool_call 09-17 23:07:31 speaks_after_tool=1 (turn 5, then 1007 mid-turn) close=1007

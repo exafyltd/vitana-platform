@@ -1,0 +1,37 @@
+{
+  "vtid": "VTID-04608",
+  "execution_id": "e8118eb9-05a5-41f4-914d-92883b763375",
+  "finding_id": "29c10ef6-cf3d-45a4-b9d7-66f57f500a87",
+  "plan_version": 1,
+  "branch": "dev-autopilot/bfaf037c",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "docs/validation/VTID-04608/acceptance.md",
+      "action": "create"
+    },
+    {
+      "path": "docs/validation/VTID-04608/commands.log",
+      "action": "create"
+    },
+    {
+      "path": "docs/validation/VTID-04608/outputs/execution.json",
+      "action": "create"
+    },
+    {
+      "path": "scripts/aws/setup-operator-agent-task-role-grants.sh",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/operator-agent-task-role-grants-script.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-26T09:28:58.590Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

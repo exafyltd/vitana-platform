@@ -1,0 +1,7 @@
+# VTID-04783
+POST /api/v1/vtid/allocate -> VTID-04783
+read-only (production Supabase, SELECT only): products category/subcategory distribution (network: supplements, skincare, health-tests, lifestyle); catalog_verticals keys
+postgres 16 (local, throwaway): psql -f docs/validation/VTID-04783/migration-scenarios.sql -> 15 x ok, ALL PASSED (outputs/migration-scenarios-postgres16.txt)
+node (TS transpile harness) test/services/discover-categories.test.ts -> 4/4 ok; the route/CSV suites need node_modules (npm registry blocked in this sandbox) and run in CI Gateway Jest
+2026-10-01 owner applied the migration via the Supabase SQL Editor (4 parts) -> final check 9 | 26 | 9 | 1 | 511
+read-only (production Supabase, SELECT only): both functions present; discover_category_counts() returns 26 category/subcategory rows (supplements 245, skincare 200, health-tests 59, lifestyle 1); all 9 verticals mapped, services NULL; anon has EXECUTE

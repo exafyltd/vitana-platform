@@ -1,0 +1,63 @@
+Real, live evidence gathered from THIS session against the deployed staging
+gateway BEFORE this fix, proving the bug this VTID fixes is real (not a
+theory) and precisely characterizing it. Not fabricated — obtained by:
+(1) logging in as the documented exafy_admin test account via a real
+Supabase Auth REST call, (2) calling the real VTID-03773 diagnostic route
+on preview-aws-gateway.vitanaland.com with that token, (3) inspecting the
+live ECS task definition, RDS cluster, and RDS CA bundle via the AWS API
+with real, working credentials already present in this session's
+environment (account 472838866351, region eu-central-1 — matches
+CLAUDE.md's canonical account/region).
+
+--- 1. Real login (Supabase Auth, e2e-test@vitana.dev, documented test admin) ---
+POST https://inmkhvwdcuyhnxkgfvsb.supabase.co/auth/v1/token?grant_type=password
+HTTP_STATUS:200
+(access_token used below was real, unexpired, confirmed exafy_admin:true via
+`raw_app_meta_data->>'exafy_admin'` on the account beforehand)
+
+--- 2. Real call to the Aurora health route with that token ---
+GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/aurora-memory/health
+Authorization: Bearer <real token>
+
+{"ok":false,"reachable":false,"configured":true,"latency_ms":710,
+ "error_type":"auth_or_tls","error_message":"unable to get local issuer certificate",
+ "target":"postgresql://vitana_admin:***@vitana-rds-proxy-prod.proxy-cfk228aiedf3.eu-central-1.rds.amazonaws.com:5432/vitana"}
+HTTP_STATUS:503
+
+--- 3. Confirmed AURORA_CA_BUNDLE_PATH and AURORA_DATABASE_URL were both
+       correctly wired on the live staging task definition (ruling out a
+       config/deploy-wiring bug) ---
+$ aws ecs describe-task-definition --task-definition vitana-gateway (via boto3, same result)
+AURORA_CA_BUNDLE_PATH = /app/certs/rds-combined-ca-bundle.pem
+AURORA_DATABASE_URL in secrets: True
+image: 472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/gateway:e2ef15018015
+(confirmed via `git merge-base --is-ancestor` that this image's commit is
+strictly AFTER both VTID-03773 fix PRs (#3213, #3219) — the CA-bundle
+Dockerfile step was definitely part of the running image)
+
+--- 4. Confirmed the Aurora cluster's real CA identifier ---
+$ aws rds describe-db-instances (via boto3)
+vitana-aurora-prod-writer -> CACertificateIdentifier: rds-ca-rsa2048-g1
+vitana-aurora-prod-reader -> CACertificateIdentifier: rds-ca-rsa2048-g1
+
+--- 5. Confirmed the downloaded RDS combined CA bundle DOES contain the
+       matching root (ruling out "wrong/incomplete bundle downloaded") ---
+$ curl -fsSL https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem
+108 certificates total, including:
+  subject=C=US, O="Amazon Web Services, Inc.", OU=Amazon RDS, ST=WA,
+  CN=Amazon RDS eu-central-1 Root CA RSA2048 G1, L=Seattle
+
+Conclusion supported by 1-5 together: the network path to Aurora is open
+(a real TLS handshake occurs — this is not a security-group problem), the
+bundle deployed is genuinely correct and current, yet verification still
+fails. The only remaining explanation is the one this fix addresses: the
+target is an RDS PROXY endpoint (not the instance directly), whose
+certificate can chain to a different, public trust root than the
+RDS-instance CA hierarchy — and passing a custom `ca` value to Node's TLS
+stack REPLACES the default trusted roots rather than extending them,
+silently dropping that public root from the trust set.
+
+This file predates the code fix in this PR. The AFTER state — a real
+`reachable:true` call against the same route once this fix deploys to
+staging — is the next verification step post-merge, recorded as a task,
+not fabricated here in advance.

@@ -1,0 +1,5 @@
+{"vtid":"VTID-04988","service":"gateway","tests":[
+{"kind":"http","name":"gateway alive after the change","path":"/alive","expect_status":200},
+{"kind":"http","name":"build-info answers JSON","path":"/api/v1/admin/build-info","expect_status":200,"expect_content_type":"json"},
+{"kind":"existing","ref":"npx jest test/vtid-04988-earned-vtna-rewards-only.test.ts test/services/entitlement-service.test.ts","cwd":"services/gateway","reason":"Spending is a write and staging shares the production database, so the bucket selection and the SQL refusal are proven by these tests (mutation-checked) and by the read-only post-migration check (0 rows allow reward_credits)."}
+]}

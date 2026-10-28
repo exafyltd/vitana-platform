@@ -1,0 +1,8 @@
+{
+  "vtid": "VTID-05083",
+  "service": "gateway",
+  "note": "A CI-script change that deploys nothing (scripts/ci is outside the gateway deploy paths). The request init is proven by node --test scripts/ci/staging-verify/lib.test.cjs (STAGING-TESTS-REQUIRED); the real proof on staging is VTID-05043's GET probe passing in the next STAGING-VERIFY run, which reads this runner from main.",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 }
+  ]
+}

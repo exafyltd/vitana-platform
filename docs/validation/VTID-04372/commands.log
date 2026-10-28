@@ -1,0 +1,8 @@
+$ cd services/gateway && npx tsc --noEmit -p .                     # clean
+$ npx jest test/vtid-04372-calendar-google-sync.test.ts            # 17 passed
+$ npx jest test/vtid-0432 test/vtid-0433 test/vtid-0435 test/vtid-04374 test/vtid-04373 test/vtid-04372 <social-connect/google suites> test/routes
+  139 suites, 2196 passed, 1 skipped
+Supabase MCP:
+  pre-check  to_regclass(calendar_google_sync|calendar_google_links|calendar_external_busy) → all null
+  apply_migration vtid_04372_calendar_google_sync → success
+  post-check relrowsecurity=true, policies=0, authenticated/anon SELECT=false on all three

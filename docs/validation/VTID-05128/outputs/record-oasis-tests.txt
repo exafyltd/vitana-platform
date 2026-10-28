@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+ok 1 - a full run (1,100 results, body over 128 KiB) is recorded from a file, not argv
+  ---
+  duration_ms: 47.740563
+  type: 'test'
+  ...
+# Subtest: a passed run is recorded as passed / success
+ok 2 - a passed run is recorded as passed / success
+  ---
+  duration_ms: 29.089759
+  type: 'test'
+  ...
+# Subtest: runner crashed (no results.json) → recorded as a failed, crashed verification
+ok 3 - runner crashed (no results.json) → recorded as a failed, crashed verification
+  ---
+  duration_ms: 31.813684
+  type: 'test'
+  ...
+# Subtest: missing Supabase credentials fail loudly before anything is sent
+ok 4 - missing Supabase credentials fail loudly before anything is sent
+  ---
+  duration_ms: 5.191868
+  type: 'test'
+  ...
+# Subtest: a failed POST fails the step (no silent success)
+ok 5 - a failed POST fails the step (no silent success)
+  ---
+  duration_ms: 21.408636
+  type: 'test'
+  ...
+# Subtest: the body file is removed after the step
+ok 6 - the body file is removed after the step
+  ---
+  duration_ms: 34.000181
+  type: 'test'
+  ...
+# Subtest: the workflow step calls the script and never passes the body as an argument
+ok 7 - the workflow step calls the script and never passes the body as an argument
+  ---
+  duration_ms: 0.529032
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 269.084864

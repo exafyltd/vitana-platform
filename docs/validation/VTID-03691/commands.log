@@ -1,0 +1,68 @@
+# VTID-03691 — commands actually run, in order.
+#
+# Everything here was executed. Where a command could NOT be run from the
+# session, that is stated rather than the command being listed as if it had
+# succeeded.
+
+# --- Live Polly audit (eu-central-1) -------------------------------------
+# First live verification of the voice table since VTID-03495. Requires the
+# ClaudeCodePollyAudit IAM policy on the agent user (polly:DescribeVoices,
+# polly:SynthesizeSpeech).
+npx ts-node scripts/tts/verify-polly-voices.ts
+#   -> 106 voices, 42 language codes
+#   -> no sr/hr/bs/sh under any spelling  (Serbian genuinely absent)
+#   -> ru: Tatyana AND Maxim both standard-only (no neural Russian at all)
+#   -> en/de/fr/es/pt/pl support `generative` on the SAME voice id
+#   -> ar (Hala), zh (Zhiyu) are neural-only
+#   -> generative verified for mp3, PCM 16k, PCM 8k and SSML <prosody rate>,
+#      and the rate genuinely applies (70% -> 6.40s, 150% -> 3.41s vs 4.82s)
+
+# --- Narration cache unit suites -----------------------------------------
+cd services/gateway
+npx jest test/services/tts/narration-audio-cache.test.ts \
+         test/services/tts/guided-topic-narration-audio.test.ts
+#   -> 2 suites, 32 tests, all passing
+#   -> captured: outputs/narration-cache-tests.txt
+
+# Mutation check on the load-bearing assertion: remove `engine` from the
+# hashed field list in buildNarrationCacheKey() and confirm the
+# "CHANGES when the engine changes" test fails, then restore.
+#   -> test went red as expected; restored.
+
+# --- Typecheck ------------------------------------------------------------
+npx tsc --noEmit
+#   -> exit 0, no output
+
+# --- VALIDATOR-CHECK guard (VTID-03696, same PR) --------------------------
+npx jest test/scripts/validator-path-guard.test.ts
+#   -> 31 tests, all passing
+#   -> captured: outputs/validator-guard-tests.txt
+
+# Mutation check on the drift guard: delete 'services/gateway/test/**' from
+# the workflow's paths: list and confirm the REMIT-vs-trigger test fails,
+# then restore.
+#   -> test went red as expected; restored (verified 2 occurrences present).
+
+# Workflow YAML parse check after every edit (VTID-03505 class of failure:
+# an unparseable workflow produces a bare red X with zero jobs and no reason).
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/VALIDATOR-CHECK.yml'))"
+#   -> parses, 15 steps
+
+# CSP gate scoping, checked against this PR's real changed-file list:
+node scripts/ci/validator-path-guard.cjs --csp-targets /tmp/cf.txt
+#   -> 0 targets (no browser-served files changed)
+#   -> before the fix, the unscoped scan flagged VALIDATOR-CHECK.yml itself
+#      (it contains the CSP pattern list as its own source) and
+#      package-lock.json (a registry URL matching the CDN-asset pattern)
+
+# Route-mount evidence, checked against this PR's real diff:
+git diff origin/main...HEAD -- services/gateway/src/routes/ \
+    services/gateway/src/index.ts services/gateway/src/app.ts > /tmp/rd.txt
+node scripts/ci/validator-path-guard.cjs --route-evidence-required /tmp/rd.txt
+#   -> "No route registration added" (exit 1) — correct; VTID-03692 changed a
+#      branch inside an existing WS handler and added no route.
+
+# --- NOT run from this session -------------------------------------------
+# The S3 narration cache leg. The bucket does not exist and the task role has
+# no s3 grant, so no `cache=hit store=s3` has ever been observed. Provisioning
+# script is scripts/aws/setup-narration-audio-cache.sh; it has NOT been run.

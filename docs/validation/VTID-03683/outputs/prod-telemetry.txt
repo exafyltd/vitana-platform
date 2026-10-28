@@ -1,0 +1,70 @@
+VTID-03683 — production measurement (READ-ONLY)
+
+All queries below are SELECT-only against the production Supabase project.
+Nothing was written, and no ORB session was started to produce this data — it is
+traffic that already existed. Per CLAUDE.md's standing rule, exercising
+production to generate evidence is forbidden; these are observations of rows
+other people's real sessions had already created.
+
+===============================================================================
+1. The measurement that identified the language ceiling
+===============================================================================
+
+Mean audio_out per completed turn, by session language, 14 days, from
+`oasis_events` `orb.live.diag` rows with stage='turn_complete' joined to their
+session's recorded language:
+
+    lang    mean audio_out/turn
+    ----    -------------------
+    de              173.0        <- Nova SUPPORTS
+    en              160.7        <- Nova SUPPORTS
+    sr               38.3        <- Nova does NOT
+    pl               35.5        <- Nova does NOT
+    ru               29.8        <- Nova does NOT
+
+A 4-5x shortfall landing on exactly the three unsupported languages present in
+the sample, and on none of the supported ones.
+
+CORRECTION TO AN EARLIER CLAIM IN THIS WORKSTREAM: I previously stated that "pl
+and sr work" while `ru` was broken. That was wrong. All three are degraded by
+roughly the same factor; `pl` and `sr` are merely less visibly broken than `ru`.
+The correction is recorded here and in the VTID ledger rather than quietly
+dropped, because the wrong version of this claim was used to scope VTID-03682.
+
+===============================================================================
+2. What this rules out
+===============================================================================
+
+- NOT the voice. VTID-03682 established that all five unsupported languages
+  resolve to `null` in NOVA_VOICES and all receive the same substitute (`tina`),
+  so voice selection cannot discriminate between them and the supported set.
+- NOT Cyrillic. `sr` is Cyrillic and shows the same shortfall as Latin-script
+  `pl`, so script is not the discriminator either.
+
+What remains is the language ceiling itself: `NOVA_SONIC_SUPPORTED_LANGUAGES`
+is `['en','de','fr','es','pt']`, and the selector's own language gate is skipped
+whenever `vertexUnavailable` is set — which it is, permanently, since GCP went
+off (VTID-03649).
+
+===============================================================================
+3. A signal built to be measured, with no consumer
+===============================================================================
+
+`nova_forced_vertex_unavailable` — the selector reason emitted precisely so this
+degradation would be visible — returns ZERO rows over 14 days. The reason string
+exists in the code and is reachable, but nothing queries it and no dashboard
+reads it, so the condition it reports has been true continuously without ever
+being surfaced.
+
+Flagged for its own VTID; not fixed here. It is the same shape as VTID-03682's
+finding — a signal that exists but tells nobody — one layer further out.
+
+===============================================================================
+4. Not yet observed, and honestly so
+===============================================================================
+
+`cascaded_language_rescue` has never appeared in `oasis_events`, because the
+flag is off and the code is not deployed. The first real confirmation of this
+VTID is that row appearing after `ORB_CASCADED_VOICE_ENABLED=true`, followed by
+`audio_out` per turn for `ru`/`pl` measured against the 29.8 / 35.5 baseline
+above. Until then the pipeline is verified by its test suite only.

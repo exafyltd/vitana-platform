@@ -1,0 +1,200 @@
+/**
+ * User Category Preferences API
+ *
+ * Endpoints:
+ * - GET /    — Get user's notification categories with preference state
+ * - PUT /:categoryId — Toggle a category on/off
+ *
+ * VTID-04674: only categories holding an admin-enabled type are listed; a
+ * category members may not switch off comes back `locked` and refuses PUT false.
+ *
+ * Security:
+ * - All endpoints require Bearer token (standard user auth)
+ */
+
+import { Router, Request, Response } from 'express';
+import {
+  requireAuth,
+  requireTenant,
+  AuthenticatedRequest,
+} from '../middleware/auth-supabase-jwt';
+import { createClient } from '@supabase/supabase-js';
+import { tt, type GatewayI18nKey, type GatewayLocale, GATEWAY_LOCALES } from '../i18n/catalog';
+import { getUserLocale } from '../i18n/server-locale';
+import * as repo from './user-category-preferences-repository';
+import { NOTIFICATION_CATALOG, type NotificationAudience } from '../services/notification-controls/notification-catalog';
+
+const router = Router();
+
+function getSupabase() {
+  return createClient(
+    process.env.SUPABASE_URL!,
+    process.env.SUPABASE_SERVICE_ROLE!
+  );
+}
+
+// VTID-03801 — mirrors journey-checklist.ts's resolveLocale(): an explicit
+// `?locale=` (the live UI language, authoritative) wins over the stored
+// profile locale. Without this, a language switch shows the new language
+// everywhere in the app EXCEPT this screen until getUserLocale()'s 5-minute
+// in-process cache happens to expire — the frontend writes stt_language
+// directly via Supabase and never invalidates the gateway's cache, so a
+// Chinese-selecting user kept seeing German category labels/descriptions
+// here for up to 5 minutes (sometimes longer, since the cache is keyed
+// per-gateway-instance and any request within the window re-reads it).
+export function resolveRequestedLocale(req: Request): GatewayLocale | null {
+  const raw = String(req.query.locale ?? '').slice(0, 5).toLowerCase().split('-')[0];
+  return (GATEWAY_LOCALES as readonly string[]).includes(raw) ? (raw as GatewayLocale) : null;
+}
+
+// ── GET / — Get categories with user preference state ───────
+
+router.get('/', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const supabase = getSupabase();
+
+  // Fetch all active categories (global + tenant-specific)
+  const { data: categories, error: catError } = await repo.fetchActiveNotificationCategories(supabase, identity.tenant_id);
+
+  if (catError) {
+    console.error('[USER-CAT-PREFS] GET / categories error:', catError.message);
+    return res.status(500).json({ ok: false, error: catError.message });
+  }
+
+  // Fetch user's existing preferences
+  const { data: userPrefs, error: prefError } = await repo.fetchUserCategoryPreferences(
+    supabase,
+    identity.user_id,
+    identity.tenant_id,
+  );
+
+  if (prefError) {
+    console.error('[USER-CAT-PREFS] GET / preferences error:', prefError.message);
+    return res.status(500).json({ ok: false, error: prefError.message });
+  }
+
+  // VTID-04674: a category is shown only if the admin has switched on at
+  // least one of its types — a switch for something that is never sent is
+  // noise. If the switches cannot be read, every category is shown.
+  const { data: enabledRows, error: enabledError } = await repo.fetchEnabledNotificationTypes(
+    supabase,
+    identity.tenant_id,
+  );
+  if (enabledError) {
+    console.error('[USER-CAT-PREFS] GET / admin switches unreadable, showing every category:', enabledError.message);
+  }
+  const enabledTypes = enabledError ? null : new Set((enabledRows || []).map((r: any) => r.type as string));
+
+  // Build a lookup map for user preferences
+  const prefMap = new Map<string, boolean>();
+  for (const pref of userPrefs || []) {
+    prefMap.set(pref.category_id, pref.enabled);
+  }
+
+  // Resolve the user's preferred locale once. Used to translate
+  // display_name + description for every category row. An explicit
+  // `?locale=` (the live UI language) wins over the cached stored
+  // preference; falls back to DE if neither resolves.
+  const locale = resolveRequestedLocale(req) ?? (await getUserLocale(supabase, identity.user_id));
+
+  // Group categories by type, merging in the user's preference state.
+  // Translate display_name + description on the fly via the gateway catalog:
+  //   notif.category.<type>.<slug>.{label,desc}
+  // If the key is missing from the catalog, fall back to the DB literal so
+  // newly-added categories never break the UI.
+  const grouped: Record<string, any[]> = { chat: [], calendar: [], community: [] };
+  for (const cat of categories || []) {
+    const mappedTypes: string[] = Array.isArray(cat.mapped_types) ? cat.mapped_types : [];
+    const liveTypes = enabledTypes ? mappedTypes.filter((t) => enabledTypes.has(t)) : mappedTypes;
+    if (enabledTypes && liveTypes.length === 0) continue;
+
+    // A category members may not switch off (account and security notices)
+    // is always on, whatever an old preference row says.
+    const locked = cat.member_can_disable === false;
+    const userPref = prefMap.get(cat.id);
+    const enabled = locked ? true : userPref !== undefined ? userPref : cat.default_enabled;
+
+    const labelKey = `notif.category.${cat.type}.${cat.slug}.label` as GatewayI18nKey;
+    const descKey = `notif.category.${cat.type}.${cat.slug}.desc` as GatewayI18nKey;
+    const translatedLabel = tt(labelKey, locale);
+    const translatedDesc = tt(descKey, locale);
+
+    const entry = {
+      id: cat.id,
+      slug: cat.slug,
+      // If the catalog has no entry for this slug, `tt()` echoes the key
+      // string back. In that case fall back to the original DB literal.
+      display_name: translatedLabel === labelKey ? cat.display_name : translatedLabel,
+      description: translatedDesc === descKey ? cat.description : translatedDesc,
+      icon: cat.icon,
+      enabled,
+      locked,
+      types: liveTypes,
+    };
+
+    if (grouped[cat.type]) {
+      grouped[cat.type].push(entry);
+    }
+  }
+
+  // VTID-04676: admins, developers and staff also see the notifications their
+  // role receives (switched on by the admin). They are not member categories,
+  // so they come without a switch.
+  let roleNotifications: Array<{ type: string; label: { en: string; de: string }; description: { en: string; de: string } }> = [];
+  const { data: roleRow } = await repo.fetchActiveRole(supabase, identity.user_id, identity.tenant_id);
+  const role = (roleRow as any)?.active_role as string | undefined;
+  const audience: NotificationAudience | null =
+    role === 'admin' ? 'admin' : role === 'developer' ? 'developer' : role === 'staff' ? 'staff' : null;
+  if (audience && enabledTypes) {
+    roleNotifications = [...NOTIFICATION_CATALOG.values()]
+      .filter((e) => e.audience === audience && enabledTypes.has(e.type))
+      .map((e) => ({ type: e.type, label: e.label, description: e.description }));
+  }
+
+  return res.json({ ok: true, data: grouped, role: audience, role_notifications: roleNotifications });
+});
+
+// ── PUT /:categoryId — Toggle a category on/off ────────────
+
+router.put('/:categoryId', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  const { enabled } = req.body;
+  if (typeof enabled !== 'boolean') {
+    return res.status(400).json({ ok: false, error: 'INVALID_INPUT', message: 'enabled must be a boolean' });
+  }
+
+  const supabase = getSupabase();
+  const categoryId = req.params.categoryId;
+
+  // Verify the category exists and is active
+  const { data: category, error: catError } = await repo.fetchActiveNotificationCategoryById(supabase, categoryId);
+
+  if (catError || !category) {
+    return res.status(404).json({ ok: false, error: 'CATEGORY_NOT_FOUND' });
+  }
+  if (!enabled && (category as any).member_can_disable === false) {
+    return res.status(409).json({ ok: false, error: 'CATEGORY_LOCKED', message: 'This category cannot be switched off' });
+  }
+
+  // Upsert the user's preference
+  const { data, error } = await repo.upsertUserCategoryPreference(supabase, {
+    user_id: identity.user_id,
+    tenant_id: identity.tenant_id,
+    category_id: categoryId,
+    enabled,
+    updated_at: new Date().toISOString(),
+  });
+
+  if (error) {
+    console.error('[USER-CAT-PREFS] PUT /:categoryId error:', error.message);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  return res.json({ ok: true, data });
+});
+
+export default router;

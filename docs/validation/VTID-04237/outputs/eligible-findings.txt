@@ -1,0 +1,15 @@
+# Findings autoApproveTick can pick once auto_approve_enabled=true (read-only, 2026-09-21 15:55 UTC)
+# Filters (dev_autopilot_config id=1): risk in (low,medium), effort<=8, scanner in the 11-id allowlist, plan exists,
+# no in-flight execution; concurrency_cap=4, PER_TICK_CAP=5, daily_budget=500.
+# finding   risk    effort impact scanner                    plan  eligible
+# b869c955  medium  5      8      rls-policy-scanner-v1      v2    yes
+# 1b7d874a  medium  5      8      schema-drift-scanner-v1    v1    yes
+# efec84e4  medium  4      8      route-auth-scanner-v1      v1    yes
+# 9e1bdb97  low     2      8      npm-audit-scanner-v1       v1    yes
+# 23e083d1  medium  3      6      todo-scanner-v1            v1    yes
+# 5fbe06e1  medium  3      6      todo-scanner-v1            v1    yes
+# e8cb7fae  medium  4      6      missing-tests-scanner-v1   v1    yes
+# b0aa6815  medium  6      6      safety-gap-scanner-v1      v1    yes
+# 8caa3710 / e367b3a1 / cd05643c / 9975d092: eligible by class but no plan yet (lazyPlanTick will plan them)
+# 41e2d7d4 / a726d525 / 3d729613: risk_class=high → never auto-approved
+# → first tick approves up to 4 (concurrency cap), ordered impact desc: b869c955, 1b7d874a, efec84e4, 9e1bdb97

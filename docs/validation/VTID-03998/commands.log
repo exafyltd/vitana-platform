@@ -1,0 +1,5 @@
+cd /home/user/vitana-platform/services/gateway
+npx tsc --noEmit
+npx jest test/tts/fish-provider.test.ts test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts test/orb/live/upstream/cascaded --silent
+npm run build
+npx jest --silent

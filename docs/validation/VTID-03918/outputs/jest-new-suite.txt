@@ -1,0 +1,45 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+  VTID-03906: Operator chat scroll-jump + flicker fix
+    ✓ the .chat-messages scroll-restore block no longer requires !savedChatFocus (4 ms)
+    ✓ the scroll-restore block still reads savedChatScroll to preserve position (1 ms)
+    ✓ the independent textarea focus-restore block is untouched
+    ✓ _actionRequiredTimer skips its 30s poll while the Operator popup is open (1 ms)
+  VTID-03907: Operator chat voice dictation
+    ✓ defines operatorDictationSupported() checking the Web Speech API (1 ms)
+    ✓ startOperatorDictation() streams transcripts into state.chatInputValue without calling renderApp() (1 ms)
+    ✓ startOperatorDictation() sets state.chatDictationActive and clears it on end/error (1 ms)
+    ✓ the mic button is wired into the chat input row, disabled when unsupported (2 ms)
+    ✓ sendChatMessage() stops any in-progress dictation before sending (1 ms)
+    ✓ closing the Operator popup (X button and backdrop click) stops dictation (1 ms)
+    ✓ .chat-mic-btn CSS exists with a recording/active state (1 ms)
+    ✓ VTID-03911: the active/red state also wins while hovered, not just at rest
+  VTID-03918: dictation no longer gets stuck red with no live recognition
+    ✓ recognition.start() is wrapped in try/catch, not called bare (1 ms)
+    ✓ active state/class are only set AFTER a successful start(), not before (1 ms)
+    ✓ a thrown start() is caught, cleaned up, and surfaced via showToast (1 ms)
+    ✓ onerror surfaces a human-readable reason via showToast, not just console.warn (1 ms)
+    ✓ operatorDictationErrorMessage() maps the real Web Speech API error codes (1 ms)
+  VTID-03908: Operator popup fullscreen toggle
+    ✓ renderOperatorOverlay() applies operator-overlay--fullscreen based on state.isOperatorFullscreen
+    ✓ a fullscreen toggle button sits beside the close button, both inside overlay-header-actions (1 ms)
+    ✓ the fullscreen button toggles state.isOperatorFullscreen and re-renders (1 ms)
+    ✓ the close button (X) still only closes the popup — behavior unchanged (1 ms)
+    ✓ state initializes isOperatorFullscreen to false
+    ✓ .operator-overlay--fullscreen CSS modifier exists
+  VTID-03910: fullscreen symmetric edge spacing + scrollable content
+    ✓ the fullscreen panel is inset by a real 2cm on every side, not true edge-to-edge 100vw/100vh (1 ms)
+    ✓ the backdrop still centers the panel (flex align/justify center), so the inset lands symmetrically
+    ✓ a narrower mobile breakpoint uses a smaller fixed inset instead of the flat 2cm
+    ✓ the flex chain from .overlay-panel down to .chat-container sets min-height:0 so overflow-y:auto can actually engage (1 ms)
+    ✓ .chat-messages drops its fixed 65vh cap in fullscreen mode so it fills the available space instead of leaving a dead gap
+  CSP compliance — no scripted inline styles introduced by these fixes
+    ✓ none of the new fullscreen/mic/dictation code paths assign element.style (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       29 passed, 29 total
+Snapshots:   0 total
+Time:        0.475 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,33 @@
+=== aws polly describe-voices --language-code tr-TR --region eu-central-1 ===
+{
+    "Voices": [
+        {
+            "Gender": "Female",
+            "Id": "Burcu",
+            "LanguageCode": "tr-TR",
+            "LanguageName": "Turkish",
+            "Name": "Burcu",
+            "SupportedEngines": [
+                "neural"
+            ]
+        },
+        {
+            "Gender": "Female",
+            "Id": "Filiz",
+            "LanguageCode": "tr-TR",
+            "LanguageName": "Turkish",
+            "Name": "Filiz",
+            "SupportedEngines": [
+                "standard"
+            ]
+        }
+    ]
+}
+
+=== aws polly synthesize-speech --engine neural --voice-id Burcu (live call) ===
+{
+    "ContentType": "audio/pcm",
+    "RequestCharacters": 86
+}
+-rw-r--r-- 1 root root 192960 Aug 24 17:49 /tmp/claude-0/-home-user/c5af1541-d918-5a4f-9161-60d382ad189b/scratchpad/burcu-verify.pcm
+bytes=192960 samples=96480 duration=6.030s chars=86 chars/sec=14.3

@@ -1,0 +1,32 @@
+# VTID-05040 — commands run (worktree trackS/VTID-05040, cwd services/gateway unless noted)
+
+## Commit 1 (orb-live debug routes)
+$ npx jest test/routes/s1-debug-route-gates.test.ts
+Tests: 17 passed, 17 total                                  (outputs/s1-debug-route-gates.part1.txt)
+$ # mutation: drop `requireAuth, requireExafyAdmin` from router.get('/debug/context-bootstrap', ...)
+$ sed -i "s#router.get('/debug/context-bootstrap', requireAuth, requireExafyAdmin, async#router.get('/debug/context-bootstrap', async#" src/routes/orb-live.ts
+$ npx jest test/routes/s1-debug-route-gates.test.ts
+Tests: 4 failed, 13 passed, 17 total                        (outputs/mutation-context-bootstrap.txt)
+  failed: context-bootstrap anonymous 401, member 403, drift guard "gated or allowlisted", drift guard "named routes gated"
+$ # restored from backup; grep confirms the gate is back
+$ npx tsc --noEmit -p . --declaration false --declarationMap false
+(exit 0. Plain `npx tsc --noEmit -p .` reports only TS2742 "inferred type cannot be named" errors in untouched files, caused by this worktree symlinking node_modules from another checkout; no other errors.)
+$ npm run test:roles
+Tests: 105 passed, 105 total
+
+## Commit 2 (routing/debug + situational/debug)
+$ npx jest test/routes/s1-debug-route-gates.test.ts test/routes/situational-awareness.test.ts
+Tests: 56 passed, 56 total   (s1: 23, situational-awareness: 33)   (outputs/s1-debug-route-gates.part2.txt)
+$ # mutation: drop `requireAuth, requireExafyAdmin` from router.get('/debug', ...) in situational-awareness.ts
+$ sed -i "s#router.get('/debug', requireAuth, requireExafyAdmin, (req#router.get('/debug', (req#" src/routes/situational-awareness.ts
+$ npx jest test/routes/s1-debug-route-gates.test.ts test/routes/situational-awareness.test.ts
+Tests: 5 failed, 51 passed, 56 total                       (outputs/mutation-situational-debug.txt)
+$ # restored from backup
+$ npx tsc --noEmit -p . --declaration false --declarationMap false
+(exit 0)
+$ npm run test:roles
+Tests: 105 passed, 105 total
+$ npm run test:support
+Tests: 87 passed, 87 total (4 suites)
+$ npm run test:operator
+Tests: 38 passed, 38 total

@@ -1,0 +1,5 @@
+201:          files_referenced: {
+202-            type: 'array',
+203-            items: { type: 'string' },
+204-            description: 'File paths the plan will create or change — nothing else. A test-only plan lists only the test file; a source change lists the source file AND its paired test file (the safety gate rejects a plan missing test coverage, and rejects any listed file outside its allow scope).'
+205-          }

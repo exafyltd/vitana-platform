@@ -1,0 +1,7 @@
+# vitana-autopilot-executor rev 21 (read-only, 2026-09-21 ~15:55 UTC)
+# image 472838866351.dkr.ecr.eu-central-1.amazonaws.com/vitana/autopilot-executor:7469e85d14a7
+# env: DEV_AUTOPILOT_REPO_OWNER=exafyltd DEV_AUTOPILOT_REPO_REF=main DEV_AUTOPILOT_REPO_NAME=vitana-platform
+#      AGENT_MEMORY_CONTEXT_ENABLED=true AGENT_DEADLINE_MS=2100000 DEV_AUTOPILOT_GITHUB_REPO=exafyltd/vitana-platform AGENT_MAX_TURNS=120
+# secrets: DB_PASSWORD SUPABASE_URL SUPABASE_SERVICE_ROLE GITHUB_SAFE_MERGE_TOKEN DEEPSEEK_API_KEY
+# ABSENT: DEV_AUTOPILOT_EXECUTOR, DEV_AUTOPILOT_PR_APPROVAL_REQUIRED  → single-shot, no hold
+# vitana-gateway-awsdr rev 114: DEV_AUTOPILOT_EXECUTOR_ENABLED=false → autoApproveTick never runs on prod

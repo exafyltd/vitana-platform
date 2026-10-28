@@ -1,0 +1,1119 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/operator-service.extract-title.test.ts
+  extractTitle — TITLE: prefix handling
+    ✓ strips a leading "TITLE:" line instead of double-prefixing it (7 ms)
+    ✓ is case-insensitive and tolerates surrounding whitespace on the TITLE: line (1 ms)
+    ✓ still normalizes a real "Area: description" title unchanged (1 ms)
+    ✓ still auto-detects a valid area and builds a title when there is no TITLE: line at all (1 ms)
+    ✓ does not let a multi-line description without early punctuation drag later lines into the title
+    ✓ falls back to "Gateway: Untitled task" for empty input (1 ms)
+
+  console.warn
+    [VTID-03902] Query for plannable tasks failed: 500 - {"error":"boom"}
+
+      91 |     if (!resp.ok) {
+      92 |       const text = await resp.text();
+    > 93 |       console.warn(`[VTID-03902] Query for plannable tasks failed: ${resp.status} - ${text}`);
+         |               ^
+      94 |       return [];
+      95 |     }
+      96 |
+
+      at findPlannableOperatorTasks (src/services/operator-planner.ts:93:15)
+      at Object.<anonymous> (test/operator-planner.test.ts:92:7)
+
+  console.warn
+    [VTID-03902] Query for plannable tasks errored: network down
+
+       97 |     return (await resp.json()) as PlannableTask[];
+       98 |   } catch (error: any) {
+    >  99 |     console.warn(`[VTID-03902] Query for plannable tasks errored: ${error.message}`);
+          |             ^
+      100 |     return [];
+      101 |   }
+      102 | }
+
+      at findPlannableOperatorTasks (src/services/operator-planner.ts:99:13)
+      at Object.<anonymous> (test/operator-planner.test.ts:97:7)
+
+  console.warn
+    [VTID-03902] Spec generation failed for VTID-04003: llm_failed
+
+      162 |     results.push({ vtid: task.vtid, ok: outcome.ok, error: outcome.error });
+      163 |     if (!outcome.ok) {
+    > 164 |       console.warn(`[VTID-03902] Spec generation failed for ${task.vtid}: ${outcome.error}`);
+          |               ^
+      165 |     }
+      166 |   }
+      167 |
+
+      at runOperatorPlannerOnce (src/services/operator-planner.ts:164:15)
+      at Object.<anonymous> (test/operator-planner.test.ts:158:23)
+
+PASS test/operator-planner.test.ts
+  Operator Planner (VTID-03902)
+    isOperatorPlannerEnabled
+      ✓ defaults to disabled (6 ms)
+      ✓ is enabled only by the exact string "true" (1 ms)
+    findPlannableOperatorTasks
+      ✓ queries vtid_ledger scoped to operator-chat, scheduled, missing spec, no prior error (2 ms)
+      ✓ returns [] and logs a warning on a failed query, never throws (11 ms)
+      ✓ returns [] on a network error, never throws (6 ms)
+    generateSpecForTask
+      ✓ calls the existing internal spec-generation endpoint, not a reimplementation (1 ms)
+      ✓ surfaces the error and does not throw when spec generation fails (1 ms)
+    runOperatorPlannerOnce
+      ✓ emits no OASIS event on a quiet sweep (polling is not progress) (1 ms)
+      ✓ generates a spec for each found task and emits one summary event (2 ms)
+      ✓ marks the sweep event as a warning when at least one task fails (2 ms)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (src/index.ts:104:25)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (src/index.ts:104:25)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1925:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1932:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1956:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1981:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2175:11)
+
+  console.log
+    [reminder-chime] PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at getReminderChimePcmB64 (src/services/reminder-chime.ts:49:11)
+
+  console.warn
+    [terra] TERRA_API_KEY / TERRA_DEV_ID not set — connector present but inactive
+
+      214 |   async initialize(): Promise<void> {
+      215 |     if (!getTerraCreds()) {
+    > 216 |       console.warn('[terra] TERRA_API_KEY / TERRA_DEV_ID not set — connector present but inactive');
+          |               ^
+      217 |     } else {
+      218 |       console.log('[terra] connector ready');
+      219 |     }
+
+      at Object.initialize (src/connectors/wearable/terra.ts:216:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+      at Object.<anonymous> (src/index.ts:201:3)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.log
+    [action-executors] registered 5 executors: shopping_add_to_list, share_milestone, social_post_story, wearable_log_workout, calendar_add_event
+
+      at registerAllActionExecutors (src/services/action-executors.ts:154:11)
+
+  console.warn
+    [VTID-01228] DailyClient not available (DAILY_API_KEY missing)
+
+      132 |     } catch {
+      133 |       // DAILY_API_KEY not set — Daily.co features disabled
+    > 134 |       console.warn('[VTID-01228] DailyClient not available (DAILY_API_KEY missing)');
+          |               ^
+      135 |     }
+      136 |   }
+      137 |
+
+      at new RoomSessionManager (src/services/room-session-manager.ts:134:15)
+      at Object.<anonymous> (src/routes/live.ts:77:24)
+      at Object.<anonymous> (src/index.ts:229:22)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.log
+    RouteGuard: registered 1404 routes, 0 duplicates
+
+      at logStartupSummary (src/governance/route-guard.ts:346:11)
+
+  console.error
+    ❌ OAuth preflight: GOOGLE_OAUTH_CLIENT_ID is not set — Google OAuth client ID is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.
+
+      1481 |   for (const { key, label } of oauthPreflight) {
+      1482 |     if (!process.env[key]) {
+    > 1483 |       console.error(`❌ OAuth preflight: ${key} is not set — ${label} is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.`);
+           |               ^
+      1484 |     } else {
+      1485 |       console.log(`✅ OAuth preflight: ${key} present.`);
+      1486 |     }
+
+      at Object.<anonymous> (src/index.ts:1483:15)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.error
+    ❌ OAuth preflight: GOOGLE_OAUTH_CLIENT_SECRET is not set — Google OAuth client secret is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.
+
+      1481 |   for (const { key, label } of oauthPreflight) {
+      1482 |     if (!process.env[key]) {
+    > 1483 |       console.error(`❌ OAuth preflight: ${key} is not set — ${label} is required for Connected Apps connectors. The frontend will see configured:false and disable the Connect button.`);
+           |               ^
+      1484 |     } else {
+      1485 |       console.log(`✅ OAuth preflight: ${key} present.`);
+      1486 |     }
+
+      at Object.<anonymous> (src/index.ts:1483:15)
+      at Object.<anonymous> (test/task-extractor.test.ts:149:1)
+
+  console.warn
+    [vital] VITAL_API_KEY not set — connector present but inactive
+
+      155 |   async initialize(): Promise<void> {
+      156 |     if (!vitalHeaders()) {
+    > 157 |       console.warn('[vital] VITAL_API_KEY not set — connector present but inactive');
+          |               ^
+      158 |     } else {
+      159 |       console.log('[vital] connector ready', vitalBaseUrl());
+      160 |     }
+
+      at Object.initialize (src/connectors/wearable/vital.ts:157:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+
+  console.warn
+    [fitbit] FITBIT_CLIENT_ID/SECRET not set — connector present but inactive
+
+      62 |   async initialize(): Promise<void> {
+      63 |     if (!fitbitCreds()) {
+    > 64 |       console.warn('[fitbit] FITBIT_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      65 |     } else {
+      66 |       console.log('[fitbit] connector ready');
+      67 |     }
+
+      at Object.initialize (src/connectors/wearable/fitbit.ts:64:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+
+  console.warn
+    [oura] OURA_CLIENT_ID/SECRET not set — connector present but inactive
+
+      57 |   async initialize(): Promise<void> {
+      58 |     if (!ouraCreds()) {
+    > 59 |       console.warn('[oura] OURA_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      60 |     } else {
+      61 |       console.log('[oura] connector ready');
+      62 |     }
+
+      at Object.initialize (src/connectors/wearable/oura.ts:59:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+
+  console.warn
+    [strava] STRAVA_CLIENT_ID/SECRET not set — connector present but inactive
+
+      61 |   async initialize(): Promise<void> {
+      62 |     if (!stravaCreds()) {
+    > 63 |       console.warn('[strava] STRAVA_CLIENT_ID/SECRET not set — connector present but inactive');
+         |               ^
+      64 |     } else {
+      65 |       console.log('[strava] connector ready');
+      66 |     }
+
+      at Object.initialize (src/connectors/wearable/strava.ts:63:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+
+  console.warn
+    [google] GOOGLE_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive
+
+      183 |   async initialize(): Promise<void> {
+      184 |     if (!googleCreds()) {
+    > 185 |       console.warn('[google] GOOGLE_OAUTH_CLIENT_ID/SECRET not set — connector registered but inactive');
+          |               ^
+      186 |     } else {
+      187 |       console.log('[google] connector ready');
+      188 |     }
+
+      at Object.initialize (src/connectors/productivity/google.ts:185:15)
+      at initializeAllConnectors (src/connectors/index.ts:69:15)
+
+  console.log
+    [vitana_hub] connector ready (no-auth, in-house)
+
+      at Object.initialize (src/connectors/media/vitana-hub.ts:68:13)
+
+  console.log
+    [connectors] initialized 7/7
+
+      at initializeAllConnectors (src/connectors/index.ts:77:11)
+
+(node:1701) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+  console.log
+    [Operator Chat] Request d2cdc46b-aa54-40a7-95c6-6660d483dd22 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request d2cdc46b-aa54-40a7-95c6-6660d483dd22 completed successfully (thread: 2fa9dcea-9e1c-46da-8562-34050fc87f37)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request d06070a1-a3de-4a32-a4a5-68bd2edcebb5 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-0532] Task request detected (mode=chat, isSlashTask=true)
+
+      at src/routes/operator.ts:227:15
+
+  console.warn
+    [VTID-0542] Allocator error: Cannot read properties of undefined (reading 'ok')
+
+      682 |     };
+      683 |   } catch (error: any) {
+    > 684 |     console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+          |             ^
+      685 |     return { ok: false, error: 'internal_error', message: error.message };
+      686 |   }
+      687 | }
+
+      at allocateVtid (src/services/operator-service.ts:684:13)
+      at createOperatorTask (src/services/operator-service.ts:996:23)
+      at src/routes/operator.ts:228:21
+
+  console.error
+    [VTID-0542] Allocator failed (internal_error): Cannot read properties of undefined (reading 'ok'). No legacy fallback.
+
+      1022 |   } else {
+      1023 |     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    > 1024 |     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+           |             ^
+      1025 |     return undefined;
+      1026 |   }
+      1027 |
+
+      at createOperatorTask (src/services/operator-service.ts:1024:13)
+      at src/routes/operator.ts:228:21
+
+  console.warn
+    [VTID-0532] Task creation failed for request d06070a1-a3de-4a32-a4a5-68bd2edcebb5
+
+      235 |         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      236 |       } else {
+    > 237 |         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+          |                 ^
+      238 |       }
+      239 |     }
+      240 |
+
+      at src/routes/operator.ts:237:17
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request d06070a1-a3de-4a32-a4a5-68bd2edcebb5 completed successfully (thread: 61927332-7670-419f-a613-0731b60a2375)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request 73df456c-295d-473c-aa3e-35d7eea3b98d started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-0532] Task request detected (mode=task, isSlashTask=false)
+
+      at src/routes/operator.ts:227:15
+
+  console.warn
+    [VTID-0542] Allocator error: Cannot read properties of undefined (reading 'ok')
+
+      682 |     };
+      683 |   } catch (error: any) {
+    > 684 |     console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+          |             ^
+      685 |     return { ok: false, error: 'internal_error', message: error.message };
+      686 |   }
+      687 | }
+
+      at allocateVtid (src/services/operator-service.ts:684:13)
+      at createOperatorTask (src/services/operator-service.ts:996:23)
+      at src/routes/operator.ts:228:21
+
+  console.error
+    [VTID-0542] Allocator failed (internal_error): Cannot read properties of undefined (reading 'ok'). No legacy fallback.
+
+      1022 |   } else {
+      1023 |     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    > 1024 |     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+           |             ^
+      1025 |     return undefined;
+      1026 |   }
+      1027 |
+
+      at createOperatorTask (src/services/operator-service.ts:1024:13)
+      at src/routes/operator.ts:228:21
+
+  console.warn
+    [VTID-0532] Task creation failed for request 73df456c-295d-473c-aa3e-35d7eea3b98d
+
+      235 |         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      236 |       } else {
+    > 237 |         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+          |                 ^
+      238 |       }
+      239 |     }
+      240 |
+
+      at src/routes/operator.ts:237:17
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request 73df456c-295d-473c-aa3e-35d7eea3b98d completed successfully (thread: 93c54fca-d95b-44f9-8404-617fcb63e633)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request fbb94787-e234-4347-b50e-3f1d5311e808 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-0532] Task request detected (mode=chat, isSlashTask=true)
+
+      at src/routes/operator.ts:227:15
+
+  console.warn
+    [VTID-0542] Allocator error: Cannot read properties of undefined (reading 'ok')
+
+      682 |     };
+      683 |   } catch (error: any) {
+    > 684 |     console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+          |             ^
+      685 |     return { ok: false, error: 'internal_error', message: error.message };
+      686 |   }
+      687 | }
+
+      at allocateVtid (src/services/operator-service.ts:684:13)
+      at createOperatorTask (src/services/operator-service.ts:996:23)
+      at src/routes/operator.ts:228:21
+
+  console.error
+    [VTID-0542] Allocator failed (internal_error): Cannot read properties of undefined (reading 'ok'). No legacy fallback.
+
+      1022 |   } else {
+      1023 |     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    > 1024 |     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+           |             ^
+      1025 |     return undefined;
+      1026 |   }
+      1027 |
+
+      at createOperatorTask (src/services/operator-service.ts:1024:13)
+      at src/routes/operator.ts:228:21
+
+  console.warn
+    [VTID-0532] Task creation failed for request fbb94787-e234-4347-b50e-3f1d5311e808
+
+      235 |         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      236 |       } else {
+    > 237 |         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+          |                 ^
+      238 |       }
+      239 |     }
+      240 |
+
+      at src/routes/operator.ts:237:17
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request fbb94787-e234-4347-b50e-3f1d5311e808 completed successfully (thread: f283e9c9-3811-4725-9d77-b9f5d72256fb)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request d3fd8206-f65b-4707-a2be-810438b2dfe5 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-0532] Task request detected (mode=chat, isSlashTask=true)
+
+      at src/routes/operator.ts:227:15
+
+  console.warn
+    [VTID-0542] Allocator error: Cannot read properties of undefined (reading 'ok')
+
+      682 |     };
+      683 |   } catch (error: any) {
+    > 684 |     console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+          |             ^
+      685 |     return { ok: false, error: 'internal_error', message: error.message };
+      686 |   }
+      687 | }
+
+      at allocateVtid (src/services/operator-service.ts:684:13)
+      at createOperatorTask (src/services/operator-service.ts:996:23)
+      at src/routes/operator.ts:228:21
+
+  console.error
+    [VTID-0542] Allocator failed (internal_error): Cannot read properties of undefined (reading 'ok'). No legacy fallback.
+
+      1022 |   } else {
+      1023 |     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    > 1024 |     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+           |             ^
+      1025 |     return undefined;
+      1026 |   }
+      1027 |
+
+      at createOperatorTask (src/services/operator-service.ts:1024:13)
+      at src/routes/operator.ts:228:21
+
+  console.warn
+    [VTID-0532] Task creation failed for request d3fd8206-f65b-4707-a2be-810438b2dfe5
+
+      235 |         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      236 |       } else {
+    > 237 |         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+          |                 ^
+      238 |       }
+      239 |     }
+      240 |
+
+      at src/routes/operator.ts:237:17
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request d3fd8206-f65b-4707-a2be-810438b2dfe5 completed successfully (thread: 66d8801d-bb10-404e-85d6-034421560e7c)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request d3f1e00b-515e-461d-b924-daba263ab872 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request d3f1e00b-515e-461d-b924-daba263ab872 completed successfully (thread: 9435e8cf-2d05-4e26-be20-dc9121c9921b)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request faad8fe7-1cdf-467e-8a84-3842c962d3e1 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:212:33
+
+  console.log
+    [VTID-0532] Task request detected (mode=chat, isSlashTask=true)
+
+      at src/routes/operator.ts:227:15
+
+  console.warn
+    [VTID-0542] Allocator error: Cannot read properties of undefined (reading 'ok')
+
+      682 |     };
+      683 |   } catch (error: any) {
+    > 684 |     console.warn(`[VTID-0542] Allocator error: ${error.message}`);
+          |             ^
+      685 |     return { ok: false, error: 'internal_error', message: error.message };
+      686 |   }
+      687 | }
+
+      at allocateVtid (src/services/operator-service.ts:684:13)
+      at createOperatorTask (src/services/operator-service.ts:996:23)
+      at src/routes/operator.ts:228:21
+
+  console.error
+    [VTID-0542] Allocator failed (internal_error): Cannot read properties of undefined (reading 'ok'). No legacy fallback.
+
+      1022 |   } else {
+      1023 |     // Allocator failed — DO NOT fall back to legacy (produces wrong VTID format)
+    > 1024 |     console.error(`[VTID-0542] Allocator failed (${allocResult.error}): ${allocResult.message}. No legacy fallback.`);
+           |             ^
+      1025 |     return undefined;
+      1026 |   }
+      1027 |
+
+      at createOperatorTask (src/services/operator-service.ts:1024:13)
+      at src/routes/operator.ts:228:21
+
+  console.warn
+    [VTID-0532] Task creation failed for request faad8fe7-1cdf-467e-8a84-3842c962d3e1
+
+      235 |         console.log(`[VTID-0532] Task created: ${createdTask.vtid} - "${createdTask.title}"`);
+      236 |       } else {
+    > 237 |         console.warn(`[VTID-0532] Task creation failed for request ${requestId}`);
+          |                 ^
+      238 |       }
+      239 |     }
+      240 |
+
+      at src/routes/operator.ts:237:17
+
+  console.log
+    [VTID-01027] Processing with conversation_id: undefined, context messages: 0
+
+      at src/routes/operator.ts:245:13
+
+  console.warn
+    [Operator Service] Chat event ingest error: Cannot read properties of undefined (reading 'ok')
+
+      483 |     return { ok: true, eventId };
+      484 |   } catch (error: any) {
+    > 485 |     console.warn(`[Operator Service] Chat event ingest error: ${error.message}`);
+          |             ^
+      486 |     return { ok: false, error: error.message };
+      487 |   }
+      488 | }
+
+      at ingestChatMessageEvent (src/services/operator-service.ts:485:13)
+      at src/routes/operator.ts:279:34
+
+  console.log
+    [Operator Chat] Request faad8fe7-1cdf-467e-8a84-3842c962d3e1 completed successfully (thread: 93c83abd-8d20-4740-a681-1cf59bf56294)
+
+      at src/routes/operator.ts:297:13
+
+  console.log
+    [Operator Chat] Request c2fdc0ec-dea4-49e5-adbc-b6e52f592619 started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Chat] Validation failed: [
+      {
+        code: 'too_small',
+        minimum: 1,
+        type: 'string',
+        inclusive: true,
+        exact: false,
+        message: 'Message is required',
+        path: [ 'message' ]
+      }
+    ]
+
+      134 |     const validation = OperatorChatMessageSchema.safeParse(req.body);
+      135 |     if (!validation.success) {
+    > 136 |       console.warn(`[Operator Chat] Validation failed:`, validation.error.errors);
+          |               ^
+      137 |       return res.status(400).json({
+      138 |         ok: false,
+      139 |         error: 'Validation failed',
+
+      at src/routes/operator.ts:136:15
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [Operator Chat] Request d61b28c2-c156-444c-b1d5-950d3b9808fa started
+
+      at src/routes/operator.ts:130:11
+
+  console.warn
+    [Operator Chat] Validation failed: [
+      {
+        received: 'invalid-mode',
+        code: 'invalid_enum_value',
+        options: [ 'chat', 'task', 'control' ],
+        path: [ 'mode' ],
+        message: "Invalid enum value. Expected 'chat' | 'task' | 'control', received 'invalid-mode'"
+      }
+    ]
+
+      134 |     const validation = OperatorChatMessageSchema.safeParse(req.body);
+      135 |     if (!validation.success) {
+    > 136 |       console.warn(`[Operator Chat] Validation failed:`, validation.error.errors);
+          |               ^
+      137 |       return res.status(400).json({
+      138 |         ok: false,
+      139 |         error: 'Validation failed',
+
+      at src/routes/operator.ts:136:15
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/express/lib/router/index.js:646:15
+      at next (node_modules/express/lib/router/index.js:265:14)
+      at Function.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at Function.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at node_modules/body-parser/lib/read.js:137:5
+      at invokeCallback (node_modules/raw-body/index.js:238:16)
+      at done (node_modules/raw-body/index.js:227:7)
+      at IncomingMessage.onEnd (node_modules/raw-body/index.js:287:7)
+
+  console.log
+    [VTID-0532] Pending plan tasks requested
+
+      at src/routes/autopilot.ts:190:11
+
+  console.warn
+    [VTID-0532] Pending plan tasks error: Cannot read properties of undefined (reading 'ok')
+
+      1167 |     return pendingTasks;
+      1168 |   } catch (error: any) {
+    > 1169 |     console.warn(`[VTID-0532] Pending plan tasks error: ${error.message}`);
+           |             ^
+      1170 |     return [];
+      1171 |   }
+      1172 | }
+
+      at getPendingPlanTasks (src/services/operator-service.ts:1169:13)
+      at src/routes/autopilot.ts:193:19
+
+  console.log
+    [VTID-0532] Returning 0 pending plan tasks
+
+      at src/routes/autopilot.ts:195:13
+
+  console.log
+    [VTID-0532] Pending plan tasks requested
+
+      at src/routes/autopilot.ts:190:11
+
+  console.warn
+    [VTID-0532] Pending plan tasks error: Cannot read properties of undefined (reading 'ok')
+
+      1167 |     return pendingTasks;
+      1168 |   } catch (error: any) {
+    > 1169 |     console.warn(`[VTID-0532] Pending plan tasks error: ${error.message}`);
+           |             ^
+      1170 |     return [];
+      1171 |   }
+      1172 | }
+
+      at getPendingPlanTasks (src/services/operator-service.ts:1169:13)
+      at src/routes/autopilot.ts:193:19
+
+  console.log
+    [VTID-0532] Returning 0 pending plan tasks
+
+      at src/routes/autopilot.ts:195:13
+
+PASS test/task-extractor.test.ts
+  Task Extractor - VTID-0532
+    Task Detection - POST /api/v1/operator/chat
+      ✓ should NOT create task for regular chat message (72 ms)
+      ✓ should return ok:true and threadId for /task command (19 ms)
+      ✓ should return ok:true for mode:task without /task prefix (15 ms)
+      ✓ should handle /task with case-insensitivity (20 ms)
+      ✓ should handle /task with leading spaces (15 ms)
+      ✓ should handle empty task description gracefully (9 ms)
+      ✓ should preserve existing response fields (16 ms)
+      ✓ should reject empty message (12 ms)
+      ✓ should reject invalid mode value (18 ms)
+    GET /api/v1/autopilot/tasks/pending-plan
+      ✓ should return ok: true with data array (17 ms)
+      ✓ should return empty array when no pending tasks (8 ms)
+    GET /api/v1/autopilot/health
+      ✓ should return healthy status (5 ms)
+      ✓ reports ok_governance_limited (healthy) when the loop is intentionally disabled (3 ms)
+      ✓ reports degraded when the loop is enabled but not running (real stall) (4 ms)
+  Task Detection Logic Unit Tests
+    isTaskRequest detection
+      ✓ should detect /task prefix
+      ✓ should detect mode=task (1 ms)
+      ✓ should NOT detect regular chat
+      ✓ should handle case insensitivity
+      ✓ should handle leading spaces (1 ms)
+      ✓ should require space after /task
+    rawDescription extraction
+      ✓ should extract description from /task syntax
+      ✓ should handle extra spaces after /task
+      ✓ should use full message for mode=task
+      ✓ should handle empty description
+    title extraction
+      ✓ should extract first sentence as title (1 ms)
+      ✓ should handle short descriptions
+      ✓ should truncate long descriptions (1 ms)
+      ✓ should handle empty description
+      ✓ should handle whitespace-only description
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 3 passed, 3 total
+Tests:       45 passed, 45 total
+Snapshots:   0 total
+Time:        5.04 s, estimated 6 s
+Ran all test suites matching /test\/operator-planner.test.ts|test\/operator-service.extract-title.test.ts|test\/task-extractor.test.ts|test\/vtid-03819-create-operator-task-dedup.test.ts|test\/vtid-03819-related-task-chip.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

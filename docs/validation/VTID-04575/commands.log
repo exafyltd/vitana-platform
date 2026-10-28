@@ -1,0 +1,9 @@
+# evidence queries (read-only) on oasis_events: first-attempt content-filter blocks by reopen vs fresh; recovery prompt outcomes by stage; retry outcomes
+# instruction dump diff: live-b95379be blocked vs retry
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ CI=true node node_modules/.bin/jest --ci test/services/conversation/vtid-04575-resume-thread-rung.test.ts
+Tests: 12 passed, 12 total
+$ CI=true node node_modules/.bin/jest --ci --silent
+Test Suites: 1 skipped, 1288 passed, 1288 of 1289 total
+Tests:       29 skipped, 6 todo, 20585 passed, 20620 total

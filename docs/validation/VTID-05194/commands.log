@@ -1,0 +1,4 @@
+$ node --test scripts/collab/queue.test.mjs
+# tests 17 / pass 17 / fail 0
+$ node scripts/ci/kiro-steering/guard.cjs .   (vitana-platform and vitana-v1)
+kiro-steering: OK

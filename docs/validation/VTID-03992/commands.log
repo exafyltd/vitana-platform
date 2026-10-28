@@ -1,0 +1,85 @@
+# VTID-03992 — commands run, verbatim intent
+
+## 1. Background audit (Explore agent, read-only, no code changed)
+
+Dispatched to check whether the class of leak VTID-03990 fixed exists on
+other real-member-facing surfaces. Findings (ranked by risk):
+- HIGH: GET /api/v1/community/members (community-members.ts / -repository.ts)
+  — no bot/test exclusion, default sort "newest" by registration_seq.
+- HIGH: ORB voice superlatives.ts / community-member-ranker.ts — same gap,
+  shared getHiddenUserIds()/fetchVisibleProfileUserIds() exclusion logic.
+- MEDIUM/HIGH (unconfirmed): matchmaking match_targets candidate pool.
+- MEDIUM: connect-people-repository.ts fetchPrimaryTenantUsers() iterates
+  all primary-tenant users; VITANA_BOT_USER_ID declared in connect-people.ts
+  but never referenced (dead code).
+- LOW: admin-facing "all users" lists (not fixed here, admins already know).
+
+## 2. Empirical confirmation (read-only against production)
+
+select p.user_id, p.display_name, p.registration_seq, p.created_at,
+       exists(select 1 from global_community_profiles gcp where gcp.user_id = p.user_id and gcp.is_visible = false) as hidden
+from profiles p
+where p.user_id in ('887b34cb-9ee9-47dc-ad53-db5be1869846','856c30ed-7136-4bc5-8bfe-86a1e8ea1401');
+-- => claude-code-agent: registration_seq=246, hidden=false
+--    operator-autopilot: registration_seq=247, hidden=false
+
+select max(registration_seq) as max_seq, count(*) as total_profiles from profiles;
+-- => max_seq=247 (== operator-autopilot's own row), total_profiles=225
+-- CONFIRMED: both bot accounts are the #1 and #2 results of the
+-- Members Directory's default "newest" sort, right now, in production.
+-- (full output saved to outputs/members-directory-exposure.json)
+
+## 3. Matchmaking investigation (read-only against production)
+
+select to_regclass('public.match_targets') as match_targets_exists,
+       to_regclass('public.matches_daily') as matches_daily_exists,
+       to_regclass('public.daily_matches') as daily_matches_exists;
+-- => match_targets_exists=null, matches_daily_exists=null, daily_matches_exists='daily_matches'
+-- CONFIRMED: match_targets/matches_daily (the candidate-pool schema the
+-- audit flagged) do not exist live — dead, never-deployed migration.
+
+select column_name from information_schema.columns where table_schema='public' and table_name='daily_matches' order by ordinal_position;
+-- => id, user_id, matched_user_id, match_score, match_reasons, created_at, expires_at, viewed_at, action
+
+select count(*) as total_rows,
+  count(*) filter (where user_id in ('887b34cb-...','856c30ed-...')) as rows_as_user,
+  count(*) filter (where matched_user_id in ('887b34cb-...','856c30ed-...')) as rows_as_matched_target
+from daily_matches;
+-- => total_rows=1600, rows_as_user=0, rows_as_matched_target=0
+-- CONFIRMED: neither bot account appears in the live daily_matches table.
+-- (full output saved to outputs/matchmaking-investigation.json)
+
+grep -rn "INTO public.daily_matches\|INTO daily_matches\|from('daily_matches')\.insert" --include="*.sql" --include="*.ts" --include="*.py" .
+-- => no matches; no code in this repo inserts into daily_matches at all.
+
+## 4. Fix
+
+- New services/gateway/src/lib/excluded-test-service-accounts.ts:
+  fetchExcludedTestServiceAccountIds() — unions service_bot_accounts +
+  notification_test_actors, fails open.
+- Wired into:
+  - services/gateway/src/routes/community-members.ts (both endpoints)
+  - services/gateway/src/services/voice-tools/superlatives.ts (getHiddenUserIds)
+  - services/gateway/src/services/voice-tools/community-member-ranker.ts (buildCandidatePool)
+  - services/gateway/src/services/automation-handlers/connect-people-repository.ts (fetchPrimaryTenantUsers)
+- Removed dead VITANA_BOT_USER_ID constant from connect-people.ts (declared,
+  never referenced).
+- New services/gateway/test/lib/excluded-test-service-accounts.test.ts (4 tests).
+
+## 5. VTID allocation (governance)
+
+select * from allocate_global_vtid('claude-code', 'COM', 'MEMBERS');
+-- => {"vtid":"VTID-03992", ...}
+
+## Not run (sandbox limitation, disclosed rather than assumed)
+
+npm ci / npx jest / npx tsc --noEmit could not be run from this session —
+the sandbox's npm registry returns 403 on package installs. Verified by
+hand that every existing test suite touched (superlatives.test.ts,
+community-member-ranker.test.ts, automation-handlers-connect-people.test.ts)
+uses a shared mock helper whose default response for an unconfigured table
+is `{data: [], error: null}` — confirmed by reading each mock's source —
+so the new Promise.all'd queries against service_bot_accounts/
+notification_test_actors cannot break any existing assertion. The Gateway
+Jest/Build Gate CI jobs on this PR are the first real execution of these
+commands against this diff.

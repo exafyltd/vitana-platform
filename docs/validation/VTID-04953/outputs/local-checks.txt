@@ -1,0 +1,14 @@
+# VTID-04953 local checks (2026-10-07T13:55:42Z)
+
+## staging manifest
+{"ok":true,"errors":[]}
+
+## acceptance gate
+Acceptance mapping OK
+
+## TypeScript transpile diagnostics on the changed files
+files 16 errors 0
+
+## Read-only production baseline (2026-10-07): one partner org (EXAFY LTD, service_provider, needs_action), no catalogue connections, one offering kept offline.
+
+## Jest: not runnable in this session (npm registry blocked by the environment's network policy); runs in CI.

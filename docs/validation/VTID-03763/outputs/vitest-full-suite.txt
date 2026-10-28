@@ -1,0 +1,12 @@
+3:28:33 PM [vite] warning: `optimizeDeps.esbuildOptions` option was specified by "vite:react-swc" plugin. This option is deprecated, please use `optimizeDeps.rolldownOptions` instead.
+
+ RUN  v4.1.10 /home/user/vitana-v1
+
+(node:4188) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+
+ Test Files  26 passed (26)
+      Tests  174 passed (174)
+   Start at  15:28:33
+   Duration  13.39s (transform 3.42s, setup 3.70s, import 5.78s, tests 4.90s, environment 20.07s)
+

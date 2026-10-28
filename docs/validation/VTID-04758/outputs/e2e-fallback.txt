@@ -1,0 +1,18 @@
+# AC-6 — no seed published (real S3 lookup), fresh vtna-token clone, --foreground
+## run 1 (fresh)
+codeintel: vtna-token: indexing started at HEAD 16e88425
+codeintel: exafyltd/vtna-token: no RepoWise seed — ERR NoSuchKey: An error occurred (NoSuchKey) when calling the GetObject operation: The specified key does not exist.
+codeintel: vtna-token: ready in 19s (repowise=true via local-build, 2 pages; graphify=true)
+## run 2 (re-run, after the .gitattributes fix)
+codeintel: vtna-token: indexing started at HEAD 16e88425
+codeintel: vtna-token: ready in 9s (repowise=true via existing, 2 pages; graphify=true)
+## status
+{"updated_at":"2026-10-01T11:18:03Z","state":"ready","repo":"<scratch>/e2e/vtna-token","head":"16e88425f96239bb87883d92a5fc8a4fb5b590ad","repowise":{"ok":true,"source":"existing","pages":2},"graphify":{"ok":true},"seconds":9}
+## /usr/local/bin links
+/usr/local/bin/graphify -> /root/.local/bin/graphify
+/usr/local/bin/repowise -> /root/.local/bin/repowise
+## git hooks + info/attributes (no .gitattributes in the tree)
+post-checkout
+post-commit
+graphify-out/graph.json merge=graphify
+ls: cannot access '<scratch>/e2e/vtna-token/.gitattributes': No such file or directory

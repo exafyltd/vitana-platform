@@ -1,0 +1,269 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.warn
+    [VTID-01225] Cognee Extractor URL not configured - extraction disabled
+
+      138 |
+      139 |     if (!this.enabled) {
+    > 140 |       console.warn('[VTID-01225] Cognee Extractor URL not configured - extraction disabled');
+          |               ^
+      141 |     } else {
+      142 |       console.log(`[VTID-01225] Cognee Extractor Client initialized: ${this.baseUrl}`);
+      143 |     }
+
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:140:15)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/characterization/tool-catalog.characterization.test.ts:20:1)
+
+  console.warn
+    [VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled
+
+      152 |   static validateConfig(): void {
+      153 |     if (!process.env.COGNEE_EXTRACTOR_URL) {
+    > 154 |       console.warn('[VTID-01225] Config warning: COGNEE_EXTRACTOR_URL is not set - extraction will be disabled');
+          |               ^
+      155 |     }
+      156 |     if (!process.env.SUPABASE_URL) {
+      157 |       console.warn('[VTID-01225] Config warning: SUPABASE_URL is not set - persistence will fail');
+
+      at Function.validateConfig (src/services/cognee-extractor-client.ts:154:15)
+      at new CogneeExtractorClient (src/services/cognee-extractor-client.ts:145:27)
+      at Object.<anonymous> (src/services/cognee-extractor-client.ts:1143:38)
+      at Object.<anonymous> (src/routes/orb-live.ts:156:1)
+      at Object.<anonymous> (test/orb/live/characterization/tool-catalog.characterization.test.ts:20:1)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1924:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1931:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:1955:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:1980:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2174:11)
+
+(node:2641) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/orb/live/characterization/tool-catalog.characterization.test.ts
+  A0.1 characterization: buildLiveApiTools
+    mode/role matrix
+      ✓ anonymous on landing route returns no tools (5 ms)
+      ✓ anonymous on /maxina (also a landing route) returns no tools (1 ms)
+      ✓ anonymous on a community route gets navigator tools only (token-expired path) (1 ms)
+      ✓ authenticated community user gets the full community tool set (1 ms)
+      ✓ authenticated admin user gets community tools PLUS admin tools (24 ms)
+    snapshots
+      ✓ snapshots full catalog for anonymous-landing (1 ms)
+      ✓ snapshots full catalog for anonymous-community-route (1 ms)
+      ✓ snapshots full catalog for authenticated-community (12 ms)
+      ✓ snapshots full catalog for authenticated-admin (16 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-b dispatched=2 users
+
+      at src/routes/scheduled-notifications.ts:849:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (20d0e57e-431c-4bd8-a7c8-8c2a529ea88b)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.warn
+    [Scheduled] daily_feature_tip: 1/2 notifyUser calls rejected
+
+      834 |     const failed = results.length - dispatched;
+      835 |     if (failed > 0) {
+    > 836 |       console.warn(`[Scheduled] daily_feature_tip: ${failed}/${results.length} notifyUser calls rejected`);
+          |               ^
+      837 |     }
+      838 |
+      839 |     // 4. Advance rotation state for next time, and record when dispatch
+
+      at src/routes/scheduled-notifications.ts:836:15
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-b dispatched=1 users
+
+      at src/routes/scheduled-notifications.ts:849:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (09af5eae-8a2f-4484-8645-08ff9fedd156)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.log
+    [Scheduled] daily_feature_tip → tip=tip-a dispatched=1 users
+
+      at src/routes/scheduled-notifications.ts:849:13
+
+  console.log
+    [OASIS Event] Emitted: notification.daily_feature_tip.dispatched for BOOTSTRAP-DAILY-FEATURE-TIP (5637ce9e-ffec-4eae-a226-aae00651011c)
+
+      at emitOasisEvent (src/services/oasis-event-service.ts:110:13)
+
+  console.error
+    [Scheduled] daily_feature_tip insert error: boom
+
+      793 |
+      794 |     if (insertError || !inserted) {
+    > 795 |       console.error('[Scheduled] daily_feature_tip insert error:', insertError?.message);
+          |               ^
+      796 |       return res.status(500).json({ ok: false, error: insertError?.message || 'INSERT_FAILED' });
+      797 |     }
+      798 |     const announcementId = inserted.id as string;
+
+      at src/routes/scheduled-notifications.ts:795:15
+
+PASS test/scheduled-notifications-daily-feature-tip.test.ts
+  POST /daily-feature-tip
+    ✓ 400 without tenant_id (25 ms)
+    ✓ advances rotation, publishes tenant-wide, and notifies every member (18 ms)
+    ✓ still counts successful dispatches when some users reject (Promise.allSettled) (4 ms)
+    ✓ wraps around to index 0 once the tip list is exhausted (3 ms)
+    ✓ 500 when the announcement insert fails (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/routes/user-category-preferences.locale.test.ts
+  resolveRequestedLocale (VTID-03801)
+    ✓ accepts every registered gateway locale, including tr and zh (1 ms)
+    ✓ normalizes BCP-47 tags the frontend language picker sends
+    ✓ returns null for an unregistered or missing locale, so the caller falls back to getUserLocale()
+    ✓ is not fooled by a long or malformed query value
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/i18n/catalog-coverage.test.ts
+  gateway i18n catalog coverage
+    ✓ ships all 11 registered locales (1 ms)
+    ✓ de has every key DE has (1 ms)
+    ✓ en has every key DE has (3 ms)
+    ✓ es has every key DE has
+    ✓ sr has every key DE has
+    ✓ fr has every key DE has (1 ms)
+    ✓ pt has every key DE has
+    ✓ ru has every key DE has
+    ✓ pl has every key DE has
+    ✓ zh has every key DE has
+    ✓ tr has every key DE has (1 ms)
+    ✓ de has no empty values
+    ✓ en has no empty values
+    ✓ es has no empty values
+    ✓ sr has no empty values
+    ✓ fr has no empty values
+    ✓ pt has no empty values
+    ✓ ru has no empty values
+    ✓ pl has no empty values (1 ms)
+    ✓ zh has no empty values
+    ✓ tr has no empty values
+    ✓ ar is honestly incomplete (registered, not yet translated) and tt() falls back visibly (1 ms)
+  gateway i18n catalog fidelity
+    ✓ de is not a copy of the English catalog
+    ✓ es is not a copy of the English catalog
+    ✓ sr is not a copy of the English catalog (1 ms)
+    ✓ fr is not a copy of the English catalog
+    ✓ pt is not a copy of the English catalog
+    ✓ ru is not a copy of the English catalog
+    ✓ pl is not a copy of the English catalog
+    ✓ zh is not a copy of the English catalog
+    ✓ tr is not a copy of the English catalog (1 ms)
+  gateway i18n placeholder integrity
+    ✓ de preserves every {placeholder} exactly (1 ms)
+    ✓ en preserves every {placeholder} exactly
+    ✓ es preserves every {placeholder} exactly
+    ✓ sr preserves every {placeholder} exactly (1 ms)
+    ✓ fr preserves every {placeholder} exactly
+    ✓ pt preserves every {placeholder} exactly (1 ms)
+    ✓ ru preserves every {placeholder} exactly
+    ✓ pl preserves every {placeholder} exactly
+    ✓ zh preserves every {placeholder} exactly
+    ✓ tr preserves every {placeholder} exactly (1 ms)
+  locale resolution
+    ✓ resolves language words whose spelling does not match their ISO code
+    ✓ resolves BCP-47 tags the frontend language picker writes (1 ms)
+    ✓ distinguishes "unknown" from "German" (strict resolver)
+  tt() fallback chain
+    ✓ returns the locale value when present
+    ✓ substitutes placeholders
+    ✓ leaves unknown placeholders untouched rather than printing undefined
+    ✓ falls back to an unknown locale via German, not a raw key
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/journey/goal-planner-service.test.ts
+  VTID-03152 goal-planner helpers
+    addDaysIso
+      ✓ adds calendar days in UTC and returns YYYY-MM-DD (1 ms)
+    calendarDaysBetween
+      ✓ counts whole calendar days regardless of time-of-day
+    mapPlanToSteps
+      ✓ dates milestones/checkpoints, clamps offsets, keeps habits dateless, sorts chronologically (8 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/journey-checklist-translations.test.ts
+  applyTranslations
+    ✓ overlays a fully-translated topic (1 ms)
+    ✓ falls back to German for missing fields (1 ms)
+    ✓ leaves untranslated topics untouched and is a no-op with no rows
+  curriculum locale surface (VTID-03509)
+    ✓ accepts every release locale as a ChecklistLocale (1 ms)
+    ✓ exposes exactly the release locale set — no more, no less
+    ✓ serves the German source verbatim for a locale with no translation rows (1 ms)
+    ✓ overlays a partially-translated locale without losing the German remainder (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/data/feature-tips.locale-coverage.test.ts
+  FEATURE_TIPS locale coverage
+    ✓ every tip has a title and description for every registered gateway locale
+    ✓ every non-English value is genuinely translated, not a copy of English (1 ms)
+
+Test Suites: 7 passed, 7 total
+Tests:       78 passed, 78 total
+Snapshots:   4 passed, 4 total
+Time:        2.333 s
+Ran all test suites matching /test\/i18n\/catalog-coverage.test.ts|test\/journey-checklist-translations.test.ts|test\/orb\/live\/characterization\/tool-catalog.characterization.test.ts|test\/routes\/user-category-preferences.locale.test.ts|test\/data\/feature-tips.locale-coverage.test.ts|test\/services\/journey\/goal-planner-service.test.ts|test\/scheduled-notifications-daily-feature-tip.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

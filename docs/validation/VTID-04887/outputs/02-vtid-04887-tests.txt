@@ -1,0 +1,1391 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/wt-04885/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    
+    === NAV GOLDEN REPORT — registry resolver (Titan v2, 512d, golden sentences held out) ===
+    ALL      n=167  correct  55.7%  reaches  51.5%  wrong   0  forbidden  0  silent   1  false-action  0
+    
+    intent:open n=107  correct  39.3%  reaches  39.3%  wrong   0  forbidden  0  silent   1  false-action  0
+    intent:where n= 53  correct  83.0%  reaches  83.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    intent:none n=  7  correct 100.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    
+    ar       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    de       n= 49  correct  63.3%  reaches  59.2%  wrong   0  forbidden  0  silent   0  false-action  0
+    en       n= 68  correct  70.6%  reaches  66.2%  wrong   0  forbidden  0  silent   0  false-action  0
+    es       n= 13  correct  23.1%  reaches  15.4%  wrong   0  forbidden  0  silent   0  false-action  0
+    fr       n=  8  correct  37.5%  reaches  37.5%  wrong   0  forbidden  0  silent   0  false-action  0
+    pl       n=  3  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    pt       n=  2  correct  50.0%  reaches  50.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    ru       n=  3  correct  33.3%  reaches  33.3%  wrong   0  forbidden  0  silent   0  false-action  0
+    sr       n= 15  correct  26.7%  reaches  20.0%  wrong   0  forbidden  0  silent   1  false-action  0
+    tr       n=  2  correct   0.0%  reaches   0.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    zh       n=  2  correct 100.0%  reaches 100.0%  wrong   0  forbidden  0  silent   0  false-action  0
+    
+    Failures:
+         clarified_with_right_option  prod.news-to-cart.sr.1       "najnovije vesti otvori ekran" → clarify[HOME.OVERVIEW|AI.INSIGHTS|HEALTH.OVERVIEW|DISCOVER.DOCTORS_COACHES|SETTINGS.SUPPORT_CONTACT]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  prod.news-screen.en.1        "news screen news feed" → clarify[HOME.OVERVIEW|COMM.FEED]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  prod.community-news.en.1     "open community news" → clarify[COMM.OVERVIEW|COMM.GROUPS|HOME.NEWS_COMMUNITY|INTENTS.BOARD]  expect∈[HOME.NEWS_COMMUNITY]
+         clarified_with_right_option  prod.my-journeys.en.1        "take me to my journeys screen" → clarify[AUTOPILOT.MY_JOURNEY]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  prod.vitana-index.sr.1       "Vitana indeks" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|INBOX.INSPIRATION|COMM.TALK_TO_VITANA|HEALTH.EDUCATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  news.en.1                    "Show me the latest news" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY|INBOX.OVERVIEW]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.en.2                    "Where can I read the longevity news?" → clarify[HOME.OVERVIEW|HEALTH.EDUCATION|HEALTH.EDUCATION_VIDEOS|HOME.NEWS_ALL|HEALTH.EDUCATION_PODCASTS]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.de.2                    "Wo finde ich die Neuigkeiten?" → clarify[INBOX.OVERVIEW|HOME.NEWS_COMMUNITY|HOME.NEWS_ALL]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.es.1                    "Muéstrame las últimas noticias" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY|COMM.EVENTS_TODAY|COMM.EVENTS_UPCOMING]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.sr.1                    "Pokaži mi najnovije vesti" → clarify[HOME.NEWS_ALL|HOME.NEWS_COMMUNITY|HEALTH.MEDICAL|HOME.OVERVIEW]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.pl.1                    "Pokaż mi najnowsze wiadomości o długowieczności" → clarify[HOME.OVERVIEW|HEALTH.EDUCATION|INBOX.OVERVIEW]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.pt.1                    "Mostra-me as últimas notícias" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY|INBOX.OVERVIEW|COMM.EVENTS_TODAY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.tr.1                    "Bana son haberleri göster" → clarify[HOME.NEWS_ALL|HOME.OVERVIEW|HOME.NEWS_COMMUNITY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  news.ar.1                    "اعرض لي آخر الأخبار" → clarify[HOME.OVERVIEW|HOME.NEWS_ALL|HOME.NEWS_COMMUNITY]  expect∈[HOME.OVERVIEW|HOME.NEWS_ALL]
+         clarified_with_right_option  messages.en.1                "Open my messages" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|CONNECTORS.PRODUCTIVITY|MEMORY.DIARY|HEALTH.SERVICES_MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.de.1                "Öffne meine Nachrichten" → clarify[INBOX.OVERVIEW|HOME.OVERVIEW|HOME.NEWS_ALL|SETTINGS.NOTIFICATIONS|INBOX.ARCHIVED]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.es.1                "Abre mis mensajes" → clarify[INBOX.OVERVIEW|INBOX.ARCHIVED|PROFILE.ME|BUSINESS.SERVICES|ASSISTANT.PROACTIVE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.fr.1                "Ouvre mes messages" → clarify[INBOX.INSPIRATION|INBOX.OVERVIEW]  expect∈[INBOX.OVERVIEW]
+         silent                       messages.sr.1                "Otvori moje poruke" → clarify[INBOX.ARCHIVED|AI.RECOMMENDATIONS|DISCOVER.ORDERS|WALLET.ACTIVITY|BUSINESS.SERVICES]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.pl.1                "Otwórz moje wiadomości" → clarify[HOME.NEWS_COMMUNITY|INBOX.ARCHIVED|INBOX.OVERVIEW|SETTINGS.NOTIFICATIONS|INTENTS.MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.ru.1                "Открой мои сообщения" → clarify[INBOX.OVERVIEW|INTENTS.MINE|SETTINGS.PREFERENCES|DISCOVER.MARKETPLACE_MINE|PROFILE.ME]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.tr.1                "Mesajlarımı aç" → clarify[INBOX.OVERVIEW|CONNECTORS.PRODUCTIVITY|BUSINESS.CLIENTS|INBOX.ARCHIVED|SETTINGS.SUPPORT_FAQ]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  messages.ar.1                "افتح رسائلي" → clarify[INBOX.OVERVIEW|INBOX.INSPIRATION|INBOX.ARCHIVED|DISCOVER.CART|INTENTS.MINE]  expect∈[INBOX.OVERVIEW]
+         clarified_with_right_option  journey.de.2                 "Wo finde ich meine Reise?" → clarify[HEALTH.PLANS|AUTOPILOT.MY_JOURNEY]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  journey.es.1                 "Abre mi viaje" → clarify[AUTOPILOT.MY_JOURNEY|WALLET.OVERVIEW|MEMORY.DIARY|CALENDAR.OVERVIEW|SETTINGS.PREFERENCES]  expect∈[AUTOPILOT.MY_JOURNEY]
+         clarified_with_right_option  index.en.1                   "Open my Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|SETTINGS.PRIVACY|ASSISTANT.OVERVIEW]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.en.2                   "Where can I see my Vitana Index score?" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|SETTINGS.PRIVACY|COMM.TALK_TO_VITANA|INBOX.INSPIRATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.de.1                   "Öffne meinen Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA|ASSISTANT.OVERVIEW|HEALTH.EDUCATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.de.2                   "Wo sehe ich meinen Vitana-Index?" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|SETTINGS.PRIVACY|ASSISTANT.AUTOPILOT|MEMORY.PERMISSIONS]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.es.1                   "Muéstrame mi Índice Vitana" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|MEMORY.OVERVIEW|COMM.TALK_TO_VITANA]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.fr.1                   "Montre-moi mon indice Vitana" → clarify[OVERLAY.VITANA_INDEX|HEALTH.VITANA_INDEX|COMM.TALK_TO_VITANA|HEALTH.EDUCATION|SETTINGS.PRIVACY]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.sr.1                   "Pokaži mi moj Vitana indeks" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|ASSISTANT.PROACTIVE|AI.COMPANION|LIFE_COMPASS.OVERLAY]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.pl.1                   "Pokaż mój Vitana Index" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|HEALTH.EDUCATION|SETTINGS.PRIVACY|INBOX.INSPIRATION]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  index.ru.1                   "Покажи мой индекс Витана" → clarify[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX|COMM.TALK_TO_VITANA]  expect∈[HEALTH.VITANA_INDEX|OVERLAY.VITANA_INDEX]
+         clarified_with_right_option  compass.es.1                 "Abre mi brújula de vida" → clarify[LIFE_COMPASS.OVERLAY|MEMORY.DIARY|MEMORY.TIMELINE|PROFILE.ME]  expect∈[LIFE_COMPASS.OVERLAY]
+         clarified_with_right_option  supplements-mine.en.1        "Show my supplements" → clarify[HEALTH.SUPPLEMENTS|DISCOVER.SUPPLEMENTS|HEALTH.BIOLOGY_SUPPLEMENTS|WALLET.SUBSCRIPTIONS|HEALTH.PLANS_NUTRITION]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  supplements-mine.en.2        "Where do I see which supplements I take?" → clarify[HEALTH.SUPPLEMENTS|HEALTH.BIOLOGY_SUPPLEMENTS|DISCOVER.SUPPLEMENTS|WALLET.SUBSCRIPTIONS|HEALTH.PLANS_NUTRITION]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  supplements-mine.de.1        "Zeig mir meine Nahrungsergänzungsmittel" → clarify[DISCOVER.SUPPLEMENTS|HEALTH.SUPPLEMENTS|HEALTH.PLANS_NUTRITION|HEALTH.BIOLOGY_SUPPLEMENTS|BUSINESS.INSIGHTS_EARNINGS]  expect∈[HEALTH.SUPPLEMENTS]
+         clarified_with_right_option  pillars.de.1                 "Zeig mir die Gesundheitssäulen" → clarify[HEALTH.PILLARS|HEALTH.CONDITIONS|HEALTH.EDUCATION|HEALTH.OVERVIEW|HEALTH.SERVICES_MINE]  expect∈[HEALTH.PILLARS]
+         clarified_with_right_option  diary.en.1                   "Open my diary" → clarify[MEMORY.DIARY|CALENDAR.OVERVIEW|MEMORY.DAILY_DIARY|MEMORY.TIMELINE|INBOX.INSPIRATION]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.de.1                   "Öffne mein Tagebuch" → clarify[CALENDAR.OVERVIEW|MEMORY.DIARY|INBOX.OVERVIEW]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.es.1                   "Abre mi diario" → clarify[MEMORY.DIARY|CALENDAR.OVERVIEW|INBOX.INSPIRATION|MEMORY.DAILY_DIARY|MEMORY.TIMELINE]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.fr.1                   "Ouvre mon journal intime" → clarify[MEMORY.DIARY]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  diary.sr.1                   "Otvori moj dnevnik" → clarify[MEMORY.DIARY|AI.DAILY_SUMMARY|CALENDAR.OVERVIEW|MEMORY.DAILY_DIARY|BUSINESS.SERVICES]  expect∈[MEMORY.DIARY|MEMORY.DAILY_DIARY]
+         clarified_with_right_option  memory.de.1                  "Öffne meinen Erinnerungsgarten" → clarify[MEMORY.OVERVIEW|REMINDERS.OVERVIEW|MEMORY.RECALL|MEMORY.TIMELINE]  expect∈[MEMORY.OVERVIEW|MEMORY.TIMELINE|MEMORY.RECALL]
+         clarified_with_right_option  calendar.es.1                "Abre mi calendario" → clarify[CALENDAR.OVERVIEW|MEMORY.DIARY|MEMORY.TIMELINE|MEMORY.DAILY_DIARY|DISCOVER.CART]  expect∈[CALENDAR.OVERVIEW]
+         clarified_with_right_option  calendar.sr.1                "Otvori moj kalendar" → clarify[CONNECTORS.PRODUCTIVITY|CALENDAR.OVERVIEW|MEMORY.DIARY|AI.DAILY_SUMMARY|BUSINESS.SERVICES]  expect∈[CALENDAR.OVERVIEW]
+         clarified_with_right_option  reminders.de.1               "Zeig mir meine Erinnerungen" → clarify[MEMORY.OVERVIEW|REMINDERS.OVERVIEW|MEMORY.RECALL|INBOX.INSPIRATION|SETTINGS.BILLING_INVOICES]  expect∈[REMINDERS.OVERVIEW]
+         clarified_with_right_option  events.en.1                  "Show me community events" → clarify[COMM.EVENTS|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.de.1                  "Zeig mir Community-Events" → clarify[COMM.EVENTS|COMM.EVENTS_UPCOMING|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.es.1                  "Muéstrame los eventos" → clarify[BUSINESS.SERVICES_EVENTS|COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.fr.1                  "Montre-moi les événements" → clarify[COMM.EVENTS_UPCOMING|COMM.EVENTS_HOT|BUSINESS.SERVICES_EVENTS|COMM.EVENTS|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  events.sr.1                  "Pokaži mi događaje" → clarify[COMM.EVENTS|COMM.EVENTS_UPCOMING|BUSINESS.SERVICES_EVENTS|COMM.EVENTS_HOT|COMM.EVENTS_TODAY]  expect∈[COMM.EVENTS|COMM.EVENTS_UPCOMING|COMM.EVENTS_TODAY|COMM.EVENTS_HOT]
+         clarified_with_right_option  groups.de.1                  "Zeig mir die Gruppen" → clarify[COMM.GROUPS|COMM.MEMBERS|COMM.GROUPS_DISCOVER|SHARING.DISTRIBUTION|COMM.LIVE_ROOMS]  expect∈[COMM.GROUPS]
+         clarified_with_right_option  members.en.2                 "Where can I see who else is in the community?" → clarify[COMM.MEMBERS|SETTINGS.TENANT_ROLE|AUTH.MAXINA_PORTAL|INTENTS.MINE|HOME.NEWS_COMMUNITY]  expect∈[COMM.MEMBERS]
+         clarified_with_right_option  members.de.1                 "Zeig mir die Mitglieder" → clarify[COMM.MATCHES|WALLET.BALANCE_MEMBERSHIP|COMM.GROUPS|COMM.MEMBERS|BUSINESS.CLIENTS]  expect∈[COMM.MEMBERS]
+         clarified_with_right_option  matches.en.1                 "Show me my matches" → clarify[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES|COMM.FIND_PARTNER_POSTS|DISCOVER.ORDERS|DISCOVER.CART]  expect∈[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES]
+         clarified_with_right_option  matches.de.1                 "Zeig mir meine Matches" → clarify[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES|DISCOVER.MY_TICKETS|COMM.FIND_PARTNER_POSTS|COMM.LIVE_ROOMS_PAST]  expect∈[COMM.MATCHES|COMM.FIND_PARTNER_MATCHES]
+         clarified_with_right_option  cart.de.1                    "Öffne meinen Warenkorb" → clarify[DISCOVER.CART|WALLET.OVERVIEW|OVERLAY.WALLET_POPUP|DISCOVER.MARKETPLACE_MINE|MEMORY.DIARY]  expect∈[DISCOVER.CART]
+         clarified_with_right_option  cart.sr.1                    "Otvori moju korpu" → clarify[INBOX.OVERVIEW|DISCOVER.CART|PROFILE.ME|BUSINESS.SALES_PROMOTIONS|WALLET.ACTIVITY]  expect∈[DISCOVER.CART]
+         clarified_with_right_option  discover.en.1                "Open discover" → clarify[DISCOVER.OVERVIEW|SEARCH.OVERVIEW]  expect∈[DISCOVER.OVERVIEW|DISCOVER.MARKETPLACE]
+         clarified_with_right_option  discover.de.1                "Öffne Entdecken" → clarify[DISCOVER.OVERVIEW|COMM.MEDIA_PODCASTS|COMM.EVENTS|SETTINGS.SUPPORT|AUTOPILOT.MY_JOURNEY]  expect∈[DISCOVER.OVERVIEW|DISCOVER.MARKETPLACE]
+         clarified_with_right_option  wallet.es.1                  "Abre mi billetera" → clarify[OVERLAY.WALLET_POPUP|WALLET.OVERVIEW|SETTINGS.BILLING_INVOICES|MEMORY.DIARY|CALENDAR.OVERVIEW]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+         clarified_with_right_option  wallet.sr.1                  "Otvori moj novčanik" → clarify[WALLET.OVERVIEW|WALLET.ACTIONS|WALLET.BALANCE_OPTIMIZATION|OVERLAY.WALLET_POPUP|WALLET.BALANCE_MEMBERSHIP]  expect∈[WALLET.OVERVIEW|WALLET.BALANCE|OVERLAY.WALLET_POPUP]
+         clarified_with_right_option  subscriptions.en.1           "Where can I see my subscription?" → clarify[SETTINGS.BILLING_PLAN|WALLET.SUBSCRIPTIONS|SETTINGS.BILLING|DISCOVER.ORDERS|WALLET.BALANCE_MEMBERSHIP]  expect∈[WALLET.SUBSCRIPTIONS|SETTINGS.BILLING_PLAN]
+         clarified_with_right_option  profile.en.1                 "Open my profile" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|SETTINGS.PREFERENCES|CALENDAR.OVERVIEW]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.es.1                 "Abre mi perfil" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PREFERENCES|INBOX.OVERVIEW|AI.COMPANION]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.fr.1                 "Ouvre mon profil" → clarify[PROFILE.ME|PROFILE.PRIVACY]  expect∈[PROFILE.ME]
+         clarified_with_right_option  profile.sr.1                 "Otvori moj profil" → clarify[PROFILE.ME|PROFILE.PRIVACY|SETTINGS.PREFERENCES|BUSINESS.SERVICES|WALLET.SUBSCRIPTIONS]  expect∈[PROFILE.ME]
+         clarified_with_right_option  settings.en.1                "Open settings" → clarify[SETTINGS.OVERVIEW|SETTINGS.PREFERENCES|SETTINGS.PRIVACY|ASSISTANT.VOICE|ASSISTANT.PROACTIVE]  expect∈[SETTINGS.OVERVIEW]
+         clarified_with_right_option  settings.de.1                "Öffne die Einstellungen" → clarify[SETTINGS.OVERVIEW|ASSISTANT.VOICE|ASSISTANT.PROACTIVE|SETTINGS.NOTIFICATIONS|SETTINGS.PRIVACY]  expect∈[SETTINGS.OVERVIEW]
+         clarified_with_right_option  privacy.en.1                 "Open my privacy settings" → clarify[SETTINGS.PRIVACY|SETTINGS.OVERVIEW|SETTINGS.PREFERENCES|PUBLIC.PRIVACY|PROFILE.PRIVACY]  expect∈[SETTINGS.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|PROFILE.PRIVACY]
+         clarified_with_right_option  privacy.de.1                 "Öffne die Datenschutzeinstellungen" → clarify[SETTINGS.PRIVACY|SETTINGS.OVERVIEW|PROFILE.PRIVACY|ASSISTANT.VOICE|SETTINGS.NOTIFICATIONS]  expect∈[SETTINGS.PRIVACY|SETTINGS.PRIVACY_VISIBILITY|PROFILE.PRIVACY]
+         clarified_with_right_option  earnings.en.1                "Where can I see how much I earned?" → clarify[BUSINESS.INSIGHTS_EARNINGS|WALLET.REWARDS|BUSINESS.ANALYTICS|BUSINESS.SELL_EARN|WALLET.BALANCE]  expect∈[BUSINESS.INSIGHTS_EARNINGS|BUSINESS.ANALYTICS|WALLET.REWARDS]
+    
+    clarified with the right screen first: 61
+
+      at Object.<anonymous> (test/nav-golden/nav-golden-registry.test.ts:45:13)
+
+PASS test/nav-golden/nav-golden-registry.test.ts
+  VTID-04517 golden navigation set — registry resolver
+    ✓ never acts on small talk (5 ms)
+    ✓ never sends a known production failure to its forbidden screen (1 ms)
+    ✓ beats the legacy navigator on reaching the right screen and on wrong screens (1 ms)
+    ✓ does not regress against its own baseline (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2173:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2180:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2204:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2229:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2423:11)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:138:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:143:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:149:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:157:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:162:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:169:40)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at handleNavigateToScreen (src/routes/orb-live.ts:3689:19)
+      at Object.<anonymous> (test/navigation/nav-dispatch.test.ts:178:15)
+
+  console.log
+    [VTID-NAV-FAST] Immediate orb_directive dispatched: MEMORY.DIARY (/memory/diary)
+
+      at handleNavigateToScreen (src/routes/orb-live.ts:3764:13)
+
+PASS test/navigation/nav-dispatch.test.ts
+  openScreen — every gate in one place
+    ✓ opens a registry screen with the payload the web client handles (7 ms)
+    ✓ accepts ids retired when Phase 1 merged screens (1 ms)
+    ✓ uses the mobile route on a mobile session (1 ms)
+    ✓ opens overlays through their ?open= marker (1 ms)
+    ✓ refuses unknown, disabled and entity-only screens without guessing (2 ms)
+    ✓ keeps member screens away from anonymous visitors but opens public ones (2 ms)
+    ✓ says so when the member is already there, instead of reloading the page (1 ms)
+  navigate — open vs. where
+    ✓ opens right away on an explicit open request (21 ms)
+    ✓ answers a where-question with an offer and moves nothing (10 ms)
+    ✓ hands near-ties to the model as candidates (10 ms)
+    ✓ never navigates on small talk (28 ms)
+    ✓ records what it decided (9 ms)
+    ✓ says so honestly, and never guesses, when the resolver cannot run (VTID-04846) (3 ms)
+  the shared voice tools with NAV_V2_ENABLED
+    ✓ navigate goes through the registry resolver (42 ms)
+    ✓ navigate defaults to "where" when the model leaves intent out — nothing moves (12 ms)
+    ✓ refuses voice navigation in the admin area (VTID-04846) (2 ms)
+    ✓ serves the other role areas from the member app, as the legacy navigator did (VTID-04846) (13 ms)
+    ✓ navigate_to_screen resolves an invented id from the stated reason instead of fuzzy-matching it (14 ms)
+  the "where → offer → yes → open" conversation through orb-live
+    ✓ opens the offered screen when the model confirms with its screen_id (18 ms)
+  tool declarations
+    ✓ declares navigate with an open/where intent when the flag is on (2 ms)
+    ✓ declares the question too (VTID-04846: no flag-off declaration remains) (1 ms)
+  VTID-04521 — speak first, hold the offer, open on yes
+    ✓ marks every registry directive to play out after the reply
+    ✓ holds a "where" answer as an offer, and never an "open" one (19 ms)
+    ✓ still answers when holding the offer fails (9 ms)
+    ✓ maps an explain_feature route to its screen (2 ms)
+    ✓ opens an accepted offer through the gates, without the session latch
+    ✓ opens nothing when the accepted screen is blocked or already showing (1 ms)
+    ✓ opens nothing for an offer whose screen the registry no longer has (VTID-04846)
+  VTID-04521 — prompts and tool lists under the flag
+    ✓ describes navigate_to_screen without the "where is = redirect" lexicon (14 ms)
+    ✓ lets the admin surface open what navigate found (1 ms)
+    ✓ gives the cascade the three navigation tools
+    ✓ uses the V2 navigator policy, which describes the offer and speak-first
+    ✓ sends open/show requests to navigate and forbids claiming an unopened screen (VTID-04557)
+    ✓ never tells the model to call tools that do not exist (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2173:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2180:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2204:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2229:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2423:11)
+
+  console.log
+    [VTID-ORBC] Vertex config at startup: PROJECT_ID=lovable-vitana-vers1, LOCATION=us-central1
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2173:9)
+
+PASS test/navigation/nav-open-screen-override.test.ts
+  VTID-04607 open-screen override
+    ✓ follows the end-conversation override when the registry navigator is on (32 ms)
+    ✓ is present without any flag: the registry is the only navigator (VTID-04846) (2 ms)
+    ✓ names the tool, the intent and the member-words rule, worded positively (1 ms)
+  VTID-04607 member words
+    ✓ passes the member words when they add to the question
+    ✓ adds nothing when they are the question, empty or too short (1 ms)
+    ✓ keeps only the latest 300 characters of a long turn
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-01155] Google Cloud TTS client initialized
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2180:11)
+
+  console.log
+    [VTID-01219] Google Auth client initialized for Live API
+
+      at Object.<anonymous> (src/routes/orb-live.ts:2204:11)
+
+  console.log
+    [VTID-01219] ORB Voice startup validation passed — Live API ready
+
+      at src/routes/orb-live.ts:2229:13
+
+  console.log
+    [VTID-INSTANT-FEEDBACK] Chime PCM generated: 9600 samples, 19200 bytes, 25600 b64 chars
+
+      at generateChimePcm (src/routes/orb-live.ts:2423:11)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/vtid-04846-registry-only.test.ts:75:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at test/navigation/vtid-04846-registry-only.test.ts:86:36
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at test/navigation/vtid-04846-registry-only.test.ts:86:36
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at test/navigation/vtid-04846-registry-only.test.ts:86:36
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at test/navigation/vtid-04846-registry-only.test.ts:86:36
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at test/navigation/vtid-04846-registry-only.test.ts:86:36
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/vtid-04846-registry-only.test.ts:91:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'get_current_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/vtid-04846-registry-only.test.ts:137:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'get_current_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/vtid-04846-registry-only.test.ts:144:36)
+
+  console.warn
+    [role-policy-enforcer][SHADOW] role 'community' is NOT permitted tool 'navigate_to_screen' (deny-by-default closed-world policy) surface=orb-tool session=s1 actor=u1
+
+      173 |   const mode = decision.enforced ? 'ENFORCED' : 'SHADOW';
+      174 |   // eslint-disable-next-line no-console
+    > 175 |   console.warn(
+          |           ^
+      176 |     `[role-policy-enforcer][${mode}] ${decision.message}` +
+      177 |       (ctx.surface ? ` surface=${ctx.surface}` : '') +
+      178 |       (ctx.session_id ? ` session=${ctx.session_id}` : '') +
+
+      at logPolicyViolation (src/services/intelligence/role-policy-enforcer.ts:175:11)
+      at shouldBlockTool (src/services/intelligence/role-policy-enforcer.ts:195:3)
+      at dispatchOrbTool (src/services/orb-tools-shared.ts:5486:22)
+      at Object.<anonymous> (test/navigation/vtid-04846-registry-only.test.ts:165:36)
+
+PASS test/navigation/vtid-04846-registry-only.test.ts
+  screens about one item open through the registry
+    ✓ fills the route from the id a prior tool result supplied (43 ms)
+    ✓ COMM.GROUP_DETAIL accepts the tool schema argument names ({"groupId":"g-7"}) (4 ms)
+    ✓ INTENTS.MATCH_DETAIL accepts the tool schema argument names ({"match_id":"m-3"}) (3 ms)
+    ✓ PROFILE.PUBLIC accepts the tool schema argument names ({"vitana_id":"@maria"}) (3 ms)
+    ✓ PROFILE.WITH_MATCH accepts the tool schema argument names ({"vitana_id":"maria","intent_id":"i-9"}) (2 ms)
+    ✓ NEWS.DETAIL accepts the tool schema argument names ({"id":"n 1"}) (2 ms)
+    ✓ never opens one without its id (3 ms)
+    ✓ keeps disabled panels closed even with an id (1 ms)
+    ✓ keeps the member gate for entity screens (1 ms)
+    ✓ says "already there" when the member is on that very item
+    ✓ no longer reads the legacy catalog for any of this (2 ms)
+  where am I — the registry names the page
+    ✓ /inbox → INBOX.OVERVIEW (1 ms)
+    ✓ /u/maria → PROFILE.PUBLIC (2 ms)
+    ✓ /comm/groups/g-7 → COMM.GROUP_DETAIL (1 ms)
+    ✓ /comm/events-meetups/some/deeper/page → COMM.EVENTS (2 ms)
+    ✓ /command-hub/overview → null
+    ✓ get_current_screen answers from the registry, in the member language (3 ms)
+    ✓ get_current_screen reports a page the registry does not describe as unknown (3 ms)
+    ✓ the system instruction screen hint uses the registry title (3 ms)
+  role areas
+    ✓ only the admin area is off (1 ms)
+    ✓ navigate_to_screen refuses in the admin area (2 ms)
+  a resolver outage
+    ✓ still opens a screen named exactly (4 ms)
+    ✓ matches names, never fragments (2 ms)
+    ✓ answers honestly otherwise (6 ms)
+  My Journey mode on the way there (NAV_GUIDED_JOURNEY)
+    ✓ open my journey as an audiobook → guided (1 ms)
+    ✓ zeig mir die Vollversion meiner Reise → full (1 ms)
+    ✓ the full app, not the guided journey → full
+    ✓ open my journey → null
+    ✓ switches the mode before opening My Journey (1 ms)
+    ✓ leaves every other screen alone
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04671-recommendation-card.test.ts
+  VTID-04671 card metrics
+    ✓ Impact/Effort is replaced by priority, value, confidence, success odds, expected cost and an executable badge (5 ms)
+    ✓ the executable list is the P4 mirror (MANUALLY_BRIDGEABLE_SOURCE_TYPES), not a second copy (2 ms)
+    ✓ formatRecTokens renders compact token counts (2 ms)
+  VTID-04671 Why section
+    ✓ renders quality.review problem, evidence, files with risk, acceptance and why now — all through textContent (3 ms)
+    ✓ a scored row without a kept review shows an awaiting-review note (1 ms)
+    ✓ the popup footer reports below_floor_count and awaiting_review_count from the listing (2 ms)
+  VTID-04671 dismiss reason picker
+    ✓ offers exactly the six VTID-04670 reason codes (2 ms)
+    ✓ Dismiss opens the picker; the picker posts reason + reason_code (+ note ≤ 300) (4 ms)
+    ✓ the Overview card uses the same picker (2 ms)
+  VTID-04671 live execution after Activate
+    ✓ a queued execution keeps the card and follows the existing SSE tail (4 ms)
+    ✓ closing the popup closes the followed streams and still resets the modal flag (2 ms)
+  VTID-04671 CSP, styling, cache-bust, ownership
+    ✓ new code uses CSS classes, not inline style strings (8 ms)
+    ✓ cache-bust bumped and the guard allows both VTIDs (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/navigation/vtid-04814-command-hub-navigation.test.ts
+  the Command Hub screen list matches the Command Hub
+    ✓ has exactly one screen per tab of NAVIGATION_CONFIG (3 ms)
+    ✓ marks every screen as a Command Hub screen a signed-in developer can open (130 ms)
+    ✓ keeps every legacy DEVHUB id working (4 ms)
+    ✓ is merged into the registry the gateway uses, after every member screen
+  surfaces
+    ✓ reads the surface from the route (1 ms)
+    ✓ only reaches screens of the session's own surface (1 ms)
+    ✓ never matches an invented Command Hub id to a member screen
+  what a developer says on the Command Hub
+    ✓ open autopilot live (6 ms)
+    ✓ show me what the autopilot is running right now (14 ms)
+    ✓ take me to the VTID ledger (7 ms)
+    ✓ open the OASIS events (7 ms)
+    ✓ show me the infrastructure logs (11 ms)
+    ✓ open the deployments in infrastructure (6 ms)
+    ✓ where can I see the governance rules (3 ms)
+    ✓ open the governance violations (4 ms)
+    ✓ show me the system overview (7 ms)
+    ✓ open the live metrics (3 ms)
+    ✓ show me errors and violations on the overview (8 ms)
+    ✓ open the release feed (2 ms)
+    ✓ go to the user management (2 ms)
+    ✓ open the tenants admin screen (2 ms)
+    ✓ open the approvals queue (2 ms)
+    ✓ show me the task board (2 ms)
+    ✓ open the operator event stream (3 ms)
+    ✓ open the runbook (2 ms)
+    ✓ show me the registered agents (2 ms)
+    ✓ open the LLM providers (2 ms)
+    ✓ open model routing (2 ms)
+    ✓ show me the test runs (2 ms)
+    ✓ open the end to end tests (2 ms)
+    ✓ open the RLS and access policies (4 ms)
+    ✓ show me the audit log (2 ms)
+    ✓ open the API inventory (2 ms)
+    ✓ show me the database schemas in the docs (2 ms)
+    ✓ open voice self-healing (3 ms)
+    ✓ show me the live voice sessions (2 ms)
+    ✓ open the nova sonic test bench (2 ms)
+    ✓ open the voice supervisor overview (2 ms)
+    ✓ show me voice health per tenant (8 ms)
+    ✓ open the test contracts (2 ms)
+    ✓ show me the autonomy pulse (2 ms)
+    ✓ open the conversation tool health (2 ms)
+    ✓ open the commerce overview (3 ms)
+    ✓ show me the marketplace review queue (2 ms)
+    ✓ open the routines catalog (3 ms)
+    ✓ öffne Autopilot Live (2 ms)
+    ✓ zeig mir die Infrastruktur-Logs (2 ms)
+    ✓ öffne das VTID-Ledger (2 ms)
+    ✓ zeig mir die Governance-Regeln (1 ms)
+    ✓ never sends a member request on the Command Hub to a member screen (65 ms)
+    ✓ never offers a Command Hub screen to a member (316 ms)
+  opening a Command Hub screen
+    ✓ opens it on the Command Hub with a /command-hub route (2 ms)
+    ✓ refuses a member screen on the Command Hub and a Command Hub screen in the app (1 ms)
+    ✓ opens a legacy redirect id at the tab it moved to
+  Command Hub tools
+    ✓ declares navigate_to_screen next to navigate, so its answers can be acted on (2 ms)
+    ✓ routes dev_open_hub_panel through the navigation handler on the Command Hub (4 ms)
+    ✓ reports the outcome and keeps the widget's route current in the Command Hub client (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04667-executable-source-types-drift.test.ts
+  Command Hub executable source types
+    ✓ app.js mirrors MANUALLY_BRIDGEABLE_SOURCE_TYPES exactly (2 ms)
+    ✓ "Create task" for types with no executor, "Activate" otherwise and when unknown (3 ms)
+    ✓ both Activate call sites use the label (Pending Approvals modal and Overview card) (4 ms)
+    ✓ the listings the cards read select source_type (2 ms)
+    ✓ cache-bust is bumped for this change
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04887-overview-cleanup.test.ts
+  VTID-04887 (1): the four old Overview tabs are redirects
+    ✓ the Overview section has exactly one tab, System Overview (36 ms)
+    ✓ there is one redirect per old tab, each with a short note (2 ms)
+    ✓ every redirect target exists in NAVIGATION_CONFIG (walk) (1 ms)
+    ✓ every redirect in the shared table resolves to a real tab too (no dangling legacy link) (4 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/live-metrics/ (with or without the slash) to its screen (1 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/recent-events/ (with or without the slash) to its screen (2 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/errors-violations/ (with or without the slash) to its screen (1 ms)
+    ✓ getRouteFromPath sends /command-hub/overview/release-feed/ (with or without the slash) to its screen
+    ✓ System Overview itself still routes to the cockpit (1 ms)
+    ✓ the note is shown once as an info toast wherever a route is applied (3 ms)
+    ✓ on first load the address bar is rewritten to the target tab path (2 ms)
+  VTID-04887 (1): no dead tab content
+    ✓ no render dispatch branch for any old tab remains (11 ms)
+    ✓ `computeDeploySuccessRate` is deleted and nothing mentions it (5 ms)
+    ✓ `computeOrbSessionStats` is deleted and nothing mentions it (6 ms)
+    ✓ `computeSystemStatus` is deleted and nothing mentions it (7 ms)
+    ✓ `fetchOverviewDashboard` is deleted and nothing mentions it (5 ms)
+    ✓ `fetchOverviewErrors` is deleted and nothing mentions it (5 ms)
+    ✓ `fetchOverviewHealth` is deleted and nothing mentions it (4 ms)
+    ✓ `fetchOverviewMetrics` is deleted and nothing mentions it (5 ms)
+    ✓ `fetchOverviewRecentEvents` is deleted and nothing mentions it (5 ms)
+    ✓ `fetchOverviewReleases` is deleted and nothing mentions it (6 ms)
+    ✓ `fetchOverviewReleasesSilent` is deleted and nothing mentions it (4 ms)
+    ✓ `fetchOverviewTimeseries` is deleted and nothing mentions it (5 ms)
+    ✓ `fetchPipelineSummary` is deleted and nothing mentions it (5 ms)
+    ✓ `metricCardHTML` is deleted and nothing mentions it (6 ms)
+    ✓ `metricColor` is deleted and nothing mentions it (6 ms)
+    ✓ `metricColorInverse` is deleted and nothing mentions it (7 ms)
+    ✓ `renderMetricsGroup` is deleted and nothing mentions it (5 ms)
+    ✓ `renderOverviewErrorsViolationsView` is deleted and nothing mentions it (5 ms)
+    ✓ `renderOverviewLiveMetricsView` is deleted and nothing mentions it (5 ms)
+    ✓ `renderOverviewRecentEventsView` is deleted and nothing mentions it (5 ms)
+    ✓ `renderOverviewReleaseFeedView` is deleted and nothing mentions it (5 ms)
+    ✓ `renderVtidAttentionCard` is deleted and nothing mentions it (6 ms)
+    ✓ `renderVtidAttentionSection` is deleted and nothing mentions it (5 ms)
+    ✓ `sparklineSVG` is deleted and nothing mentions it (5 ms)
+    ✓ `startOverviewDashboardPolling` is deleted and nothing mentions it (5 ms)
+    ✓ `startOverviewReleasesAutoRefresh` is deleted and nothing mentions it (6 ms)
+    ✓ `stopOverviewReleasesAutoRefresh` is deleted and nothing mentions it (6 ms)
+    ✓ the hardcoded lists and state the old tabs and panels used are gone (19 ms)
+  VTID-04887 (2): the detailed panels keep only grouped Service Health and Vitana Recommends
+    ✓ renders the grouped Service Health panel from the registry poll only (1 ms)
+    ✓ no other pre-Phase-1 panel is left
+    ✓ the disclosure is labelled for what it holds and stays collapsed until opened (3 ms)
+    ✓ Vitana Recommends is rendered inside the disclosure, after Service Health (1 ms)
+    ✓ the cockpit is the only Overview poll (no 60 s dashboard refresh) (1 ms)
+    ✓ the Service Health badge names full class names, so the dead-CSS matcher sees them (2 ms)
+  VTID-04887 (3): browser callers of the pipeline summary use the admin route
+    ✓ no code line calls the service-token /api/v1/autopilot/pipeline/summary (16 ms)
+    Vitana Recommends
+      ✓ reads the admin route with the bearer token and keeps only the recommendations (1 ms)
+      ✓ cannot loop: fetched is set in finally, and the panel fetches only when not fetched/loading (1 ms)
+      ✓ a failed or pending read is never "No pending recommendations"
+      ✓ keeps Generate, Activate and Dismiss, and refreshes through the admin route
+  VTID-04887: asset version
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04887 version (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [nav-registry] using https://example.test/nav-registry.json: 1 screens, signature 687ffee983d29ed0
+
+      at src/navigation/nav-registry.ts:269:17
+
+  console.warn
+    [nav-registry] could not load https://example.test/nav-registry.json (HTTP 500); keeping snapshot
+
+      271 |       current = next;
+      272 |     } catch (err) {
+    > 273 |       console.warn(`[nav-registry] could not load ${url} (${(err as Error).message}); keeping ${current ? current.source : 'snapshot'}`);
+          |               ^
+      274 |       current = current || loadSnapshotRegistry();
+      275 |     } finally {
+      276 |       inflight = null;
+
+      at src/navigation/nav-registry.ts:273:15
+      at Object.<anonymous> (test/navigation/nav-resolver.test.ts:180:13)
+
+  console.warn
+    [nav-registry] could not load https://example.test/nav-registry.json (invalid: screens is empty); keeping snapshot
+
+      271 |       current = next;
+      272 |     } catch (err) {
+    > 273 |       console.warn(`[nav-registry] could not load ${url} (${(err as Error).message}); keeping ${current ? current.source : 'snapshot'}`);
+          |               ^
+      274 |       current = current || loadSnapshotRegistry();
+      275 |     } finally {
+      276 |       inflight = null;
+
+      at src/navigation/nav-registry.ts:273:15
+      at Object.<anonymous> (test/navigation/nav-resolver.test.ts:182:13)
+
+PASS test/navigation/nav-resolver.test.ts
+  VTID-04517 registry resolver
+    ✓ opens a clear match, with the route for the viewport (2 ms)
+    ✓ measures the lead against another page, so a page and its tab do not block a match (1 ms)
+    ✓ hands back candidates when two pages are equally close (1 ms)
+    ✓ returns nothing when no screen is close
+    ✓ never offers disabled screens or screens that need an entity (1 ms)
+    ✓ only offers public screens to anonymous visitors
+    ✓ respects the viewport and tenant exclusions (1 ms)
+    ✓ maps retired ids to the screen that replaced them (1 ms)
+    ✓ fails loudly when a registry text has no vector (29 ms)
+    ✓ pins the thresholds the test set was measured with (1 ms)
+  VTID-04517 registry loading
+    ✓ bundles a valid snapshot of every voice screen (10 ms)
+    ✓ rejects malformed registries (1 ms)
+    ✓ adopts the live registry when it is valid (6 ms)
+    ✓ keeps the snapshot when the live registry is unreachable or invalid (4 ms)
+    ✓ groups a page with its tabs
+  VTID-04517 stored vectors
+    ✓ round-trips through int8 storage without changing a score by more than 0.01 (69 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04875-health-summary-builder.test.ts
+  VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper)
+    ✓ route: first call probes over loopback with the caller token, mixed outcomes (72 ms)
+    ✓ route: PORT env overrides the loopback port; a different admin token is forwarded verbatim (56 ms)
+    ✓ route: concurrent callers share one run; a later call within 30s is served from cache; after 30s re-probes (70 ms)
+    ✓ route: unauthenticated caller → 401, nothing probed (31 ms)
+    ✓ route: a probe run that rejects → 500 summary_failed, and the next call retries (49 ms)
+  VTID-04875 buildHealthSummary() — in-process, no req/res
+    ✓ returns exactly what the route serves and shares the route cache (31 ms)
+    ✓ without authHeader probes with no Authorization header (36 ms)
+    ✓ `now` decides cache freshness: within 30s cached, at 30s re-probed (52 ms)
+    ✓ the route module still exports resetHealthSummaryCacheForTests and it clears the builder cache (51 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/navigation/vtid-04880-legacy-navigator-retired.test.ts
+  VTID-04880: no code reads the archived nav_catalog tables
+    ✓ gateway source (358 ms)
+    ✓ scripts (the guarded Aurora restore dumps excepted) (32 ms)
+    ✓ every Aurora restore statement on them is guarded (19 ms)
+    ✓ the db-i18n pipeline has no nav-catalog surface (2 ms)
+  VTID-04880: the retired NAV_V2_ENABLED flag is never pinned
+    ✓ AWS-STAGE-DEPLOY-GATEWAY.yml (1 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04887-ops-pipeline-summary-route.test.ts
+  GET /api/v1/ops/pipeline-summary — real auth middleware
+    ✓ 401 JSON without an Authorization header; the builder never runs (49 ms)
+  GET /api/v1/ops/pipeline-summary — admin (middleware mocked)
+    ✓ 200 with exactly the builder body for an exafy_admin (24 ms)
+    ✓ a non-admin is refused by the gate and the builder never runs (31 ms)
+    ✓ a second request inside 15 s is served from the cache (29 ms)
+    ✓ concurrent requests share one builder run (single-flight) (101 ms)
+    ✓ a builder error (500) is passed through and never cached (35 ms)
+    ✓ a throwing builder still answers JSON 500 with a snake_case error code (30 ms)
+  the service-token route is unchanged for machine callers
+    ✓ /pipeline/summary still sits behind requireServiceToken and calls the same builder (1 ms)
+    ✓ the new route calls the same in-process builder, never an HTTP self-call (1 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/pipeline-summary with owner ops-pipeline-summary (2 ms)
+    ✓ the developer domain atlas claims the new route file (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-route.test.ts
+  GET /api/v1/ops/attention — real auth middleware
+    ✓ 401 JSON without an Authorization header (never reaches the aggregator) (33 ms)
+  GET /api/v1/ops/attention — admin (middleware mocked)
+    ✓ 200 {ok, data} with the contract shape for an exafy_admin (57 ms)
+    ✓ a non-admin is refused by the gate (40 ms)
+  index.ts mounts the route like its neighbours
+    ✓ mountRouterSync at /api/v1/ops/attention with owner ops-attention (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: acks table missing
+
+      424 |         .then((rows) => ({ rows, error: null }))
+      425 |         .catch((err) => {
+    > 426 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      427 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      428 |         })
+      429 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:426:19
+
+  console.error
+    [ops-attention] ack read failed — nothing is hidden: timeout after 3000 ms
+
+      424 |         .then((rows) => ({ rows, error: null }))
+      425 |         .catch((err) => {
+    > 426 |           console.error('[ops-attention] ack read failed — nothing is hidden:', errMessage(err));
+          |                   ^
+      427 |           return { rows: [] as AckRow[], error: errMessage(err) };
+      428 |         })
+      429 |     : Promise.resolve({ rows: [] as AckRow[], error: null });
+
+      at src/services/ops-attention.ts:426:19
+      at buildOpsAttention (src/services/ops-attention.ts:506:16)
+
+  console.error
+    [ops-attention] OASIS ops.attention.acked not recorded: insert failed
+
+      678 |     const r = await emit(event);
+      679 |     oasisEmitted = !!(r && r.ok);
+    > 680 |     if (!oasisEmitted) console.error(`[ops-attention] OASIS ${event.type} not recorded:`, r && r.error);
+          |                                ^
+      681 |   } catch (err) {
+      682 |     console.error(`[ops-attention] OASIS ${event.type} failed:`, errMessage(err));
+      683 |   }
+
+      at recordOpsAttentionAction (src/services/ops-attention.ts:680:32)
+      at src/routes/ops-attention.ts:80:19
+
+PASS test/vtid-04886-ops-attention-acks-timeline.test.ts
+  applyAcks
+    ✓ ack marks (still shown); snooze hides and lists; P1 is never hidden (snooze_overridden) (2 ms)
+    ✓ the latest unexpired row per fingerprint wins; expired rows are ignored
+  buildOpsAttention with acks
+    ✓ a snoozed P2 leaves the queue, counts.hidden says so, the domain tile counts it, the verdict follows what is shown (2 ms)
+    ✓ an ack read failure hides nothing and is reported in acks_error (not a source, so no false UNKNOWN) (6 ms)
+    ✓ an ack read that hangs is cut at 3 s (32 ms)
+  timeline + sparklines
+    ✓ timelineFrom: classified, newest first, unknown topics and blocklisted self-heal endpoints dropped (3 ms)
+    ✓ sparklinesFrom: 24 hourly buckets, oldest first; deploys exclude failures, incidents are the bad events (1 ms)
+    ✓ the response carries the timeline and sparklines; a failed timeline read is an error and null sparklines (13 ms)
+  production reads (VTID-04886)
+    ✓ timelineEvents: oasis_events topic IN TIMELINE_TOPICS, 24 h, newest first, LIMIT 200; throws on error (28 ms)
+    ✓ selfHealOutcomes is read once per window per computation (autonomy + timeline share it) (1 ms)
+    ✓ ack store: active rows by env and expires_at > now; insert returns the row; errors throw (2 ms)
+    ✓ the migration: table, CHECKs (24 h, reason, P1 never snoozed), RLS, service_role only, idempotent (3 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04886-ops-attention-ack-route.test.ts
+  POST /ack, /snooze — real auth middleware
+    ✓ 401 JSON without an Authorization header; nothing is written or emitted (143 ms)
+  POST /ack, /snooze — admin (middleware mocked)
+    ✓ a non-admin is refused by the gate (51 ms)
+    ✓ Zod: reason required, expiry <= 24 h, integer minutes, known keys only, vtid shape (120 ms)
+    ✓ P1 is ackable but NEVER snoozable (400 p1_not_snoozable); the severity is the server's (69 ms)
+    ✓ snooze a P2: one row (actor, reason, expiry <= 24 h), one OASIS event, and the next GET hides it and counts it (58 ms)
+    ✓ ack emits ops.attention.acked; an OASIS failure is reported, the action still stands (66 ms)
+    ✓ an item that is not open now is 404 not_open; another env's fingerprint is 400 wrong_env (48 ms)
+    ✓ the write-side cap holds even without the route (recordOpsAttentionAction refuses > 24 h) (48 ms)
+    ✓ index.ts: the ack/snooze routes ride the existing /api/v1/ops/attention mount after express.json() (2 ms)
+    ✓ the OASIS event types are in the CicdEventType union (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04875-pipeline-summary-builder.test.ts
+  VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper)
+    ✓ route: realistic data (29 ms)
+    ✓ route: every Supabase query non-ok (5 ms)
+    ✓ route: every Supabase query rejects (network error) (5 ms)
+    ✓ route: event loop status throws (4 ms)
+    ✓ route: Supabase env missing (3 ms)
+  VTID-04875 buildPipelineSummary() — in-process, no req/res
+    ✓ builder returns exactly what the route serves: realistic data (4 ms)
+    ✓ builder returns exactly what the route serves: every Supabase query non-ok (4 ms)
+    ✓ builder returns exactly what the route serves: every Supabase query rejects (network error) (4 ms)
+    ✓ builder returns exactly what the route serves: event loop status throws (3 ms)
+    ✓ builder returns exactly what the route serves: Supabase env missing (3 ms)
+    ✓ accepts injected fetch / env / loop status (no globals touched) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/command-hub/vtid-04876-overview-cockpit.test.ts
+  VTID-04876: status bar
+    ✓ polls every 30 s and goes blind after 2x the poll interval (6 ms)
+    ✓ any fetch error, or no answer yet, is UNKNOWN — never OK (4 ms)
+    ✓ shows the server verdict when fresh; an unknown or unrecognised verdict stays UNKNOWN (5 ms)
+    ✓ labels staging as "Staging build · production data" (4 ms)
+    ✓ renders verdict, P1/P2/P3 counts, sources fresh x/y, generated_at, env and refresh (2 ms)
+  VTID-04876: ranked queue
+    ✓ severity is icon + text label + colour class (16 ms)
+    ✓ the queue body is aria-live="polite" and has a "Needs attention now" heading (1 ms)
+    ✓ domain filters are data-action buttons with aria-pressed (3 ms)
+    ✓ an empty queue with unknown sources is explicitly not an all-clear (1 ms)
+    ✓ each item is a real link carrying its deeplink and navigates via navigateToScreen(section, tab, query) (1 ms)
+  VTID-04876: no inline handlers
+    ✓ no 'onclick=' anywhere in the Overview region (3 ms)
+    ✓ the cockpit assigns no on* handler properties; one delegated listener reads data-action (2 ms)
+    ✓ the cockpit block is CSP-clean (no inline style or eval) (2 ms)
+    ✓ says why its strings are English (admin-facing by design) (1 ms)
+  VTID-04876: polling and the /ops/attention migration
+    ✓ renderOverviewSystemView renders the cockpit and polls every 30 s on the real router keys only (2 ms)
+    ✓ the old panels are kept, collapsed, and rendered only when opened (1 ms)
+    ✓ fetches GET /api/v1/ops/attention with the signed-in headers; nothing reads /ops/action-required any more (3 ms)
+    ✓ keeps showing the last good answer on error but marks the cockpit blind (2 ms)
+  VTID-04876: deep-link contract (?vtid= / ?session=)
+    ✓ the frontend contract equals the backend DEEPLINK_QUERY_CONTRACT (5 ms)
+    ✓ params are read on navigation: navigateToScreen, back/forward and page load (2 ms)
+    ✓ applyDeepLinkParams keys on the real router state (1 ms)
+    ✓ ?vtid= on command-hub/tasks opens the task drawer (7 ms)
+    ✓ an unresolvable ?vtid= on the task list shows a toast and falls back to the list (6 ms)
+    ✓ ?vtid= on oasis/vtid-ledger opens the ledger drawer; unresolvable → toast + list (10 ms)
+    ✓ ?session= on voice/sessions opens the voice session drawer; unresolvable → toast + list (10 ms)
+    ✓ a param on a screen outside the contract is ignored (10 ms)
+  VTID-04876: every adapter deeplink resolves against NAVIGATION_CONFIG
+    ✓ every section/tab exists, every query key is one its screen reads, every screen is dispatched (12 ms)
+    ✓ the drawers are reachable: ?vtid= deeplinks are emitted for tasks and the ledger (3 ms)
+  VTID-04876: styles and asset version
+    ✓ the cockpit styles exist (UNKNOWN is grey) and use logical properties (3 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04876 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-adapters.test.ts
+  cost_budgets adapter
+    ✓ an LLM budget over its daily limit is P2; >= 80% is P3; runs are grouped (11 ms)
+    ✓ lines under 80% are not reported (1 ms)
+    ✓ Jev: one item per tenant, the highest level wins — 100% is P2 (exhausted), 80% is P3 (2 ms)
+    ✓ reads the Jev events from the start of the UTC month (1 ms)
+    ✓ a truncated spend read or one failed half is partial (UNKNOWN); both failing throws (52 ms)
+  tests_contracts adapter
+    ✓ a workflow failing on main >= 2 runs in a row is P2, since the first failure of the streak (1 ms)
+    ✓ a single latest failure is P3; a green latest run or a non-main branch is not reported (1 ms)
+    ✓ failing capability contracts are one P3 item (1 ms)
+    ✓ a stale or never-run results sync is UNKNOWN (never a clean OK) (2 ms)
+  routines adapter
+    ✓ cronIntervalMs understands the simple shapes and refuses the rest (2 ms)
+    ✓ a failed last run is P3; three in a row is P2 (1 ms)
+    ✓ overdue after 1.5 intervals without a run (P3, since = when it became overdue); never-run uses created_at (1 ms)
+    ✓ a run still "running" after 6 h is P3
+    ✓ a schedule it cannot judge makes the source UNKNOWN; an unreadable table throws (1 ms)
+  support_tickets adapter
+    ✓ an open p0 is P2 and deep-links to that ticket (?ticket=) (1 ms)
+    ✓ p1 waiting > 1 h is P3, > 4 h is P2; under 1 h is not reported (2 ms)
+    ✓ several tickets link to the inbox list; closed statuses never count
+    ✓ reads tickets older than 72 h as "aged"; an unreadable table throws (1 ms)
+  llm_google_fallback adapter
+    ✓ any fallback that landed on Google in 24 h is P2 (an incident)
+    ✓ a stage routed at Google without a fallback is its own P2; other providers are ignored (2 ms)
+    ✓ reads a 24 h window; an unreadable read throws (UNKNOWN, never "no fallbacks") (1 ms)
+  stuck_vtids adapter
+    ✓ session-plane VTIDs without an update for > 72 h are one P3 item; autonomous tasks are excluded (1 ms)
+    ✓ one stale VTID deep-links to its task drawer (?vtid=) (4 ms)
+    ✓ a full 500-row page is truncated (UNKNOWN) (4 ms)
+  registry, not-wired sources and domain tiles
+    ✓ the CloudWatch adapter is not wired (no @aws-sdk/client-cloudwatch dependency) and is listed as such (6 ms)
+    ✓ the plan's 13 domains, every adapter in exactly one tile (2 ms)
+    ✓ buildDomainSummary: worst severity, open count, freshness; unmonitored is never OK (6 ms)
+    ✓ the full registry over the Phase 2 fakes: every new source reports, the response carries 13 domains (7 ms)
+    ✓ a throwing Phase 2 read makes only its source and its tile UNKNOWN (2 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04875-voice-overview-builder.test.ts
+  VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper)
+    ✓ route: platform admin, default window, no filters (9 ms)
+    ✓ route: platform admin, window=7d, tenant_id + filters, truncated (4 ms)
+    ✓ route: platform admin, bogus window + non-uuid tenant_id fall back (3 ms)
+    ✓ route: tenant admin is forced to own tenant whatever tenant_id says (3 ms)
+    ✓ route: data layer SupervisorDataError → 502 (3 ms)
+    ✓ route: unexpected Error → 500 (3 ms)
+    ✓ route: tenant name lookup fails → 502 (3 ms)
+  VTID-04875 buildVoiceOverview() — in-process, no req
+    ✓ platform-admin scope with no filters equals the route body for an exafy_admin with no query (7 ms)
+    ✓ window defaults to 24h and accepts a parsed window object (2 ms)
+    ✓ equals the route for every scenario that succeeds, given the same scope + filters (28 ms)
+    ✓ throws the data-layer error unchanged (the route maps it to 502) (1 ms)
+    ✓ a non-platform scope without explicit filters is confined to its tenant (3 ms)
+    ✓ a non-platform scope cannot widen its reads through filters.tenant_id (2 ms)
+    ✓ a non-platform scope without tenant_id is refused, never read unscoped (17 ms)
+
+PASS test/command-hub/vtid-04886-overview-ack-timeline.test.ts
+  VTID-04886: opt-in P1 browser notifications
+    ✓ off by default; the toggle is stored in localStorage; a throwing storage reads as off and never throws (14 ms)
+    ✓ fires only when a NEW fingerprint reaches P1 — never on the first load, never twice, never for P2 (10 ms)
+    ✓ does nothing when opted out or when the browser has not granted permission (12 ms)
+    ✓ the toggle asks for permission only when turned on, and seeds the seen set (no burst) (3 ms)
+  VTID-04886: Ack / Snooze controls
+    ✓ every item has Ack; Snooze is not offered for P1 (1 ms)
+    ✓ the reason form: reason required (3–500), expiry choices capped at 24 h, optional VTID, submit + cancel (12 ms)
+    ✓ submit POSTs {fingerprint, reason, duration_minutes, vtid?} to /ack or /snooze and refetches; errors stay in the form (2 ms)
+    ✓ a poll never wipes an open form (deferred until it closes) (1 ms)
+    ✓ acked items are de-emphasised with who/why/until; snoozed items are listed, never silently dropped (10 ms)
+    ✓ delegated listeners only: no inline handler and no .style in the cockpit region (3 ms)
+  VTID-04886: timeline and sparklines
+    ✓ the sparkline is attribute-only SVG with an accessible label (11 ms)
+    ✓ the timeline renders newest first from data.timeline and says so when it could not be read (3 ms)
+  VTID-04886: styles and asset version
+    ✓ the Phase 3 styles exist and use logical properties only; targets >= 24px (1 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04886 version
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-adapters.test.ts
+  service_health adapter (N5 golden path)
+    ✓ golden-path failing → P1, other failing → P2, degraded → P3; all held 2 min via state (2 ms)
+    ✓ an unmeasured golden-path check (no_access) makes the source UNKNOWN, never green (1 ms)
+    ✓ an unmeasured non-golden check is skipped silently (1 ms)
+  release adapter
+    ✓ P1 when the newest prod deploy failed < 2 h ago; not after 2 h; not when completed (1 ms)
+    ✓ P2 when STAGING-VERIFY failed on the latest staging deploy, not when a newer deploy landed (1 ms)
+    ✓ P3 STAGING-VERIFY stale only beyond 72 h (1 ms)
+    ✓ commit drift is a P3 candidate held 48 h via state; unreadable build-info → source UNKNOWN (1 ms)
+    ✓ a legacy deploy-failure topic within 24 h is P3 (1 ms)
+  voice_supervisor adapter
+    ✓ system_wide → P1, segment critical → P2, warning → P3 (4 ms)
+    ✓ carries quarantines and open architecture reports over from /ops/action-required (P3)
+    ✓ a truncated overview keeps its verdicts (a P1 stays visible) but the source is partial (→ UNKNOWN) (1 ms)
+    ✓ insufficient_data is no item; a failing overview read throws (→ UNKNOWN) (31 ms)
+  autonomy adapter
+    ✓ critical alert → P2, warning → P3, info dropped, kill switch and approvals owned elsewhere (N7)
+    ✓ alert keys ignore the changing numbers in the text (1 ms)
+    ✓ self-heal rolled_back → P2, escalated → P3, grouped per endpoint, blocklist applied (1 ms)
+  operator_pipeline adapter (N4)
+    ✓ stuck = no heartbeat > 60 min by claim_expires_at - 60 min, never updated_at (7 ms)
+    ✓ only isAutonomousExecutionTask() rows count; session VTIDs are never flagged
+    ✓ broken (pipeline summary) autonomous task → P2 even when unclaimed; no 30–60 min band
+    ✓ pipeline summary failure → partial (UNKNOWN), heartbeat items still reported (1 ms)
+  governance adapter
+    ✓ a disarmed governance kill-switch control → P2 with who/when
+    ✓ Dev Autopilot kill switch engaged → one P2 fingerprint with the activation time (N7) (1 ms)
+    ✓ critical violations → one P2 item, others → one P3 item (grouped with count) (1 ms)
+    ✓ unreadable controls throw (→ UNKNOWN) (1 ms)
+  decisions_waiting adapter
+    ✓ waiting > 4 h → P2, > 1 h → P3, ≤ 1 h not shown; grouped per kind with count (1 ms)
+    ✓ one failing kind → partial (UNKNOWN); all failing → throws (1 ms)
+  registry
+    ✓ has the seven Phase 1 adapters, then the six Phase 2 adapters (VTID-04885) (1 ms)
+
+PASS test/command-hub/vtid-04885-overview-tiles.test.ts
+  VTID-04885: domain tiles
+    ✓ a blind cockpit shows every tile UNKNOWN; an unmonitored domain says "Not yet monitored", never OK (2 ms)
+    ✓ worst severity wins (icon + text label + colour class); unknown with nothing open is UNKNOWN; clean is OK (1 ms)
+    ✓ the tiles render inside the cockpit from data.domains, with data-action links (no onclick) (3 ms)
+    ✓ every tile deep link is a NAVIGATION_CONFIG screen the dispatcher renders (3 ms)
+    ✓ the queue filters cover every domain a Phase 2 adapter emits (3 ms)
+  VTID-04885: the Feedback module is routable without a sidebar entry
+    ✓ NAVIGATION_CONFIG has a feedback section with the four dispatched tabs, flagged sidebar:false (2 ms)
+    ✓ renderSidebar skips sidebar:false sections, so the sidebar is unchanged (7 ms)
+    ✓ ?ticket= on feedback/inbox opens the ticket drawer; an unknown id falls back with a toast (2 ms)
+  VTID-04885: styles and asset version
+    ✓ the tile styles exist and use logical properties only (1 ms)
+    ✓ index.html loads app.js and styles.css at (or after) the VTID-04885 version (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-reads.test.ts
+  in-process wiring (no HTTP self-calls)
+    ✓ service health → buildHealthSummary with the caller auth header (1 ms)
+    ✓ voice → buildVoiceOverview({window:"1h", scope:{is_platform_admin:true}}) (1 ms)
+    ✓ release build-info → the cached ops-runtime checks (1 ms)
+    ✓ operator → BROKEN vtids (in progress, no update for 2 h) read directly + isAutonomousExecutionTask (1 ms)
+    ✓ autonomy → buildSupervisorSnapshot alerts (1 ms)
+    ✓ autonomy: a failed subordinate supervisor read throws (UNKNOWN), never an empty alert list (25 ms)
+    ✓ operator: a failed broken-task read throws, never an empty broken set
+    ✓ voice: the overview truncation flag is passed through (1 ms)
+    ✓ governance: only OPEN violations (IGNORED and RESOLVED are not open) (1 ms)
+    ✓ PR approvals → the /approvals/pending helpers, only rows with a PR or branch
+    ✓ nothing above used fetch (1 ms)
+  bounded supabase reads
+    ✓ oasis_events latestEvent: topic IN + created_at >= + newest first + LIMIT 1 (1 ms)
+    ✓ a read error throws instead of returning an empty list (1 ms)
+    ✓ in-progress ledger: VTID-% in_progress non-terminal, LIMIT 500
+    ✓ self-heal pending approval drops human-decided rows (1 ms)
+    ✓ system controls: an empty list is unreadable; a missing allocator row is disabled unless the env var is set (1 ms)
+    ✓ kill switch: row → engaged flag; no row → null (1 ms)
+  ops_attention_state store
+    ✓ loads by env + fingerprints and upserts (env, fingerprint) (3 ms)
+    ✓ a write error throws (the aggregator logs it and carries on) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04885-ops-attention-phase2-reads.test.ts
+  cost & budgets
+    ✓ LLM budget lines come from loadSpendToday + the budgets arithmetic (same as GET /orchestrator/budgets) (2 ms)
+    ✓ a failed spend read throws (never "no spend") (19 ms)
+    ✓ Jev budget alerts: oasis_events topic = jev.budget.threshold_crossed, since, LIMIT 200 (1 ms)
+  tests & contracts
+    ✓ ci_test_runs on main since the window (LIMIT 1000) + the oldest repository sync time (8 ms)
+    ✓ a repository that never synced makes last_synced_at null; a failed read throws (1 ms)
+    ✓ failing contracts: test_contracts status = fail, LIMIT 100
+  routines, support tickets, Google fallback
+    ✓ routines: enabled only, LIMIT 200; an error throws
+    ✓ support tickets: open statuses only (the partial index), p0/p1 or aged, oldest first, LIMIT 300 (1 ms)
+    ✓ Google calls: llm.call.completed in the window with a Google provider; fallback_used parsed (1 ms)
+  the in-progress ledger is read once per computation (operator_pipeline + stuck_vtids)
+    ✓ two callers share one read; a failed read is retried by the next caller
+    ✓ nothing above used fetch (1 ms)
+
+PASS test/vtid-03925-pipeline-summary-loop-fix.test.ts
+  VTID-03925 / VTID-04887: the looping Overview fetcher is gone
+    ✓ no fetchPipelineSummary() definition or call remains (6 ms)
+    ✓ no browser code calls the service-token route any more (16 ms)
+  VTID-04887: the remaining pipeline-summary consumers
+    ✓ fetchOperatorDashboard() reads the admin route with the bearer token (2 ms)
+    ✓ fetchOperatorDashboard() cannot loop: allSettled never rejects, so fetched is always set (6 ms)
+    ✓ fetchOperatorRunbook() reads the admin route with the bearer token (1 ms)
+    ✓ fetchOperatorRunbook() cannot loop: allSettled never rejects, so fetched is always set (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/navigation/nav-ack.test.ts
+  sanitizeNavResult
+    ✓ accepts only nav_result frames and bounds every field (1 ms)
+  applyNavResult
+    ✓ moves the route only when the screen opened (1 ms)
+    ✓ keeps the route and records the failure when the app refused
+    ✓ believes a host that does not report yet, as before
+    ✓ does not move the page for an overlay
+    ✓ ignores a result for a directive it is not waiting on (1 ms)
+  takeNavFailureNote
+    ✓ tells the next tool result once, and only while fresh
+  handleNavResultMessage
+    ✓ records the outcome as orb.navigator.acknowledged (21 ms)
+
+PASS test/nav-golden/golden-set.integrity.test.ts
+  VTID-04496 golden navigation set — integrity
+    ✓ has unique case ids (1 ms)
+    ✓ only names screens that exist in the screen registry (1 ms)
+    ✓ never expects and forbids the same screen
+    ✓ gives navigation cases at least one acceptable screen and non-navigation cases none (1 ms)
+    ✓ covers every shipped locale with at least one explicit "open" request
+    ✓ keeps every production failure as a permanent case (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04876-ops-attention-aggregator.test.ts
+  verdict
+    ✓ CRITICAL beats UNKNOWN; UNKNOWN beats ATTENTION/OK; OK only with all sources fresh and no items (2 ms)
+  buildOpsAttention
+    ✓ response shape, env-scoped fingerprints, ranking by severity then age (2 ms)
+    ✓ an adapter that exceeds the 3 s timeout is UNKNOWN; the verdict is UNKNOWN, not OK (3 ms)
+    ✓ per-source budgets: service health 8 s, autonomy 6 s, every other source 3 s (2 ms)
+    ✓ a throwing adapter is UNKNOWN; a P1 elsewhere still makes the verdict CRITICAL
+    ✓ a partial adapter is UNKNOWN but still shows its candidates (1 ms)
+    ✓ the full default registry runs over all-healthy fakes: OK with 14 fresh sources (13 adapters + state, VTID-04885) (1 ms)
+  hysteresis (time-based, N2/N5/N8)
+    ✓ a source-timestamped candidate is stateless: shown once held long enough, no state write (1 ms)
+    ✓ a stateless-source candidate opens only after 2 min of consecutive observation (6 ms)
+    ✓ a gap longer than the clear grace (90 s) resets first_seen; a shorter one keeps it (1 ms)
+    ✓ staging and production state never mix: the fingerprint and the store call carry env
+    ✓ a state READ failure never breaks the response: logged, first seen at this request, attention_state UNKNOWN (1 ms)
+    ✓ a state WRITE failure never breaks the response: logged, source stays ok with the error noted (2 ms)
+  getOpsAttention — single-flight + cache
+    ✓ concurrent callers share one computation; within 25 s the cache answers; after, it recomputes (2 ms)
+
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2314 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      2315 |     .catch((err: any) =>
+    > 2316 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2317 | }
+      2318 |
+      2319 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2316:15
+
+(node:6867) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+(Use `node --trace-warnings ...` to show where the warning was created)
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2314 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      2315 |     .catch((err: any) =>
+    > 2316 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2317 | }
+      2318 |
+      2319 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2316:15
+
+(node:6867) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+  console.warn
+    [VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily): Could not load the default credentials. Browse to https://cloud.google.com/docs/authentication/getting-started for more information.
+
+      2314 |     .then(() => console.log('[VTID-01219] ORB Voice access token prewarmed'))
+      2315 |     .catch((err: any) =>
+    > 2316 |       console.warn('[VTID-01219] ORB Voice access-token prewarm failed (will fetch lazily):', err?.message));
+           |               ^
+      2317 | }
+      2318 |
+      2319 | // BOOTSTRAP-NOVA-SONIC-VOICE: same latency treatment for Nova — when Nova is
+
+      at src/routes/orb-live.ts:2316:15
+
+(node:6873) MetadataLookupWarning: received unexpected error = Request failed with status code 502 code = UNKNOWN
+(Use `node --trace-warnings ...` to show where the warning was created)
+  console.log
+    phrasings 7495  top1 71.5%  top5 93.4%  confident 31.4%  confident-wrong-page 55
+      en  top1 89.2%  top5 98.8%  wrong-page 5
+      de  top1 82.3%  top5 96.8%  wrong-page 2
+      es  top1 84.2%  top5 98.6%  wrong-page 0
+      fr  top1 77.2%  top5 97.9%  wrong-page 2
+      sr  top1 51.5%  top5 82.1%  wrong-page 12
+      pl  top1 76.6%  top5 96.5%  wrong-page 3
+      pt  top1 78.4%  top5 98.3%  wrong-page 1
+      ru  top1 71.0%  top5 93.8%  wrong-page 4
+      tr  top1 63.6%  top5 91.9%  wrong-page 12
+      ar  top1 61.7%  top5 88.6%  wrong-page 6
+      zh  top1 74.1%  top5 97.9%  wrong-page 8
+    weakest screens (top5 share):
+      DEVHUB.GOVERNANCE.HISTORY 0.67
+      DEVHUB.ASSISTANT.OVERVIEW 0.71
+      DEVHUB.TESTING.OVERVIEW 0.71
+      DISCOVER.CART 0.74
+      DEVHUB.COMMERCE.OVERVIEW 0.75
+      DEVHUB.VOICE.OVERVIEW 0.75
+      AI.INSIGHTS 0.76
+      COMM.OVERVIEW 0.79
+
+      at Object.<anonymous> (test/nav-golden/nav-registry-loo.test.ts:46:13)
+
+PASS test/nav-golden/nav-registry-loo.test.ts (55.698 s)
+  VTID-04517 bundled vectors
+    ✓ has a stored vector for every registry text and golden sentence (144 ms)
+  VTID-04517 registry leave-one-out
+    ✓ finds every screen from its own phrasings (top five for at least 60% of them) (1 ms)
+    ✓ covers every voice-reachable screen (1 ms)
+    ✓ does not open a different page more often than the baseline
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 29 passed, 29 total
+Tests:       470 passed, 470 total
+Snapshots:   17 passed, 17 total
+Time:        56.877 s, estimated 58 s
+Ran all test suites matching /vtid-04885|vtid-04886|vtid-04887|vtid-04876|vtid-04875|test\/vtid-03925-pipeline-summary-loop-fix.test.ts|test\/vtid-04671-recommendation-card.test.ts|test\/vtid-04667-executable-source-types-drift.test.ts|test\/navigation|test\/nav-golden/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

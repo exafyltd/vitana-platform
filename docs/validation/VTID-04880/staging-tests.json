@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-04880",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "locale coverage judges the curriculum only and is ok", "path": "/api/v1/ops/health/locale-coverage", "expect_json": { "status": "ok" } },
+    { "kind": "existing", "ref": "npx jest test/navigation/vtid-04880-legacy-navigator-retired.test.ts test/vtid-04517-staging-nav-v2-pinned.test.ts", "cwd": "services/gateway",
+      "reason": "no gateway source or script reads the archived nav_catalog tables, every Aurora restore statement on them is guarded, the db-i18n pipeline has no nav-catalog surface, and neither deploy workflow sets NAV_V2_ENABLED while both still strip it" },
+    { "kind": "existing", "ref": "npx jest test/db-i18n test/vtid-04663-ops-health-checks.test.ts test/scripts/check-migration-drift.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts", "cwd": "services/gateway",
+      "reason": "the seeder runs the journey checklist only and rejects nav-catalog by name; a locale with only Navigator gaps is ok; the drift check treats SET SCHEMA out of public as a removal; the flag pins no longer carry NAV_V2_ENABLED" },
+    { "kind": "existing", "ref": "npx jest test/navigation test/nav-redirect test/nav-golden", "cwd": "services/gateway",
+      "reason": "voice navigation unchanged with the flag setters removed from the tests: golden set, 50-case redirect suite, Command Hub isolation and registry-only behaviour" }
+  ]
+}

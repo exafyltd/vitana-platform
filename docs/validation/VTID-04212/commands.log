@@ -1,0 +1,43 @@
+# 2026-09-20T22:20:00.000Z
+# execution: Claude Code session (interactive, not the agent executor)
+# root cause: read-only Supabase query against oasis_events for VTID-04149..04162
+
+$ select vtid, status, spec_status, is_terminal, terminal_outcome, title from vtid_ledger
+  where vtid ~ '^VTID-041(4[9]|5[0-9]|6[0-2])$';
+# → 12/14 status=failed terminal_outcome=failed, 1 in_progress, 1 not checked further
+
+$ select vtid, topic, status, message, created_at from oasis_events
+  where vtid ~ '^VTID-041(4[9]|5[0-9]|6[0-2])$'
+    and (status='error' or topic ilike '%fail%' or topic ilike '%error%' or topic ilike '%terminal%')
+  order by created_at asc;
+# → all 12 failures: "agent hit the 120-turn cap without calling finish"
+
+$ select ... from oasis_events where vtid='VTID-04149' order by created_at asc limit 100;
+# → dev_autopilot.agent.tool: read_file services/gateway/src/frontend/command-hub/styles.css
+#   at turns 2, 10, 12, 16, 17 (byte-identical path/args every time, no edit_file/write_file
+#   in between) plus several near-duplicate search_text calls against the same file/pattern.
+
+# --- fix ---
+$ edit services/gateway/src/services/autopilot-agent/agent-check-guard.ts
+  # add shouldRefuseNav/navRefusedCount to RepeatedCheckGuard, navGuardKey helper
+$ edit services/gateway/src/services/autopilot-agent/agent-tools.ts
+  # executeAgentTool: refuse an exact-repeat read_file/search_text/list_dir/find_files
+  # call via ctx.checkGuard.shouldRefuseNav before dispatching
+$ edit services/gateway/src/services/dev-autopilot-pr-contract.ts
+  # PrContractInput.agentStats.navRepeatsRefused; commands.log line extended
+$ edit services/gateway/src/services/autopilot-agent/run-agent-execution.ts
+  # pass checkGuard.navRefusedCount() into agentStats
+$ edit services/gateway/test/vtid-04016-agent-check-guard.test.ts
+  # 5 new tests (2 pure, 2 wired-through-executeAgentTool, 1 commands.log assertion updated)
+  # + 3 existing agentStats literals updated for the new required field
+
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+# exit 0
+
+$ npx jest test/vtid-04016-agent-check-guard.test.ts
+# Test Suites: 1 passed, 1 total / Tests: 14 passed, 14 total
+
+$ npx jest test/autopilot-agent-loop.test.ts test/autopilot-agent-tools.test.ts \
+    test/dev-autopilot-pr-contract.test.ts test/vtid-04029-dev-autopilot-pr-approval.test.ts \
+    test/vtid-04032-cancel-running-execution.test.ts
+# Test Suites: 5 passed, 5 total / Tests: 87 passed, 87 total (sibling suites, 0 regressions)

@@ -1,0 +1,75 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+    ✅ Test setup loaded - fetch mocked, env vars set
+    [VTID-04692] recall backstop s1: 12 facts offered
+    [VTID-04692] recall backstop s1: 10 facts offered
+    [VTID-04692] recall backstop s1: 0 facts offered
+    [VTID-04692] recall backstop s1: nothing stored
+    [VTID-04692] recall backstop s1: 10 facts offered
+    [VTID-04692] recall backstop s1: 0 facts offered
+    [VTID-04692] recall backstop s1: 10 facts offered
+    [VTID-04692] recall backstop s1: 0 facts offered
+PASS test/services/memory/vtid-04704-recall-privacy-and-dates.test.ts
+  VTID-04704 detection
+    ✓ the live privacy refusal counts as a denial (7 ms)
+    ✓ naming the privacy page is not a privacy refusal (2 ms)
+    ✓ the live profile deflection is detected; a question about the app is exempt (3 ms)
+    ✓ a plain answer does not cite privacy (1 ms)
+    ✓ reads day and month in the forms members and facts use (5 ms)
+    ✓ a birthday question asks for a date; a name question does not (1 ms)
+    ✓ a date matches a stored fact whatever the format (2 ms)
+    ✓ the nothing-stored note is intent, carries the marker, and forbids guessing and privacy (2 ms)
+  VTID-04704 live hook
+    ✓ privacy refusal with the fact stored: the facts are offered, spouse first (14 ms)
+    ✓ privacy refusal with nothing about the spouse stored: told to say so and ask (3 ms)
+    ✓ privacy refusal with nothing stored at all: the nothing-stored note (2 ms)
+    ✓ an honest "not stored" with nothing stored stays silent (VTID-04692 unchanged) (2 ms)
+    ✓ the live invented date with no spouse fact: corrected (2 ms)
+    ✓ the live invented date with nothing stored: the nothing-stored note (1 ms)
+    ✓ the live profile deflection with nothing about the spouse stored: told to say so and ask (2 ms)
+    ✓ the live profile deflection with nothing stored at all: the nothing-stored note (1 ms)
+    ✓ the live navigation answer about privacy settings never triggers it (1 ms)
+    ✓ the right date from memory stays silent, in any format (1 ms)
+    ✓ a date in a reply to a non-date question is left alone (1 ms)
+    ✅ Test setup loaded - fetch mocked, env vars set
+    [VTID-04692] recall backstop s1: 12 facts offered
+    [VTID-04692] recall backstop s1: 12 facts offered
+    [VTID-04692] recall backstop s1: nothing stored
+PASS test/services/memory/vtid-04692-recall-backstop.test.ts
+  VTID-04692 detection
+    ✓ a question about own details: Wie heißt mein Hund? (1 ms)
+    ✓ a question about own details: Wann feiert mein Bruder Paul eigentlich?
+    ✓ a question about own details: Wann hat mein Bruder Paul Geburtstag? (1 ms)
+    ✓ a question about own details: What is my favourite colour?
+    ✓ a question about own details: Weißt du noch, wie mein Hund heißt?
+    ✓ not a recall question: Wie geht es dir?
+    ✓ not a recall question: Was kann ich heute machen? (1 ms)
+    ✓ not a recall question: Merk dir, mein Hund heißt Bello
+    ✓ not a recall question: [memory-check] Wie heißt mein Hund?
+    ✓ every live failing reply is a denial or deferral: Ich sehe, dass du nach dem Namen deines Hundes fragst. Leider habe ich diese Information nicht in deinen gespeicherten Daten. (1 ms)
+    ✓ every live failing reply is a denial or deferral: Ich kann dir leider nicht den Namen deines Hundes sagen, da diese Information nicht in deinem Profil gespeichert ist.
+    ✓ every live failing reply is a denial or deferral: Ich habe in deinen Informationen nachgeschaut, aber ich konnte den Namen deines Hundes nicht finden. (1 ms)
+    ✓ every live failing reply is a denial or deferral: Ich kann dir gerne helfen, aber ich muss erst in deinen Informationen nachsehen. Einen Moment bitte.
+    ✓ every live failing reply is a denial or deferral: Ich habe deine Anfrage notiert, aber ich kann keine persönlichen Daten wie Geburtstage von Familienmitgliedern anzeigen oder verwalten.
+    ✓ every live failing reply is a denial or deferral: Leider kann ich keine relevanten Details für Ihre Frage finden. (1 ms)
+    ✓ a real answer is not a denial
+    ✓ "Was weißt du eigentlich alles über mich?" is an about-me question (live B-REC-06) (1 ms)
+  VTID-04692 note
+    ✓ lists the facts with the matching one first and never the system keys (2 ms)
+    ✓ ranks by the asked person and topic (1 ms)
+    ✓ is null when nothing is stored
+    ✓ the about-me note asks for a few concrete facts, not keys (1 ms)
+  VTID-04692 live hook
+    ✓ injects the facts after a live B-REC-01 denial (3 ms)
+    ✓ injects after a vague about-me answer (live B-REC-06) (2 ms)
+    ✓ stays silent when the reply already answered (1 ms)
+    ✓ stands down on a remember/forget turn, a remember request, or a non-Nova session (4 ms)
+    ✓ stays silent when nothing is stored (1 ms)
+    ✓ is wired at turn_complete and the write-tool flag is set and cleared (1 ms)
+Test Suites: 2 passed, 2 total
+Tests:       46 passed, 46 total
+Snapshots:   0 total
+Time:        0.686 s, estimated 1 s
+Ran all test suites matching /test\/services\/memory\/vtid-04704-recall-privacy-and-dates.test.ts|test\/services\/memory\/vtid-04692-recall-backstop.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

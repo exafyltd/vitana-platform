@@ -1,0 +1,9 @@
+# VTID-04500 commands (2026-09-24)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04500
+UPDATE vtid_ledger SET title, summary, status='in_progress', spec_status='approved' WHERE vtid='VTID-04500'
+read-only: get_my_permitted_roles / me_set_active_role / set_role_preference definitions; check_role_permitted(p_user_id,p_tenant_id,p_role) signature
+apply_migration vtid_04500_autopilot_role_scope (backfill + trigger); read-only count afterwards (outputs/role-scope-live-counts.txt)
+cd services/gateway && npx tsc --noEmit -p .    # clean
+npx jest test/routes/autopilot-recommendations.test.ts test/vtid-04500-lineup-role.test.ts test/guide test/voice-activate-recommendation-shared.test.ts test/vtid-04493-community-autopilot-voice-tools.test.ts   # 8 suites, 131 passed
+git stash push -- services/gateway/src && npx jest <route+lineup suites>   # 5 failed / 80 (mutation check)
+vitana-v1: npx vitest run src/hooks/useAutopilotRole.test.tsx   # 4 passed; eslint: only the pre-existing no-explicit-any on main

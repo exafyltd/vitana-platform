@@ -1,0 +1,15 @@
+# VTID-04933 local checks (2026-10-07T08:53:24Z)
+
+## SQL keep-offline test on a throwaway local Postgres 16 (socket /var/tmp/pgsock_pt, port 54329; never Supabase/Aurora)
+$ PGHOST=/var/tmp/pgsock_pt PGPORT=54329 PGUSER=postgres scripts/ci/sql-tests/run-partner-review-test.sh
+PASS vtid-04933 keep offline and allow listing
+
+## staging manifest
+$ node -e "validateManifest(docs/validation/VTID-04933/staging-tests.json)"
+{"ok":true,"errors":[]}
+
+## syntax: changed TypeScript (typescript transpile diagnostics) and the Command Hub script
+files 16 errors 0
+partner-review.js: ok
+
+## Jest: not runnable in this session (npm registry blocked by the environment's network policy); runs in CI (gateway Jest job).

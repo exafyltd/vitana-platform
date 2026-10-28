@@ -1,0 +1,8 @@
+$ node --test scripts/ci/vtid-auto-close.test.cjs
+# tests 7  # pass 7  # fail 0
+$ (mutation: rowAction terminal guard disabled) node --test scripts/ci/vtid-auto-close.test.cjs
+# pass 5  # fail 2
+$ PR_TITLE="Probe (VTID-04633)" PR_HEAD_REF=claude/x PR_LABELS='[]' node scripts/ci/vtid-auto-close.cjs   # read-only: row already terminal
+VTID-04633: left — already terminal (completed/success)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway ... --title "x (VTID-04691)"
+[staging-verify] PR touches no gateway deploy path — nothing deploys, no staging suite needed.

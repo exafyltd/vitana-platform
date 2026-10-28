@@ -1,0 +1,7 @@
+# VTID-04911 commands
+python3 -I scratchpad/clean_terms.py docs/legal/partner-terms/2026-10 <out>   # remove 4 marker lines (+following blank) per file, placeholder -> legal@vitanaland.com; asserts exactly 4 markers and 1 placeholder per file
+git diff -U0 docs/legal/partner-terms/2026-10/*.md > outputs/text-diff.txt   # only marker lines and §21.1 changed
+python3 -I <QA mirror>  > outputs/multilingual-qa.txt                          # structure / markers / placeholder / email / bidi per language
+node -e "require('./scripts/ci/staging-verify/lib.cjs').validateManifest(...)" # {"ok":true,"errors":[]}
+# jest runs in CI (npm registry not reachable from this session)
+# read-only (Supabase MCP execute_sql, SELECT only): partner_terms_versions / partner_terms_acceptances counts -> 0 / 0 (2026-10-06 10:36 UTC)

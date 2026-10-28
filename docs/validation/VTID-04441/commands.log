@@ -1,0 +1,14 @@
+$ npx tsc --noEmit -p services/gateway            # exit 0
+$ npx jest test/vtid-04441-forgotten-facts.test.ts test/services/memory test/memory-golden-eval.test.ts <every suite that imports memory/remember>
+Test Suites: 22 passed, 22 total
+Tests:       295 passed, 295 total
+# mutation check: disable the `if (!gate.allow)` refusal in remember.ts
+#   -> "refuses an inferred write of a forgotten value before any RPC" fails (1 failed, 16 passed); restored.
+
+# CI on e972f07 caught test/services/intent-memory-hooks.test.ts: it asserts
+# fetch.mock.calls[0] is the write_fact RPC, and the marker read is now the first
+# REST call. The suite stubs memory/forgotten (it pins the write_fact payload;
+# the gate has its own suite).
+$ npx jest   # full gateway suite, after the fix
+Test Suites: 1 skipped, 1156 passed, 1156 of 1157 total
+Tests:       29 skipped, 6 todo, 18514 passed, 18549 total

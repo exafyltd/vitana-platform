@@ -1,0 +1,10 @@
+# VTID-04424 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04424; vtid_ledger in_progress / approved.
+cd services/gateway
+npx tsx scripts/nova-midsession-probe.ts --only=baseline_fact_in_system_prompt            (smoke; exposed harness barge-in + late transcript, fixed)
+npx tsx scripts/nova-midsession-probe.ts --runs=3 --concurrency=4                         (11 scenarios, 33 sessions)
+npx tsx scripts/nova-midsession-probe.ts --runs=3 --concurrency=4 --only=get_guidance_tool_health_note,prompt_rollover_new_tools   (6 sessions)
+  model amazon.nova-2-sonic-v1:0, region eu-north-1; user speech Polly Joanna neural PCM 16 kHz (eu-central-1)
+  synthetic content only; no gateway, no database, no user data
+npx jest test/services/conversation/vtid-04424-nova-midsession-probe.test.ts -> 5 passed
+npx tsc --noEmit -p .  -> clean

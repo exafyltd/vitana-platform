@@ -1,0 +1,4 @@
+# commands run locally (session, no live services)
+cd services/gateway && npx jest test/vtid-04904-live-daily-rooms.test.ts test/vtid-04905-live-enter-exit.test.ts test/routes/live-attendees-error-logging.test.ts
+cd services/gateway && npx tsc --noEmit
+cd services/gateway && npx jest   # full suite: 1525 suites, 24318 tests passed

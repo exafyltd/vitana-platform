@@ -1,0 +1,297 @@
+/**
+ * VTID-0150-B: Assistant Core Service
+ *
+ * Provides Gemini-powered assistant capabilities for the Dev ORB.
+ * This is the global assistant brain - read-only Q&A for VTID-0150-B.
+ *
+ * Key behaviors:
+ * - No tools (pure Q&A / explanation)
+ * - Safe, concise answers oriented to help developers understand the system
+ * - OASIS event logging for assistant.session.started and assistant.turn
+ *
+ * VTID-0151-C: Updated to use Gemini API (AI Studio) with API key.
+ * Uses gemini-3-pro-preview with fallback to gemini-2.5-pro.
+ */
+
+import { callViaRouter } from './llm-router'; // VTID-03579: provider from llm_routing_policy, never hardcoded
+import { randomUUID } from 'crypto';
+import { emitOasisEvent } from './oasis-event-service';
+import { AssistantContext, AssistantChatResponse } from '../types/assistant';
+import { getPersonalityConfigSync } from './ai-personality-service';
+// VTID-01208 telemetry imports removed under VTID-03579 — callViaRouter emits
+// the llm.call.* events itself; calling both double-counted every turn.
+
+// VTID-03579: no PRIMARY_MODEL / FALLBACK_MODEL / Gemini client here any more.
+// This module used to own a two-model Gemini cascade AND its own API-key check,
+// which meant switching the platform off Google required editing this file. The
+// `operator` stage decides now, and its fallback is configured in
+// `llm_routing_policy` rather than reimplemented here.
+
+// Track which model was used in the last request (for metadata)
+let lastUsedModel = 'router';
+
+// Track sessions to detect first turn
+const activeSessions = new Set<string>();
+
+/**
+ * VTID-0150-B: System prompt for the global Vitana Assistant (Dev context)
+ */
+function buildSystemPrompt(context: AssistantContext): string {
+  const devConfig = getPersonalityConfigSync('dev_orb') as Record<string, any>;
+
+  // VTID-01967: Authoritative Vitana ID directive — pinned so the assistant
+  // can answer identity questions with the @handle instead of leaking a UUID.
+  // The Dev ORB chat body doesn't currently carry an authenticated identity,
+  // so vitanaId may be undefined; we still emit the guardrail in that case.
+  const vitanaIdBlock = context.vitanaId
+    ? `\n## Authoritative User Vitana ID\nThe user's Vitana ID handle is: ${context.vitanaId}\nThis is the ONLY identifier you may share when the user asks "what is my user ID", "what is my handle", or "who am I". Do NOT speak the internal UUID under any circumstance.\n`
+    : `\n## Authoritative User Vitana ID\nNo Vitana ID handle is available for this session. If the user asks for their user ID, handle, or Vitana ID, tell them honestly that their handle isn't available in this context — do NOT substitute an internal UUID.\n`;
+
+  return `${devConfig.base_identity || 'You are the Vitana Global Assistant, a helpful AI assistant for the Vitana development platform.'}
+${vitanaIdBlock}
+## Context
+- **Role**: ${context.role} (Developer context)
+- **Tenant**: ${context.tenant}
+- **Current Route/Module**: ${context.route || 'Not specified'}
+- **Selected Entity ID**: ${context.selectedId || 'None'}
+- **Session ID**: ${context.sessionId}
+
+## Your Purpose
+${devConfig.purpose || 'You help developers understand and navigate the Vitana system.'}
+
+## Guidelines
+${devConfig.guidelines || '1. Be concise and helpful - developers appreciate direct answers\n2. Focus on explanations and guidance - do NOT execute actions or create tasks\n3. You are read-only in this context - no side effects'}
+
+## Important
+${devConfig.important_section || '- This is the Dev ORB assistant, NOT the Operator Chat\n- You cannot create tasks, trigger deployments, or modify system state\n- Your role is purely informational and educational'}
+
+Answer the developer's question with clarity and precision.`;
+}
+
+/**
+ * VTID-0151-C: Generate content with model fallback
+ * Provider and fallback both come from the `operator` stage's routing policy.
+ */
+async function callGemini(
+  message: string,
+  context: AssistantContext
+): Promise<{ reply: string; tokens_in: number; tokens_out: number; model: string }> {
+  const systemPrompt = buildSystemPrompt(context);
+
+  // VTID-03579: the manual startLLMCall/completeLLMCall/failLLMCall trio that
+  // used to wrap this call is gone — `callViaRouter` emits exactly that
+  // telemetry itself, so keeping both would double-count every ORB assistant
+  // turn in the llm.call.* topics the cost analysis reads.
+  const r = await callViaRouter('operator', message, {
+    service: 'orb-assistant',
+    systemPrompt,
+    maxTokens: 1024,
+  });
+
+  if (!r.ok || !r.text) {
+    console.error(
+      `[VTID-0151-C] assistant call failed via ${r.provider ?? 'router'}: ${r.error ?? 'empty response'}`,
+    );
+    return {
+      reply: 'I encountered an error while processing your request. Please try again.',
+      tokens_in: 0,
+      tokens_out: 0,
+      model: 'error',
+    };
+  }
+
+  const usedModel = r.model ?? 'router';
+  lastUsedModel = usedModel;
+  const tokens_in = r.usage?.inputTokens ?? 0;
+  const tokens_out = r.usage?.outputTokens ?? 0;
+
+  console.log(
+    `[VTID-0151-C] assistant response received (provider=${r.provider}, model=${usedModel}), tokens_in=${tokens_in}, tokens_out=${tokens_out}`,
+  );
+
+  return { reply: r.text, tokens_in, tokens_out, model: usedModel };
+}
+
+/**
+ * VTID-0150-B: Log assistant session started event to OASIS
+ */
+async function logSessionStarted(context: AssistantContext): Promise<string | undefined> {
+  const result = await emitOasisEvent({
+    vtid: `VTID-0150-B`,
+    type: 'assistant.session.started',
+    source: 'assistant-core',
+    status: 'info',
+    message: `Assistant session started for ${context.role} on ${context.tenant}`,
+    payload: {
+      sessionId: context.sessionId,
+      role: context.role,
+      tenant: context.tenant,
+      route: context.route,
+      selectedId: context.selectedId
+    }
+  });
+
+  return result.event_id;
+}
+
+/**
+ * VTID-0150-B: Log assistant turn event to OASIS
+ */
+async function logAssistantTurn(
+  context: AssistantContext,
+  message: string,
+  reply: string,
+  model: string,
+  tokens_in: number,
+  tokens_out: number,
+  latency_ms: number
+): Promise<string | undefined> {
+  const result = await emitOasisEvent({
+    vtid: `VTID-0150-B`,
+    type: 'assistant.turn',
+    source: 'assistant-core',
+    status: 'success',
+    message: `Assistant turn completed (${latency_ms}ms, ${tokens_in + tokens_out} tokens)`,
+    payload: {
+      sessionId: context.sessionId,
+      role: context.role,
+      tenant: context.tenant,
+      route: context.route,
+      selectedId: context.selectedId,
+      model,
+      tokens_in,
+      tokens_out,
+      latency_ms,
+      message_preview: message.substring(0, 100),
+      reply_preview: reply.substring(0, 100)
+    }
+  });
+
+  return result.event_id;
+}
+
+/**
+ * VTID-0150-B: Process an assistant chat message
+ *
+ * Main entry point for the Assistant Core.
+ * Handles session tracking, Gemini calls, and OASIS logging.
+ */
+export async function processAssistantMessage(
+  message: string,
+  sessionId: string | null | undefined,
+  role: string,
+  tenant: string,
+  route: string,
+  selectedId: string,
+  identity?: { user_id: string; tenant_id: string | null } | null
+): Promise<AssistantChatResponse> {
+  const startTime = Date.now();
+
+  // Generate or use provided sessionId
+  const finalSessionId = sessionId || randomUUID();
+  const isNewSession = !activeSessions.has(finalSessionId);
+
+  const context: AssistantContext = {
+    sessionId: finalSessionId,
+    role,
+    tenant,
+    route,
+    selectedId
+  };
+
+  console.log(`[VTID-0150-B] Processing assistant message, session=${finalSessionId}, new=${isNewSession}`);
+
+  try {
+    // VITANA-BRAIN: Route through brain when flag is enabled.
+    // VTID-04339: only with a verified identity. The brain reads and writes a
+    // user's memory, so it must never run under a session id posing as a
+    // user_id or a tenant taken from the request body. Unauthenticated callers
+    // (the Command Hub Dev ORB today) take the stateless path below.
+    const { isVitanaBrainEnabled } = await import('./system-controls-service');
+    const useBrain = !!(identity?.user_id && identity?.tenant_id) && (await isVitanaBrainEnabled());
+
+    if (useBrain && identity?.user_id && identity?.tenant_id) {
+      console.log(`[VITANA-BRAIN] Routing assistant message through brain`);
+      const { processBrainTurn } = await import('./vitana-brain');
+      const brainResult = await processBrainTurn({
+        channel: 'developer_assistant',
+        tenant_id: identity.tenant_id,
+        user_id: identity.user_id,
+        role,
+        message,
+      });
+
+      const latency_ms = Date.now() - startTime;
+      return {
+        ok: brainResult.ok,
+        reply: brainResult.reply || 'I could not generate a response.',
+        sessionId: finalSessionId,
+        oasis_ref: brainResult.oasis_ref,
+        meta: {
+          model: brainResult.meta.model_used,
+          tokens_in: brainResult.meta.tokens_used?.prompt || 0,
+          tokens_out: brainResult.meta.tokens_used?.completion || 0,
+          latency_ms,
+        },
+        error: brainResult.error,
+      };
+    }
+
+    // Log session started if this is a new session
+    if (isNewSession) {
+      activeSessions.add(finalSessionId);
+      await logSessionStarted(context);
+      console.log(`[VTID-0150-B] New session started: ${finalSessionId}`);
+    }
+
+    // Call Gemini API with fallback
+    const geminiResult = await callGemini(message, context);
+
+    const latency_ms = Date.now() - startTime;
+    const model = geminiResult.model; // VTID-0151-C: Now using Gemini API with fallback
+
+    // Log the turn
+    const turnEventId = await logAssistantTurn(
+      context,
+      message,
+      geminiResult.reply,
+      model,
+      geminiResult.tokens_in,
+      geminiResult.tokens_out,
+      latency_ms
+    );
+
+    console.log(`[VTID-0150-B] Turn completed in ${latency_ms}ms, oasis_ref=${turnEventId}`);
+
+    return {
+      ok: true,
+      reply: geminiResult.reply,
+      sessionId: finalSessionId,
+      oasis_ref: turnEventId || randomUUID(),
+      meta: {
+        model,
+        tokens_in: geminiResult.tokens_in,
+        tokens_out: geminiResult.tokens_out,
+        latency_ms
+      }
+    };
+  } catch (error: any) {
+    console.error(`[VTID-0150-B] Assistant processing error:`, error);
+
+    const latency_ms = Date.now() - startTime;
+
+    return {
+      ok: false,
+      reply: 'I encountered an error while processing your request. Please try again.',
+      sessionId: finalSessionId,
+      oasis_ref: randomUUID(),
+      meta: {
+        model: 'error',
+        tokens_in: 0,
+        tokens_out: 0,
+        latency_ms
+      },
+      error: error.message
+    };
+  }
+}

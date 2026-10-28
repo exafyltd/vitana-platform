@@ -1,0 +1,30 @@
+
+  console.log
+    [architecture-investigator] Investigating incident: topic=x vtid=-
+
+      at Object.investigateIncident (src/services/architecture-investigator.ts:333:11)
+
+  console.log
+    [architecture-investigator] Investigating incident: topic=x vtid=-
+
+      at Object.investigateIncident (src/services/architecture-investigator.ts:333:11)
+
+PASS test/vtid-04234-architecture-investigator-triage-stage.test.ts
+  VTID-04234: architecture investigator on the triage stage
+    ✓ calls callViaRouter on the triage stage with the investigator system prompt and fallback allowed — no override by default (18 ms)
+    ✓ records the provider/model the router actually served on the report row, the event and the return value (5 ms)
+    ✓ never calls a provider endpoint itself — every fetch is Supabase (3 ms)
+    ✓ surfaces a router failure as an error naming the stage, and writes no report (15 ms)
+    ✓ treats an empty router text as a failure rather than parsing nothing (2 ms)
+    ✓ source contract: the module has no direct provider client left (1 ms)
+    resolveInvestigatorOverride — the provider+model pair contract
+      ✓ is null when neither is set (2 ms)
+      ✓ is null on a lone model (the pre-VTID-04234 task-def shape) so a DeepSeek id is never pinned onto a Bedrock call (3 ms)
+      ✓ passes both through as the router primary override when both are set (4 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       9 passed, 9 total
+Snapshots:   0 total
+Time:        0.51 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04234-architecture-investigator-triage-stage.test.ts|test\/services\/architecture-investigator*.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

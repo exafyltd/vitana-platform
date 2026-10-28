@@ -1,0 +1,14 @@
+$ grep -c "AUTONOMY CONTRACT — TWO OWNER GATES" CLAUDE.md
+1
+$ grep -n "## 4. Gate 1\|## 6. After the yes" .claude/skills/plan-sparring/SKILL.md
+44:## 4. Gate 1 — owner approval (one message)
+62:## 6. After the yes — run to Gate 2 without asking
+$ git grep -c VitanaE2eTest2026
+(no matches)
+$ grep -c TEST_USER_PASSWORD <workflows>
+ANDROID-DEVICE-E2E: 1
+E2E-ORB-MONITOR: 1
+E2E-TEST-RUN: 1
+MOBILE-DEVICE-E2E: 1
+MORNING-SYSTEM-HEALTH-CHECK: 1
+SCREEN-LOAD-TIMING: 1

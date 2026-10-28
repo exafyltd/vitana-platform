@@ -1,0 +1,111 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/services/assistant-continuation/decide-continuation.test.ts
+  B0d.1 decideContinuation — checklist #4: SELECTED continuation path
+    ✓ returns the candidate when exactly one provider fires (4 ms)
+    ✓ ranks by descending priority and breaks ties by registration order (1 ms)
+    ✓ only considers providers servicing the requested surface (1 ms)
+  B0d.1 decideContinuation — checklist #4: SUPPRESSED (all-suppressed) path
+    ✓ returns selectedContinuation=null when every provider suppresses (2 ms)
+    ✓ surfaces "no_providers_registered" when nothing is wired for the surface (1 ms)
+    ✓ surfaces "all_providers_errored" when every provider throws (1 ms)
+    ✓ reports "no_provider_returned_a_candidate" on mixed suppressed/errored outcomes (1 ms)
+  B0d.1 decideContinuation — checklist #3: provider results observable on no-fire paths
+    ✓ sourceProviderResults has one row per provider when every provider suppressed (2 ms)
+    ✓ records latencyMs + provider key + reason for an erroring provider (no exception bubbles) (6 ms)
+  B0d.1 decideContinuation — checklist #1: contract carrier has timing + evidence
+    ✓ every decision contains all 7 fields of AssistantContinuationDecision (1 ms)
+    ✓ decisionFinishedAt >= decisionStartedAt (1 ms)
+    ✓ uses the injected id factory (decisionId is not random in tests)
+  B0d.1 decideContinuation — checklist #2: none_with_reason is first-class
+    ✓ materializedNone() converts a null-selection decision into a continuation
+    ✓ materializedNone() refuses to run on a selected decision (21 ms)
+    ✓ a provider may also return a `none_with_reason` candidate directly (1 ms)
+  B0d.1 decideContinuation — checklist #5: contract generic across kinds
+    ✓ accepts a returned candidate with kind="wake_brief" with no special handling (1 ms)
+    ✓ accepts a returned candidate with kind="next_step" with no special handling (1 ms)
+    ✓ accepts a returned candidate with kind="did_you_know" with no special handling
+    ✓ accepts a returned candidate with kind="feature_discovery" with no special handling
+    ✓ accepts a returned candidate with kind="opportunity" with no special handling
+    ✓ accepts a returned candidate with kind="reminder" with no special handling (1 ms)
+    ✓ accepts a returned candidate with kind="check_in" with no special handling
+    ✓ accepts a returned candidate with kind="offer_to_continue" with no special handling
+    ✓ accepts a returned candidate with kind="journey_guidance" with no special handling
+    ✓ accepts a returned candidate with kind="match_journey_next_move" with no special handling
+    ✓ ranks across heterogeneous kinds purely by priority (1 ms)
+  B0d.1 decideContinuation — P1: candidate invariant validation
+    ✓ downgrades a returned candidate with malformed kind to errored
+    ✓ downgrades a returned kind="none_with_reason" candidate missing suppressReason
+    ✓ downgrades a real kind that carries suppressReason (1 ms)
+    ✓ downgrades a returned candidate missing required fields (e.g. only kind set)
+    ✓ a valid candidate alongside a malformed one still wins (1 ms)
+  B0d.1 decideContinuation — P3: latency fallback policy
+    ✓ uses the orchestrator measurement when provider reports latencyMs=0 (1 ms)
+    ✓ uses the orchestrator measurement when latencyMs is negative
+    ✓ uses the orchestrator measurement when latencyMs is missing
+    ✓ uses the orchestrator measurement when latencyMs is non-finite (1 ms)
+    ✓ keeps provider-supplied latency when it is strictly positive
+  B0d.1 decideContinuation — rollUpSuppressionReason helper
+    ✓ returns no_providers_registered when zero providers ran
+    ✓ returns all_providers_errored when every result is errored (1 ms)
+    ✓ returns all_providers_suppressed when every result is suppressed
+    ✓ returns all_providers_skipped when every result is skipped
+    ✓ returns no_provider_returned_a_candidate on mixed no-fire outcomes (1 ms)
+  VTID-03301 rotation penalty
+    ✓ effectivePriority: fresh key unchanged; last-served demoted hardest; in-window demoted
+    ✓ without recency, the highest base priority wins (baseline behaviour preserved) (1 ms)
+    ✓ when the top opener was just served, a DIFFERENT relevant opener wins instead
+    ✓ rotation is a soft penalty: a lone recently-served opener still wins if nothing else qualifies
+    ✓ DEFAULT_RECENCY_PENALTY is exported and positive (1 ms)
+  VTID-03741 parallel ranker
+    ✓ runs providers concurrently: wall time tracks the slowest provider, not the sum (42 ms)
+    ✓ a hung provider is bounded by the per-provider timeout, not left to stall the decision forever (32 ms)
+    ✓ selection is unaffected by completion order: a slow-but-higher-priority provider still wins over a fast-but-lower-priority one (32 ms)
+    ✓ DEFAULT_PROVIDER_TIMEOUT_MS is exported and positive
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-latency-telemetry-flag-pinned.test.ts
+  VTID-03741: staging pins FEATURE_LATENCY_TELEMETRY_ENV
+    ✓ upserts the flag as "staging-only" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-cascade-flag-pinned.test.ts
+  VTID-03720: staging pins ORB_CASCADED_VOICE_ENABLED
+    ✓ upserts the flag as the exact string "true"
+    ✓ strips the inherited value first, so a stale one cannot survive
+    ✓ keeps the flag it is useless without
+    ✓ keeps Polly strict, so a TTS gap fails loudly instead of reaching for dead Google (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/orb/live/upstream/staging-fast-start-brain-cache-flags-pinned.test.ts
+  VTID-03741: staging pins FEATURE_ORB_FAST_START_ENV and FEATURE_ORB_BRAIN_CACHE_ENV
+    ✓ upserts FEATURE_ORB_FAST_START_ENV as "staging+prod", matching prod
+    ✓ upserts FEATURE_ORB_BRAIN_CACHE_ENV as "staging+prod", matching prod (1 ms)
+    ✓ strips both inherited values first, so a stale one cannot survive
+    ✓ matches the exact value AWS-PROD-DEPLOY-GATEWAY.yml pins, so staging and prod cannot silently diverge (1 ms)
+
+Test Suites: 4 passed, 4 total
+Tests:       60 passed, 60 total
+Snapshots:   0 total
+Time:        0.756 s, estimated 1 s
+Ran all test suites matching /test\/services\/assistant-continuation\/decide-continuation.test.ts|test\/orb\/live\/upstream\/staging-latency-telemetry-flag-pinned.test.ts|test\/orb\/live\/upstream\/staging-fast-start-brain-cache-flags-pinned.test.ts|test\/orb\/live\/upstream\/staging-cascade-flag-pinned.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

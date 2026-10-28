@@ -1,0 +1,3 @@
+    ✕ a voice activation of a medium-risk action returns a read-back and changes nothing (23 ms)
+    ✕ an app activation runs the typed action and returns its result (68 ms)
+Tests:       2 failed, 73 skipped, 75 total

@@ -1,0 +1,15 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+    ✅ Test setup loaded - fetch mocked, env vars set
+PASS test/vtid-04860-vtna-token-name.test.ts
+  VTID-04860: the token is VTNA
+    ✓ no member- or Vitana-readable source uses the bare word "VTN" (168 ms)
+    ✓ the diary-streak push says VTNA (1 ms)
+    ✓ a migration renames VTN → VTNA in the live knowledge base, whole word only (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       3 passed, 3 total
+Snapshots:   0 total
+Time:        0.592 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04860-vtna-token-name.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

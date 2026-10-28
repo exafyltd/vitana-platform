@@ -1,0 +1,13 @@
+GOLDEN overall {"total": 167, "correct": 93, "reaches_right_screen": 86, "wrong_screen": 0, "forbidden_hits": 0, "false_action": 0, "silent": 1, "clarified_with_right_option": 73, "right_screen_wrong_behaviour": 0}
+LOO {"signature": "db796c1e366296f0", "phrasings": 6941, "top1": 4859, "top5": 6455, "confident": 2090, "confident_wrong_page": 55}
+  en {"phrasings": 423, "top1": 384, "top5": 422, "confident_wrong_page": 3}
+  de {"phrasings": 424, "top1": 347, "top5": 410, "confident_wrong_page": 2}
+  es {"phrasings": 510, "top1": 429, "top5": 503, "confident_wrong_page": 0}
+  fr {"phrasings": 510, "top1": 392, "top5": 499, "confident_wrong_page": 2}
+  sr {"phrasings": 1009, "top1": 520, "top5": 828, "confident_wrong_page": 14}
+  pl {"phrasings": 510, "top1": 387, "top5": 492, "confident_wrong_page": 3}
+  pt {"phrasings": 510, "top1": 398, "top5": 501, "confident_wrong_page": 1}
+  ru {"phrasings": 510, "top1": 361, "top5": 477, "confident_wrong_page": 4}
+  tr {"phrasings": 1014, "top1": 645, "top5": 932, "confident_wrong_page": 12}
+  ar {"phrasings": 1012, "top1": 622, "top5": 895, "confident_wrong_page": 6}
+  zh {"phrasings": 509, "top1": 374, "top5": 496, "confident_wrong_page": 8}

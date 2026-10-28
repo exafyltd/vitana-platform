@@ -1,0 +1,42 @@
+provider_policy:
+  memory_gateway: supabase_oasis
+  defaults:
+    autonomy: true
+    report_events: gateway
+    tenant_required: true
+    retry:
+      on: [429,500,502,503,504,connection_reset]
+      attempts: 5
+      backoff: exponential
+      base_ms: 200
+      max_ms: 3000
+      jitter: full
+  roles:
+    planner:
+      primary: gemini
+      secondary: chatgpt
+      contrarian: grok
+    worker:
+      primary: claude
+      heavy_compute: gemini
+      review: chatgpt
+    validator:
+      primary: chatgpt
+      load_test: gemini
+      red_team: grok
+    research:
+      web_primary: perplexity_mcp
+      realtime_alt: grok
+      synth: gemini
+      summarize: chatgpt
+    autopilot:
+      brain: gemini
+      ux_tone: chatgpt
+      trend_contra: grok
+      exec_bridge: claude
+  fallbacks:
+    - gemini -> chatgpt -> claude
+    - claude -> gemini
+    - research -> perplexity_mcp -> gemini
+  reporting:
+    required_fields: [rid, task_type, assignee_ai, status, notes, git_sha?]

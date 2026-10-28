@@ -1,0 +1,22 @@
+# VTID-01152: Mem0 OSS Local Memory (Anthropic version)
+# Local-first fact memory for ORB, no SaaS, no regex ranking
+
+# Core dependencies
+flask>=3.0.0
+gunicorn>=21.0.0
+
+# Mem0 OSS - local memory library
+mem0ai>=0.1.0
+
+# Anthropic SDK - LLM reasoning
+anthropic>=0.30.0
+
+# Qdrant - local vector storage
+qdrant-client>=1.7.0
+
+# Sentence Transformers - local embeddings
+sentence-transformers>=2.2.0
+
+# Supporting dependencies
+requests>=2.31.0
+python-dotenv>=1.0.0

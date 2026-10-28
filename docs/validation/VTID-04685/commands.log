@@ -1,0 +1,5 @@
+cd services/gateway
+node_modules/.bin/tsc --noEmit -p tsconfig.json   # exit 0
+node_modules/.bin/jest test/services/memory/vtid-04685-hypothetical-not-a-fact.test.ts   # see outputs/jest.txt
+node_modules/.bin/jest   # full gateway suite: 1353 suites passed, 1 skipped; 21736 tests passed, 0 failed
+VOICE_IDENTITY_UPDATE=1 node_modules/.bin/jest -u test/orb/latency/vtid-04542-voice-payload-identity.test.ts test/orb/live/characterization test/services/conversation/vtid-04443-conversation-replay.test.ts   # deliberate re-record: MEMORY prompt line + forget_fact in the unbudgeted catalog; Nova-declared (65549 B) and Serbian bridge (49198 B) tool sets byte-identical

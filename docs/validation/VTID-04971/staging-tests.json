@@ -1,0 +1,30 @@
+{
+  "vtid": "VTID-04971",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/.well-known/oauth-protected-resource/mcp",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "reason": "discovery still answers (read-only, no sign-in)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "an unsigned MCP request is still refused (rejected probe; nothing is written)"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04971-review-sandbox.test.ts test/vtid-04933-partner-review.test.ts test/vtid-04847-partner-onboarding-service.test.ts test/commerce-mcp.test.ts test/vtid-04820-partner-onboarding-triage.test.ts",
+      "cwd": "services/gateway",
+      "reason": "sandbox submit/connect/review-list behaviour and that real suppliers' review, onboarding and MCP behaviour is unchanged"
+    }
+  ]
+}

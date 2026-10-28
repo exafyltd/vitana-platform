@@ -1,0 +1,14 @@
+[
+  {
+    "user_id": "887b34cb-9ee9-47dc-ad53-db5be1869846",
+    "label": "claude-code-agent",
+    "reason": "VTID-03990: automation identity provisioned 2026-09-16 11:38:38 UTC; its primary-membership insert fanned out 222 real welcome-chat DMs before this guard existed.",
+    "created_at": "2026-09-17 08:53:02.433855+00"
+  },
+  {
+    "user_id": "856c30ed-7136-4bc5-8bfe-86a1e8ea1401",
+    "label": "operator-autopilot",
+    "reason": "VTID-03990: automation identity provisioned 2026-09-16 11:38:40 UTC; its primary-membership insert fanned out 223 real welcome-chat DMs before this guard existed.",
+    "created_at": "2026-09-17 08:53:02.433855+00"
+  }
+]

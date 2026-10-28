@@ -1,0 +1,547 @@
+/**
+ * Self-Healing Triage Service
+ *
+ * Reusable synchronous wrapper around Claude Managed Agents that the
+ * self-healing pipeline calls at three points:
+ *
+ *   1. PRE-FIX:  low-confidence deterministic diagnosis → agent investigates
+ *                deeper → may upgrade confidence or enrich human context
+ *   2. POST-FAILURE: reconciler exhausted redispatches → agent analyzes the
+ *                full failure history → produces a revised diagnosis for a
+ *                fresh self-healing cycle
+ *   3. VERIFICATION_FAILURE: blast radius detected → agent reads pre/post
+ *                snapshots + applied diff → explains what went wrong
+ *
+ * The agent has access to:
+ *   - (VTID-04232) the investigator tool set in self-healing-triage-tools.ts —
+ *     OASIS events, CloudWatch logs, ECS tasks, read-only SQL, prior
+ *     architecture_reports — through the shared bounded stage loop
+ *   - OASIS events via the `query_oasis_events` custom tool (Supabase creds host-side)
+ *   - E2E test results via the `query_test_results` custom tool (future)
+ *
+ * Shared Anthropic API helpers and config are imported from triage-agent.ts.
+ */
+
+const LOG_PREFIX = '[self-healing-triage]';
+
+// Config from environment (same as triage-agent.ts)
+const ANTHROPIC_API_KEY = process.env.ANTHROPIC_API_KEY || '';
+const AGENT_ID = process.env.TRIAGE_AGENT_ID || 'agent_011Ca1RTRZADaWdZsKAKjs3B';
+const ENVIRONMENT_ID = process.env.TRIAGE_ENVIRONMENT_ID || 'env_01VrvRRUWP91wiFQrmWaUcEh';
+const ANTHROPIC_BASE = 'https://api.anthropic.com';
+const BETA_HEADER = 'managed-agents-2026-04-01';
+const MAX_TRIAGE_ATTEMPTS = 2;
+const SESSION_TIMEOUT_MS = 120_000; // 2 minutes max per triage session
+
+// =============================================================================
+// Types
+// =============================================================================
+
+export type TriageMode = 'pre_fix' | 'post_failure' | 'verification_failure';
+
+export interface TriageInput {
+  mode: TriageMode;
+  vtid: string;
+  // Pre-fix mode
+  diagnosis?: Record<string, unknown>;
+  failure?: { endpoint: string; name?: string; status?: string; error?: string };
+  // Post-failure mode
+  original_diagnosis?: Record<string, unknown>;
+  failure_class?: string;
+  endpoint?: string;
+  all_attempts?: number;
+  reconciler_history?: Record<string, unknown>;
+  // Verification failure mode
+  applied_spec?: string;
+  verification_result?: Record<string, unknown>;
+  pre_fix_snapshot?: unknown;
+  post_fix_snapshot?: unknown;
+  blast_radius?: unknown;
+}
+
+export interface TriageReport {
+  session_id: string;
+  severity: 'critical' | 'warning' | 'info';
+  root_cause_hypothesis: string;
+  affected_component: string;
+  evidence: string[];
+  recommended_fix: string;
+  confidence: 'high' | 'medium' | 'low';
+  confidence_numeric: number;
+  elapsed_ms: number;
+  mode: TriageMode;
+  raw_output: string;
+  /** VTID-04232: which provider/model served the report and which tools it called. */
+  llm_provider?: string;
+  llm_model?: string;
+  llm_fallback_used?: boolean;
+  tool_calls?: number;
+  tools_used?: string[];
+}
+
+export interface TriageResult {
+  ok: boolean;
+  report?: TriageReport;
+  error?: string;
+  /** VTID-04759: an enforced Jev gate skipped triage (the caller escalates as on any failed triage). */
+  skipped_by_gate?: { gate: string; reason: string };
+}
+
+// =============================================================================
+// Anthropic API helper (duplicated from triage-agent.ts to avoid circular dep)
+// =============================================================================
+
+async function anthropicRequest<T>(
+  path: string,
+  options: { method?: string; body?: unknown } = {}
+): Promise<{ ok: boolean; data?: T; error?: string }> {
+  if (!ANTHROPIC_API_KEY) {
+    return { ok: false, error: 'ANTHROPIC_API_KEY not set' };
+  }
+
+  try {
+    const response = await fetch(`${ANTHROPIC_BASE}${path}`, {
+      method: options.method || 'GET',
+      headers: {
+        'Content-Type': 'application/json',
+        'x-api-key': ANTHROPIC_API_KEY,
+        'anthropic-version': '2023-06-01',
+        'anthropic-beta': BETA_HEADER,
+      },
+      body: options.body ? JSON.stringify(options.body) : undefined,
+    });
+
+    if (!response.ok) {
+      const errorText = await response.text();
+      return { ok: false, error: `${response.status}: ${errorText}` };
+    }
+
+    const data = (await response.json()) as T;
+    return { ok: true, data };
+  } catch (error) {
+    return { ok: false, error: String(error) };
+  }
+}
+
+// =============================================================================
+// OASIS events custom tool handler (same as triage-agent.ts)
+// =============================================================================
+
+export async function queryOasisEvents(
+  filter: string | { sessionId?: string; vtid?: string },
+  limit: number = 100
+): Promise<string> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return 'Error: Missing Supabase credentials';
+  }
+
+  const f = typeof filter === 'string' ? { sessionId: filter } : filter;
+  const where = f.sessionId
+    ? `or=(metadata->>session_id.eq.${encodeURIComponent(f.sessionId)},metadata->>sessionId.eq.${encodeURIComponent(f.sessionId)})`
+    : f.vtid
+      ? `vtid=eq.${encodeURIComponent(f.vtid)}`
+      : '';
+  if (!where) return 'Error: session_id or vtid is required';
+
+  try {
+    const response = await fetch(
+      `${supabaseUrl}/rest/v1/oasis_events?${where}&order=created_at.asc&limit=${limit}&select=id,topic,vtid,status,message,metadata,created_at`,
+      {
+        headers: {
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+        },
+      }
+    );
+
+    if (!response.ok) {
+      return `Error: Supabase ${response.status}: ${await response.text()}`;
+    }
+
+    const events = await response.json();
+    return JSON.stringify(events, null, 2);
+  } catch (error) {
+    return `Error: ${String(error)}`;
+  }
+}
+
+/**
+ * VTID-04232: the triage agent's tool loop (self-healing-triage-tools.ts).
+ * Default ON; the exact string 'false' restores the single-shot call.
+ */
+export function isTriageToolsEnabled(env: NodeJS.ProcessEnv = process.env): boolean {
+  return (env.SELF_HEALING_TRIAGE_TOOLS_ENABLED || '').toLowerCase() !== 'false';
+}
+export const TRIAGE_MAX_TURNS = 8;
+export const TRIAGE_MAX_TOOL_CALLS = 10;
+export const TRIAGE_DEADLINE_MS = 180_000;
+export const TRIAGE_SYSTEM_PROMPT = 'You are a self-healing triage agent. Investigate the failure and produce a structured report with: Severity, Root Cause Hypothesis, Affected Component, Evidence (bulleted list), Recommended Fix, Confidence (low|medium|high). Use plain markdown headings (## Severity, ## Root Cause Hypothesis, etc.).';
+
+function buildPrompt(input: TriageInput): string {
+  const lines: string[] = [];
+
+  switch (input.mode) {
+    case 'pre_fix':
+      lines.push(
+        `## Investigation Mode: PRE-FIX DEEP TRIAGE`,
+        ``,
+        `The deterministic self-healing classifier produced a diagnosis with`,
+        `insufficient confidence. Your job is to investigate deeper using`,
+        `source code and OASIS events, and either upgrade the confidence`,
+        `or provide richer context for human approval.`,
+        ``,
+        `### VTID: ${input.vtid}`,
+        `### Endpoint: ${input.failure?.endpoint || 'unknown'}`,
+        `### Service: ${input.failure?.name || 'unknown'}`,
+        `### Deterministic Diagnosis:`,
+        `${JSON.stringify(input.diagnosis, null, 2)}`,
+        ``,
+        `### Instructions`,
+        `1. Use the tools if you have them: query_oasis_events for the session/VTID timeline, dev_cloudwatch_logs for what the service logged, dev_ecs_tasks for task state, dev_run_sql_readonly for counts the feed cannot answer, get_architecture_reports for a prior root cause on this topic`,
+        `2. Reason from the failure class and the evidence you gathered — a few tool calls, not an audit`,
+        `3. Produce your triage report with a confidence assessment`,
+      );
+      break;
+
+    case 'post_failure':
+      lines.push(
+        `## Investigation Mode: POST-FAILURE FEEDBACK LOOP`,
+        ``,
+        `A previous self-healing attempt for this endpoint FAILED. The`,
+        `reconciler exhausted its redispatch budget and the endpoint is`,
+        `still down. Your job is to analyze the FULL failure history,`,
+        `understand WHY the previous fix didn't work, and propose a`,
+        `DIFFERENT approach.`,
+        ``,
+        `### VTID: ${input.vtid}`,
+        `### Endpoint: ${input.endpoint || 'unknown'}`,
+        `### Failure Class: ${input.failure_class || 'unknown'}`,
+        `### Previous Attempts: ${input.all_attempts || 0}`,
+        `### Reconciler History:`,
+        `${JSON.stringify(input.reconciler_history, null, 2)}`,
+        `### Original Diagnosis:`,
+        `${JSON.stringify(input.original_diagnosis, null, 2)}`,
+        ``,
+        `### Instructions`,
+        `1. Gather evidence with the tools if you have them (query_oasis_events by VTID, dev_cloudwatch_logs, get_architecture_reports for the prior hypothesis on this topic)`,
+        `2. Understand why the previous approach failed`,
+        `3. Propose a DIFFERENT root cause and fix — do not repeat the same approach`,
+        `4. Your diagnosis will feed a FRESH self-healing cycle with a new VTID`,
+      );
+      break;
+
+    case 'verification_failure':
+      lines.push(
+        `## Investigation Mode: VERIFICATION FAILURE ANALYSIS`,
+        ``,
+        `A self-healing fix was applied but verification detected problems`,
+        `— either blast radius (newly broken endpoints) or the original`,
+        `endpoint is still down. The fix will be rolled back. Your job is`,
+        `to analyze what went wrong so the next attempt is better-informed.`,
+        ``,
+        `### VTID: ${input.vtid}`,
+        `### Applied Spec:`,
+        `${input.applied_spec || '(not available)'}`,
+        `### Verification Result:`,
+        `${JSON.stringify(input.verification_result, null, 2)}`,
+        `### Blast Radius:`,
+        `${JSON.stringify(input.blast_radius, null, 2)}`,
+        ``,
+        `### Instructions`,
+        `1. Gather evidence with the tools if you have them (query_oasis_events, dev_cloudwatch_logs, dev_ecs_tasks around the verification window)`,
+        `2. Analyze why the fix caused blast radius or failed verification`,
+        `3. Explain what went wrong and what the next attempt should do differently`,
+      );
+      break;
+  }
+
+  lines.push(
+    ``,
+    `## Output Format`,
+    `End your investigation with a structured report:`,
+    ``,
+    `### Triage Report`,
+    `- **Session ID**: (your managed session id)`,
+    `- **Severity**: critical / warning / info`,
+    `- **Root Cause Hypothesis**: 1-2 sentences`,
+    `- **Affected Component**: file path + function name`,
+    `- **Evidence**: bullet list`,
+    `- **Recommended Fix**: concrete next step`,
+    `- **Confidence**: high / medium / low`,
+  );
+
+  return lines.join('\n');
+}
+
+// =============================================================================
+// Report parser — extracts structured data from the agent's text output
+// =============================================================================
+
+function parseTriageReport(
+  rawText: string,
+  sessionId: string,
+  mode: TriageMode,
+  elapsedMs: number
+): TriageReport {
+  const extract = (label: string): string => {
+    const regex = new RegExp(`\\*\\*${label}\\*\\*:\\s*(.+?)(?=\\n\\*\\*|\\n###|$)`, 's');
+    const match = rawText.match(regex);
+    return match ? match[1].trim() : '';
+  };
+
+  const severityRaw = extract('Severity').toLowerCase();
+  const severity = (['critical', 'warning', 'info'].includes(severityRaw)
+    ? severityRaw
+    : 'warning') as 'critical' | 'warning' | 'info';
+
+  const confidenceRaw = extract('Confidence').toLowerCase();
+  const confidence = (['high', 'medium', 'low'].includes(confidenceRaw)
+    ? confidenceRaw
+    : 'low') as 'high' | 'medium' | 'low';
+
+  const confidenceNumeric =
+    confidence === 'high' ? 0.85 : confidence === 'medium' ? 0.65 : 0.4;
+
+  const evidenceRaw = extract('Evidence');
+  const evidence = evidenceRaw
+    .split('\n')
+    .map((line) => line.replace(/^[-*•]\s*/, '').trim())
+    .filter((line) => line.length > 0);
+
+  return {
+    session_id: sessionId,
+    severity,
+    root_cause_hypothesis: extract('Root Cause Hypothesis'),
+    affected_component: extract('Affected Component'),
+    evidence,
+    recommended_fix: extract('Recommended Fix'),
+    confidence,
+    confidence_numeric: confidenceNumeric,
+    elapsed_ms: elapsedMs,
+    mode,
+    raw_output: rawText,
+  };
+}
+
+// =============================================================================
+// Main entry point: spawnTriageAgent
+// =============================================================================
+
+/**
+ * BOOTSTRAP-LLM-ROUTER (Phase C): triage now goes through the provider
+ * router. The router reads llm_routing_policy.policy.triage and dispatches
+ * to the configured provider (Vertex / Anthropic / OpenAI / DeepSeek).
+ *
+ * Architectural change vs the prior Managed Agents flow: instead of giving
+ * the model a `query_oasis_events` tool that fires mid-session, we
+ * pre-fetch the OASIS events for the failure session up front and attach
+ * them to the prompt. This is lossless for the diagnosis path (the agent
+ * always called the tool with the same session_id from `input.diagnosis`)
+ * and works across every provider — no Managed Agents dependency.
+ *
+ * The repo-mount feature is dropped — for the diagnosis use case the model
+ * doesn't need to read code on demand; failure context + recent events is
+ * sufficient. If a stage genuinely needs repo browsing in future, that's a
+ * separate router extension.
+ */
+export async function spawnTriageAgent(input: TriageInput): Promise<TriageResult> {
+  const startTime = Date.now();
+  console.log(`${LOG_PREFIX} Triage for ${input.vtid} (mode=${input.mode})`);
+
+  // 1. Pre-fetch OASIS events keyed off any session_id mentioned in the
+  //    diagnosis. The original Managed Agents path did this lazily via a
+  //    custom tool; we just pull them upfront and inline.
+  const sessionIdHint = (input.diagnosis as Record<string, unknown> | undefined)?.session_id
+    || (input.diagnosis as Record<string, unknown> | undefined)?.sessionId
+    || '';
+  let oasisEventsBlock = '';
+  if (typeof sessionIdHint === 'string' && sessionIdHint) {
+    try {
+      const eventsJson = await queryOasisEvents(sessionIdHint, 50);
+      oasisEventsBlock = `\n### OASIS events for session ${sessionIdHint} (most recent 50):\n${eventsJson}\n`;
+    } catch (err) {
+      console.warn(`${LOG_PREFIX} OASIS prefetch failed:`, err);
+    }
+  }
+
+  // 2. Build the prompt — same per-mode template as before, plus the
+  //    pre-fetched events if any.
+  const prompt = buildPrompt(input) + oasisEventsBlock;
+
+  // 2b. VTID-04759: Jev P1 gates B1 (same open incident?) and B2 (provider
+  //     failure type). Off by default; shadow records and triage proceeds;
+  //     enforce skips a triage that cannot help (a provider outage, or an
+  //     incident already triaged in the last 30 minutes).
+  const { runSelfHealGates, recordSelfHealGateOutcome, recordPretriageOutcome } = await import('./jev/gates/selfheal-gates');
+  const gates = await runSelfHealGates(input);
+  if (gates.skip) {
+    console.warn(`${LOG_PREFIX} Triage for ${input.vtid} skipped by ${gates.skip.gate}: ${gates.skip.reason}`);
+    void recordSelfHealGateOutcome(gates, { ok: false, skipped: true });
+    return { ok: false, error: `jev_gate:${gates.skip.gate}:${gates.skip.reason}`, skipped_by_gate: gates.skip };
+  }
+
+  // VTID-04802 (Jev B4/B5): was there a deploy before this incident, and which
+  // commit most likely caused it? Started now, awaited only after triage.
+  const { isDeployCauseOn, runDeployCauseCheck, recordDeployCauseOutcome, defaultDeployCauseDeps } = await import('./jev/gates/deploy-cause-gate');
+  const deployCause = isDeployCauseOn() ? runDeployCauseCheck(input, defaultDeployCauseDeps()) : null;
+
+  // 3. The `triage` stage, through the shared bounded tool loop (VTID-04232):
+  //    the provider comes from llm_routing_policy; the tools are the
+  //    investigator's read-only set (self-healing-triage-tools.ts). With the
+  //    tools off, this is the same single-shot call as before this VTID.
+  //    `pseudoSessionId` is just a correlation id for the parser — there is
+  //    no real session.
+  const pseudoSessionId = `triage-${input.vtid}-${Date.now()}`;
+  const toolsOn = isTriageToolsEnabled();
+  const { runStageToolLoop } = await import('./llm-stage-tool-loop');
+  const { triageRouterTools, createTriageToolExecutor } = await import('./self-healing-triage-tools');
+  const loop = await runStageToolLoop({
+    stage: 'triage',
+    service: 'self-healing-triage',
+    vtid: input.vtid,
+    systemPrompt: TRIAGE_SYSTEM_PROMPT,
+    prompt,
+    tools: toolsOn ? triageRouterTools() : [],
+    execute: toolsOn
+      ? createTriageToolExecutor({ vtid: input.vtid, queryOasisEvents })
+      : async (name) => ({ result: `no tools are available in this triage (${name})`, isError: true }),
+    maxTurns: toolsOn ? TRIAGE_MAX_TURNS : 1,
+    maxToolCalls: toolsOn ? TRIAGE_MAX_TOOL_CALLS : 0,
+    deadlineMs: TRIAGE_DEADLINE_MS,
+    maxTokens: 4000,
+    allowFallback: true,
+  });
+  const r = { ok: loop.ok, text: loop.text, error: loop.error, provider: loop.provider, model: loop.model };
+  void recordSelfHealGateOutcome(gates, { ok: r.ok && !!r.text, error: r.error });
+
+  const elapsedMs = Date.now() - startTime;
+
+  if (!r.ok || !r.text) {
+    if (deployCause) void deployCause.then((dc) => recordDeployCauseOutcome(dc, null)); // VTID-04802
+  }
+  if (!r.ok) {
+    console.warn(`${LOG_PREFIX} Triage router call failed for ${input.vtid}: ${r.error}`);
+    return { ok: false, error: r.error || 'router returned ok=false' };
+  }
+
+  const rawOutput = r.text || '';
+  if (!rawOutput) {
+    console.warn(`${LOG_PREFIX} Triage produced no text for ${input.vtid}`);
+    return { ok: false, error: 'Triage produced no output' };
+  }
+
+  const report = parseTriageReport(rawOutput, pseudoSessionId, input.mode, elapsedMs);
+  report.llm_provider = r.provider;
+  report.llm_model = r.model;
+  report.llm_fallback_used = loop.fallbackUsed;
+  report.tool_calls = loop.toolCalls;
+  report.tools_used = loop.toolNames;
+  void recordPretriageOutcome(gates, report); // VTID-04799 (Jev B3)
+  if (deployCause) void deployCause.then((dc) => recordDeployCauseOutcome(dc, report)); // VTID-04802
+  console.log(
+    `${LOG_PREFIX} Triage complete for ${input.vtid}: provider=${r.provider} model=${r.model} fallback=${loop.fallbackUsed} tool_calls=${loop.toolCalls}${loop.toolNames.length ? ` (${loop.toolNames.join(', ')})` : ''} confidence=${report.confidence} (${report.confidence_numeric}) elapsed=${elapsedMs}ms`
+  );
+
+  return { ok: true, report };
+}
+
+// =============================================================================
+// Helper: create a fresh VTID from a triage report for the feedback loop
+// =============================================================================
+
+export async function createFreshVtidFromTriageReport(
+  parentVtid: string,
+  report: TriageReport,
+  endpoint: string,
+): Promise<string | null> {
+  const supabaseUrl = process.env.SUPABASE_URL;
+  const supabaseKey = process.env.SUPABASE_SERVICE_ROLE;
+
+  if (!supabaseUrl || !supabaseKey) {
+    return null;
+  }
+
+  // Allocate a new VTID via the canonical allocator RPC.
+  //
+  // Previously this minted `latest vtid + 1` and direct-inserted. That writer
+  // never advanced global_vtid_seq, so it was a primary cause of sequence
+  // drift: the allocator (and the Command Hub PUBLISH button) would later draw
+  // a nextval() that collided with these rows, producing 23505 duplicate-key
+  // failures on vtid_ledger_vtid_unique. Routing through allocate_global_vtid
+  // keeps the sequence as the single source of truth (and that RPC now skips
+  // forward past any pre-existing VTID, so it can't collide either).
+  try {
+    const allocRes = await fetch(`${supabaseUrl}/rest/v1/rpc/allocate_global_vtid`, {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+        apikey: supabaseKey,
+        Authorization: `Bearer ${supabaseKey}`,
+      },
+      body: JSON.stringify({
+        p_source: 'self-healing-triage-loop',
+        p_layer: 'OPS',
+        p_module: 'SELF-HEAL',
+      }),
+    });
+
+    if (!allocRes.ok) {
+      console.error(`${LOG_PREFIX} Failed to allocate VTID: ${allocRes.status}`);
+      return null;
+    }
+
+    const allocated = (await allocRes.json()) as Array<{ vtid: string; num: number; id: string }>;
+    if (!allocated || allocated.length === 0) {
+      console.error(`${LOG_PREFIX} Allocator returned no VTID`);
+      return null;
+    }
+    const newVtid = allocated[0].vtid;
+
+    // Promote the freshly-allocated shell row to an in-progress self-heal task.
+    // The allocator inserts status='allocated' with a placeholder title; patch
+    // it to carry the triage context so the Tasks board renders it correctly.
+    const patchRes = await fetch(
+      `${supabaseUrl}/rest/v1/vtid_ledger?vtid=eq.${encodeURIComponent(newVtid)}`,
+      {
+        method: 'PATCH',
+        headers: {
+          'Content-Type': 'application/json',
+          apikey: supabaseKey,
+          Authorization: `Bearer ${supabaseKey}`,
+          Prefer: 'return=minimal',
+        },
+        body: JSON.stringify({
+          title: `SELF-HEAL (retry): ${report.root_cause_hypothesis.substring(0, 80)}`,
+          summary: report.recommended_fix,
+          status: 'in_progress',
+          metadata: {
+            source: 'self-healing-triage-loop',
+            parent_vtid: parentVtid,
+            triage_session_id: report.session_id,
+            triage_confidence: report.confidence,
+            triage_mode: report.mode,
+            endpoint,
+          },
+          updated_at: new Date().toISOString(),
+        }),
+      }
+    );
+
+    if (!patchRes.ok) {
+      // The VTID row exists and is valid; failing to enrich it shouldn't drop
+      // the retry. Log loudly and continue with the allocated VTID.
+      console.warn(`${LOG_PREFIX} VTID ${newVtid} allocated but enrichment PATCH failed: ${patchRes.status}`);
+    }
+
+    console.log(`${LOG_PREFIX} Created fresh VTID ${newVtid} (parent: ${parentVtid})`);
+    return newVtid;
+  } catch (error) {
+    console.error(`${LOG_PREFIX} createFreshVtid error:`, error);
+    return null;
+  }
+}
+
+export { MAX_TRIAGE_ATTEMPTS };

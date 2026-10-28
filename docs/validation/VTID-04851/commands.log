@@ -1,0 +1,9 @@
+# Read-only evidence (2026-10-02)
+scripts/memory/recall-shadow-report.sh /vitana/gateway-awsdr 12  -> 18 sessions, 0 failures, facts identical 7/18, avg facts 40.9/37.9, only_served 3.06, only_shadow 0, value_diff 0
+SELECT count(*) FILTER (superseded_by null XOR superseded_at null) FROM memory_facts -> 0 (both reads pick the same rows)
+
+# Local verification (services/gateway)
+npx jest test/services/memory/vtid-04851-recall-fact-recency.test.ts (old recall.ts) -> 2 failed (24 of 45 facts kept)
+npx jest test/services/memory/vtid-04851-recall-fact-recency.test.ts (fixed)        -> 2 passed (45 of 45)
+npx tsc --noEmit -p .                                                              -> exit 0
+npx jest test/services/memory test/orb/latency test/vtid-04452* memory-broker*     -> 45 suites, 603 tests passed

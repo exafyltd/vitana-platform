@@ -1,0 +1,4 @@
+# Live schema, read-only (Supabase MCP): user_id tables without ON DELETE CASCADE -> ~200; FKs into them from tables without user_id -> wallet_transactions->profiles, tenant_autopilot_*->app_users, reseller_*->reseller_profiles; retained ledgers -> wallet_accounts
+# Throwaway local Postgres 16 (never Supabase)
+PGHOST=/var/lib/postgresql/vtest PGPORT=55433 PGUSER=postgres scripts/ci/sql-tests/run-erase-user-data-test.sh   -> PASS vtid-04765 erase_user_data
+# Mutation check: max passes 5 -> 1 makes the test fail ("FAIL: parent kept A (FK retry)"); restored

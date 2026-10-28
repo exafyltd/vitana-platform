@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04724",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the greeting-rung change",
+      "path": "/alive"
+    },
+    {
+      "kind": "http",
+      "name": "staging reports env=staging and the deployed commit",
+      "path": "/api/v1/admin/build-info"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/conversation",
+      "cwd": "services/gateway",
+      "reason": "This VTID only changes what two greeting rungs TELL the model; there is no new route, flag or schema to probe. The behaviour is pinned by vtid-04724-resume-directive-language.test.ts (mutation-verified both halves), the changed rung's own vtid-04575-resume-thread-rung.test.ts, and the re-recorded golden/payload-identity snapshots — all in this suite. A read-only staging suite cannot speak to the voice model, and the real signal is the post-deploy oasis_events query in outputs/telemetry-ru-sessions.txt showing resume_thread sessions no longer answering in German."
+    }
+  ]
+}

@@ -1,0 +1,11 @@
+# 17 — upstream SQLite suites (reports, gl, setup-lib) with patch 0004 applied — worktree at pin + 0001-0003
+# excluded: setup/tests/test_crypto_env_check.py (needs _cffi_backend, missing in this session);
+#           reports/tests/test_elimination_retired.py::test_cli_steers_with_the_legacy_flags (4 cases) — fail IDENTICALLY without 0004 (baseline run in commands.log)
+# remaining failure below, gl/tests/test_accounts.py::TestRootTypeCoherence::…every_pair_our_own_charts_ship, asserts 'only 0 chart pairs checked; the charts moved' —
+#           also fails IDENTICALLY on the 0001-0003 baseline (re-run alone, 1 failed in 0.09s): the test looks for chart files at a path this checkout does not have. Not 0004.
+
+E       AssertionError: only 0 chart pairs checked; the charts moved
+E       assert 0 > 100
+FAILED scripts/erpclaw-gl/tests/test_accounts.py::TestRootTypeCoherence::test_the_coherence_map_accepts_every_pair_our_own_charts_ship
+1 failed, 397 passed, 13 skipped, 4 deselected in 123.47s (0:02:03)
+exit=1

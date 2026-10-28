@@ -1,0 +1,4 @@
+PASS test/vtid-04800-ci-failure-routing.test.ts
+PASS test/dev-autopilot-watcher.test.ts
+PASS test/vtid-04465-operator-pipeline-regression.test.ts (6.408 s)
+Tests:       77 passed, 77 total

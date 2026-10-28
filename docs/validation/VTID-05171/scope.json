@@ -1,0 +1,45 @@
+{
+  "vtid": "VTID-05171",
+  "kind": "feature",
+  "sparring_record": "docs/validation/VTID-05167/plan-sparring.md",
+  "paths": [
+    "supabase/migrations/20261014150000_vtid_05171_companion_wiring.sql",
+    "scripts/ci/sql-tests/vtid-05171-companion-wiring.test.sql",
+    "scripts/ci/sql-tests/run-companion-wiring-test.sh",
+    ".github/workflows/SQL-COMPANION-WIRING.yml",
+    "services/gateway/src/services/timeline/**",
+    "services/gateway/src/services/orb-tools/timeline-tools.ts",
+    "services/gateway/src/services/orb-tools-shared.ts",
+    "services/gateway/src/orb/live/tools/vertex-tool-catalog-budget.ts",
+    "services/gateway/src/services/user-context-profiler.ts",
+    "services/gateway/src/services/user-context-profiler-repository.ts",
+    "services/gateway/src/services/automation-registry.ts",
+    "services/gateway/src/services/automation-shadow.ts",
+    "services/gateway/src/services/automation-handlers/memory-intelligence.ts",
+    "services/gateway/src/routes/timeline.ts",
+    "services/gateway/test/vtid-05171-companion-wiring.test.ts",
+    "services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts",
+    "services/gateway/test/vtid-04349-automation-shadow.test.ts",
+    "services/gateway/test/orb/latency/__snapshots__/vtid-04542-voice-payload-identity.test.ts.snap",
+    "services/gateway/test/orb/latency/vtid-04542-voice-payload-identity.hashes.json",
+    "services/gateway/test/orb/live/characterization/__snapshots__/system-instruction.characterization.test.ts.snap",
+    "services/gateway/test/orb/live/characterization/__snapshots__/tool-catalog.characterization.test.ts.snap",
+    "services/gateway/test/services/conversation/__snapshots__/vtid-04443-conversation-replay.test.ts.snap",
+    "scripts/aws/setup-eventbridge-cron-migration.sh",
+    "services/postgrest-aurora-proxy/aurora-restore-0*.sql",
+    "scripts/ci/migration-drift-baseline.json",
+    "DATABASE_SCHEMA.md",
+    ".kiro/specs/life-timeline/**",
+    "docs/validation/VTID-05171/**"
+  ],
+  "weakens_tests": [
+    {
+      "file": "services/gateway/test/vtid-04226-eventbridge-test-contract-schedules.test.ts",
+      "reason": "Not a weakening: the pinned EventBridge job counts go up by one (32\u219233 jobs, 21\u219222 automation jobs, dry-run 'Jobs: 33') for the new AP-0916 Timeline Habit Rollup schedule, annotated like every earlier addition. Every other assertion is unchanged."
+    },
+    {
+      "file": "services/gateway/test/vtid-04349-automation-shadow.test.ts",
+      "reason": "Not a weakening: the pinned count of AP- cron jobs goes from 21 to 22 for AP-0916; each job is still checked for the internal token and the staging default."
+    }
+  ]
+}

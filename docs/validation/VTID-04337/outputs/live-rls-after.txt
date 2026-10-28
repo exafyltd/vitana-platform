@@ -1,0 +1,30 @@
+Live project inmkhvwdcuyhnxkgfvsb, 2026-09-23, after applying migration
+20260923120000_vtid_04337_partner_org_members_rls_no_recursion (applied via the
+Supabase MCP apply_migration on the platform owner's explicit go-ahead in
+conversation). Every probe below is a read-only transaction that was rolled
+back; nothing was written.
+
+1. Same probe as outputs/live-rls-recursion-before.txt, as the authenticated test user:
+     BEGIN READ ONLY; SET LOCAL ROLE authenticated; (claims sub=a27552a3-…)
+     SELECT count(*) FROM partner_organization_members, count(*) FROM partner_organizations;
+     ROLLBACK;
+   Result: members_visible=0, orgs_visible=0. No error; before the migration the
+   same probe failed with 42P17 infinite recursion.
+
+2. The same probe as anon:
+   Result: members_visible=0, orgs_visible=0. No error, and no
+   "permission denied for function" (anon holds SELECT on partner_organizations,
+   so the helper must be executable by anon).
+
+3. Live definitions (pg_policy / pg_proc):
+   partner_organization_members_select: is_partner_org_member(partner_organization_id)
+   partner_organizations_select: (status = 'active') OR (owner_user_id = current_user_id()) OR is_partner_org_member(id)
+   is_partner_org_member: SECURITY DEFINER = true; EXECUTE for anon = true, for authenticated = true
+
+Limitation, stated plainly: both tables are EMPTY on the live project
+(0 organizations, 0 members), so these probes prove the recursion error is gone
+and anon/authenticated reads succeed. They do not prove that a member sees
+exactly their own org's roster. That positive case is covered only by the
+migration-shape test. Proving it live would mean writing an organization and
+membership rows as the shared test account, and repository rules forbid that on
+the production project.

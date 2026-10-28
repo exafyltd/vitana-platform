@@ -1,0 +1,10 @@
+Source check (same regex as test/vtid-04928-group-push-opens-message.test.ts), run against the branch:
+src/routes/chat-groups.ts
+  url: `/inbox/g/${groupId}/msg/${messageId}`   -> carries message id: true   (mention push, pre-existing)
+  url: `/inbox/g/${groupId}/msg/${messageId}`   -> carries message id: true   (generic push, changed)
+  url: `/inbox/g/${groupId}/msg/${welcome.id}`  -> carries message id: true   (welcome re-fanout, changed)
+src/services/orb-tools/messaging-depth-tools.ts
+  url: `/inbox/g/${group.id}/msg/${messageId}`  -> carries message id: true   (ORB voice send, changed)
+Old form `url: \`/inbox/g/${groupId}\`` rejected by the check: true
+
+Jest/tsc: not run locally (npm registry blocked in this session); CI is the first run.

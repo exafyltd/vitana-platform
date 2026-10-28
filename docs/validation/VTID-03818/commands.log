@@ -1,0 +1,80 @@
+VTID-03818 — commands.log
+==========================
+
+## Confirm the live bugs before touching anything
+
+$ mcp__Supabase__execute_sql
+  select status, spec_status, is_terminal, count(*) from vtid_ledger group by 1,2,3 order by 4 desc;
+-> confirmed: 47 rows status='complete' (distinct from 'completed'); a long
+   tail of status/spec_status/is_terminal combinations including
+   status='deleted' with is_terminal not true.
+
+$ mcp__Supabase__execute_sql
+  select count(*), min(created_at), max(created_at) from vtid_ledger
+  where title = 'Allocated - Pending Title';
+-> 703 rows, spanning 2025-12-19 to 2026-09-10.
+
+$ mcp__Supabase__execute_sql
+  select is_terminal, count(*) from vtid_ledger where title='Allocated - Pending Title' group by 1;
+-> is_terminal=false: 184, is_terminal=true: 519.
+
+## Root-cause read (source, not assumption)
+
+Read services/gateway/src/routes/vtid.ts deriveAllocationTitle() (line 40):
+returns null whenever source is unset/'api' -- and source defaults to 'api'
+on line 86 whenever a caller doesn't pass one. /allocate-internal (line 199)
+has NO title logic at all -- confirmed by reading the whole handler.
+
+Read services/gateway/src/services/dev-autopilot-execute.ts
+allocatedOrphanReaperTick() (line 3117): PATCH body sets status='deleted'
+but never is_terminal/terminal_outcome (line 3133-3141 before fix).
+
+Read services/gateway/src/routes/oasis-tasks.ts's manual delete endpoint
+(line 447-462): sets is_terminal:true, terminal_outcome:'deleted' alongside
+status:'deleted' -- confirms the reaper was the one write site NOT matching
+this pattern (repo-wide grep for every "status: 'deleted'"/"status=deleted"
+write site turns up exactly these two).
+
+Read services/gateway/src/frontend/command-hub/app.js: mapStatusToColumn()
+(line 10965), renderTaskDrawer()'s isFinalMode (line 8210),
+isInconsistentState (line 8233), isCompleted (line 9556) -- confirmed all
+four check taskStatus === 'completed' only, never 'complete'.
+
+## Fix
+
+- vtid.ts: deriveAllocationTitle() rewritten to always return a real string
+  (module+vtid fallback instead of null); both /allocate and
+  /allocate-internal call sites updated to always PATCH the derived title.
+- dev-autopilot-execute.ts: allocatedOrphanReaperTick()'s PATCH body now
+  includes is_terminal:true, terminal_outcome:'deleted', deleted_at,
+  deleted_by -- matching oasis-tasks.ts's manual-delete pattern.
+- app.js: 'complete' added alongside 'completed' in all four checks.
+
+## One-time live data migration
+
+$ mcp__Supabase__apply_migration name=vtid_03818_ledger_hygiene_normalize_status_and_backfill_terminal
+  UPDATE vtid_ledger SET status='completed' WHERE status='complete';
+  UPDATE vtid_ledger SET is_terminal=true, terminal_outcome=COALESCE(terminal_outcome,'deleted')
+    WHERE status='deleted' AND is_terminal IS DISTINCT FROM true;
+-> {"success": true}
+
+$ mcp__Supabase__execute_sql (verify)
+  select (select count(*) from vtid_ledger where status='complete') as a,
+         (select count(*) from vtid_ledger where status='deleted' and is_terminal is distinct from true) as b;
+-> {"a": 0, "b": 0}
+
+See outputs/live-verification.txt for the full before/after transcript.
+
+## Verification
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit.txt: clean
+
+$ npx jest test/vtid-03818-allocation-title.test.ts test/vtid-03818-reaper-terminal-flag.test.ts test/vtid-03818-complete-completed-drift.test.ts --silent=false
+-> outputs/jest-vtid-03818-filter.txt: 3/3 suites, 16/16 tests passing
+
+$ npx jest --silent=false   # full suite
+-> outputs/jest-full-suite.txt (tail): 740/741 suites (1 pre-existing skip),
+   13,689/13,724 tests passing, 0 failures, exit code 0
+   (prior VTID's baseline was 737/738 -- the +3 suites here are exactly the
+   3 new VTID-03818 test files, everything else unchanged)

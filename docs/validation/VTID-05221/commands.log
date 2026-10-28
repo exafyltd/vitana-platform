@@ -1,0 +1,8 @@
+# VTID-05221 spec PR — commands run (2026-10-15, session_01TMPMNGNEtPxKwmVqyfdx46)
+node scripts/collab/queue.mjs claim multi-tenant/_plan --session session_01TMPMNGNEtPxKwmVqyfdx46 --repo .
+  -> {"ok":true}
+node scripts/collab/queue.mjs validate --base origin/main --head HEAD
+  -> ✅ collab handoff — 3 handoff/lane file(s) changed, all valid
+SQL (production, governance bookkeeping only): plan_sparring_sessions insert 6400562e (converged) + owner approval;
+  allocate_global_vtid(...) -> VTID-05221, VTID-05222; vtid_ledger titles/status in_progress/approved.
+No product data read or written; nothing deployed.

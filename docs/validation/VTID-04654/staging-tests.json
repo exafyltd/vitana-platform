@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04654",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway answers on the deployed build", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "ORB health answers JSON", "path": "/api/v1/orb/health", "expect_status": 200 },
+    { "kind": "existing", "ref": "npm run test:roles", "cwd": "services/gateway",
+      "reason": "pins the admin opener facts (briefingHighlights on the live briefing shape), the admin instruction that no longer tells the model to fetch the briefing, the VTID-04655 role-truth migration and the VTID-04656 eval thread ids" },
+    { "kind": "existing", "ref": "npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts", "cwd": "services/gateway",
+      "reason": "proves only the admin scenario's instruction changed; every member payload is byte-identical" }
+  ]
+}

@@ -1,0 +1,84 @@
+{
+  "vtid": "VTID-05042",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "partner-health orders refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/partner-health/orders",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "anonymous GET; route mounted and auth-gated (JSON 401, not an HTML 404)"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "audit access refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/audit/access",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "anonymous GET; route mounted and auth-gated"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "overview activity refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/overview/activity",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "anonymous GET; route mounted and auth-gated"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "community live-rooms refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/community/live-rooms",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "anonymous GET; route mounted and auth-gated"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "content items refuses an anonymous caller",
+      "method": "GET",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/content/items",
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "anonymous GET; route mounted and auth-gated"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "content approve refuses an invalid caller",
+      "method": "POST",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/content/items/00000000-0000-0000-0000-000000000000/approve",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "POST only as a rejected probe (invalid bearer); nothing is moderated"
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "name": "meetup delete refuses an invalid caller",
+      "method": "DELETE",
+      "path": "/api/v1/admin/tenants/00000000-0000-0000-0000-000000000000/community/meetups/00000000-0000-0000-0000-000000000000",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "DELETE only as a rejected probe (invalid bearer); nothing is deleted"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/admin-partner-health.test.ts test/routes/tenant-admin test/middleware/require-tenant-admin.test.ts",
+      "cwd": "services/gateway",
+      "reason": "tenant admin -> 403 on all 7 partner-health routes and PLATFORM_SCOPE_ONLY (no query issued) on the platform-only routes; live-rooms/memberships tenant-filtered; exafy_admin unchanged. A tenant admin of another tenant cannot be exercised on staging without a write, so this is proven in jest."
+    }
+  ]
+}

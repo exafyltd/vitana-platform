@@ -1,0 +1,23 @@
+# VTID-04230 — commands (2026-09-21)
+
+# Compare the two workflows' operator pins (staging block vs prod)
+grep -n 'OPERATOR_' .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+grep -n 'OPERATOR_\|DEV_AUTOPILOT_' .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml   # before: only the dispatch-input executor gate
+
+# Task-role grants (denied — recorded, not worked around)
+scripts/aws/setup-operator-agent-task-role-grants.sh status     # inline policy ... (absent)
+scripts/aws/setup-operator-agent-task-role-grants.sh --apply    # -> outputs/setup-operator-agent-task-role-grants-apply-2026-09-21.log, exit 255, AccessDenied iam:PutRolePolicy
+
+# YAML still parses after the insert
+python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml'))"
+
+# Tests
+cd services/gateway
+npx jest test/vtid-04230-prod-operator-flags-declared.test.ts test/vtid-03820-onramp-staging-flag-pinned.test.ts \
+  test/vtid-04006-staging-onramp-executor-pinned.test.ts test/vtid-04018-operator-bootstrap-pack.test.ts \
+  test/vtid-04037-staging-operator-agent-flags-pinned.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts \
+  test/vtid-03958-env-overrides-input.test.ts test/vtid-03961-env-only-deploy-mode.test.ts test/vtid-04098-feature-flag-invalid-value.test.ts
+#   -> 8 suites / 106 tests green
+FILES=$(npx jest --listTests | xargs grep -l "AWS-PROD-DEPLOY-GATEWAY"); npx jest $FILES   # every suite that reads the prod workflow (21)
+
+# NOT run, deliberately: gh workflow run AWS-PROD-DEPLOY-GATEWAY.yml

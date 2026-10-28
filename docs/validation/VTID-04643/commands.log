@@ -1,0 +1,11 @@
+# VTID-04643 — commands run
+npx tsc --noEmit -p services/gateway                                      # clean
+npx jest test/services/testing/test-launcher.test.ts                      # 10 passed
+npx jest test/routes/testing-launcher.test.ts                             # 12 passed
+npx jest test/command-hub test/services/testing test/routes/testing test/navigation test/nav-golden test/vtid-04560-role-separation-regression.test.ts   # 867 passed
+node services/gateway/scripts/validate-dev-frontend-spec.mjs              # FRONTEND SPEC OK — 20 modules / 116 screens
+node services/gateway/scripts/generate-command-hub-symbol-index.mjs       # regenerated
+# Found and fixed before commit: the navigation-config edit first matched the
+# Autopilot module's "runs" tab (spec validator: autopilot tab count 9 vs 8).
+CATALOG_JSON=catalog.json node docs/validation/VTID-04643/outputs/harness-server.js &
+node docs/validation/VTID-04643/outputs/harness-shoot.js                  # desktop + mobile: 16 cards, refusal shown, start ok, E2E start ok, 29 not launchable, no errors, no overflow

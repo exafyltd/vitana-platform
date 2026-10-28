@@ -1,0 +1,21 @@
+# VTID-03237 — gateway slice verification commands (run in services/gateway)
+
+$ npm ci
+# installs pinned deps from package-lock
+
+$ npm run typecheck        # tsc --noEmit
+# exit 0 (after null-guarding getSupabase() and casting supabase rows to any[])
+
+$ npm test                 # jest, full gateway suite
+# Test Suites: 286 passed, 286 total
+# Tests:       6 skipped, 4939 passed, 4945 total
+# includes test/universal-cart.test.ts (38 passed) covering the video_shop + attribution path
+
+$ npm run build            # tsc && copy-frontend && copy-data
+# exit 0
+
+# Route surface added (mounted at /api/v1/shop-feed in src/index.ts):
+#   GET    /health
+#   GET    /videos            GET /videos/:id            GET /videos/:id/anchor
+#   POST   /videos/:id/events POST /events/batch
+#   GET    /saved             POST /saved                DELETE /saved/:productId

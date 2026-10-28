@@ -1,0 +1,23 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+    ✅ Test setup loaded - fetch mocked, env vars set
+PASS test/vtid-04031-operator-turn-cost.test.ts
+  VTID-04031 pricing key and per-call fields
+    ✓ uses the exact id when priced, reduces a Bedrock profile id to the bare Anthropic name, and knows what it does not know (4 ms)
+    ✓ turnUsageFields: router usage → tokens + estimated cost; unknown model → cost 0 and cost_priced false; no usage → nothing (3 ms)
+    ✓ summarizeTurnCost folds the plan and final calls, sums tokens and cost, and is unpriced if any priced-less call ran (1 ms)
+  VTID-04031 the turn carries usage + cost through processWithGemini
+    ✓ no tool call: meta has usage, cost_usd, cost_priced, model_calls and duration_ms; model.turn(plan) carries the same usage (97 ms)
+    ✓ with a tool round: both model calls are folded and the final model.turn reports the final call (7 ms)
+    ✓ a provider that reports no usage leaves the reply meta honest: zero tokens, unpriced, no usage on the frame (3 ms)
+  VTID-04031 Command Hub client
+    ✓ renders the badge on a reply meta row from the reply meta, never on sent messages (1 ms)
+    ✓ formats provider · model · duration · tokens · cost, says "unpriced" for an unknown model, and never invents a cost (3 ms)
+    ✓ shows each model call in the live transcript with its cost fields, and keeps "Thinking" only while nothing has happened (1 ms)
+    ✓ ships the styles and bumps the cache-bust version (1 ms)
+Test Suites: 1 passed, 1 total
+Tests:       10 passed, 10 total
+Snapshots:   0 total
+Time:        0.876 s, estimated 1 s
+Ran all test suites matching /test\/vtid-04031-operator-turn-cost.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,9 @@
+# VTID-04227 — commands run (2026-09-21)
+aws ecs describe-task-definition --task-definition vitana-gateway-awsdr --query 'taskDefinition.containerDefinitions[0].environment[?starts_with(name,`DEV_AUTOPILOT`)]'   # outputs/live-prod-values.txt
+aws ecs describe-task-definition --task-definition vitana-gateway --query '...DEV_AUTOPILOT...'
+grep -n "DRY_RUN" services/gateway/src/services/dev-autopilot-watcher.ts
+python3 (edit) .github/workflows/AWS-PROD-DEPLOY-GATEWAY.yml   # unconditional pin block after VTID-04098
+python3 (edit) services/gateway/test/vtid-03850-staging-executor-dispatch-pinned.test.ts
+cat > services/gateway/test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts
+cd services/gateway && npx jest test/vtid-04227-prod-dev-autopilot-flags-pinned.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts   # 3 suites / 33 tests green
+# NOT run: any dispatch of AWS-PROD-DEPLOY-GATEWAY.yml

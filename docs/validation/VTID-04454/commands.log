@@ -1,0 +1,13 @@
+# VTID-04454 — commands run (2026-09-24)
+select allocate_global_vtid('claude-code','DEV','conversation-brain')   -> VTID-04454 (Supabase RPC; gateway allocate blocked by the session egress proxy)
+UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-04454'
+
+cd services/gateway
+node node_modules/.bin/tsc --noEmit -p .                                     -> clean
+CI=true node node_modules/.bin/jest --ci test/services/conversation/vtid-04454-scored-opening.test.ts  -> 14 passed
+CI=true node node_modules/.bin/jest --ci=false -u test/services/conversation/vtid-04443-conversation-replay.test.ts
+  -> 40 passed; 9 snapshots updated (each only + "ranking_mode": "fixed"), 2 written (new cases)
+CI=true node node_modules/.bin/jest --ci --silent (full gateway suite)
+  -> first run: 1 failure, the VTID-04422 source pin on the old wiring shape; pin updated to the new shape
+  -> affected suites re-run green (vtid-04422, vtid-04454, vtid-04435, vtid-04443, wake-brief-wiring, wake-brief-explicit-selection-timeout)
+CI=true node node_modules/.bin/jest --ci --silent (full gateway suite, after the pin update) -> Test Suites 1185 passed (1 skipped); Tests 19067 passed, 0 failed; Snapshots 53 passed

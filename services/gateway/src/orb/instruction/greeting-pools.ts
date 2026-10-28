@@ -1,0 +1,203 @@
+/**
+ * BOOTSTRAP-ORB-MOVE: Phase 2 (move-only) — short-gap greeting phrase pool
+ * plus the randomizer that injects a subset into the system instruction.
+ *
+ * Gemini tends to converge on a single translation every short-gap reopening.
+ * To avoid the same phrase every time the user reopens the orb after seconds
+ * or minutes, we maintain a per-language pool of short, warm openers and
+ * inject a random subset into the greeting prompt each turn. Applies ONLY to
+ * the short-gap buckets (reconnect, recent, same_day) — new-day greetings keep
+ * the polite "Good morning, [Name]" pattern untouched.
+ *
+ * VTID-03630 — SHORT_GAP_GREETING_PHRASES / pickShortGapGreetings() are no
+ * longer used to build spoken directives. Both remaining callers
+ * (compute-greeting-decision.ts's short-gap rungs, voice-wake-brief.ts's
+ * expandShortGapPhraseMenu) told the model to use a pool entry "VERBATIM" —
+ * exactly the hardcoded-spoken-sentence shape CLAUDE.md NEVER-rule 41
+ * forbids, and this file's own header above already documented the failure
+ * mode it produces ("Gemini/Nova converges on a single translation"). Live
+ * report: "Lass mich dir den nächsten Schritt zeigen." (pool entry, line 49
+ * below) recited verbatim once the day_close/newday_overview rungs were
+ * disabled and more sessions fell through to this one. Both call sites now
+ * hand the model an INTENT instead — do not reintroduce a VERBATIM
+ * instruction against this pool.
+ */
+
+// VTID-03090: every phrase below MUST sound like a warm, service-grade
+// concierge — never dismissive, never street-casual, never the kind of
+// thing a busy receptionist says to get rid of you.
+//
+// Banned tonal patterns (these were in the prior pool and got cut):
+//   - one-word interrogatives: "Yes?", "Ja bitte?", "Oui ?", "¿Sí?",
+//     "Да?", "嗯？" — these read as impatient.
+//   - "what's new" casuals: "Was gibt's Neues?", "Quoi de neuf ?",
+//     "¿Qué hay?", "Что нового?", "Шта има ново?", "有什么新鲜事？"
+//   - curt commands: "Go ahead.", "Bereit.", "Lista.", "请说。"
+//   - colloquial "what's up": "Was liegt an?", "Worum geht's?"
+//
+// VTID-03256 — every phrase greets warmly, then LEADS to the next step.
+// Vitana proposes the move; she never asks the user's preference ("what would
+// you like?") — a returning user is here to continue, so we continue them.
+//
+// HARD RULE (broken-promise fix): this is the GENERIC fallback pool, used when
+// there is NO loaded last-session context. So a phrase here must NEVER claim to
+// resume a remembered conversation ("pick up where we left off", "dort
+// anknüpfen, wo wir waren", bare "lass uns weitermachen") — Vitana cannot
+// deliver that and the user calls the bluff ("I don't remember where we
+// ended"). Lead to the NEXT STEP or SHOW WHERE WE ARE (both grounded in the
+// journey/awareness she always has), never to an unrecalled past.
+export const SHORT_GAP_GREETING_PHRASES: Record<string, string[]> = {
+  en: [
+    "Welcome back. Let me show you your next step.",
+    "Good to have you back. Let me show you the next step.",
+    "Hi again. Let me take you to your next step.",
+    "Nice to hear you. Let me show you where we are.",
+    "Welcome back. Let me walk you to what's next.",
+    "I'm here for you. Let me walk you to the next step.",
+    "Good to see you again. Let me show you what's next.",
+    "Welcome back. Let me show you what's next.",
+  ],
+  de: [
+    "Schön, dich wieder zu hören. Lass mich dir deinen nächsten Schritt zeigen.",
+    "Willkommen zurück. Lass mich dir den nächsten Schritt zeigen.",
+    "Schön, dass du wieder da bist. Lass mich dir zeigen, was als Nächstes kommt.",
+    "Hallo nochmal. Lass mich dir deinen nächsten Schritt zeigen.",
+    "Gut, dich wieder zu hören. Lass mich dir zeigen, wo wir stehen.",
+    "Schön, dass du wieder hier bist. Lass mich dir deinen nächsten Schritt zeigen.",
+    "Willkommen zurück. Lass mich dir zeigen, was als Nächstes kommt.",
+    "Ich bin für dich da. Lass mich dich zum nächsten Schritt führen.",
+  ],
+  fr: [
+    "Content de te revoir. Comment puis-je t'aider ?",
+    "Bienvenue. Comment puis-je t'accompagner ?",
+    "Heureuse de t'entendre. Que veux-tu faire ?",
+    "Bonjour à nouveau. Comment puis-je aider ?",
+    "Je suis là pour toi. Comment puis-je t'aider ?",
+    "Content de te revoir. Sur quoi veux-tu te concentrer ?",
+    "Ravi de t'entendre. Comment puis-je t'aider ?",
+    "Bienvenue. Que puis-je faire pour toi ?",
+  ],
+  es: [
+    "Bienvenido de nuevo. ¿En qué puedo ayudarte?",
+    "Me alegra escucharte. ¿En qué puedo ayudarte?",
+    "Hola de nuevo. ¿Cómo puedo apoyarte?",
+    "Bienvenido. ¿En qué te puedo ayudar?",
+    "Aquí estoy para ti. ¿En qué puedo ayudar?",
+    "Qué bueno verte de nuevo. ¿En qué quieres enfocarte?",
+    "Encantada de escucharte. ¿Cómo puedo ayudarte?",
+    "Hola. ¿En qué puedo apoyarte hoy?",
+  ],
+  ar: [
+    "أهلاً بعودتك. كيف يمكنني مساعدتك؟",
+    "سعيدة بسماعك مجدداً. بماذا يمكنني مساعدتك؟",
+    "مرحباً مرة أخرى. كيف يمكنني دعمك؟",
+    "أنا هنا من أجلك. كيف يمكنني المساعدة؟",
+    "أهلاً بك. كيف يمكنني خدمتك اليوم؟",
+    "تسعدني عودتك. كيف يمكنني المساعدة؟",
+    "مرحباً. بماذا يمكنني دعمك؟",
+    "يسعدني سماعك. كيف يمكنني المساعدة؟",
+  ],
+  zh: [
+    "欢迎回来。我能为你做什么？",
+    "很高兴再次听到你。需要我帮什么忙吗？",
+    "你好，再次见到你。我能为你提供什么帮助？",
+    "我在这里为你服务。需要我帮什么忙吗？",
+    "欢迎回来。我可以帮你什么？",
+    "很高兴你回来了。今天有什么可以帮你的？",
+    "你好。我能为你做些什么？",
+    "再次见到你真好。我能为你提供什么支持？",
+  ],
+  ru: [
+    "Рада снова тебя слышать. Чем могу помочь?",
+    "Добро пожаловать. Чем я могу помочь?",
+    "Снова здравствуй. Как я могу тебя поддержать?",
+    "Я здесь для тебя. Чем могу помочь?",
+    "Приятно снова тебя слышать. Чем могу помочь?",
+    "С возвращением. Чем я могу тебе помочь?",
+    "Здравствуй ещё раз. Как я могу тебя поддержать?",
+    "Рада, что ты снова здесь. Чем могу помочь?",
+  ],
+  sr: [
+    "Добро дошао назад. Како могу да ти помогнем?",
+    "Драго ми је што те поново чујем. Како могу да помогнем?",
+    "Здраво поново. Чиме могу да те подржим?",
+    "Ту сам за тебе. Како могу да помогнем?",
+    "Добро дошао. Шта могу да урадим за тебе?",
+    "Драго ми је што те видим поново. Како могу да помогнем?",
+    "Поздрав. Како могу да те подржим данас?",
+    "Лепо што си се вратио. Како могу да помогнем?",
+  ],
+  // VTID-03681. `pickShortGapGreetings` ends `|| SHORT_GAP_GREETING_PHRASES.en`,
+  // so without these a Portuguese session was handed eight ENGLISH openers to
+  // choose from — inside a prompt otherwise telling it to speak Portuguese.
+  // Brazilian Portuguese (pt-BR), matching the shipped catalog; informal
+  // "você", which is the Brazilian register equivalent of the du-form used
+  // throughout the German source of truth.
+  pt: [
+    "Que bom te ver de novo. Deixa eu te mostrar o seu próximo passo.",
+    "Bem-vindo de volta. Vou te mostrar o próximo passo.",
+    "Que bom te ouvir. Deixa eu te mostrar onde estamos.",
+    "Olá de novo. Vou te levar ao seu próximo passo.",
+    "Estou aqui para você. Deixa eu te levar ao próximo passo.",
+    "Bem-vindo de volta. Vou te mostrar o que vem a seguir.",
+    "Que bom que você voltou. Deixa eu te mostrar o próximo passo.",
+    "Que prazer te ouvir. Vou te mostrar o que vem a seguir.",
+  ],
+  // Informal "ty" register throughout, per the same brand-voice rule.
+  pl: [
+    "Dobrze znów cię słyszeć. Pokażę ci twój następny krok.",
+    "Witaj z powrotem. Pokażę ci następny krok.",
+    "Miło, że znów jesteś. Pokażę ci, co dalej.",
+    "Cześć ponownie. Zaprowadzę cię do następnego kroku.",
+    "Jestem tu dla ciebie. Pokażę ci następny krok.",
+    "Witaj z powrotem. Pokażę ci, co czeka dalej.",
+    "Dobrze, że wróciłeś. Pokażę ci, na jakim jesteśmy etapie.",
+    "Miło cię słyszeć. Pokażę ci, co dalej.",
+  ],
+  // Informal "sen" register throughout, per the same brand-voice rule.
+  tr: [
+    "Tekrar hoş geldin. Sıradaki adımını göstereyim.",
+    "Seni tekrar duymak güzel. Bir sonraki adıma bakalım.",
+    "Merhaba yine. Seni bir sonraki adıma götüreyim.",
+    "Buradayım, senin için. Sıradaki adımı göstereyim.",
+    "Tekrar hoş geldin. Nerede kaldığımızı gösterebilirim.",
+    "Seni tekrar görmek güzel. Sırada ne var, göstereyim.",
+    "Merhaba. Bugün sana nasıl yardımcı olabilirim?",
+    "Tekrar hoş geldin. Devam edelim mi?",
+  ],
+};
+
+/**
+ * FIRST-TIME WELCOME — the opener a brand-new user hears on their very first
+ * ORB session. It must NEVER be a "welcome back" line; it introduces Vitana,
+ * frames the guided journey + what to expect, and offers to start session one.
+ * de/en/es/sr localized; other languages fall back to en (a first-time English
+ * welcome is still correct — far better than a returning-user greeting).
+ */
+export function buildFirstTimeWelcomeLine(lang: string, firstName: string | null): string {
+  const nm = firstName && firstName.trim().length > 0 ? ` ${firstName.trim()}` : '';
+  const lk = (lang || 'en').slice(0, 2).toLowerCase();
+  const byLang: Record<string, string> = {
+    de: `Hallo${nm}, ich bin Vitana, deine persönliche Longevity-Assistentin. Herzlich willkommen bei Maxina! Ich begleite dich Schritt für Schritt durch deine geführte Reise und zeige dir, wie alles funktioniert. Sollen wir gemeinsam mit deiner ersten Session starten?`,
+    en: `Hi${nm}, I'm Vitana, your personal longevity assistant. Welcome to Maxina! I'll guide you step by step through your journey and show you how everything works. Shall we start with your first session together?`,
+    es: `Hola${nm}, soy Vitana, tu asistente personal de longevidad. ¡Bienvenido a Maxina! Te guiaré paso a paso en tu viaje y te mostraré cómo funciona todo. ¿Empezamos juntos con tu primera sesión?`,
+    sr: `Здраво${nm}, ја сам Витана, твоја лична асистенткиња за дуговечност. Добро дошао у Максину! Водићу те корак по корак кроз твоје путовање и показаћу ти како све функционише. Хоћемо ли заједно да почнемо са првом сесијом?`,
+  };
+  return byLang[lk] || byLang.en;
+}
+
+/**
+ * Pick N phrases from the lang pool without replacement. Randomized per call
+ * so the system instruction and the turn-start prompt each see a fresh
+ * ordering — Gemini strongly biases toward the first option in a list, so
+ * rotating the order is the cheapest effective variety lever.
+ */
+export function pickShortGapGreetings(lang: string, count: number): string[] {
+  const pool = SHORT_GAP_GREETING_PHRASES[lang] || SHORT_GAP_GREETING_PHRASES.en;
+  const copy = pool.slice();
+  for (let i = copy.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [copy[i], copy[j]] = [copy[j], copy[i]];
+  }
+  return copy.slice(0, Math.min(count, copy.length));
+}

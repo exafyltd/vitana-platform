@@ -1,0 +1,13 @@
+diff --git a/services/gateway/src/services/partner-health/ingestion.ts b/services/gateway/src/services/partner-health/ingestion.ts
+index c6299e9..0064fe8 100644
+--- a/services/gateway/src/services/partner-health/ingestion.ts
++++ b/services/gateway/src/services/partner-health/ingestion.ts
+@@ -270,7 +270,7 @@ export async function ingestPartnerResult(
+   notifyUserAsync(
+     order.user_id,
+     order.tenant_id,
+-    'lab_report_processed',
++    'health_test_result_ready',
+     {
+       title: tt('notif.partner_test_result_ready.title', locale),
+       body: tt('notif.partner_test_result_ready.body', locale, { test_name: order.test_name, partner_name: order.partner_display_name }),

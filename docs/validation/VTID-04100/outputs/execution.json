@@ -1,0 +1,1 @@
+{"vtid":"VTID-04100","change":"pin FEATURE_ORB_GREETING_TTS_BRIDGE_ENV=staging+prod on AWS-PROD-DEPLOY-GATEWAY.yml","staging_measured_first_audible_ms":{"min":621,"p50":1398,"p90":2018},"staging_measured_first_model_audio_ms":{"min":2370,"p50":2878,"p90":3614},"role_files_in_deploy_range":0}

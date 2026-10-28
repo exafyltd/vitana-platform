@@ -1,0 +1,8 @@
+REQUIRED_BY_TYPE (services/gateway/src/services/partner-onboarding-checklist.ts:47-53)
+  supplier_shop, service_provider: account, company, verification, catalogue, mapping, tracking_test, terms, billing_mandate
+  affiliate_brand: account, company, verification, catalogue, mapping, tracking_test, terms
+  practitioner_clinic: account, company, verification, catalogue, mapping, terms, dpa
+  lab: account, company, verification, catalogue, mapping, results_channel, terms, dpa
+evaluateVerification (same file :238): outcome 'live' only when every required step is done, else 'needs_action'.
+Step writers outside the MCP: verification -> routes/partner-onboarding.ts:300,377; mapping -> routes/partner-onboarding-connections.ts:117,127.
+MCP tools (services/gateway/src/services/commerce-mcp.ts:76-194): get_onboarding_status, create_business, update_business, add_product, list_products, update_product, submit_for_verification.

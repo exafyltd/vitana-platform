@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04606",
+  "execution_id": "d8ab65fa-99cd-4294-8ba8-335618410463",
+  "finding_id": "f9b57505-21f0-4dad-bbe5-ae884b87549b",
+  "plan_version": 1,
+  "branch": "dev-autopilot/d8ab65fa",
+  "base_branch": "main",
+  "llm": {
+    "provider": "bedrock",
+    "model": "eu.anthropic.claude-sonnet-4-6"
+  },
+  "ticket_number": null,
+  "files": [
+    {
+      "path": "services/gateway/test/ai-credential-crypto.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-26T08:48:33.998Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

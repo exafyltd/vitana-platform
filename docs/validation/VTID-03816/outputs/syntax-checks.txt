@@ -1,0 +1,5 @@
+$ python3 -m py_compile services/agents/cognee-extractor/main.py services/agents/conductor/llm-router/router.py
+PYTHON SYNTAX OK
+
+$ node --check scripts/translate-keys.mjs && node --check scripts/i18n-audit-llm.mjs   # exafyltd/vitana-v1
+SYNTAX OK

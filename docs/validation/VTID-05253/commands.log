@@ -1,0 +1,15 @@
+# Commands run for VTID-05253 (lane-status / sentinel)
+# This is a spec/docs-only coordinator PR; verification is the merged state of the two gated lanes
+# plus the collab validator over the lane transitions.
+
+# 1. Confirm the two gated lanes' code is merged to vitana-v1 main
+gh pr view 1466 --repo exafyltd/vitana-v1 --json state,mergeCommit   # => MERGED, 50873056a (env-profiles, VTID-05249)
+gh pr view 1465 --repo exafyltd/vitana-v1 --json state,mergeCommit   # => MERGED, db3e0766b (fixture-gateway, VTID-05250)
+
+# 2. Confirm the lane files exist on vitana-platform main (via plan-spec merge #4179)
+git cat-file -e origin/main:.kiro/specs/native-g1-wiring/lanes/fixture-gateway.md   # => exit 0
+
+# 3. Validate the lane front-matter transitions in this PR
+node scripts/collab/queue.mjs validate   # => lane transitions ready/in-review -> done accepted
+
+# See outputs/ for captured results.

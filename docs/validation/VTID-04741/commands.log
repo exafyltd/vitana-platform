@@ -1,0 +1,6 @@
+# VTID-04741
+POST /api/v1/vtid/allocate -> VTID-04741 (ledger in_progress/approved)
+read-only: recommendation_commissions has 0 rows; CHECK name recommendation_commissions_status_check
+Supabase apply_migration vtid_04741_recommendation_commission_hold -> success (owner approval in session)
+read-only verification -> outputs/live-schema.txt
+typescript transpileModule on changed files -> 0 diagnostics; CI Jest runs the suites

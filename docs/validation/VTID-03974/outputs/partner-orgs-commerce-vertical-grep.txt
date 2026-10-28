@@ -1,0 +1,10 @@
+41:function isCommerceVertical(value: unknown): value is CommerceVertical {
+110:  const commerceVertical = req.body?.commerce_vertical;
+116:  if (!isCommerceVertical(commerceVertical)) {
+117:    return res.status(400).json({ ok: false, error: `commerce_vertical must be one of: ${COMMERCE_VERTICALS.join(', ')}` });
+126:      commerce_vertical: commerceVertical,
+131:    .select('id, org_key, display_name, org_type, commerce_vertical, status')
+137:  const orgRow = org as { id: string; org_key: string; display_name: string; org_type: string; commerce_vertical: CommerceVertical; status: string };
+316:    .select('id, org_key, display_name, commerce_vertical, status')
+320:  const orgRow = org as { id: string; org_key: string; display_name: string; commerce_vertical: CommerceVertical | null; status: string };
+338:  if (orgRow.commerce_vertical === 'health') {

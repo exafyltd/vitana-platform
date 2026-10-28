@@ -1,0 +1,40 @@
+{
+  "vtid": "VTID-05177",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "GET /api/v1/app-config answers 200 JSON, no auth, with every flag off and min version 0.0.0",
+      "path": "/api/v1/app-config",
+      "expect_status": 200,
+      "expect_content_type": "application/json",
+      "expect_json": {
+        "ok": true,
+        "schema_version": 1,
+        "ttl_seconds": 300,
+        "platforms.ios.min_supported_version": "0.0.0",
+        "platforms.android.min_supported_version": "0.0.0",
+        "platforms.ios.flags.push_enabled": false,
+        "platforms.ios.flags.health_sync_enabled": false,
+        "platforms.ios.flags.orb_native_enabled": false,
+        "platforms.android.flags.push_enabled": false,
+        "platforms.android.flags.health_sync_enabled": false,
+        "platforms.android.flags.orb_native_enabled": false
+      },
+      "expect_body_contains": ["\"push_enabled\":false", "\"min_supported_version\":\"0.0.0\""]
+    },
+    {
+      "kind": "http",
+      "name": "build-info answers JSON (the runner confirms the verified commit from it)",
+      "path": "/api/v1/admin/build-info",
+      "expect_status": 200,
+      "expect_content_type": "application/json"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/services/native-push-golden.vtid-05177.test.ts test/services/native-push-routing.vtid-05177.test.ts test/routes/notifications-token.vtid-05177.test.ts test/app-config.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Token registration (POST /api/v1/notifications/token) and push dispatch are writes to the database staging shares with production and sends to real members' devices, so a read-only staging suite cannot exercise them; NATIVE_PUSH_DIRECT_ENABLED and NATIVE_PUSH_APPILIX_GUARD_ENABLED stay unset on staging, so dispatch there is today's. These suites mock Supabase, FCM and Appilix and prove: the switch-off golden fixtures recorded from the unmodified code for all three dispatch sites (130 scenarios), switch-on native routing, badge and duplicate-guard rules, the token route's device_type allowlist with today's rows unchanged, and the app-config kill switches, 503, rate limit, mount and atlas claim."
+    }
+  ]
+}

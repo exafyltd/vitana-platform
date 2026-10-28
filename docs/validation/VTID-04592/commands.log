@@ -1,0 +1,3 @@
+cd services/gateway && npx tsc --noEmit -p .
+npx jest test/orb/live/session/vtid-04592-end-conversation-backstop.test.ts test/orb/live/session/still-here-complaint-backstop.test.ts
+npx jest --silent

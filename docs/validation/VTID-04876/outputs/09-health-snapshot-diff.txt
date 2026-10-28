@@ -1,0 +1,2 @@
+identical after stripping ,"golden_path":true — the re-recorded snapshot differs only by the new field
+54

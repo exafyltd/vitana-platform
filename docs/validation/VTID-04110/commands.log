@@ -1,0 +1,68 @@
+VTID-04110 — commands run, in order
+
+1. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0
+
+2. npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   (from services/gateway, fix applied)
+   -> 2 suites, 25 tests, all passing
+
+3. git stash push --include-untracked -- \
+     services/gateway/src/frontend/command-hub/app.js \
+     services/gateway/src/frontend/command-hub/index.html \
+     scripts/ci/command-hub-ownership-guard.js
+   npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   -> 2 suites, 9 of 25 tests FAILING (mutation verification — confirms
+      the test suite actually exercises the fix; the flicker test failed
+      on the literal renderApp(); calls the fix removes)
+
+4. git stash pop
+   -> fix restored
+
+5. npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+       test/vtid-04028-operator-turn-stream.test.ts --silent
+   -> 2 suites, 25 tests, all passing again
+
+6. npx tsc --noEmit (from services/gateway)
+   -> exit 0, no output
+
+7. node --check services/gateway/src/frontend/command-hub/app.js
+   -> exit 0 (re-confirmed after stash pop)
+
+8. npx jest test/scripts/command-hub-ownership-guard.test.ts \
+       test/vtid-04106-operator-chat-stick-to-bottom.test.ts \
+       test/vtid-04031-operator-turn-cost.test.ts \
+       test/vtid-04033-operator-execution-follow.test.ts \
+       test/vtid-03949-operator-sessions-sidebar-rename.test.ts \
+       test/vtid-03822-operator-chat-threads.test.ts --silent
+   -> 6 suites, 71 tests, all passing (wider Command Hub regression sweep)
+
+9. Pushed commit 954e9642; CI's "Gateway (Jest, ~7.5k tests)" job failed:
+   3 tests in the PRE-EXISTING test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+   (untouched by the original diff) — fixed-length SOURCE.slice(idx, idx+N)
+   windows and one literal-text regex, all anchored near the two source
+   edits, no longer matched once the source grew (a localStorage.setItem
+   call, an IIFE replacing a literal `false,`).
+
+10. Fixed the 3 assertions in test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts
+    (widened two SOURCE.slice windows: 1400->1600, 200->400; rewrote the
+    literal-`isOperatorFullscreen: false,` regex assertion to assert the
+    new IIFE pattern instead).
+    npx jest test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts --silent
+    -> 1 suite, 28 tests, all passing
+
+11. npx tsc --noEmit (from services/gateway)
+    -> exit 0, no output
+
+12. npx jest test/vtid-04110-operator-console-flicker-fullscreen-persist.test.ts \
+        test/vtid-04028-operator-turn-stream.test.ts \
+        test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts \
+        test/scripts/command-hub-ownership-guard.test.ts \
+        test/vtid-04106-operator-chat-stick-to-bottom.test.ts \
+        test/vtid-04031-operator-turn-cost.test.ts \
+        test/vtid-04033-operator-execution-follow.test.ts \
+        test/vtid-03949-operator-sessions-sidebar-rename.test.ts \
+        test/vtid-03822-operator-chat-threads.test.ts --silent
+    -> 9 suites, 124 tests, all passing

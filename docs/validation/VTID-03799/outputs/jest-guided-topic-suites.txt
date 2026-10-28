@@ -1,0 +1,88 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/guided-topic-replay-loop.test.ts
+  VTID-03799 guided-topic replay loop
+    one authority decides whether a topic may be resumed
+      ✓ declares _shouldResumeGuidedTopic() (4 ms)
+      ✓ refuses to resume once teaching has ended (1 ms)
+      ✓ still requires an in-flight topic that is not already armed (1 ms)
+    every re-arm site goes through that one authority
+      ✓ all three re-arm sites are guarded by it (1 ms)
+      ✓ no re-arm site still uses the old teaching-blind condition (1 ms)
+    the delivered-audio flag is not coupled to the one-shot auto-close
+      ✓ is set on its own condition, not inside the guidedAutoClose branch
+      ✓ the auto-close branch no longer sets it (1 ms)
+    closing a DELIVERED lesson credits it (the Well Done drawer)
+      ✓ _hide captures a pending completion before clearing the flags (1 ms)
+      ✓ marks teaching ended so the tool call and this path cannot double-fire (1 ms)
+      ✓ does NOT credit a lesson whose audio never played (1 ms)
+      ✓ fires onGuidedTopicTeachingEnd after teardown (1 ms)
+    pre-existing invariants still hold
+      ✓ _endGuidedTopicTeaching still sets its flag before hiding (no double-fire) (1 ms)
+      ✓ _hide still clears every guided flag (1 ms)
+      ✓ a fresh tap still resets teaching-ended (VTID-03781) (1 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts
+  orb-widget _announceDisconnect spoken alert gating (VTID-03746)
+    ✓ does not call _playAlert unconditionally (1 ms)
+    ✓ gates the spoken alert clip on _audioEverHeardThisOpen (1 ms)
+    ✓ still plays the alert once real audio has been heard (no regression to the normal case)
+    ✓ the visual status label (_setStatus) is unaffected by this gate — still set every time
+  orb-widget guided-topic mid-lesson resume via _guidedTopicInFlight (VTID-03746)
+    ✓ is declared in the initial _s state, defaulting to null
+    ✓ focusGuidedTopic arms it alongside _s.guidedTopic (1 ms)
+    ✓ is NOT cleared at the first-turn-complete point that nulls _s.guidedTopic
+    ✓ _attemptReconnect re-arms _s.guidedTopic from _guidedTopicInFlight only when _shouldResumeGuidedTopic() allows it (1 ms)
+    ✓ _shouldResumeGuidedTopic() keeps both original conjuncts and adds the teaching-ended check
+    ✓ _hide() clears _guidedTopicInFlight — a real close ends the overlay session (1 ms)
+  orb-widget _resetAndReconnect guided-topic resume + reconnect mutex (VTID-03770)
+    ✓ re-arms _s.guidedTopic from _guidedTopicInFlight only when _shouldResumeGuidedTopic() allows it — same predicate as _attemptReconnect (1 ms)
+    ✓ sets _isReconnecting = true before starting the reconnect — the health-probe watchdog's own "if (_s._isReconnecting) return;" guard is otherwise inert (1 ms)
+    ✓ resets _isReconnecting = false once _sessionStart() settles, on both the success and failure branch
+    ✓ the guided-topic re-arm runs before the _isReconnecting reset in the settle handlers (arm is a pre-start setup step, not a settle step) (1 ms)
+  orb-widget _sessionStart restores guidedTopic from _guidedTopicInFlight at the send site (VTID-03774)
+    ✓ restores guidedTopic from _guidedTopicInFlight via _shouldResumeGuidedTopic(), immediately before the payload read
+    ✓ does not touch guidedTopic when it is already set (no-op on a fresh, non-reconnect open) (1 ms)
+    ✓ logs the restore for future diagnosability
+    ✓ logs guidedTopic/guidedTopicInFlight/preDisconnectStage state on every _sessionStart call
+    ✓ the existing _attemptReconnect/_resetAndReconnect restore-guards are still present (this is additive, not a replacement)
+  orb-widget guided-topic resume signal — _guidedTopicAudioDelivered (VTID-03774)
+    ✓ is declared in the initial _s state, defaulting to false (1 ms)
+    ✓ focusGuidedTopic resets it to false on every fresh tap (1 ms)
+    ✓ is flipped true at the turn-complete point, on its own condition, OUTSIDE the one-shot guidedAutoClose block (1 ms)
+    ✓ _hide() clears it — a real close ends the overlay session
+    ✓ _sessionStart sends guided_topic_resume only when both guidedTopic AND the delivered flag are set (1 ms)
+    ✓ the resume field is nested inside the guidedTopic block, so it can never be sent without guided_topic_id (4 ms)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/frontend/orb-widget-guided-topic-backstop-stuck-state.test.ts
+  orb-widget _enterStuckState cancels the guided-topic backstop (VTID-03784)
+    ✓ clears _guidedTopicOpenedAt (1 ms)
+    ✓ cancels the backstop interval and nulls the handle
+    ✓ gates the cancellation on _guidedTopicInFlight being null — does not strip the backstop from a resumable lesson
+    ✓ _resetAndReconnect re-arms a still-in-flight guided topic on resume — the exact case the gate must protect (1 ms)
+    ✓ still sets the tap-to-reconnect UI state (unchanged behavior)
+    ✓ the guided-topic circuit breaker call site no longer needs its own duplicate cancellation — _enterStuckState covers it (1 ms)
+    ✓ MAX_WIDGET_RECONNECTS exhaustion also stops via the same _enterStuckState — same protection, no separate mechanism (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       46 passed, 46 total
+Snapshots:   0 total
+Time:        0.716 s, estimated 1 s
+Ran all test suites matching /test\/frontend\/guided-topic-replay-loop.test.ts|test\/frontend\/orb-widget-guided-topic-mid-lesson-resume.test.ts|test\/frontend\/orb-widget-guided-topic-backstop-stuck-state.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

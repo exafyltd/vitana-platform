@@ -1,0 +1,81 @@
+# VTID-03791 — commands run this session
+
+## Context: how this VTID was found
+
+While delivering the user's requested "click / visuals / audio" full live
+verification of VTID-03779 (Nova session prewarm) on staging, a real
+Playwright run against the actual community app (preview-aws.vitanaland.com,
+real .vtorb-fab click, real auth) showed `prewarm_ready` observed on every
+run, but the WS transcript's `start` send was consistently preceded by a
+fresh `connected` — i.e. the cold-connect path, not the reuse branch. Traced
+to `GET /live/transport` (orb-live.ts) resolving `isFeatureLive('ORB_WS_TRANSPORT')`
+false (unset on staging, code default 'off'), so the widget's real-app tap
+used SSE, which never calls `_sessionStartWs()` at all.
+
+## Verification that this flag is real, and confirming the fix works
+
+$ grep -n "FEATURE_ORB_WS_TRANSPORT_ENV" -r vitana-platform
+  -> feature-flags.ts has no DEFAULT_SETTINGS entry for ORB_WS_TRANSPORT;
+     AWS-STAGE-DEPLOY-GATEWAY.yml and AWS-PROD-DEPLOY-GATEWAY.yml both had
+     no reference to it before this change -> confirmed default 'off' on
+     both stacks, not staging-only as might have been assumed.
+
+Forced the widget's own documented developer override
+(`localStorage['vtorb.transport']='ws'`, orb-widget.js) in a real Playwright
+session against preview-aws-gateway.vitanaland.com to exercise the reuse
+branch ahead of deploying this pin, to confirm the MECHANISM (not just the
+config) is correct:
+
+  WS transcript (single tap, forced ws transport):
+  {"t":2050.7,"dir":"recv","type":"connected"}
+  {"t":2051.1,"dir":"send","type":"prewarm"}
+  {"t":2472.1,"dir":"recv","type":"prewarm_ready"}
+  {"t":2906.3,"dir":"send","type":"start"}          <- no 'connected' before this
+  {"t":4208.2,"dir":"recv","type":"session_started"}
+  {"t":4208.9,"dir":"send","type":"audio_ready"}
+  {"t":4458.3,"dir":"recv","type":"audio"}
+  TAP-TO-FIRST-AUDIO: 1787ms (desktop), 1396ms (mobile)
+
+  Direct cold-vs-warm, same page, back-to-back (forced ws transport):
+  WARM (reused prewarmed socket):        1726ms
+  COLD (fired immediately after, fresh connect): 1819ms
+  Both under the 3s cold-start target.
+
+This confirms pinning FEATURE_ORB_WS_TRANSPORT_ENV=staging-only turns the
+above into the DEFAULT behavior for every real staging tap, rather than
+something only reachable via a manual localStorage override.
+
+## The change itself
+
+Edited `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`: added
+`FEATURE_ORB_WS_TRANSPORT_ENV` to both the strip-list and the re-add list
+(`value:"staging-only"`) in the task-def jq block, same pattern as every
+other pinned flag in this file. No application code touched.
+
+$ python3 -c "import yaml; yaml.safe_load(open('.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml'))"
+  -> YAML OK
+
+## New regression test
+
+Added `services/gateway/test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts`,
+mirroring `staging-nova-prewarm-flag-pinned.test.ts`'s structure exactly.
+
+$ npx jest test/orb/live/upstream/staging-ws-transport-flag-pinned.test.ts \
+    test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts \
+    test/orb/live/upstream/staging-nova-prewarm-flag-pinned.test.ts
+  -> 3 suites passed, 13/13 tests passing (no regression to the
+     apostrophe-in-jq / run-step-size guards VTID-03787/03788 added)
+
+$ npx tsc --noEmit -p .
+  -> clean (no TS files changed by this VTID)
+
+## Governance
+
+Self-allocated via `POST /api/v1/vtid/allocate` (VTID-03791). A second,
+accidental allocate call produced VTID-03792 with no work ever attached to
+it; terminalized it `cancelled` via direct Supabase update (gateway has no
+PATCH /api/v1/vtid/:id route to correct a duplicate allocation) rather than
+leaving a dangling "Allocated - Pending Title" row. VTID-03791 itself was
+set to `status='in_progress'`, `spec_status='approved'` the same way, per
+CLAUDE.md §4.1 — the user's own "Yes, flip it on staging" instruction is
+the approval.

@@ -1,0 +1,5 @@
+NOT JUDGED — 1 file(s) outside this gate's remit:
+  supabase/migrations/20260916150000_vtid_03972_widen_oasis_events_retention.sql
+  These trees have no governance gate of their own. That is a real gap,
+  not an approval — see VTID-03696.
+APPROVED: 4 in-remit file(s) match the gateway_backend allowlist

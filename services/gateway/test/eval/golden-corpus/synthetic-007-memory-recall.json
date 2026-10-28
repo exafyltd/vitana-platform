@@ -1,0 +1,37 @@
+{
+  "fixture_id": "synthetic-007-memory-recall",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Memory write + semantic recall + diary.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Remember that I had a great walk this morning",
+      "expected_tool": "remember",
+      "expected_intent": "memory.write"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "What did I tell you about my sleep this week?",
+      "expected_tool": "search_memory",
+      "expected_intent": "memory.read"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "What were we talking about yesterday afternoon?",
+      "expected_tool": "recall_conversation_at_time",
+      "expected_intent": "memory.recall"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "Save a diary entry: feeling optimistic about the new project",
+      "expected_tool": "save_diary_entry",
+      "expected_intent": "memory.diary"
+    }
+  ]
+}

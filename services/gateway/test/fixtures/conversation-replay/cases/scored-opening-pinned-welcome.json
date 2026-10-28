@@ -1,0 +1,67 @@
+{
+ "schema_version": 1,
+ "id": "scored-opening-pinned-welcome",
+ "description": "Scored opening live (VTID-04454): a first-time welcome is an onboarding obligation and keeps the opening even when the score prefers the briefing.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "greeting": {
+   "openDecision": {
+    "mode": "speak",
+    "source": "wake_brief",
+    "line": "You have two things on today: a walk at noon and your diary."
+   },
+   "wakeBriefHasSelectedContinuation": true
+  },
+  "providers": [
+   {
+    "providerKey": "first_time_welcome",
+    "status": "returned",
+    "candidate": {
+     "id": "c-ftw",
+     "kind": "wake_brief",
+     "dedupeKey": "first_time_welcome:1",
+     "priority": 95,
+     "userFacingLine": "Welcome to the community, let me show you around.",
+     "privacyMode": "safe_to_speak"
+    }
+   },
+   {
+    "providerKey": "login_briefing",
+    "status": "returned",
+    "candidate": {
+     "id": "c-lb",
+     "kind": "wake_brief",
+     "dedupeKey": "login_briefing:today",
+     "priority": 90,
+     "userFacingLine": "You have two things on today.",
+     "privacyMode": "safe_to_speak"
+    }
+   }
+  ],
+  "winner": "first_time_welcome"
+ },
+ "outcomes": {
+  "first_time_welcome": {
+   "accepted": 0,
+   "declined": 20,
+   "ignored": 2
+  },
+  "login_briefing": {
+   "accepted": 28,
+   "declined": 1,
+   "ignored": 1
+  }
+ },
+ "turns": [],
+ "expect": {
+  "opener_kind": "override_v2",
+  "candidate_provider": "first_time_welcome",
+  "candidate_spoken": true,
+  "shadow_winner": "login_briefing",
+  "ranking_mode": "fixed_pinned"
+ },
+ "personal_weights_live": true,
+ "scored_opening_live": true
+}

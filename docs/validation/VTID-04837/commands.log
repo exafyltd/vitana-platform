@@ -1,0 +1,8 @@
+# VTID-04837 — commands run (npm registry blocked in the authoring session; Jest runs in CI)
+$ tsc --noEmit --skipLibCheck --strict src/services/partner-setup.ts src/routes/partner-orgs.ts src/routes/partner-onboarding-catalogue.ts   # filtered to the changed files, missing-package errors excluded
+  -> outputs/tsc-changed-files.txt (no type errors in the changed files)
+$ node scripts/ci/staging-verify/run.mjs check-pr --service gateway --repo-root . --base origin/main --head HEAD --title "VTID-04837: ..."
+  -> outputs/staging-suite-check.txt
+$ node --test scripts/ci/staging-verify/lib.test.cjs
+  -> outputs/staging-verify-lib-tests.txt (22 pass, 0 fail)
+# CI: Gateway (Jest) runs test/vtid-04837-partner-setup-idempotency.test.ts and the existing partner route suites.

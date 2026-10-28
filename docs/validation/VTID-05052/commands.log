@@ -1,0 +1,6 @@
+# VTID-05052 — commands run (2026-10-10)
+gh api repos/exafyltd/vitana-platform/check-runs/113360113867/annotations   # 2 signups, 0 greetings
+mcp Supabase execute_sql: app_users since 2026-10-06 with allowlist membership   # both signups registered test accounts
+mcp Supabase execute_sql: pg_get_functiondef(ci_welcome_greeting_health / fire_welcome_chat_on_membership)
+cd services/gateway && npx jest test/vtid-05052-welcome-greeting-health-test-accounts.test.ts   # 6/6 pass
+initdb + pg_ctl (PostgreSQL 16, local) ; psql -v ON_ERROR_STOP=1 -f outputs/local-postgres-harness.sql   # see outputs/local-postgres-harness.txt

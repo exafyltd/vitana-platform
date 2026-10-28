@@ -1,0 +1,57 @@
+# VTID-03906/03907/03908 — commands run during this change
+
+## TypeScript
+$ cd services/gateway && npx tsc --noEmit -p tsconfig.json
+(clean, no output — see outputs/tsc-noemit.txt)
+
+## New-suite tests
+$ cd services/gateway && npx jest test/vtid-03906-08-operator-scroll-mic-fullscreen.test.ts --silent
+Test Suites: 1 passed, 1 total
+Tests:       18 passed, 18 total
+(full output: outputs/jest-new-suite.txt)
+
+## Full gateway suite (regression check)
+$ cd services/gateway && npx jest --silent
+Test Suites: 1 skipped, 793 passed, 793 of 794 total
+Tests:       29 skipped, 6 todo, 14187 passed, 14222 total
+0 failures.
+(tail: outputs/jest-full-suite.txt)
+
+## Build Gate (gateway_backend profile)
+$ cd services/gateway && npm run build
+exit 0 — tsc, copy-frontend, copy-data all succeeded
+(full output: outputs/npm-build.txt)
+
+## CSP Governance Gate — local pre-flight (VTID-03714 diff-only scan)
+$ git diff origin/main -- 'services/gateway/src/frontend/' > /tmp/csp_diff_final.txt
+$ node scripts/ci/validator-path-guard.cjs --csp-added-lines /tmp/csp_diff_final.txt
+No CSP pattern hits in added lines.
+
+First run of this command flagged one false-positive hit: a doc comment
+that used the literal substring "style=" while explaining that the new
+SVG icons carry no inline styling attribute (the same self-referential
+trap VTID-03896 hit in styles.css). Fixed by rewording the comment to
+avoid the literal substring — no code change needed, since the actual SVG
+markup only uses fill/stroke/width/height attributes, never `style=`.
+
+## Command Hub Ownership Guard — local pre-flight
+$ GITHUB_HEAD_REF=claude/youthful-mccarthy-9o56j5 GITHUB_BASE_REF=main \
+  PR_TITLE="VTID-03906: Command Hub Operator scroll-jump/flicker fix + voice dictation (VTID-03907) + fullscreen toggle (VTID-03908)" \
+  node scripts/ci/command-hub-ownership-guard.js
+DEV-COMHU marker found in branch/PR title (ran after committing; before the
+commit the guard reported "Changed files: 0" since it diffs committed
+state).
+Guard check PASSED.
+
+(Required adding VTID-03906/03907/03908 to
+scripts/ci/command-hub-ownership-guard.js's ALLOWED_VTID_PATTERN.)
+
+## Path Ownership Guard (validator-path-guard.cjs) — local pre-flight
+$ git diff --name-only origin/main...HEAD > /tmp/changed_files.txt
+$ node scripts/ci/validator-path-guard.cjs /tmp/changed_files.txt gateway_backend /tmp/pr_body.txt
+
+(gateway_backend allows services/gateway/src/** — which includes
+frontend/command-hub/** as a subtree — plus services/gateway/test/** and
+docs/validation/**; scripts/ci/*.js is outside this gate's REMIT and is
+reported NOT JUDGED rather than rejected, per VTID-03696 — same shape as
+the prior PR in this repo.)

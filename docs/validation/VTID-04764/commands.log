@@ -1,0 +1,6 @@
+# VTID-04764 — commands (services/gateway unless noted)
+node --max-old-space-size=4096 node_modules/.bin/tsc --noEmit -p .   # clean
+npx jest test/vtid-04764-agent-progress-gate.test.ts                  # 16 tests, outputs/jest-a1.txt
+npx jest (full gateway suite)                                         # 1415 suites, 22756 tests, 0 failed
+(root) node scripts/conversation/generate-flag-pins.mjs --check       # current
+(root) node scripts/ci/dev-autopilot-impact-scan.mjs                  # see PR

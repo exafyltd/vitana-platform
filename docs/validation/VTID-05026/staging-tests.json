@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05026",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "episode audio stays behind sign-in",
+      "path": "/api/v1/journey/audiobook/topics/T251/audio?lang=sr",
+      "expect_status": 401
+    },
+    {
+      "kind": "http",
+      "name": "the Google voice list is admin-only",
+      "path": "/api/v1/voice/preview/google-voices?lang=sr",
+      "expect_status": 401
+    },
+    {
+      "kind": "playwright",
+      "name": "ru and sr are read by Google, the other nine by Polly (X-Audiobook-Voice-Provider)",
+      "spec": "e2e/staging/vtid-05026-audiobook-voices.staging.spec.ts",
+      "cwd": "e2e"
+    },
+    {
+      "kind": "existing",
+      "name": "Audiobook voice table, Google narration, cap, Polly override, gender rule, preview route",
+      "ref": "npx jest test/vtid-05026-audiobook-voices.test.ts test/vtid-04761-audiobook-audio.test.ts test/vtid-04761-audiobook-audio-route.test.ts test/vtid-04445-persona-voice-gender.test.ts test/routes/voice-config.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins what a read-only staging probe cannot: Google is never chosen for any language but ru/sr, each switch is independent, the cap and a Google failure answer 422 and never another voice, the 4,500-byte splitter on long Russian text, in-flight dedupe, provider-separated cache keys, existing Polly callers byte-identical, and every Audiobook voice female."
+    }
+  ]
+}

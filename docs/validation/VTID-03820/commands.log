@@ -1,0 +1,127 @@
+VTID-03820 — commands.log
+==========================
+
+## Research (background agent) before writing any code
+
+Traced the real execution engine rather than assuming its shape:
+- services/gateway/src/services/dev-autopilot-execute.ts:1340
+  runExecutionSession(s, executionId) — the function that actually writes
+  files via GitHub Contents API and opens a PR. Takes only executionId,
+  loads everything else (finding/plan/branch) from dev_autopilot_executions.
+  LLM invocation is dual-path: worker-queue (isWorkerQueueEnabled() ?
+  runWorkerTask(...) — a hardcoded Claude-subscription model, unrelated to
+  llm_routing_policy) : callMessagesApi(prompt, vtid) (direct path, goes
+  through callViaRouter('worker', ...)). No override parameter existed on
+  either path.
+- services/gateway/src/services/self-healing-injector-service.ts:215
+  bridgeToAutopilotExecution() — the reusable pattern: insert an
+  autopilot_recommendations row + a dev_autopilot_plan_versions row, then
+  call bridgeActivationToExecution(findingId, null), which calls
+  approveAutoExecute() (runs the FULL existing safety gate) to create the
+  execution row, then patches execute_after=now.
+- services/gateway/src/services/llm-router.ts:973 callViaRouter() — always
+  DB-policy-driven via loadPolicy(), no per-call override existed.
+- No existing "trigger Dev Autopilot execution for this specific VTID"
+  route or tool was found anywhere in the repo (confirmed by reading the
+  two existing Command Hub "Activate" buttons — both feed different,
+  unrelated planes).
+- dev_autopilot_executions has a metadata jsonb column and no
+  model/provider column — confirmed via the live migration file, matching
+  VTID-03819's own "use metadata, don't add a column" precedent.
+- Confirmed: the Dev Autopilot pipeline itself has NO spec_status check —
+  that gate lives on the unrelated generic VTID-lifecycle-start route. Any
+  new operator-triggered on-ramp needs to add its own.
+
+## Design decisions (why this shape, not a bigger/smaller one)
+
+1. Override lives in llm-router.ts as opts.providerOverride/modelOverride,
+   replacing PRIMARY only (the stage's own policy fallback still applies on
+   failure) — additive to LLMRouterOpts, every existing caller omits both
+   fields and is provably unaffected (see outputs/jest-vtid-03820-filter.txt,
+   "existing callers unaffected" test).
+2. The override is threaded through dev_autopilot_executions.metadata
+   (read by the new extractLlmOnRampOverride(), dev-autopilot-execute.ts),
+   NOT a new runExecutionSession() parameter — this keeps the function's
+   signature untouched and means the override is fully determined by data
+   already loaded from the DB for that execution row.
+3. The worker-queue path is SKIPPED when an override is present
+   (isWorkerQueueEnabled() && !onRampOverride) — the worker queue dispatches
+   to a hardcoded Claude-subscription model that has nothing to do with
+   llm_routing_policy, so an override could never take effect through it.
+   This is the one behavior change to an existing branch, and it only
+   fires when metadata.llm_on_ramp_override is set — never for a
+   self-healing execution, which never sets it.
+4. New services/gateway/src/services/operator-execution-onramp.ts reuses
+   approveAutoExecute() (the FULL existing safety gate: kill_switch,
+   allow/deny scope, budget, concurrency, tests_missing, PR-flood guard)
+   rather than reimplementing any of it. Only two governance gates are new,
+   because the reused machinery has neither:
+     - OPERATOR_EXECUTION_ONRAMP_ENABLED kill switch, default OFF (unset
+       or anything but the literal string 'true' stays disabled).
+     - target VTID must have spec_status='approved' and not be terminal.
+5. Plan content (plan_markdown + files_referenced) is NOT auto-derived —
+   the caller (operator or the model composing the tool call) supplies it,
+   same as a human filling in a plan before clicking Activate. Building
+   the self-healing path's diagnosis-driven auto-derivation
+   (deriveTestPathsForPlan et al.) for an operator-triggered generic VTID
+   is out of scope here; the EXISTING tests_missing safety-gate rule still
+   runs unchanged on whatever the caller supplies, so a bad file list is
+   still rejected, not silently accepted.
+6. New source_type 'operator_onramp' registered in
+   autopilot-executable-source-types.ts, per that file's own documented
+   process ("adding a new scanner... means adding its source_type here in
+   a code-reviewed PR").
+7. New operator-chat tool `autopilot_execute_task` (gemini-operator.ts +
+   tool-registry.ts) is a thin, governance-logged wrapper around
+   triggerOperatorExecution() — mirrors executeCreateTask()'s existing
+   shape. Since the underlying capability is default-OFF via the kill
+   switch, registering the tool is safe to ship without it being able to
+   fire in production today.
+
+## Code changes
+
+- llm-router.ts: LLMRouterOpts gains providerOverride?/modelOverride?;
+  callViaRouter() builds stageConfig from the override (primary only) when
+  both are set, else uses the policy unchanged.
+- dev-autopilot-execute.ts: ExecutionRow gains metadata?; new EXPORTED
+  extractLlmOnRampOverride() (pure, permissive about malformed jsonb);
+  callMessagesApi() gains an optional 4th-arg-shaped override param, passed
+  through to callViaRouter(); the runExecutionSession() call site computes
+  onRampOverride from exec.metadata and both branches route through it.
+  supa() exported (was module-private) so operator-execution-onramp.ts can
+  reuse the same REST helper instead of duplicating it.
+- New operator-execution-onramp.ts: triggerOperatorExecution() — the two
+  new governance gates, then insert recommendation+plan rows, call
+  approveAutoExecute(), one combined PATCH stamping the DeepSeek override +
+  execute_after=now, one OASIS event.
+- autopilot-executable-source-types.ts: added 'operator_onramp'.
+- gemini-operator.ts / tool-registry.ts: new autopilot_execute_task tool
+  definition + executor + dispatch case.
+
+## Verification
+
+$ cd services/gateway && npx tsc --noEmit
+-> outputs/tsc-noemit.txt: clean
+
+$ npx jest test/vtid-03820-llm-router-override.test.ts test/vtid-03820-execution-onramp-metadata.test.ts test/vtid-03820-operator-execution-onramp.test.ts test/autopilot-executable-source-types.test.ts test/autopilot-source-type-filter-call-sites.test.ts --silent=false
+-> outputs/jest-vtid-03820-filter.txt: 5/5 suites, 42/42 tests passing
+   (the last two are PRE-EXISTING suites updated for the new
+   'operator_onramp' allowlist entry — both pass unmodified in their other
+   assertions, confirming the addition didn't disturb the existing gate)
+
+$ npx jest --silent=false   # full suite
+-> outputs/jest-full-suite.txt (tail): 748/749 suites (1 pre-existing skip),
+   13,753/13,788 tests passing, 0 failures, exit code 0
+   (baseline was 745/746 after VTID-03819; the +3 net suites here are the
+   3 new VTID-03820 test files — autopilot-executable-source-types.test.ts
+   and autopilot-source-type-filter-call-sites.test.ts already existed and
+   are modified/unmodified respectively, not new suites)
+
+## Deliberately not run
+
+No live invocation of triggerOperatorExecution()/runExecutionSession()
+against the real repo — the kill switch (OPERATOR_EXECUTION_ONRAMP_ENABLED)
+is not set anywhere, so the capability is inert by construction; exercising
+it for real would mean actually opening a PR against this org, which is
+exactly the blast radius this VTID's default-OFF gate exists to prevent
+until the platform owner deliberately turns it on and observes it.

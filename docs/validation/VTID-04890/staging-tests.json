@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-04890",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "POST",
+      "path": "/mcp",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_content_type": "application/json",
+      "reason": "the Commerce MCP endpoint still refuses an unsigned call before any tool runs; the tool list (with update_business.business_type) is behind sign-in, so its schema is proven by the Jest suite"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04890-commerce-business-type.test.ts test/commerce-mcp.test.ts",
+      "cwd": "services/gateway",
+      "reason": "setting a missing business type (draft + null only, never changed once set, race-safe, no new business), the typeless status and the update_business schema are pinned in the suite; the real repair is the owner's own call through Claude on staging"
+    }
+  ]
+}

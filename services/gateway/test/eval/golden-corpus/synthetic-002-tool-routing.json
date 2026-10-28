@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-002-tool-routing",
+  "source": "synthetic",
+  "captured_at": "2026-05-28T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Three-turn session that exercises the top voice-tool-routing surfaces (memory write, send message, schedule).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Remember that I had a great walk this morning",
+      "expected_tool": "remember",
+      "expected_intent": "memory.write"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Send a message to Maria saying I'll be late",
+      "expected_tool": "send_chat_message",
+      "expected_intent": "communication.send_message"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Book a 30 minute focus block tomorrow at 10",
+      "expected_tool": "create_calendar_event",
+      "expected_intent": "calendar.create"
+    }
+  ]
+}

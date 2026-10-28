@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-05009",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after the change",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/dev-memory/morning-pack",
+      "expect_status": 401,
+      "reason": "the morning-pack route exists and stays closed without a token or admin JWT (JSON 401); read-only. 200 with X-Dev-Memory-Token is checked once the owner creates the staging secret."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05009-dev-memory-pack-token-wiring.test.ts test/routes/dev-memory.test.ts",
+      "cwd": "services/gateway",
+      "reason": "optional wiring on both workflows (absent secret never fails a deploy), prod ARN validation, hook registered and never failing a session, token comparison in the route"
+    }
+  ]
+}

@@ -1,0 +1,15 @@
+# VTID-04426 — commands run (2026-09-23)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate -> VTID-04426; vtid_ledger in_progress / approved.
+Catalog dump (real buildLiveApiTools('authenticated','/community','community'), default Nova budget): 291 decls, 43 kept, 248 dropped, 65,508 bytes.
+cd services/gateway
+npx tsc --noEmit -p .  -> clean
+npx jest test/orb/live/tools/vtid-04426-session-tool-selection.test.ts -> 16 passed
+  (first run: /health kept only index/pillar/supplement tools — stems re-ordered by importance, contextual ranked by stem)
+  (harness showed find_tool matching reorder_last_order on the single word "last" — half-the-words rule added, test added)
+npx jest test/orb test/routes/orb-live -> 237 suites, 4148 passed
+npx jest test/command-hub test/frontend test/services/conversation test/orb/live/tools -> 79 suites, 1005 passed
+  (styles.css ?v= bumped with app.js — the sync tests require both)
+npx jest workflow bash-syntax / size guards -> 37 passed
+node scripts/generate-command-hub-symbol-index.mjs -> regenerated
+node scripts/ci/validator-path-guard.cjs --csp-added-lines <diff of command-hub/> -> No CSP pattern hits in added lines.
+docs/validation/VTID-04426/outputs: node harness-server.js & node harness-shoot.js -> 1400x900 + 390x844, no overflow, no page errors

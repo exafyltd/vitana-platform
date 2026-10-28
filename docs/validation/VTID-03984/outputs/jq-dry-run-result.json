@@ -1,0 +1,199 @@
+{
+  "containerDefinitions": [
+    {
+      "image": "img",
+      "environment": [
+        {
+          "name": "FOO",
+          "value": "bar"
+        },
+        {
+          "name": "GIT_COMMIT_SHA",
+          "value": "sha"
+        },
+        {
+          "name": "COMMIT_SHA",
+          "value": "sha"
+        },
+        {
+          "name": "BUILD_INFO_MARKER",
+          "value": "short"
+        },
+        {
+          "name": "NOVA_SONIC_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "NOVA_SONIC_REGION",
+          "value": "eu-north-1"
+        },
+        {
+          "name": "NOVA_SONIC_MODEL_ID",
+          "value": "amazon.nova-2-sonic-v1:0"
+        },
+        {
+          "name": "NOVA_SONIC_CANARY_USER_IDS",
+          "value": "u"
+        },
+        {
+          "name": "NOVA_SONIC_CANARY_TENANT_IDS",
+          "value": "t"
+        },
+        {
+          "name": "FEATURE_ORB_GREETING_TTS_BRIDGE_ENV",
+          "value": "off"
+        },
+        {
+          "name": "FEATURE_ORB_SAFE_FAST_GREETING_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "FEATURE_LATENCY_TELEMETRY_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "FEATURE_ORB_FAST_START_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "FEATURE_ORB_BRAIN_CACHE_ENV",
+          "value": "staging+prod"
+        },
+        {
+          "name": "FEATURE_ORB_NOVA_PREWARM_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "FEATURE_ORB_WS_TRANSPORT_ENV",
+          "value": "staging-only"
+        },
+        {
+          "name": "ORB_FULL_DUPLEX_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_DAY_CLOSE_RUNG_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "ORB_LOG_NOVA_INSTRUCTION_DEBUG",
+          "value": "true"
+        },
+        {
+          "name": "TTS_PROVIDER",
+          "value": "polly"
+        },
+        {
+          "name": "TTS_POLLY_STRICT",
+          "value": "true"
+        },
+        {
+          "name": "TTS_FISH_FALLBACK_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "VERTEX_LIVE_UNAVAILABLE",
+          "value": "true"
+        },
+        {
+          "name": "ORB_CASCADED_VOICE_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_EXECUTION_ONRAMP_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_CODEBASE_READ_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_DB_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_AWS_READONLY_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_LLM_REVIEW_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_USE_JOB",
+          "value": "true"
+        },
+        {
+          "name": "DEV_AUTOPILOT_JOB_CLOUD",
+          "value": "aws"
+        },
+        {
+          "name": "DEV_AUTOPILOT_WATCHER_LIVE",
+          "value": "true"
+        },
+        {
+          "name": "OPERATOR_PLANNER_ENABLED",
+          "value": "true"
+        },
+        {
+          "name": "BEDROCK_ROLE_ARN",
+          "value": "role"
+        },
+        {
+          "name": "AWS_BEDROCK_REGION",
+          "value": "eu-central-1"
+        },
+        {
+          "name": "AURORA_CA_BUNDLE_PATH",
+          "value": "/app/certs/rds-combined-ca-bundle.pem"
+        }
+      ],
+      "secrets": [
+        {
+          "name": "BAZ",
+          "valueFrom": "arn:old"
+        },
+        {
+          "name": "SUPABASE_JWT_SECRET",
+          "valueFrom": "j"
+        },
+        {
+          "name": "SUPABASE_ANON_KEY",
+          "valueFrom": "a"
+        },
+        {
+          "name": "GOOGLE_GEMINI_API_KEY",
+          "valueFrom": "g"
+        },
+        {
+          "name": "GEMINI_API_KEY",
+          "valueFrom": "g"
+        },
+        {
+          "name": "OPENAI_API_KEY",
+          "valueFrom": "o"
+        },
+        {
+          "name": "DEEPSEEK_API_KEY",
+          "valueFrom": "d"
+        },
+        {
+          "name": "FISH_API_KEY",
+          "valueFrom": "f"
+        },
+        {
+          "name": "AURORA_DATABASE_URL",
+          "valueFrom": "au"
+        },
+        {
+          "name": "AURORA_RLS_DATABASE_URL",
+          "valueFrom": "ar"
+        },
+        {
+          "name": "GITHUB_SAFE_MERGE_TOKEN",
+          "valueFrom": "gt"
+        }
+      ]
+    }
+  ]
+}

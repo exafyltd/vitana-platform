@@ -1,0 +1,18 @@
+## social_connections has is_active + disconnected_at, no status column
+27:  enrichment_status TEXT DEFAULT 'pending' CHECK (enrichment_status IN (
+33:  disconnected_at TIMESTAMPTZ,
+34:  is_active BOOLEAN DEFAULT true,
+43:  ON social_connections (user_id, is_active);
+45:  ON social_connections (enrichment_status) WHERE is_active = true;
+## social router mount
+900:  mountRouterSync(app, '/api/v1/social-accounts', socialConnectRouter, { owner: 'social-connect' });
+## streak repository
+24:export async function fetchUserDiaryStreak(sb: SupabaseClient, userId: string) {
+## frontend routes
+1183:          <Route path="/calendar" element={
+1260:          <Route path="/comm/media-hub" element={
+1438:          <Route path="/connectors" element={
+1448:          <Route path="/settings/connected-apps" element={<RedirectPreservingSearch to="/connectors" />} />
+1480:          <Route path="/me/profile" element={
+## no /comm/create-post route
+0

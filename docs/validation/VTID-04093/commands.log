@@ -1,0 +1,76 @@
+VTID-04093 — commands run
+
+# Dependency analysis (before any edit) — confirm every candidate name's only
+# reachable callers live inside the same dead block
+$ grep -o '\bescapeHtmlSafe\b' app.js | wc -l         # 4 (1 def + 3 calls, all inside renderUnifiedIntelligencePanel)
+$ grep -n "'memory-garden'" app.js                     # 1 hit: triggerGlobalRefresh's own dead branch
+$ grep -n "'memory-garden'" app.js (SECTION_LABELS)    # 0 hits — module key not in nav config, unreachable
+
+# Deletion
+$ sed -i '22405,24823d' services/gateway/src/frontend/command-hub/app.js   # -2419 lines
+$ # removed the dead `moduleKey === 'memory-garden'` branch in triggerGlobalRefresh (3 lines)
+
+# Post-deletion: confirm zero remaining references for all 23 names
+$ for name in refreshMemoryGarden renderMemoryGardenView renderKnowledgeGraphView renderRecallView \
+  renderInspectorView renderEmbeddingsView fetchMemoryGardenProgress fetchLongevitySummary \
+  fetchCategoryMemories fetchMemoryFacts fetchRelationshipGraph fetchBehavioralSignals \
+  renderMemoryGardenCard renderLongevityFocusPanel renderLongevitySignal renderDiaryEntryModal \
+  renderCategoryDetailModal getCategorySubcategories renderUnifiedIntelligencePanel escapeHtmlSafe \
+  getKnowledgeGraphIcon MEMORY_GARDEN_ICONS LONGEVITY_MESSAGES; do
+    grep -o "\b$name\b" app.js | wc -l
+  done
+# all 0
+
+$ node --check services/gateway/src/frontend/command-hub/app.js
+app.js syntax OK
+
+# Dead CSS cleanup (T11's own tool, run against this deletion)
+$ node scripts/find-dead-css-classes.mjs --check
+✓ 1828 classes referenced in styles.css
+✓ 361 dead candidates
+✓ 190 rule(s) removable
+✗ out of sync
+
+$ node scripts/find-dead-css-classes.mjs --fix
+✓ wrote styles.css (removed 190 rule(s))
+
+$ node scripts/find-dead-css-classes.mjs --check
+✓ 1712 classes referenced in styles.css
+✓ 245 dead candidates
+✓ 0 rule(s) removable
+✓ in sync (no removable dead rules found)
+
+# Cache-bust bump
+index.html: styles.css?v=20260918-vtid-04093-t1b-delete-dead-memory-block
+index.html: app.js?v=20260918-vtid-04093-t1b-delete-dead-memory-block
+
+# TypeScript / build
+$ cd services/gateway && npx tsc --noEmit
+(clean, no output)
+
+$ npm run build
+(exit 0)
+
+# Test suites — first pass surfaced 5 failing suites (22 tests), all from
+# prior VTIDs' own "this block must survive untouched" guard tests, since
+# T1b's decision (delete) supersedes their premise. Each fixed by replacing
+# the now-obsolete guard with an explanatory comment pointing at VTID-04093
+# — no other assertion in any of those files was touched.
+$ npx jest test/command-hub/ test/scripts/find-dead-css-classes.test.ts
+Test Suites: 5 failed, 11 passed, 16 total
+Tests:       22 failed, 242 passed, 264 total
+
+# Fixed: t5d-stale-gcp-labels-fixed.test.ts, t5c-no-fabricated-fallback-rows.test.ts,
+# t5b-gcp-static-screens-gated.test.ts, t1d-dead-functions-removed.test.ts
+# Deleted: memory-garden-placeholder-banner.test.ts (its whole subject —
+#   renderMemoryGardenView's placeholder banner — no longer exists)
+
+$ npx jest test/command-hub/ test/scripts/find-dead-css-classes.test.ts
+Test Suites: 15 passed, 15 total
+Tests:       242 passed, 242 total
+
+# Repo-wide sweep for any other reference to the 23 removed names
+$ for name in <all 23>; do grep -rl "\b$name\b" --include="*.ts" --include="*.js" --include="*.md" services/gateway docs; done
+# Only hits: this PR's own test files (intentional removal-assertions), and
+# docs/AURORA-B3-DEAD-RPC-CALLSITE-AUDIT.md (historical record, unrelated
+# backend RPC finding, deliberately left untouched)

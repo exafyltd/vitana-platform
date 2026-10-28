@@ -1,0 +1,48 @@
+# VTID-04124 — what this session actually ran
+
+## Allocation (CLAUDE.md §4.1)
+POST https://gateway.vitanaland.com/api/v1/vtid/allocate
+  -> {"ok":true,"vtid":"VTID-04124","num":4124,"id":"3da61c8e-..."}
+UPDATE vtid_ledger SET title/summary, status='in_progress', spec_status='approved'
+
+## Measurement (read-only, Supabase)
+- split oasis_events stage='upstream_error' code='nova_validation' by diagnostic
+- joined vtid.live.session.start (origin, user_id, lang) to the content-filter close
+- grouped by origin / user / rung / prompt_len band
+- reverse-causality split on a 30-minute prior-block window
+
+## A correction made during this work
+The provider/blocked-rate figures reported EARLIER in this session counted
+`code='nova_validation'`, which also carries an unrelated 55-second idle-stream
+timeout, and did not filter by `origin` (so staging benchmark traffic from this
+same session was mixed into "production"). Both are corrected here. The earlier
+"35.8% -> 66.7%" framing should not be used.
+
+## Verification
+services/gateway $ ./node_modules/.bin/tsc --noEmit                  -> exit 0
+services/gateway $ npx jest test/services/conversation \
+                            test/orb/live/characterization \
+                            test/orb/live/instruction
+  -> 61 suites, 819 tests, 41 snapshots, 0 failures
+services/gateway $ npx jest                                          -> full suite, see below
+
+## Mutation verification of the new guard
+Restored the prohibition stack on ONE branch (bucket=reconnect):
+  -> vtid-04124-greeting-prohibition-stack.test.ts: 1 failed, 7 passed
+Reverted: 8 passed. The guard bites.
+
+## Snapshots
+5 golden snapshots re-recorded DELIBERATELY and diffed line by line before
+acceptance (3 short-gap directives, 3 per-language apology literals collapsed
+into 1 intent, rung 6). The diff is the intended change and nothing else.
+
+## Not run / not possible
+No live ORB call: this session cannot place one, and CLAUDE.md forbids testing
+against production. No post-deploy block rate is claimed.
+
+## Full gateway suite (final)
+services/gateway $ npx jest
+  Test Suites: 1 skipped, 1005 passed, 1005 of 1006 total
+  Tests:       29 skipped, 6 todo, 16707 passed, 16742 total
+  Snapshots:   42 passed, 42 total
+  exit 0

@@ -1,0 +1,43 @@
+# PostgreSQL 16 (local, throwaway), 2026-10-01, migration 20261001120000 applied twice
+ok  backfill: live org draft goes on
+ok  backfill: live org product stays on
+ok  backfill: draft org admin-activated product is held
+ok  backfill: network product untouched
+ok  backfill: network inactive product untouched
+ok  backfill: existing hand merchant linked to its live org, draft on
+ok  insert while live: on
+ok  insert while not live: off, waiting
+ok  admin switch-off
+ok  go-live: held product on
+ok  go-live: waiting draft on
+ok  pause: hidden
+ok  pause: hidden (new)
+ok  pause: admin-off untouched
+ok  admin switch-on while paused: held
+ok  admin switch-off while paused clears hold
+ok  resume: back on
+ok  resume: admin switch-on made while paused applies
+ok  resume: admin-off stays off
+ok  test owner: hidden
+ok  test owner: hidden 2
+ok  test owner: new product never on
+ok  test owner removed: back
+ok  test owner removed: waiting draft on
+ok  service-account merchant product never on
+ok  legacy owner merchant: untouched draft
+ok  adopted into live org: on
+ok  network admin switch-on
+ok  suspend: hidden
+ok  insert while suspended: waiting
+ok  moved to a live org: on
+ok  moved back to suspended org: held
+ok  hand merchant linked to owner's single org
+ok  hand product waits
+ok  team Activate: hand product on Discover
+ok  earlier hand merchant adopted when the org registers
+ok  adopted merchant: on at go-live
+ok  two orgs: not linked
+ok  org already has a merchant: second not linked
+ok  re-run: still held
+ok  re-run: still on
+ ALL PASSED

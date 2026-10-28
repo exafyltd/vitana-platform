@@ -1,0 +1,41 @@
+{
+ "schema_version": 1,
+ "id": "silent-reconnect",
+ "description": "A transport reconnect resumes silently; the provider winner is not spoken.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "greeting": {
+   "reconnectCount": 1,
+   "bucket": "reconnect",
+   "openDecision": {
+    "mode": "silent",
+    "source": "native_resume",
+    "line": null
+   }
+  },
+  "providers": [
+   {
+    "providerKey": "login_briefing",
+    "status": "returned",
+    "candidate": {
+     "id": "c-lb",
+     "kind": "wake_brief",
+     "dedupeKey": "login_briefing:today",
+     "priority": 70,
+     "userFacingLine": "You have two things on today: a walk at noon and your diary.",
+     "privacyMode": "safe_to_speak"
+    }
+   }
+  ],
+  "winner": "login_briefing"
+ },
+ "turns": [],
+ "expect": {
+  "opener_kind": "silent_reconnect",
+  "silent_opening": true,
+  "candidate_provider": "login_briefing",
+  "candidate_spoken": false
+ }
+}

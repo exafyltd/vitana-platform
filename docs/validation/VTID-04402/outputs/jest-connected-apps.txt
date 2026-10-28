@@ -1,0 +1,8 @@
+    ✓ wearables: an unsigned state is a 400 (1 ms)
+
+Test Suites: 3 passed, 3 total
+Tests:       64 passed, 64 total
+Snapshots:   0 total
+Time:        1.687 s
+Ran all test suites matching /test\/vtid-04402-connected-apps.test.ts|test\/vtid-04372-calendar-google-sync.test.ts|test\/vtid-04401-connected-apps-auth.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

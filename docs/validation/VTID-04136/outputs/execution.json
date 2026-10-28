@@ -1,0 +1,48 @@
+{
+  "vtid": "VTID-04136",
+  "execution_id": "6336343b-f098-4654-9ef0-ed9b11d862a3",
+  "finding_id": "5b84e418-b4de-4cc0-94f8-3870881b310d",
+  "plan_version": 1,
+  "branch": "dev-autopilot/6336343b",
+  "base_branch": "main",
+  "llm": {
+    "provider": "deepseek",
+    "model": "deepseek-flash"
+  },
+  "files": [
+    {
+      "path": "scripts/ci/command-hub-ownership-guard.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/app.js",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/src/frontend/command-hub/index.html",
+      "action": "modify"
+    },
+    {
+      "path": "services/gateway/test/vtid-03947-message-copy-timestamp.test.ts",
+      "action": "modify"
+    },
+    {
+      "path": "docs/validation/VTID-04136/acceptance.md",
+      "action": "create"
+    },
+    {
+      "path": "docs/validation/VTID-04136/commands.log",
+      "action": "create"
+    },
+    {
+      "path": "docs/validation/VTID-04136/outputs/execution.json",
+      "action": "create"
+    },
+    {
+      "path": "services/gateway/test/vtid-04136-single-format-relative-time.test.ts",
+      "action": "create"
+    }
+  ],
+  "generated_at": "2026-09-20T19:59:39.503Z",
+  "generated_by": "dev-autopilot-execute (VTID-04002 PR contract)"
+}

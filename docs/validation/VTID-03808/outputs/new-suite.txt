@@ -1,0 +1,5 @@
+    ✓ declares pointer-events:auto on the overlay root (4 ms)
+    ✓ declares it on the ROOT, not on an inner element (1 ms)
+    ✓ keeps the close button wired unconditionally — it was never disabled (1 ms)
+    ✓ does not gate the overlay on any guided-topic state (1 ms)
+Tests:       4 passed, 4 total

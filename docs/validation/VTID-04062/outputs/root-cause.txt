@@ -1,0 +1,7 @@
+grep -n 'select(.name | IN' .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml
+184:                    ( [ (. // [])[] | select(.name | IN("BEDROCK_ROLE_ARN","AWS_BEDROCK_REGION","AGENT_MAX_TURNS","AGENT_DEADLINE_MS") | not) ]
+190:                    ( [ (. // [])[] | select(.name | IN("DEEPSEEK_API_KEY") | not) ]
+
+This confirms the live workflow's strip-list no longer matches the old
+two-name regex pinned in test/vtid-03850-staging-executor-dispatch-pinned.test.ts,
+traced to VTID-04050 (#3420, merged a45cfd0c).

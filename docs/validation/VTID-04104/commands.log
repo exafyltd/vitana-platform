@@ -1,0 +1,71 @@
+$ # Live investigation (Supabase MCP execute_sql, read-only), project inmkhvwdcuyhnxkgfvsb
+select vtid, title, status, updated_at from vtid_ledger order by updated_at desc limit 10;
+-> VTID-04103 in_progress, updated_at 08:33:31 (unchanged)
+
+select id, status, metadata, updated_at from dev_autopilot_executions order by updated_at desc limit 8;
+-> 22cbc22f-... status:running, metadata.claimed_env:staging, metadata.triggered_by:operator-chat:...
+
+select topic, status, message, metadata->>'turn' as turn, created_at from oasis_events
+where metadata->>'execution_id' = '22cbc22f-1ccb-45e9-a00e-f86f48e4227e' order by created_at desc limit 25;
+-> turn 80 tool read_file (moments before), llm.call.started/completed pairs every ~10-35s
+
+select status, updated_at, now() - updated_at as age from dev_autopilot_executions where id = '22cbc22f-...';
+select metadata->>'turn' as turn, created_at, now() - created_at as age from oasis_events
+where metadata->>'execution_id' = '22cbc22f-...' order by created_at desc limit 1;
+-> turn 86, age 1.25s  <- confirms backend never stopped
+
+$ # Traced the client-side defect
+grep -n "closeAllOperatorExecutionFollows|setTaskTitleOverride" app.js
+-> setTaskTitleOverride: pure localStorage write, no server call
+-> closeAllOperatorExecutionFollows: only called from startNewOperatorThread()
+
+grep -n "operatorExecFollow|currentModuleKey =" app.js
+-> no navigation function touches operatorExecFollow
+
+Read switchOperatorThread() and initOperatorChatSession() (page-load bootstrap):
+-> both rebuild state.chatMessages from state.operatorChatHistory via
+   history.map(msg => ({type, content, timestamp, ts})) — followExecIds dropped
+
+Read sendChatMessage(): followExecIds only ever set on the in-memory
+state.chatMessages push, never on assistantHistoryEntry (the persisted one)
+-> ROOT CAUSE CONFIRMED
+
+$ # Checked the SSE stream route replays full history on reconnect
+read routes/dev-autopilot.ts GET /executions/:id/stream
+-> pollSteps() starts lastSeenTimestamp=null on every connect, queries ALL
+   step events for the execution — safe to reattach at any point, terminal
+   or still-running
+
+$ allocate_global_vtid('claude-code','gateway','command-hub-operator-follow-persistence')
+-> VTID-04104
+update vtid_ledger set title=..., status='in_progress', spec_status='approved' where vtid='VTID-04104';
+
+$ git fetch origin main && git checkout -b claude/vtid-04104-operator-follow-persistence origin/main
+
+$ # Fix applied (see acceptance.md) — app.js, index.html, command-hub-ownership-guard.js
+$ # New test: test/vtid-04104-operator-follow-persist.test.ts
+$ # Updated test: test/vtid-04033-operator-execution-follow.test.ts (refactor-shape follow-up)
+
+$ node --check src/frontend/command-hub/app.js
+$ node --check ../../scripts/ci/command-hub-ownership-guard.js
+SYNTAX_OK
+
+$ npx jest test/vtid-04104-operator-follow-persist.test.ts test/vtid-04033-operator-execution-follow.test.ts test/scripts/command-hub-ownership-guard.test.ts --silent
+Test Suites: 3 passed, 3 total
+Tests:       26 passed, 26 total
+
+$ cd /home/user/vitana-platform && git stash push -- services/gateway/src/frontend/command-hub/app.js
+$ cd services/gateway && npx jest test/vtid-04104-operator-follow-persist.test.ts --silent
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 1 passed, 5 total
+# mutation-verified: reproduces the exact defect (no persisted followExecIds, no reattach wiring)
+
+$ cd /home/user/vitana-platform && git stash pop
+# fix restored
+
+$ cd services/gateway && npx tsc --noEmit
+(clean, exit 0)
+
+$ npx jest test/vtid-04104-operator-follow-persist.test.ts test/vtid-04033-operator-execution-follow.test.ts test/scripts/command-hub-ownership-guard.test.ts test/vtid-04102-operator-truncated-reply.test.ts --silent
+Test Suites: 4 passed, 4 total
+Tests:       29 passed, 29 total

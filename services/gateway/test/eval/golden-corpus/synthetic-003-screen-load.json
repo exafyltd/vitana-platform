@@ -1,0 +1,33 @@
+{
+  "fixture_id": "synthetic-003-screen-load",
+  "source": "synthetic",
+  "captured_at": "2026-05-28T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Screen-navigation session that exercises the top-10 community routes targeted by the Cloudflare KV cache PR (#4).",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "text",
+      "user_input": "open autopilot recommendations",
+      "expected_intent": "screen.autopilot.recommendations"
+    },
+    {
+      "turn": 2,
+      "kind": "text",
+      "user_input": "show me my vitana index",
+      "expected_intent": "screen.vitana_index.detail"
+    },
+    {
+      "turn": 3,
+      "kind": "text",
+      "user_input": "what intents do I have on the board",
+      "expected_intent": "screen.intents.board"
+    },
+    {
+      "turn": 4,
+      "kind": "text",
+      "user_input": "go back to community feed",
+      "expected_intent": "screen.community.feed"
+    }
+  ]
+}

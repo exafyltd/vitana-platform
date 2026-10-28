@@ -1,0 +1,61 @@
+    ✓ AWS-PROD-DEPLOY-OASIS-PROJECTOR.yml rolls back on failure to the captured task definition, behind the kill switch (2 ms)
+    ✓ AWS-PROD-DEPLOY-ORB-AGENT.yml rolls back on failure to the captured task definition, behind the kill switch (1 ms)
+    ✓ AWS-PROD-DEPLOY-VERIFICATION-ENGINE.yml rolls back on failure to the captured task definition, behind the kill switch (1 ms)
+    ✓ the gateway keeps its own rollback (VTID-04647) (3 ms)
+
+PASS test/vtid-04517-staging-nav-v2-pinned.test.ts
+  VTID-04517: registry navigation on both gateways
+    ✓ pins the registry to the staging frontend, exactly once, after stripping it (2 ms)
+    ✓ points production at its own registry, never the staging one (VTID-04541)
+  VTID-04880: NAV_V2_ENABLED is retired
+    ✓ is never set by either deploy workflow (1 ms)
+    ✓ is still stripped by both, so the stale value leaves the task definitions
+    ✓ is not read by the code (VTID-04846) (5 ms)
+
+PASS test/services/journey/goal-plan-i18n-repository.test.ts
+  goal-plan-i18n-repository
+    fetchCachedStepTranslations / upsertStepTranslations
+      ✓ fetch filters by locale + the step-id set (4 ms)
+      ✓ upsert conflicts on step_id,locale (reused by localizeGoalPlan and seedGoalPlanSourceCache) (1 ms)
+    fetchCachedPlanTranslation / upsertPlanTranslation
+      ✓ fetch filters by locale + plan_id, single row (1 ms)
+      ✓ upsert conflicts on plan_id,locale (reused by localizeGoalPlan and seedGoalPlanSourceCache) (1 ms)
+
+PASS test/services/guide/pause-check-repository.test.ts
+  pause-check-repository
+    fetchActivePauses
+      ✓ scopes by user_id, still-active (paused_until > now), newest-first (4 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Summary of all failing tests
+FAIL test/vtid-04231-validator-tools.test.ts
+  ● runLlmMergeReview with tools (VTID-04231) › fails open when the router fails mid-loop and when the model never answers with a verdict
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "ok": false,
+    -   "passed": true,
+    +   "passed": false,
+      }
+
+      176 |     mockChecks.mockResolvedValue({ check_runs: [] });
+      177 |     const r = await runLlmMergeReview({ repo: 'exafyltd/vitana-platform', prNumber: 7, vtid: 'VTID-X' });
+    > 178 |     expect(r).toMatchObject({ ok: false, passed: true });
+          |               ^
+      179 |     expect(r.error).toContain('throttled');
+      180 |     mockRouter.mockReset();
+      181 |     mockRouter.mockResolvedValue({ ok: true, text: 'prose, no json' });
+
+      at Object.<anonymous> (test/vtid-04231-validator-tools.test.ts:178:15)
+
+
+Test Suites: 1 failed, 2 skipped, 1660 passed, 1661 of 1663 total
+Tests:       1 failed, 26 skipped, 6 todo, 26854 passed, 26887 total
+Snapshots:   126 passed, 126 total
+Time:        226.087 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=0

@@ -1,0 +1,25 @@
+    [workflow-inputs] within 2 of the 25 limit: AWS-PROD-DEPLOY-GATEWAY.yml=24
+
+      86 |     if (near.length > 0) {
+      87 |       // eslint-disable-next-line no-console
+    > 88 |       console.warn(
+         |               ^
+      89 |         `[workflow-inputs] within 2 of the ${MAX_DISPATCH_INPUTS} limit: ` +
+      90 |           near.map((w) => `${w.file}=${w.count}`).join(', '),
+      91 |       );
+
+      at Object.<anonymous> (test/scripts/workflow-dispatch-input-limit.test.ts:88:15)
+
+PASS test/scripts/workflow-dispatch-input-limit.test.ts
+  workflow_dispatch input limit
+    ✓ no workflow exceeds GitHub’s 25-input maximum (60 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml specifically stays dispatchable (21 ms)
+    ✓ actually parsed some dispatch workflows — a guard that scans nothing passes forever (21 ms)
+    ✓ flags a workflow that is near the ceiling, so the next addition is a decision (25 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       4 passed, 4 total
+Snapshots:   0 total
+Time:        0.607 s, estimated 1 s
+Ran all test suites matching /test\/scripts\/workflow-dispatch-input-limit.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

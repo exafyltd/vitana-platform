@@ -1,0 +1,6 @@
+npx jest test/vtid-04560-role-separation-regression.test.ts            # 104 passed
+git stash (source only) && npx jest test/vtid-04560-role-separation-regression.test.ts  # 4 failed (mutation check)
+npx jest test/orb/latency/vtid-04542-voice-payload-identity.test.ts -u # admin-surface-en + manifest updated, 54 other snapshots unchanged
+npx tsc --noEmit
+npx jest --ci (full gateway suite)
+node probe-admin.mjs / probe-bo.mjs against preview-aws-gateway.vitanaland.com (greeting only, session started and stopped)

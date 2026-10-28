@@ -1,0 +1,8 @@
+    ✓ does not abandon the session when the user closed the overlay mid-start
+
+Test Suites: 3 passed, 3 total
+Tests:       32 passed, 32 total
+Snapshots:   0 total
+Time:        0.855 s, estimated 1 s
+Ran all test suites matching /test\/orb\/vtid-05001-orb-hide-reasons.test.ts|test\/orb\/live\/ws-transport-default.test.ts|test\/vtid-04659-staging-checks-use-versioned-urls.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

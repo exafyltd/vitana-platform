@@ -1,0 +1,80 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in <repo>/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/vtid-04875-pipeline-summary-builder.test.ts
+  VTID-04875 GET /pipeline/summary — characterization (old handler == new wrapper)
+    ✓ route: realistic data (27 ms)
+    ✓ route: every Supabase query non-ok (5 ms)
+    ✓ route: every Supabase query rejects (network error) (6 ms)
+    ✓ route: event loop status throws (4 ms)
+    ✓ route: Supabase env missing (3 ms)
+  VTID-04875 buildPipelineSummary() — in-process, no req/res
+    ○ skipped builder returns exactly what the route serves: realistic data
+    ○ skipped builder returns exactly what the route serves: every Supabase query non-ok
+    ○ skipped builder returns exactly what the route serves: every Supabase query rejects (network error)
+    ○ skipped builder returns exactly what the route serves: event loop status throws
+    ○ skipped builder returns exactly what the route serves: Supabase env missing
+    ○ skipped accepts injected fetch / env / loop status (no globals touched)
+
+ › 5 snapshots written.
+PASS test/vtid-04875-voice-overview-builder.test.ts
+  VTID-04875 GET /voice/supervisor/overview — characterization (old handler == new wrapper)
+    ✓ route: platform admin, default window, no filters (27 ms)
+    ✓ route: platform admin, window=7d, tenant_id + filters, truncated (6 ms)
+    ✓ route: platform admin, bogus window + non-uuid tenant_id fall back (5 ms)
+    ✓ route: tenant admin is forced to own tenant whatever tenant_id says (4 ms)
+    ✓ route: data layer SupervisorDataError → 502 (4 ms)
+    ✓ route: unexpected Error → 500 (3 ms)
+    ✓ route: tenant name lookup fails → 502 (3 ms)
+  VTID-04875 buildVoiceOverview() — in-process, no req
+    ○ skipped platform-admin scope with no filters equals the route body for an exafy_admin with no query
+    ○ skipped window defaults to 24h and accepts a parsed window object
+    ○ skipped equals the route for every scenario that succeeds, given the same scope + filters
+    ○ skipped throws the data-layer error unchanged (the route maps it to 502)
+    ○ skipped a non-platform scope without explicit filters is confined to its tenant
+
+ › 7 snapshots written.
+PASS test/vtid-04875-health-summary-builder.test.ts
+  VTID-04875 GET /admin/health/summary — characterization (old handler == new wrapper)
+    ✓ route: first call probes over loopback with the caller token, mixed outcomes (277 ms)
+    ✓ route: PORT env overrides the loopback port; a different admin token is forwarded verbatim (42 ms)
+    ✓ route: concurrent callers share one run; a later call within 30s is served from cache; after 30s re-probes (53 ms)
+    ✓ route: unauthenticated caller → 401, nothing probed (34 ms)
+    ✓ route: a probe run that rejects → 500 summary_failed, and the next call retries (43 ms)
+  VTID-04875 buildHealthSummary() — in-process, no req/res
+    ○ skipped returns exactly what the route serves and shares the route cache
+    ○ skipped without authHeader probes with no Authorization header
+    ○ skipped `now` decides cache freshness: within 30s cached, at 30s re-probed
+    ○ skipped the route module still exports resetHealthSummaryCacheForTests and it clears the builder cache
+
+ › 5 snapshots written.
+Snapshot Summary
+ › 17 snapshots written from 3 test suites.
+
+Test Suites: 3 passed, 3 total
+Tests:       15 skipped, 17 passed, 32 total
+Snapshots:   17 written, 17 total
+Time:        2.077 s
+Ran all test suites matching /test\/vtid-04875-/i with tests matching "characterization".
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

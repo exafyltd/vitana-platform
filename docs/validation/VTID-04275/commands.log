@@ -1,0 +1,99 @@
+VTID-04275 — commands run to build and verify this change
+
+1. Continuing VTID-04274's backlog-processing work, queried the live
+   `autopilot_recommendations` backlog (source_type='dev_autopilot',
+   status in new/snoozed/activated) — 17 rows.
+
+2. Closed 7a93bca4... (activated_vtid VTID-04261) as `completed` — its
+   underlying fix already shipped in PR #3570 this session, the row had
+   simply never been marked resolved.
+
+3. Read the two remaining "Address TODO/FIXME in dev-autopilot-scan.mjs"
+   rows (5fbe06e1, 8caa3710) and "Address TODO/FIXME in codebase-analyzer.ts"
+   (23e083d1) — each `summary` quoted the exact flagged line verbatim.
+
+4. `grep -n "FIXME|TODO" scripts/ci/dev-autopilot-scan.mjs` — confirmed
+   line 32 (TODO_PATTERN regex) and line 77 (severity comparison) both
+   self-match the scanner's own TODO_PATTERN.
+
+5. `grep -n "FIXME|TODO_PATTERN|HACK" services/gateway/src/services/
+   recommendation-engine/analyzers/codebase-analyzer.ts` — confirmed
+   lines 5, 66, 83, 93, 274 all self-match.
+
+6. `grep -n "TODO|FIXME|HACK|XXX" scripts/ci/scanners/registry.mjs` —
+   confirmed lines 30-31 (the todo-scanner-v1 catalog entry's own title/
+   description) self-match.
+
+7. Allocated VTID-04275, self-registered via allocate_global_vtid.
+
+8. Fetched origin/main, created branch claude/vtid-04275-todo-scanner-self-match.
+
+9. Edited scripts/ci/dev-autopilot-scan.mjs: added
+   TODO_SCANNER_SELF_MATCH_DENYLIST (this file + registry.mjs), a check in
+   scanTodos() before reading each file, exported scanTodos + the
+   denylist for testability.
+
+10. Edited services/gateway/src/services/recommendation-engine/analyzers/
+    codebase-analyzer.ts: added TODO_SCAN_SELF_MATCH_FILE (its own path),
+    a check after resolving the grep-output file path to relative, before
+    parsing the TODO type.
+
+11. First test run against dev-autopilot-scan.mjs's exported scanTodos
+    failed: importing the module for the named export triggered its
+    unconditional `main()` call at module scope (no import.meta.url
+    guard), which attempted a live network POST and failed on missing
+    GATEWAY_URL/DEV_AUTOPILOT_SCAN_TOKEN. Added the standard ESM
+    "is this the entry module" guard:
+    `if (process.argv[1] && import.meta.url ===
+    pathToFileURL(process.argv[1]).href) { main()... }`.
+    Verified directly that this guard evaluates true for the real CI
+    invocation shape (`node scripts/ci/dev-autopilot-scan.mjs` from the
+    repo root, matching .github/workflows/DEV-AUTOPILOT.yml:72):
+    `node -e "process.argv[1]=require('path').resolve('scripts/ci/
+    dev-autopilot-scan.mjs'); console.log(pathToFileURL(process.argv[1])
+    .href)"` -> `file:///.../scripts/ci/dev-autopilot-scan.mjs`, matching
+    what import.meta.url resolves to for that same file when run as the
+    entry module (standard Node ESM semantics).
+
+12. Wrote services/gateway/test/scripts/dev-autopilot-todo-scanner-self-
+    match.test.ts (4 tests) — spawns a real, separate Node process to run
+    the real scanTodos via native ESM import (same pattern as VTID-04273's
+    secret-exposure-scanner.test.ts; Jest cannot import a bare .mjs
+    module directly).
+
+13. Added 2 new tests to the existing
+    services/gateway/test/services/recommendation-engine/analyzers/
+    codebase-analyzer.test.ts (self-match excluded; a sibling file's
+    genuine TODO still caught).
+
+14. `cd services/gateway && node node_modules/.bin/jest
+    test/scripts/dev-autopilot-todo-scanner-self-match.test.ts
+    test/services/recommendation-engine/analyzers/codebase-analyzer.test.ts`
+    -> 11/11 passing.
+
+15. Mutation verification, both fixes independently, using file backups
+    (cp, not git checkout — an earlier `git checkout --` in this same
+    session had discarded uncommitted work and had to be redone):
+    - Removed the TODO_SCANNER_SELF_MATCH_DENYLIST check from
+      dev-autopilot-scan.mjs -> 2/4 tests correctly failed (the two
+      self-match assertions; the two "still flags a real TODO" assertions
+      correctly stayed green). Restored from backup.
+    - Removed the TODO_SCAN_SELF_MATCH_FILE check from
+      codebase-analyzer.ts -> 1/7 tests correctly failed (the self-match
+      assertion only). Restored from backup.
+    - Confirmed both restored files are byte-identical to the fixed
+      backups (`diff` exit 0 on both).
+
+16. `cd services/gateway && npx tsc --noEmit` -> clean, no output.
+
+17. `cd services/gateway && npx jest --silent` (full suite) -> 1062/1063
+    suites (1 pre-existing skip), 17,331/17,366 tests passing (29 skipped,
+    6 todo, both pre-existing), 0 failures, 42/42 snapshots.
+
+18. `git checkout -- services/gateway/specs/command-hub-symbol-index.json`
+    — reverted the auto-regenerated symbol index (a jest side effect
+    unrelated to this change, per this session's established practice).
+
+No Supabase or AWS mutation was made from this session for this VTID
+beyond closing the one unrelated stale row (step 2) and self-allocating
+the VTID itself.

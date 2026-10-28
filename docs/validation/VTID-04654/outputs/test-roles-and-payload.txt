@@ -1,0 +1,135 @@
+    ✓ work surface command-hub serves role /command-hub/autopilot/live/ from the first byte (6 ms)
+    ✓ work surface admin serves role /admin/dashboard from the first byte (1 ms)
+    ✓ work surface backoffice serves role /backoffice/dashboard from the first byte (1 ms)
+    ✓ work surface commerce serves role /commerce/org from the first byte
+    ✓ the device never changes the surface: a phone on the Command Hub is still the Command Hub (1 ms)
+    ✓ community screens serve the declared member role; a work role there is narrowed to community (1 ms)
+    ✓ a declared surface wins over the route (the host knows what it renders)
+    ✓ an unknown declared surface falls back to the route, never to a crash or undefined (1 ms)
+    ✓ Command Hub without an exafy_admin claim is unverified — still the developer persona, never community
+    ✓ anonymous sessions stay on the member surface with no role
+    ✓ clampRoleToProfile: stored roles never leak across surfaces
+    ✓ session helpers read the profile; sessions without one keep the legacy derivation (1 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — normal ladder (context resolved) (4 ms)
+    ✓ developer on the Command Hub opens with work_surface_open — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ admin surface opens with its own role opener (8 ms)
+    ✓ backoffice surface opens with its own role opener (1 ms)
+    ✓ commerce surface opens with its own role opener
+    ✓ no facts loaded → the opener offers to check, it does not invent
+    ✓ VTID-04586: a work surface skips the member payload gathers — normal ladder (context resolved)
+    ✓ VTID-04586: a work surface skips the member payload gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case) (1 ms)
+    ✓ VTID-04586: the member surface still gathers — normal ladder (context resolved)
+    ✓ VTID-04586: the member surface still gathers — safe-fast ladder (context NOT resolved — the 300 ms gate case)
+    ✓ VTID-04586: the opener speaks from the loaded facts and calls no tool first (1 ms)
+    ✓ VTID-04586: the developer conduct rule no longer demands a tool call for facts the snapshot covers
+    ✓ a genuine transport reconnect stays silent on a work surface too
+    ✓ the member surface is untouched: no surface field, or vitanaland, never takes the work rung (1 ms)
+    ✓ workSurfaceGreetingFields feeds the rung from the session; member sessions add nothing
+    ✓ Command Hub: developer supervisor conduct, the work context, and no member content even when it is concatenated in (7 ms)
+    ✓ Command Hub with no work context carries no bootstrap at all (never the member brain) (2 ms)
+    ✓ admin: work conduct block, no member content (1 ms)
+    ✓ backoffice: work conduct block, no member content (1 ms)
+    ✓ commerce: work conduct block, no member content (1 ms)
+    ✓ member surface keeps the member Vitana exactly as before (2 ms)
+    ✓ every surface keeps the stop-and-farewell rule (2 ms)
+    ✓ extractWorkSurfaceContext keeps only the marked section
+    ✓ the Operator Console itself (no custom instruction) keeps it
+    ✓ developer caller with a custom instruction keeps it
+    ✓ admin caller with a custom instruction keeps it
+    ✓ infra caller with a custom instruction keeps it
+    ✓ exafy_admin caller with a custom instruction keeps it
+    ✓ member caller community never receives it
+    ✓ member caller patient never receives it
+    ✓ member caller professional never receives it
+    ✓ member caller staff never receives it
+    ✓ member caller undefined never receives it (5 ms)
+    ✓ the controller resolves the profile from the declared surface/view_role and stores it on the session (1 ms)
+    ✓ work surfaces skip the member brain and the member wake-brief
+    ✓ the old route override and phone-means-community rule are gone (1 ms)
+    ✓ the setup envelope reads role, surface and tools from the profile (2 ms)
+    ✓ every greeting context carries the work-surface fields (1 ms)
+    ✓ the Nova prewarm resolves the same profile and member role as the session start (1 ms)
+    ✓ the widget declares surface + view_role and restarts on a role switch (1 ms)
+    ✓ the Command Hub declares the developer surface (2 ms)
+    ✓ every Vitana role has an entry
+    ✓ member-plane roles are served on the member surface by the member ladder; work roles on their surface (1 ms)
+    ✓ privileged voice tools follow the registry, never a member role (1 ms)
+    ✓ the profile persona comes from the registry (1 ms)
+    ✓ the tool catalog has no hard-coded privileged-role list left (1 ms)
+    ✓ set_role_preference (community app) also writes user_active_roles (1 ms)
+    ✓ me_set_active_role (Command Hub) also writes role_preferences
+    ✓ the Command Hub switches into the community app of its own environment (12 ms)
+    ✓ every gateway route file is claimed by at least one domain (drift guard) (11 ms)
+    ✓ keys are unique and every domain names code, tables and docs or flags (3 ms)
+    ✓ the developer's words find the right domain (1 ms)
+    ✓ the prompt index is one line per domain and names the lookup tool (1 ms)
+    ✓ critical facts lead the highlights (kill switch, provider outage, error spike) (1 ms)
+    ✓ a clean system says so instead of inventing a problem (1 ms)
+    ✓ a failed source renders as unavailable, the rest still renders (1 ms)
+    ✓ snapshots are cached and concurrent builds coalesce into one (1 ms)
+    ✓ snapshot, atlas and engineering memory all reach the session (1 ms)
+    ✓ failing sources degrade to null, the atlas stays (1 ms)
+    ✓ the Command Hub loader is registered and the member surface gets nothing (4 ms)
+    ✓ the developer loader reads dev_agent_memory, never the member memory tables (1 ms)
+    ✓ both tools are declared for developers and registered with a handler (7 ms)
+    ✓ a community caller is refused
+    ✓ dev_domain_atlas answers a topic with code, tables and docs (1 ms)
+    ✓ the developer conduct block names both tools
+    ✓ sendToolResultsToVertex only loads the pack for engineering callers (2 ms)
+    ✓ the probe only GETs /alive and /api/v1/* on the two known hosts (1 ms)
+    ✓ file windows are numbered and bounded (1 ms)
+    ✓ a screen resolves by id, route or title to its App.tsx mount (1 ms)
+    ✓ the executor routes every tool and never throws (9 ms)
+    ✓ member and admin-surface callers are refused before any model call (1 ms)
+    ✓ a developer question runs bounded on the planner stage and reports findings with telemetry (3 ms)
+    ✓ a loop failure is reported as failed, never as findings (1 ms)
+    ✓ the target is registered for the Command Hub only, read tier (1 ms)
+    ✓ the Command Hub catalog declares dev_deep_dive; the member and admin catalogs never do (2 ms)
+    ✓ a delegation caller carries the served role from the profile
+    ✓ orb-live dispatches dev_deep_dive to the async runner (5 ms)
+    ✓ the console declares the same three developer tools the voice assistant has (1 ms)
+    ✓ engineering callers get the atlas in the prompt; the snapshot stays one tool call away (1 ms)
+    ✓ the console deep dive requires the verified caller on the thread (1 ms)
+    ✓ 60+ questions, every domain covered, every expected tool declared (5 ms)
+    ✓ the atlas routes at least 90% of the questions to the right domain (2 ms)
+    ✓ the live eval script refuses any host but staging and uses the machine credential
+    ✓ profiles are counted per surface and resolution (1 ms)
+    ✓ the snapshot reports them and reads them in its one events query
+    ✓ each numbered insight becomes one fact with its detail; the instruction text is never a fact (3 ms)
+    ✓ a block without numbered items still yields plain lines, minus headings (1 ms)
+    ✓ the admin opener carries the insights as its facts
+    ✓ the admin instruction says the briefing is already loaded, so the no-tool opener has no conflict (1 ms)
+    ✓ the preference tenant falls back to the token claim, then the primary membership, members only (1 ms)
+    ✓ the backfill only repairs single-membership users (user_active_roles carries no tenant)
+    ✓ authorization is unchanged: still current_tenant_id() + check_role_permitted, exafy-admin otherwise
+    ✓ the eval script sends a UUID, which is what the route validates (1 ms)
+    ✓ anonymous-de (30 ms)
+    ✓ authenticated-community-de-first-day (38 ms)
+    ✓ authenticated-community-en-returning (33 ms)
+    ✓ devon-specialist-en (33 ms)
+    ✓ admin-surface-en (12 ms)
+    ✓ command-hub-developer-en (14 ms)
+    ✓ guided-topic-de (25 ms)
+    ✓ cascade-ru (17 ms)
+    ✓ vertex-serbian-bridge-sr (26 ms)
+    ✓ is deterministic — the same scenario twice yields byte-identical payloads (45 ms)
+    ✓ first_time_welcome (safe-fast) (2 ms)
+    ✓ conv_resume (2 ms)
+    ✓ newday_overview (safe-fast ladder) (2 ms)
+    ✓ newday_overview (normal ladder) (1 ms)
+    ✓ short-gap reconnect (legacy_default, bucket=reconnect) (1 ms)
+    ✓ silent reconnect (native resume) (1 ms)
+    ✓ guided topic (override_v2 guided) (1 ms)
+    ✓ support report
+    ✓ day_close (full) (2 ms)
+    ✓ day_close (reduced retry)
+    ✓ override_v2 (wake-brief line) (1 ms)
+    ✓ anonymous (legacy_default intro) (1 ms)
+    ✓ greeting turn (first assistant turn, no user speech) (30 ms)
+    ✓ regular turn (user + assistant, authenticated) (10 ms)
+    ✓ regular turn (anonymous, no identity) (5 ms)
+    ✓ anonymous de (208 ms)
+    ✓ authenticated community de (489 ms)
+    ✓ matches the committed quick-diff manifest (regenerated with -u) (2 ms)
+Tests:       133 passed, 133 total
+Snapshots:   56 passed, 56 total

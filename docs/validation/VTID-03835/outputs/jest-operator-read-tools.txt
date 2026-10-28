@@ -1,0 +1,97 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-03820-operator-execution-onramp.test.ts
+  triggerOperatorExecution (VTID-03820)
+    ✓ rejects when the kill switch is not "true" (default OFF) (6 ms)
+    ✓ rejects an arbitrary non-"true" value the same as unset (1 ms)
+    ✓ rejects when Supabase is not configured (1 ms)
+    ✓ rejects empty planMarkdown without touching the DB (1 ms)
+    ✓ rejects an empty filesReferenced list without touching the DB (1 ms)
+    ✓ rejects when the target VTID is not found (1 ms)
+    ✓ rejects when the target VTID is already terminal (10 ms)
+    ✓ rejects when the target VTID is not spec_status=approved (1 ms)
+    ✓ creates the recommendation + plan rows, calls approveAutoExecute, and stamps the DeepSeek override on success (3 ms)
+    ✓ surfaces a safety-gate rejection from approveAutoExecute without stamping anything (2 ms)
+
+PASS test/vtid-03819-create-operator-task-dedup.test.ts
+  createOperatorTask dedup wiring (VTID-03819)
+    ✓ short-circuits on a duplicate: returns the existing VTID and never calls the allocator (3 ms)
+    ✓ creates normally when no similar task is found, and stamps the new row embedding (2 ms)
+    ✓ creates normally on a related (non-duplicate) match, and stamps related_vtid in metadata (1 ms)
+
+PASS test/vtid-03835-github-service-read-access.test.ts
+  github-service read access (VTID-03835)
+    searchCode
+      ✓ builds a repo-scoped query and maps results (1 ms)
+      ✓ adds an optional path qualifier
+    getFileContents
+      ✓ decodes base64 file content (1 ms)
+      ✓ defaults ref to main and strips a leading slash from the path
+      ✓ returns a directory listing when the path is a directory (1 ms)
+      ✓ throws a clear error when the file is too large to inline (21 ms)
+
+PASS test/vtid-03835-operator-console-read-tools.test.ts
+  Operator Console read-only tools
+    role gating (defense-in-depth, VTID-DEV-ASSIST pattern)
+      ✓ blocks dev_search_codebase for a non-developer role (6 ms)
+      ✓ blocks dev_read_file for a non-developer role (1 ms)
+      ✓ blocks dev_aws_ecs_status for a non-developer role (1 ms)
+      ✓ blocks dev_db_query for a non-developer role (1 ms)
+    dev_search_codebase (VTID-03835)
+      ✓ rejects when the kill switch is not "true" (default OFF) (3 ms)
+      ✓ searches the default repo and returns results (2 ms)
+      ✓ rejects an empty query without calling GitHub (1 ms)
+      ✓ surfaces a GitHub API failure as a tool error, not a throw (1 ms)
+    dev_read_file (VTID-03835)
+      ✓ rejects when the kill switch is not "true" (default OFF) (1 ms)
+      ✓ defaults ref to "main" when omitted (1 ms)
+      ✓ passes an explicit ref through unchanged (1 ms)
+      ✓ surfaces a file-too-large error as a tool error (1 ms)
+    dev_aws_ecs_status (VTID-03836)
+      ✓ rejects when the kill switch is not "true" (default OFF) — the shipped default (1 ms)
+      ✓ returns the described service status (1 ms)
+      ✓ reports not-found when AWS returns no matching service (1 ms)
+    dev_db_query (VTID-03837)
+      ✓ rejects when the kill switch is not "true" (default OFF) (1 ms)
+      ✓ rejects a table not on the allowlist without ever calling Supabase (1 ms)
+      ✓ queries the allowlisted table with a capped limit (1 ms)
+      ✓ filters by vtid on vtid_ledger
+      ✓ refuses a vtid filter on a table with no vtid column (1 ms)
+
+(node:1325) [DEP0040] DeprecationWarning: The `punycode` module is deprecated. Please use a userland alternative instead.
+(Use `node --trace-deprecation ...` to show where the warning was created)
+PASS test/operator-command.test.ts
+  Operator Command Hub - VTID-0525
+    POST /api/v1/operator/command
+      ✓ should parse deploy gateway command and execute deployment (39 ms)
+      ✓ should auto-create VTID when not provided (7 ms)
+      ✓ should return error for non-parseable commands (5 ms)
+      ✓ should return error for unrecognized service (5 ms)
+      ✓ should validate required fields (5 ms)
+      ✓ should require message field (4 ms)
+      ○ skipped should return dry_run result without triggering deploy
+      ○ skipped should handle task commands
+    POST /api/v1/operator/deploy
+      ✓ should execute deploy for valid service (5 ms)
+      ✓ should handle oasis-operator service (3 ms)
+      ✓ should handle oasis-projector service (6 ms)
+      ✓ should reject invalid service (4 ms)
+      ✓ should reject invalid environment (8 ms)
+      ✓ should validate required fields (3 ms)
+      ✓ should handle deploy orchestrator failure (5 ms)
+      ✓ should include workflow URL in response (4 ms)
+
+A worker process has failed to exit gracefully and has been force exited. This is likely caused by tests leaking due to improper teardown. Try running with --detectOpenHandles to find leaks. Active timers can also cause this, ensure that .unref() was called on them.
+Test Suites: 5 passed, 5 total
+Tests:       2 skipped, 53 passed, 55 total
+Snapshots:   0 total
+Time:        4.808 s, estimated 19 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+jest exit: 0

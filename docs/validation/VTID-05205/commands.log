@@ -1,0 +1,23 @@
+# VTID-05205 — commands run by kiro-202610150924-9ecd (no write to any live system; nothing called on staging or production)
+git fetch --prune origin && git checkout -b kiro/new-member-welcome/team-welcome-backend origin/main
+node scripts/collab/queue.mjs claim new-member-welcome/team-welcome-backend --session kiro-202610150924-9ecd   # {"ok":true}
+# read-only lookups on production (SELECT only), for the plan's defaults:
+#   app_users/profiles/user_tenants for @mariia04 @jovana4 @dragan1 (ids, tenant, exclusion lists) — 2026-10-15
+#   SELECT tenant_id, count(*) FROM user_tenants WHERE is_primary GROUP BY 1   # MAXINA 2e7528b8-… = 238, Alkalma = 1
+cd services/gateway && npm ci --no-audit --no-fund --ignore-scripts
+npx jest test/vtid-04892-onboarding-coach.test.ts test/i18n/catalog-coverage.test.ts   # baseline before the change: 71 passed
+npx tsc --noEmit -p .   # exit 0 (outputs/tsc.txt)
+npm run test:welcome-team   # 36 passed (outputs/test-welcome-team.txt)
+# mutation checks (reverted): stagger offset removed → 3 tests fail; send-once (sent/pending skip) removed → 7 tests fail
+npm run test:roles      # 105 passed
+npm run test:support    # 4 suites, 87 passed
+npm run test:operator   # 71 passed
+npx jest <welcome-team, coach, companion, role separation, and every test referencing scheduled-notifications / types/cicd / i18n catalog / locales / mountRouterSync / eventbridge-cron>   # 68 suites: 1266 passed, 1 failed (outputs/regression.txt)
+#   the 1 failure: vtid-04226 "token provisioning script is dry-run by default" — `openssl: command not found` in scripts/aws/setup-gateway-internal-token.sh
+#   (this sandbox has no openssl; the script is not touched by this change). The two VTID-04226 job-count pins were updated 33 → 34 for the new job.
+bash -n scripts/aws/setup-eventbridge-cron-migration.sh   # ok
+node -e "lintMigration(...)" (scripts/ci/pr-gate/lib.mjs)   # no problems
+libpg-query parseSync(migration)   # parses
+node docs/validation/VTID-05205/pglite-welcome-team-check.mjs supabase/migrations/20261015150000_vtid_05205_welcome_team_claims.sql   # 30 PASS (outputs/pglite-welcome-team-check.txt)
+node -e "validateManifest(staging-tests.json)" (scripts/ci/staging-verify/lib.cjs)   # { ok: true, errors: [] }
+node scripts/ci/pr-gate/vtid-scope.mjs init VTID-05205 --kind feature --sparring-record docs/validation/VTID-05205/plan-sparring.md --paths ...   # wrote scope.json

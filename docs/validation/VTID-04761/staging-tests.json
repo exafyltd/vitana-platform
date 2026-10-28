@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-04761",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "episode audio route exists and requires sign-in",
+      "path": "/api/v1/journey/audiobook/topics/T001/audio",
+      "expect_status": 401
+    },
+    {
+      "kind": "existing",
+      "name": "MP3 narration renderer + route",
+      "ref": "npx jest test/vtid-04761-audiobook-audio.test.ts test/vtid-04761-audiobook-audio-route.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Pins Polly MP3 rendering in the Vitana voice, no partial render returned or cached, sr -> 422, auth, topic validation, 404 for unpublished topics and the private cache headers. The signed-in 200 audio/mpeg path is exercised by the community-app staging spec."
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+PASS test/calendar/calendar-logic.golden.test.ts
+PASS test/vtid-04372-calendar-google-sync.test.ts
+PASS test/vtid-04358-calendar-ics-feed.test.ts
+PASS test/calendar/calendar-coverage.guard.test.ts
+PASS test/vtid-04374-calendar-maintenance.test.ts
+PASS test/vtid-04338-calendar-default-reminders.test.ts
+PASS test/vtid-04436-calendar-push.test.ts
+PASS test/vtid-04331-calendar-data-model.test.ts
+PASS test/orb-tools/calendar-management-tools.test.ts
+PASS test/vtid-04357-calendar-work-lenses.test.ts
+PASS test/vtid-04373-calendar-reminder-quiet-hours.test.ts
+PASS test/services/recommendation-engine/analyzers/calendar-prep-analyzer.test.ts
+PASS test/vtid-04356-calendar-source-producers.test.ts
+PASS test/vtid-04321-calendar-backend-repair.test.ts
+PASS test/services/assistant-continuation/providers/next-action/calendar-upcoming.test.ts
+PASS test/services/calendar-role-context.test.ts
+PASS test/calendar/calendar-routes.contract.test.ts
+Test Suites: 17 passed, 17 total
+Tests:       366 passed, 366 total

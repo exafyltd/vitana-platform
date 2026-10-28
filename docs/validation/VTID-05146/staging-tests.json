@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05146",
+  "service": "gateway",
+  "note": "Phase C changes how the Dev Autopilot claims and merges (server-side, staging-owned loop; the kill switch is armed, so nothing claims or merges yet). Read-only probes confirm the routes are mounted and still require a developer login and that the Command Hub serves the hold UI; the overlap hold/release/timeout, frozen_scope and review fail-closed behaviour is proven by the jest suites (the operator pipeline regression suite runs the real code end to end).",
+  "tests": [
+    { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
+    { "kind": "http", "name": "the Dev Autopilot config route is mounted and still requires a developer login", "path": "/api/v1/dev-autopilot/config", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "the release-hold route exists and refuses an invalid caller", "method": "POST", "path": "/api/v1/dev-autopilot/executions/00000000-0000-4000-8000-000000000000/release-hold", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "the Command Hub serves app.js with the overlap-hold release action", "target": "gateway", "path": "/command-hub/app.js?v=20261121-vtid-05082", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function devAutopilotReleaseHold(", "'/release-hold'", "Frozen scope"] },
+    { "kind": "existing", "ref": "npx jest test/vtid-05146-overlap-guard.test.ts", "cwd": "services/gateway", "reason": "The overlap guard's pure parts and its GitHub snapshot: shared files, own PR excluded, incomplete lists block, frozen globs, hold expiry, and GitHub failures never read as no overlap" }
+  ]
+}

@@ -1,0 +1,8 @@
+# VTID-04782 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04782-crm-gates.test.ts                             # 19 tests
+npx jest test/vtid-04782 test/vtid-04411 test/vtid-03848-orchestrator-voice-ceiling test/vtid-03834   # outputs/jest-e3-e6.txt
+npx jest (full gateway suite)                                          # 1422 suites, 22863 tests, 0 failed (outputs/jest-full.txt)
+node scripts/ci/dev-autopilot-impact-scan.mjs   (repo root)            # see below
+# impact scan: blocker=0 warning=0 info=0

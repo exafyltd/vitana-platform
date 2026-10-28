@@ -1,0 +1,37 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/operator-service.extract-title.test.ts
+  extractTitle — TITLE: prefix handling
+    ✓ strips a leading "TITLE:" line instead of double-prefixing it (4 ms)
+    ✓ is case-insensitive and tolerates surrounding whitespace on the TITLE: line (1 ms)
+    ✓ still normalizes a real "Area: description" title unchanged (1 ms)
+    ✓ still auto-detects a valid area and builds a title when there is no TITLE: line at all
+    ✓ does not let a multi-line description without early punctuation drag later lines into the title (1 ms)
+    ✓ falls back to "Gateway: Untitled task" for empty input
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:517:9)
+
+PASS test/task-title.guess-area-ordering.test.ts
+  guessAreaFromText — Auth-vs-specific-area ordering (VTID-03933)
+    ✓ classifies the exact reproduced live failure as Command Hub, not Auth (1 ms)
+    ✓ still classifies genuine Auth-only text as Auth (bare "session", no other area keyword) (1 ms)
+    ✓ lets a more specific area win over "session" appearing elsewhere in the text (1 ms)
+    ✓ ORB keeps priority over Auth for voice/session text (ORB stays first)
+    ✓ falls back to Gateway when nothing matches, unchanged from before
+    ✓ mutation check: reverting Auth to 2nd position reproduces the live bug (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       12 passed, 12 total
+Snapshots:   0 total
+Time:        0.604 s, estimated 1 s
+Ran all test suites matching /test\/task-title.guess-area-ordering.test.ts|test\/operator-service.extract-title.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

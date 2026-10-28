@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-04951",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/orb-widget.js?v=20261008-vtid-05001-hide-reasons",
+      "expect_status": 200,
+      "expect_body_contains": ["startGuide: function (ctx)", "startPayload.guide_feature = _s.guide.feature;", "startPayload.guide_state = _s.guide.state;"],
+      "reason": "the deployed widget carries VitanaOrb.startGuide and sends the four guide fields one-shot on the session start"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/orb/live/guide test/services/conversation test/orb/live/prewarm test/vtid-04560-role-separation-regression.test.ts test/vtid-04659-staging-checks-use-versioned-urls.test.ts",
+      "cwd": "services/gateway",
+      "reason": "a real guide session needs a microphone and the model; the sanitiser, the guide_open rung on both ladders and its precedence, the system-instruction block, the prewarm skip and the widget wiring are proven with fakes here, and the real spoken answer for an ended event is checked by the owner on staging"
+    }
+  ]
+}

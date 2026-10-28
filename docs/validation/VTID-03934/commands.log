@@ -1,0 +1,74 @@
+# VTID-03934 — commands actually run.
+
+# --- Investigation (prior conversation turn, part of the Operator quality
+#     evaluation that surfaced this bug — same evaluation that surfaced
+#     VTID-03933) ---------------------------------------------------------
+
+# The generated spec for VTID-03931 (a real test task run through the live
+# Operator chat + planner-sweep pipeline) was checked line-by-line against
+# the real codebase instead of accepted at face value.
+
+grep -n "VTID-03573" -r .
+#   -> zero matches anywhere in the repo; the generated spec's Risk
+#      section cited this VTID as an "actively modifying internal auth
+#      flows" coordination risk. Fabricated, not retrieved.
+
+wc -l services/gateway/src/frontend/command-hub/app.js
+#   -> 56112 (the generated spec, and the system prompt it came from,
+#      both said "~30k lines").
+
+grep -n "SPEC_GEN_SYSTEM_PROMPT\|SPEC_GEN_MODEL" services/gateway/src/routes/specs.ts
+#   -> const SPEC_GEN_SYSTEM_PROMPT = `...` (not exported); traced the
+#      "EXEC-DEPLOY.yml -> Cloud Run source deploy" and "~30k lines" lines
+#      directly to this hardcoded string, confirming the generated spec's
+#      wrong facts came from here, not from the model's own reasoning.
+
+sed -n '178,257p' services/gateway/src/routes/specs.ts
+#   -> gatherSystemContext(): the only legitimate source of real VTID
+#      citations (Related/Similar Tasks, OASIS Events, Example Spec),
+#      injected into the user prompt under a literal "--- SYSTEM CONTEXT
+#      ---" heading (confirmed at generateSpecWithLLM(), line ~274).
+
+# --- Fix -------------------------------------------------------------
+
+# services/gateway/src/routes/specs.ts
+#   - `const SPEC_GEN_SYSTEM_PROMPT` -> `export const SPEC_GEN_SYSTEM_PROMPT`
+#   - "Main backend API on Cloud Run" -> "Main backend API on AWS ECS
+#     (service `vitana-gateway-awsdr` in prod, `vitana-gateway` in
+#     staging ...)"
+#   - "Frontend: ... (vanilla JS, ~30k lines)" -> "... (vanilla JS, a large
+#     single-file bundle — tens of thousands of lines; do not cite a
+#     specific line count, it drifts)"
+#   - "Deploy via GitHub Actions EXEC-DEPLOY.yml -> Cloud Run source
+#     deploy" -> real AWS ECS staging-first deploy description
+#     (AWS-STAGE-DEPLOY-GATEWAY.yml auto-deploys staging;
+#     AWS-PROD-DEPLOY-GATEWAY.yml/PUBLISH button for prod), with GCP/Cloud
+#     Run/EXEC-DEPLOY.yml explicitly flagged as decommissioned
+#   - Added Output Rule 8: never cite a specific VTID as a coordination
+#     risk/dependency unless it appears verbatim in the SYSTEM CONTEXT
+#     section; describe generically otherwise
+
+cd services/gateway
+
+# --- Verification ---------------------------------------------------------
+
+npx jest test/specs-gen-system-prompt-accuracy.test.ts test/specs-generate-claim.test.ts --runInBand
+#   -> 2/2 suites, 21/21 tests passing. (outputs/targeted-tests.txt)
+
+# Mutation check on the fix: reverted via `git stash` (restoring the
+# unexported const + stale facts), re-ran the new test file -- confirmed
+# 9/9 tests fail (import resolves to undefined pre-fix, since the symbol
+# wasn't exported -- proof the export itself is load-bearing). Restored
+# via `git stash pop` -- re-ran -- 9/9 green again.
+
+npx tsc --noEmit
+#   -> 2 pre-existing, unrelated errors only (missing @aws-sdk sub-packages
+#      in this session's local node_modules — declared in package.json,
+#      not referenced by any file this VTID touches). Zero errors in
+#      specs.ts or its new test file. (outputs/tsc.txt)
+
+npx jest --runInBand
+#   -> full suite: 899/911 suites passing (12 pre-existing failures, same
+#      missing-module root cause documented in VTID-03927/VTID-03933's
+#      evidence packs), 14755/14801 tests passing, 0 failures in any file
+#      this VTID touches. (outputs/full-suite.txt)

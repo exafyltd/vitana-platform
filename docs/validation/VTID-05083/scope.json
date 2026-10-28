@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05083",
+  "kind": "chore",
+  "paths": [
+    "scripts/ci/staging-verify/lib.cjs",
+    "scripts/ci/staging-verify/run.mjs",
+    "scripts/ci/staging-verify/lib.test.cjs",
+    "docs/validation/VTID-05083/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

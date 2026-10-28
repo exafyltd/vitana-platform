@@ -1,0 +1,7 @@
+# VTID-04437 — commands run (2026-09-23)
+curl -X POST preview-aws-gateway/api/v1/vtid/allocate   -> VTID-04437; ledger row set in_progress/approved
+node --check services/gateway/src/frontend/command-hub/app.js   -> ok
+npx jest test/command-hub/vtid-04437-operator-server-threads.test.ts   -> 11/11
+npx jest test/command-hub + operator/csp suites   -> 72 suites, 889 passed, 2 skipped
+PORT=18437 node docs/validation/VTID-04437/outputs/harness-server.js &
+node docs/validation/VTID-04437/outputs/harness-shoot.js   -> screenshots desktop + mobile

@@ -1,0 +1,6 @@
+{"at":"2026-10-05T09:45:12Z","source":"read-only SELECT on the production Supabase project (inmkhvwdcuyhnxkgfvsb)",
+ "excluded_accounts":3,"visible_excluded_profiles":3,"live_intents_of_excluded":18,"recommendation_rows_on_their_intents":16,
+ "real_members_recommendation_rows_listing_them":11,"intent_matches_involving_them":173,"intent_matches_total":297,
+ "visible_profiles_total":233,
+ "dependent_rows_on_those_matches":{"intent_events":0,"intent_disputes":0,"user_ratings":0,"service_payments":0,"match_notifications":0,"autopilot_prompts":0},
+ "live_function_md5_crlf_normalised":{"search_intent_catalog_v2":"f36258851643cd0a2add3e584f612221","compute_intent_matches_v2":"ab69be4997e8fc689efec0ca977e2534","search_intent_catalog":"d920b178a9730f26a54313c291a170aa","compute_intent_matches":"2bcf828f4866e2eeb4a2bc7eb479154e"}}

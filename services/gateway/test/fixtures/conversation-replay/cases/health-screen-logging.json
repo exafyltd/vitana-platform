@@ -1,0 +1,65 @@
+{
+ "schema_version": 1,
+ "id": "health-screen-logging",
+ "description": "Member on the health screen logs a meal and their mood.",
+ "source": {
+  "kind": "synthetic"
+ },
+ "opening": {
+  "providers": [
+   {
+    "providerKey": "journey_guide",
+    "status": "returned",
+    "candidate": {
+     "id": "c-jg",
+     "kind": "wake_brief",
+     "dedupeKey": "journey_guide:step3",
+     "priority": 60,
+     "userFacingLine": "The next step on your journey is setting a sleep target.",
+     "privacyMode": "safe_to_speak",
+     "cta": {
+      "type": "navigate",
+      "route": "/health/sleep"
+     }
+    }
+   }
+  ],
+  "winner": "journey_guide"
+ },
+ "turns": [
+  {
+   "route": "/health",
+   "screen_title": "Health",
+   "user": "I had oatmeal with berries for breakfast today"
+  },
+  {
+   "user": "and I am feeling pretty calm this morning"
+  }
+ ],
+ "expect": {
+  "opener_kind": "legacy_default",
+  "candidate_provider": "journey_guide",
+  "candidate_spoken": false,
+  "turns": [
+   {
+    "route_groups": [
+     "health"
+    ],
+    "declared_tools_include": [
+     "log_meal",
+     "log_mood"
+    ],
+    "advisor_eligible": true
+   },
+   {
+    "route_groups": [
+     "health"
+    ],
+    "declared_tools_include": [
+     "log_mood"
+    ],
+    "advisor_eligible": true
+   }
+  ]
+ }
+}

@@ -1,0 +1,7 @@
+cd services/gateway && npx tsc --noEmit -p .                                          # clean
+npx jest test/vtid-04506-wake-autopilot-slot-due.test.ts                             # 11 passed
+npx jest test/services/conversation/vtid-04443-conversation-replay.test.ts test/orb/live/characterization -u   # catalog + replay count
+npx jest (full gateway)                                                               # 1227 passed, 1 failed (ar catalog rule) -> fixed in the CA-5 commit
+npx jest <61 related suites>                                                          # 846 passed
+python3 -c "import ast; ast.parse(open('services/agents/orb-agent/src/orb_agent/tools.py').read())"  # ok
+# mutation: activated-status check removed -> fails (outputs/mutation-activated-check-removed.txt)

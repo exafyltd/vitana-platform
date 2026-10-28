@@ -1,0 +1,100 @@
+# VTID-03770 — commands run during investigation and verification
+
+## Investigation (read-only, live oasis_events tracing via Supabase MCP)
+
+Allocated VTID and set title/status:
+  SELECT allocate_global_vtid('claude-code', 'DEV', 'orb-guided-topic');
+  UPDATE vtid_ledger SET title=..., status='in_progress', spec_status='approved' WHERE vtid='VTID-03770';
+
+Scoped to the documented e2e test account first — a dead end, corrected by
+widening scope rather than trusting it:
+  SELECT ... FROM oasis_events WHERE created_at > now() - interval '3 hours'
+    AND (actor_id = 'a27552a3-...' OR metadata->>'user_id' = 'a27552a3-...')
+  SELECT ... WHERE metadata::text ILIKE '%guided_topic%' AND user_id = 'a27552a3-...'
+    -- zero rows in the last 12 hours; ruled this account out.
+
+Widened to all users/all guided-topic activity in the last 6 hours:
+  SELECT ... WHERE metadata::text ILIKE '%guided_topic%' OR message ILIKE '%guided%'
+    -- found the real reporting account bc34a5ca-6966-44f6-9507-3bed98e3e1d5
+       (j.tadic@exafy.io), topics T003 (08:01) and T005 (09:15).
+
+Full second-by-second trace of the T005 session chain:
+  SELECT created_at, topic, status, message, metadata FROM oasis_events
+    WHERE created_at > '2026-08-27 09:14:00+00'
+      AND (metadata->>'user_id' = 'bc34a5ca-...'
+        OR metadata->>'session_id' = 'live-c3bde79b-371a-4bf9-8349-bcfe1b9b573a')
+    ORDER BY created_at ASC;
+  -- traced: live-c3bde79b (nova_validation x2, superseded) ->
+  --         live-3b5251dd (real 37.7s/335-chunk teaching turn, connection drop) ->
+  --         live-4c56c1f3 (generic reopen, all_sources_skipped, ~4.5s, hide)
+
+Static code reading (services/gateway/src/frontend/command-hub/orb-widget.js):
+  grep -n "setInterval|_reconnectTimer|..." orb-widget.js
+    -> found _s._recoveryWatchdog (5s health-probe, line ~1361) and
+       _s._guidedTopicBackstopInterval (VTID-03762, unrelated to this bug).
+  Read _resetAndReconnect() in full (lines 1437-1484) — confirmed NO
+    reference to _guidedTopicInFlight anywhere in its body, unlike
+    _attemptReconnect() (lines 4269-4370), which has the VTID-03746 guard.
+  Read _hide() (confirms _guidedTopicInFlight is cleared ONLY there),
+    focusGuidedTopic (confirms it's set ONLY there), and the turn-complete
+    handler (confirms it deliberately does NOT clear _guidedTopicInFlight,
+    only _s.guidedTopic — the VTID-03746 design).
+  Read guided-topic-narration.ts (server-side provider) — confirmed its
+    candidate decision is a pure function of whether guided_topic_id
+    arrived on the request; no server-side dedup/already-delivered gate
+    that would explain the missing candidate independent of the client.
+  grep -n "superseded_by_new_session" across services/gateway/src —
+    confirmed this is the server killing an existing tracked-active session
+    when a NEW session-start request arrives for the same user
+    (routes/orb-live.ts).
+  grep -n "closeBtn|pointer-events" orb-widget.js — confirmed the close
+    button is created once (idempotent _renderOverlay guard) and bound
+    directly to _hide with no state-based disabling; ruled out a DOM/
+    z-index explanation for "close doesn't react."
+
+## Implementation
+
+Edit to services/gateway/src/frontend/command-hub/orb-widget.js,
+_resetAndReconnect():
+  - Changed `_s._isReconnecting = false;` to `_s._isReconnecting = true;`
+    at function entry.
+  - Added the guided-topic restore guard (identical shape to
+    _attemptReconnect()'s) immediately before `_sessionStart()`.
+  - Added `_s._isReconnecting = false;` to both the `.then()` success
+    branch and the `.catch()` failure branch.
+
+## Verification
+
+### Gateway (services/gateway/, run from that directory)
+
+  node --check src/frontend/command-hub/orb-widget.js
+    -> exit 0 (outputs/node-check.txt)
+
+  npx jest test/frontend/orb-widget-guided-topic-mid-lesson-resume.test.ts \
+    test/frontend/orb-widget-guided-topic-reconnect.test.ts \
+    test/frontend/orb-widget-stale-poll-generation-guard.test.ts --silent
+    -> 3 suites, 28 tests, 0 failures (outputs/jest-vtid-03770-suite.txt)
+
+  npx jest --silent
+    -> 713/714 suites (1 pre-existing skip), 13,433/13,468 tests, 0 failures
+      (outputs/jest-full-suite.txt)
+
+  npx tsc --noEmit
+    -> exit 0, no output (outputs/tsc-noemit.txt)
+
+### Mutation testing (orb-widget.js, _resetAndReconnect())
+
+Backed up the file, then for each of 2 regions: reverted exactly that
+region's fix, re-ran the target test file, confirmed exactly the expected
+subset of tests failed and nothing else did, restored the backup, re-
+verified `node --check` clean, moved to the next region. Full per-mutation
+pass/fail breakdown: outputs/mutation-testing-log.txt.
+
+## Branch note
+
+Same pattern as VTID-03763: the designated branch
+(claude/my-journey-catalog-multilingual-qrwxng) contained only
+already-merged history (its VTID-03763 commits are squash-merged into
+origin/main as 0a5f71ec) — reset to origin/main (git reset --hard
+origin/main) before starting this VTID's work, safe since nothing unmerged
+was lost (confirmed via git log on origin/main before resetting).

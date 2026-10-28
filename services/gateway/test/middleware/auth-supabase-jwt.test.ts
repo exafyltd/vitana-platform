@@ -1,0 +1,747 @@
+/**
+ * Tests for src/middleware/auth-supabase-jwt.ts (VTID-01157 / VTID-ORBC).
+ *
+ * Contract under test:
+ *   - requireAuth: valid HS256 token → identity + auth_source + raw claims
+ *     attached (incl. vitana_id lookup from app_users and active-day tracking);
+ *     missing/malformed/invalid/expired token → 401 UNAUTHENTICATED;
+ *     no secrets configured → 401 without ever calling jwtVerify.
+ *   - Dual-secret behavior: platform secret first, then LOVABLE_JWT_SECRET
+ *     (auth_source='lovable').
+ *   - optionalAuth: never blocks; attaches identity only when the token is valid.
+ *   - requireExafyAdmin: 401 without identity, 403 without exafy_admin claim.
+ *   - requireAdminAuth: combined auth + exafy_admin gating.
+ *   - requireTenant / requireAuthWithTenant: tenant from JWT, DB fallback via
+ *     user_tenants (VTID-05149 resolver: is_primary desc, created_at,
+ *     tenant_id, limit 1), else 400 TENANT_REQUIRED.
+ *   - resolveVitanaId: cached per user, invalidateVitanaIdCache busts the cache.
+ *   - VTID-05043: a tenant taken from the JWT must be a user_tenants membership
+ *     (403 TENANT_NOT_MEMBER), exafy_admin exempt, 503 on lookup failure,
+ *     TENANT_MEMBERSHIP_CHECK_MODE=log lets it through with a warning, 60 s
+ *     positive cache, negatives never cached.
+ */
+
+import request from 'supertest';
+import express from 'express';
+import * as jose from 'jose';
+
+jest.mock('jose');
+
+// Per-table thenable query-chain mock for the getSupabase() service client
+// (used by resolveVitanaId → app_users and requireTenant → user_tenants).
+const createChain = () => {
+  const responseQueue: any[] = [];
+  let defaultData: any = { data: null, error: null };
+
+  const chain: any = {
+    select: jest.fn(() => chain),
+    eq: jest.fn(() => chain),
+    order: jest.fn(() => chain),
+    limit: jest.fn(() => chain),
+    abortSignal: jest.fn(() => chain),
+    single: jest.fn(() => chain),
+    maybeSingle: jest.fn(() => chain),
+    then: jest.fn((resolve: (v: any) => any) => {
+      const value = responseQueue.length > 0 ? responseQueue.shift() : defaultData;
+      return Promise.resolve(value).then(resolve);
+    }),
+    mockResolvedValue(v: any) {
+      defaultData = v;
+      return chain;
+    },
+    mockResolvedValueOnce(v: any) {
+      responseQueue.push(v);
+      return chain;
+    },
+    mockReset() {
+      responseQueue.length = 0;
+      defaultData = { data: null, error: null };
+    },
+  };
+  return chain;
+};
+
+const tableChains: Record<string, ReturnType<typeof createChain>> = {};
+const chainFor = (table: string) => (tableChains[table] ??= createChain());
+const mockSupabase = { from: jest.fn((table: string) => chainFor(table)) };
+const mockGetSupabase = jest.fn(() => mockSupabase as any);
+
+jest.mock('../../src/lib/supabase', () => ({
+  getSupabase: () => mockGetSupabase(),
+}));
+
+jest.mock('../../src/services/guide/active-usage', () => ({
+  upsertActiveDay: jest.fn().mockResolvedValue(undefined),
+}));
+
+import {
+  requireAuth,
+  optionalAuth,
+  requireExafyAdmin,
+  requireTenant,
+  requireAuthWithTenant,
+  requireAdminAuth,
+  resolveVitanaId,
+  invalidateVitanaIdCache,
+  verifyAndExtractIdentity,
+  clearTenantMembershipCache,
+} from '../../src/middleware/auth-supabase-jwt';
+import { upsertActiveDay } from '../../src/services/guide/active-usage';
+
+// ---------------------------------------------------------------------------
+// App under test — one route per middleware combination
+// ---------------------------------------------------------------------------
+
+const echo = (req: any, res: any) =>
+  res.json({
+    ok: true,
+    identity: req.identity ?? null,
+    auth_source: req.auth_source ?? null,
+    has_raw_claims: !!req.auth_raw_claims,
+  });
+
+const app = express();
+app.get('/auth', requireAuth, echo);
+app.get('/opt', optionalAuth, echo);
+app.get('/admin', requireAuth, requireExafyAdmin, echo);
+app.get('/admin-auth', requireAdminAuth, echo);
+app.get('/tenant', requireAuth, requireTenant, echo);
+app.get('/auth-tenant', requireAuthWithTenant, echo);
+
+// ---------------------------------------------------------------------------
+// Helpers
+// ---------------------------------------------------------------------------
+
+let subCounter = 0;
+/** Unique sub per test — the module-level vitana_id cache persists across tests. */
+const uniqueSub = (label: string) => `${label}-${++subCounter}`;
+
+function claims(sub: string, overrides: Record<string, unknown> = {}) {
+  return {
+    sub,
+    email: 'user@example.com',
+    role: 'authenticated',
+    aud: ['authenticated'],
+    exp: 1893456000,
+    iat: 1893452400,
+    app_metadata: { active_tenant_id: 'tenant-1', exafy_admin: false },
+    ...overrides,
+  };
+}
+
+function mockVerifiedJwt(payload: object) {
+  (jose.jwtVerify as jest.Mock).mockResolvedValue({ payload });
+}
+
+function mockInvalidJwt(message = 'signature verification failed') {
+  (jose.jwtVerify as jest.Mock).mockRejectedValue(new Error(message));
+}
+
+describe('auth-supabase-jwt middleware', () => {
+  beforeEach(() => {
+    process.env.SUPABASE_JWT_SECRET = 'test-jwt-secret';
+    delete process.env.LOVABLE_JWT_SECRET;
+    delete process.env.SUPABASE_AUTH_JWKS_URL;
+    delete process.env.COGNITO_USER_POOL_ID;
+    delete process.env.COGNITO_REGION;
+    delete process.env.COGNITO_APP_CLIENT_ID;
+    for (const chain of Object.values(tableChains)) chain.mockReset();
+    mockGetSupabase.mockReturnValue(mockSupabase as any);
+    mockInvalidJwt();
+    clearTenantMembershipCache();
+    delete process.env.TENANT_MEMBERSHIP_CHECK_MODE;
+  });
+
+  // =========================================================================
+  // requireAuth
+  // =========================================================================
+
+  describe('requireAuth', () => {
+    it('returns 401 UNAUTHENTICATED when the Authorization header is missing', async () => {
+      const res = await request(app).get('/auth');
+      expect(res.status).toBe(401);
+      expect(res.body).toMatchObject({ ok: false, error: 'UNAUTHENTICATED' });
+      expect(jose.jwtVerify).not.toHaveBeenCalled();
+    });
+
+    it('returns 401 UNAUTHENTICATED for a non-Bearer Authorization header', async () => {
+      const res = await request(app).get('/auth').set('Authorization', 'Token abc');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('returns 401 UNAUTHENTICATED for an invalid/expired token', async () => {
+      mockInvalidJwt('"exp" claim timestamp check failed');
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer expired');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('returns 401 without calling jwtVerify when no secrets are configured', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      delete process.env.LOVABLE_JWT_SECRET;
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer whatever');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+      expect(jose.jwtVerify).not.toHaveBeenCalled();
+    });
+
+    it('attaches identity, raw claims and auth_source=platform for a valid token', async () => {
+      const sub = uniqueSub('user');
+      mockVerifiedJwt(claims(sub));
+      chainFor('app_users').mockResolvedValue({ data: { vitana_id: 'VIT-42' }, error: null });
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer good-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.identity).toEqual({
+        user_id: sub,
+        email: 'user@example.com',
+        tenant_id: 'tenant-1',
+        exafy_admin: false,
+        role: 'authenticated',
+        aud: 'authenticated', // first element of the aud array
+        exp: 1893456000,
+        iat: 1893452400,
+        vitana_id: 'VIT-42',
+      });
+      expect(res.body.auth_source).toBe('platform');
+      expect(res.body.has_raw_claims).toBe(true);
+      expect(jose.jwtVerify).toHaveBeenCalledWith(
+        'good-token',
+        expect.anything(),
+        expect.objectContaining({ algorithms: ['HS256'] })
+      );
+      // fire-and-forget active-day tracker got the authenticated user
+      expect(upsertActiveDay).toHaveBeenCalledWith(sub);
+    });
+
+    it('is null-tolerant on vitana_id when the user has no app_users row', async () => {
+      const sub = uniqueSub('no-vitana');
+      mockVerifiedJwt(claims(sub));
+      chainFor('app_users').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer good-token');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.vitana_id).toBeNull();
+    });
+
+    it('falls back to LOVABLE_JWT_SECRET and reports auth_source=lovable', async () => {
+      process.env.LOVABLE_JWT_SECRET = 'lovable-secret';
+      const sub = uniqueSub('lovable');
+      (jose.jwtVerify as jest.Mock)
+        .mockRejectedValueOnce(new Error('signature verification failed')) // platform secret
+        .mockResolvedValueOnce({ payload: claims(sub) }); // lovable secret
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer lovable-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.auth_source).toBe('lovable');
+      expect(jose.jwtVerify).toHaveBeenCalledTimes(2);
+    });
+  });
+
+  // =========================================================================
+  // Cognito RS256 JWT verification (VTID-03827)
+  // =========================================================================
+
+  describe('Cognito RS256 JWT verification (VTID-03827)', () => {
+    const cognitoClaims = (sub: string, overrides: Record<string, unknown> = {}) => ({
+      sub,
+      token_use: 'id',
+      email: 'migrated@example.com',
+      aud: 'test-app-client-id',
+      exp: 1893456000,
+      iat: 1893452400,
+      'custom:legacy_user_id': 'legacy-uuid-123',
+      ...overrides,
+    });
+
+    beforeEach(() => {
+      // Isolate from the HS256/ES256 paths so only the Cognito branch can
+      // possibly succeed — makes call-count assertions unambiguous.
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      process.env.COGNITO_APP_CLIENT_ID = 'test-app-client-id';
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+    });
+
+    it('verifies a Cognito ID token and maps custom:legacy_user_id to user_id (not the Cognito sub)', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-abc'));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer cognito-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.auth_source).toBe('cognito');
+      expect(res.body.identity).toMatchObject({
+        user_id: 'legacy-uuid-123',
+        email: 'migrated@example.com',
+        tenant_id: null,
+        exafy_admin: false,
+        role: 'authenticated',
+      });
+      expect(jose.jwtVerify).toHaveBeenCalledWith(
+        'cognito-token',
+        'cognito-jwks-sentinel',
+        expect.objectContaining({
+          algorithms: ['RS256'],
+          issuer: 'https://cognito-idp.eu-central-1.amazonaws.com/eu-central-1_TestPool',
+        })
+      );
+    });
+
+    it('falls back to the Cognito sub when custom:legacy_user_id is absent', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-xyz', { 'custom:legacy_user_id': undefined }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer cognito-token');
+
+      expect(res.status).toBe(200);
+      expect(res.body.identity.user_id).toBe('cognito-random-sub-xyz');
+    });
+
+    it('rejects a Cognito access token (token_use !== "id")', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { token_use: 'access' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer access-token');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('rejects a token whose aud does not match COGNITO_APP_CLIENT_ID', async () => {
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { aud: 'some-other-client' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer wrong-aud');
+
+      expect(res.status).toBe(401);
+    });
+
+    it('skips the aud check when COGNITO_APP_CLIENT_ID is unset', async () => {
+      delete process.env.COGNITO_APP_CLIENT_ID;
+      mockVerifiedJwt(cognitoClaims('cognito-sub', { aud: 'anything-at-all' }));
+
+      const res = await request(app).get('/auth').set('Authorization', 'Bearer any-aud');
+
+      expect(res.status).toBe(200);
+    });
+  });
+
+  // =========================================================================
+  // claims.sub normalization for Aurora RLS (B4) — VTID-03827 follow-up
+  //
+  // `verifyAndExtractIdentity()`'s `claims` return value is forwarded
+  // verbatim into Aurora's `request.jwt.claims` session GUC by
+  // withAuroraRlsContext() (services/aurora-client.ts), which Postgres's
+  // auth.uid() reads `sub` out of. A Cognito ID token's own `sub` is
+  // Cognito's random UUID, not the legacy Supabase user id — these tests
+  // pin that the returned `claims.sub` always matches `identity.user_id`,
+  // regardless of which provider signed the token.
+  // =========================================================================
+
+  describe('claims.sub normalization for Aurora RLS (B4)', () => {
+    const cognitoClaims = (sub: string, overrides: Record<string, unknown> = {}) => ({
+      sub,
+      token_use: 'id',
+      email: 'migrated@example.com',
+      aud: 'test-app-client-id',
+      exp: 1893456000,
+      iat: 1893452400,
+      'custom:legacy_user_id': 'legacy-uuid-123',
+      ...overrides,
+    });
+
+    it('overwrites claims.sub with the legacy user id for a Cognito token', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      process.env.COGNITO_APP_CLIENT_ID = 'test-app-client-id';
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-abc'));
+
+      const result = await verifyAndExtractIdentity('cognito-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe('legacy-uuid-123');
+      // The bug this pins: without normalization this would be
+      // 'cognito-random-sub-abc' (Cognito's own sub), breaking
+      // auth.uid() = user_id RLS policies for every migrated user.
+      expect(result!.claims.sub).toBe('legacy-uuid-123');
+      expect(result!.claims.sub).not.toBe('cognito-random-sub-abc');
+      // Every other claim is preserved untouched.
+      expect(result!.claims.email).toBe('migrated@example.com');
+      expect(result!.claims['custom:legacy_user_id']).toBe('legacy-uuid-123');
+    });
+
+    it('leaves claims.sub as the Cognito sub when there is no legacy_user_id to map to', async () => {
+      delete process.env.SUPABASE_JWT_SECRET;
+      process.env.COGNITO_USER_POOL_ID = 'eu-central-1_TestPool';
+      process.env.COGNITO_REGION = 'eu-central-1';
+      delete process.env.COGNITO_APP_CLIENT_ID;
+      (jose.createRemoteJWKSet as jest.Mock).mockReturnValue('cognito-jwks-sentinel');
+      mockVerifiedJwt(cognitoClaims('cognito-random-sub-xyz', { 'custom:legacy_user_id': undefined }));
+
+      const result = await verifyAndExtractIdentity('cognito-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe('cognito-random-sub-xyz');
+      expect(result!.claims.sub).toBe('cognito-random-sub-xyz');
+    });
+
+    it('is a no-op for a Supabase HS256 token (sub already equals identity.user_id)', async () => {
+      const sub = uniqueSub('rls-noop');
+      mockVerifiedJwt(claims(sub));
+
+      const result = await verifyAndExtractIdentity('good-token');
+
+      expect(result).not.toBeNull();
+      expect(result!.identity.user_id).toBe(sub);
+      expect(result!.claims.sub).toBe(sub);
+    });
+  });
+
+  // =========================================================================
+  // optionalAuth
+  // =========================================================================
+
+  describe('optionalAuth', () => {
+    it('passes through without identity when no token is present', async () => {
+      const res = await request(app).get('/opt');
+      expect(res.status).toBe(200);
+      expect(res.body.identity).toBeNull();
+      expect(res.body.auth_source).toBeNull();
+    });
+
+    it('passes through without identity when the token is invalid', async () => {
+      mockInvalidJwt();
+      const res = await request(app).get('/opt').set('Authorization', 'Bearer bad');
+      expect(res.status).toBe(200);
+      expect(res.body.identity).toBeNull();
+    });
+
+    it('attaches identity when a valid token is present', async () => {
+      const sub = uniqueSub('opt');
+      mockVerifiedJwt(claims(sub));
+
+      const res = await request(app).get('/opt').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.user_id).toBe(sub);
+      expect(res.body.auth_source).toBe('platform');
+    });
+  });
+
+  // =========================================================================
+  // requireExafyAdmin
+  // =========================================================================
+
+  describe('requireExafyAdmin', () => {
+    it('returns 403 FORBIDDEN for an authenticated non-admin', async () => {
+      mockVerifiedJwt(claims(uniqueSub('plain')));
+      const res = await request(app).get('/admin').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'FORBIDDEN' });
+    });
+
+    it('allows an exafy_admin through', async () => {
+      const sub = uniqueSub('exafy');
+      mockVerifiedJwt(
+        claims(sub, { app_metadata: { active_tenant_id: 'tenant-1', exafy_admin: true } })
+      );
+      const res = await request(app).get('/admin').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.exafy_admin).toBe(true);
+    });
+
+    it('returns 401 when used without a preceding requireAuth (no identity)', () => {
+      const req: any = { headers: {} };
+      const status = jest.fn().mockReturnThis();
+      const json = jest.fn();
+      const next = jest.fn();
+
+      requireExafyAdmin(req, { status, json } as any, next);
+
+      expect(status).toHaveBeenCalledWith(401);
+      expect(json).toHaveBeenCalledWith(expect.objectContaining({ error: 'UNAUTHENTICATED' }));
+      expect(next).not.toHaveBeenCalled();
+    });
+  });
+
+  // =========================================================================
+  // requireAdminAuth (combined)
+  // =========================================================================
+
+  describe('requireAdminAuth', () => {
+    it('returns 401 without a token', async () => {
+      const res = await request(app).get('/admin-auth');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('returns 403 for a valid non-admin token', async () => {
+      mockVerifiedJwt(claims(uniqueSub('aa-plain')));
+      const res = await request(app).get('/admin-auth').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(403);
+      expect(res.body.error).toBe('FORBIDDEN');
+    });
+
+    it('allows a valid exafy_admin token', async () => {
+      const sub = uniqueSub('aa-admin');
+      mockVerifiedJwt(claims(sub, { app_metadata: { exafy_admin: true } }));
+      const res = await request(app).get('/admin-auth').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.user_id).toBe(sub);
+    });
+  });
+
+  // =========================================================================
+  // requireTenant / requireAuthWithTenant
+  // =========================================================================
+
+  describe('requireTenant', () => {
+    it('passes when the JWT carries active_tenant_id the user is a member of', async () => {
+      mockVerifiedJwt(claims(uniqueSub('t-jwt')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+      const res = await request(app).get('/tenant').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+    });
+
+    it('resolves the primary tenant from user_tenants when the JWT lacks one', async () => {
+      mockVerifiedJwt(claims(uniqueSub('t-db'), { app_metadata: {} }));
+      chainFor('user_tenants').mockResolvedValue({
+        data: [{ tenant_id: 'tenant-from-db', active_role: 'community', is_primary: true }],
+        error: null,
+      });
+
+      const res = await request(app).get('/tenant').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-from-db');
+      // VTID-05149: deterministic query shape (was eq('is_primary', true).single()).
+      expect(chainFor('user_tenants').order).toHaveBeenCalledWith('is_primary', { ascending: false });
+      expect(chainFor('user_tenants').limit).toHaveBeenCalledWith(1);
+    });
+
+    it('returns 400 TENANT_REQUIRED when no tenant exists in JWT or DB', async () => {
+      mockVerifiedJwt(claims(uniqueSub('t-none'), { app_metadata: {} }));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get('/tenant').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(400);
+      expect(res.body).toMatchObject({ ok: false, error: 'TENANT_REQUIRED' });
+    });
+  });
+
+  describe('requireAuthWithTenant', () => {
+    it('returns 401 without a token', async () => {
+      const res = await request(app).get('/auth-tenant');
+      expect(res.status).toBe(401);
+      expect(res.body.error).toBe('UNAUTHENTICATED');
+    });
+
+    it('allows a valid token with a tenant in the JWT the user is a member of', async () => {
+      mockVerifiedJwt(claims(uniqueSub('at-ok')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+      const res = await request(app).get('/auth-tenant').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+    });
+
+    it('returns 400 TENANT_REQUIRED when neither JWT nor DB yields a tenant', async () => {
+      mockVerifiedJwt(claims(uniqueSub('at-none'), { app_metadata: {} }));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get('/auth-tenant').set('Authorization', 'Bearer good');
+      expect(res.status).toBe(400);
+      expect(res.body.error).toBe('TENANT_REQUIRED');
+    });
+  });
+
+  // =========================================================================
+  // VTID-05043: tenant claim must be a membership
+  // =========================================================================
+
+  describe.each([
+    ['requireTenant', '/tenant'],
+    ['requireAuthWithTenant', '/auth-tenant'],
+  ])('%s — tenant membership check (VTID-05043)', (_name, path) => {
+    let warn: jest.SpyInstance;
+    beforeEach(() => {
+      warn = jest.spyOn(console, 'warn').mockImplementation(() => {});
+    });
+    afterEach(() => warn.mockRestore());
+
+    const membershipQueried = () =>
+      chainFor('user_tenants').eq.mock.calls.some((c: any[]) => c[0] === 'tenant_id' && c[1] === 'tenant-1');
+
+    it('claim tenant + membership row → next(), looked up by (user_id, tenant_id)', async () => {
+      const sub = uniqueSub('m-member');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+      expect(chainFor('user_tenants').eq).toHaveBeenCalledWith('user_id', sub);
+      expect(membershipQueried()).toBe(true);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalled();
+    });
+
+    it('claim tenant without membership → 403 TENANT_NOT_MEMBER + structured warning', async () => {
+      const sub = uniqueSub('m-stranger');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(403);
+      expect(res.body).toMatchObject({ ok: false, error: 'TENANT_NOT_MEMBER' });
+      const logged = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('tenant_membership_mismatch'));
+      expect(logged).toBeDefined();
+      expect(JSON.parse(logged!)).toMatchObject({
+        event: 'tenant_membership_mismatch',
+        user_id: sub,
+        tenant_id: 'tenant-1',
+        route: `GET ${path}`,
+        mode: 'enforce',
+      });
+    });
+
+    it('exafy_admin with a claim tenant it is not a member of → next(), no lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-exafy'), { app_metadata: { active_tenant_id: 'tenant-1', exafy_admin: true } }));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-1');
+      expect(membershipQueried()).toBe(false);
+    });
+
+    it('no claim → primary fallback unchanged, no membership lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-noclaim'), { app_metadata: {} }));
+      chainFor('user_tenants').mockResolvedValue({
+        data: [{ tenant_id: 'tenant-primary', active_role: 'community', is_primary: true }],
+        error: null,
+      });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(res.body.identity.tenant_id).toBe('tenant-primary');
+      // VTID-05149: deterministic query shape (was eq('is_primary', true).single()).
+      expect(chainFor('user_tenants').order).toHaveBeenCalledWith('is_primary', { ascending: false });
+      expect(chainFor('user_tenants').limit).toHaveBeenCalledWith(1);
+      expect(chainFor('user_tenants').maybeSingle).not.toHaveBeenCalled();
+    });
+
+    it('lookup throws → 503 TENANT_CHECK_UNAVAILABLE (fail closed)', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-throw')));
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'user_tenants') throw new Error('The operation was aborted');
+        return chainFor(table);
+      });
+      try {
+        const res = await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(res.status).toBe(503);
+        expect(res.body).toMatchObject({ ok: false, error: 'TENANT_CHECK_UNAVAILABLE' });
+      } finally {
+        mockSupabase.from.mockImplementation((table: string) => chainFor(table));
+      }
+    });
+
+    it('lookup returns an error → 503; Supabase not configured → 503', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-err')));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: { message: 'boom' } });
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(503);
+
+      mockVerifiedJwt(claims(uniqueSub('m-nosb')));
+      mockGetSupabase.mockReturnValue(null as any);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(503);
+    });
+
+    it('log mode → non-member passes with the warning, after the same lookup', async () => {
+      process.env.TENANT_MEMBERSHIP_CHECK_MODE = 'log';
+      const sub = uniqueSub('m-log');
+      mockVerifiedJwt(claims(sub));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+
+      const res = await request(app).get(path).set('Authorization', 'Bearer good');
+      expect(res.status).toBe(200);
+      expect(membershipQueried()).toBe(true);
+      const logged = warn.mock.calls.map((c) => String(c[0])).find((m) => m.includes('tenant_membership_mismatch'));
+      expect(JSON.parse(logged!)).toMatchObject({ user_id: sub, tenant_id: 'tenant-1', mode: 'log' });
+    });
+
+    it('an unknown mode value means enforce', async () => {
+      process.env.TENANT_MEMBERSHIP_CHECK_MODE = 'off';
+      mockVerifiedJwt(claims(uniqueSub('m-off')));
+      chainFor('user_tenants').mockResolvedValue({ data: null, error: null });
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(403);
+    });
+
+    it('positive result is cached: two calls issue one membership lookup', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-cache')));
+      chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(1);
+    });
+
+    it('negative result is not cached: a member who just joined passes on the next call', async () => {
+      mockVerifiedJwt(claims(uniqueSub('m-join')));
+      chainFor('user_tenants')
+        .mockResolvedValueOnce({ data: null, error: null })
+        .mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(403);
+      expect((await request(app).get(path).set('Authorization', 'Bearer good')).status).toBe(200);
+      expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(2);
+    });
+
+    it('the cache expires after 60 s', async () => {
+      const now = Date.now();
+      const spy = jest.spyOn(Date, 'now').mockReturnValue(now);
+      try {
+        mockVerifiedJwt(claims(uniqueSub('m-ttl')));
+        chainFor('user_tenants').mockResolvedValue({ data: { tenant_id: 'tenant-1' }, error: null });
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        spy.mockReturnValue(now + 59_000);
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(1);
+        spy.mockReturnValue(now + 61_000);
+        await request(app).get(path).set('Authorization', 'Bearer good');
+        expect(chainFor('user_tenants').maybeSingle).toHaveBeenCalledTimes(2);
+      } finally {
+        spy.mockRestore();
+      }
+    });
+  });
+
+  // =========================================================================
+  // resolveVitanaId cache behavior
+  // =========================================================================
+
+  describe('resolveVitanaId', () => {
+    it('returns null for an empty userId without querying', async () => {
+      const before = mockSupabase.from.mock.calls.length;
+      expect(await resolveVitanaId('')).toBeNull();
+      expect(mockSupabase.from.mock.calls.length).toBe(before);
+    });
+
+    it('caches the lookup per user and re-queries after invalidation', async () => {
+      const sub = uniqueSub('cache');
+      chainFor('app_users').mockResolvedValue({ data: { vitana_id: 'VIT-A' }, error: null });
+
+      expect(await resolveVitanaId(sub)).toBe('VIT-A');
+      const callsAfterFirst = mockSupabase.from.mock.calls.length;
+
+      // Second call: served from cache, no additional query
+      expect(await resolveVitanaId(sub)).toBe('VIT-A');
+      expect(mockSupabase.from.mock.calls.length).toBe(callsAfterFirst);
+
+      // Invalidate → next call hits the DB again and sees the new value
+      invalidateVitanaIdCache(sub);
+      chainFor('app_users').mockResolvedValue({ data: { vitana_id: 'VIT-B' }, error: null });
+      expect(await resolveVitanaId(sub)).toBe('VIT-B');
+      expect(mockSupabase.from.mock.calls.length).toBeGreaterThan(callsAfterFirst);
+    });
+  });
+});

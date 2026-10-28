@@ -1,0 +1,5 @@
+Test Suites: 2 skipped, 1648 passed, 1648 of 1650 total
+Tests:       26 skipped, 6 todo, 26565 passed, 26597 total
+related suites: 65 suites, 1176 pass, 1 skipped; new tests: loop-catalog + autonomy-pulse 44 pass, routine-audits + vtid-05098-simplify 20 pass
+tsc --noEmit clean; npm run build ok; golden fingerprint PASSED; CSP added-lines gate clean; migration lint clean; regen + symbol index --check in sync
+staging-verify validateManifest: VTID-05098 ok, VTID-05084 ok

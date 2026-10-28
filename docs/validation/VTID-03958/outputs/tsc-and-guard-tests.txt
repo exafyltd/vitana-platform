@@ -1,0 +1,50 @@
+== npx jest test/vtid-03958-env-overrides-input.test.ts test/vtid-03820-onramp-staging-flag-pinned.test.ts test/scripts/workflow-dispatch-input-limit.test.ts --silent ==
+(re-run for this evidence pack; matches the run recorded in commands.log)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /home/user/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+PASS test/vtid-03958-env-overrides-input.test.ts
+  VTID-03958: AWS-PROD-DEPLOY-GATEWAY.yml stays under the 25-input ceiling via env_overrides
+    ✓ removes nova_canary_user_ids and nova_canary_tenant_ids as named inputs (6 ms)
+    ✓ adds env_overrides as a named input (4 ms)
+    ✓ net input count is 24 (was 25, at the ceiling, before this change) (5 ms)
+    ✓ the nova_sonic_enabled override block no longer references the removed env wiring (2 ms)
+    ✓ wires ENV_OVERRIDES_INPUT from inputs.env_overrides on the register step (2 ms)
+    the real extracted jq block, executed against real jq
+      ✓ is a non-empty, well-formed bash if/fi block
+      ✓ passes bash -n on its own (6 ms)
+      ✓ EMPTY input is a true no-op — NEW_DEF passes through byte-for-byte (5 ms)
+      ✓ adds a brand-new key with no code change needed (generic, not hardcoded) (19 ms)
+      ✓ upserts (replaces) a key that already exists on the task def (17 ms)
+      ✓ applies multiple keys in one call, generically (to_entries, no fixed arity) (17 ms)
+      ✓ coerces a non-string JSON value to a string (ECS env vars are always strings) (16 ms)
+      ✓ fails loudly (non-zero exit, ::error::) on malformed JSON — never a silent no-op (7 ms)
+      ✓ fails loudly on valid JSON that is not an object (e.g. an array or a string) (25 ms)
+      ✓ never partially mutates NEW_DEF on a validation failure — original env is intact on the error path (7 ms)
+
+PASS test/scripts/workflow-dispatch-input-limit.test.ts
+  workflow_dispatch input limit
+    ✓ no workflow exceeds GitHub’s 25-input maximum (37 ms)
+    ✓ AWS-PROD-DEPLOY-GATEWAY.yml specifically stays dispatchable (16 ms)
+    ✓ actually parsed some dispatch workflows — a guard that scans nothing passes forever (17 ms)
+    ✓ flags a workflow that is near the ceiling, so the next addition is a decision (12 ms)
+
+PASS test/vtid-03820-onramp-staging-flag-pinned.test.ts
+  VTID-03820 follow-up: staging pins OPERATOR_EXECUTION_ONRAMP_ENABLED
+    ✓ upserts the flag as the exact string "true" (1 ms)
+    ✓ strips the inherited value first, so a stale one cannot survive
+    ✓ is deliberately NOT pinned on the prod deploy workflow yet (1 ms)
+    ✓ DEEPSEEK_API_KEY secret is already wired on the same task definition (a real prerequisite for the on-ramp)
+
+Test Suites: 3 passed, 3 total
+Tests:       23 passed, 23 total
+Snapshots:   0 total
+Time:        0.671 s, estimated 1 s
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+
+== npx tsc --noEmit -p tsconfig.json ==
+(clean, exit 0)
+
+== python3 -c "import yaml; ..." input count check ==
+workflow_dispatch inputs: 24

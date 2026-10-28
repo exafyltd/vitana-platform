@@ -1,0 +1,66 @@
+// Jest Snapshot v1, https://goo.gl/fbAQLP
+
+exports[`A0.2 characterization: describeTimeSince full snapshot snapshots describeTimeSince across the bucket grid 1`] = `
+{
+  "fourteenDaysAgo": {
+    "bucket": "long",
+    "diffMs": 1209600000,
+    "timeAgo": "14 days ago",
+    "wasFailure": false,
+  },
+  "nullInput": {
+    "bucket": "first",
+    "diffMs": Infinity,
+    "timeAgo": "never before",
+    "wasFailure": false,
+  },
+  "oneSecondAgo": {
+    "bucket": "reconnect",
+    "diffMs": 1000,
+    "timeAgo": "a few seconds ago",
+    "wasFailure": false,
+  },
+  "thirtyHoursAgo": {
+    "bucket": "yesterday",
+    "diffMs": 108000000,
+    "timeAgo": "yesterday",
+    "wasFailure": false,
+  },
+  "thirtyMinutesAgo": {
+    "bucket": "same_day",
+    "diffMs": 1800000,
+    "timeAgo": "30 minutes ago",
+    "wasFailure": false,
+  },
+  "thirtySecondsAgo": {
+    "bucket": "reconnect",
+    "diffMs": 30000,
+    "timeAgo": "about 30 seconds ago",
+    "wasFailure": false,
+  },
+  "threeDaysAgo": {
+    "bucket": "week",
+    "diffMs": 259200000,
+    "timeAgo": "3 days ago",
+    "wasFailure": false,
+  },
+  "threeHoursAgo": {
+    "bucket": "same_day",
+    "diffMs": 10800000,
+    "timeAgo": "about 3 hours ago",
+    "wasFailure": false,
+  },
+  "twentyHoursAgo": {
+    "bucket": "today",
+    "diffMs": 72000000,
+    "timeAgo": "earlier today (about 20 hours ago)",
+    "wasFailure": false,
+  },
+  "twoMinutesAgo": {
+    "bucket": "recent",
+    "diffMs": 120000,
+    "timeAgo": "2 minutes ago",
+    "wasFailure": false,
+  },
+}
+`;

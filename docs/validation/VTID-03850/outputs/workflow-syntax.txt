@@ -1,0 +1,4 @@
+yaml ok .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
+yaml ok .github/workflows/AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml
+bash -n executor register step: ok
+bash -n staging register step: ok

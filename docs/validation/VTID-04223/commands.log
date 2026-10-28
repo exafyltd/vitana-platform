@@ -1,0 +1,11 @@
+# VTID-04223 — commands run while building (sandbox, 2026-09-21)
+
+$ curl -sS https://gateway.vitanaland.com/api/v1/vtid/allocate  (POST, bearer)   → VTID-04223
+$ grep -rn "recallDevMemory\|getOperatorBootstrapPack\|agent_runs" services/gateway/src/services/autopilot-agent/   → no hits before this VTID
+$ aws ecs describe-task-definition --task-definition vitana-autopilot-executor  → rev 20, no OPERATOR_* flag, BEDROCK_ROLE_ARN + DEEPSEEK_API_KEY present
+$ npx tsc --noEmit -p services/gateway   → clean
+$ npx jest test/vtid-04223-agent-memory-context.test.ts test/vtid-03850-staging-executor-dispatch-pinned.test.ts \
+    test/vtid-04025-operator-turn-memory.test.ts test/autopilot-agent-loop.test.ts test/vtid-04017-fix-mode.test.ts \
+    test/vtid-04217-fix-mode-merge-conflicts.test.ts test/vtid-04024 test/vtid-04027 test/vtid-04016 test/vtid-04032
+    → 10/10 suites, 146 tests green (see outputs/jest.txt)
+$ npx jest test/vtid-04018   → was RED on origin/main: the 2026-09-21 VTID-04221 CHANGE LOG row carried a literal `|` (`approve|reject`) inside its Change cell, which splits the markdown row; fixed in this PR (cell now reads `approve` / `…/reject`), suite green again

@@ -1,0 +1,10 @@
+{
+  "vtid": "VTID-04695",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "calendar window 401 is JSON, not an event stream", "path": "/api/v1/calendar/events/window?from=2026-10-05T00:00:00Z&to=2026-10-06T00:00:00Z", "expect_status": 401, "expect_content_type": "application/json" },
+    { "kind": "http", "name": "OASIS events list is served as JSON", "path": "/api/v1/oasis/events", "expect_status": 200, "expect_content_type": "application/json" },
+    { "kind": "existing", "ref": "npx jest test/middleware/cors.test.ts", "cwd": "services/gateway",
+      "reason": "pins that /stream paths still get SSE headers, /events only when the client asks for text/event-stream, and JSON /events routes never" }
+  ]
+}

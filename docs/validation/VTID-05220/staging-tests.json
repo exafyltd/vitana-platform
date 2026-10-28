@@ -1,0 +1,26 @@
+{
+  "vtid": "VTID-05220",
+  "service": "gateway",
+  "note": "Read-only. VTID-05220 only flips staging env pins (PM_AGENT_ENABLED, PM_MODE) in AWS-STAGE-DEPLOY-GATEWAY.yml. The suite proves the gateway boots with them and the PM route stays mounted and auth-gated.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive with PM pins",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the staging build with the PM pins boots"
+    },
+    {
+      "kind": "http",
+      "name": "project-manager status is mounted and auth-gated",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/status",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid bearer: JSON 401 proves the PM route is mounted and guarded"
+    }
+  ]
+}

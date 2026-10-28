@@ -1,0 +1,21 @@
+# VTID-03841 — commands run (2026-09-13)
+
+## Live observation (staging, read-only)
+SQL (read-only): select ... from dev_autopilot_executions where id in ('beeb2c55-...','fb3d86f8-...')
+SQL (read-only): select ... from oasis_events where created_at > '2026-09-13 07:40:00+00' and (topic like 'llm.call.%' or topic like 'dev_autopilot.%' ...)
+SQL (read-only): select ... from self_healing_log where created_at > '2026-09-13 07:59:00+00'
+GitHub (read-only): search PRs "VTID-03829" in exafyltd/vitana-platform -> none
+  -> outputs/staging-observation-2026-09-13.txt
+
+## Governance
+curl -s -X POST https://preview-aws-gateway.vitanaland.com/api/v1/vtid/allocate -d '{"source":"claude-code","layer":"DEV","module":"deepseek-adapter-request-timeout"}'
+  -> {"ok":true,"vtid":"VTID-03841"}
+curl -s -X PATCH https://preview-aws-gateway.vitanaland.com/api/v1/oasis/tasks/VTID-03841 -d '{"title":"Gateway: DeepSeek adapter request timeout","status":"in_progress",...}'
+SQL: update vtid_ledger set spec_status='approved' where vtid='VTID-03841'   (user-instructed work; no gateway PATCH field for spec_status)
+
+## Verification
+cd services/gateway && npx tsc --noEmit                                                                 -> exit 0
+cd services/gateway && npx jest test/vtid-03841-deepseek-adapter-timeout.test.ts                        -> outputs/jest-vtid-03841.txt
+cd services/gateway && npx jest test/vtid-03841-deepseek-adapter-timeout.test.ts test/vtid-03820-llm-router-override.test.ts test/llm-router.test.ts
+                                                                                                        -> 3/3 suites, 20 tests
+cd services/gateway && npx jest                                                                         -> outputs/jest-full-suite-tail.txt

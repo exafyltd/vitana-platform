@@ -1,0 +1,37 @@
+{
+  "fixture_id": "synthetic-008-goals-compass",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 4,
+  "notes": "Goal / Vitana-Index introspection surfaces.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Show me my life compass",
+      "expected_tool": "get_life_compass",
+      "expected_intent": "goal.compass"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "What's my Vitana index right now?",
+      "expected_tool": "get_vitana_index",
+      "expected_intent": "goal.index"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Break down my pillar subscores",
+      "expected_tool": "get_pillar_subscores",
+      "expected_intent": "goal.subscores"
+    },
+    {
+      "turn": 4,
+      "kind": "voice",
+      "user_input": "What should I focus on this week?",
+      "expected_tool": "get_recommendations",
+      "expected_intent": "goal.recommend"
+    }
+  ]
+}

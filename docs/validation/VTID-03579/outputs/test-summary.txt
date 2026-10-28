@@ -1,0 +1,22 @@
+$ npx jest --silent   (services/gateway, HEAD = 28a0cde + evidence pack)
+
+Test Suites: 9 failed, 632 passed, 641 total
+Tests:       5 skipped, 6 todo, 12220 passed, 12231 total
+Snapshots:   44 passed, 44 total
+Time:        62.242 s
+
+Zero assertion failures.
+
+All 9 failing suites fail at import with:
+    Cannot find module 'compression' from 'src/index.ts'
+    Cannot find module 'pg' from 'src/services/db-i18n/aurora-client.ts'
+These are absent dependencies in the container, not defects introduced here;
+they fail identically on an unmodified checkout.
+
+New/rewritten suites in this change:
+  test/llm-router-agentic.test.ts            5 passed  (history, parallel tools)
+  test/guide-session-summary-flow.test.ts    5 passed  (flow contract)
+  test/inline-fact-extractor-deepseek.test.ts 5 passed (no direct provider call)
+  test/inline-fact-extractor.test.ts        20 passed
+  test/services/user-model-synthesis.test.ts  7 passed
+  test/providers/bedrock-vision-tools.test.ts 10 passed (+1 parallel tool_use)

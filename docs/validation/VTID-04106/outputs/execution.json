@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-04106",
+  "title": "Operator Console: chat does not scroll to the new exchange when sent while scrolled up in history",
+  "files_changed": [
+    "services/gateway/src/frontend/command-hub/app.js",
+    "services/gateway/src/frontend/command-hub/index.html",
+    "scripts/ci/command-hub-ownership-guard.js",
+    "services/gateway/test/vtid-04106-operator-chat-stick-to-bottom.test.ts",
+    "docs/validation/VTID-04106/acceptance.md",
+    "docs/validation/VTID-04106/commands.log",
+    "docs/validation/VTID-04106/outputs/execution.json"
+  ],
+  "verification": {
+    "node_check": "pass",
+    "tsc_no_emit": "pass",
+    "jest_targeted_suites": "3/3 suites, 21/21 tests passing",
+    "mutation_verified": true
+  },
+  "not_done": [
+    "no live staging re-verification yet",
+    "no Playwright screenshot pass (scroll-behavior-only change, no markup/CSS)"
+  ]
+}

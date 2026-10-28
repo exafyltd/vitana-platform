@@ -1,0 +1,80 @@
+name: AURORA-I18N-INTEGRATION
+run-name: 'Aurora db-i18n SQL against real Postgres [VTID: VTID-03517] (${{ github.ref_name }})'
+
+# VTID-03517 — runs the Aurora adapter's SQL against a real PostgreSQL.
+#
+# This suite skips itself when AURORA_TEST_DATABASE_URL is unset, which is the
+# right behaviour on a laptop and the WRONG behaviour in CI: a skipped suite is
+# indistinguishable from a passing one in the summary, so the adapter's SQL
+# would silently go unverified. Hence a dedicated job with a service container
+# and an explicit assertion below that the suite actually ran.
+#
+# The unit suite covers config/guard logic and is part of the normal test run;
+# only the SQL needs a server.
+
+on:
+  pull_request:
+    paths:
+      - 'services/gateway/src/services/db-i18n/**'
+      - 'services/gateway/src/scripts/seed-db-i18n.ts'
+      - 'services/gateway/test/db-i18n/**'
+      - '.github/workflows/AURORA-I18N-INTEGRATION.yml'
+  workflow_dispatch:
+
+jobs:
+  integration:
+    runs-on: ubuntu-latest
+
+    services:
+      postgres:
+        # Aurora PostgreSQL is engine-compatible; 16 is close enough for the
+        # features used here (unnest, ON CONFLICT, jsonb). Nothing in the
+        # adapter depends on an Aurora-only extension.
+        image: postgres:16
+        env:
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: aurora_test
+        ports: ['5432:5432']
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 10
+
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      - name: Install gateway deps
+        working-directory: services/gateway
+        run: npm ci --no-audit --no-fund
+
+      - name: Run the Aurora integration suite
+        working-directory: services/gateway
+        env:
+          # sslmode=disable is honoured only for loopback hosts (see
+          # aurora-client.ts). The service container is on 127.0.0.1, so this
+          # works here and would be REFUSED against a real Aurora endpoint.
+          AURORA_TEST_DATABASE_URL: postgres://postgres:postgres@127.0.0.1:5432/aurora_test?sslmode=disable
+        # set -o pipefail is MANDATORY here (VTID-03559). GitHub runs steps with
+        # `bash -e {0}` and NOT pipefail, so the pipeline's status is tee's — a
+        # jest run with failing tests exits 1, tee exits 0, and the step passes.
+        # The assertion below only checks that SOME test passed, so a suite that
+        # was half red would report the Aurora SQL as verified.
+        run: |
+          set -o pipefail
+          npx jest aurora-integration --ci 2>&1 | tee /tmp/aurora-jest.log
+
+      # A skipped suite passes. Without this the job would go green on a
+      # misconfigured service container and report the SQL as verified.
+      - name: Assert the suite was not skipped
+        run: |
+          if grep -qE '^Tests:.*[1-9][0-9]* passed' /tmp/aurora-jest.log; then
+            echo "Integration tests ran."
+          else
+            echo "::error::The Aurora integration suite reported no passing tests — it was skipped or did not run."
+            tail -20 /tmp/aurora-jest.log
+            exit 1
+          fi

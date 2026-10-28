@@ -1,0 +1,5 @@
+# Local verification (services/gateway)
+npx tsc --noEmit -p .   -> exit 0
+npx jest test/services/memory/vtid-04784-recall-shadow.test.ts test/services/memory/recall-bridge-wiring.test.ts test/services/conversation/vtid-04525-conversation-flag-registry.test.ts test/vtid-04452-staging-orb-recall-pinned.test.ts   -> passed
+node scripts/conversation/generate-flag-pins.mjs   -> MEMORY_ORB_RECALL_SHADOW staging "true", prod "true"
+scripts/memory/recall-shadow-report.sh with a stubbed aws CLI   -> summary printed (sessions, failures, identical facts, latency)

@@ -1,0 +1,12 @@
+# MUTATION CHECK — remove `pt: 'carolina'` from NOVA_VOICES and re-run.
+# If the guard is real, the pt-voice tests must go RED.
+
+    ✕ reports fallback=false for languages Nova has a real voice for (2 ms)
+      ✓ keeps Serbian on Nova and blames Polly, the blocker that is real (1 ms)
+      ✕ keeps a real Nova voice for a cascade-routed language Nova can still voice
+      ✕ only reports a substitution when Nova genuinely has no voice (2 ms)
+    ✕ keeps carolina for pt — the cascade gate is inert until IAM lands
+Tests:       4 failed, 50 passed, 54 total
+
+# Restored. Re-run confirms green again:
+Tests:       54 passed, 54 total

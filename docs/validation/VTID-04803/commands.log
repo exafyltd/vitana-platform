@@ -1,0 +1,13 @@
+# VTID-04803 — commands (services/gateway unless noted)
+npx tsc --noEmit -p .                                                  # clean
+node scripts/conversation/generate-flag-pins.mjs   (repo root)         # pins regenerated
+npx jest test/vtid-04803 test/dev-autopilot-watcher test/vtid-04377 test/vtid-04465-operator-pipeline-regression   # 78 tests (outputs/jest-b6.txt)
+npx jest (full gateway suite)                                          # 1444 suites, 23172 tests, 0 failed (outputs/jest-full.txt)
+# CI fix: after merging origin/main (1133ef5, VTID-04786) the prod workflow step
+# "Build task-definition (2/2 ...)" measured 20,297 chars > GitHub's 20,000 per-step limit
+# (test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts). Reproduced locally, then:
+#   - the Jev env strip is one test, select(.name != "JEV_DECISIONS_ENABLED" and (.name | test("^JEV_.*_MODE$") | not)),
+#     instead of one `.name != "X"` clause per gate (checked with jq: stale JEV_*_MODE dropped, other vars kept);
+#   - the per-VTID Jev comment lines are one three-line comment.
+# Step 2 now 19,141 chars. Bash-syntax/size test + every JEV workflow test: 192 passed.
+npx jest (full gateway suite, merged with origin/main)                # 1445 suites, 23181 tests, 0 failed (outputs/jest-full.txt)

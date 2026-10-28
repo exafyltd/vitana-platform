@@ -1,0 +1,9 @@
+# replay: a throwaway tsx script (not committed) that used NovaSonicLiveClient
+# with the dumped setup instruction of live-40e5aea4 (orb.live.diag
+# nova_instruction_debug_dump), sent the reconnect-bucket greeting via
+# sendTextTurn, and recorded content-filter errors vs first audio;
+# RUNS=5 per variant A/B/C/D.
+cd services/gateway && npx tsc --noEmit -p .
+npx jest test/orb/live/session/guided-topic-spoken-first-utterance.test.ts
+npx jest test/orb/latency -u     # VTID-04542 guard: instruction -393 bytes, tools unchanged
+npx jest --silent                # 1291 suites passed, 20723 tests passed

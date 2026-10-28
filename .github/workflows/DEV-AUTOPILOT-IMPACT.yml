@@ -1,0 +1,208 @@
+name: Dev Autopilot Impact Scan
+
+# Diff-aware scan that runs on every PR (and on manual dispatch for local
+# testing). Reads the PR's base...HEAD diff, runs every rule in
+# scripts/ci/impact-rules/, and posts an auto-updating PR comment with the
+# aggregated findings. Blocker-severity rules fail the job; warnings are
+# surfaced but do not block.
+#
+# Companion to the baseline scanner (DEV-AUTOPILOT.yml, twice-daily cron).
+# The two together answer different questions:
+#   - DEV-AUTOPILOT.yml     : what gaps exist in the repo today?
+#   - DEV-AUTOPILOT-IMPACT  : does this PR introduce new gaps or conflicts?
+
+on:
+  pull_request:
+    # Run on any PR targeting main — the rules self-filter by touched path.
+    branches: [main]
+    types: [opened, synchronize, reopened, ready_for_review]
+  push:
+    # Also run on push to main so findings from merged PRs get INGESTED
+    # into autopilot_recommendations (dev_autopilot_impact source_type).
+    # PR-scoped runs only post a comment; push-to-main runs persist findings
+    # so the Developer Autopilot view can surface + auto-fix them.
+    branches: [main]
+  workflow_dispatch:
+    inputs:
+      base_ref:
+        description: "Override the base ref for diff (e.g. 'origin/main'). Default: auto."
+        required: false
+        default: ""
+      dry_run:
+        description: "If true, do not fail the job on blocker findings."
+        required: false
+        default: "false"
+
+permissions:
+  contents: read
+  pull-requests: write # for the PR-comment step
+
+concurrency:
+  # PR events: group per-PR so synchronize cancels the prior run.
+  # Push events: queue so each merge commit's findings get ingested.
+  group: impact-scan-${{ github.event.pull_request.number || github.sha }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  scan:
+    runs-on: ubuntu-latest
+    env:
+      IMPACT_SCAN_DRY_RUN: ${{ github.event.inputs.dry_run || 'false' }}
+      # Base ref per event type:
+      #   pull_request  → origin/<pr.base.ref>
+      #   push (main)   → HEAD~1 (compare merge commit to its parent)
+      #   workflow_dispatch → user override OR origin/main
+      IMPACT_SCAN_BASE: >-
+        ${{ github.event.inputs.base_ref
+          || (github.event_name == 'pull_request' && format('origin/{0}', github.event.pull_request.base.ref))
+          || (github.event_name == 'push' && 'HEAD~1')
+          || 'origin/main' }}
+    steps:
+      - name: Checkout (full history for diff)
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0 # need history for base...HEAD diff
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+
+      - name: Run impact scan
+        id: scan
+        # Continue even on blocker — we want to post the comment + ingest first,
+        # then fail the check.
+        continue-on-error: true
+        run: node scripts/ci/dev-autopilot-impact-scan.mjs
+
+      # Ingest step: only on push to main. Persists non-info findings into
+      # autopilot_recommendations (source_type='dev_autopilot_impact') so the
+      # Developer Autopilot view can activate them one by one.
+      - name: Ingest impact findings into Developer Autopilot queue
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main'
+        env:
+          GATEWAY_URL: https://preview-aws-gateway.vitanaland.com
+          DEV_AUTOPILOT_SCAN_TOKEN: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+        run: |
+          if [ ! -f dev-autopilot-impact-findings.json ]; then
+            echo "No findings file to ingest — skipping."
+            exit 0
+          fi
+          # Build the ingest payload from the driver's output.
+          python3 <<'PY' > ingest-payload.json
+          import json
+          with open('dev-autopilot-impact-findings.json') as fh:
+              data = json.load(fh)
+          payload = {
+              'findings': data.get('findings', []),
+              'metadata': {
+                  'github_sha': '${{ github.sha }}',
+                  'github_ref': '${{ github.ref }}',
+                  'github_run_id': '${{ github.run_id }}',
+                  'event_name': '${{ github.event_name }}',
+              },
+          }
+          with open('ingest-payload.json', 'w') as fh:
+              json.dump(payload, fh)
+          PY
+          curl -sS -o ingest-response.json -w "status=%{http_code}\n" \
+            -X POST "$GATEWAY_URL/api/v1/dev-autopilot/impact-ingest" \
+            -H "Content-Type: application/json" \
+            -H "X-DevAutopilot-Scan-Token: $DEV_AUTOPILOT_SCAN_TOKEN" \
+            --data-binary @ingest-payload.json
+          echo "Ingest response:"
+          cat ingest-response.json
+          echo
+
+      - name: Build PR comment body
+        id: comment
+        run: |
+          # shellcheck disable=SC2016
+          python3 <<'PY' > comment.md
+          import json, os
+          try:
+              with open('dev-autopilot-impact-findings.json') as fh:
+                  data = json.load(fh)
+          except FileNotFoundError:
+              print('<!-- impact-scan -->')
+              print('### Dev Autopilot — Impact Scan')
+              print()
+              print('Could not read findings file. Check the job log.')
+              raise SystemExit
+
+          counts = data.get('counts', {})
+          findings = data.get('findings', [])
+          blocker = counts.get('blocker', 0)
+          warning = counts.get('warning', 0)
+          info = counts.get('info', 0)
+
+          print('<!-- impact-scan -->')
+          print('### Dev Autopilot — Impact Scan')
+          print()
+          if not findings:
+              print('No impact findings — PR touches no paths that trigger a companion/conflict/semantic rule.')
+              print()
+              print('_Impact rules run on every PR. See **Command Hub → Autopilot → Impact Rules** for the active ruleset._')
+              raise SystemExit
+
+          emoji = '🟥' if blocker else ('🟨' if warning else '🟦')
+          print(f'{emoji} **blocker: {blocker} · warning: {warning} · info: {info}**')
+          print()
+
+          for f in findings:
+              sev = f.get('severity', 'info')
+              pill = {'blocker': '🟥 blocker', 'warning': '🟨 warning', 'info': '🟦 info'}.get(sev, sev)
+              rule = f.get('rule', '(unknown)')
+              msg = f.get('message', '')
+              act = f.get('suggested_action', '')
+              fp = f.get('file_path') or ''
+              ln = f.get('line_number')
+              loc = fp + (f':{ln}' if ln else '') if fp else ''
+              print(f'<details><summary>{pill} · <code>{rule}</code>{" · " + loc if loc else ""}</summary>')
+              print()
+              print(f'{msg}')
+              print()
+              if act:
+                  print(f'**Fix:** {act}')
+              print()
+              print('</details>')
+              print()
+
+          print('---')
+          print('_Rules live in [`scripts/ci/impact-rules/`](scripts/ci/impact-rules) · registry at **Command Hub → Autopilot → Impact Rules**_')
+          PY
+
+      - name: Post or update PR comment
+        if: github.event.pull_request.number != null
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPO: ${{ github.repository }}
+        run: |
+          set -e
+          # Find an existing comment with our marker.
+          EXISTING=$(gh api "repos/$REPO/issues/$PR_NUMBER/comments?per_page=100" \
+            --jq '.[] | select(.body | contains("<!-- impact-scan -->")) | .id' | head -n1)
+          BODY_JSON=$(jq -Rs '{body: .}' < comment.md)
+          if [ -n "$EXISTING" ]; then
+            echo "Updating comment $EXISTING"
+            gh api -X PATCH "repos/$REPO/issues/comments/$EXISTING" --input - <<< "$BODY_JSON"
+          else
+            echo "Creating new comment"
+            gh api -X POST "repos/$REPO/issues/$PR_NUMBER/comments" --input - <<< "$BODY_JSON"
+          fi
+
+      - name: Upload findings artifact
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dev-autopilot-impact-findings
+          path: dev-autopilot-impact-findings.json
+          retention-days: 14
+          if-no-files-found: warn
+
+      - name: Fail if blocker findings (PR only, respecting dry_run)
+        if: ${{ github.event_name == 'pull_request' && env.IMPACT_SCAN_DRY_RUN != 'true' && steps.scan.outcome == 'failure' }}
+        run: |
+          echo "Impact scan reported blocker findings. See the PR comment or the uploaded artifact."
+          exit 1

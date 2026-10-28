@@ -1,0 +1,55 @@
+# VTID-03983 — commands run, verbatim intent (secrets redacted)
+
+## Live synthesis, mp3, free-tier model
+curl -s -o live-synthesis-sr-free-tier.mp3 -w "HTTP_STATUS:%{http_code}\n" \
+  -X POST "https://api.fish.audio/v1/tts" \
+  -H "Authorization: Bearer <FISH_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -H "model: s2.1-pro-free" \
+  -d '{"text":"Zdravo, ovo je test.","reference_id":"2ad62aaf885e4a14add09fe4a38ffd23","format":"mp3"}'
+# => HTTP_STATUS:200
+# => file: MPEG ADTS, layer III, v1, 128 kbps, 44.1 kHz, Monaural
+# => size: 29256 bytes
+
+## Live synthesis, pcm, free-tier model, requested 16kHz
+curl -s -o /tmp/fish-test-free.pcm -w "HTTP_STATUS:%{http_code}\n" \
+  -X POST "https://api.fish.audio/v1/tts" \
+  -H "Authorization: Bearer <FISH_API_KEY>" \
+  -H "Content-Type: application/json" \
+  -H "model: s2.1-pro-free" \
+  -d '{"text":"Zdravo, ovo je test.","reference_id":"2ad62aaf885e4a14add09fe4a38ffd23","format":"pcm","sample_rate":16000}'
+# => HTTP_STATUS:200
+# => size: 57862 bytes -> implied duration at 16kHz 16-bit mono: 1.81s
+#    (matches the mp3's own 1.83s duration; see outputs/live-synthesis-pcm-duration-check.txt)
+
+## Re-check curated voice metadata for adult-content tag drift
+curl -s "https://api.fish.audio/model/2ad62aaf885e4a14add09fe4a38ffd23" \
+  -H "Authorization: Bearer <FISH_API_KEY>" | python3 -m json.tool
+# => tags: female, young, conversational, professional, clear, confident,
+#    brisk, serbian, sr-rs -- no adult-content tags. dmca_taken_down:false.
+# => NEW FINDING (non-blocking): "languages":["hr"] -- Croatian, not sr,
+#    despite title/tags/description all being explicitly Serbian.
+# => see outputs/milica-voice-metadata-recheck.json for the full response
+
+## Prior failing attempt (paid model, same key) for comparison -- from
+## VTID-03970's own build session, reproduced here as the negative control:
+##   model: s2.1-pro -> HTTP 402 "Insufficient API credit"
+
+## scripts/tts/verify-fish-voice.ts
+cd services/gateway
+FISH_API_KEY=<redacted> npx ts-node ../../scripts/tts/verify-fish-voice.ts
+# First run: TSError TS18046 x3 (meta typed as unknown) -- real pre-existing
+# bug in the script, never caught because it could never get past the 402
+# before to reach that code path. Fixed with an explicit response type.
+# Re-run: exit 0, but this sandbox's ts-node produces no captured stdout for
+# ANY script (confirmed with a trivial `console.log` sanity check, also zero
+# captured output despite exit 0) -- see outputs/verify-fish-voice-script-note.txt.
+# Equivalent checks performed directly via the curl calls above instead.
+
+## Type check + build + affected tests
+cd services/gateway
+npx tsc --noEmit                                    # exit 0, clean
+npm run build                                        # exit 0, clean
+npx jest test/tts/fish-provider.test.ts \
+  test/orb/live/upstream/cascaded-voice-fish-fallback.test.ts --silent
+# 2 suites, 19/19 tests passing

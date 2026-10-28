@@ -1,0 +1,50 @@
+VTID-04116 — commands run during this session (verbatim, condensed)
+
+# 1. Prove RepoWise and Graphify are real, installable tools
+$ pip3 install --user repowise
+  -> Successfully installed repowise-0.51.0 (+ deps: mcp, litellm, lancedb, tree-sitter*, ...)
+$ uv tool install graphifyy
+  -> Installed 2 executables: graphify, graphify-mcp
+
+# 2. Run each tool for real against this repo (vitana-platform)
+$ cd /home/user/vitana-platform
+$ graphify update . --no-cluster
+  -> AST extraction: 5167/5167 uncached files (100%) [4 workers]
+  -> [graphify watch] Rebuilt (no clustering): 46681 nodes, 90186 edges
+  -> real 1m41.131s
+
+$ repowise init --no-prose -y
+  -> Health check: 9/20 lowest-health files had a bug fix in the last 6
+     months, 60.91x the 1% baseline.
+  -> Written to repo: .mcp.json, .claude/CLAUDE.md, .vscode/mcp.json,
+     .vscode/extensions.json (all machine-local; .mcp.json/.vscode/* were
+     already gitignored by a prior partial attempt at this same integration)
+  -> exited with code 0
+
+# 3. Also ran against the companion repo (exafyltd/vitana-v1)
+$ cd /home/user/vitana-v1
+$ graphify update . --no-cluster
+  -> AST extraction: 4283/4283 uncached files (100%) [4 workers]
+  -> [graphify watch] Rebuilt (no clustering): 13337 nodes, 46181 edges
+$ repowise init --no-prose -y
+  -> exited with code 0 (regenerated .claude/CLAUDE.md there too)
+
+# 4. Build the session-start hook, then validate its config
+$ jq empty .claude/settings.json && echo "valid JSON"      # both repos
+  -> valid JSON (both vitana-platform and vitana-v1)
+
+# 5. Typecheck the new gateway code
+$ cd /home/user/vitana-platform/services/gateway
+$ npx tsc --noEmit
+  -> 1 pre-existing, unrelated error: src/services/aws-cloudwatch-logs-readonly.ts(24,62):
+     Cannot find module '@aws-sdk/client-cloudwatch-logs' — not introduced by this change,
+     not touched by this change.
+  -> zero errors in codeintel-readonly.ts or gemini-operator.ts
+
+# 6. New test suite
+$ npx jest test/vtid-04116-operator-codeintel.test.ts --silent
+  -> Test Suites: 1 passed, 1 total
+  -> Tests:       12 passed, 12 total
+
+# Model / actor
+Model: claude-sonnet-5 (this session)

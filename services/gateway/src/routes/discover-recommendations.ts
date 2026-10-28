@@ -1,0 +1,135 @@
+/**
+ * VTID-02950: "Recommend & Earn" — user product recommendations.
+ *
+ *   POST /api/v1/discover/recommendations       — create/find a recommendation, get a share link
+ *   GET  /api/v1/discover/my-recommendations    — the caller's recommended products + stats
+ *
+ * A recommendation is per (user, product) — resharing the same product reuses
+ * the same row and share link rather than minting duplicates.
+ */
+
+import { communityAppBaseUrl } from '../env';
+import { Router, Request, Response } from 'express';
+import { z } from 'zod';
+import { randomUUID } from 'crypto';
+import { getSupabase } from '../lib/supabase';
+import { requireAuth } from '../middleware/auth-supabase-jwt';
+import { emitOasisEvent } from '../services/oasis-event-service';
+import * as repo from './discover-recommendations-repository';
+
+const router = Router();
+router.use(requireAuth as any);
+
+function getUserId(req: Request): string {
+  return String((req as any).identity?.user_id || '');
+}
+function getTenantId(req: Request): string | null {
+  return (req as any).identity?.tenant_id ?? null;
+}
+
+function shortCode(): string {
+  return randomUUID().replace(/-/g, '').slice(0, 10);
+}
+
+const CreateRecommendationSchema = z.object({
+  product_id: z.string().uuid(),
+});
+
+router.post('/recommendations', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+
+  const parsed = CreateRecommendationSchema.safeParse(req.body);
+  if (!parsed.success) {
+    return res.status(400).json({ ok: false, error: 'INVALID_BODY', message: parsed.error.message });
+  }
+  const userId = getUserId(req);
+  const tenantId = getTenantId(req);
+  const { product_id } = parsed.data;
+
+  const { data: product, error: productErr } = await repo.fetchActiveProductForRecommendation(supabase, product_id);
+  if (productErr || !product) return res.status(404).json({ ok: false, error: 'PRODUCT_NOT_FOUND' });
+
+  // Find-or-create — one recommendation per (user, product). A DB error here
+  // must not fall through to create: this is find-or-create, and treating a
+  // failed lookup as "not found" would mint a second recommendation + sharing
+  // link for a pair that may already have one.
+  const { data: existing, error: existingErr } = await repo.fetchExistingRecommendation(supabase, userId, product_id);
+  if (existingErr) {
+    return res.status(500).json({ ok: false, error: 'EXISTING_RECOMMENDATION_LOOKUP_FAILED', message: existingErr.message });
+  }
+
+  let recommendationId: string;
+  if (existing) {
+    recommendationId = existing.id;
+  } else {
+    const { data: link, error: linkErr } = await repo.insertSharingLink(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      target_type: 'product',
+      target_id: product_id,
+      short_code: shortCode(),
+      utm_source: 'vitana',
+      utm_medium: 'recommend',
+      utm_campaign: 'discover_recommend',
+    });
+    if (linkErr || !link) {
+      return res.status(500).json({ ok: false, error: 'SHARING_LINK_FAILED', message: linkErr?.message });
+    }
+
+    const { data: created, error: createErr } = await repo.insertProductRecommendation(supabase, {
+      tenant_id: tenantId,
+      user_id: userId,
+      product_id,
+      merchant_id: product.merchant_id,
+      sharing_link_id: link.id,
+    });
+    if (createErr || !created) {
+      return res.status(500).json({ ok: false, error: 'RECOMMENDATION_CREATE_FAILED', message: createErr?.message });
+    }
+    recommendationId = created.id;
+
+    try {
+      await emitOasisEvent({
+        type: 'discover.recommendation.created' as any,
+        source: 'gateway',
+        vtid: 'VTID-02950',
+        status: 'info',
+        message: `User recommended product ${product_id}`,
+        actor_id: userId,
+        payload: { tenant_id: tenantId, user_id: userId, product_id, recommendation_id: recommendationId },
+      });
+    } catch { /* non-fatal */ }
+  }
+
+  const origin = communityAppBaseUrl();
+  const share_url = `${origin}/discover/product/${product_id}?rec=${recommendationId}`;
+
+  res.json({ ok: true, recommendation_id: recommendationId, share_url, product_title: product.title });
+});
+
+router.get('/my-recommendations', async (req: Request, res: Response) => {
+  const supabase = getSupabase();
+  if (!supabase) return res.status(503).json({ ok: false, error: 'DB_UNAVAILABLE' });
+  const userId = getUserId(req);
+
+  const { data, error } = await repo.fetchMyRecommendations(supabase, userId);
+  if (error) return res.status(500).json({ ok: false, error: error.message });
+
+  const items = (data ?? []).map((r: any) => ({
+    id: r.id,
+    product_id: r.product_id,
+    product_title: r.products?.title ?? null,
+    product_thumbnail_url: r.products?.images?.[0] ?? null,
+    status: r.status,
+    click_count: r.click_count,
+    conversion_count: r.conversion_count,
+    commission_earned_minor: r.commission_earned_minor,
+    currency: r.commission_currency,
+    created_at: r.created_at,
+  }));
+
+  res.json({ ok: true, items });
+});
+
+export default router;

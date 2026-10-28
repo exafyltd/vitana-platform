@@ -1,0 +1,4 @@
+POST .../connections/:id/shopify/authorize -> 401 application/json
+POST .../connections/:id/fhir/authorize -> 401 application/json
+GET /api/v1/vcaop/shopify-oauth/callback -> 503 application/json (not_configured)
+GET /api/v1/vcaop/fhir-oauth/callback -> 503 application/json (not_configured)

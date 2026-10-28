@@ -1,0 +1,30 @@
+{
+  "fixture_id": "synthetic-014-community-events",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 3,
+  "notes": "Community + events discovery.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Find people near me into cold-water swimming",
+      "expected_tool": "find_community_member",
+      "expected_intent": "communication.find_member"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "What events are happening this weekend?",
+      "expected_tool": "search_events",
+      "expected_intent": "calendar.events"
+    },
+    {
+      "turn": 3,
+      "kind": "voice",
+      "user_input": "Search the community for parents of toddlers",
+      "expected_tool": "search_community",
+      "expected_intent": "communication.search_community"
+    }
+  ]
+}

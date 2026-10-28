@@ -1,0 +1,82 @@
+name: Screen Load Daily Report
+run-name: VTID-05062 — Screen Load Daily Report
+
+# VTID-05062 — once-a-day production screen-loading report.
+#
+# Asks the production gateway to build today's report from telemetry real
+# members' devices already sent (RUM `screen.nav.measured` + LCP from
+# `screen.latency.measured`) plus a read-only check that the live build passed
+# STAGING-VERIFY. The gateway records a `screen.load.daily_report` OASIS event
+# and posts one Google Chat summary; GET /api/v1/frontend/screen-load/daily-report
+# serves it to the Command Hub.
+#
+# This is NOT a test against production: no browser, no sign-in, no member
+# data written — one authenticated call that aggregates existing telemetry.
+# The endpoint is idempotent per UTC day (a second run returns the same
+# report and posts nothing), so a retried or duplicated schedule is harmless.
+# No in-process timer: the gateway autoscales 1–4 ECS tasks.
+
+on:
+  schedule:
+    # 05:52 UTC daily (jittered off the hour).
+    - cron: '52 5 * * *'
+  workflow_dispatch:
+    inputs:
+      force:
+        description: 'Rebuild and re-post today''s report even if it already exists'
+        required: false
+        type: boolean
+        default: false
+
+permissions:
+  contents: read
+
+concurrency:
+  group: screen-load-daily
+  cancel-in-progress: false
+
+jobs:
+  daily-report:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Run the daily screen-load report
+        env:
+          # VTID-04721: the gateway's GATEWAY_SERVICE_TOKEN is sourced from the
+          # Supabase service-role key; the repo secret of that name differs (401).
+          SERVICE_TOKEN: ${{ secrets.SUPABASE_SERVICE_ROLE }}
+          FORCE: ${{ github.event_name == 'workflow_dispatch' && inputs.force && 'true' || 'false' }}
+        run: |
+          set -euo pipefail
+          if [ -z "${SERVICE_TOKEN:-}" ]; then
+            echo "::error::SUPABASE_SERVICE_ROLE secret is not set — cannot authenticate to the gateway."
+            exit 1
+          fi
+          url="https://gateway.vitanaland.com/api/v1/frontend/screen-load/daily-report/run"
+          if [ "$FORCE" = "true" ]; then url="$url?force=true"; fi
+          code=$(curl -sS -o "$RUNNER_TEMP/report.json" -w '%{http_code}' --max-time 120 \
+            -X POST "$url" \
+            -H "Authorization: Bearer $SERVICE_TOKEN" \
+            -H 'Content-Type: application/json' \
+            -d '{}') || { echo "::error::Request to the gateway failed."; exit 1; }
+          echo "HTTP $code"
+          case "$code" in
+            2??) ;;
+            *)
+              echo "::error::Daily report rejected by the gateway (HTTP $code): $(head -c 500 "$RUNNER_TEMP/report.json")"
+              exit 1 ;;
+          esac
+          status=$(jq -r '.status // "unknown"' "$RUNNER_TEMP/report.json")
+          created=$(jq -r '.created // false' "$RUNNER_TEMP/report.json")
+          date=$(jq -r '.report.report_date // "?"' "$RUNNER_TEMP/report.json")
+          echo "Report $date: status=$status (newly created: $created)"
+          jq -r '.report.gchat_text // empty' "$RUNNER_TEMP/report.json"
+          {
+            echo "### Screen loading — production $date"
+            echo ""
+            echo "Status: **$status** (newly created: $created)"
+            echo ""
+            echo '```'
+            jq -r '.report.gchat_text // empty' "$RUNNER_TEMP/report.json"
+            echo '```'
+          } >> "$GITHUB_STEP_SUMMARY"

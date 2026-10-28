@@ -1,0 +1,12 @@
+$ cd services/gateway && npx tsc --noEmit -p .
+(clean)
+$ CI=true node node_modules/.bin/jest --ci --silent
+Test Suites: 1 skipped, 1253 passed, 1253 of 1254 total
+Tests:       29 skipped, 6 todo, 20006 passed, 20041 total
+Snapshots:   53 passed, 53 total
+$ CI=true node node_modules/.bin/jest --ci test/orb/live/instruction test/orb/live/characterization test/routes/vtid-04525-conversation-hub-phase-a-routes.test.ts
+Test Suites: 52 passed, 52 total
+Tests:       623 passed, 623 total
+# byte measurement, buildLiveSystemInstruction('de','warm',undefined,'community')
+before: {"total":169112,"rule0":11553,"tools":7133}
+after:  {"total":159396,"rule0":4980,"tools":3990}

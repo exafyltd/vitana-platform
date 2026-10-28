@@ -1,0 +1,84 @@
+name: VCAOP CI/CD (dev-only)
+
+# CICD-PIPE-0001 (runbook Sec. 6 / Sec. 8). Full gate sequence:
+#   install -> typecheck -> test:guardrails (REQUIRED) -> unit/integration/iam/
+#   privacy/e2e -> build -> deploy to DEV (gated).
+# Guardrail gate blocks the pipeline on failure (Sec. 0.3/11.3). Never pushes to a
+# protected branch. Deploy is dev-only (*-dev service, --source, Sec. 0.5 flags) and
+# is GATED behind a repo variable + WIF; absent that, deploy is skipped and a blocker
+# is logged (BLK-001 — no reachable dev Cloud Run/Supabase in this environment).
+
+on:
+  pull_request:
+    paths:
+      - 'services/vcaop/**'
+      - '.github/workflows/VCAOP-CICD.yml'
+  push:
+    branches:
+      - 'claude/**'
+      - 'feature/vcaop'
+    paths:
+      - 'services/vcaop/**'
+      - '.github/workflows/VCAOP-CICD.yml'
+
+jobs:
+  verify:
+    name: install · typecheck · guardrails · tests · build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Install
+        working-directory: services/vcaop
+        run: npm install --no-audit --no-fund
+      - name: Typecheck
+        working-directory: services/vcaop
+        run: npm run typecheck
+      - name: Guardrails (REQUIRED gate — blocks on failure)
+        working-directory: services/vcaop
+        run: npm run test:guardrails
+      - name: Unit + integration + iam + privacy + e2e
+        working-directory: services/vcaop
+        run: npm test
+      - name: Build
+        working-directory: services/vcaop
+        run: npm run build
+
+  deploy-dev:
+    name: deploy to dev (gated — BLK-001 until dev env exists)
+    needs: verify
+    runs-on: ubuntu-latest
+    # GATE: only runs when a dev deploy is explicitly enabled AND on the VCAOP branches.
+    # No dev Cloud Run/Supabase is reachable in this environment, so this stays skipped
+    # (recorded as BLK-001). Never deploys production; never routes production traffic.
+    if: ${{ vars.VCAOP_DEV_DEPLOY_ENABLED == 'true' && (github.ref == 'refs/heads/feature/vcaop' || startsWith(github.ref, 'refs/heads/claude/')) }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Authenticate to GCP (WIF)
+        id: auth
+        continue-on-error: true # IAM PERMISSION_DENIED -> fall back to a logged blocker (Sec. 1.2)
+        uses: google-github-actions/auth@v2
+        with:
+          workload_identity_provider: ${{ secrets.VCAOP_WIF_PROVIDER }}
+          service_account: ${{ secrets.VCAOP_DEPLOY_SA }}
+      - name: Record rollback point (prior good dev revision)
+        if: steps.auth.outcome == 'success'
+        run: |
+          gcloud run revisions list --service=vcaop-api-dev --region=us-central1 \
+            --format="value(metadata.name)" --limit=1 > /tmp/prev_revision.txt || true
+          echo "Prior dev revision recorded for rollback."
+      - name: Deploy to DEV Cloud Run (--source, dev caps; never production)
+        if: steps.auth.outcome == 'success'
+        working-directory: services/vcaop
+        run: |
+          gcloud run deploy vcaop-api-dev \
+            --source . --region us-central1 \
+            --max-instances=2 --concurrency=20 --timeout=300s --memory=512Mi --cpu=1 \
+            --no-allow-unauthenticated
+      - name: Blocker note if WIF/IAM denied
+        if: steps.auth.outcome != 'success'
+        run: |
+          echo "::warning::Dev deploy skipped — WIF/IAM unavailable. Falling back per Sec. 1.2; see vcaop/BLOCKERS.md BLK-001."

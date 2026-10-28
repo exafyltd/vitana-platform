@@ -1,0 +1,24 @@
+# VTID-04028 — commands run (2026-09-17, Claude Code session)
+
+# VTID allocated + registered (Supabase MCP, project inmkhvwdcuyhnxkgfvsb)
+select * from allocate_global_vtid('claude-code', 'AGTL', 'operator-console');   -- VTID-04028
+update vtid_ledger set title=..., summary=..., status='in_progress', spec_status='approved' where vtid='VTID-04028';
+
+# gateway
+cd services/gateway
+node --check src/frontend/command-hub/app.js                                        # ok
+NODE_OPTIONS=--max-old-space-size=3072 npx tsc --noEmit                             # exit 0 (twice: after the service/route change, after the res.on('close') fix)
+npx jest test/vtid-04028-operator-turn-stream.test.ts                               # 16/16 (first run 12/16: req.on('close') fired after body parse on Node 22 → switched to res.on('close'); one substring assertion corrected)
+npx jest test/vtid-03926-operator-chat-userrole.test.ts test/vtid-04022-operator-threads.test.ts \
+  test/vtid-03822-operator-chat-threads.test.ts test/vtid-03851-execute-task-requires-auth.test.ts \
+  test/operator-chat-oasis.test.ts test/vtid-03928-operator-cross-session-memory.test.ts \
+  test/vtid-03892-operator-dev-memory-wiring.test.ts test/vtid-03930-operator-codebase-overview.test.ts \
+  test/vtid-04025-operator-turn-memory.test.ts test/vtid-03838-operator-prompt-lists-execute-tool.test.ts
+                                                                                    # 10 suites, 101 tests; one VTID-03851 source-wiring slice re-pointed at runOperatorChatTurn (the marker moved with the handler body), then 13/13
+
+# visual verification (local harness, nothing live)
+node docs/validation/VTID-04028/outputs/harness-server.js &                         # http://127.0.0.1:18428 — statics from the working tree, stubbed boot APIs, scripted SSE turn
+node docs/validation/VTID-04028/outputs/harness-shoot.js                            # Playwright: desktop 1400x900 + mobile 390x844, mid-turn and finished screenshots
+# liveText (desktop): ["✓ Ran dev_search_codebase · 1.2s","✓ Ran dev_read_file · 640ms","… Ran dev_cloudwatch_logs (running)"]
+# doneText (desktop): ["Ran dev_search_codebase · 1.2s","Ran dev_read_file · 640ms","Ran dev_cloudwatch_logs · 388ms"]
+# reply rendered from the `reply` frame; console errors = harness-only 404s (unstubbed statics) + the ORB websocket

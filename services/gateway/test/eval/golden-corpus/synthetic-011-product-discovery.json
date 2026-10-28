@@ -1,0 +1,23 @@
+{
+  "fixture_id": "synthetic-011-product-discovery",
+  "source": "synthetic",
+  "captured_at": "2026-06-03T00:00:00Z",
+  "turn_count": 2,
+  "notes": "Product discovery + recommendation activation.",
+  "turns": [
+    {
+      "turn": 1,
+      "kind": "voice",
+      "user_input": "Find me a good magnesium supplement",
+      "expected_tool": "find_perfect_product",
+      "expected_intent": "goal.match_product"
+    },
+    {
+      "turn": 2,
+      "kind": "voice",
+      "user_input": "Activate that sleep recommendation",
+      "expected_tool": "activate_recommendation",
+      "expected_intent": "goal.recommend_activate"
+    }
+  ]
+}

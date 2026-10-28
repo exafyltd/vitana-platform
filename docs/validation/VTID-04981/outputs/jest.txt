@@ -1,0 +1,5 @@
+    ✓ revokes members and keeps the gateway, and checks itself on apply (4 ms)
+    ✓ no later migration grants fn_consume_credits to members again (1 ms)
+    ✓ the gateway calls it through the service-role client
+    ✓ reproduces the VTID-03107 grant, applies the lockdown twice and passes the SQL assertions (1958 ms)
+Tests:       4 passed, 4 total

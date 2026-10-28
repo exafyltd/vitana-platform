@@ -1,0 +1,13 @@
+# VTID-04669 — commands run (cwd services/gateway unless noted)
+# Built on the VTID-04668 commit. Nothing written to any database; every
+# model / code-index / PostgREST call in the tests is mocked.
+
+npx tsc --noEmit -p .                                   # clean
+node node_modules/.bin/jest test/vtid-04669             # 1 suite, 20 tests passed (outputs/vtid-04669-suite.txt)
+npm run test:operator                                   # 1 suite, 30 tests passed (rules 42e/42f)
+npm run test:support                                    # 4 suites, 82 tests passed (rules 42c/42d)
+node node_modules/.bin/jest test/vtid-04669 test/vtid-04668 test/vtid-0466 test/routes/dev-autopilot.test.ts \
+  test/routes/autopilot-recommendations.test.ts test/services/autopilot-voice-next-actions.test.ts \
+  test/vtid-04500-lineup-role.test.ts test/dev-autopilot-synthesis.test.ts
+                                                        # 17 suites, 445 tests passed (3 suites set AUTOPILOT_QUALITY_REVIEW_ENABLED=false, see acceptance.md)
+node node_modules/.bin/jest --silent                    # 1351 passed / 1 skipped suites; 21705 passed, 29 skipped, 6 todo (outputs/full-gateway-jest.txt)

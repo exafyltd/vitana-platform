@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-04943",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04943-orb-ws-audio-ready-ack.test.ts",
+      "cwd": "services/gateway",
+      "reason": "proving it on staging would need a real voice session, which writes; staging tests are read-only (rule 48). The jest suite is the gate; production row 16 is the final check"
+    }
+  ]
+}

@@ -1,0 +1,25 @@
+$ curl -s https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info
+git_commit=ae833f657954a6cd1d514760d41e078c72233fea env=staging
+
+$ POST https://preview-aws-gateway.vitanaland.com/api/v1/operator/chat   (fresh thread, 2026-09-13 07:19 UTC)
+message: "Execute VTID-03829 via the autopilot execution on-ramp now ... files_referenced = [services/gateway/test/task-title.test.ts] ... plan_markdown (verbatim, with a '## Files to modify' section listing only the test file)"
+
+ok: True
+meta: {"provider": "deepseek", "model": "deepseek-flash", "mode": "operator_deepseek", "tool_calls": 1}
+threadId: e947d9bb-95b6-4b99-86c1-b5c75de27570
+toolResults: [{"name": "autopilot_execute_task", "response": {"ok": false,
+  "error": "execution insert failed: 400: {\"code\":\"22P02\",\"details\":null,\"hint\":null,\"message\":\"invalid input syntax for type uuid: \\\"operator-chat:e947d9bb-95b6-4b99-86c1-b5c75de27570\\\"\"}"}}]
+
+oasis_events for the thread (read-only query):
+07:19:11 operator.chat.message      info     (the request above)
+07:19:14 governance.evaluate        success  operator.autopilot.execute_task: allowed  {level: L4, violations_count: 0}
+07:19:15 autopilot.intent.rejected  warning  reason: execution insert failed: 400 ... 22P02 ... "operator-chat:e947d9bb-..."
+07:19:15 assistant.turn             error    Tool call: autopilot_execute_task (args: vtid VTID-03829, files_referenced [test file only], plan_markdown as sent)
+07:19:20 operator.chat.message      info     (assistant reply reporting the exact tool error)
+
+information_schema.columns, public.dev_autopilot_executions:
+approved_by  uuid  nullable=YES
+
+autopilot_recommendations rows created by the two on-ramp attempts (source_type=operator_onramp, status=new):
+4208c292-33ef-4af3-be3f-f1b65e321344  2026-09-13 00:50 UTC  files [test file, src/utils/task-title.ts]  -> file_outside_allow_scope (self-inflicted: src/utils/** is not in dev_autopilot_config.allow_scope)
+(second row, 07:19 UTC)                                    files [test file]                           -> safety gate PASSED, then 22P02 on the execution INSERT

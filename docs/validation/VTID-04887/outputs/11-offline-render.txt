@@ -1,0 +1,18 @@
+desktop fetched /api/v1/ops/attention hscroll false tiles 13 targets<24px []
+mobile fetched /api/v1/ops/attention hscroll false tiles 13 targets<24px []
+tile labels ["Platform & Services=⛔ P1 Critical","Release Pipeline=⚠ P2 High","Voice / ORB=✓ OK","AI & LLM Routing=⚠ P2 High","Autonomy=⚠ P2 High","Operator & VTIDs=⚠ P2 High","Governance=✓ OK","Quality=⚠ P2 High","Cost & Budgets=⚠ P2 High","Community & Support=⚠ P2 High","Moderation & Commerce=– Not yet monitored","Data & Memory=– Not yet monitored","Scheduled Jobs=⚠ P2 High"]
+tile navigate [["autopilot","orchestrator",{}]]
+unmonitored links 0
+support items 2
+p1 snooze buttons 0 p1 ack buttons 1
+posted [["/api/v1/ops/attention/snooze","{\"fingerprint\":\"staging:decisions_waiting:dev_autopilot_approval\",\"reason\":\"Known: budget raised in VTID-05000, waiting for tomorrow\",\"duration_minutes\":60}"]]
+hidden note 1 snoozed item(s) hidden until they expireℹ P3 Watch Routine overdue: Daily B until 2026-10-05T13:07:40.325Z · Routine h
+acked items 1
+timeline rows 5 sparklines 2
+desktop disclosure summary Service health and recommendations open false
+desktop service-health panel hscroll false panels ["overview-health-grid","overview-recommends-panel"] badge overview-count-badge overview-count-badge-amber 4/7 healthy bg=rgba(245, 158, 11, 0.2) healthFetch 0
+desktop recs fetched 1 rec cards 2 rec buttons ["Generate New","Activate","Dismiss","Create task","Dismiss"]
+mobile disclosure summary Service health and recommendations open false
+mobile service-health panel hscroll false panels ["overview-health-grid","overview-recommends-panel"] badge overview-count-badge overview-count-badge-amber 4/7 healthy bg=rgba(245, 158, 11, 0.2) healthFetch 0
+mobile recs fetched 1 rec cards 2 rec buttons ["Generate New","Activate","Dismiss","Create task","Dismiss"]
+blind tiles ["? UNKNOWN"]
