@@ -1,9 +1,10 @@
 ---
 lane: driver-wake
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pipeline-agent-wake-and-review/driver-wake
+pr: https://github.com/exafyltd/vitana-platform/pull/4448
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -18,7 +19,7 @@ paths:
   - .kiro/automations/wake.md
   - docs/kiro/driver-wake.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:21Z
+updated: 2026-10-28T12:26Z
 vtid: VTID-05354
 ---
 # Lane: driver-wake (repo vitana-platform)
@@ -80,3 +81,6 @@ Findings: non-blocking — head is a GitHub update-branch merge of main 963a420b
 Findings: non-blocking — CI not readable by the reviewer; land-guard confirmed 11 checks green on this head before merging
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the land step merges under §7b
+
+### 2026-10-28T12:26Z · kiro-exafyltd-202610271503-9458 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4448 opened and reviewed (accepts above, last on the merged head `18bcf93d`).
