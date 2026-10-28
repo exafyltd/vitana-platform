@@ -26,7 +26,7 @@ paths:
   - services/gateway/test/project-manager/decide.test.ts
   - services/gateway/test/project-manager/review-rule-parity.test.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-28T14:54Z
+updated: 2026-10-28T14:58Z
 vtid: VTID-05392
 ---
 # Lane: review-independence (repo vitana-platform)
@@ -39,4 +39,6 @@ Lane created with the plan.
 ### 2026-10-28T12:52Z · ci-plan-spar · ready (VTID allocated)
 VTID-05392 allocated after policy approval (converged-auto-v1).
 ### 2026-10-28T14:54Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-28T14:58Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
