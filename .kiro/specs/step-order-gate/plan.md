@@ -27,7 +27,7 @@ Open plan PR exafyltd/vitana-platform#4392 (`kiro-web-reliability`; its spec is 
 and `preflight.mjs`. This plan touches none of them.
 
 ## 3. Change — one lane `land-guard` (vitana-platform)
-New `scripts/collab/land-guard.mjs` (Node ≥ 20, ESM, no npm dependencies; imports `globToRegex` and `PROTECTED_GATE_PATHS` from the co-located `queue.mjs`, pure decision functions exported). Every command
+New `scripts/collab/land-guard.mjs` (Node ≥ 20, ESM, no npm dependencies; imports exactly `globToRegex` and `PROTECTED_GATE_PATHS` from the co-located `queue.mjs` and reads `state:` with its own one-line match, pure decision functions exported). Every command
 exits 0 only when the step may run, 1 when it may not (the reason is printed), and 2 while checks are still pending.
 1. `evidence --repo <dir> --vtid <VTID>`: `docs/validation/<VTID>/` must hold `acceptance.md`, `commands.log` and
    `scope.json`, each committed or staged (`git ls-files` ∪ `git diff --cached --name-only`). Run it before a lane
@@ -54,8 +54,13 @@ exits 0 only when the step may run, 1 when it may not (the reason is printed), a
 Runbook: `.kiro/pipeline/common-rules.md` gets rule 13 "Step order (enforced)". It lists the four dependencies, says
 that independent steps may run in parallel and dependent steps never do (one tool call waits for the previous result),
 and says that merges and releases in a Kiro session go through `land-guard.mjs`, not a raw merge call or
-`queue.mjs release`. `.kiro/pipeline/lane-land.md` steps 3d (merge) and 3f
-(release) call `land-guard.mjs merge` / `land-guard.mjs release` instead of the raw commands. `driver.md` (owned by #4392)
+`queue.mjs release`. Two merges stay outside `land-guard.mjs merge`, and rule 13 names both: a spec-only `plan(` PR
+(it has no reviewer-agent entry), and the `--admin` governance-artifact false positive of common-rules rule 4. For
+each, `land-guard.mjs checks` must show that the only red check is that logged false positive (run URL in
+`merges.md`); a real red is never merged. `.kiro/pipeline/lane-land.md` steps 3d (merge) and 3f
+(release) call `land-guard.mjs merge` / `land-guard.mjs release` instead of the raw commands. Step 3f also says that the closing record (lane `state: done`; `handoff.md` for `_plan`)
+must be merged to `origin/main` before `land-guard.mjs release` runs. A refusal prints the file path and the state it
+found on `origin/main`, so an unmerged record and a real refusal look different. `driver.md` (owned by #4392)
 is not changed. Its step 6 describes the merge inline and does not bind `common-rules.md`, so the follow-ups for #4392
 are: route step 6 through `land-guard.mjs merge`, bind rule 13, and point step 9 at `release` / `release-heartbeat`
 (posted on #4392).
