@@ -1,6 +1,6 @@
 ---
 lane: land-guard
-state: executing
+state: done
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610261510-099d
 branch: kiro/step-order-gate/land-guard
@@ -17,7 +17,7 @@ paths:
   - .kiro/pipeline/common-rules.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:00Z
+updated: 2026-10-28T11:21Z
 vtid: VTID-05362
 ---
 # Lane: land-guard (repo vitana-platform)
@@ -66,3 +66,12 @@ re-checked: no path where a refusal merges or releases, no fail-open handling, `
 squash and `--admin` limits kept.
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the land step merges under §7b.
+
+### 2026-10-28T11:06Z · kiro-exafyltd-202610261510-099d · executing → in-review
+PR #4439 opened. Reviewer agent: changes on `0c43330d`, then accept on `d9749341` (entries above).
+
+### 2026-10-28T11:13Z · kiro-exafyltd-202610261510-099d · in-review → verified
+merge: 6f4bea7bf7021a665c1dd6b58e4d5b26a7717bc9 (#4439) · authority: §7b PM rule, applied by `land-guard.mjs merge` itself (the review is current on `1e87d629`, entry-only after `d9749341`; 10/10 checks green; up to date; no protected gate file). Deploys nothing, so there is no STAGING-VERIFY.
+
+### 2026-10-28T11:21Z · kiro-exafyltd-202610261510-099d · verified → done
+Lane closed under §7b. The claim is released by `land-guard.mjs release` after this record merges.
