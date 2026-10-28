@@ -21,7 +21,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/aiAssistantsNative.json
   - docs/validation/**
-updated: 2026-10-22T13:10Z
+updated: 2026-10-28T13:17Z
+vtid: VTID-05395
 ---
 # AI assistants management port — `/assistant` (+ 5 tabs); the useAIAssistants management flow
 Plan: `.kiro/specs/native-wave2-ai-pages/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -71,3 +72,6 @@ and the paths were computed from the parity ledger and `src/App.tsx` so no file 
 `depends_on`. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-ai-pages/ai-assistants --session <id>`). Runs in parallel with `ai-coach` and
 `ai-chat`.
+
+### 2026-10-28T13:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05395 allocated after policy approval (converged-auto-v1).

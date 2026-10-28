@@ -3,10 +3,10 @@ slug: native-wave2-ai-pages
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-22T13:10Z
-vtids: []
+updated: 2026-10-28T13:17Z
+vtids: [VTID-05395, VTID-05396, VTID-05397]
 sparring_record: .kiro/specs/native-wave2-ai-pages/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: main
@@ -45,3 +45,6 @@ so the partner can verify the `apps/mobile/**` and web-screen premises); this se
 `sparring/responses-<n>.md`. On convergence CI writes the VTIDs into the lanes; then seat `exafyltd` claims lanes —
 all three in parallel (no deps). Reviewer seat `hotmail` reviews each lane. Device-runtime parity (the final task in
 each lane) waits on the owner's G1 isolated test environment.
+
+### 2026-10-28T13:17Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

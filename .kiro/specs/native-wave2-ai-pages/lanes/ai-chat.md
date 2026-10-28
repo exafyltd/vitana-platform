@@ -21,7 +21,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/aiChatNative.json
   - docs/validation/**
-updated: 2026-10-22T13:10Z
+updated: 2026-10-28T13:17Z
+vtid: VTID-05396
 ---
 # Chat-with-Vitana text screen port — `/comm/talk-to-vitana`
 Plan: `.kiro/specs/native-wave2-ai-pages/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -67,3 +68,6 @@ parity ledger and `src/App.tsx` so no file belongs to two lanes; no `depends_on`
 once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-ai-pages/ai-chat --session <id>`). Runs in parallel with `ai-coach` and
 `ai-assistants`.
+
+### 2026-10-28T13:17Z · ci-plan-spar · ready (VTID allocated)
+VTID-05396 allocated after policy approval (converged-auto-v1).
