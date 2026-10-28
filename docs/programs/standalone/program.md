@@ -38,6 +38,7 @@ specs:
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
   - vitana-platform:pipeline-lane-state-efficiency
+  - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
   - vitana-platform:pipeline-agent-wake-and-review
   - vitana-platform:context-map
@@ -91,3 +92,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:context-map` — one read-only command and one linked page to find routes, screens, areas, importers, rules and prior work; stale-link check
 - `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
 - `vitana-platform:reviewer-step-model` — every pinned review step's prompt opens with its own chain model, so the reviewer agent's self-check stops returning `model_unavailable`
+- `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics

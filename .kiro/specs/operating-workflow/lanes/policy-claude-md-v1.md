@@ -1,0 +1,21 @@
+---
+lane: policy-claude-md-v1
+state: ready
+next_actor: kiro
+depends_on: [policy-text-v1]
+executor: claude
+seat: jtadic
+area: frontend
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+repos: [exafyltd/vitana-v1]
+paths:
+  - CLAUDE.md
+  - docs/validation/VTID-*/**
+updated: 2026-10-28T12:20Z
+---
+# Lane: policy-claude-md-v1 (repo vitana-v1)
+Tasks in `tasks.md` (`<!-- lane: policy-claude-md-v1 -->`). Plan: `plan.md` §9. VTID: allocated by CI PLAN-SPAR on convergence.
+
+## Log
+### 2026-10-28T12:20Z · kiro-jtadic-202610281148-d6d3 · ready
+Lane created with the plan.
