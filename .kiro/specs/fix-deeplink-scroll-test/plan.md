@@ -42,29 +42,58 @@ the lane. … the Vitest (jsdom) check must turn green on main after merge."*
    fixtures at `:204`, `:205`, `:261` carry fixed `created_at` `2026-10-21T10:00:00.000Z` / `…10:00:01.000Z`;
    `src/lib/messaging/outbox.ts:48` `OUTBOX_MAX_AGE_MS = 7 days` and `:90` prune drops items older than that on load,
    so since 2026-10-28T10:00Z the seeded items vanish and the assertions fail on every run (PR, push, nightly). Same
-   defect class VTID-05313 fixed in the deep-link test.
+   defect class VTID-05313 fixed in the deep-link test. Still red on vitana-v1 `origin/main` `1349f6991` (UNIT-TESTS
+   run 40674402709, 2026-10-28T10:43Z).
+   Verified on vitana-v1 `origin/main` `1349f6991` (round 1, R1-F1): `git show origin/main:src/lib/messaging/outbox.ts`
+   → `:46` `SENT_GRACE_MS = 2 * 60 * 1000`, `:48` `OUTBOX_MAX_AGE_MS = 7 * 24 * 60 * 60 * 1000`, `:89-90`
+   `prune(items, now)` = `items.filter((i) => now - new Date(i.created_at).getTime() < OUTBOX_MAX_AGE_MS)`, `:99`
+   `loadOutbox(userId, now = Date.now())`, `:114` / `:138` sort by `created_at.localeCompare`. The fixed outbox dates
+   `2026-10-21T10:00:0…` sit at test lines `:204`, `:205`, `:261` (outbox) and `:249`, `:250` (realtime INSERT payloads,
+   never pruned).
+   **Time thresholds on outbox items (R1-F3):** `created_at` is read only by `prune` (`outbox.ts:90`, 7 days) and for
+   ordering (`:114`, `:138`; copied to the optimistic row at `:181-182`). The only other threshold, `SENT_GRACE_MS`
+   (2 min), is applied to `sent_at` of `status: 'sent'` items (`src/hooks/useGlobalMessages.ts:1460-1465`), never to
+   `created_at`, and the fixtures are `sending` / `failed` without `sent_at`. No minimum-age check exists.
+5. **A fix-forward for the same defect is already open: exafyltd/vitana-v1#1506** (branch
+   `kiro/messenger-ux-v2/ui-send-status-fixfwd`, session `kiro-exafyltd-202610281029-e076`, lane
+   `messenger-ux-v2/ui-send-status`, VTID-05320, opened 2026-10-28T11:01Z, head `3e324cec2`). It changes only this
+   test file: a `minutesAgo(m)` helper and `created_at: minutesAgo(2)` / `minutesAgo(1)` at `:204`, `:205`, `:261`. Its
+   `Vitest (jsdom)` check is green on that head, which proves the approach empirically; it is not merged yet
+   (`mergeStateStatus: UNSTABLE`, one unrelated red native-parity check).
 
 ## Decision
 The owner's named test needs no change (item 1); the owner's outcome ("Vitest (jsdom) must turn green on main after
 merge") is unmet today only because of item 4. The conservative change that delivers that outcome, test-only and
 inside "fix the test, not the component": make the three outbox fixture timestamps in the VTID-05320 test relative
 to now. No component, hook, `outbox.ts`, constant or assertion changes. The deep-link test is re-run as a regression
-check only.
+check only. Because #1506 (item 5) carries the same edit, the lane does not race it: it applies the identical edit
+only if #1506 is not merged when the lane starts, and otherwise closes as a verification of `main` (see Lanes).
 
 ## Lanes
 - `fixture-dates` — **repo `exafyltd/vitana-v1`**, executor `kiro`, reviewer `agent:vitana-lane-reviewer`.
   Files: `src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx`, `docs/validation/<VTID>/{red-on-base.txt,
   commands.log,staging-tests.json}`.
-  Change: replace the fixed `created_at` at `:204`, `:205`, `:261` with now-relative ISO strings (for example
-  `const T0 = Date.now() - 60_000;` → `new Date(T0).toISOString()` and `new Date(T0 + 1000).toISOString()`), keeping
-  the pending item strictly older than the failed one (merge order is by `created_at`, `outbox.ts:114,138`). No fake
-  timers (the hook relies on real `waitFor` timing). Other fixed dates in the file (`:79` `fetchConversations`,
-  `serverRow()` `:101`, realtime payloads `:231-250`) are not pruned and stay.
+  Start check: if exafyltd/vitana-v1#1506 is merged to `main` when the lane starts, the test file is already fixed;
+  the lane makes no code change, re-runs the commands below on `main`, records them in
+  `docs/validation/<VTID>/commands.log` (with the #1506 merge SHA and the UNIT-TESTS run on it) and closes. Otherwise:
+  Change: replace the fixed `created_at` at `:204`, `:205`, `:261` with now-relative ISO strings, using the same shape
+  as #1506 so the two edits are identical and either can land without conflict: a `minutesAgo(m)` helper
+  (`new Date(Date.now() - m * 60_000).toISOString()`), pending = `minutesAgo(2)`, failed = `minutesAgo(1)`, the
+  `:261` pending = `minutesAgo(2)`. Offsets (R1-F3): 1-2 minutes is (a) far inside `OUTBOX_MAX_AGE_MS` (7 days), (b)
+  keeps the pending item strictly older than the failed one (60 s apart, merge order by `created_at`,
+  `outbox.ts:114,138`), and (c) touches no other threshold (only `prune` reads `created_at`; `SENT_GRACE_MS` reads
+  `sent_at` of `sent` items). In the reload test the re-posted item becomes a server row dated by `serverRow()`
+  (2026-10-21, `:101`), still earlier than the failed item, so the asserted order `['was in flight:server', 'had
+  failed:failed']` is unchanged; #1506's green `Vitest (jsdom)` on `3e324cec2` confirms it. No fake timers (the hook
+  relies on real `waitFor` timing). Other fixed dates in the file (`:79` `fetchConversations`, `serverRow()` `:101`,
+  realtime payloads `:231-250`) are not pruned and stay.
   Test that fails on base: `npx vitest run src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx` on base
   (any date ≥ 2026-10-28T10:00Z) → the 2 tests above fail; on head → all pass.
 
 ## Parallel / shared files / hot files
-One lane, at most 4 files, no fan-out (common-rules §11). No hot file (no migration, `DATABASE_SCHEMA.md`,
+One lane, no fan-out (common-rules §11 small task): one changed code file (the test file) plus the standard lane
+evidence under `docs/validation/<VTID>/` (`red-on-base.txt`, `commands.log`, `staging-tests.json`), which every lane
+produces and which §11's "at most 3 files" does not count (R1-F2). No hot file (no migration, `DATABASE_SCHEMA.md`,
 `src/App.tsx`, `screens.json`/`exclusions.json`, parity ledger, i18n shard, `CLAUDE.md`). No protected gate file and
 no governance path, so the reviewer agent's accept is enough under §7b. No interfaces between lanes.
 

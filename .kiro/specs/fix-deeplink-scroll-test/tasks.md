@@ -1,13 +1,17 @@
 # Tasks — fix-deeplink-scroll-test
 <!-- lane: fixture-dates -->
 Repo `exafyltd/vitana-v1`. Code starts only after the VTID is allocated (plan § Lanes).
+- [ ] T0 Start check: `gh pr view 1506 --repo exafyltd/vitana-v1 --json state,mergeCommit`. If `MERGED`: skip T1, T2
+      and T4; run T3 on `origin/main` and record it, the #1506 merge SHA and the UNIT-TESTS run on that SHA in
+      `docs/validation/<VTID>/commands.log`; T5 then means that evidence PR. Otherwise continue with T1.
 - [ ] T1 Red on base: in the lane worktree on `origin/main`, run
       `npx vitest run src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx` and save the output (2 failed:
       `reload > re-posts a pending item …`, `review fixes > several mounted instances share one outbox …`) to
       `docs/validation/<VTID>/red-on-base.txt`.
 - [ ] T2 `src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx`: replace the fixed outbox `created_at` values
-      at `:204`, `:205`, `:261` with now-relative ISO strings (pending older than failed by 1 s, both well under
-      `OUTBOX_MAX_AGE_MS`). No other line, assertion, fake timer or product file changes.
+      at `:204`, `:205`, `:261` with now-relative ISO strings, same shape as vitana-v1#1506: a `minutesAgo(m)` helper,
+      pending `minutesAgo(2)`, failed `minutesAgo(1)`, `:261` `minutesAgo(2)` (pending older than failed by 60 s,
+      both far under `OUTBOX_MAX_AGE_MS`). No other line, assertion, fake timer or product file changes.
 - [ ] T3 Green on head: the VTID-05320 file passes; the deep-link test
       `npx vitest run src/components/messages/ConversationView.deeplink-scroll.vtid-05201.test.tsx` passes;
       `npm run test:unit` passes every file. Commands and summaries in `docs/validation/<VTID>/commands.log`.
