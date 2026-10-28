@@ -38,10 +38,14 @@ most 3 files) gets one investigator.
   from `seat`). No two lanes edit the same file; a lane on a governance path follows the rule collaboration.md §3a
   states on `main` today.
 - Add the slug to the right `docs/programs/<id>/program.md` (or `standalone`) when `queue.mjs validate` requires it.
-- `queue.mjs validate --base origin/main --head HEAD` green before pushing.
+- Commit, then run preflight before pushing: `node <vitana-platform>/scripts/collab/preflight.mjs --repo <spec WT>
+  --base origin/main --head HEAD --branch kiro/<slug>/plan --title "plan(<slug>): <summary>"` (it runs `queue.mjs
+  validate`, Lane scope, the PR-GATE checks, Kiro steering and the Collab tests in one pass and prints every
+  failure); fix every error and re-run until it passes.
 
 ## 4. Plan PR
-Branch `kiro/<slug>/plan`, commit with `Collab-Session` + `Collab-Lane: <slug>/_plan`, push (protocol), PR title
+Branch `kiro/<slug>/plan`, commit with `Collab-Session` + `Collab-Lane: <slug>/_plan`, run preflight (§3) on that
+commit and fix every error, then push (protocol), PR title
 `plan(<slug>): <summary>`, body: summary, lanes, owner quote, session id. Save `{number,url,head}` in `RUN/run.json`.
 
 ## 5. Spar loop (one iteration per step run)
@@ -50,8 +54,8 @@ calls the sparring partner itself.
 1. Wait (poll 2-3 min, bounded) for the newest PLAN-SPAR run on the PR head; read `sparring/state.json` and the
    newest `round-<n>.md` from the PR branch.
 2. New round without `responses-<n>.md` → answer every finding (accepted → change `plan.md` / `tasks.md` / lane
-   files; rejected → reason with `file:line`; deferred → where tracked) in `sparring/responses-<n>.md`, commit, push.
-   Never edit `round-*.md`, `state.json` or `verdict.md`.
+   files; rejected → reason with `file:line`; deferred → where tracked) in `sparring/responses-<n>.md`, commit, run
+   preflight (§3) and fix every error, then push. Never edit `round-*.md`, `state.json` or `verdict.md`.
 3. Converged → policy approval `converged-auto-v1`; CI writes the lane VTIDs into the lane files and `handoff.md`
    (`state: approved`). Lanes still without a VTID → wait for the next PLAN-SPAR run (it retries allocation); never
    allocate by hand.
