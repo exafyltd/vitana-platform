@@ -1,6 +1,6 @@
 ---
 lane: context-cli
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271221-c93f
 branch: kiro/context-map/context-cli
@@ -16,7 +16,7 @@ paths:
   - scripts/dev/context.test.mjs
   - docs/CONTEXT-MAP.md
   - docs/validation/VTID-*/**
-updated: 2026-10-27T13:44Z
+updated: 2026-10-28T11:05Z
 vtid: VTID-05349
 ---
 # Lane: context-cli (repo exafyltd/vitana-platform)
@@ -57,3 +57,6 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4410
 Findings: none blocking. Every finding of the 14:14Z review on `3b9bb36a` is resolved on this head; 10/10 checks green.
 Stored by the land step on the agent's behalf (`lane-land.md` step 2).
 Next: the land step merges under §7b.
+
+### 2026-10-28T11:05Z · kiro-jtadic-202610271221-c93f · executing → in-review (§7b closing record)
+PR #4410 opened; reviewed (changes on 3b9bb36a, fixed; accept on 2801b1f9).
