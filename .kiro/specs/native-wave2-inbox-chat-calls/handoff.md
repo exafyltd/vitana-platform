@@ -3,11 +3,12 @@ slug: native-wave2-inbox-chat-calls
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: sparred
 author_seat: exafyltd
-updated: 2026-10-15T19:13Z
+updated: 2026-10-28T10:39Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-inbox-chat-calls/sparring/verdict.md
 ---
 # Handoff — Native Wave 2: Inbox / Chat / Calls screen ports
 Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`, program
@@ -37,3 +38,6 @@ session answers each round in `sparring/responses-<n>.md`. On convergence CI wri
 seat `exafyltd` claims lanes — `inbox-list` and `conversation-chat` in parallel (no `depends_on` between them).
 Reviewer seat `hotmail` reviews each lane. Device-runtime parity and the live realtime/call journey (task 7 in each
 lane) wait on the owner's G1 isolated test environment.
+
+### 2026-10-28T10:39Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. 0 lane(s) got a VTID and are handed to Kiro.
