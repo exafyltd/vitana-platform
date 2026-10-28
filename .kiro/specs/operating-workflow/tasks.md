@@ -14,16 +14,19 @@ Acceptance below is what the reviewer agent `vitana-lane-reviewer` checks.
       `kaf-staging-claude-available-wiring.test.ts`.
 - [ ] P2 `writers.ts`: `laneChangeIsNoop` (compares `state`, mapped `next_actor`, `seat`, `claimed_by`, newest log
       body; never `updated:` or the heading time) before `applyLaneChange`, skip `put` on W1/W2, `writeFile` skips an
-      unchanged text, `applyLaneChange` throws on `seat == reviewer_seat`; `act.ts` `write` → `'written'|'noop'`,
+      unchanged text, `applyLaneChange` throws on any change of `seat`, `executor`, `reviewer_seat` or `paths`
+      (R1-F3: Lane scope's PERM rule rejects such a pm-agent commit, `queue.mjs:678-684`); `act.ts` `write` → `'written'|'noop'`,
       `unchanged` status; `types.ts` `ActStatus` gains `'unchanged'`; `decide.ts` stale-ready target never
-      `reviewer_seat` (no decision when only `reviewer_seat` is left).
+      `reviewer_seat` and never changes `seat` (no decision unless the target is `claude`, which keeps the seat).
 - [ ] P3 `AWS-STAGE-DEPLOY-GATEWAY.yml:1225` → `"false"`.
 - [ ] P4 `staging-tests.json` (`kind: existing`, the jest suites), `commands.log`.
 
 **Acceptance**
 - Change types: Backend, Infrastructure/CI
-- Outcome: two PM ticks over the same lane write once, then nothing; no PM write produces `seat == reviewer_seat`; a
-  staging gateway deploy leaves `PM_AGENT_ENABLED=false`.
+- Outcome: two PM ticks over the same lane write once, then nothing; no PM write changes a lane permission key (so
+  none is rejected by Lane scope); a staging gateway deploy leaves `PM_AGENT_ENABLED=false`.
+- Evidence includes a `queue.mjs scope-check` run over a fixture pm-agent commit that changes `seat` (error), showing
+  the rejection path the guard avoids.
 - `npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts` green on head, new tests red on base.
 - Only the lane paths change; the PM is not re-enabled anywhere; no test weakened.
 <!-- lane: pm-noop -->
@@ -71,6 +74,7 @@ Acceptance below is what the reviewer agent `vitana-lane-reviewer` checks.
 - Outcome: every session (Kiro Web, Kiro IDE, automations, Claude Code) loads one policy that answers who may do
   what, when to stop and the end point; each contradiction C1-C17 is resolved to the newer owner decision, with a
   file:line note per item in `acceptance.md`.
+- Merges only after a Claude review on the current head or an owner instruction naming `operating-workflow` (R1-F1).
 - No stop removed or weakened: the 13 stops, §7c, §7d migration rule, §3a protected files and every prohibition read
   as before; the unattended-merge change is named in the PR body as a governance decision.
 - `node --test scripts/collab/*.test.mjs`, `node scripts/collab/kiro-web-steering.mjs --check`, preflight green.
@@ -86,6 +90,7 @@ Acceptance below is what the reviewer agent `vitana-lane-reviewer` checks.
 - Change types: Tooling/docs
 - Outcome: both repos load the same policy text.
 - Every copied file is byte-identical to the platform file at `policy-text`'s merge commit.
+- Merges only after a Claude review on the current head or an owner instruction naming `operating-workflow` (R1-F1).
 <!-- lane: policy-text-v1 -->
 
 <!-- lane: policy-claude-md -->
@@ -124,8 +129,10 @@ Acceptance below is what the reviewer agent `vitana-lane-reviewer` checks.
       `observe-live`, `decide` tests.
 - [ ] R2 `scripts/collab/review-rule.mjs` (requester, reviewer identity, lane-only review commit + verbatim review
       record, digest, current-head rule with merge-of-main patch-id tolerance); used by `queue.mjs` scope-check and
-      `land-guard.mjs` (reads the entry itself); `store-review.cjs` writes the record and digest; added to
-      `protected-gate-files.json` (and the compiled-in copies).
+      `land-guard.mjs` (reads the entry itself); `store-review.cjs` writes the record and digest;
+      `protected-gate-files.json` and both compiled-in copies (queue.mjs fallback, governance.ts) gain
+      `scripts/collab/review-rule.mjs`, `scripts/collab/land-guard.mjs`, `.claude/rules/operating-policy.md`,
+      `.kiro/steering/vitana-operating-policy.md` (R1-F1, R1-F2), parity test green.
 - [ ] R3 PM: `governance.ts` + `observe-live.ts` mirror the rule (executing log includes `Collab-Lane` commit sessions;
       `Collab-Review-Requested-By` parsed); `decide.ts` self-review guard uses it.
 - [ ] R4 Fallback: one retry cycle after ≥ 30 min, then park (driver record `Collab-Blocker: review_unavailable`).

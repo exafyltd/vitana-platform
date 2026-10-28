@@ -74,8 +74,10 @@ design-contract changes, the VTID allocator and product autonomy stay exactly as
 ### 2.4 CI congestion
 - PM writer: `writers.ts:42-62` always bumps `updated:` and appends a log entry; `:91-117` always PUTs (one commit per
   tick, 2 min). Commits on bookkeeping PRs: #4333 8,118; #4290 5,221; #4267 3,794; #4244 2,545; #4249 1,069;
-  #4370 868. `decide.ts:244-260` stale-ready can set `seat == reviewer_seat`, which `queue.mjs:227` rejects, so the PR
-  never merges and the decision repeats every tick.
+  #4370 868. `decide.ts:244-260` stale-ready changes `seat`; on a `pm-agent` bookkeeping PR the Lane scope PERM rule
+  (`queue.mjs:678-684`: a change of `executor`/`seat`/`reviewer_seat`/`paths` is refused unless every session is a
+  Claude `session_…`, and `pm-agent` commits are excluded from that set) rejects it before the `seat == reviewer_seat`
+  check at `queue.mjs:227` is reached, so the PR never merges and the decision repeats every tick (sparring R1-F3).
 - Deploy restores it: `AWS-STAGE-DEPLOY-GATEWAY.yml:1225-1226` upserts `PM_AGENT_ENABLED="true"`, `PM_MODE="live"`.
   Staging today: task def `vitana-gateway:967`, `PM_AGENT_ENABLED=false`, `PM_MODE=live`, `CLAUDE_AVAILABLE=false`
   (read-only `aws ecs describe-task-definition`). Last staging gateway deploy 2026-10-28T08:37 failed, so the next
@@ -147,6 +149,12 @@ Content of `operating-policy.md` (text written in lane `policy-text`):
 9. **Proportional path** (ask 5, §8 below).
 10. **Precedence** and the single-source rule above (resolves C16, C17).
 
+The authority itself is reviewed like a protected file from its first version (R1-F1): `policy-text` and
+`policy-text-v1` merge only with the §3a review (a merge precondition of this plan, applied by its driver and stated
+in their acceptance, until the list update makes it mechanical) — a Claude review on the current head
+or an owner instruction naming `operating-workflow` — and `review-independence` then puts both files on the
+protected list. One owner instruction naming this plan covers every protected lane of it.
+
 Protected parts (`CLAUDE.md` in both repos): the Autonomy Contract, the collaboration paragraph, rule 49 and the
 `send_later` paragraph become pointers to `operating-policy.md`, keeping every absolute (no production testing,
 production-safety, IF-THEN 26 scoping) verbatim. Lane `policy-claude-md`; it never merges on an agent accept
@@ -155,7 +163,11 @@ production-safety, IF-THEN 26 scoping) verbatim. Lane `policy-claude-md`; it nev
 ## 5. Review independence, fixed centrally (ask 2)
 One pure module `scripts/collab/review-rule.mjs` decides whether a review entry counts; `queue.mjs` scope-check and
 `land-guard.mjs` import it, the PM mirrors it in `governance.ts` (+ `observe-live.ts`) with a parity test, the way
-`PROTECTED_GATE_GLOBS` is mirrored today. It is added to `protected-gate-files.json`.
+`PROTECTED_GATE_GLOBS` is mirrored today. The lane adds to `protected-gate-files.json` (and to both compiled-in
+copies, with the parity test): `scripts/collab/review-rule.mjs`, `scripts/collab/land-guard.mjs` (its merge-time
+caller, R1-F2), `.claude/rules/operating-policy.md` and `.kiro/steering/vitana-operating-policy.md` (the authority,
+R1-F1). vitana-v1's PR-GATE fetches `queue.mjs` and the list from vitana-platform `main`
+(`vitana-v1/.github/workflows/PR-GATE.yml:81-91`), so the same relative globs protect the v1 copies.
 - **Requester.** A review entry carries `Collab-Review-Requested-By: <session>`; the requester may be the builder or the
   driver. The entry's `Collab-Session` (the reviewer) must be an `agent-vitana-lane-reviewer-…` id, must differ from
   the requester, and must not appear as `Collab-Session` on any `Collab-Lane: <slug>/<lane>` commit of the PR nor in
@@ -207,9 +219,11 @@ One pure module `scripts/collab/review-rule.mjs` decides whether a review entry 
   DRIVER-WAKE.
 
 ## 7. CI congestion (ask 4)
-- **`pm-noop`**: the converged pm-reassign-idempotent spec, unchanged (writer no-op guard on W1/W2 and `writeFile`,
-  `'written'|'noop'`, `unchanged` status, stale-ready target never `reviewer_seat`, `applyLaneChange` refuses
-  `seat == reviewer_seat`, `AWS-STAGE-DEPLOY-GATEWAY.yml:1225` → `"false"` so a deploy can never turn the PM on), plus
+- **`pm-noop`**: the converged pm-reassign-idempotent spec (writer no-op guard on W1/W2 and `writeFile`,
+  `'written'|'noop'`, `unchanged` status) with one correction from R1-F3: the PM never writes a lane permission key —
+  `applyLaneChange` throws on any change of `seat`, `executor`, `reviewer_seat` or `paths`, and `decide.ts`
+  stale-ready makes no decision when its target would change `seat` (the `claude` target, which keeps the seat,
+  remains; the stale lane stays visible on the queue); `AWS-STAGE-DEPLOY-GATEWAY.yml:1225` → `"false"` so a deploy can never turn the PM on), plus
   one guard: `writeFile` (timings.json) skips the PUT when the text is unchanged. Re-enabling the PM stays an owner
   decision (stop 13 reading: it is an autonomy level of a loop).
 - **Merge order**: `pm-noop` merges before any other gateway PR in §3 (#4421, #4424, #4445); the driver comments that
@@ -245,8 +259,8 @@ in `operating-policy.md` §9 as an open proposal for the owner and goes through 
 |---|---|---|---|---|
 | `pm-noop` | kiro, reviewer_seat agent | `services/gateway/src/services/project-manager/{decide,act,writers,types}.ts`, `services/gateway/test/project-manager/**`, `services/gateway/test/kaf-staging-claude-available-wiring.test.ts`, `.github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml`, `docs/validation/VTID-*/**` | — | gateway → staging |
 | `ci-activity-guard` | kiro, reviewer_seat agent | `scripts/ci/ci-activity.mjs`, `scripts/ci/ci-activity.json`, `scripts/ci/ci-activity.test.mjs`, `.github/workflows/ALERT-CI-ACTIVITY.yml`, `.github/workflows/ENFORCE-FRONTEND-CANONICAL-SOURCE.yml`, `.github/workflows/PHASE-2B-NAMING-ENFORCEMENT.yml`, `docs/ci/ci-activity.md`, `docs/validation/VTID-*/**` | — | none |
-| `policy-text` | kiro, reviewer_seat agent | `.claude/rules/operating-policy.md` (new), `.kiro/steering/vitana-operating-policy.md` (new), `.kiro/steering/{vitana-owner-autonomy,vitana-pipeline,vitana-kiro-notes,vitana-load-project-rules}.md`, `.claude/rules/collaboration.md` (§3a note, §7 lists, §8 schedule only), `.kiro/pipeline/{README,lane-review,lane-land,lane-code,planning}.md`, `.kiro/hooks/vitana-pipeline-start.json`, `.kiro/automations/*.md`, `scripts/collab/routine-prompt.md`, `scripts/collab/kiro-web-steering.mjs` (+ its test), `scripts/collab/policy-consistency.test.mjs` (new), `docs/DEPLOYMENT-PIPELINE.md`, `docs/collab/operating-policy-inventory.md` (new), `docs/kiro/unattended-continuation.md` (new), `docs/validation/VTID-*/**` | — (merges after quality-checks/pipeline-quality #4407, which edits the same `.kiro/pipeline/*` files) | none |
-| `policy-text-v1` | kiro, reviewer_seat agent; repo vitana-v1 | `.claude/rules/operating-policy.md`, `.kiro/steering/vitana-operating-policy.md`, `.kiro/steering/{vitana-owner-autonomy,vitana-pipeline,vitana-kiro-notes,vitana-load-project-rules}.md`, `.claude/rules/collaboration.md` (byte-identical copies of the platform files), `docs/validation/VTID-*/**` | `policy-text` | none |
+| `policy-text` | kiro, reviewer_seat agent; merges only with the §3a review (authority file, R1-F1) | `.claude/rules/operating-policy.md` (new), `.kiro/steering/vitana-operating-policy.md` (new), `.kiro/steering/{vitana-owner-autonomy,vitana-pipeline,vitana-kiro-notes,vitana-load-project-rules}.md`, `.claude/rules/collaboration.md` (§3a note, §7 lists, §8 schedule only), `.kiro/pipeline/{README,lane-review,lane-land,lane-code,planning}.md`, `.kiro/hooks/vitana-pipeline-start.json`, `.kiro/automations/*.md`, `scripts/collab/routine-prompt.md`, `scripts/collab/kiro-web-steering.mjs` (+ its test), `scripts/collab/policy-consistency.test.mjs` (new), `docs/DEPLOYMENT-PIPELINE.md`, `docs/collab/operating-policy-inventory.md` (new), `docs/kiro/unattended-continuation.md` (new), `docs/validation/VTID-*/**` | — (merges after quality-checks/pipeline-quality #4407, which edits the same `.kiro/pipeline/*` files) | none |
+| `policy-text-v1` | kiro, reviewer_seat agent; merges only with the §3a review (R1-F1); repo vitana-v1 | `.claude/rules/operating-policy.md`, `.kiro/steering/vitana-operating-policy.md`, `.kiro/steering/{vitana-owner-autonomy,vitana-pipeline,vitana-kiro-notes,vitana-load-project-rules}.md`, `.claude/rules/collaboration.md` (byte-identical copies of the platform files), `docs/validation/VTID-*/**` | `policy-text` | none |
 | `policy-claude-md` | claude (protected), reviewer agent + §3a review | `CLAUDE.md`, `.claude/skills/plan-sparring/SKILL.md`, `docs/validation/VTID-*/**` | `policy-text` | none |
 | `policy-claude-md-v1` | claude (protected), reviewer agent + §3a review; repo vitana-v1 | `CLAUDE.md`, `docs/validation/VTID-*/**` | `policy-text-v1` | none |
 | `review-independence` | claude (protected), reviewer agent + §3a review | `scripts/collab/review-rule.mjs` (new) + test, `scripts/collab/queue.mjs`, `scripts/collab/queue.test.mjs`, `scripts/collab/land-guard.mjs`, `scripts/collab/land-guard.test.mjs`, `scripts/collab/store-review.cjs` (+ test), `scripts/collab/protected-gate-files.json`, `services/gateway/src/services/project-manager/{governance,observe-live,decide}.ts`, `services/gateway/test/project-manager/{governance,observe-live,decide,review-rule-parity}.test.ts`, `docs/validation/VTID-*/**` | `pm-noop` (both edit `decide.ts`) | gateway → staging |
