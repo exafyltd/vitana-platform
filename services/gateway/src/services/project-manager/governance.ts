@@ -7,7 +7,8 @@
  *
  * The one place that decides whether a review entry lets a lane PR merge:
  *   - an `accept` by the reviewer agent `agent:vitana-lane-reviewer
- *     (claude-sonnet-5.5)` on the PR's current head satisfies any lane;
+ *     (<model>)`, <model> in REVIEWER_AGENT_MODELS, on the PR's current head
+ *     satisfies any lane;
  *   - a legacy seat `approve` keeps today's rule (reviewer_seat match, exact
  *     head; a governance lane additionally needs `reviewer_seat: claude`);
  *   - a PR that changes a protected gate file needs a legacy `claude` review on
@@ -23,8 +24,21 @@ import type { ObservedLane, ObservedPr, ReviewEntry } from './types';
 
 /** The reviewer agent's identity (plan §4.1 `Collab-Reviewer`). */
 export const REVIEWER_AGENT = 'agent:vitana-lane-reviewer';
-/** The only model the reviewer agent's verdict counts on (plan §4.2). */
-export const REVIEWER_AGENT_MODEL = 'claude-sonnet-5.5';
+/**
+ * The reviewer agent's ordered model fallback chain (owner 2026-10-21: "if one model
+ * is not available it should pick up another one as fallback ... then a third one").
+ * Each lane slot of the pipeline has one review step pinned to each model, in this
+ * order; a later step reviews only when the earlier ones returned model_unavailable.
+ * A verdict counts on any model in this chain, never outside it.
+ * Mirrored (with a parity test) in scripts/ci/kiro-steering/guard.cjs REVIEWER_MODELS.
+ */
+export const REVIEWER_AGENT_MODELS: readonly string[] = Object.freeze([
+  'claude-sonnet-5.5',
+  'claude-opus-5.5',
+  'claude-sonnet-4.5',
+]);
+/** The primary (first-choice) reviewer model. */
+export const REVIEWER_AGENT_MODEL = REVIEWER_AGENT_MODELS[0];
 
 /** Protected gate files (plan §4.3) — globs with scripts/collab/queue.mjs globToRegex semantics. */
 export const PROTECTED_GATE_GLOBS: readonly string[] = Object.freeze([
@@ -113,7 +127,7 @@ export function laneTouchesGovernance(lane: ObservedLane): boolean {
 }
 
 /** The exact `Collab-Reviewer` values that identify the reviewer agent. */
-const AGENT_REVIEWER_VALUES = new Set([REVIEWER_AGENT, `${REVIEWER_AGENT} (${REVIEWER_AGENT_MODEL})`]);
+const AGENT_REVIEWER_VALUES = new Set([REVIEWER_AGENT, ...REVIEWER_AGENT_MODELS.map((m) => `${REVIEWER_AGENT} (${m})`)]);
 
 /** An `accept` written for the reviewer agent (exact identity; `agent:someone-else`, `…-fake`, null never count). */
 export function isAgentReview(r: ReviewEntry): boolean {

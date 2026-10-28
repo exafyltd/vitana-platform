@@ -1,0 +1,17 @@
+base: origin/main 1d5cfda68 (scripts/collab/workflow-watchdog.mjs and .kiro/hooks/vitana-workflow-watchdog.json absent)
+command: node --test --test-reporter=tap scripts/collab/workflow-watchdog.test.mjs (test file only, on base)
+# tests 12
+# pass 3
+# fail 9
+# skipped 0
+not ok 1 - SessionStart: only this workspace's paused and stale-running runs are reported
+not ok 2 - restart pause vs user pause: user pauses are listed, never resumed
+not ok 3 - own run vs other session's run get different instructions
+not ok 4 - UserPromptSubmit reports only the session's own runs
+not ok 5 - workspace match is case-insensitive with normalised separators on win32
+not ok 6 - missing sessions dir: falls back to run ids from .agents/tasks/pipeline-*/run.json, exit 0
+not ok 8 - malformed JSON is skipped, the rest is still reported
+not ok 9 - nothing found -> empty stdout, exit 0; bad stdin -> exit 0
+not ok 11 - hook file: v1, SessionStart + UserPromptSubmit command hooks running the watchdog
+
+The 3 tests passing on base are regression guards by design: #7 (run.json fallback adds nothing: base prints nothing because the module is missing), #10 (read-only: no file written), #12 (vitana-pipeline-start.json hooks[0] unchanged).

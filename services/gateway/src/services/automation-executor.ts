@@ -383,7 +383,10 @@ export async function executeAutomation(
 // Heartbeat loop — runs all heartbeat automations on their intervals
 // =============================================================================
 
-const lastHeartbeatRun: Record<string, number> = {}; // automation_id → last run timestamp ms
+// VTID-05270: keyed `${tenantId}:${automation_id}` so each tenant keeps its own
+// heartbeat clock when one tick runs several tenants; with one tenant the
+// skip/execute sequence is unchanged.
+const lastHeartbeatRun: Record<string, number> = {}; // `${tenantId}:${automation_id}` → last run timestamp ms
 
 /**
  * Run one heartbeat cycle. Called every minute by the heartbeat loop.
@@ -402,7 +405,8 @@ export async function runHeartbeatCycle(tenantId: string): Promise<{
 
   for (const def of heartbeatAutomations) {
     const intervalMs = (def.triggerConfig?.intervalMinutes || 60) * 60 * 1000;
-    const lastRun = lastHeartbeatRun[def.id] || 0;
+    const clockKey = `${tenantId}:${def.id}`;
+    const lastRun = lastHeartbeatRun[clockKey] || 0;
 
     if (now - lastRun < intervalMs) {
       skipped.push(def.id);
@@ -415,13 +419,13 @@ export async function runHeartbeatCycle(tenantId: string): Promise<{
       const [latest] = await getRunHistory(tenantId, def.id, 1);
       const latestMs = latest?.started_at ? Date.parse(latest.started_at) : 0;
       if (latestMs && now - latestMs < intervalMs) {
-        lastHeartbeatRun[def.id] = latestMs;
+        lastHeartbeatRun[clockKey] = latestMs;
         skipped.push(def.id);
         continue;
       }
     }
 
-    lastHeartbeatRun[def.id] = now;
+    lastHeartbeatRun[clockKey] = now;
     const result = await executeAutomation(def.id, tenantId, 'heartbeat', 'heartbeat-loop');
 
     if (result.ok && !result.skipped) {

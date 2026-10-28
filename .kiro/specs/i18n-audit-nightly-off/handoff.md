@@ -3,8 +3,8 @@ slug: i18n-audit-nightly-off
 author: kiro
 executor: claude
 next_actor: kiro
-state: approved
-updated: 2026-10-21T08:48Z
+state: done
+updated: 2026-10-22T18:38Z
 sparring_record: .kiro/specs/i18n-audit-nightly-off/sparring/verdict.md
 vtids: [VTID-05284]
 ---
@@ -31,3 +31,11 @@ to the plan. The lane file is unchanged (only its claim holder edits it): the ex
 
 ### 2026-10-21T08:48Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+### 2026-10-22T17:59Z · kiro-202610181950-f0b7 · approved → executing
+The only lane `workflow-off` merged under §7b (owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")): exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`). Next: one edge per PR to done.
+### 2026-10-22T18:06Z · kiro-202610181950-f0b7 · executing → in-review
+Lane `workflow-off` in-review → verified; merges exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`) under §7b (owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")).
+### 2026-10-22T18:19Z · kiro-202610181950-f0b7 · in-review → verified
+Lane `workflow-off` done; exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`) merged under §7b (owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")).
+### 2026-10-22T18:38Z · kiro-202610181950-f0b7 · verified → done
+Plan closed: every lane done (exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`), merged under §7b, owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")). VTID-05284 ships no deploy, so no Gate 2.
