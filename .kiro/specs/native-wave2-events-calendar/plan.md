@@ -17,7 +17,15 @@ Rounds 1–2 ran blind: `spar_refs` is applied only at `client.create`, never at
 (`responses-2.md`, findings R1-F1 / R1-F4). The spec folder (including `handoff.md` with the `spar_refs` block) is on
 this PR HEAD branch, not the pinned base commit — PLAN-SPAR reads it from the plan tree. A fresh session is required
 so the partner can verify the frontend premises; this plan-text change sets up the `replan` path (a changed plan on an
-escalated, non-infra session creates a new session with `spar_refs` applied).
+escalated, non-infra session creates a new session with `spar_refs` applied). Round 2 confirmed the blocker is purely
+mechanical (the session predates `spar_refs` reaching the branch, and `client.round` never forwards `extra_refs` —
+`scripts/collab/plan-spar.mjs:291`), not a merits defect: no content finding was raised against the plan, only the
+code-access and spec-presence conditions. The branch now carries the spec folder and the merged `extra_refs`
+forwarding fix at its base, so the moment the current in-progress session reaches its round cap and escalates
+(non-infra), the next run with this changed plan text creates session #2 (`sessions.length` 1 < `MAX_SESSIONS` 2)
+with `extra_refs: { exafyltd/vitana-v1: <resolved main SHA> }` applied at `client.create`, giving the partner
+read access to verify the 22-row ledger partition, the class-A/class-B closures, `lib/vcal/time.ts`, `liveRoom.ts`,
+the ERROR-level i18n locale rule and the `src/App.tsx` routes.
 ## Goal
 Second Wave 2 screen-port batch of the native Maxina app: port the events / meetups / calendar / reminders /
 live-rooms cluster — the **22 web destinations the parity ledger assigns to `"lane": "events-calendar"`** — to the
