@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05406",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05308/staging-tests.json",
+    "docs/validation/VTID-05406/**",
+    ".kiro/specs/sv-05308-coverage/lanes/suite.md"
+  ],
+  "sparring_record": "docs/validation/VTID-05406/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
