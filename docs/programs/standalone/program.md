@@ -31,6 +31,7 @@ specs:
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
+  - vitana-platform:step-order-gate
   - vitana-platform:kiro-web-parity
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
@@ -75,6 +76,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:step-order-gate` — pipeline step order enforced in code (`scripts/collab/land-guard.mjs`)
 - `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
 - `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
 - `vitana-platform:pipeline-agent-wake-and-review` — wake an absent driver on sparring/review events, an independent reviewer tier gated by shadow qualification, CI merge of converged plan PRs
