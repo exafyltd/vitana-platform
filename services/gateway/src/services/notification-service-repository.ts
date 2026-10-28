@@ -99,3 +99,17 @@ export async function insertUserNotification(sb: SupabaseClient, row: Record<str
 export async function setNotificationPushOutcome(sb: SupabaseClient, notificationId: string, outcome: string) {
   return sb.from('user_notifications').update({ push_outcome: outcome }).eq('id', notificationId);
 }
+
+// VTID-05312: dedup of chat notification rows — every UNPUSHED row of this
+// recipient for this chat message is marked handled (push_sent_at now,
+// outcome suppressed_duplicate). Called before notifyUser writes its own row.
+export async function markUnpushedChatDuplicatesHandled(sb: SupabaseClient, userId: string, messageId: string) {
+  return sb
+    .from('user_notifications')
+    .update({ push_sent_at: new Date().toISOString(), push_outcome: 'suppressed_duplicate' })
+    .eq('user_id', userId)
+    .in('type', ['new_chat_message', 'chat_mention'])
+    .eq('data->>message_id', messageId)
+    .is('push_sent_at', null);
+}
+

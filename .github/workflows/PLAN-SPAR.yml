@@ -45,6 +45,10 @@ jobs:
       startsWith(github.event.pull_request.title, 'plan(')
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      # The `secrets` context is not allowed in a step `if:` (the file would not parse), so expose only whether the
+      # optional push token is set — 'true' or 'false', never the value. Read by the needs-rebase step below.
+      PLAN_SPAR_HAS_PUSH_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN != '' }}
     steps:
       - name: Base checkout (trusted code)
         uses: actions/checkout@v4
@@ -119,7 +123,7 @@ jobs:
       # re-run and the Checks API are not usable here (plan R2-F1). When the PAT secret is present the push
       # already starts checks and this step is skipped.
       - name: Signal needs-rebase on the bot head (GITHUB_TOKEN push)
-        if: steps.guard.outputs.skip != 'true' && secrets.PLAN_SPAR_PUSH_TOKEN == ''
+        if: steps.guard.outputs.skip != 'true' && env.PLAN_SPAR_HAS_PUSH_TOKEN != 'true'
         env:
           GH_TOKEN: ${{ github.token }}
           RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
