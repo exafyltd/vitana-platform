@@ -13,7 +13,8 @@ paths:
   - scripts/collab/workflow-metrics.mjs
   - scripts/collab/workflow-metrics.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:20Z
+updated: 2026-10-28T12:52Z
+vtid: VTID-05393
 ---
 # Lane: workflow-validation (repo vitana-platform)
 Tasks in `tasks.md` (`<!-- lane: workflow-validation -->`). Plan: `plan.md` §9. VTID: allocated by CI PLAN-SPAR on convergence.
@@ -21,3 +22,6 @@ Tasks in `tasks.md` (`<!-- lane: workflow-validation -->`). Plan: `plan.md` §9.
 ## Log
 ### 2026-10-28T12:20Z · kiro-jtadic-202610281148-d6d3 · ready
 Lane created with the plan.
+
+### 2026-10-28T12:52Z · ci-plan-spar · ready (VTID allocated)
+VTID-05393 allocated after policy approval (converged-auto-v1).
