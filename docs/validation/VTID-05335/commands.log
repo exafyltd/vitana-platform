@@ -1,0 +1,25 @@
+# VTID-05335 (reviewer-model-fallback / chain-coverage) — verification commands
+
+2026-10-23 · lane-code slot 1 · worktree .worktrees/reviewer-model-fallback-chain-coverage · base origin/main 6b4fba0fb
+
+T1 — staging-tests.json manifest validation
+  node -e "lib.validateManifest(staging-tests.json, {vtid:VTID-05335, service:gateway})"
+  => OK manifest valid  [PASS]
+
+T2 — commit-coverage.json parse keeps the 91d26a15 entry
+  node -e "lib.parseCommitCoverage(commit-coverage.json)"
+  => OK coverage entry 91d26a15...a12 -> VTID-05335, no errors  [PASS]
+  node --test scripts/ci/staging-verify/lib.test.cjs
+  => tests 62, pass 62, fail 0  [PASS]
+
+T4 — checks
+  (services/gateway) npx jest test/project-manager
+  => Test Suites: 10 passed, 10 total; Tests: 198 passed, 198 total (governance.test.ts PASS)  [PASS]
+  (services/gateway) npx tsc --noEmit
+  => exit 0, no errors  [PASS]
+  node --test scripts/ci/kiro-steering/guard.test.cjs
+  => tests 34, pass 34, fail 0  [PASS]
+
+Note: lane is docs-only (docs/validation/**). No change to governance.ts or governance.test.ts or any gateway source,
+so the governance suite / typecheck prove the chain behaviour is unchanged on base (R1, R2 acceptance). npm ci was run
+once in the worktree's services/gateway (node_modules absent in a fresh worktree) before jest/tsc.

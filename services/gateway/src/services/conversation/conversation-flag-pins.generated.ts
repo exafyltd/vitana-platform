@@ -26,6 +26,7 @@ export const GATEWAY_WORKFLOW_PINS: Record<string, { staging: string | null; pro
   CALENDAR_DEFAULT_REMINDERS_ENABLED: { staging: "true", prod: "true" },
   CALENDAR_GOOGLE_SYNC_ENABLED: { staging: "true", prod: "true" },
   CALENDAR_MAINTENANCE_ENABLED: { staging: "true", prod: "true" },
+  CLAUDE_AVAILABLE: { staging: "dynamic", prod: null },
   CODEINTEL_PLATFORM_REPO_DIR: { staging: "/repo-platform", prod: null },
   CODEINTEL_V1_REPO_DIR: { staging: "/repo-vitana-v1", prod: null },
   COMMERCE_AI_SETUP_ENABLED: { staging: "true", prod: null },

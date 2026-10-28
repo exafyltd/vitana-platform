@@ -307,7 +307,8 @@ function runExisting(repoRoot, t) {
     cwd: cwdAbs,
     encoding: 'utf8',
     timeout: 20 * 60_000,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test' },
+    // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) },
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
@@ -446,6 +447,8 @@ async function verify(args) {
     full: args.full === 'true',
     superseded_by: supersededBy || null,
     attribution_cutoff: attributionCutoff,
+    // VTID-05272: per-lane attribution for the PM / plan driver; the outcome above is unchanged.
+    per_vtid: lib.summarizeByVtid(results, [...shipping.flatMap((c) => lib.extractVtids(c.subject)), ...plan.suites.map((s) => s.vtid)]),
     chain,
     results,
     plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },

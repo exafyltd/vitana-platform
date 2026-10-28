@@ -32,6 +32,10 @@ Converged in round 3; policy-approved (converged-auto-v1). VTID-05260 `owner-gov
 `tasks.md`; the approved plan block is unchanged. Next: seat exafy builds `owner-governance` (its PR uses the one-time
 Lane-scope override, plan A.5); then this plan's author adds `governance: owner` to `retry-partner-invalid`.
 
+### 2026-10-20T11:32Z · kiro-exafyltd-202610201024-84c9 · plan merged to main (§7b)
+Owner instruction 2026-10-20 "ok, go ahead and merge" (for #4211). Squash-merged as 817dd897 with all 9 PR checks green
+(Lane scope included); plan-only PR, nothing deployed. Lane `owner-governance` (VTID-05260) is ready for seat exafy;
+`retry-partner-invalid` (VTID-05261) waits for it.
 ### 2026-10-20T13:55Z · kiro-exafyltd-202610201346-3bb3 · approved → parked (superseded)
 Owner decision 2026-10-20 in a Kiro session on account exafyltd@gmail.com: "let's go with Option A".
 - Governance lanes use `governance: true` from `retire-claude-code` (#4210, VTID-05259), not this plan's `governance: owner`.

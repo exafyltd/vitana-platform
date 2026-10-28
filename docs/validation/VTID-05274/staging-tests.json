@@ -1,0 +1,36 @@
+{
+  "vtid": "VTID-05274",
+  "service": "gateway",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "name": "project-manager /mode is public and reports live mode with the executor routing",
+      "path": "/api/v1/project-manager/mode",
+      "expect_status": 200,
+      "expect_json": { "ok": true, "mode": "live" },
+      "expect_body_contains": "executor_mode",
+      "reason": "read-only anonymous GET; proves the VTID-05274 route is on the deployed commit and staging runs the PM live"
+    },
+    {
+      "kind": "http",
+      "name": "project-manager /status stays auth-gated",
+      "path": "/api/v1/project-manager/status",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid bearer: JSON 401 proves requireServiceOrAdmin still guards the fallback detail"
+    },
+    {
+      "kind": "existing",
+      "name": "project-manager suites (fallback, governance guard, live seams, timings, Gate 2)",
+      "ref": "npx jest test/project-manager",
+      "cwd": "services/gateway",
+      "reason": "the PM's writes (lane files, merges, ledger, Gate 2) cannot run against staging (rule 48); the jest suites prove them over fakes"
+    }
+  ]
+}
