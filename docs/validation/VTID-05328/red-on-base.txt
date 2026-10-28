@@ -1,0 +1,14 @@
+VTID-05328 (ci-ecr-public-auth/platform-ecr-public-login) red on base
+Base: origin/main 9816df6d93 workflows (lane test file only), run 2026-10-28 on Windows:
+  cd services/gateway; npx jest test/ci-ecr-public-auth-workflows.test.ts --verbose
+
+  √ checks every platform job that builds a public.ecr.aws Dockerfile
+  × AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml:build-push-register: fail-soft ECR Public login after credentials, before the build
+  × AWS-PROD-DEPLOY-GATEWAY.yml:build-push-deploy: fail-soft ECR Public login after credentials, before the build
+  × AWS-STAGE-DEPLOY-GATEWAY.yml:build-push-deploy: fail-soft ECR Public login after credentials, before the build
+  × AWS-STAGE-DEPLOY-KIRO-RUNNER.yml:build: fail-soft ECR Public login after credentials, before the build
+  × AWS-STAGE-DEPLOY-KIRO-RUNNER.yml:build-push-deploy: fail-soft ECR Public login after credentials, before the build
+  each failure: expected { hasLogin: true }, received { hasLogin: false }
+Tests: 5 failed, 1 passed, 6 total
+
+Lane head: 6 passed, 0 failed (commands.log).
