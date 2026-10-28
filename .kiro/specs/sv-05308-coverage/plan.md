@@ -20,15 +20,19 @@ missing artifact so verification can pass, within the staging scope.
   `services/gateway/test/vtid-04868-plan-sparring-session-layer.test.ts` (`git show 3d3b4e6f --stat`).
 - `docs/validation/VTID-05308/` exists on `origin/main` (acceptance.md, commands.log, contract.md, outputs/) but has
   **no `staging-tests.json`** (`git ls-tree origin/main -- docs/validation/VTID-05308`).
-- `scripts/ci/staging-verify/run.mjs:203,501` loads `docs/validation/<VTID>/staging-tests.json` and fails the run when
-  a VTID in the range has none. `docs/validation/commit-coverage.json` is only for commits **without** a VTID in their
+- `scripts/ci/staging-verify/run.mjs:203` (`loadManifest`) loads `docs/validation/<VTID>/staging-tests.json`, and the
+  verify flow fails when a VTID in the range has none: `planRange` puts it in `missing`, and `lib.cjs:508`
+  (`decideOutcome`) returns `'failed'` when `plan.missing.length > 0`. (`run.mjs:501` is the separate pre-merge
+  `checkPr` path.) `docs/validation/commit-coverage.json` is only for commits **without** a VTID in their
   subject (`_doc`), so it does not apply: #4423's subject carries `VTID-05308`.
 - #4423's own changes are all CI-proven and deploy nothing of their own (a test file, a loop-catalog JSON entry, an
   edited staging-tests.json). The correct suite is read-only: a rejected-write probe plus an `existing` ref that
   re-runs the gateway jest suites #4423 fixed.
 
 ## 3. Change — one lane `suite` (vitana-platform)
-Add `docs/validation/VTID-05308/staging-tests.json` (`service: gateway`):
+Add `docs/validation/VTID-05308/staging-tests.json` with the top-level fields `"vtid": "VTID-05308"`,
+`"service": "gateway"` and `"tests": [...]` (the shape `validateManifest` requires, `lib.cjs:211-214`; it rejects a
+manifest whose `vtid` differs or is absent):
 - one `http` rejected-probe check against an existing authenticated gateway route (GET/HEAD or a rejected POST,
   `expect_status: 401`, nothing written) — the mandatory read-only staging probe;
 - one `existing` ref: `cwd: services/gateway`, `npx jest test/loop-catalog.test.ts
