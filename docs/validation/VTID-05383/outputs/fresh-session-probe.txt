@@ -1,0 +1,28 @@
+# VTID-05383 fresh-session probe (2026-10-28, Kiro Web workspace /projects/sandbox)
+Method: the driver steering file generated from this lane's head (4 links, quality-checks.md last) was copied into
+the workspace's .kiro/steering/; a new agent session (sub-agent, no tool calls allowed) answered from its start-up
+context only. Then the pre-change file (3 links) was restored and the same probe run again as a negative control.
+Probe questions: Q1 control = driver.md loop step 10; Q2 = is "Quality checks, proportional to the change type" in
+context; Q3 = Acceptance template field names; Q4 = Database CREATE OR REPLACE rule; Q5 = truncation note.
+
+## With the change (4 links)
+Q1: Step 10 is "Wait": heartbeat, poll every 2–3 min, loop.
+Q2: Yes.
+Q3: Change types, Outcome, States, Surfaces, Locales, Accessibility, Contract, Staging proof.
+Q4: every kept default and grant.
+Q5: Yes, vitana-platform/.claude/CLAUDE.md was truncated.
+
+## Negative control (pre-change file, 3 links)
+(see below)
+Q1: Step 10 is "Wait": heartbeat, poll every 2–3 min, loop.
+Q2: No. planning.md mentions "the Acceptance template of quality-checks.md", but the document itself is not in context.
+Q3: NOT IN CONTEXT
+Q4: NOT IN CONTEXT
+Q5: Yes, vitana-platform/.claude/CLAUDE.md was truncated.
+
+## Result
+Received: with the change a fresh session has the full quality-checks.md text (Q2-Q4); without it, only the name.
+The truncation Kiro reports (Q5) is the RepoWise index vitana-platform/.claude/CLAUDE.md, the same before and after;
+quality-checks.md itself arrived whole. Always-included total with links inlined: 142420 B (was 131711 B).
+After this lane merges, every session's `kiro-web-steering.mjs` run (setup) writes the 4-link file; the session
+workspace keeps the 4-link file generated from this head until then.
