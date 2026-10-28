@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -13,7 +13,7 @@ paths:
   - scripts/collab/change-class.mjs
   - scripts/collab/change-class.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:52Z
+updated: 2026-10-28T14:54Z
 vtid: VTID-05384
 ---
 # Lane: change-class (repo vitana-platform)
@@ -25,3 +25,5 @@ Lane created with the plan.
 
 ### 2026-10-28T12:52Z · ci-plan-spar · ready (VTID allocated)
 VTID-05384 allocated after policy approval (converged-auto-v1).
+### 2026-10-28T14:54Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
