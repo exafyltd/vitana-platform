@@ -1,6 +1,6 @@
 ---
 lane: driver-wake
-state: in-review
+state: verified
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pipeline-agent-wake-and-review/driver-wake
@@ -19,7 +19,7 @@ paths:
   - .kiro/automations/wake.md
   - docs/kiro/driver-wake.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:26Z
+updated: 2026-10-28T12:40Z
 vtid: VTID-05354
 ---
 # Lane: driver-wake (repo vitana-platform)
@@ -84,3 +84,12 @@ Next: the land step merges under §7b
 
 ### 2026-10-28T12:26Z · kiro-exafyltd-202610271503-9458 · executing → in-review
 PR https://github.com/exafyltd/vitana-platform/pull/4448 opened and reviewed (accepts above, last on the merged head `18bcf93d`).
+
+### 2026-10-28T12:40Z · kiro-exafyltd-202610271503-9458 · in-review → verified
+merge: 746912a7ea823ea96be8de658f1eb4820206fe70 (#4448) · authority: §7b PM rule, via `land-guard.mjs merge`. Accept from
+agent:vitana-lane-reviewer (claude-opus-5.5) on the current head `18bcf93d`; 11/11 checks green on that head; up to date with
+`main`; no protected gate file; squash. Deploys nothing (no AWS-STAGE deploy path), so no STAGING-VERIFY and no Gate 2.
+W4 dispatch dry run after merge: run https://github.com/exafyltd/vitana-platform/actions/runs/40687604810 (main
+746912a7, slug pipeline-agent-wake-and-review, dry_run=true) → success; `driver-wake: pipeline-agent-wake-and-review: skip
+(wake unavailable: KIRO_API_KEY not configured)`; the session step was skipped. Inert until the owner adds the repository
+secret `KIRO_API_KEY`.
