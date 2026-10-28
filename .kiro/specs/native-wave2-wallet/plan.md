@@ -119,3 +119,5 @@ a single core-extraction owner) and run in parallel.
   stay `next_actor: owner` until it exists.
 - macOS minutes / G3 for iOS-on-device screenshots (program STATUS row 8b) — not needed for the JS build.
 <!-- plan:end -->
+
+<!-- re-trigger after PLAN-SPAR repair; 2026-10-28T09:53:01.1255134+01:00 -->
