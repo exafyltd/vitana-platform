@@ -52,3 +52,10 @@ describe('VTID-05282 staging task definition carries CLAUDE_AVAILABLE', () => {
     expect(prod).not.toContain('CLAUDE_AVAILABLE');
   });
 });
+
+describe('VTID-05387 (operating-workflow/pm-noop): a staging deploy never turns the PM on', () => {
+  test('the staging task definition pins PM_AGENT_ENABLED to "false"', () => {
+    expect(stage).toContain('{name:"PM_AGENT_ENABLED", value:"false"}');
+    expect(stage).not.toContain('{name:"PM_AGENT_ENABLED", value:"true"}');
+  });
+});

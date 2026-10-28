@@ -397,14 +397,16 @@ describe('act layer — Gate-2 batch', () => {
 // --------------------------------------------------------------------------
 
 describe('act layer — reassign and park write lane-file state', () => {
-  it('reassign to a seat moves seat + next_actor', async () => {
+  // VTID-05387 (R1-F3): contract change on purpose — the PM never writes `seat` (Lane scope PERM rule).
+  it('reassign to a seat writes next_actor only, never seat', async () => {
     process.env.PM_MODE = 'live';
     const l = lane({ state: 'ready' });
     const fake = new FakeSafeMerge(new Map());
     const writer = new FakeLaneWriter();
     const d: ReassignDecision = { kind: 'reassign', slug: 'pm-agent', lane: 'p4-act', target: 'lane', from_seat: 'jtadic', to_actor: 'exafyltd', reason: 'stale_ready', window_ms: 86400000, fallback: false };
     await actOnDecisions([d], stateWith([l]), baseDeps(fake, { laneWriter: writer }));
-    expect(writer.changes[0]).toMatchObject({ seat: 'exafyltd', next_actor: 'exafyltd' });
+    expect(writer.changes[0]).toMatchObject({ next_actor: 'exafyltd' });
+    expect(writer.changes[0].seat).toBeUndefined();
   });
 
   it('reassign to claude sets next_actor claude, no seat change', async () => {

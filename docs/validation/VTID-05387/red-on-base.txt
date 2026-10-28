@@ -1,0 +1,26 @@
+# red on base: origin/main ad6b081d96372c304468a232c227a1058415b833 sources and workflow, with this lane's new tests
+    ✓ the step env reads the repo variable with a true default, outside run: (34 ms)
+    ✓ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (1 ms)
+    ✓ the strip list removes the old entry next to PM_MODE
+    ✓ the upsert appears exactly once, right after PM_MODE (1 ms)
+    ✓ production never gets CLAUDE_AVAILABLE (1 ms)
+    ✕ the staging task definition pins PM_AGENT_ENABLED to "false" (7 ms)
+                  echo \"✓ env=staging, git_commit=$COMMIT\"
+              echo \"✓ Nova Sonic health: enabled=$(echo \"$NOVA\" | jq -r '.enabled') ready=$(echo \"$NOVA\" | jq -r '.ready') canary_users=$(echo \"$NOVA\" | jq -r '.canary_user_count')\"·
+    ✕ is false for a change the file does not have yet, true once it is applied (6 ms)
+    ✕ ignores updated: and the heading time, never the log body (1 ms)
+    ✕ W2 (bookkeeping): the same change twice → one put, second call reports noop (8 ms)
+    ✕ W1 (lane PR branch): the same change twice → one put (1 ms)
+    ✕ a noop creates no bookkeeping branch and no PR (1 ms)
+    ✕ writeFile skips an unchanged text (1 ms)
+    ✕ write once, then zero; the second act reports unchanged (11 ms)
+    ✕ only the exceptions seat is left (Claude unavailable) → next_actor only, no seat (19 ms)
+    ✕ a next seat in the rotation → next_actor only, no seat (1 ms)
+    ✓ end of rotation with Claude available → claude, seat unchanged (2 ms)
+    ✕ seat changed → throws (2 ms)
+    ✓ seat equal to the current seat → allowed (no change) (1 ms)
+    ✓ state / next_actor / claim changes are still allowed (1 ms)
+    ✕ reassign (lane target to a seat, e.g. from an older decider) writes next_actor only (1 ms)
+    ✕ park to the exceptions seat writes next_actor only (1 ms)
+Test Suites: 3 failed, 3 total
+Tests:       13 failed, 8 passed, 21 total
