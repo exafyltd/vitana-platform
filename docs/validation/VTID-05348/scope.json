@@ -5,7 +5,7 @@
     ".kiro/specs/quality-checks/**",
     "docs/validation/VTID-05348/**"
   ],
-  "sparring_record": ".kiro/specs/quality-checks/sparring/verdict.md",
+  "sparring_record": "docs/validation/VTID-05346/plan-sparring.md",
   "weakens_tests": [],
   "red_green_exempt": [
     {
