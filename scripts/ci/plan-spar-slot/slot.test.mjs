@@ -64,8 +64,12 @@ test('PLAN-SPAR.yml: producer needs-rebase status on the GITHUB_TOKEN bot-head p
   assert.ok(commitAt > 0 && stepAt > commitAt, 'the status step comes after the round-commit push');
   const commentAt = y.indexOf('- name: Comment', stepAt);
   const step = y.slice(stepAt, commentAt > stepAt ? commentAt : undefined);
-  assert.match(step, /if: steps\.guard\.outputs\.skip != 'true' && secrets\.PLAN_SPAR_PUSH_TOKEN == ''/,
+  // `secrets` is not allowed in a step `if:` (the file would not parse), so the job env carries a presence flag.
+  assert.match(y, /^\s+PLAN_SPAR_HAS_PUSH_TOKEN: \$\{\{ secrets\.PLAN_SPAR_PUSH_TOKEN != '' \}\}$/m,
+    'job env exposes only whether the PAT secret is set');
+  assert.match(step, /if: steps\.guard\.outputs\.skip != 'true' && env\.PLAN_SPAR_HAS_PUSH_TOKEN != 'true'/,
     'skipped on our own commit and when the PAT secret is present');
+  assert.doesNotMatch(y, /^\s+if:.*secrets\./m, 'no step or job if: reads the secrets context');
   assert.match(step, /git -C head rev-parse HEAD/, 'reads the pushed bot head SHA');
   assert.match(step, /gh api -X POST "repos\/\$\{\{ github\.repository \}\}\/statuses\/\$\{sha\}"/,
     'posts via the statuses API on the bot head');
