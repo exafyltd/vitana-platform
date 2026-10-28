@@ -60,7 +60,8 @@ surfaces.
    in `packages/core/src/**` + `node scripts/native/core-closure.mjs --write` with the regenerated
    `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json` committed in the **same
    lane PR**, so `--check` passes. The gateway/Supabase-coupled channel connectors, campaign hooks and business data
-   hooks are class B (measured above) and would fail `core-closure.mjs --check` (`m.own !== 'A'`, `:150`); each lane
+   hooks are class B (measured above) and would fail `core-closure.mjs --check` (`m.own !== 'A'`, `:153` — the ownership
+   guard; the `for` loop over the sorted closure starts at `:150`, corrected per sparring R1-F1); each lane
    **re-implements their data access natively** (native Supabase client + native auth context — the home-feed plan's
    pattern for `useNewsFeed`/`useAllNewsFeed`) and consumes only the pure helpers from core. Type-only edges are
    excluded from the closure (`extraction-deps.mjs:183`) and resolved by the native `@/*` alias.
