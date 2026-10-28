@@ -10,9 +10,9 @@ paths:
   - services/gateway/src/services/community-autopilot/scan-runner.ts
   - services/gateway/src/routes/autopilot-recommendations.ts
   - services/gateway/src/services/memory-embedding-backfill-loop.ts
-  - services/gateway/test/
-  - docs/validation/
-updated: 2026-10-20T17:43Z
+  - services/gateway/test/vtid-05268-community-scan-tenant.test.ts
+  - docs/validation/VTID-05268/**
+updated: 2026-10-22T19:50Z
 vtid: VTID-05268
 ---
 # jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
@@ -50,3 +50,16 @@ keeps today's six top-level payload fields (backward-compatible) and adds `per_t
 
 ### 2026-10-20T17:43Z · ci-plan-spar · ready (VTID allocated)
 VTID-05268 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-22T19:50Z · kiro-hotmail-202610221946-2ad6 · paths glob fix (plan author)
+`paths` listed the directories `services/gateway/test/` and `docs/validation/` without a glob, so Lane scope
+(`globToRegex`) matched no file under them and refused PR #4319. Narrowed to what `tasks.md` C3/C4 allow:
+`services/gateway/test/vtid-05268-community-scan-tenant.test.ts` and `docs/validation/VTID-05268/**`. No other key,
+no state change. The other mt-jobs lanes keep their directory entries for now (one PR per lane).
+### 2026-10-28T11:01Z · agent-vitana-lane-reviewer-202610281100-3c65 · review
+review: accept
+head: c29171fdac06f7697869521f0c1d2ea949f4a394
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4319
+Findings: no blocking findings. Entry committed by the land step (parent session kiro-ide-202610272306-27b0) on the reviewer agent's behalf. The two commits after the reviewed head (d7e28d137a, 1f2d360aa8) only merge origin/main.
+Next: kiro — land under collaboration.md §7b (PM rule applied by the plan driver).
