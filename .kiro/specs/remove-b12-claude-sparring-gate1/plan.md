@@ -101,6 +101,18 @@ Change `**The owner is asked only:** Gate 2 (and Gate 1 for a plan Claude Code s
 sparring verdict, and the stop cases …` to `**The owner is asked only:** Gate 2, an escalated sparring verdict, and
 the stop cases …` (drop the parenthetical; the rest of the sentence unchanged).
 
+### I7 — the Kiro steering guard (`scripts/ci/kiro-steering/guard.cjs` + `guard.test.cjs`, vitana-platform only)
+The guard that gates the Stops table encodes the carve-out being removed and MUST be updated in lockstep, or CI
+(PR-GATE "Kiro steering") and the Kiro Web push guard fail on the correct change. In `guard.cjs`, the
+`OWNER_AUTONOMY_ROW_ANCHORS` list contains `['Gate 1', 'stop: Gate 1 for Claude-local sparring']` and
+`checkOwnerAutonomy` asserts every anchor appears in a `| <n> |` stop-table row; remove that one anchor (→ 12 row
+anchors). In `guard.test.cjs`, the self-test asserts `OWNER_AUTONOMY_ANCHORS.length === 16` and stop-table
+`rows.length === 13`; change them to `15` and `12`. No other guard behaviour changes. `scripts/ci/kiro-steering/**`
+is ordinary code (NOT a `queue.mjs` GOVERNANCE_PATH and NOT a protected gate file), so it builds inside the
+`executor: kiro` + reviewer-agent `platform-governance` lane once that lane's `paths` include the two files (added to
+the lane here, in a plan PR, because the Lane scope PERM rule forbids a Kiro session widening a merged lane's `paths`
+in the lane PR itself).
+
 ## 4. Lanes
 Three lanes. `CLAUDE.md` must be its **own** lane because it is a **protected gate file**: Lane scope / scope-check
 (`scripts/collab/queue.mjs`) refuses a `CLAUDE.md` change from any lane that is not `executor: claude` ("a protected
@@ -114,6 +126,14 @@ same file.
   `reviewer_seat: agent:vitana-lane-reviewer`): applies I5, I6 to `.claude/rules/collaboration.md`; I1 to
   `.kiro/steering/vitana-owner-autonomy.md`. Paths: `.claude/rules/collaboration.md`,
   `.kiro/steering/vitana-owner-autonomy.md`, `docs/validation/VTID-*/**`.
+- **`platform-guard`** (repo `exafyltd/vitana-platform`, `executor: kiro`, seat `jtadic`,
+  `reviewer_seat: agent:vitana-lane-reviewer`, `depends_on: [platform-governance]`): applies I7 to
+  `scripts/ci/kiro-steering/guard.cjs` + `guard.test.cjs`. Paths: `scripts/ci/kiro-steering/guard.cjs`,
+  `scripts/ci/kiro-steering/guard.test.cjs`, `docs/validation/VTID-*/**`. A **separate** lane (not folded into
+  `platform-governance`) because that lane's `paths` are already on `main` and the Lane scope PERM rule / the
+  `_plan`-cannot-edit-a-lane rule forbid a Kiro session widening them. `depends_on` platform-governance so the Stops
+  row is gone before the guard update lands (minimizes the transient red between the two merges; the guard step is
+  `continue-on-error`/report-only, so neither merge is blocked by the other's absence).
 - **`platform-claude-md`** (repo `exafyltd/vitana-platform`, **`executor: claude`**, seat `exafyltd` = the exceptions
   seat, `depends_on: [platform-governance]`): applies I2, I3, I4 to `CLAUDE.md` only. Paths: `CLAUDE.md`,
   `docs/validation/VTID-*/**`. **Merge authority (§6 R3): the owner's named-plan instruction this session** (recorded
@@ -176,11 +196,16 @@ Per lane, before every push and after the merges:
   change. This is NOT an owner stop; it is authorized. Because `CLAUDE.md` is a protected gate file, its lane is
   `executor: claude` (Lane scope refuses a `CLAUDE.md` change from a non-claude lane, `queue.mjs` ~:699/:233); with
   Claude Code unavailable the exceptions seat `exafyltd` builds it (§7 Claude-unavailable mode).
-- **R4 — adjacency (surfaced, not auto-fixed).** `vitana-platform/.kiro/hooks/vitana-pipeline-start.json` already says
-  *"the only owner stop is Gate 2 (plus an escalated sparring verdict)"*, omitting Gate 1 entirely — i.e. it is
-  already consistent with this change's direction. It is a hook prompt, not a Stops-table/rule-text site in scope. Not
-  edited here; surfaced for sparring/owner to decide whether it wants any wording touch. (If sparring directs it in
-  scope, it is a governance path, not a protected gate file.)
+- **R4 — the Kiro steering guard (now IN scope as I7) + the hook adjacency (surfaced).** `scripts/ci/kiro-steering/
+  guard.cjs` and its self-test `guard.test.cjs` hard-code the 13-row stop table and a `['Gate 1', 'stop: Gate 1 for
+  Claude-local sparring']` row anchor; removing the Stops row turns the guard red (PR-GATE "Kiro steering", and the
+  Kiro Web push guard blocks a push while it is red). The guard therefore MUST be updated in lockstep — handled by I7
+  in the `platform-governance` lane (12 row anchors / 15 total / 12 rows). `scripts/ci/kiro-steering/**` is ordinary
+  code, not a governance path, so the `executor: kiro` + reviewer-agent lane may own it. Separately,
+  `vitana-platform/.kiro/hooks/vitana-pipeline-start.json` already says *"the only owner stop is Gate 2 (plus an
+  escalated sparring verdict)"*, omitting Gate 1 — already consistent with this change's direction. It is a hook
+  prompt, not a Stops-table/rule-text site, and the guard does not check it; left unchanged and surfaced for
+  sparring/owner.
 - **R5 — `retire-claude-code` (approved, lanes `ready`, not merged).** Its `rules-platform`/`rules-v1` lanes touch
   `CLAUDE.md` + `collaboration.md` to remove Claude Code broadly, but do NOT list `vitana-owner-autonomy.md` and do
   not target the B12 row specifically. Overlap is on `CLAUDE.md` + `collaboration.md` only; resolved by serialized

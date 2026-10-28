@@ -24,9 +24,28 @@ byte-identical.
 - The two "How to read" references read `stop 12`; no dangling `row 12` / `B12` / `stop 13`.
 - grep (collaboration.md, vitana-owner-autonomy.md) for `local partner`, `locally sparred`, `sparred with its own`,
   `Gate 1 for a plan Claude Code`, `spar its own`, `sparred locally` → zero matches.
-- `node scripts/collab/preflight.mjs …` passes on the lane branch; `kiro-web-steering --check` ok after merge.
+- `node scripts/collab/preflight.mjs …` passes on the lane branch (required checks); `kiro-web-steering --check` ok
+  after merge.
 - Only the lane paths change; no stop other than the B12 carve-out is touched; no other policy claim is contradicted.
 <!-- lane: platform-governance -->
+
+<!-- lane: platform-guard -->
+## Lane `platform-guard` — vitana-platform (executor: kiro, reviewer agent; depends_on: platform-governance)
+- [ ] G1 `scripts/ci/kiro-steering/guard.cjs`: apply I7 — remove the `['Gate 1', 'stop: Gate 1 for Claude-local
+      sparring']` anchor from `OWNER_AUTONOMY_ROW_ANCHORS` (→ 12 row anchors). No other guard behaviour changes.
+- [ ] G2 `scripts/ci/kiro-steering/guard.test.cjs`: update the self-test `OWNER_AUTONOMY_ANCHORS.length` 16 → 15 and
+      the stop-table `rows.length` 13 → 12. `node --test scripts/ci/kiro-steering/guard.test.cjs` green;
+      `node scripts/ci/kiro-steering/guard.cjs .` clean against the merged 12-row table.
+- [ ] G3 Evidence in `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`.
+
+**Acceptance**
+- Change types: Tooling/docs
+- Outcome: the Kiro steering guard no longer requires a Gate-1/Claude-local Stops row; the guard self-test passes with
+  12 row anchors / 15 total / 12 rows, so PR-GATE "Kiro steering" is green on the merged 12-row table.
+- `node --test scripts/ci/kiro-steering/guard.test.cjs` green; `node scripts/ci/kiro-steering/guard.cjs .` clean.
+- Only the two guard files (+ this VTID's evidence) change; the guard's other anchors and all other behaviour are
+  untouched (it is not a test weakening — the removed expectation matched the removed policy).
+<!-- lane: platform-guard -->
 
 <!-- lane: platform-claude-md -->
 ## Lane `platform-claude-md` — vitana-platform (executor: claude; protected gate file CLAUDE.md; depends_on: platform-governance)
