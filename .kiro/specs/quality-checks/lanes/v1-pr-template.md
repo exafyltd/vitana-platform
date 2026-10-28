@@ -1,6 +1,6 @@
 ---
 lane: v1-pr-template
-state: in-review
+state: verified
 next_actor: kiro
 branch: kiro/quality-checks/v1-pr-template
 depends_on: []
@@ -15,7 +15,7 @@ paths:
   - docs/validation/VTID-*/**
 claimed_by: kiro-jtadic-202610271220-68a5
 pr: https://github.com/exafyltd/vitana-v1/pull/1503
-updated: 2026-10-28T11:51Z
+updated: 2026-10-28T12:02Z
 vtid: VTID-05348
 ---
 # Lane: v1-pr-template (repo vitana-v1)
@@ -42,3 +42,6 @@ Claimed by this session. Built in exafyltd/vitana-v1#1503 (template text only; r
 
 ### 2026-10-28T11:51Z · kiro-jtadic-202610271220-68a5 · executing → in-review
 exafyltd/vitana-v1#1503 in review; accepted by `agent-vitana-lane-reviewer-202610280846-be97` on `01538df4`, requested by `kiro-ide-202610272306-27b0`.
+
+### 2026-10-28T12:02Z · kiro-jtadic-202610271220-68a5 · in-review → verified
+Accepted on `01538df4`; every required check green on that head (pr-gate passed once the public.ecr.aws data limit cleared; no bypass); squash-merged `5bc8d10c`.
