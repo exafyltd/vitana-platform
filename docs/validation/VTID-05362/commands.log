@@ -1,0 +1,27 @@
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 7
+# pass 7
+# fail 0
+# skipped 0
+exit=0
+
+$ node --test scripts/collab/*.test.mjs
+# tests 191
+# pass 190
+# fail 0
+# skipped 1
+exit=0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# tests 66
+# pass 66
+# fail 0
+# skipped 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+$ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362   (gate before the commit)
+land-guard evidence: refused — spawnSync git ENOBUFS
