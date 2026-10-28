@@ -15,7 +15,8 @@ TEST: node --test scripts/collab/driver-wake.test.mjs ("decide: every branch", "
 
 AC-3 Markers: tree = main's, fast-forward (no force), markers older than 2 h deleted; the prompt is a fixed sentence
 plus the validated slug; the workflow checks out `main`, never the pushed branch, and reads no event text into the
-prompt; the push trigger is limited to lane files.
+prompt; the push trigger is limited to lane files; the advisory job never fails a lane head (continue-on-error) and skips
+while the script is not on main.
 TEST: node --test scripts/collab/driver-wake.test.mjs ("markers …", "wakePrompt …"); .github/workflows/DRIVER-WAKE.yml (ruby YAML parse, commands.log)
 
 AC-4 The woken session never merges, publishes or writes a live system, and reuses driver.md; turn-on/turn-off steps

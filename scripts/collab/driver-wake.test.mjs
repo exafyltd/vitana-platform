@@ -109,3 +109,14 @@ test('CLI run: missing key → green no-op with a summary line, no marker writte
     assert.deepEqual(W.listMarkers(f.work), []);
   } finally { f.done(); }
 });
+
+test('DRIVER-WAKE.yml: checks out main, never reds a lane head, skips until the script is on main', () => {
+  const y = readFileSync(path.join(HERE, '../../.github/workflows/DRIVER-WAKE.yml'), 'utf8');
+  assert.match(y, /uses: actions\/checkout@v4\n\s+with:\n\s+ref: main\n/);
+  const steps = y.split(/\n      - /).slice(1).filter((st) => /^name: /.test(st));
+  assert.deepEqual(steps.map((st) => /^name: (.+)/.exec(st)[1]), ['Decide', 'Start one Kiro cloud session (fixed prompt)']);
+  for (const st of steps) assert.match(st, /\n\s+continue-on-error: true\n/, `step ${st.split('\n')[0]} must not fail the check`);
+  assert.match(y, /if \[ ! -f scripts\/collab\/driver-wake\.mjs \]; then .*exit 0; fi/);
+  assert.match(y, /paths: \['\.kiro\/specs\/\*\/lanes\/\*\.md'\]/);
+  assert.doesNotMatch(y, /pull_request/);
+});

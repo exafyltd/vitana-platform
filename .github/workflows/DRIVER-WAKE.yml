@@ -48,15 +48,22 @@ jobs:
         with:
           node-version: 20
 
+      # A push run attaches a `wake` check to the pushed commit, and land-guard refuses a merge while any check is
+      # red, so this advisory job must never fail a lane's head: every step is continue-on-error and reports in the
+      # job summary instead. Until this lane is on main the script is absent there: skip.
       - name: Decide
         id: decide
+        continue-on-error: true
         env:
           KIRO_API_KEY_SET: ${{ secrets.KIRO_API_KEY != '' }}
           DRY_RUN: ${{ github.event_name == 'workflow_dispatch' && inputs.dry_run && 'true' || 'false' }}
-        run: node scripts/collab/driver-wake.mjs run --repo . --event "$GITHUB_EVENT_PATH" --event-name "$GITHUB_EVENT_NAME"
+        run: |
+          if [ ! -f scripts/collab/driver-wake.mjs ]; then echo "driver-wake: not on main yet — skip" >> "$GITHUB_STEP_SUMMARY"; exit 0; fi
+          node scripts/collab/driver-wake.mjs run --repo . --event "$GITHUB_EVENT_PATH" --event-name "$GITHUB_EVENT_NAME"
 
       - name: Start one Kiro cloud session (fixed prompt)
         if: steps.decide.outputs.decision == 'wake'
+        continue-on-error: true
         env:
           KIRO_API_KEY: ${{ secrets.KIRO_API_KEY }}
           SLUG: ${{ steps.decide.outputs.slug }}

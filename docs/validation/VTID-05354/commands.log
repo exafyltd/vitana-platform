@@ -4,8 +4,8 @@ $ node --test scripts/collab/driver-wake.test.mjs   (base: module missing)
 # pass 0
 # fail 1
 $ node --test scripts/collab/driver-wake.test.mjs   (head)
-# tests 8
-# pass 8
+# tests 9
+# pass 9
 # fail 0
 $ node --test scripts/collab/*.test.mjs   (head)
 # tests 203
@@ -20,3 +20,4 @@ $ node --test scripts/ci/kiro-steering/guard.test.cjs; node scripts/ci/kiro-stee
 # pass 66
 # fail 0
 kiro-steering: OK
+$ fix-forward 1 (wake=failure on 3add720f: the push run checked out main, where the script did not exist yet): bootstrap skip + continue-on-error on both steps; new test 9 red against the previous workflow file, green now

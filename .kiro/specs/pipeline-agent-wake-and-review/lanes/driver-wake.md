@@ -18,7 +18,7 @@ paths:
   - .kiro/automations/wake.md
   - docs/kiro/driver-wake.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:14Z
+updated: 2026-10-28T11:21Z
 vtid: VTID-05354
 ---
 # Lane: driver-wake (repo vitana-platform)
@@ -39,3 +39,9 @@ instead of `.kiro/automations/wake.md`, because `automations.test.mjs` requires 
 automation (it failed 4 tests with a fifth file); a subset of the lane's `paths`, nothing outside them. Also resolved
 `kiro/close/<slug>/…` closing-record pushes to their plan. Deploys nothing; turning it on needs the owner's
 `KIRO_API_KEY` secret.
+
+### 2026-10-28T11:21Z · kiro-exafyltd-202610271503-9458 · note
+Fix-forward 1/3: on `3add720f` the new workflow's own push run failed (`wake=failure`: it checks out `main`, where
+`driver-wake.mjs` does not exist yet), and a push run attaches a check to the lane head, which land-guard counts.
+Both steps are now `continue-on-error` and the decide step skips while the script is absent on `main`; test 9 pins
+this (red against the previous workflow file).
