@@ -1,0 +1,20 @@
+✔ SessionStart: only this workspace's paused and stale-running runs are reported (244.6154ms)
+✔ restart pause vs user pause: user pauses are listed, never resumed (223.1767ms)
+✔ own run vs other session's run get different instructions (382.0696ms)
+✔ UserPromptSubmit reports only the session's own runs (511.4492ms)
+✔ workspace match is case-insensitive with normalised separators on win32 (140.2113ms)
+✔ missing sessions dir: falls back to run ids from .agents/tasks/pipeline-*/run.json, exit 0 (579.1692ms)
+✔ run.json is only a fallback: with engine state present it adds nothing (189.8433ms)
+✔ malformed JSON is skipped, the rest is still reported (169.462ms)
+✔ nothing found → empty stdout, exit 0; bad stdin → exit 0 (571.3867ms)
+✔ read-only: no file is written in home or workspace (621.1435ms)
+✔ hook file: v1, SessionStart + UserPromptSubmit command hooks running the watchdog (0.9848ms)
+✔ vitana-pipeline-start.json hooks[0] is unchanged (2.0566ms)
+ℹ tests 12
+ℹ suites 0
+ℹ pass 12
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 4077.907

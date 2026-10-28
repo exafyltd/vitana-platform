@@ -1,0 +1,12 @@
+# VTID-05311 (messenger-ux-v2/api-shared-content) — session kiro-exafyltd-202610211130-c65e
+$ npx jest test/vtid-05311-chat-shared-content.test.ts   # base: cannot load (outputs/red-on-base.txt); head: 13 passed
+$ npx jest test/vtid-05311 05310 05137 04926 04917 05104 test/chat test/i18n   # 230 passed
+$ npx tsc --noEmit -p .   # clean (TS2742 from symlinked node_modules ignored)
+$ (read-only SQL) chat_messages CHECK constraints   # only chat_messages_target_xor — no message_type list to extend, no migration needed
+Decisions: the service-role client answers only "exists?" (key column) and "test/service account?"; every card field comes from the viewer's user-scoped client (RLS). Products use the `products` table (is_active) as GET /discover/product/:id does. A post's title is its author's display name (as the viewer may see it). Shared items push like calendar invites: a catalog line, never coalesced. `ar` is a sparse locale by design (catalog.ts) and falls back to English.
+
+## Review fixes (/projects/sandbox/reviews/pr4371.md)
+$ npx jest test/vtid-05311-chat-shared-content.test.ts   # 20 passed (the moderation test fails without the moderation_status filter)
+Fixed: posts only while moderation_status = 'active' (blocking); test/service accounts' posts and events restricted too; group share check after membership + retry lookup (a retried share gets its stored row; non-members get not_a_member); group shared items keep the sanitized mentions; unreadable profiles are always "restricted"; a delisted product is "deleted"; the author lookup's error → 503 (no half card); caption ≤ 1000 chars (else 400 caption_too_long); docs say {kind, id} + server reply_to.
+Accepted: blocked/muted authors are filtered only in the feed (the sender's choice to share wins); the exclusion lookup is the fail-open variant (display path, as the feed); `requireAuth` makes the 401 branch defensive only.
+Follow-up (r2 approve): group shared-item mentions and group caption limit tested; module header wording aligned (22 passed).
