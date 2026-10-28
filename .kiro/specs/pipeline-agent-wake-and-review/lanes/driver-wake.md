@@ -1,8 +1,7 @@
 ---
 lane: driver-wake
-state: verified
+state: done
 next_actor: kiro
-claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pipeline-agent-wake-and-review/driver-wake
 pr: https://github.com/exafyltd/vitana-platform/pull/4448
 depends_on: []
@@ -19,7 +18,7 @@ paths:
   - .kiro/automations/wake.md
   - docs/kiro/driver-wake.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:40Z
+updated: 2026-10-28T12:50Z
 vtid: VTID-05354
 ---
 # Lane: driver-wake (repo vitana-platform)
@@ -93,3 +92,7 @@ W4 dispatch dry run after merge: run https://github.com/exafyltd/vitana-platform
 746912a7, slug pipeline-agent-wake-and-review, dry_run=true) → success; `driver-wake: pipeline-agent-wake-and-review: skip
 (wake unavailable: KIRO_API_KEY not configured)`; the session step was skipped. Inert until the owner adds the repository
 secret `KIRO_API_KEY`.
+
+### 2026-10-28T12:50Z · kiro-exafyltd-202610271503-9458 · verified → done
+Lane closed under §7b. Merge `746912a7ea823ea96be8de658f1eb4820206fe70` (#4448). Deploys nothing. Claim released after this
+record.
