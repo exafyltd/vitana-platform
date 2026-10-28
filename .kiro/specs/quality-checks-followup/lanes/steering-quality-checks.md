@@ -15,7 +15,8 @@ paths:
   - scripts/collab/kiro-web-steering.test.mjs
   - docs/kiro/kiro-web-bootstrap.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:25Z
+updated: 2026-10-28T11:56Z
+vtid: VTID-05383
 ---
 # Lane: steering-quality-checks (repo vitana-platform)
 Tasks in `tasks.md` (lane `steering-quality-checks`). The VTID is allocated by PLAN-SPAR on convergence.
@@ -23,3 +24,6 @@ Tasks in `tasks.md` (lane `steering-quality-checks`). The VTID is allocated by P
 ## Log
 ### 2026-10-28T11:25Z · kiro-jtadic-202610271220-68a5 · ready
 Lane created with the plan.
+
+### 2026-10-28T11:56Z · ci-plan-spar · ready (VTID allocated)
+VTID-05383 allocated after policy approval (converged-auto-v1).

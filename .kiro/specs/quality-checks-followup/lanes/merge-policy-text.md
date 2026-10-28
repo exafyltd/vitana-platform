@@ -16,7 +16,8 @@ paths:
   - scripts/ci/staging-verify/lib.cjs
   - scripts/collab/quality-checks.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:25Z
+updated: 2026-10-28T11:56Z
+vtid: VTID-05381
 ---
 # Lane: merge-policy-text (repo vitana-platform)
 Tasks in `tasks.md` (lane `merge-policy-text`). The VTID is allocated by PLAN-SPAR on convergence.
@@ -24,3 +25,6 @@ Tasks in `tasks.md` (lane `merge-policy-text`). The VTID is allocated by PLAN-SP
 ## Log
 ### 2026-10-28T11:25Z · kiro-jtadic-202610271220-68a5 · ready
 Lane created with the plan.
+
+### 2026-10-28T11:56Z · ci-plan-spar · ready (VTID allocated)
+VTID-05381 allocated after policy approval (converged-auto-v1).
