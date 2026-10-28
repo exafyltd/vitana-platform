@@ -1,0 +1,44 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "kiro-web-parity",
+  "vtid": "VTID-05340",
+  "vtids": [
+    "VTID-05340"
+  ],
+  "generated_at": "2026-10-27T09:50:00Z",
+  "generated_by": "kiro-exafy-202610261526-5cd7",
+  "plan_pr_opened_at": "2026-10-26T15:45:29Z",
+  "converged_at": "2026-10-26T16:11:27Z",
+  "policy_approved_at": "2026-10-26T16:11:27Z",
+  "vtids_allocated_at": "2026-10-26T16:14:49Z",
+  "plan_merged_at": "2026-10-26T16:30:24Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 1558000,
+  "vtid_ms": 202000,
+  "plan_merge_ms": 1137000,
+  "lanes": [
+    {
+      "lane": "session-kit",
+      "vtid": "VTID-05340",
+      "claimed_at": "2026-10-26T16:19:10Z",
+      "pr_opened_at": "2026-10-26T16:58:54Z",
+      "accepted_at": "2026-10-27T09:33:30Z",
+      "merged_at": "2026-10-27T09:43:27Z",
+      "staging_verified_at": null,
+      "build_ms": 2384000,
+      "review_ms": 59676000,
+      "merge_ms": 597000,
+      "review_rounds": 2,
+      "ci_fix_attempts": 2
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 1,
+  "staging_verify_failure_count": 0,
+  "sources_unavailable": [
+    "staging_verify (deploys nothing)",
+    "gate2 (deploys nothing)"
+  ],
+  "notes": "review_ms includes ~15 h with the session idle overnight (2026-10-26T17:30Z-2026-10-27T08:47Z); PR opened on #4385, superseded by #4389 (opened 2026-10-27T09:24Z). ci_fix_attempts: validate-pr PR-body declarations, then the evidence pack outputs/ dir."
+}

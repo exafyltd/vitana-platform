@@ -1,0 +1,14 @@
+# VTID-05300 — collab-queue-perf/queue-batch-read — commands run (Windows, PowerShell 5.1, node 24.11.1, git 2.52)
+# Session kiro-202610181950-f0b7. All read-only against GitHub except the branch push and the PR edit.
+$ git fetch --prune origin
+$ git worktree add --no-checkout --detach .worktrees/qbr-ready origin/kiro/collab-queue-perf/queue-batch-read
+$ git sparse-checkout set --no-cone /scripts/collab/ /docs/validation/ /docs/programs/ /.kiro/specs/collab-queue-perf/ /scripts/ci/
+$ git sparse-checkout add /.kiro/automations/ /.github/workflows/ /.claude/rules/ /.kiro/pipeline/   # files the collab tests read
+$ git merge --no-ff origin/main            # conflict in scripts/collab/queue.test.mjs: both sides' new tests kept
+$ node --test "scripts/collab/*.test.mjs"  # => tests 101, pass 101, fail 0
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/collab-queue-perf/queue-batch-read   # => all valid
+$ node <origin/main queue.mjs> scope-check --repo . --base origin/main --head HEAD --branch kiro/collab-queue-perf/queue-batch-read --plan-repo exafyltd/vitana-platform   # => every change is inside its paths
+$ PR_TITLE='VTID-05300 …' node scripts/ci/pr-gate/gate.mjs scope|sparring|weakening --base origin/main --head HEAD   # => all pass
+$ node <temp script importing the worktree queue.mjs: collect(repo, { days: 30 }) twice per repo>   # => outputs/timings.txt
+$ Measure-Command { node <origin/main queue.mjs> --repo C:/Users/dstev/vitana-platform-1 --repo C:/Users/dstev/vitana-v1 }   # => 238.2 s
+$ Measure-Command { node scripts/collab/queue.mjs --repo C:/Users/dstev/vitana-platform-1 --repo C:/Users/dstev/vitana-v1 }   # => 12.8 s, 6.9 s

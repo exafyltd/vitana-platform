@@ -6,7 +6,7 @@
     { "kind": "http", "name": "gateway is alive", "path": "/alive", "expect_status": 200 },
     { "kind": "http", "name": "the Dev Autopilot config route is mounted and still requires a developer login", "path": "/api/v1/dev-autopilot/config", "expect_status": 401, "expect_content_type": "application/json" },
     { "kind": "http", "name": "the release-hold route exists and refuses an invalid caller", "method": "POST", "path": "/api/v1/dev-autopilot/executions/00000000-0000-4000-8000-000000000000/release-hold", "rejected_probe": true, "expect_status": 401, "expect_content_type": "application/json" },
-    { "kind": "http", "name": "the Command Hub serves app.js with the overlap-hold release action", "target": "gateway", "path": "/command-hub/app.js?v=20261120-vtid-05148", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function devAutopilotReleaseHold(", "'/release-hold'", "Frozen scope"] },
+    { "kind": "http", "name": "the Command Hub serves app.js with the overlap-hold release action", "target": "gateway", "path": "/command-hub/app.js?v=20261121-vtid-05082", "expect_status": 200, "expect_content_type": "javascript", "expect_body_contains": ["function devAutopilotReleaseHold(", "'/release-hold'", "Frozen scope"] },
     { "kind": "existing", "ref": "npx jest test/vtid-05146-overlap-guard.test.ts", "cwd": "services/gateway", "reason": "The overlap guard's pure parts and its GitHub snapshot: shared files, own PR excluded, incomplete lists block, frozen globs, hold expiry, and GitHub failures never read as no overlap" }
   ]
 }
