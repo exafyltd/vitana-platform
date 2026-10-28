@@ -4,8 +4,12 @@ Authoritative plan: `plan.md`. VTID: allocated by PLAN-SPAR.
 <!-- lane: reassign-noop -->
 ## reassign-noop
 - [ ] R1. Tests first (red on base): `test/project-manager/reassign-idempotent.test.ts` (two ticks → one write, then zero;
-  writer: same change twice → one `put`); wiring assertion `{name:"PM_AGENT_ENABLED", value:"false"}`.
-- [ ] R2. `writers.ts` `laneChangeIsNoop` + skip `put` on W1/W2; `act.ts` `unchanged` status; `decide.ts` guard.
+  writer: same change twice → one `put`, W1 and W2); `test/project-manager/reassign-seat.test.ts` (stale-ready target
+  never `reviewer_seat`; `applyLaneChange` refuses `seat == reviewer_seat`); wiring assertion
+  `{name:"PM_AGENT_ENABLED", value:"false"}`.
+- [ ] R2. `writers.ts` `laneChangeIsNoop` + skip `put` on W1/W2 + `seat == reviewer_seat` refusal; `act.ts`
+  `LaneFileWriter.write` → `Promise<'written' | 'noop'>`, `unchanged` status, fakes updated; `decide.ts` stale-ready
+  target skips `reviewer_seat` (no decision when only `reviewer_seat` is left). No `stale_review` decide guard.
 - [ ] R3. `AWS-STAGE-DEPLOY-GATEWAY.yml:1225` → `"false"`.
 - [ ] R4. `docs/validation/<VTID>/staging-tests.json` + `commands.log`.
 
