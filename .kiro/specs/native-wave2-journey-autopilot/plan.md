@@ -34,7 +34,7 @@ flips.
   `src/navigation/registry/exclusions.json:211`. The 2 rows and their web paths are listed in `requirements.md`
   R0.2–R0.3.
 - Web sources verified present with line counts: `src/pages/AutopilotDashboard.tsx` (605; route `src/App.tsx:1538-1543`
-  for `/autopilot`, `:1544-1548` for `/autopilot/audiobook` — both render `AutopilotDashboard`), journey components
+  for `/autopilot`, `:1544-1549` for `/autopilot/audiobook` — both render `AutopilotDashboard`), journey components
   `components/journey/GuidedModeSwitch.tsx` (39), `GuidedJourneyCatalog.tsx` (691), goal/dream north-star + preview
   tiles + goal sheets; the autopilot popup `components/AutopilotPopup.tsx` (717); app-wide providers
   `context/GuidedModeProvider.tsx` (221), `context/AudiobookPlayerProvider.tsx` (528); the mini-player
@@ -61,7 +61,7 @@ flips.
 2. **Only the two pure IO-free helpers move into `@vitana/core`; every hook/provider is re-implemented natively**
    (R1.4, R1.5). Core gets re-export entries for exactly `horizonBuckets` and `vitana-projection` — both pure (no
    supabase client, no `community-gateway`). `src/types/autopilot.ts` is already a type-only core re-export
-   (`packages/core/manifest.json:59`) and is reused. **Every data-fetching hook / provider is NOT moved into core** —
+   (`packages/core/manifest.json:74`) and is reused. **Every data-fetching hook / provider is NOT moved into core** —
    `use-autopilot.ts` runtime-imports `@/integrations/supabase/client` (`:4`) and `GuidedModeProvider.tsx`,
    `useGuidedJourneyProgress.ts`, `useMyJourney.ts`, `journeyPractice.ts`, `AudiobookPlayerProvider.tsx` all
    runtime-import `@/lib/community-gateway` (IO) — moving any of them into core would pull a class-B file into the
