@@ -4,7 +4,7 @@ state: ready
 next_actor: kiro
 depends_on: [policy-text]
 executor: claude
-seat: jtadic
+seat: exafyltd
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 repos: [exafyltd/vitana-platform]
@@ -12,7 +12,7 @@ paths:
   - CLAUDE.md
   - .claude/skills/plan-sparring/SKILL.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:52Z
+updated: 2026-10-28T14:54Z
 vtid: VTID-05389
 ---
 # Lane: policy-claude-md (repo vitana-platform)
@@ -24,3 +24,5 @@ Lane created with the plan.
 
 ### 2026-10-28T12:52Z · ci-plan-spar · ready (VTID allocated)
 VTID-05389 allocated after policy approval (converged-auto-v1).
+### 2026-10-28T14:54Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
