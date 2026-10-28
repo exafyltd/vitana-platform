@@ -22,3 +22,7 @@ prototyped (17/17). No VTID allocated.
 
 ### 2026-10-28T10:36Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-28T10:45Z · kiro-exafyltd-202610220833-d231 · approved (plan PR merge)
+Converged round 2 (session b736a881; R1-F1 deferred and acknowledged). Policy `converged-auto-v1` approved it and CI
+allocated VTID-05372. The plan PR merges under §7b. Next: build `relative-dates`.
