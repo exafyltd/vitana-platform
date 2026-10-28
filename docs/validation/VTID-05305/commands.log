@@ -1,0 +1,34 @@
+# VTID-05305 — verification commands (Kiro IDE, Windows, node v24)
+
+# New node:test suite — green on head (6 pass / 0 fail)
+node --test scripts/ci/validator-path-guard.test.cjs
+# => tests 6, pass 6, fail 0  (outputs/green-on-head.txt)
+
+# Same test against the origin/main guard module (prBodyRequirements absent)
+# — red on base (all 6 fail; the base module has no --pr-body-check branch)
+node --test <base validator-path-guard.cjs + head test in temp dir>
+# => tests 6, pass 0, fail 6  (outputs/red-on-base.txt)
+
+# CLI demo — a complete body passes
+node scripts/ci/validator-path-guard.cjs --pr-body-check docs/validation/VTID-05305/acceptance.md
+# => "PR body carries every required declaration." exit 0  (outputs/pr-body-check-demo.txt)
+
+# REMIT == workflow paths: invariant (the gateway TS test's one assertion my
+# change could affect) — match: true  (outputs/remit-parity.txt)
+
+# Workflow YAML parses with js-yaml; step order correct, inline
+# "Require PR markers" step removed, "Require PR body declarations" step added.
+
+# --- review round 1 (blocking findings 1 & 2) ---------------------------------
+# Reworded the template's guidance comment so it no longer carries sample
+# "VALIDATION_PROFILE:" / "OASIS_IMPACT:" marker lines before the real ones.
+# Added 3 node:test cases that apply the workflow's OWN first-match regexes to
+# the shipped template file.
+node --test scripts/ci/validator-path-guard.test.cjs
+# => tests 9, pass 9, fail 0  (updated outputs/green-on-head.txt)
+
+# Proof the finding was real and is fixed: workflow extractors on the reviewed
+# template (7c22c050) vs the fixed head template.
+# reviewed:  PROFILE=one (exit 21),  IMPACT=yes (exit 81)
+# fixed:     PROFILE=gateway_backend, IMPACT=no
+# => outputs/template-extractor-fix.txt

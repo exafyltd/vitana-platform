@@ -1,0 +1,17 @@
+VTID-05301 — ci-health lane — red-on-base proof
+================================================
+
+The producer and its test do not exist on origin/main, so the test is red on base
+(the import of ./report.mjs cannot resolve). Proof:
+
+  $ git -C <platform> cat-file -e origin/main:scripts/ci/health/report.mjs
+  fatal: path 'scripts/ci/health/report.mjs' does not exist in 'origin/main'
+
+  $ git -C <platform> cat-file -e origin/main:scripts/ci/health/report.test.mjs
+  fatal: path 'scripts/ci/health/report.test.mjs' does not exist in 'origin/main'
+
+On head the same `node --test scripts/ci/health/report.test.mjs` is green (9/9) —
+see commands.log.
+
+This matches the lane acceptance: "the test is red on base (files absent) and green
+on head".
