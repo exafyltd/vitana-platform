@@ -23,7 +23,8 @@ equivalent, which it is not.
 - `docs/DEPLOYMENT-PIPELINE.md:155` and the comment at `scripts/ci/staging-verify/lib.cjs:240-245` say a PR merged with
   a merge commit "is judged by the merge commit, whose subject carries the PR title and VTID". GitHub's default
   merge-commit subject is `Merge pull request #<n> from <branch>` with the title in the body, and
-  `lib.extractVtids(c.subject)` (`run.mjs`) reads only the subject: vitana-v1 `11b4e2ba2`, `b8a4efbd3`, `624618db1`,
+  `extractVtids(c.subject)` reads only the subject (the rule-47 decision in `lib.cjs:302-304` `planRange`; manifest
+  loading in `run.mjs:375`): vitana-v1 `11b4e2ba2`, `b8a4efbd3`, `624618db1`,
   `aa3fb55f2` (#1452, #1450, #1451, #1447) have no VTID in their subject and failed rule 47 (STAGING-VERIFY runs
   39952660840, 39870086198, 39783669906). `lane-code.md:29` ("merge `origin/main` into BRANCH (merge commit)") is a
   branch update, not a PR merge: no conflict.
@@ -60,7 +61,8 @@ inlined link without a documented cap (`docs/kiro/kiro-web-bootstrap.md:17`).
 
 ## 3. Change — three lanes, no shared file
 - **Lane `merge-policy-text`** (kiro). `.kiro/pipeline/quality-checks.md` "Merge": name the policy sources (PM
-  `act.ts` `merge_strategy: 'squash'`, `planning.md`) and state that a merge commit counts only when its subject carries
+  `act.ts` `merge_strategy: 'squash'`, `planning.md`), cite the subject read where it decides (`lib.cjs` `planRange`,
+  replacing today's `run.mjs` attribution) and state that a merge commit counts only when its subject carries
   the VTID, which GitHub's default subject does not. `docs/DEPLOYMENT-PIPELINE.md:155`: the same qualification in one
   sentence. `scripts/ci/staging-verify/lib.cjs:240-245`: comment only, the same qualification. No behaviour change.
   Test appended to `scripts/collab/quality-checks.test.mjs`: the Merge section links `act.ts` and `act.ts` really merges
