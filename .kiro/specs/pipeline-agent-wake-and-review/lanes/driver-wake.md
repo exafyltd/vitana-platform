@@ -18,7 +18,7 @@ paths:
   - .kiro/automations/wake.md
   - docs/kiro/driver-wake.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T15:15Z
+updated: 2026-10-28T15:19Z
 vtid: VTID-05354
 parked_from: verified
 ---
@@ -94,4 +94,6 @@ W4 dispatch dry run after merge: run https://github.com/exafyltd/vitana-platform
 (wake unavailable: KIRO_API_KEY not configured)`; the session step was skipped. Inert until the owner adds the repository
 secret `KIRO_API_KEY`.
 ### 2026-10-28T15:15Z · pm-agent · verified → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-28T15:19Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
