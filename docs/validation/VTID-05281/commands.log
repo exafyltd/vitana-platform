@@ -1,0 +1,32 @@
+# VTID-05281 (kaf-fallback-env/ff-pm-flag) — commands, Windows 11 / PowerShell 5.1, cwd services/gateway
+# base = origin/main 0688a5998; head = this lane's commit
+npm ci --no-audit --no-fund                                   -> ok (799 packages)
+[base sources + new tests] npx jest test/project-manager/observe-live.test.ts --ci
+                                                              -> FAIL 4 failed / 16 passed / 20 (B1, B4, B5, B7 red) outputs/red-on-base.txt
+[head] npx jest test/project-manager/observe-live.test.ts --ci -> PASS 20 passed / 20 (outputs/green-head.txt)
+[head] npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts test/kiro-autonomy-fallback-proof.test.ts test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts --ci
+                                                              -> 212 passed / 3 failed / 14 skipped / 229; 11 of 13 suites pass (outputs/jest-pm-suite.txt)
+       (kaf-staging-claude-available-wiring.test.ts is lane ff-stage-env's file; not on this branch, no match)
+       red 1: vtid-05127-phone-verify-switch-wiring "dry run without credentials" — same red on base (Windows: bash script spawn); not this lane's
+       red 2: staging-deploy-workflow-bash-syntax "bash -n" x2 — empty bash stderr under parallel load; alone on head:
+[head] npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts --ci -> PASS 7 passed / 7 (outputs/bash-syntax-head.txt)
+[base] npx jest test/orb/live/upstream/staging-deploy-workflow-bash-syntax.test.ts test/vtid-05127-phone-verify-switch-wiring.test.ts --ci
+                                                              -> 1 failed (phone-verify dry run, same as head) / 17 passed / 14 skipped
+[head] npm run typecheck                                       -> PASS (exit 0) outputs/typecheck.txt
+[head] npx tsc  (the build's compile step; prebuild/copy use rm/cp/mkdir -p, absent in Windows cmd) -> PASS (exit 0) outputs/build.txt
+[head] npm run build  (review round 1; npm_config_script_shell = Git Bash so prebuild rm and copy-* cp/mkdir -p run)
+                                                              -> PASS (exit 0; tsc + copy-frontend + copy-data, dist artefacts present) outputs/build.txt
+[head] npm run lint                                            -> exit 2 "ESLint couldn't find a configuration file" — KNOWN PRE-EXISTING RED, same on base:
+       services/gateway has no ESLint config, so "lint green" cannot be met by any change; not caused by this lane; outputs/lint.txt
+[CI on PR head 29908fa95] gh pr checks 4242 -> 23 pass (Gateway Jest shards 1-4, Gateway Validation, Lane scope, Collab handoff, pr-gate, unit, validate, ...);
+       VALIDATOR-CHECK validate-pr red: PR body lacked VALIDATION_PROFILE / SCOPE_ALLOWLIST / ACCEPTANCE / MERGE_PAYLOAD_PREVIEW / OASIS_IMPACT markers -> body fixed (review round 1)
+[head] git grep -E "workflow_dispatch|/dispatches|AWS-PROD-DEPLOY" -- services/gateway/src/services/project-manager/ -> no match
+## Review round 2 fix — re-run at sources 0e93e3701 (lane code unchanged since b62b27556)
+[head] npx jest test/project-manager/observe-live.test.ts --ci -> PASS 20 passed / 20 (outputs/green-head.txt)
+[head] npx jest test/project-manager --ci                     -> PASS 184 passed / 184, 10 suites
+[head] npm run typecheck                                       -> PASS (exit 0) outputs/typecheck.txt
+[head] npm run build (Git Bash script shell)                   -> PASS (exit 0) outputs/build.txt
+[local] validator-path-guard.cjs <changed files> gateway_backend <PR body> -> APPROVED (12 in remit, 1 not judged: the lane file)
+[CI on PR head 0e93e3701] gh pr checks 4242 -> 24 pass / 0 fail / 0 pending, VALIDATOR-CHECK validate-pr PASS (outputs/ci-head.txt)
+[head] git diff origin/main...0e93e3701 (stat + source diff)    -> outputs/diff-head.patch (for a review session without a shell)
+CI on the PR head is the authority.

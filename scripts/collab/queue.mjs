@@ -10,20 +10,22 @@
  *
  *   node scripts/collab/queue.mjs [--repo <path>]... [--mine <session>] [--seat <seat>] [--json] [--days 30]
  *   node scripts/collab/queue.mjs session-id --agent kiro [--seat <seat>]
+ *   node scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer      (VTID-05276 reviewer agent)
  *   node scripts/collab/queue.mjs claim   <slug>/<lane-id> --session <id> [--repo <path>]
  *   node scripts/collab/queue.mjs release <slug>/<lane-id> --session <id> [--stale] [--repo <path>]
  *   node scripts/collab/queue.mjs claims  [--repo <path>]          (claims with age; housekeeping input)
  *   node scripts/collab/queue.mjs validate --base <sha> --head <sha> [--repo .] [--branch <name>]
  *                                         [--allow-initial=<slug>] [--lane-repo <owner/repo>] [--summary <file>]
  *   node scripts/collab/queue.mjs scope-check --base <sha> --head <sha> [--repo .] [--branch <name>]
- *                                         [--lane-repo <owner/repo>] [--summary <file>]   (VTID-05213 Lane scope)
+ *                                         [--lane-repo <owner/repo>] [--plan-repo <owner/repo>]... [--summary <file>]
+ *                                         (VTID-05213 Lane scope; VTID-05276: lane files of an open plan( PR)
  *   node scripts/collab/queue.mjs [...] --program <id>             (lanes of one programme, docs/programs/<id>/program.md)
  *
  * Read the queue after `git fetch --prune origin` in every checkout. Exit codes: 0 ok, 1 validation
  * failed / claim refused, 2 usage.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync } from 'node:fs';
+import { appendFileSync, readFileSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
@@ -57,17 +59,54 @@ const SLUG_RE = /^[a-z0-9][a-z0-9-]*$/;
 // so a seat can never be mistaken for the 12-digit stamp; the old kiro-YYYYMMDDHHMM-xxxx form stays valid.
 // VTID-05213: two automation literals — `pm-agent` (the Project Manager's lane-file commits) and `ci-plan-spar`
 // (PLAN-SPAR.yml's sparring-round commits).
-const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
+// VTID-05276: a reviewer agent's own id, agent-<name>-YYYYMMDDHHMM-xxxx (`session-id --agent agent:<name>`).
+const SESSION_RE = /^(session_[A-Za-z0-9]+|kiro-(?:[a-z]{1,12}-)?\d{12}-[0-9a-f]{4}|agent-[a-z][a-z0-9-]{0,40}-\d{12}-[0-9a-f]{4}|pm-agent|ci-plan-spar)$/;
 export const SEAT_RE = /^[a-z]{1,12}$/;
 export const isSessionId = (s) => SESSION_RE.test(s || '');
 const CI_PLAN_SPAR = 'ci-plan-spar';
+const PM_AGENT = 'pm-agent';
 /** The seat named in a seat-scoped Kiro session id, else ''. */
 export const seatOf = (s) => (/^kiro-([a-z]{1,12})-\d{12}-[0-9a-f]{4}$/.exec(s || '') || [])[1] || '';
 
+// VTID-05276 (plan kiro-autonomy-fallback §4.1): reviewer agents — a `reviewer_seat` value that is not a Kiro seat. A
+// lane with `executor: kiro` and `reviewer_seat: agent:vitana-lane-reviewer` may change governance paths (never a
+// protected gate file); its review entries come from the agent's own session id.
+export const REVIEWER_AGENTS = ['agent:vitana-lane-reviewer'];
+export const isReviewerAgent = (v) => REVIEWER_AGENTS.includes(v);
+/** The reviewer agent named in an agent session id (`agent:<name>`), else ''. */
+export const agentOf = (s) => {
+  const m = /^agent-([a-z][a-z0-9-]{0,40})-\d{12}-[0-9a-f]{4}$/.exec(s || '');
+  return m ? `agent:${m[1]}` : '';
+};
+
 // VTID-05213: paths that only an `executor: claude` lane may change (governance: CI, rules, steering, automations,
-// this script, the seat map). A Kiro lane that declares or touches one is refused by validate and scope-check.
+// this script, the seat map). A Kiro lane that declares or touches one is refused by validate and scope-check —
+// VTID-05276: unless the lane's reviewer is a reviewer agent and its permissions come from a trusted source.
 export const GOVERNANCE_PATHS = ['.github/**', '.claude/**', '.kiro/steering/**', '.kiro/automations/**', 'scripts/collab/**',
   'CLAUDE.md', 'docs/programs/areas.yaml'];
+
+// VTID-05276 (plan §4.3): protected gate files — the gates themselves. A Kiro lane never changes one, whatever its
+// reviewer (owner or Claude review stays required). The list lives in protected-gate-files.json next to this script;
+// CI and vitana-v1 run single-file copies of queue.mjs, so the same list is compiled in for when the JSON is absent.
+// A JSON that is present but unreadable, malformed or empty fails loudly (the list is never silently emptied).
+export const PROTECTED_GATE_BUILTIN = ['CLAUDE.md', 'scripts/collab/plan-spar.mjs', 'scripts/collab/queue.mjs',
+  'scripts/collab/protected-gate-files.json', 'services/gateway/src/services/plan-sparring/**',
+  'services/gateway/src/services/project-manager/governance.ts', '.github/workflows/PLAN-SPAR.yml',
+  '.github/workflows/PR-GATE.yml', '.github/workflows/AWS-PROD-*.yml', '.kiro/agents/vitana-lane-reviewer.md',
+  'supabase/migrations/*vtid_ledger*.sql', 'supabase/migrations/*plan_sparring*.sql'];
+function loadProtectedGatePaths() {
+  let text;
+  try { text = readFileSync(new URL('./protected-gate-files.json', import.meta.url), 'utf8'); } catch (e) {
+    if (e && e.code === 'ENOENT') return PROTECTED_GATE_BUILTIN;
+    throw e;
+  }
+  const globs = JSON.parse(text).globs;
+  if (!Array.isArray(globs) || globs.length === 0 || !globs.every((g) => typeof g === 'string' && g.trim())) {
+    throw new Error('scripts/collab/protected-gate-files.json: "globs" must be a non-empty list of path globs');
+  }
+  return globs;
+}
+export const PROTECTED_GATE_PATHS = Object.freeze(loadProtectedGatePaths());
 
 /** Glob → RegExp: `**` any path (incl. `/`), `*` within one segment, `?` one char. `dir/**` also matches `dir`. */
 export function globToRegex(glob) {
@@ -96,6 +135,14 @@ export const globTouchesGovernance = (glob) => GOVERNANCE_PROBES.some((f) => glo
   const probe = String(glob).replace(/\*\*.*$/, '').replace(/\*.*$/, '');
   return globToRegex(gp).test(probe.replace(/\/$/, '')) || globToRegex(glob).test(gp.replace(/\/\*\*$/, '')) || globToRegex(glob).test(gp);
 });
+// VTID-05276: a representative file for every protected gate glob that is also a governance path (`*`/`**` → `x`).
+// validateLane refuses a Kiro lane whose declared glob reaches one of them. Protected gate code outside governance
+// (plan-sparring service, PM governance guard, reviewer agent, gate migrations) is refused by scopeCheck when a
+// Kiro lane actually changes it, not at declaration, so lanes that already declare those directories stay valid.
+const PROTECTED_GOVERNANCE_PROBES = PROTECTED_GATE_PATHS.filter((g) => globTouchesGovernance(g))
+  .map((g) => g.replace(/\*\*/g, 'x').replace(/\*/g, 'x'));
+/** Does a declared lane glob reach a protected gate file that is a governance path? */
+export const globTouchesProtected = (glob) => PROTECTED_GOVERNANCE_PROBES.some((f) => globToRegex(glob).test(f));
 
 // ── Parsing ──────────────────────────────────────────────────────────────
 
@@ -172,12 +219,21 @@ export function validateLane(fm, slug, lane, laneIds) {
   // VTID-05213: who builds (executor), who reviews (reviewer_seat) and which files the lane may change (paths).
   if (fm.executor !== undefined && !AGENTS.includes(fm.executor)) e.push(`executor must be one of ${AGENTS.join('|')}`);
   if (fm.reviewer_seat !== undefined) {
-    if (fm.reviewer_seat !== 'claude' && !SEAT_RE.test(fm.reviewer_seat)) e.push(`reviewer_seat "${fm.reviewer_seat}" must be a seat or "claude"`);
+    if (isReviewerAgent(fm.reviewer_seat)) {
+      if (fm.executor !== 'kiro') e.push(`reviewer_seat "${fm.reviewer_seat}" is a reviewer agent; it reviews only lanes with executor: kiro`);
+    } else if (fm.reviewer_seat !== 'claude' && !SEAT_RE.test(fm.reviewer_seat)) {
+      e.push(`reviewer_seat "${fm.reviewer_seat}" must be a seat, "claude" or a reviewer agent (${REVIEWER_AGENTS.join(', ')})`);
+    }
     if (fm.seat && fm.reviewer_seat === fm.seat) e.push('reviewer_seat must differ from seat (one Kiro account never reviews its own lane)');
   }
   const paths = asList(fm.paths);
   if (fm.executor && fm.state && fm.state !== 'ready' && fm.state !== 'parked' && paths.length === 0) e.push(`paths required in state ${fm.state} for a lane that declares an executor`);
-  if (fm.executor === 'kiro') for (const g of paths) if (globTouchesGovernance(g)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude`);
+  if (fm.executor === 'kiro') {
+    for (const g of paths) {
+      if (globTouchesProtected(g)) e.push(`paths "${g}" reaches a protected gate file (a governance path an agent review cannot unlock, scripts/collab/protected-gate-files.json); such a lane needs executor: claude`);
+      else if (globTouchesGovernance(g) && !isReviewerAgent(fm.reviewer_seat)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude, or reviewer_seat: ${REVIEWER_AGENTS[0]}`);
+    }
+  }
   if (fm.state === 'parked' && !LANE_EDGES[fm.parked_from]) e.push('parked_from must name the non-terminal state the lane was parked from');
   for (const d of asList(fm.depends_on)) {
     if (d === lane) e.push('a lane cannot depend on itself');
@@ -203,8 +259,50 @@ export function checkTransition(kind, before, after, { allowInitial = false } = 
 
 // ── Git helpers ─────────────────────────────────────────────────────────
 
+/** Number of git processes this module has started (the queue's spawn budget is asserted against it in tests). */
+export const gitSpawns = { count: 0 };
+
+function spawnGit(repo, args, opts = {}) {
+  gitSpawns.count++;
+  return execFileSync('git', ['-C', repo, ...args], { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+}
+
 function git(repo, args, opts = {}) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trimEnd();
+  return spawnGit(repo, args, { encoding: 'utf8', ...opts }).trimEnd();
+}
+
+// Batch-style calls (cat-file --batch, rev-list, log) read far more than Node's 1 MB default; overflow (ENOBUFS) throws.
+const BIG_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * Read many objects (`<rev>:<path>`, a commit sha, …) through ONE `git cat-file --batch` process.
+ * → Map<query, string|null>: the raw object text (UTF-8, untrimmed), or null when the object is missing or the query
+ * cannot be sent (contains a line break). Replies arrive in query order and are parsed by byte length.
+ */
+export function catFileBatch(repo, queries) {
+  const out = new Map();
+  const send = [];
+  for (const q of queries) {
+    if (out.has(q)) continue;
+    out.set(q, null);
+    if (!/[\r\n]/.test(q)) send.push(q);
+  }
+  if (send.length === 0) return out;
+  const buf = spawnGit(repo, ['cat-file', '--batch'], { input: `${send.join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: BIG_BUFFER });
+  let pos = 0;
+  for (const q of send) {
+    const nl = buf.indexOf(0x0a, pos);
+    if (nl < 0) throw new Error(`${repo}: git cat-file --batch: truncated reply`);
+    const header = buf.toString('utf8', pos, nl);
+    pos = nl + 1;
+    const m = /^[0-9a-f]{40,64} \S+ (\d+)$/.exec(header); // otherwise "<query> missing" / "<query> ambiguous"
+    if (!m) continue;
+    const size = Number(m[1]); // bytes
+    if (pos + size > buf.length) throw new Error(`${repo}: git cat-file --batch: short object for ${q}`);
+    out.set(q, buf.toString('utf8', pos, pos + size));
+    pos += size + 1; // the LF after the content
+  }
+  return out;
 }
 
 function gitOk(repo, args) {
@@ -227,45 +325,121 @@ function defaultRemoteBranch(repo) {
   return null;
 }
 
-/** Claims from remote-tracking refs (run `git fetch --prune origin` first). */
-export function listClaims(repo) {
-  const out = gitOk(repo, ['for-each-ref', '--format=%(refname)%09%(objectname)%09%(committerdate:unix)', `refs/remotes/origin/${CLAIM_PREFIX}`]);
-  if (!out) return [];
-  return out.split('\n').filter(Boolean).map((line) => {
-    const [ref, sha, ts] = line.split('\t');
-    const key = ref.slice(`refs/remotes/origin/${CLAIM_PREFIX}`.length);
-    const msg = gitOk(repo, ['log', '-1', '--format=%B', sha]) || '';
+const CLAIM_REF = `refs/remotes/origin/${CLAIM_PREFIX}`;
+const REFS_FMT = '%(refname)%09%(refname:short)%09%(objectname)%09%(committerdate:unix)';
+
+/** for-each-ref output in REFS_FMT → [{ ref, short, sha, ts }] in for-each-ref order. */
+function parseRefs(out) {
+  return (out || '').split('\n').filter(Boolean).map((l) => {
+    const [ref, short, sha, ts] = l.split('\t');
+    return { ref, short, sha, ts: Number(ts) };
+  });
+}
+
+/** Claim rows (refs under CLAIM_REF) + their commit objects from catFileBatch → claims. */
+function claimsFrom(claimRows, objects) {
+  return claimRows.map(({ ref, sha, ts }) => {
+    const key = ref.slice(CLAIM_REF.length);
+    const raw = objects.get(sha) ?? '';
+    const i = raw.indexOf('\n\n');
+    const msg = (i < 0 ? '' : raw.slice(i + 2)).trimEnd(); // a commit object's message follows the first blank line
     const session = (/^Collab-Session:\s*(\S+)/m.exec(msg) || [])[1] || null;
     const [slug, ...rest] = key.split('/');
-    return { key, slug, lane: rest.join('/'), sha, session, at: Number(ts) * 1000 };
+    return { key, slug, lane: rest.join('/'), sha, session, at: ts * 1000 };
   });
+}
+
+/** Claims from remote-tracking refs (run `git fetch --prune origin` first). Two git processes at most. */
+export function listClaims(repo) {
+  const rows = parseRefs(gitOk(repo, ['for-each-ref', `--format=${REFS_FMT}`, CLAIM_REF]));
+  return claimsFrom(rows, catFileBatch(repo, rows.map((r) => r.sha)));
 }
 
 // ── Queue ───────────────────────────────────────────────────────────────
 
-/** Newest version (by `updated`) of every handoff/lane file across main and recent branches. */
+const bytewise = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Newest version (by `updated`) of every handoff/lane file across main and recent branches.
+ * A constant number of git processes per repo (≤ 6), whatever the number of branches, files or claims:
+ * symbolic-ref, for-each-ref, ls-tree, rev-list, log, cat-file --batch.
+ * A branch contributes a spec file it changed off main when the file is on main or the branch added it, so a file
+ * deleted from main does not come back through a stale branch.
+ */
 export function collect(repo, { days = 30, now = Date.now() } = {}) {
-  const main = defaultRemoteBranch(repo);
+  const sym = gitOk(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  const rows = parseRefs(gitOk(repo, ['for-each-ref', `--format=${REFS_FMT}`, 'refs/remotes/origin']));
+  const main = sym || ['origin/main', 'origin/master'].find((b) => rows.some((r) => r.short === b)) || null;
   if (!main) throw new Error(`${repo}: no origin/main — run git fetch origin`);
+  const mainRow = rows.find((r) => r.short === main);
+  const mainSha = mainRow?.sha ?? main;
+  const mainRef = mainRow?.ref ?? main;
+  const mainPaths = specFilesAt(repo, mainSha);
+  const onMain = new Set(mainPaths);
+
+  const since = Math.floor((now - days * 86400000) / 1000);
+  const recent = rows.filter((r) => r.short !== main && r.short !== 'origin/HEAD' && r.short !== 'origin'
+    && !r.short.startsWith(`origin/${CLAIM_PREFIX}`) && r.ts >= since);
+  const claimRows = rows.filter((r) => r.ref.startsWith(CLAIM_REF));
+
+  const branchPairs = [];
+  if (recent.length) {
+    const opts = { input: `${[...recent.map((r) => r.ref), `^${mainRef}`].join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: BIG_BUFFER };
+    // Every commit on a recent branch and not on main, with its parents.
+    const graph = new Map();
+    for (const line of git(repo, ['rev-list', '--parents', '--stdin'], opts).split('\n')) {
+      if (!line) continue;
+      const [sha, ...parents] = line.split(' ');
+      graph.set(sha, parents);
+    }
+    // The handoff/lane files each of those commits touched. `--cc` keeps a merge commit's own conflict resolutions
+    // (a combined status has one letter per parent; a file a merge took unchanged from one parent is not listed).
+    const touchedBy = new Map();
+    const log = git(repo, ['log', '--stdin', '--full-history', '--cc', '--no-renames', '--no-color',
+      '--format=%x00%H', '--name-status', '--', '.kiro/specs'], opts);
+    for (const chunk of log.split('\0').slice(1)) {
+      const [sha, ...lines] = chunk.split('\n');
+      const files = [];
+      for (const l of lines) {
+        const m = /^([A-Z]+)\d*\t/.exec(l);
+        const p = m && l.slice(l.lastIndexOf('\t') + 1); // the path is the last tab field
+        if (p && classifyPath(p)) files.push({ status: m[1], path: p });
+      }
+      touchedBy.set(sha.trim(), files);
+    }
+    for (const r of recent) {
+      const touched = new Map(); // path → added on this branch
+      const seen = new Set();
+      const stack = [r.sha];
+      while (stack.length) {
+        const c = stack.pop();
+        if (seen.has(c) || !graph.has(c)) continue; // on main (or the boundary)
+        seen.add(c);
+        for (const { status, path: p } of touchedBy.get(c) || []) touched.set(p, touched.get(p) || status.includes('A'));
+        stack.push(...graph.get(c));
+      }
+      const paths = [...touched].filter(([p, added]) => onMain.has(p) || added).map(([p]) => p).sort(bytewise);
+      if (paths.length) branchPairs.push({ ref: r.short, sha: r.sha, paths });
+    }
+  }
+
+  const objects = catFileBatch(repo, [
+    ...mainPaths.map((p) => `${mainSha}:${p}`),
+    ...branchPairs.flatMap(({ sha, paths }) => paths.map((p) => `${sha}:${p}`)),
+    ...claimRows.map((r) => r.sha),
+  ]);
   const best = new Map();
-  const consider = (ref, p) => {
-    const text = showFile(repo, ref, p);
-    if (text === null) return;
+  const consider = (ref, query, p) => {
+    const raw = objects.get(query);
+    if (raw === null || raw === undefined) return;
+    const text = raw.trimEnd();
     const fm = parseFrontMatter(text);
     const prev = best.get(p);
     if (!prev || (fm?.updated || '') > (prev.fm?.updated || '')) best.set(p, { path: p, ref, fm, text, ...classifyPath(p) });
   };
-  for (const p of specFilesAt(repo, main)) consider(main, p);
-  const since = Math.floor((now - days * 86400000) / 1000);
-  const refs = (gitOk(repo, ['for-each-ref', '--format=%(refname:short)%09%(committerdate:unix)', 'refs/remotes/origin']) || '')
-    .split('\n').filter(Boolean).map((l) => l.split('\t'))
-    .filter(([r, ts]) => r !== main && r !== 'origin/HEAD' && r !== 'origin' && !r.startsWith(`origin/${CLAIM_PREFIX}`) && Number(ts) >= since);
-  for (const [ref] of refs) {
-    const changed = gitOk(repo, ['diff', '--name-only', `${main}...${ref}`, '--', '.kiro/specs']);
-    if (!changed) continue;
-    for (const p of changed.split('\n')) if (classifyPath(p)) consider(ref, p);
-  }
-  return { main, files: [...best.values()], claims: listClaims(repo) };
+  for (const p of mainPaths) consider(main, `${mainSha}:${p}`, p);
+  for (const { ref, sha, paths } of branchPairs) for (const p of paths) consider(ref, `${sha}:${p}`, p);
+  return { main, files: [...best.values()], claims: claimsFrom(claimRows, objects) };
 }
 
 export function buildQueue(collected, repoName) {
@@ -314,14 +488,34 @@ export function renderTable(rows) {
 // ── PR validation ───────────────────────────────────────────────────────
 
 function commitsInRange(repo, base, head) {
-  const fmt = '%H%x1f%(trailers:key=Collab-Session,valueonly,separator=%x2c)%x1f%(trailers:key=Collab-Lane,valueonly,separator=%x2c)%x1f%(trailers:key=Collab-Review,valueonly,separator=%x2c)%x1e';
+  // VTID-05276 (plan §4.1): review entries also carry Collab-Verdict, Collab-Reviewer and Collab-Reviewed-Head.
+  const keys = ['Collab-Session', 'Collab-Lane', 'Collab-Review', 'Collab-Verdict', 'Collab-Reviewer', 'Collab-Reviewed-Head'];
+  const fmt = `%H${keys.map((k) => `%x1f%(trailers:key=${k},valueonly,separator=%x2c)`).join('')}%x1e`;
   const out = git(repo, ['log', '--no-merges', `--format=${fmt}`, `${base}..${head}`]);
   return out.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
-    const [sha, session, lane, review] = rec.split('\x1f');
+    const [sha, session, lane, review, verdict, reviewer, reviewedHead] = rec.split('\x1f').map((s) => (s || '').trim());
     const files = git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha]).split('\n').filter(Boolean);
-    return { sha, session: session.trim(), lane: lane.trim(), review: review.trim(), files };
+    return { sha, session, lane, review, verdict, reviewer, reviewedHead, files };
   });
 }
+
+// VTID-05276 (plan §4.5): a `pm-agent` commit may change only these lane keys and append a log entry.
+const PM_AGENT_KEYS = ['state', 'parked_from', 'next_actor', 'seat', 'claimed_by', 'updated'];
+const FRONT_MATTER_RE = /^---\r?\n[\s\S]*?\r?\n---/;
+/** What a pm-agent commit changed in lane file `p` beyond its allowance ([] = only allowed keys + appended log). */
+function pmAgentOverreach(repo, sha, p) {
+  const a = showFile(repo, `${sha}^`, p);
+  const b = showFile(repo, sha, p);
+  if (a === null || b === null) return [a === null ? 'created the lane file' : 'deleted the lane file'];
+  const fa = parseFrontMatter(a) || {};
+  const fb = parseFrontMatter(b) || {};
+  const out = [...new Set([...Object.keys(fa), ...Object.keys(fb)])]
+    .filter((k) => !PM_AGENT_KEYS.includes(k) && JSON.stringify(fa[k]) !== JSON.stringify(fb[k])).map((k) => `changed ${k}`);
+  const body = (t) => t.replace(FRONT_MATTER_RE, '').replace(/\r\n/g, '\n');
+  if (!body(b).startsWith(body(a))) out.push('rewrote the log (only appending an entry is allowed)');
+  return out;
+}
+const pmAgentMessage = (short, p, bad) => `${short}: pm-agent may only change ${PM_AGENT_KEYS.join(', ')} and append a log entry in ${p} (${bad.join('; ')})`;
 
 /** Front matter (the text between the first two `---` lines) changed by this commit? */
 function frontMatterChanged(repo, sha, p) {
@@ -372,7 +566,8 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     const short = k.sha.slice(0, 8);
     if (laneTrailers.size && (!k.session || !k.lane) && !k.review) errors.push(`${short}: a lane PR needs Collab-Session and Collab-Lane trailers on every commit`);
     if (k.session && !SESSION_RE.test(k.session)) errors.push(`${short}: Collab-Session "${k.session}" is not a session id`);
-    if (k.lane) {
+    // VTID-05276 (plan §4.5): the Project Manager's lane-state commits do not count for one-session-per-lane or claimed_by.
+    if (k.lane && k.session !== PM_AGENT) {
       if (!sessionsByLane.has(k.lane)) sessionsByLane.set(k.lane, new Set());
       sessionsByLane.get(k.lane).add(k.session);
     }
@@ -380,6 +575,12 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       const c = classifyPath(f);
       if (!c) continue;
       const key = `${c.slug}/${c.lane}`;
+      // VTID-05276 (plan §4.5): pm-agent W1 (Collab-Lane: the lane) and W2 (Collab-Lane: `_plan`) lane-state commits.
+      if (c.kind === 'lane' && k.session === PM_AGENT && (k.lane === key || k.lane === `${c.slug}/${PLAN_LANE}`)) {
+        const bad = pmAgentOverreach(repo, k.sha, f);
+        if (bad.length) errors.push(pmAgentMessage(short, f, bad));
+        continue;
+      }
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
       if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
@@ -424,7 +625,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
  * this check is the merge-time boundary the Project Manager requires. Lanes without `paths` (before VTID-05213) are
  * reported only. `fetchLane(path)` returns the lane file's text from vitana-platform when this repo does not hold it.
  */
-export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) {
+export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fetchPlanLane = null }) {
   const errors = [];
   const warnings = [];
   const commits = commitsInRange(repo, base, head);
@@ -439,25 +640,50 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
   const key = [...keys][0];
   const [slug, id] = key.split('/');
   const lanePath = `.kiro/specs/${slug}/lanes/${id}.md`;
+  // VTID-05276: lane file source order — the lane PR head, then the open `plan(<slug>)` PR (fetchPlanLane), then the
+  // other repo's main (fetchLane).
   let text = showFile(repo, head, lanePath);
   let source = 'this repo';
+  let plan;
+  const planLaneOnce = () => {
+    if (plan === undefined) plan = fetchPlanLane ? (fetchPlanLane(slug, lanePath) || null) : null;
+    return plan;
+  };
+  if (text === null && planLaneOnce()?.text) { text = plan.text; source = 'plan-pr'; }
   if (text === null && fetchLane) { text = fetchLane(lanePath); source = 'vitana-platform'; }
-  if (text === null || text === undefined) { errors.push(`lane ${key}: ${lanePath} not found in this repo or vitana-platform`); return { applies: true, errors, warnings, lane: key }; }
+  if (text === null || text === undefined) {
+    errors.push(`lane ${key}: ${lanePath} not found in this repo${fetchPlanLane ? ', an open plan( PR' : ''} or vitana-platform`);
+    return { applies: true, errors, warnings, lane: key };
+  }
   let fm = parseFrontMatter(text) || {};
-  // The lane's permissions are the BASE revision's (VTID-05213 review): a lane PR must not widen its own `paths`,
+  // The lane's permissions are the trusted revision's (VTID-05213 review): a lane PR must not widen its own `paths`,
   // `executor`, `seat` or `reviewer_seat`. Only a Claude Code session (session_…) may change them, and only on a lane
-  // that already was `executor: claude`. A lane that is new in this PR is created by its plan (`_plan` commit).
+  // that already was `executor: claude`. VTID-05276: trusted = the merge-base, else a qualifying open plan( PR (its
+  // ci-plan-spar revision), else the other repo's main — whatever the lane text's source. A lane file that exists only
+  // in the lane PR head is untrusted: Lane scope judges it as before but grants no governance exemption.
   const mergeBase = gitOk(repo, ['merge-base', base, head]);
-  const baseFm = source === 'this repo' && mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
-  if (baseFm) {
+  let trustedFm = mergeBase ? parseFrontMatter(showFile(repo, mergeBase, lanePath)) : null;
+  let trustedFrom = trustedFm ? 'merge-base' : null;
+  if (!trustedFm && planLaneQualifies(planLaneOnce())) { trustedFm = parseFrontMatter(plan.text); trustedFrom = trustedFm ? 'plan-pr' : null; }
+  if (!trustedFm && fetchLane) {
+    trustedFm = parseFrontMatter(source === 'vitana-platform' ? text : fetchLane(lanePath));
+    trustedFrom = trustedFm ? 'vitana-platform' : null;
+  }
+  // The Project Manager's lane-state commits (plan §4.5) are checked on their own and never decide who edited the lane.
+  for (const k of commits) {
+    if (k.session !== PM_AGENT || !k.files.includes(lanePath)) continue;
+    const bad = pmAgentOverreach(repo, k.sha, lanePath);
+    if (bad.length) errors.push(pmAgentMessage(k.sha.slice(0, 8), lanePath, bad));
+  }
+  if (trustedFm) {
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
-    const changed = PERM.filter((k) => JSON.stringify(asList(baseFm[k])) !== JSON.stringify(asList(fm[k])));
-    const sessions = new Set(commits.filter((k) => k.files.includes(lanePath)).map((k) => k.session));
+    const changed = PERM.filter((k) => JSON.stringify(asList(trustedFm[k])) !== JSON.stringify(asList(fm[k])));
+    const sessions = new Set(commits.filter((k) => k.files.includes(lanePath) && k.session !== PM_AGENT).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
-    if (changed.length && !(baseFm.executor === 'claude' && claudeOnly)) {
+    if (changed.length && !(trustedFm.executor === 'claude' && claudeOnly)) {
       errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane)`);
     }
-    if (!(baseFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, baseFm[k]])) };
+    if (!(trustedFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, trustedFm[k]])) };
   }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -468,15 +694,22 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
     for (const f of changed) {
       if (own(f)) continue;
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
-      else if (fm.executor !== 'claude' && matchesAny(f, GOVERNANCE_PATHS)) errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs claude)`);
+      else if (fm.executor === 'claude') continue;
+      // VTID-05276 (plan §4.3): a protected gate file never passes for a non-claude lane, whatever its reviewer.
+      else if (matchesAny(f, PROTECTED_GATE_PATHS)) errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} (needs claude — an agent review cannot unlock it)`);
+      else if (!matchesAny(f, GOVERNANCE_PATHS)) continue;
+      else if (fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom) continue;
+      else errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs claude, or executor kiro with reviewer_seat ${REVIEWER_AGENTS[0]} from main or an approved plan( PR)`);
     }
   }
   for (const k of commits) {
-    if (!k.files.includes(lanePath)) continue;
+    if (!k.files.includes(lanePath) || k.session === PM_AGENT) continue;
     const short = k.sha.slice(0, 8);
     const seat = seatOf(k.session);
     if (k.review === key && k.lane !== key) {
-      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session) : !fm.reviewer_seat || seat === fm.reviewer_seat;
+      const ok = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session)
+        : isReviewerAgent(fm.reviewer_seat) ? agentOf(k.session) === fm.reviewer_seat
+          : !fm.reviewer_seat || seat === fm.reviewer_seat;
       if (!ok) errors.push(`${short}: review entry on ${key} from ${k.session || 'no session'}, but reviewer_seat is ${fm.reviewer_seat}`);
     } else if (fm.seat && seat && seat !== fm.seat) {
       errors.push(`${short}: ${k.session} (seat ${seat}) edits lane ${key}, which belongs to seat ${fm.seat}`);
@@ -484,7 +717,55 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null }) 
       warnings.push(`${short}: ${k.session} names no seat; lane ${key} belongs to seat ${fm.seat}`);
     }
   }
-  return { applies: true, errors, warnings, lane: key, source, paths };
+  return { applies: true, errors, warnings, lane: key, source, trusted: trustedFrom, paths };
+}
+
+/**
+ * VTID-05276: does a plan-PR lane read (`fetchPlanLane` result) come from an approved plan? handoff.md at the plan
+ * PR head is `approved|executing` with a `sparring_record`, the lane's `vtid` is one of its `vtids`, and the lane text
+ * was read at a ci-plan-spar commit (PLAN-SPAR writes the VTID into every approved lane).
+ */
+export function planLaneQualifies(planLane) {
+  if (!planLane || !planLane.text || !planLane.handoffText) return false;
+  const h = parseFrontMatter(planLane.handoffText);
+  const l = parseFrontMatter(planLane.text);
+  return !!h && !!l && ['approved', 'executing'].includes(h.state) && !!h.sparring_record && !!l.vtid
+    && asList(h.vtids).includes(l.vtid) && planLane.lastSession === CI_PLAN_SPAR;
+}
+
+/** VTID-05276: the single open same-repo PR titled `plan(<slug>)…` in `gh pr list` JSON; none or several → null. */
+export function findPlanPr(prs, slug) {
+  const hits = (Array.isArray(prs) ? prs : []).filter((p) => p && !p.isCrossRepository && typeof p.title === 'string'
+    && p.title.startsWith(`plan(${slug})`));
+  return hits.length === 1 ? hits[0] : null;
+}
+
+const ghRun = (args) => execFileSync('gh', args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'] });
+
+/**
+ * VTID-05276: `fetchPlanLane(slug, lanePath)` over the GitHub CLI for `repoSlug` → `{ text, handoffText, lastSession,
+ * pr, sha }`: the lane file at the newest commit on the plan PR head that touched it with `Collab-Session: ci-plan-spar`
+ * (later edits ignored; without one, the newest commit, which never qualifies) and handoff.md at the PR head. Any gh
+ * or parse failure → null (fail closed: no plan-PR source, no exemption).
+ */
+export function ghPlanLaneFetcher(repoSlug, run = ghRun) {
+  return (slug, lanePath) => {
+    try {
+      const prs = JSON.parse(run(['pr', 'list', '--repo', repoSlug, '--state', 'open', '--search', `plan(${slug}) in:title`,
+        '--json', 'number,title,headRefOid,isCrossRepository', '--limit', '20']));
+      const pr = findPlanPr(prs, slug);
+      if (!pr || !/^[0-9a-f]{40}$/.test(pr.headRefOid || '')) return null;
+      const raw = (p, ref) => run(['api', '-H', 'Accept: application/vnd.github.raw', `repos/${repoSlug}/contents/${p}?ref=${ref}`]);
+      const commits = JSON.parse(run(['api', `repos/${repoSlug}/commits?sha=${pr.headRefOid}&path=${lanePath}&per_page=50`]));
+      if (!Array.isArray(commits) || commits.length === 0) return null;
+      const sessionOf = (c) => (/^Collab-Session:\s*(\S+)/m.exec(c?.commit?.message || '') || [])[1] || '';
+      const at = commits.find((c) => sessionOf(c) === CI_PLAN_SPAR) || commits[0];
+      if (!/^[0-9a-f]{40}$/.test(at?.sha || '')) return null;
+      const handoffText = raw(`.kiro/specs/${slug}/handoff.md`, pr.headRefOid);
+      const text = raw(lanePath, at.sha);
+      return { text, handoffText, lastSession: sessionOf(at), pr: pr.number, sha: at.sha };
+    } catch { return null; }
+  };
 }
 
 /** Read a file of exafyltd/vitana-platform (or `repoSlug`) on main through the GitHub CLI; null when unavailable. */
@@ -503,8 +784,12 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
 export function loadPrograms(repo, ref) {
   const out = gitOk(repo, ['ls-tree', '-r', '--name-only', ref, '--', 'docs/programs']);
   if (!out) return [];
-  return out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean)
-    .map((m) => ({ id: m[1], path: m[0], fm: parseFrontMatter(showFile(repo, ref, m[0])) }));
+  const found = out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean);
+  const objects = catFileBatch(repo, found.map((m) => `${ref}:${m[0]}`)); // one process for every program.md
+  return found.map((m) => {
+    const raw = objects.get(`${ref}:${m[0]}`);
+    return { id: m[1], path: m[0], fm: parseFrontMatter(raw === null || raw === undefined ? null : raw.trimEnd()) };
+  });
 }
 
 export const PROGRAM_STATUSES = ['active', 'paused', 'done'];
@@ -553,7 +838,7 @@ export function validateRegistry(repo, { head, touched, repoName, seats, program
     if (!c || c.kind !== 'lane' || !seats) continue;
     const fm = parseFrontMatter(showFile(repo, head, p)) || {};
     if (fm.seat && !seats.has(fm.seat)) e.push(`${p}: seat "${fm.seat}" is not a seat of docs/programs/areas.yaml`);
-    if (fm.reviewer_seat && fm.reviewer_seat !== 'claude' && !seats.has(fm.reviewer_seat)) e.push(`${p}: reviewer_seat "${fm.reviewer_seat}" is not a seat of docs/programs/areas.yaml`);
+    if (fm.reviewer_seat && fm.reviewer_seat !== 'claude' && !isReviewerAgent(fm.reviewer_seat) && !seats.has(fm.reviewer_seat)) e.push(`${p}: reviewer_seat "${fm.reviewer_seat}" is not a seat of docs/programs/areas.yaml`);
   }
   if (programs.length) {
     const idx = programIndex(programs);
@@ -620,9 +905,14 @@ export function release(repo, key, session, { stale = false, now = Date.now() } 
 }
 
 export function sessionId(agent, now = new Date(), seat = '') {
-  if (agent !== 'kiro') throw new Usage('only Kiro sessions generate an id; a Claude cloud session uses its session_… id');
   const p = (n) => String(n).padStart(2, '0');
   const stamp = `${now.getUTCFullYear()}${p(now.getUTCMonth() + 1)}${p(now.getUTCDate())}${p(now.getUTCHours())}${p(now.getUTCMinutes())}`;
+  // VTID-05276: a reviewer agent mints its own id per review (agent-<name>-YYYYMMDDHHMM-xxxx); it has no seat.
+  if (isReviewerAgent(agent)) {
+    if (seat) throw new Usage('a reviewer agent id names no seat');
+    return `agent-${agent.slice('agent:'.length)}-${stamp}-${randomBytes(2).toString('hex')}`;
+  }
+  if (agent !== 'kiro') throw new Usage(`only Kiro sessions and reviewer agents (${REVIEWER_AGENTS.join(', ')}) generate an id; a Claude cloud session uses its session_… id`);
   if (seat && !SEAT_RE.test(seat)) throw new Usage(`--seat "${seat}" must be 1-12 lowercase letters`);
   return `kiro-${seat ? `${seat}-` : ''}${stamp}-${randomBytes(2).toString('hex')}`;
 }
@@ -632,7 +922,7 @@ export function sessionId(agent, now = new Date(), seat = '') {
 class Usage extends Error {}
 
 function parseArgs(argv) {
-  const out = { _: [], repo: [], allowInitial: [] };
+  const out = { _: [], repo: [], allowInitial: [], planRepo: [] };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const eq = /^--([\w-]+)=(.*)$/.exec(a);
@@ -642,6 +932,7 @@ function parseArgs(argv) {
     const val = flag ? true : v ?? argv[++i];
     if (k === 'repo') out.repo.push(val);
     else if (k === 'allow-initial') out.allowInitial.push(val);
+    else if (k === 'plan-repo') out.planRepo.push(val);
     else out[k] = val;
   }
   if (out.repo.length === 0) out.repo.push('.');
@@ -699,7 +990,12 @@ function main(argv) {
   }
   if (cmd === 'scope-check') {
     if (!args.base || !args.head) throw new Usage('scope-check needs --base <sha> --head <sha>');
-    const r = scopeCheck(repo, { base: args.base, head: args.head, branch: args.branch || '', fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
+    // VTID-05276: lane files of an open plan( PR — --plan-repo (repeatable), else $GITHUB_REPOSITORY, then --lane-repo.
+    const planRepos = [...new Set((args.planRepo.length ? args.planRepo : [process.env.GITHUB_REPOSITORY, args['lane-repo']]).filter(Boolean))];
+    const planFetchers = planRepos.map((r) => ghPlanLaneFetcher(r));
+    const fetchPlanLane = planFetchers.length ? (slug, p) => { for (const f of planFetchers) { const x = f(slug, p); if (x) return x; } return null; } : null;
+    const r = scopeCheck(repo, { base: args.base, head: args.head, branch: args.branch || '', fetchPlanLane,
+      fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
     const status = !r.applies ? '➖ **lane scope** — not a lane PR'
       : r.errors.length ? `❌ **lane scope** — ${r.errors.length} problem(s)${r.lane ? ` (lane ${r.lane})` : ''}:\n${r.errors.map((e) => `- ${e}`).join('\n')}`
         : `✅ **lane scope** — lane ${r.lane}: every change is inside its paths`;

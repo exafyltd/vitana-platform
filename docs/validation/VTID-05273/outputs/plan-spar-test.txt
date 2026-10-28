@@ -1,0 +1,26 @@
+node --test --test-reporter=tap scripts/collab/plan-spar.test.mjs (lane branch, Windows, node v24.11.1)
+ok 1 - detectSlug / parseResponses / setFrontMatter
+ok 2 - round 1 is written, then the session waits for the planner
+ok 3 - responses -> converged + policy-approved; without allocation the plan goes to Claude as sparred
+ok 4 - with allocation on: one VTID per lane, the first bound to the sparring record; plan approved, lanes to Kiro
+ok 5 - escalation: one re-plan session on a changed plan, a second escalation parks the plan
+ok 6 - a partner outage hands the plan to Claude, is never parked, and the retry does not use up a session
+ok 7 - gateway client: a lost long call is recovered by polling the session
+ok 8 - review fix: a round is only submitted to this plan's own in-progress session
+ok 9 - review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)
+ok 10 - late lane: a converged, policy-approved plan allocates a lane added after convergence
+ok 11 - late lane: the retry never re-sends the sparring id once the session is bound
+ok 12 - no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"
+ok 13 - lanes added later to a lane-less converged plan: first lane gets the bound VTID
+ok 14 - allocation failure keeps the VTIDs already allocated and retries the rest on the next run
+ok 15 - orphaned bound VTID is adopted, not re-allocated
+ok 16 - retry refuses a state.json that names another plan's session
+ok 17 - retry with every lane allocated is a no-op with zero writes
+ok 18 - allocation off: a converged plan with a late lane is not retried and still goes to claude
+ok 19 - R1-F1: extraRefs is forwarded to create as extra_refs (and omitted when null)
+# tests 19
+# pass 19
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0

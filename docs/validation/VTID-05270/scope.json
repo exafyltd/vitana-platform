@@ -1,0 +1,21 @@
+{
+  "vtid": "VTID-05270",
+  "lane": "mt-jobs/jobs-tenant-loop",
+  "kind": "code",
+  "paths": [
+    "services/gateway/src/services/mt-flags.ts",
+    "services/gateway/src/services/jobs/job-tenant-loop.ts",
+    "services/gateway/src/services/jobs/job-tenant-loop-repository.ts",
+    "services/gateway/src/index.ts",
+    "services/gateway/src/routes/scheduled-notifications.ts",
+    "services/gateway/src/routes/automations.ts",
+    "services/gateway/src/services/automation-executor.ts",
+    "services/gateway/test/vtid-05270-job-tenant-loop.test.ts",
+    "docs/validation/VTID-05270/**"
+  ],
+  "migrations": [],
+  "plan": "docs/validation/VTID-05270/plan.md (copy of .kiro/specs/mt-jobs/plan.md at origin/kiro/mt-jobs/plan 0cb0efd5)",
+  "dark_by_default": "MT_RESOLUTION_V2 unset => every converted site runs exactly today's single-tenant path",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
