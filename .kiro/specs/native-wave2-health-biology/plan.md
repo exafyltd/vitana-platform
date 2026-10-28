@@ -191,3 +191,5 @@ module + chip twins).
   the ingest-off flag and the dependency is logged (decision 3 / Health Hub coordination). Whether this cluster should
   instead wait for N5a is an owner/sparring call; the plan's default is stub-and-log so the screens land.
 <!-- plan:end -->
+
+<!-- replan: fresh sparring session #2 so spar_refs (vitana-v1) applies at client.create; 2026-10-28T10:58:46.1644284+01:00 -->
