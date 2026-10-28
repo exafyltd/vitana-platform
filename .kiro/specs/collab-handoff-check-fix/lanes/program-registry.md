@@ -15,7 +15,7 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T13:26Z
+updated: 2026-10-28T13:31Z
 vtid: VTID-05364
 ---
 # program-registry — list the unregistered specs in their programmes
@@ -28,4 +28,6 @@ Created and held.
 ### 2026-10-28T10:22Z · ci-plan-spar · ready (VTID allocated)
 VTID-05364 allocated after policy approval (converged-auto-v1).
 ### 2026-10-28T13:26Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-28T13:31Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
