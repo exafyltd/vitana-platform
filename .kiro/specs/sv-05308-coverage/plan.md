@@ -1,5 +1,5 @@
 ---
-change_class: small
+change_class: standard
 ---
 # plan(sv-05308-coverage): add the missing VTID-05308 staging suite so gateway STAGING-VERIFY passes
 Author: Kiro, seat `exafyltd`, session `kiro-exafyltd-202610281440-d785` (Kiro Web). Repo: `exafyltd/vitana-platform`.
