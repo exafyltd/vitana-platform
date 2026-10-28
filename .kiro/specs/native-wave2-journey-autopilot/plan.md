@@ -133,3 +133,5 @@ route files are independent even though they share the `app/(app)/autopilot/` di
 - Whether the native audiobook player belongs in `autopilot-audiobook` (this plan's default) or should be a shared
   app-wide shell concern — default here: `autopilot-audiobook` owns it, the cluster that the deep-link row names.
 <!-- plan:end -->
+
+<!-- replan: fresh sparring session #2 so spar_refs (vitana-v1) applies at client.create; 2026-10-28T10:57:47.3066341+01:00 -->
