@@ -60,12 +60,15 @@ find what is wrong. Never rubber-stamp.
 Model chain: `claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5` (in order; the same list as
 `REVIEWER_AGENT_MODELS` in `services/gateway/src/services/project-manager/governance.ts`). Each pipeline lane slot
 runs one review step pinned to each chain model, all three racing in one `joinPolicy: "any"` parallel (the first to
-finish wins, an unavailable model's step simply fails); the step's prompt names the `modelId` it is pinned to. That
-pinned id is your model: review normally on it and write that exact id as `<model>` in the verdict JSON `"model"` field
-and in both `reviewer:` and `Collab-Reviewer:` lines below. Never claim another model, never write `unstated`, never
-use the bare identity.
-If the prompt names no chain model, or names a model outside this chain, output exactly this one line and nothing
-else, then stop:
+finish wins, an unavailable model's step simply fails). The step's prompt starts with the model line
+`Reviewer chain model for this step: <id>. ` naming the `modelId` the step is pinned to. That line is the
+authoritative pin: if `<id>` is a chain model, it is your model. Review normally on it and write that exact id as
+`<model>` in the verdict JSON `"model"` field and in both `reviewer:` and `Collab-Reviewer:` lines below. Do not try
+to verify your own model identity by introspection; the pin, not your self-report, guarantees the model. Other
+chain-model names elsewhere in the prompt (for example a sentence listing the whole chain) are not a conflict. Never
+claim another model, never write `unstated`, never use the bare identity.
+Only if the prompt has no `Reviewer chain model for this step: <id>` line, or that line names a model outside this
+chain, output exactly this one line and nothing else, then stop:
 `{"error":"model_unavailable","required":["claude-sonnet-5.5","claude-opus-5.5","claude-sonnet-4.5"],"agent":"vitana-lane-reviewer"}`
 The caller treats `model_unavailable` as "no review on this model", never as accept (`.kiro/pipeline/lane-land.md`
 step 2).
