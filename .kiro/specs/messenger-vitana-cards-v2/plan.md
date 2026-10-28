@@ -167,7 +167,10 @@ Reused unchanged:
 - `enrichment/card-catalog.ts` `eligibleEnrichmentCards(completions,
   dismissRows, screen, now)` ΓÇö the shared eligibility rule.
 - `guide/presence-pacer.ts`, `data/enrichment-card-tips.ts`,
-  vitana-v1 `MessageBubble.tsx` (renders the card; no vitana-v1 change).
+  vitana-v1 `MessageBubble.tsx` → `VitanaChatCard` (no vitana-v1 change —
+  VERIFIED R1-F1: `VitanaChatCard` renders ANY `card_type` via the shared
+  `getVitanaCardComponent` registry, not an F-series allowlist, and already
+  handles E-series dismissal, so E1–E11 render unchanged).
 
 Genuinely new (the real work):
 1. **Bulk enrichment completion + dismissal reads.** The per-member
