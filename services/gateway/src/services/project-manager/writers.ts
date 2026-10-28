@@ -18,7 +18,7 @@
  *
  * No deploy, no workflow run, no VTID allocation is reachable from here.
  */
-import type { LaneFileChange, LaneFileWriter, LedgerWriter, UpdateBranchFn } from './act';
+import type { LaneFileChange, LaneFileWriter, LedgerWriter, UpdateBranchFn, WriteOutcome } from './act';
 import { PM_SESSION } from './types';
 import { prNumberFromUrl } from './act';
 import { gh, supaRest } from './github-rest';
@@ -30,6 +30,45 @@ const FM_RE = /^---\r?\n([\s\S]*?)\r?\n---/;
 /** ISO minute, the lane-log timestamp style (`2026-10-20T20:00Z`). */
 function isoMinute(iso: string): string {
   return iso.slice(0, 16) + 'Z';
+}
+
+function getKey(fm: string, key: string): string {
+  return new RegExp(`^${key}:[ \t]*(.*)$`, 'm').exec(fm)?.[1]?.trim() ?? '';
+}
+
+/**
+ * VTID-05387 (operating-workflow/pm-noop, sparring R1-F3): lane keys the PM never
+ * changes. Lane scope (scripts/collab/queue.mjs PERM rule) refuses a change of any
+ * of them on a `pm-agent` commit, so such a write would keep its PR red forever.
+ */
+export const PERMISSION_KEYS = ['executor', 'seat', 'reviewer_seat', 'paths'] as const;
+
+/** The body of the newest `### …` log entry (heading excluded), trimmed. */
+function newestLogBody(text: string): string | null {
+  const at = text.lastIndexOf('\n### ');
+  if (at < 0) return null;
+  const nl = text.indexOf('\n', at + 1);
+  return nl < 0 ? '' : text.slice(nl + 1).trim();
+}
+
+/**
+ * VTID-05387: true when applying `change` would change nothing but `updated:` and
+ * the heading time — every key it sets already has that value (`next_actor` after
+ * the LANE_ACTORS mapping, `claimed_by` empty on `release_claim`) and the newest
+ * log entry already carries the same `change.log` text.
+ */
+export function laneChangeIsNoop(text: string, change: LaneFileChange): boolean {
+  const m = FM_RE.exec(text);
+  if (!m) return false;
+  const fm = m[1].replace(/\r/g, '');
+  if (change.state !== undefined && change.state !== getKey(fm, 'state')) return false;
+  if (change.next_actor) {
+    const mapped = LANE_ACTORS.includes(change.next_actor) ? change.next_actor : 'kiro';
+    if (mapped !== getKey(fm, 'next_actor')) return false;
+  }
+  if (change.seat !== undefined && change.seat !== getKey(fm, 'seat')) return false;
+  if (change.release_claim && !['', 'null', '~'].includes(getKey(fm, 'claimed_by'))) return false;
+  return newestLogBody(text) === change.log.trim();
 }
 
 function setKey(fm: string, key: string, value: string | null): string {
@@ -52,7 +91,12 @@ export function applyLaneChange(text: string, change: LaneFileChange, nowIso: st
   // A lane's next_actor is claude|kiro|owner (queue.mjs validateLane); a seat
   // (e.g. the exceptions seat) is a Kiro actor — the seat itself goes in `seat`.
   if (change.next_actor) fm = setKey(fm, 'next_actor', LANE_ACTORS.includes(change.next_actor) ? change.next_actor : 'kiro');
-  if (change.seat !== undefined) fm = setKey(fm, 'seat', change.seat);
+  if (change.seat !== undefined && change.seat !== getKey(fm, 'seat')) {
+    throw new Error(
+      `invalid lane change ${change.slug}/${change.lane}: permission key seat (${getKey(fm, 'seat') || 'unset'} → ${change.seat}); ` +
+        'Lane scope refuses a pm-agent change of executor, seat, reviewer_seat or paths (scripts/collab/queue.mjs PERM rule)',
+    );
+  }
   if (change.release_claim) fm = setKey(fm, 'claimed_by', null);
   fm = setKey(fm, 'updated', isoMinute(nowIso));
   const rest = text.slice(m[0].length);
@@ -73,6 +117,7 @@ export interface GithubWriteClient {
 }
 
 const laneFilePath = (slug: string, lane: string) => `.kiro/specs/${slug}/lanes/${lane}.md`;
+const bookkeepingBranch = (slug: string) => `pm-agent/${slug}`;
 
 function commitMessage(subject: string, laneKey: string): string {
   return `${subject}\n\nCollab-Session: ${PM_SESSION}\nCollab-Lane: ${laneKey}`;
@@ -88,7 +133,12 @@ export class GithubRepoFileWriter implements LaneFileWriter {
     return new Date((this.opts.now ?? Date.now)()).toISOString();
   }
 
-  async write(change: LaneFileChange): Promise<void> {
+  /**
+   * VTID-05387: returns `'noop'` — no commit, no push, no branch or PR created —
+   * when the change is already in the file on the branch it would write (the PR
+   * head for W1; `pm-agent/<slug>`, or `main` while that branch does not exist, for W2).
+   */
+  async write(change: LaneFileChange): Promise<WriteOutcome> {
     const repo = change.repo ?? PLATFORM;
     const path = laneFilePath(change.slug, change.lane);
     if (change.target === 'pr_branch') {
@@ -97,28 +147,40 @@ export class GithubRepoFileWriter implements LaneFileWriter {
       const head = await this.client.pullHead(repo, n);
       const cur = await this.client.file(repo, path, head.ref);
       if (!cur) throw new Error(`${path} not on ${head.ref}`);
+      if (laneChangeIsNoop(cur.text, change)) return 'noop';
       const next = applyLaneChange(cur.text, change, this.nowIso());
       await this.client.put(repo, path, head.ref, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/${change.lane}`));
-      return;
+      return 'written';
     }
+    const bookkeeping = bookkeepingBranch(change.slug);
+    const readRef = (await this.client.refSha(repo, bookkeeping)) ? bookkeeping : 'main';
+    const before = await this.client.file(repo, path, readRef);
+    if (!before) throw new Error(`${path} not on ${readRef}`);
+    if (laneChangeIsNoop(before.text, change)) return 'noop';
     const branch = await this.ensureBookkeepingBranch(repo, change.slug);
-    const cur = await this.client.file(repo, path, branch);
+    const cur = readRef === branch ? before : await this.client.file(repo, path, branch);
     if (!cur) throw new Error(`${path} not on ${branch}`);
     const next = applyLaneChange(cur.text, change, this.nowIso());
     await this.client.put(repo, path, branch, next, cur.sha, commitMessage(`pm: ${change.slug}/${change.lane} ${change.state ?? 'update'}`, `${change.slug}/_plan`));
     await this.ensureBookkeepingPull(repo, change.slug, branch);
+    return 'written';
   }
 
-  /** W2 for a non-lane file (e.g. `docs/validation/<plan VTID>/timings.json`). */
-  async writeFile(repo: string, slug: string, path: string, text: string, subject: string): Promise<void> {
+  /** W2 for a non-lane file (e.g. `docs/validation/<plan VTID>/timings.json`); `'noop'` when the text is unchanged. */
+  async writeFile(repo: string, slug: string, path: string, text: string, subject: string): Promise<WriteOutcome> {
+    const bookkeeping = bookkeepingBranch(slug);
+    const readRef = (await this.client.refSha(repo, bookkeeping)) ? bookkeeping : 'main';
+    const before = await this.client.file(repo, path, readRef);
+    if (before && before.text === text) return 'noop';
     const branch = await this.ensureBookkeepingBranch(repo, slug);
-    const cur = await this.client.file(repo, path, branch);
+    const cur = readRef === branch ? before : await this.client.file(repo, path, branch);
     await this.client.put(repo, path, branch, text, cur?.sha ?? null, commitMessage(subject, `${slug}/_plan`));
     await this.ensureBookkeepingPull(repo, slug, branch);
+    return 'written';
   }
 
   private async ensureBookkeepingBranch(repo: string, slug: string): Promise<string> {
-    const branch = `pm-agent/${slug}`;
+    const branch = bookkeepingBranch(slug);
     if (!(await this.client.refSha(repo, branch))) {
       const main = await this.client.refSha(repo, 'main');
       if (!main) throw new Error('main ref not readable');

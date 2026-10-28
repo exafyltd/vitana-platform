@@ -439,6 +439,8 @@ export type ActStatus =
   | 'plan_merged'
   | 'ledger_updated'
   | 'ledger_failed'
+  // VTID-05387: a reassignment already in the lane file — nothing written.
+  | 'unchanged'
   | 'act_error';
 
 /** The result of acting on one decision. */

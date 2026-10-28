@@ -1,0 +1,19 @@
+{
+  "vtid": "VTID-05387",
+  "kind": "fix",
+  "paths": [
+    "services/gateway/src/services/project-manager/decide.ts",
+    "services/gateway/src/services/project-manager/act.ts",
+    "services/gateway/src/services/project-manager/writers.ts",
+    "services/gateway/src/services/project-manager/types.ts",
+    "services/gateway/test/project-manager/**",
+    "services/gateway/test/kaf-staging-claude-available-wiring.test.ts",
+    "services/gateway/test/kiro-autonomy-fallback-proof.test.ts",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".kiro/specs/operating-workflow/lanes/pm-noop.md",
+    "docs/validation/VTID-05387/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05387/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
