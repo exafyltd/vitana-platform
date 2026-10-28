@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/multi-tenant/provisioning-ui
 pr: https://github.com/exafyltd/vitana-v1/pull/1438
-updated: 2026-10-28T13:27Z
+updated: 2026-10-28T13:32Z
 ---
 # Exafy-admin "New community" panel — VTID-05221 (repo vitana-v1)
 
@@ -65,4 +65,6 @@ ConversationView.deeplink-scroll.vtid-05201.test.tsx (@/lib/i18n-toast mock lack
 main 704b5def too (UNIT-TESTS 39111020642). Next actor claude: re-run pr-gate once the ECR limit clears, fix or
 quarantine the main-red VTID-05201 test, review against tasks.md P1â€“P9, merge.
 ### 2026-10-28T13:27Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-28T13:32Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
