@@ -56,3 +56,8 @@ bash outputs/demo-fresh-sandbox.sh → outputs/demo-fresh-sandbox.txt: fresh --d
                                    `status --check` → ready, exit 0 (codeintel WARN, non-required). Warm `setup --no-codeintel | head -3`:
                                    1 s, node exit 0 (no EPIPE); installs then ok. Decision: code intelligence stays last, so a timeout
                                    leaves every required item done; AGENTS.md / driver.md / README say so.
+
+## governance (one preflight run after the lane commit 0e9aa184d4d8de514c2ac3f035248afae3cddd3a)
+node scripts/collab/preflight.mjs --repo <WT> --base origin/main --head HEAD --branch kiro/kiro-web-reliability/session-reliability --title 'VTID-05361 (…)'
+   → every check passed: Collab tests, Collab handoff, Lane scope, PR-GATE scope/sparring/weakening/red-green, Kiro steering (outputs/preflight.txt)
+node scripts/ci/validator-path-guard.cjs --pr-body-check <PR body>      → PR body carries every required declaration.
