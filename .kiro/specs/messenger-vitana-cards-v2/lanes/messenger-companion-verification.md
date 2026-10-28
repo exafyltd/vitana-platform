@@ -12,7 +12,8 @@ paths:
   - services/gateway/src/services/companion/**
   - services/gateway/test/**
   - docs/validation/**
-updated: 2026-10-22T22:05Z
+updated: 2026-10-28T10:29Z
+vtid: VTID-05368
 ---
 
 Run-mode doc, the `disabled-on-staging` read-only staging test (matching
@@ -25,3 +26,5 @@ Rescoped in sparring round-1 rewrite (R1-F3): the engine is disabled-on-staging,
 so no delivered-card assertion on staging; verification is status-endpoint +
 offline tests. Awaiting CI PLAN-SPAR convergence + VTID allocation before build.
 
+### 2026-10-28T10:29Z · ci-plan-spar · ready (VTID allocated)
+VTID-05368 allocated after policy approval (converged-auto-v1).

@@ -11,7 +11,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/src/services/companion/**
   - services/gateway/test/**
-updated: 2026-10-22T22:05Z
+updated: 2026-10-28T10:29Z
+vtid: VTID-05366
 ---
 
 The 11 E1ΓÇôE11 enrichment moments only, gated through
@@ -55,3 +56,5 @@ Rescoped in sparring round-1 rewrite (R1-F1): F1/F7/F8 removed (already
 shipped); lane now adds ONLY E1ΓÇôE11. Awaiting CI PLAN-SPAR convergence + VTID
 allocation before build.
 
+### 2026-10-28T10:29Z · ci-plan-spar · ready (VTID allocated)
+VTID-05366 allocated after policy approval (converged-auto-v1).

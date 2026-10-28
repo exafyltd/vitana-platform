@@ -11,7 +11,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/src/services/companion/**
   - services/gateway/test/**
-updated: 2026-10-22T22:05Z
+updated: 2026-10-28T10:29Z
+vtid: VTID-05367
 ---
 
 Bulk enrichment completion + `user_enrichment_cards` dismissal reads, the
@@ -40,3 +41,5 @@ Created in sparring round-1 rewrite (R1-F4/R1-F5): the enrichment resolver is
 per-member with no bulk form, so the bulk read is its own lane. Awaiting CI
 PLAN-SPAR convergence + VTID allocation before build.
 
+### 2026-10-28T10:29Z · ci-plan-spar · ready (VTID allocated)
+VTID-05367 allocated after policy approval (converged-auto-v1).

@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-22T22:05Z
+state: approved
+updated: 2026-10-28T10:29Z
+sparring_record: .kiro/specs/messenger-vitana-cards-v2/sparring/verdict.md
+vtids: [VTID-05366, VTID-05367, VTID-05368]
 ---
 
 Clean re-spar of the `messenger-vitana-cards` plan. The original slug went
@@ -29,3 +31,6 @@ messenger-vitana-cards slug for allocation purposes. Next: push the
 `plan(messenger-vitana-cards-v2)` PR so CI PLAN-SPAR spars it; expected to
 converge quickly (no open findings) → policy approval → CI allocates the lane
 VTIDs.
+
+### 2026-10-28T10:29Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
