@@ -1,0 +1,15 @@
+{
+  "sessions": [
+    {
+      "id": "64ef89c6-29fe-44bb-b80c-93439416326f",
+      "submitted": [],
+      "plan_text_sha": "efaa5218",
+      "rounds": 1,
+      "verdict": "in_progress",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": null,
+      "policy_approved_at": null
+    }
+  ]
+}
