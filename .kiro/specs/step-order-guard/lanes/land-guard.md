@@ -13,6 +13,7 @@ paths:
   - scripts/collab/land-guard.mjs
   - scripts/collab/land-guard.test.mjs
   - .kiro/pipeline/common-rules.md
+  - .kiro/pipeline/lane-land.md
   - docs/validation/VTID-*/**
 updated: 2026-10-28T09:55Z
 ---

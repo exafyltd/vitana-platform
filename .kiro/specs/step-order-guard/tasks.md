@@ -6,7 +6,7 @@ Authoritative plan: `plan.md`. VTID from CI PLAN-SPAR. Branch `kiro/step-order-g
 ## Lane `land-guard`
 - [ ] T1 `step-order-guard.test.mjs` per plan §4, red on `origin/main`.
 - [ ] T2 `step-order-guard.mjs` per plan §3 1–5.
-- [ ] T3 `common-rules.md` rule 13 per plan §3.
+- [ ] T3 `common-rules.md` rule 13 and `lane-land.md` steps 3d / 3f per plan §3.
 - [ ] T4 `node --test scripts/collab/*.test.mjs`, the steering guard, preflight; the lane itself is landed and closed
       with `step-order-guard.mjs merge` / `release` (dogfood), recorded in `commands.log`.
 

@@ -27,13 +27,14 @@ Open plan PR exafyltd/vitana-platform#4392 (`kiro-web-reliability`; its spec is 
 and `preflight.mjs`. This plan touches none of them.
 
 ## 3. Change — one lane `land-guard` (vitana-platform)
-New `scripts/collab/land-guard.mjs` (Node ≥ 20, ESM, no dependencies, pure decision functions exported). Every command
+New `scripts/collab/land-guard.mjs` (Node ≥ 20, ESM, no npm dependencies; imports `globToRegex` and `PROTECTED_GATE_PATHS` from the co-located `queue.mjs`, pure decision functions exported). Every command
 exits 0 only when the step may run, 1 when it may not (the reason is printed), and 2 while checks are still pending.
 1. `evidence --repo <dir> --vtid <VTID>`: `docs/validation/<VTID>/` must hold `acceptance.md`, `commands.log` and
    `scope.json`, each committed or staged (`git ls-files` ∪ `git diff --cached --name-only`). Run it before a lane
    code commit.
 2. `review --gh <owner/repo> --pr <n> --reviewed-head <sha>`: the PR head must equal the reviewed head, or every
-   commit after it must change only `.kiro/specs/<slug>/lanes/<lane>.md` (an entry-only commit, collaboration.md §3).
+   commit after it must change only `.kiro/specs/<slug>/lanes/<lane>.md` (an entry-only commit, collaboration.md §3), or be a `pm-agent`
+   lane-state commit (trailer `Collab-Session: pm-agent`, only `.kiro/specs/<slug>/` lane or handoff files), as §3 allows.
    Data comes from `gh api …/compare/<reviewed>...<head>`.
 3. `checks --gh <owner/repo> --sha <sha> [--wait <sec>]`: takes the latest attempt of each check run name. Any
    conclusion other than success / skipped / neutral → 1. Any still running → poll every 60 s up to `--wait`, then 2. No
@@ -53,15 +54,17 @@ exits 0 only when the step may run, 1 when it may not (the reason is printed), a
 Runbook: `.kiro/pipeline/common-rules.md` gets rule 13 "Step order (enforced)". It lists the four dependencies, says
 that independent steps may run in parallel and dependent steps never do (one tool call waits for the previous result),
 and says that merges and releases in a Kiro session go through `land-guard.mjs`, not a raw merge call or
-`queue.mjs release`. No other runbook changes.
+`queue.mjs release`. `.kiro/pipeline/lane-land.md` steps 3d (merge) and 3f
+(release) call `land-guard.mjs merge` / `land-guard.mjs release` instead of the raw commands. `driver.md` (owned by #4392)
+is not changed: its step 6 defers to `lane-land.md`, and pointing its step 9 at `release` / `release-heartbeat` is listed for #4392.
 Lane: `executor: kiro`, `reviewer_seat: agent:vitana-lane-reviewer`; paths `scripts/collab/land-guard.mjs`,
-`scripts/collab/land-guard.test.mjs`, `.kiro/pipeline/common-rules.md`, `docs/validation/VTID-*/**`. `scripts/collab/**`
+`scripts/collab/land-guard.test.mjs`, `.kiro/pipeline/common-rules.md`, `.kiro/pipeline/lane-land.md`, `docs/validation/VTID-*/**`. `scripts/collab/**`
 is a governance path (`queue.mjs:85`). An `executor: kiro` lane may change one only with
 `reviewer_seat: agent:vitana-lane-reviewer` (the VTID-05276 exception, `queue.mjs:72-73`, `:231-234`), which the lane file
 sets. None of these files matches a glob in `scripts/collab/protected-gate-files.json`.
 
 ## 4. Tests (`scripts/collab/land-guard.test.mjs`, written first, red on base)
-Unit tests of the pure functions: evidence missing / present (staged or committed); entry-only vs a code commit after
+Unit tests of the pure functions: evidence missing / present (staged or committed); entry-only, a `pm-agent` lane-state commit, and a code commit after
 the reviewed head; head equal to reviewed; checks latest-attempt selection (a failed attempt 1 followed by a successful
 attempt 2 passes, a successful attempt 1 followed by a failed attempt 2 fails), pending → 2, empty → 2; merge decision
 refuses when behind > 0 or a protected gate file is changed; release refused for `executing` / `verified`, allowed for `done` / `parked`; `_plan` refused
