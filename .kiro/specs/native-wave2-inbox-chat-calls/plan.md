@@ -163,3 +163,5 @@ lanes run in parallel (no `depends_on`).
 - Whether `/inbox/t/:threadId` renders the conversation inline or redirects after resolving the thread id (web strips
   the segment back to `/inbox`); default: render the conversation screen with a thread-id resolver.
 <!-- plan:end -->
+
+<!-- replan: fresh sparring session #2 so spar_refs (vitana-v1) applies at client.create; 2026-10-28T10:58:22.9073120+01:00 -->
