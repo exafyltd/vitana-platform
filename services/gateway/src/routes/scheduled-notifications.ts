@@ -42,6 +42,7 @@ import {
 } from '../services/whats-new-publisher';
 import * as repo from './scheduled-notifications-repository';
 import { withJobTenants } from '../services/jobs/job-tenant-loop';
+import { CHAT_PUSH_TYPES, chatConversationKeyFromData, keysByMessageId, messageIdOf, viewingKey, viewingPairs } from '../services/chat-viewing-presence';
 import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
@@ -1311,8 +1312,71 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
     await recordPushOutcome(supa, id, outcome);
   };
 
+  // VTID-05312: chat rows of this batch, decided before anything is sent:
+  //   - duplicates: of rows for the same recipient and chat message the oldest
+  //     is kept; the others — and a kept row whose sibling was already pushed —
+  //     are marked suppressed_duplicate;
+  //   - viewing: the recipient is looking at that conversation → suppressed_viewing.
+  // Keys are resolved for the whole batch (one chat_messages read for rows that
+  // name neither group nor sender, one presence read). Fails open.
+  const chatDuplicateIds = new Set<string>();
+  const chatViewingIds = new Set<string>();
+  const chatRows = pending.filter((n: any) => CHAT_PUSH_TYPES.has(n.type));
+  if (chatRows.length > 0) {
+    try {
+      const keptByPair = new Map<string, string>();
+      for (const n of chatRows) {
+        const mid = messageIdOf(n.data);
+        if (!mid) continue;
+        const pair = `${n.user_id}|${mid}`;
+        if (keptByPair.has(pair)) chatDuplicateIds.add(n.id);
+        else keptByPair.set(pair, n.id);
+      }
+      const mids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[1])));
+      if (mids.length > 0) {
+        const uids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[0])));
+        const { data: pushed, error: siblingError } = await repo.fetchPushedChatSiblings(supa, mids, uids);
+        if (siblingError) console.warn(`[PushDispatch] pushed-sibling read failed (dedup of already-pushed rows skipped this tick): ${siblingError.message}`);
+        for (const r of (pushed as Array<{ id: string; user_id: string; message_id: string }> | null) ?? []) {
+          const kept = keptByPair.get(`${r.user_id}|${r.message_id}`);
+          if (kept && kept !== r.id) chatDuplicateIds.add(kept);
+        }
+      }
+      const needLookup = chatRows
+        .filter((n: any) => !chatConversationKeyFromData(n.data))
+        .map((n: any) => messageIdOf(n.data))
+        .filter((x: string | null): x is string => !!x);
+      const keyByMessage = await keysByMessageId(supa, needLookup);
+      const keyByRow = new Map<string, string>();
+      for (const n of chatRows) {
+        const key = chatConversationKeyFromData(n.data) ?? keyByMessage.get(messageIdOf(n.data) ?? '') ?? null;
+        if (key) keyByRow.set(n.id, key);
+      }
+      const viewing = await viewingPairs(supa, chatRows
+        .filter((n: any) => keyByRow.has(n.id))
+        .map((n: any) => ({ userId: n.user_id, tenantId: n.tenant_id, key: keyByRow.get(n.id)! })));
+      for (const n of chatRows) {
+        const key = keyByRow.get(n.id);
+        if (key && viewing.has(viewingKey(n.user_id, n.tenant_id, key))) chatViewingIds.add(n.id);
+      }
+    } catch (err: any) {
+      console.warn(`[PushDispatch] chat dedup/viewing check failed (pushing as before): ${err?.message || err}`);
+    }
+  }
+
   for (const notif of pending) {
     try {
+      if (chatDuplicateIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_duplicate');
+        skipped++;
+        continue;
+      }
+      if (chatViewingIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_viewing');
+        skipped++;
+        continue;
+      }
+
       // VTID-04674: the admin switch. The row exists (it passed the database
       // guard when it was written), but a type switched off since must not
       // push. Marked handled so it is not picked up again.
