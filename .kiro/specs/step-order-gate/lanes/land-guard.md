@@ -1,6 +1,6 @@
 ---
 lane: land-guard
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610261510-099d
 branch: kiro/step-order-gate/land-guard
@@ -17,7 +17,7 @@ paths:
   - .kiro/pipeline/common-rules.md
   - .kiro/pipeline/lane-land.md
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:00Z
+updated: 2026-10-28T11:06Z
 vtid: VTID-05362
 ---
 # Lane: land-guard (repo vitana-platform)
@@ -66,3 +66,6 @@ re-checked: no path where a refusal merges or releases, no fail-open handling, `
 squash and `--admin` limits kept.
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the land step merges under §7b.
+
+### 2026-10-28T11:06Z · kiro-exafyltd-202610261510-099d · executing → in-review
+PR #4439 opened. Reviewer agent: changes on `0c43330d`, then accept on `d9749341` (entries above).
