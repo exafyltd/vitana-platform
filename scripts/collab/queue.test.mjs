@@ -1179,3 +1179,140 @@ test('VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test
   assert.match(lane, /node "\$RUNNER_TEMP\/queue\.mjs" scope-check/);
   assert.doesNotMatch(lane, /node scripts\/collab\/queue\.mjs scope-check/);
 });
+
+// ── VTID-05331 (collab-multi-builder-handoff/sequential-builders): sessions of the lane's own seat, one after another ──
+// Lane LANE: seat jtadic, reviewer_seat exafyltd, paths src/backoffice/**. Builders JT (A) and JT2 (B), same seat.
+const JT2 = 'kiro-jtadic-202610151400-ef56';
+const HM = 'kiro-hotmail-202610151500-aa11';
+const AGENT = 'agent-vitana-lane-reviewer-202610151600-bb22';
+const L1 = '.kiro/specs/cards/lanes/card-01.md';
+/** The lane file at a builder step: front matter + a log that names `logged` sessions (one entry each). */
+const laneStep = (claimedBy, logged) => {
+  const md = laneMd('card-01', { ...LANE, state: 'executing', vtid: 'VTID-00002', claimed_by: claimedBy });
+  return md + logged.map((s, i) => `### 2026-10-15T1${i}:00Z · ${s} · ${i ? 'takeover (continues the lane)' : 'ready → executing'}\n`).join('');
+};
+/** One builder commit by `session` on lane card-01: a file under `file` and the lane file as given. */
+const build = (f, session, file, lane) => {
+  write(f.work, file, `${session}\n`);
+  if (lane) write(f.work, L1, lane);
+  return commit(f.work, `work ${session}`, { 'Collab-Session': session, 'Collab-Lane': 'cards/card-01' });
+};
+const rangeErrors = (f, base, head) => Q.validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+const scopeErrors = (f, base, head) => scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+
+test('VTID-05331 1: builder A releases, B of the same seat takes over and logs it, claimed_by B → pass', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, JT2, 'src/backoffice/b.ts', laneStep(JT2, [JT, JT2]));
+    assert.deepEqual(rangeErrors(f, base, head), []);
+    assert.deepEqual(scopeErrors(f, base, head), []);
+  } finally { f.done(); }
+});
+
+test('VTID-05331 2: interleaved builders A, B, A → fail (overlap)', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    build(f, JT2, 'src/backoffice/b.ts', laneStep(JT2, [JT, JT2]));
+    const head = build(f, JT, 'src/backoffice/c.ts', laneStep(JT, [JT, JT2, JT]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes('builder sessions overlap')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 3: a session of another seat continues the lane → fail (seat), and scope-check still refuses it', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, HM, 'src/backoffice/b.ts', laneStep(HM, [JT, HM]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes("not a session of the lane's seat jtadic")), e.join('\n'));
+    assert.ok(scopeErrors(f, base, head).some((x) => x.includes('which belongs to seat jtadic')));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 4: the reviewer seat, a reviewer agent, or a session that reviewed the lane may not continue the build', () => {
+  // (a) a session of reviewer_seat exafyltd
+  let f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, EX, 'src/backoffice/b.ts', laneStep(EX, [JT, EX]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes(`${EX} reviews this lane and cannot also build it`)), e.join('\n'));
+  } finally { f.done(); }
+  // (b) a reviewer-agent session id
+  f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, AGENT, 'src/backoffice/b.ts', laneStep(AGENT, [JT, AGENT]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes(`${AGENT} reviews this lane and cannot also build it`)), e.join('\n'));
+  } finally { f.done(); }
+  // (c) a session of the lane's own seat that already wrote a review entry on the lane
+  f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    write(f.work, L1, `${laneStep(JT, [JT])}### 2026-10-15T12:00Z · ${JT2} · review\nreview: accept\n`);
+    commit(f.work, 'review', { 'Collab-Session': JT2, 'Collab-Review': 'cards/card-01' });
+    const head = build(f, JT2, 'src/backoffice/b.ts', `${laneStep(JT2, [JT, JT2])}### 2026-10-15T12:00Z · ${JT2} · review\nreview: accept\n`);
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes(`${JT2} reviews this lane and cannot also build it`)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 5: sequential same-seat builders do not widen the lane paths (scope-check still fails)', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, JT2, 'src/other/b.ts', laneStep(JT2, [JT, JT2]));
+    assert.deepEqual(rangeErrors(f, base, head), []);
+    assert.ok(scopeErrors(f, base, head).some((x) => x.includes('src/other/b.ts is outside lane cards/card-01')));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 6: a single-builder lane passes unchanged, and its claimed_by is still checked', () => {
+  let f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, JT, 'src/backoffice/b.ts', laneStep(JT, [JT]));
+    assert.deepEqual(rangeErrors(f, base, head), []);
+    assert.deepEqual(scopeErrors(f, base, head), []);
+  } finally { f.done(); }
+  f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    const head = build(f, JT, 'src/backoffice/a.ts', laneStep(JT2, [JT]));
+    assert.ok(rangeErrors(f, base, head).some((x) => x.includes(`claimed_by is ${JT2} but the commits come from ${JT}`)));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 7: a takeover not named in the lane log → fail', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, JT2, 'src/backoffice/b.ts', laneStep(JT2, [JT]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes(`builder session ${JT2} is not named in the lane log`)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05331 8: claimed_by still names the earlier builder after a takeover → fail', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    build(f, JT, 'src/backoffice/a.ts', laneStep(JT, [JT]));
+    const head = build(f, JT2, 'src/backoffice/b.ts', laneStep(JT, [JT, JT2]));
+    const e = rangeErrors(f, base, head);
+    assert.ok(e.some((x) => x.includes(`claimed_by is ${JT} but the last builder session is ${JT2}`)), e.join('\n'));
+  } finally { f.done(); }
+});

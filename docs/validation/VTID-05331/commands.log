@@ -1,0 +1,7 @@
+# VTID-05331 — commands run (session kiro-exafyltd-202610261013-e940, base origin/main 55cc5bbad)
+node --test --test-name-pattern='VTID-05331' scripts/collab/queue.test.mjs   # on main's queue.mjs: 8 tests, 1 pass, 7 fail (outputs/red-on-main.txt)
+node --test scripts/collab/*.test.mjs                                        # on main (baseline): 146 tests, 145 pass, 0 fail, 1 skipped
+node --test --test-name-pattern='VTID-05331' scripts/collab/queue.test.mjs   # after the change: 8/8 pass (outputs/vtid-05331-green.txt)
+node --test scripts/collab/*.test.mjs                                        # after the change: 154 tests, 153 pass, 0 fail, 1 skipped (outputs/collab-suite-green.txt)
+node scripts/collab/queue.mjs validate --repo . --base origin/main --head HEAD
+node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/collab-multi-builder-handoff/sequential-builders

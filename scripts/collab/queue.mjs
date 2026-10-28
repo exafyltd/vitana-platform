@@ -567,7 +567,8 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     if (laneTrailers.size && (!k.session || !k.lane) && !k.review) errors.push(`${short}: a lane PR needs Collab-Session and Collab-Lane trailers on every commit`);
     if (k.session && !SESSION_RE.test(k.session)) errors.push(`${short}: Collab-Session "${k.session}" is not a session id`);
     // VTID-05276 (plan §4.5): the Project Manager's lane-state commits do not count for one-session-per-lane or claimed_by.
-    if (k.lane && k.session !== PM_AGENT) {
+    // VTID-05331: nor do PLAN-SPAR's own commits (they carry `<slug>/_plan`; now excluded explicitly).
+    if (k.lane && k.session !== PM_AGENT && k.session !== CI_PLAN_SPAR) {
       if (!sessionsByLane.has(k.lane)) sessionsByLane.set(k.lane, new Set());
       sessionsByLane.get(k.lane).add(k.session);
     }
@@ -591,16 +592,50 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
   }
+  let order = null; // VTID-05331: non-merge commits of the range, oldest first (topological), computed once when needed.
+  const onePerLane = (lane, sessions) => `lane ${lane}: commits from ${sessions.size} sessions (${[...sessions].join(', ')}) — one session per lane`;
   for (const [lane, sessions] of sessionsByLane) {
-    if (sessions.size > 1) errors.push(`lane ${lane}: commits from ${sessions.size} sessions (${[...sessions].join(', ')}) — one session per lane`);
     const [slug, id] = lane.split('/');
-    if (id === PLAN_LANE) continue;
+    if (id === PLAN_LANE) {
+      if (sessions.size > 1) errors.push(onePerLane(lane, sessions));
+      continue;
+    }
     // A vitana-v1 PR may work a lane whose spec lives in vitana-platform (VTID-05213): fetchLane reads it there.
     const lanePath = `.kiro/specs/${slug}/lanes/${id}.md`;
-    const fm = parseFrontMatter(showFile(repo, head, lanePath) ?? (fetchLane ? fetchLane(lanePath) : null));
+    const headText = showFile(repo, head, lanePath) ?? (fetchLane ? fetchLane(lanePath) : null);
+    const fm = parseFrontMatter(headText);
     if (!fm) { errors.push(`Collab-Lane ${lane}: ${lanePath} does not exist${fetchLane ? ' here or in vitana-platform' : ''}`); continue; }
-    const s = [...sessions][0];
-    if (fm.claimed_by && fm.claimed_by !== s) errors.push(`lane ${lane}: claimed_by is ${fm.claimed_by} but the commits come from ${s}`);
+    if (sessions.size === 1) {
+      const s = [...sessions][0];
+      if (fm.claimed_by && fm.claimed_by !== s) errors.push(`lane ${lane}: claimed_by is ${fm.claimed_by} but the commits come from ${s}`);
+      continue;
+    }
+    // VTID-05331 (plan collab-multi-builder-handoff): sessions of the lane's own seat may build it one after another.
+    // The seat and reviewer come from the merge-base revision of the lane file when it exists there (base-revision rule).
+    const baseFm = parseFrontMatter(showFile(repo, mergeBase, lanePath)) || fm;
+    const seat = baseFm.seat || '';
+    if (!seat) { errors.push(onePerLane(lane, sessions)); continue; } // a lane without a seat keeps the old rule
+    const reviewerSeat = isReviewerAgent(baseFm.reviewer_seat) ? '' : (baseFm.reviewer_seat || '');
+    const reviewedBy = new Set(commits.filter((k) => (k.review || '').split(',').map((x) => x.trim()).includes(lane)).map((k) => k.session));
+    for (const m of (headText || '').matchAll(/^### [^\n]*? · (\S+) · review\b/gm)) reviewedBy.add(m[1]);
+    for (const s of sessions) {
+      // (b) never a reviewer as builder; (a) every builder is a session of the lane's seat.
+      if (agentOf(s) || (reviewerSeat && seatOf(s) === reviewerSeat) || reviewedBy.has(s)) errors.push(`lane ${lane}: ${s} reviews this lane and cannot also build it`);
+      else if (seatOf(s) !== seat) errors.push(`lane ${lane}: builder session ${s} is not a session of the lane's seat ${seat}`);
+    }
+    // (c) no overlap: in topological order each session's builder commits form one contiguous run.
+    if (!order) order = new Map(git(repo, ['rev-list', '--topo-order', '--reverse', '--no-merges', `${base}..${head}`]).split('\n').filter(Boolean).map((sha, i) => [sha, i]));
+    const runs = commits.filter((k) => k.lane === lane && k.session !== PM_AGENT && k.session !== CI_PLAN_SPAR)
+      .sort((a, b) => (order.get(a.sha) ?? 0) - (order.get(b.sha) ?? 0))
+      .map((k) => k.session).filter((s, i, a) => i === 0 || s !== a[i - 1]);
+    if (new Set(runs).size !== runs.length) errors.push(`lane ${lane}: builder sessions overlap (${runs.join(', ')}) — one session at a time`);
+    // (d) every takeover is logged: each builder session is named in the lane file's log at head (never the front matter).
+    const body = (headText || '').replace(FRONT_MATTER_RE, '');
+    const log = body.includes('## Log') ? body.slice(body.indexOf('## Log')) : body;
+    for (const s of sessions) if (!log.includes(s)) errors.push(`lane ${lane}: builder session ${s} is not named in the lane log (every takeover is logged)`);
+    // (e) the claim holder is the last builder.
+    const last = runs[runs.length - 1];
+    if (fm.claimed_by && fm.claimed_by !== last) errors.push(`lane ${lane}: claimed_by is ${fm.claimed_by} but the last builder session is ${last}`);
   }
 
   // 3. Branch name: a branch in lane form must agree with the trailers. Cloud sessions get their branch
