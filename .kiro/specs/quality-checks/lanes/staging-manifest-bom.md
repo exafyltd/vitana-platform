@@ -1,6 +1,6 @@
 ---
 lane: staging-manifest-bom
-state: verified
+state: done
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271220-68a5
 branch: kiro/quality-checks/staging-manifest-bom
@@ -17,7 +17,7 @@ paths:
   - scripts/ci/staging-verify/lib.test.cjs
   - docs/validation/VTID-*/**
 pr: https://github.com/exafyltd/vitana-platform/pull/4408
-updated: 2026-10-28T11:50Z
+updated: 2026-10-28T12:02Z
 vtid: VTID-05347
 ---
 # Lane: staging-manifest-bom (repo vitana-platform)
@@ -59,3 +59,6 @@ PR #4408 in review. Self-review `changes` on `84a0f749`; accepted on `0f24a3b4` 
 
 ### 2026-10-28T11:50Z · kiro-jtadic-202610271220-68a5 · in-review → verified
 Accepted on `0f24a3b4`; every required check green on `3c8e062f`; squash-merged `28aaab23` (#4408). Deploys nothing: verified by its tests (88/88) and by STAGING-TESTS-REQUIRED `check-pr` on every later PR.
+
+### 2026-10-28T12:02Z · kiro-jtadic-202610271220-68a5 · verified → done
+Merged and verified; nothing deploys (plan §3). Done.
