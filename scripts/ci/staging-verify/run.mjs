@@ -307,7 +307,8 @@ function runExisting(repoRoot, t) {
     cwd: cwdAbs,
     encoding: 'utf8',
     timeout: 20 * 60_000,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test' },
+    // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) },
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);

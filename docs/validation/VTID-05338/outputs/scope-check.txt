@@ -1,0 +1,4 @@
+✅ **lane scope** — lane pipeline-speed/slot-sizing: every change is inside its paths
+
+⚠️ e28b5fa3: kiro-202610220829-5884 names no seat; lane pipeline-speed/slot-sizing belongs to seat exafy
+⚠️ 954e2aab: kiro-202610220829-5884 names no seat; lane pipeline-speed/slot-sizing belongs to seat exafy
