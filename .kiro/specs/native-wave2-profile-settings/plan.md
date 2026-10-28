@@ -136,3 +136,5 @@ three lanes run in parallel (no dependencies).
 - Whether `/settings/connected-apps` native file renders `ConnectedApps` directly or redirects to `/connectors`
   (design §2c default: mirror the web redirect).
 <!-- plan:end -->
+
+<!-- cross-repo plan; vitana-v1 read via spar_refs. fresh session after PLAN-SPAR repair; 2026-10-28T09:50:36.9823176+01:00 -->
