@@ -92,7 +92,8 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
   (`SETTINGS.CONNECTED_APPS /settings/connected-apps`) and the `/connectors?tab=health` screen are **NOT** in this
   cluster — the parity ledger assigns them to `"lane": "profile-settings-support"`, a different Wave 2 batch.
 - **Consent on reads.** Every health-data read (Vitana Index `vitana_index_scores`, `lab_reports`, supplements,
-  `useProfileHealthSummary`) goes through the same RLS-scoped (`user_id = auth.uid()`) path the web uses, re-fetched
+  `useProfileHealthSummary`, and the `user_health_plans` read behind the native Plans screen) goes through the same
+  RLS-scoped (`user_id = auth.uid()`) path the web uses, re-fetched
   natively via the native Supabase client + native auth context (these hooks runtime-import
   `@/integrations/supabase/client.ts`, a class-B module, so they are **not** moved to core — see decision 2). The
   native screens show only data the signed-in member can already see; no category the member has not consented to is
@@ -115,16 +116,50 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
    URL), so adding them to core would fail `core-closure.mjs --check` (`m.own !== 'A'`). Instead `health-hub`
    **re-implements the fetching natively** (native Supabase client + native auth context) and the biology/index lanes
    consume that native data module via a port. Only the **pure, IO-free** helpers the screens need — the Vitana Index
-   tier/label/pillar math (`src/lib/vitanaIndex.ts`, `pillarKeys`/`pillarLabel`/`getVitanaIndexTier`), and any pure
-   formatting the biology report cards use — move into core as re-export entries, and only if a check confirms they
-   reach no class-B file. Type-only imports are excluded from the runtime graph by
+   tier/label math from `src/lib/vitanaIndex.ts` (its actual exports, verified on vitana-v1 main per s2-round-1 R1-F3:
+   `VITANA_INDEX_TIERS`, `getVitanaIndexTier`, `nextTier`, `pointsToNextTier`, `getVitanaIndexPercentage`,
+   `formatVitanaIndexScore`, and the `VitanaIndexTier` type), and any pure formatting the biology report cards use —
+   move into core as re-export entries, and only if a check confirms they reach no class-B file. **There are no
+   `pillarKeys`/`pillarLabel` exports in `vitanaIndex.ts`** (the earlier plan text was wrong); the pillar
+   labels the screens render come from the i18n `screens.health.pillar_*` keys and the local `pillars` array in
+   `PillarsOfHealth.tsx`, not from `vitanaIndex.ts` — so there is no pillar-key helper to extract, and the plan no
+   longer claims one. Type-only imports are excluded from the runtime graph by
    `scripts/native/extraction-deps.mjs` and resolve through the native `@/*` → `../../src/*` alias, so they get no
    core re-export.
 3. **`health-hub` owns the core extraction and the native health-data module + consent gate + the Vitana Index chip
-   twins + the in-screen Health Sync affordance**, so those have exactly one owner. Therefore
-   **`vitana-index-biology` depends_on `health-hub`** (it consumes the native Vitana Index data module and the chip
-   twins). `health-plans-services` has no dependency on either (its screens are static/navigational — pillars,
-   conditions, education, plans, services hub — and read no health data) and runs in parallel.
+   twins + the Vitana Index value/provider twin + the in-screen Health Sync affordance**, so those have exactly one
+   owner. Therefore **`vitana-index-biology` depends_on `health-hub`** (it consumes the native Vitana Index data
+   module and the chip twins), **and `health-plans-services` also depends_on `health-hub`** (corrected per sparring
+   s2-round-1 R1-F1/R1-F2 — see below). `health-hub` runs first; `vitana-index-biology` and `health-plans-services`
+   both wait on it and then run in parallel with each other (disjoint route files / `src/screens` subtrees).
+
+   **Correction (s2-round-1 R1-F1/R1-F2): `health-plans-services` is NOT data-free.** Two of its screens read live
+   health data in the mobile-web branch the native port targets (decision 6):
+   - **`Plans.tsx`** imports `useHealthPlans()` (`vitana-v1:src/hooks/useHealthPlans.ts`), which `select`s from
+     `user_health_plans` via the prod Supabase client — a health-data read — and also exposes three **write**
+     mutations (`generatePlan`/`updateAdherence`/`logAdherence`). The native twin consumes `health-hub`'s native
+     health-data module (native Supabase client + native auth context) for the read; it does **not** re-implement
+     fetching. The writes are handled per decision 3a below (read-only twin).
+   - **`PillarsOfHealth.tsx`** renders `<VitanaIndexValue />` in its non-Spotlight (mobile-web) branch
+     (`vitana-v1:src/pages/health/PillarsOfHealth.tsx:85`), and `VitanaIndexValue` reads the live Vitana Index through
+     `useVitanaIndexCache()` (`vitana-v1:src/components/health/VitanaIndexValue.tsx:1` →
+     `VitanaIndexProvider.tsx`). The native twin consumes `health-hub`'s native Vitana Index value/provider twin — it
+     does **not** add its own Index subscription. (The Spotlight/desktop branch omits the Index tile, but the native
+     port mirrors the mobile-web branch per decision 6, so the Index read is in scope.) `conditions`, `education` and
+     the `services-hub` screens remain static/navigational and read no health data; they still live in this lane and
+     simply do not touch the shared module.
+3a. **The native twin is READS-ONLY — the `Plans.tsx` write mutations are stubbed/omitted, not ported** (s2-round-1
+   R1-F4, program §6 / collaboration §7a). `generatePlan` (which invokes the `generate-personalized-plan` Supabase
+   Edge Function — a server-side LLM path whose Bedrock-only governance is NOT verified for a native caller),
+   `updateAdherence` (UPDATE `user_health_plans`) and `logAdherence` (INSERT `plan_adherence_logs`) are **not wired**
+   in the native twin: the native `useHealthPlans` port exposes the read (`plans`, `isLoading`) only, the "Generate New
+   Plan" button and the adherence-logging controls are **disabled/hidden** behind a `readsOnly` constant, and the
+   plan generator wizard is omitted. This is documented as a hard "reads only" constraint in the
+   `health-plans-services` lane file. The network-guard unit test (test plan) explicitly covers these paths: it
+   asserts that rendering and interacting with the native Plans screen issues **no non-GET** to the gateway or
+   Supabase and never invokes the edge function. Porting the mutations (option b) is out of scope for this cluster and
+   would require separate LLM-governance verification of the edge function from a native client — deferred, not done
+   here.
 4. **No new routes / registry / manifest.** Ports of screens already in `App.tsx` + `screens.json`; a native Expo
    Router file is not an `App.tsx` route, so the "new page needs screens.json/exclusions.json + screen-manifest +
    parity rows" rule does not fire — only parity-row **status** flips (`not_started`→`in_progress`→`native`).
@@ -142,26 +177,32 @@ the in-flight **`health-native`** spec (`vitana-platform:.kiro/specs/health-nati
 |---|---|---|---|
 | `health-hub` | exafyltd → hotmail | `/health` dashboard (`HEALTH.OVERVIEW`, `HEALTH.MEDICAL /health?mode=medical`, `HEALTH.SUPPLEMENTS /health?mode=supplements`) + the Vitana Index **overlay** (`OVERLAY.VITANA_INDEX /health`); the in-screen Health Sync affordance; **AND owns the core extraction** (pure Vitana Index math + biology-card helpers) + the native health-data fetch/consent module + the `VitanaIndexChip`/`AutopilotChip` twins (**4 parity rows**) | — |
 | `vitana-index-biology` | exafyltd → hotmail | Vitana Index detail `HEALTH.VITANA_INDEX /health/vitana-index`; biology `HEALTH.MY_BIOLOGY /health/my-biology` (+ `?tab=omics` `HEALTH.BIOLOGY_OMICS`, `?tab=supplements` `HEALTH.BIOLOGY_SUPPLEMENTS`) (**4 parity rows**) | `health-hub` |
-| `health-plans-services` | exafyltd → hotmail | pillars `HEALTH.PILLARS`, conditions `HEALTH.CONDITIONS`, education `HEALTH.EDUCATION` (+`?tab=podcasts` `HEALTH.EDUCATION_PODCASTS`, `?tab=videos` `HEALTH.EDUCATION_VIDEOS`), plans `HEALTH.PLANS` (+`?tab=exercise/hydration/mental/nutrition/sleep`), services hub `HEALTH.SERVICES_HUB` (+`?tab=insuranceSupport/medicalServices/myServices/wellnessPrograms`) (**16 parity rows**) | — |
+| `health-plans-services` | exafyltd → hotmail | pillars `HEALTH.PILLARS` (renders the Vitana Index value via `health-hub`'s Index twin), conditions `HEALTH.CONDITIONS`, education `HEALTH.EDUCATION` (+`?tab=podcasts` `HEALTH.EDUCATION_PODCASTS`, `?tab=videos` `HEALTH.EDUCATION_VIDEOS`), plans `HEALTH.PLANS` (reads `user_health_plans` via `health-hub`'s native health-data module, **reads-only** — write mutations stubbed, decision 3a) (+`?tab=exercise/hydration/mental/nutrition/sleep`), services hub `HEALTH.SERVICES_HUB` (+`?tab=insuranceSupport/medicalServices/myServices/wellnessPrograms`) (**16 parity rows**) | `health-hub` |
 
 Exact `paths` globs are in each `lanes/<id>.md`; the 24 parity rows partition **4 (health-hub) + 4
-(vitana-index-biology) + 16 (health-plans-services)** with 0 overlap and 0 orphan. `health-hub` and
-`health-plans-services` run in parallel; `vitana-index-biology` waits for `health-hub` (the native Vitana Index data
-module + chip twins).
+(vitana-index-biology) + 16 (health-plans-services)** with 0 overlap and 0 orphan. `health-hub` runs first;
+`vitana-index-biology` and `health-plans-services` both wait on `health-hub` (the native Vitana Index data module +
+value/provider twin + chip twins) and then run in parallel with each other on disjoint route files.
 
 ## Test plan
 - **Per lane, offline (fixture / fake gateway, no network):** from `apps/mobile/` — `npm run typecheck`, `npm test`
   (jest-expo + RNTL: loaded/empty/error per screen; health-hub dashboard mode-tab switch overview/medical/supplements,
   Vitana Index overlay open/dismiss, snapshot/priority/guidance widgets, the Health Sync affordance tap resolving to
   the module entry behind the ingest-off flag; index detail pillar breakdown + log-data dialog; biology medical/omics/
-  supplements tabs with loaded/empty/error; plans/services tab switches; i18n no-raw-text + RTL start/end; React 19
+  supplements tabs with loaded/empty/error; plans (reads-only: `user_health_plans` read renders, the "Generate New
+  Plan" button and adherence controls are disabled/hidden per decision 3a) / services tab switches; pillars screen
+  renders the Vitana Index value via `health-hub`'s twin; i18n no-raw-text + RTL start/end; React 19
   `ReactElement`), `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`. From the repo root —
   `node scripts/native/parity-ledger.mjs --check` (rows `native`, routes present).
 - **Consent / no-write checks:** a unit test asserts the native health screens request/display only data the signed-in
   member already has RLS access to (the fetch uses the same `user_id = auth.uid()`-scoped query as web) and that no
   code path issues a non-GET to the gateway or Supabase (network guard), and that the in-screen Health Sync affordance
-  does not itself request an OS permission or ingest (it delegates to the `n5a-health-sync` module).
+  does not itself request an OS permission or ingest (it delegates to the `n5a-health-sync` module). The network guard
+  **explicitly covers the native Plans screen** (decision 3a / s2-round-1 R1-F1/R1-F4): rendering and interacting with
+  it issues no `user_health_plans` UPDATE, no `plan_adherence_logs` INSERT and never invokes the
+  `generate-personalized-plan` edge function — the mutations are not wired, the generate button is disabled/hidden,
+  and a test asserts those controls are non-interactive in the reads-only twin.
 - **Health Sync stub contract test (R1-F5):** a test asserts the `health-hub` typed stub is structurally compatible
   with the `n5a-health-sync` public read-only entry — a type-level assignability assertion against the vendored
   `interface` plus a runtime shape check — importing the real export through its module path so the check flips from
