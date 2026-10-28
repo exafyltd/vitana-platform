@@ -35,14 +35,21 @@ export function evidenceMissing(paths, vtid) {
   return EVIDENCE_FILES.map((f) => `docs/validation/${vtid}/${f}`).filter((p) => !have.has(p));
 }
 
-/** Does a review of `reviewed` still count at `head`? `after` = [{sha, session, files:[…]}] for reviewed..head. */
-export function reviewCurrent(reviewed, head, after) {
+/** Does a review of `reviewed` still count at `head`? `after` = [{sha, session, files:[…]}] for reviewed..head;
+ * `laneKey` = `<slug>/<lane>` restricts entry-only commits to that lane's file (and its handoff for pm-agent). */
+export const laneKeyOf = (title) => (/\(([a-z0-9][a-z0-9-]*\/[a-z0-9][a-z0-9-]*)\)/.exec(title || '') || [])[1];
+export function reviewCurrent(reviewed, head, after, laneKey) {
   if (reviewed === head) return { ok: true, reason: 'reviewed head is the PR head' };
   if (!after.length) return { ok: false, reason: `reviewed head ${reviewed.slice(0, 8)} is not an ancestor of head ${head.slice(0, 8)}` };
   for (const c of after) {
     // collaboration.md §3: entry-only commits on the lane file, or the Project Manager's lane-state commits.
-    const allowed = c.session === 'pm-agent' ? /^\.kiro\/specs\/[^/]+\/(lanes\/[^/]+|handoff)\.md$/ : /^\.kiro\/specs\/[^/]+\/lanes\/[^/]+\.md$/;
-    const bad = c.files.filter((f) => !allowed.test(f));
+    const [slug, lane] = (laneKey || '').split('/');
+    const laneFile = slug && lane ? `.kiro/specs/${slug}/lanes/${lane}.md` : null;
+    const ok = (f) => {
+      if (c.session === 'pm-agent') return laneFile ? f === laneFile || f === `.kiro/specs/${slug}/handoff.md` : /^\.kiro\/specs\/[^/]+\/(lanes\/[^/]+|handoff)\.md$/.test(f);
+      return laneFile ? f === laneFile : /^\.kiro\/specs\/[^/]+\/lanes\/[^/]+\.md$/.test(f);
+    };
+    const bad = c.files.filter((f) => !ok(f));
     if (bad.length || c.files.length === 0) return { ok: false, reason: `${c.sha.slice(0, 8)} after the reviewed head changes ${bad.join(', ') || 'nothing'}: a new review is needed` };
   }
   return { ok: true, reason: 'only lane-file entries after the reviewed head' };
@@ -54,12 +61,14 @@ export function checksVerdict(runs) {
   const latest = new Map();
   for (const r of runs) {
     const prev = latest.get(r.name);
-    if (!prev || String(r.started_at || '') >= String(prev.started_at || '')) latest.set(r.name, r);
+    const key = (x) => `${x.started_at || '9999'}|${String(x.id || 0).padStart(20, '0')}`;
+    if (!prev || key(r) >= key(prev)) latest.set(r.name, r);
   }
   const rows = [...latest.values()];
   const failed = rows.filter((r) => r.status === 'completed' && !OK_CONCLUSIONS.has(r.conclusion));
   if (failed.length) return { state: 'fail', detail: failed.map((r) => `${r.name}=${r.conclusion}`).join(', ') };
-  const pending = rows.filter((r) => r.status !== 'completed');
+  // Any attempt of a name that is not completed (a queued re-run may have no started_at yet) keeps it pending.
+  const pending = runs.filter((r) => r.status !== 'completed');
   if (pending.length) return { state: 'pending', detail: pending.map((r) => `${r.name}=${r.status}`).join(', ') };
   return { state: 'pass', detail: `${rows.length} checks green` };
 }
@@ -155,15 +164,16 @@ export async function main(argv) {
       need(o, 'repo', 'vtid');
       // Only the evidence directory: a whole-tree ls-files overflows the child-process buffer on a large repo.
       const dir = `docs/validation/${o.vtid}`;
-      const tracked = run('git', ['-C', o.repo, 'ls-files', '--', dir]).split('\n');
-      const staged = run('git', ['-C', o.repo, 'diff', '--cached', '--name-only', '--', dir]).split('\n');
+      const deleted = new Set(run('git', ['-C', o.repo, 'diff', '--cached', '--name-only', '--diff-filter=D', '--', dir]).split('\n'));
+      const tracked = run('git', ['-C', o.repo, 'ls-files', '--', dir]).split('\n').filter((f) => !deleted.has(f));
+      const staged = run('git', ['-C', o.repo, 'diff', '--cached', '--name-only', '--diff-filter=d', '--', dir]).split('\n');
       const miss = evidenceMissing([...tracked, ...staged], o.vtid);
       return miss.length ? say(1, `evidence missing (write and stage it before the commit): ${miss.join(', ')}`) : say(0, `${o.vtid} evidence present`);
     }
     if (cmd === 'review') {
       need(o, 'gh', 'pr', 'reviewed-head');
       const head = prHead(o.gh, o.pr).head.sha;
-      const r = reviewCurrent(o['reviewed-head'], head, afterCommits(o.gh, o['reviewed-head'], head));
+      const r = reviewCurrent(o['reviewed-head'], head, afterCommits(o.gh, o['reviewed-head'], head), o.lane || laneKeyOf(prHead(o.gh, o.pr).title));
       return say(r.ok ? 0 : 1, r.reason);
     }
     if (cmd === 'checks') {
@@ -176,7 +186,7 @@ export async function main(argv) {
       const pr = prHead(o.gh, o.pr);
       if (pr.merged) return say(0, `already merged (${pr.merge_commit_sha})`);
       const head = pr.head.sha;
-      const review = reviewCurrent(o['reviewed-head'], head, afterCommits(o.gh, o['reviewed-head'], head));
+      const review = reviewCurrent(o['reviewed-head'], head, afterCommits(o.gh, o['reviewed-head'], head), o.lane || laneKeyOf(pr.title));
       const checks = review.ok ? await waitChecks(o.gh, head, Number(o.wait || 0)) : { state: 'pending', detail: 'not read' };
       const cmp = ghJson(`repos/${o.gh}/compare/${pr.base.ref}...${head}`);
       const files = [];
@@ -195,7 +205,7 @@ export async function main(argv) {
       const st = specStates(o.repo, o.slug);
       const d = releaseDecision(o.lane, { laneState: st.laneStates[o.lane], ...st });
       if (!d.ok) return say(1, d.reason);
-      run('node', [path.join(HERE, 'queue.mjs'), 'release', `${o.slug}/${o.lane}`, '--session', o.session, '--repo', o.repo], { stdio: 'inherit' });
+      execFileSync(process.execPath, [path.join(HERE, 'queue.mjs'), 'release', `${o.slug}/${o.lane}`, '--session', o.session, '--repo', o.repo], { stdio: 'inherit' });
       return say(0, `${o.slug}/${o.lane} released`);
     }
     if (cmd === 'release-heartbeat') {

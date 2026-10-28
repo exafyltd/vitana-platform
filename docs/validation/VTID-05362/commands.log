@@ -40,3 +40,18 @@ exit=0
 $ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362
 land-guard evidence: ok — VTID-05362 evidence present
 exit=0
+
+## fix 2 (review changes on 0c43330d)
+release: no .trim() on an inherited stdout (a successful release reported 'refused'). There is now a CLI test where a done lane exits 0 and the claim ref is freed. review: with the lane key (derived from the PR title) only that lane's file counts. checks: any non-completed attempt keeps a check pending. evidence: a staged deletion no longer counts as present.
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 11
+# pass 11
+# fail 0
+# skipped 0
+exit=0
+$ node --test scripts/collab/*.test.mjs
+# tests 195
+# pass 194
+# fail 0
+# skipped 1
+exit=0

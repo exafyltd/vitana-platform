@@ -46,3 +46,10 @@ pass; a staged deletion counts as evidence present; the executing entry overstat
 971fd206 went ahead ungated); tasks.md says step-order-gate.mjs while the plan says land-guard.mjs.
 Stored by the plan driver on the agent's behalf (`lane-land.md` step 2).
 Next: the lane's seat fixes the blocking finding.
+
+### 2026-10-28T11:40Z · kiro-exafyltd-202610261510-099d · changes addressed
+The blocking finding is fixed: a successful `release` now exits 0, and a CLI test covers a done lane and the freed
+claim. The non-blocking findings are fixed too: entry-only is restricted to this lane's file; a queued re-run keeps the
+check pending; a staged deletion is not counted as evidence. Correction to the executing entry above: the gate refused
+the first lane commit (971fd206) with ENOBUFS, and a pipe hid the exit code, so that commit was not gated. Fix 1 and its
+regression test are in `commands.log`, and every later commit was gated with its exit code checked. Tests 11/11.

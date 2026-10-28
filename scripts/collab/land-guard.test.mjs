@@ -6,7 +6,7 @@ import os from 'node:os';
 import path from 'node:path';
 import { execFileSync } from 'node:child_process';
 import { fileURLToPath } from 'node:url';
-import { evidenceMissing, reviewCurrent, checksVerdict, mergeDecision, releaseDecision, protectedTouched } from './land-guard.mjs';
+import { evidenceMissing, reviewCurrent, checksVerdict, mergeDecision, releaseDecision, protectedTouched, laneKeyOf } from './land-guard.mjs';
 
 const SCRIPT = path.join(path.dirname(fileURLToPath(import.meta.url)), 'land-guard.mjs');
 const H = (c) => c.repeat(40);
@@ -88,4 +88,47 @@ test('CLI: evidence passes on this repository for a VTID whose evidence is commi
   const repo = execFileSync('git', ['-C', path.dirname(SCRIPT), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
   const out = execFileSync(process.execPath, [SCRIPT, 'evidence', '--repo', repo, '--vtid', 'VTID-05343'], { encoding: 'utf8' });
   assert.match(out, /evidence present/);
+});
+
+test('review: with the lane key only that lane file (and its handoff for pm-agent) counts', () => {
+  const k = 's/l';
+  assert.equal(reviewCurrent(H('a'), H('b'), [{ sha: H('b'), files: ['.kiro/specs/s/lanes/l.md'] }], k).ok, true);
+  assert.equal(reviewCurrent(H('a'), H('b'), [{ sha: H('b'), files: ['.kiro/specs/other/lanes/x.md'] }], k).ok, false);
+  assert.equal(reviewCurrent(H('a'), H('b'), [{ sha: H('b'), session: 'pm-agent', files: ['.kiro/specs/s/handoff.md'] }], k).ok, true);
+  assert.equal(reviewCurrent(H('a'), H('b'), [{ sha: H('b'), session: 'pm-agent', files: ['.kiro/specs/z/handoff.md'] }], k).ok, false);
+  assert.equal(laneKeyOf('VTID-05362 (step-order-gate/land-guard): land-guard …'), 'step-order-gate/land-guard');
+});
+
+test('checks: a queued re-run without started_at keeps the check pending', () => {
+  const runs = [{ name: 'pr-gate', status: 'completed', conclusion: 'success', started_at: '2026-10-28T10:00:00Z', id: 1 },
+    { name: 'pr-gate', status: 'queued', conclusion: null, started_at: null, id: 2 }];
+  assert.equal(checksVerdict(runs).state, 'pending');
+});
+
+test('CLI: release of a done lane exits 0 and frees the claim; a staged deletion is not evidence', () => {
+  const tmp = fs.mkdtempSync(path.join(os.tmpdir(), 'lg-ok-'));
+  const remote = path.join(tmp, 'remote.git');
+  const work = path.join(tmp, 'work');
+  const g = (dir, ...a) => execFileSync('git', ['-C', dir, ...a], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
+  execFileSync('git', ['init', '-q', '--bare', remote]);
+  execFileSync('git', ['init', '-q', '-b', 'main', work]);
+  fs.mkdirSync(path.join(work, '.kiro/specs/s/lanes'), { recursive: true });
+  fs.mkdirSync(path.join(work, 'docs/validation/VTID-7'), { recursive: true });
+  fs.writeFileSync(path.join(work, '.kiro/specs/s/handoff.md'), '---\nslug: s\nstate: done\n---\n');
+  fs.writeFileSync(path.join(work, '.kiro/specs/s/lanes/l.md'), '---\nlane: l\nstate: done\n---\n');
+  for (const f of ['acceptance.md', 'commands.log', 'scope.json']) fs.writeFileSync(path.join(work, 'docs/validation/VTID-7', f), 'x\n');
+  g(work, 'add', '-A');
+  g(work, '-c', 'user.name=t', '-c', 'user.email=t@t', 'commit', '-q', '-m', 'x');
+  g(work, 'remote', 'add', 'origin', remote);
+  g(work, 'push', '-q', 'origin', 'main');
+  const session = 'kiro-x-202610280000-abcd';
+  const env = { ...process.env, GIT_AUTHOR_NAME: 't', GIT_AUTHOR_EMAIL: 't@t', GIT_COMMITTER_NAME: 't', GIT_COMMITTER_EMAIL: 't@t' };
+  execFileSync(process.execPath, [path.join(path.dirname(SCRIPT), 'queue.mjs'), 'claim', 's/l', '--session', session, '--repo', work], { env, stdio: 'ignore' });
+  assert.match(g(remote, 'for-each-ref', '--format=%(refname)'), /collab-claim\/s\/l/);
+  const run = (...a) => { try { execFileSync(process.execPath, [SCRIPT, ...a], { encoding: 'utf8', env, stdio: ['ignore', 'pipe', 'pipe'] }); return 0; } catch (e) { return e.status; } };
+  assert.equal(run('release', '--repo', work, '--slug', 's', '--lane', 'l', '--session', session), 0);
+  assert.doesNotMatch(g(remote, 'for-each-ref', '--format=%(refname)'), /collab-claim\/s\/l/);
+  assert.equal(run('evidence', '--repo', work, '--vtid', 'VTID-7'), 0);
+  g(work, 'rm', '-q', '--cached', 'docs/validation/VTID-7/scope.json');
+  assert.equal(run('evidence', '--repo', work, '--vtid', 'VTID-7'), 1);
 });
