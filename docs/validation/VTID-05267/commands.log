@@ -1,0 +1,5 @@
+﻿# VTID-05267 commands (services/gateway, Windows, node 20)
+base main 5f76b3ab (suite copied in, then removed): npx jest test/vtid-05267-automation-actor-tenant.test.ts -> 19 failed / 10 passed / 29 total (outputs/jest-vtid-05267-base.txt)
+head: npx jest test/vtid-05267-automation-actor-tenant.test.ts -> 29/29 passed (outputs/jest-vtid-05267-head.txt)
+head regression: jest --forceExit test/vtid-05267-automation-actor-tenant.test.ts test/vtid-05270-job-tenant-loop.test.ts test/routes/admin-signups.test.ts test/orb-tools/groups-events-tools.test.ts test/routes/community-group-members-error-logging.test.ts test/routes/s1-debug-route-gates.test.ts test/vtid-03832-vitana-roles-constant.test.ts test/vtid-04349-automation-shadow.test.ts -> 8 suites, 180/180 passed (outputs/jest-regression-head.txt)
+head: npx tsc --noEmit -> exit 0, 0 errors

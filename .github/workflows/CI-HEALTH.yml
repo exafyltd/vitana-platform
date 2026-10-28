@@ -1,0 +1,82 @@
+name: CI-HEALTH
+run-name: "CI-HEALTH daily report (VTID-05301)"
+
+# VTID-05301 (plan ci-github-modernization, lane ci-health) — a daily CI-health
+# report that turns the Phase-1 inventory into a standing signal. For each
+# workflow it reports:
+#   * flake rate — a head SHA that both failed and later succeeded (a re-run
+#     that went green);
+#   * red-on-main age — how long a workflow whose latest main run failed has
+#     been red;
+#   * per-check median / p90 duration.
+# It also surfaces the coverage gap: the Playwright/e2e specs and the
+# shell/Python test scripts that no required check runs today.
+#
+# GitHub reads only. It calls `gh run list` against this repository's Actions
+# history (read-only) and never touches any production service or database.
+# The result is written to the job step summary and uploaded as an artifact;
+# nothing is deployed.
+
+on:
+  schedule:
+    - cron: '17 5 * * *'   # 07:17 CET daily, staggered off the other scheduled jobs
+  workflow_dispatch:
+    inputs:
+      days:
+        description: 'Window in days for the run history'
+        required: false
+        default: '30'
+        type: string
+
+permissions:
+  contents: read
+  actions: read
+
+concurrency:
+  group: ci-health
+  cancel-in-progress: false
+
+jobs:
+  report:
+    name: Build the CI-health report
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Node
+        uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+
+      - name: Collect GitHub Actions run history (read-only)
+        env:
+          GH_TOKEN: ${{ github.token }}
+          DAYS: ${{ github.event.inputs.days || '30' }}
+        run: |
+          set -euo pipefail
+          # Read-only: list this repo's recent workflow runs. Never a call against a production service.
+          gh run list \
+            --repo "${{ github.repository }}" \
+            --limit 1000 \
+            --json name,conclusion,status,headSha,headBranch,createdAt,updatedAt \
+            > runs.json
+          echo "collected $(jq 'length' runs.json) runs over the last ${DAYS} days window"
+
+      - name: Build the report
+        run: |
+          set -euo pipefail
+          node scripts/ci/health/report.mjs \
+            --runs runs.json \
+            --branch main \
+            --days "${{ github.event.inputs.days || '30' }}" \
+            --out ci-health.json \
+            --summary "$GITHUB_STEP_SUMMARY"
+
+      - name: Upload the report artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: ci-health-report
+          path: ci-health.json
+          if-no-files-found: error
