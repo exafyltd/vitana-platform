@@ -1,0 +1,29 @@
+
+> @vitana/mobile@0.0.0 prebundle
+> npm run gen:i18n
+
+
+> @vitana/mobile@0.0.0 gen:i18n
+> node ../../scripts/native/gen-i18n-map.mjs
+
+gen-i18n-map: 11 locales, 1397 shards → src/i18n/catalog-map.generated.ts (unchanged)
+
+> @vitana/mobile@0.0.0 bundle
+> expo export --platform ios --platform android --output-dir dist
+
+Error: Error reading Expo config at /projects/sandbox/wt-manifests/apps/mobile/app.config.ts:
+
+APP_PROFILE is not set. Use APP_PROFILE=development (or test-g1). There is no production profile in Wave 0.
+Error: Error reading Expo config at /projects/sandbox/wt-manifests/apps/mobile/app.config.ts:
+
+APP_PROFILE is not set. Use APP_PROFILE=development (or test-g1). There is no production profile in Wave 0.
+    at resolveProfile (/projects/sandbox/wt-manifests/apps/mobile/app.config.js:17:15)
+    at buildConfig (/projects/sandbox/wt-manifests/apps/mobile/app.config.js:83:21)
+    at exports.default (/projects/sandbox/wt-manifests/apps/mobile/app.config.js:117:25)
+    at resolveConfigExport (/projects/sandbox/wt-manifests/apps/mobile/node_modules/@expo/config/build/evalConfig.js:69:14)
+    at evalConfig (/projects/sandbox/wt-manifests/apps/mobile/node_modules/@expo/config/build/evalConfig.js:43:10)
+    at readConfigFile (/projects/sandbox/wt-manifests/apps/mobile/node_modules/@expo/config/build/getConfig.js:43:41)
+    at getDynamicConfig (/projects/sandbox/wt-manifests/apps/mobile/node_modules/@expo/config/build/getConfig.js:52:18)
+    at getConfig (/projects/sandbox/wt-manifests/apps/mobile/node_modules/@expo/config/build/Config.js:291:43)
+    at resolveOptionsAsync (/projects/sandbox/wt-manifests/apps/mobile/node_modules/expo/node_modules/@expo/cli/build/src/export/resolveOptions.js:64:45)
+    at expoExport (/projects/sandbox/wt-manifests/apps/mobile/node_modules/expo/node_modules/@expo/cli/build/src/export/index.js:140:27)

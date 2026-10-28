@@ -1,0 +1,71 @@
+# VTID-05338 — pipeline-speed/slot-sizing: commands and results
+Session kiro-202610220829-5884 (seat exafy), branch kiro/pipeline-speed/slot-sizing, base origin/main 1d5cfda68
+(re-checked against origin/main 1478926bb). Windows 11, PowerShell 5.1, Node 24.11.1.
+
+## 1. Installed engine facts (read-only reads of the Kiro agent extension, kiro.kiro-agent/dist/extension.js)
+- Watch node schema: {type:"watch", id, handler, config?: record, idleTimeoutSec?: positive number}. idleTimeoutSec
+  is a node key (not a config key) and has no upper cap, so the D3a value 86400 is used as planned.
+- Idle-timeout behaviour (executeWatch -> completeIdleTimedOutWatch): after idleTimeoutSec of idle polls the watch
+  node COMPLETES with payload {"outcome":"idle-timeout"} and watchTerminal=true. In a joinPolicy any gate race that
+  means the -skip watch wins after 24 h idle and the work branch is aborted; the race itself ends `completed`, so
+  `lanes` (allSettled) does not fail. 24 h is above a 40-iteration slot's wall time (plan D3a); a lane still running
+  then is surfaced by the restart watchdog (plan R2) and keeps done:false.
+- Command handler config: command (static), pollIntervalSec (min 10), commandTimeoutSec, passthrough for other keys;
+  only top-level strings are templated, so the gatedStepIds array reaches stdin unchanged.
+- Poll result contract (engine recipe guide, "command handler"): stdout {"outcome":"idle"|"new-activity"|
+  "terminal-state","cursor":…,"payload"?}. The key is `outcome` (tasks.md S1 says `status`; the engine wins and
+  run-gate.cjs prints `outcome`, like store-review.cjs). Exit 0 with an invalid object fails the node; on Windows
+  PowerShell other exit codes arrive as an idle poll, so run-gate.cjs always exits 0.
+- Run state: <home>/.kiro/sessions/<dir>/workflows/<wf id>/workflow-state.json; top-level keys workflowId,
+  workflowName, status, inputs, artifacts, capturedOutputs, root, createdAt, planRevision, parentSessionId, runLabel,
+  originalUserMessages, rootConversationId, workspacePath, …; node statuses pending|running|paused|completed|failed|
+  aborted|skipped.
+
+## 2. Status field paths (D3 / R2-F2), from real redacted state files
+Scan: node <RUN>/code-1-engine-scan.mjs (138 runs). Observed layout: the tree is `root` → `children`, each node
+{nodeId, type, status, iteration?, branchId?, failureReason?, watchTerminal?, children?}; a repeat's children are its
+iterations `<repeat id>#<i>` (type sequence, `iteration` set), and the steps inside carry the same `iteration`. There
+is no flat `steps[<id>]` map, so the gate looks nodes up by `nodeId` in the tree (every iteration's instance).
+- wf_1cf4b73383bba5df (failed inner step in a repeat):
+  stage2-spar-loop:repeat:failed > stage2-spar-loop#1:sequence:failed@1 > stage2-round:step:failed@1
+  ("Step signaled error via send_message.") — the failure propagates to the iteration and the repeat.
+- wf_8e7f53a930509020 (pipeline recipe with the review race):
+  lane-slot-6:repeat:failed > lane-slot-6#0:sequence:failed@0 > reviews-6:parallel:failed@0
+  ("branch 'rev-6' status=failed") > rev-6/-b/-c:sequence:failed > review-6/-b/-c:step:failed  (all three failed)
+  lane-slot-1 > lane-slot-1#0 > reviews-1:parallel:completed > rev-1-b:sequence:aborted (race loser, step completed,
+  store watch aborted) — an aborted loser stays in the tree after its race was won.
+  lane-slot-2 > reviews-2:parallel (running at the time) > rev-2-c:sequence:failed > review-2-c:step:failed while
+  rev-2 / rev-2-b still ran — a tolerated race branch failure.
+Consequence (judgement inside the plan, conservative): a gated inner step that is failed/aborted counts as terminal
+only if none of the gated steps is running or paused AND no node between it and the gated node is `completed` (an
+earlier iteration, a race another branch won) or a still-running `parallel` (a race still going). Without that,
+the aborted losers of every won review race would end a healthy lane between the race and land-N. Fixtures in
+run-gate.test.mjs: failed-at-repeat, failed-inner-step-in-repeat, failed-inner-step-in-wrapper, failed planning step
+(terminal); running, paused, race branch failed while others run, race won with aborted losers before land, earlier
+iteration with failed/aborted losers (idle).
+
+## 3. Recipe change
+node <RUN>/code-1-transform.mjs .kiro/workflows/vitana-pipeline.workflow.json   (roundtrip check first: equal, LF)
+- 11 gate races: investigate-gate, spec-gate, plan-pr-gate, spar-loop-gate, merge-plan-gate
+  (parallel any [watch <id>-skip, sequence <id>-work [watch <id>-go, <id>]]) and slot-1..6
+  (parallel any [watch slot-N-skip, repeat lane-slot-N with watch slot-N-go first]); every step id kept; review
+  races, store watches, land steps and stopWhen unchanged; setup prompt names run.json `plan_pr` and `steps_done`.
+- Watch recipe: command `node scripts/collab/run-gate.cjs`, config {run:"{{setup.output}}", role, gatedNodeId,
+  gatedStepIds + slot (lane slots), pollIntervalSec:30, commandTimeoutSec:30}, idleTimeoutSec:86400.
+- Step nodes 40 (unchanged), max depth 6 (limit 8), 6 lane slots.
+
+## 4. Session count, before / after (S6; simulated walk, iteration 0 of every repeat)
+node <RUN>/code-1-measure.mjs <origin/main recipe> <head recipe> scripts/collab/run-gate.cjs
+fresh plan, 1 lane (5 empty slots): base 10 + 30 lanes = 40 sessions per pass; head 10 + 5 lanes = 15
+resumed plan past approval, 1 lane: base 10 + 30 lanes = 40 sessions per pass; head 3 + 5 lanes = 8
+resumed mid-planning (investigate+spec done), 1 lane: base 10 + 30 lanes = 40 sessions per pass; head 6 + 5 lanes = 11
+6 filled slots (slots.json present, so planning is skipped): base 10 + 30 lanes = 40; head 3 + 30 lanes = 33
+one empty slot, first iteration: base 5 sessions (code + 3 reviews + land), head 0
+A filled slot costs exactly what it did (5 per iteration). Asserted in run-gate.test.mjs ("simulated walk").
+
+## 5. Verification (lane head)
+node --test scripts/collab/run-gate.test.mjs                      tests 20  pass 20  fail 0
+node --test scripts/ci/kiro-steering/guard.test.cjs               tests 37  pass 37  fail 0
+node scripts/ci/kiro-steering/guard.cjs .                         kiro-steering: OK
+node --test scripts/collab/*.test.mjs (every file listed)         tests 121 pass 121 fail 0
+Red on base: red-on-base.txt.

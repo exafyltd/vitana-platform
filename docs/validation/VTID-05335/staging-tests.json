@@ -1,0 +1,40 @@
+{
+  "vtid": "VTID-05335",
+  "service": "gateway",
+  "note": "Read-only. Covers the already-merged reviewer-agent model fallback chain of #4295 (commit 91d26a15, services/gateway/src/services/project-manager/governance.ts): REVIEWER_AGENT_MODELS + AGENT_REVIEWER_VALUES + isAgentReview. The chain's merge-decision behaviour is write-path and cannot be exercised read-only on staging (rule 48), so the proof of the behaviour is the existing governance jest suite below; the HTTP probes only prove the PM module that imports governance.ts loaded and still serves on the deployed commit. Nothing targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the reviewer-chain governance.ts change boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "project-manager mode endpoint serves",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/mode",
+      "expect_status": 200,
+      "reason": "read-only GET of the public PM mode route: proves the project-manager module that imports governance.ts loaded on the deployed commit"
+    },
+    {
+      "kind": "http",
+      "name": "project-manager status auth gate rejects an invalid bearer",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/project-manager/status",
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid/absent bearer: the requireServiceOrAdmin auth gate on the PM status route is unchanged and rejects before any handler runs"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/project-manager",
+      "cwd": "services/gateway",
+      "reason": "Pins the reviewer fallback chain order, the Claude-only constraint, and the exact accepted/rejected agent identity strings from governance.ts AGENT_REVIEWER_VALUES/isAgentReview — the write-path proof of the chain behaviour that cannot run read-only on staging."
+    }
+  ]
+}

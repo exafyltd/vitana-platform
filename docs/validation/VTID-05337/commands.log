@@ -1,0 +1,37 @@
+VTID-05337 · pipeline-speed/restart-watchdog · Windows, node v24.11.1, PowerShell 5.1
+base: origin/main 1d5cfda68 · head: af4620b94 (implementation commit)
+
+RED on base (test file only, module + hook file absent) — see red-on-base.txt
+node --test scripts/collab/workflow-watchdog.test.mjs            tests 12, pass 3, fail 9   (3 = regression guards by design)
+
+GREEN on head
+node --test scripts/collab/workflow-watchdog.test.mjs            exit 0 · tests 12, pass 12, fail 0
+node --test scripts/collab/*.test.mjs                            exit 0 · tests 113, pass 113, fail 0
+node --test scripts/ci/kiro-steering/guard.test.cjs              exit 0 · tests 34, pass 34, fail 0
+node scripts/ci/kiro-steering/guard.cjs .                        exit 0
+node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/pipeline-speed/restart-watchdog   exit 0
+base queue.mjs scope-check (as PR-GATE.yml Lane scope) --plan-repo exafyltd/vitana-platform   exit 0 · "every change is inside its paths"
+  (warning only: session id kiro-202610220829-5884 names no seat; it is the run's recorded seat-exafy session id)
+
+Engine evidence (installed kiro.kiro-agent dist/extension.js, read-only)
+- run status enum: running | paused | completed | failed | aborted
+- workflow-state top-level fields: workflowId, workflowName, status, pauseReason, parentSessionId, workspacePath,
+  createdAt, runLabel, stopInitiator (enum ["user"]), stopReason
+- pause reason string "Interrupted by agent restart; the previously running step was paused for resume." classified "infra"
+- run.beat {pid, instanceId, stampedAt} next to workflow-state.json
+- command hooks: JSON on stdin with session context; exit 0 stdout forwarded for SessionStart/UserPromptSubmit/PreToolUse;
+  UserPromptSubmit payload = {..., hook_event_name: "UserPromptSubmit", prompt}
+
+Real-data smoke (read-only, this machine's engine folders, SessionStart, cwd = vitana-platform checkout)
+'{"session_id":"sess_…","hook_event_name":"SessionStart","cwd":"<vitana-platform>"}' | node scripts/collab/workflow-watchdog.mjs
+  exit 0 · 17 runs reported (4 paused by agent restart, 2 paused for user input, 1 paused transient model error,
+  10 running with heartbeat > 10 min); completed/failed/aborted runs not reported
+Engine evidence, review follow-up (installed kiro.kiro-agent dist/extension.js, read-only, 2026-10-22)
+- beat timing: beatIntervalMs 30000, staleAfterMs = beatIntervalMs*4.5 (135 s); the watchdog threshold (10 min) is deliberately looser
+- startup sweep: a running run whose beat is stale is reconciled to paused (log event workflow.sweep.reconciling_stale_run)
+- startup sweep: only a run whose parked steps are all watch steps is auto-resumed (workflow.sweep.auto_resuming_watch_parked_run)
+- startup sweep: a user park is never auto-resumed (workflow.sweep.user_park_not_auto_resumed)
+Re-run on merge of origin/main (review follow-up):
+node --test scripts/collab/workflow-watchdog.test.mjs            exit 0 · tests 12, pass 12, fail 0 (outputs/workflow-watchdog.test.txt)
+node --test scripts/collab/*.test.mjs                            exit 0 · tests 113, pass 113, fail 0 (outputs/collab-all.test.txt)
+node scripts/ci/kiro-steering/guard.cjs .                        exit 0

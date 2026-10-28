@@ -1,0 +1,10 @@
+$ git checkout 5a232d889 && node --test scripts/ci/staging-verify/lib.test.cjs
+not ok 9 - existing suites may set only allowlisted, non-production env (staging-verify-runner-fix)
+# tests 62
+# pass 61
+# fail 1
+
+$ node --test scripts/ci/staging-verify/lib.test.cjs scripts/ci/staging-verify/workflow.test.cjs
+# tests 69
+# pass 69
+# fail 0
