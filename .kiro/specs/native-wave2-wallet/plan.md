@@ -20,12 +20,14 @@ registry/manifest change — only native route files and parity-row status flips
   **435 rows total**. Counted with `node -e` over the committed ledger read from `origin/main` (the `--report` CLI
   needs `typescript`, not installed in this checkout). The 14 rows and their web paths are listed in `requirements.md`
   R0.2–R0.4 and in each lane file.
-- Web sources verified present on `origin/main` with line counts and `App.tsx` route lines: `src/pages/Wallet.tsx`
+- Web sources verified present on `origin/main` with line counts (approximate, for scoping; exact counts are not
+  load-bearing) and `App.tsx` route lines: `src/pages/Wallet.tsx`
   (970; route `:1558-1562`, import `:199`), `src/pages/wallet/Balance.tsx` (491; route `:1563-1567`, import `:286`),
   `src/pages/wallet/Rewards.tsx` (137; route `:1573-1577`, import `:288`), `src/pages/wallet/Subscriptions.tsx` (143;
   route `:1568-1572`, import `:287`), `src/pages/RedeemVoucher.tsx` (206; route `:849`, import `:89`),
   `src/pages/MobileSubscriptions.tsx` (105; import `:186`, reached via `ProfileSubscriptionsRouter`
-  `:730-733`/`:1477-1482`). The one pure (class-A) helper `src/lib/exchangeRates.ts` (117 lines, no imports, no IO)
+  `:730-733`/`:1477-1482`). The one pure (class-A) helper `src/lib/exchangeRates.ts` (**127 lines** on
+  `origin/main` — corrected per sparring R1-F3; no imports, no IO)
   is confirmed IO-free and extractable; `src/lib/appilix.ts` (`isIAPRestricted`/`isIOSApp`, `:230-247`) is class-B
   (browser globals) and the IAP gate is referenced by **21 files** on `origin/main` (listed in `design.md` §4).
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
@@ -42,6 +44,18 @@ registry/manifest change — only native route files and parity-row status flips
    `App.tsx` route verified on `origin/main` (`/wallet`, `/wallet/balance`, `/wallet/rewards`, `/wallet/subscriptions`,
    `/redeem`, `/profile/subscriptions`). A native Expo Router file is not an `App.tsx` route, so the "new page needs
    screens.json/exclusions.json + screen-manifest + parity rows" rule does not fire — only parity-row **status** flips.
+2a. **`/redeem` is public/unauthenticated on web and the native twin preserves that — it is placed OUTSIDE the
+   authenticated `(app)` layout group (sparring R1-F1).** Verified on `origin/main`: `/redeem` sits under the
+   "Public Routes - No Auth Required" block in `src/App.tsx` (line 849), with **no `AuthGuard`**, whereas every other
+   wallet-lane route (`/wallet`, `/wallet/balance`, `/wallet/rewards`, `/wallet/subscriptions`) is wrapped in
+   `AuthGuard`. The parity guarantee covers the auth boundary, not just IAP gates: to avoid silently narrowing access
+   (requiring auth where web does not), the `wallet-rewards` lane places the native `RedeemVoucher` screen in the
+   **public/unauthenticated** Expo Router group (the native equivalent of being outside `(app)` — e.g. the public
+   `app/redeem.tsx` route segment, not under `app/(app)/`), so an unauthenticated member can reach it exactly as on
+   web. No parity-ledger exception is needed because the boundary is preserved, not changed. The `wallet-rewards`
+   lane file records this placement explicitly and a unit/routing test asserts the redeem screen renders without an
+   authenticated session. (The other three wallet routes stay inside the authenticated group, matching their
+   `AuthGuard` web wrappers.)
 3. **iOS-IAP gating preserved 1:1 — a parity port, not a gating change (decision 5 / R3).** Each surface's current
    `isIAPRestricted()` branches are mirrored one-for-one; no gate is added, removed, widened or narrowed. Verified
    per surface on `origin/main`: `Wallet.tsx` **gated** (hides add-funds/buy/withdraw/deposit + quick-exchange on iOS),
@@ -87,8 +101,12 @@ a single core-extraction owner) and run in parallel.
 - **Per lane, offline (fixture / fake gateway, no network):** from `apps/mobile/` — `npm run typecheck`, `npm test`
   (jest-expo + RNTL: loaded/empty/error per screen; **the `isIAPRestricted` gate tested both ways on wallet-home —
   iOS-gated fixture hides add-funds/buy/withdraw + quick-exchange, non-iOS shows them**; rewards earn/shop + shop gate;
-  redeem code valid/invalid/claimed; subscriptions overview + mobile router; `exchangeRates` pure-module tests; i18n
-  no-raw-text + RTL start/end; React 19 `ReactElement`), `APP_PROFILE=development npm run bundle`,
+  redeem code valid/invalid/claimed (**rendered without an authenticated session**, decision 2a); subscriptions
+  overview + mobile router; **`exchangeRates` pure-module tests — because `getCurrentExchangeRates()` sets
+  `lastUpdated: new Date()` on every call (two call sites, `src/lib/exchangeRates.ts:27` onward), the tests assert the
+  deterministic fields (`from`/`to`/`rate`/`trend`/`change24h`) exactly and assert `lastUpdated` with
+  `expect.any(Date)` (not deep-equality / snapshot), so they are not stale on the next millisecond** (sparring R1-F4);
+  i18n no-raw-text + RTL start/end; React 19 `ReactElement`), `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`. From the repo root —
   `node scripts/native/parity-ledger.mjs --check` (rows `native`, routes present).
 - **Core extraction deliverable (R4): run `--write` AND commit the generated files, not just `--check`.** The
@@ -96,8 +114,12 @@ a single core-extraction owner) and run in parallel.
   `node scripts/native/core-closure.mjs --write` and commit the regenerated `packages/core/closure.generated.json`
   and `scripts/native/mobile-ci-paths.generated.json` in the SAME PR, then `node scripts/native/core-closure.mjs
   --check` passes. Without the `--write`+commit, `--check` fails in NATIVE-CI with "stale generated file" regardless
-  of whether the module is class A. (Confirmed IO-free premise: `src/lib/exchangeRates.ts` on `origin/main` is 117
-  lines with no imports and no IO, so the core copy is class A.)
+  of whether the module is class A. (Confirmed IO-free premise: `src/lib/exchangeRates.ts` on `origin/main` is **127
+  lines** (R1-F3) with no imports and no IO, so the core copy is class A.) **`extract.json` is NOT a `--write` output
+  (R1-F2):** `core-closure.mjs --write` writes only `closure.generated.json` and `mobile-ci-paths.generated.json`
+  (verified at `core-closure.mjs:240`, which writes `r.outputs`, and its header comment); `packages/core/extract.json`
+  is **read as input**, never mutated by `--write`, so the `wallet-home` commit checklist does **not** include it —
+  reviewers should not flag its absence from the commit.
 - NATIVE-CI (shell source-pin + ports), PR-GATE **Collab handoff** + **Lane scope** green.
 - **i18n:** 11 locales (ar de en es fr pl pt ru sr tr zh), any new key DE-first (du-form; pt Brazilian você-form)
   then mirrored; RTL (`ar`) rendered per screen, start/end only.
