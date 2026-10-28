@@ -1,0 +1,18 @@
+# [sources at 0e93e3701f82230ed73a2f73d73b148aab3c2317; lane code unchanged since b62b27556 (git diff --stat b62b27556 0e93e3701f82230ed73a2f73d73b148aab3c2317 -- services/ is empty)]
+# npm run build (services/gateway), Windows 11, npm_config_script_shell=Git Bash; exit 0
+
+> @vitana/gateway@1.0.1 prebuild
+> rm -rf dist
+
+
+> @vitana/gateway@1.0.1 build
+> tsc && npm run copy-frontend && npm run copy-data
+
+
+> @vitana/gateway@1.0.1 copy-frontend
+> mkdir -p dist/frontend/command-hub && cp -r src/frontend/command-hub/* dist/frontend/command-hub/ && mkdir -p dist/frontend/voice-lab && cp -r src/frontend/voice-lab/* dist/frontend/voice-lab/
+
+
+> @vitana/gateway@1.0.1 copy-data
+> mkdir -p dist/services && cp src/services/tool-manifest.json dist/services/tool-manifest.json && mkdir -p dist/kb && cp -r src/kb/instruction-manual dist/kb/ && mkdir -p dist/navigation/data && cp src/navigation/data/* dist/navigation/data/
+

@@ -241,7 +241,7 @@ describe('reassignDecision — stale ready / stale review', () => {
   it('ready >24h, no automation → reassign to next seat for area', () => {
     const lane = mergeableLane({ state: 'ready', seat: 'jtadic', area: 'backoffice', state_since: ISO(NOW - HOURS(30)), seat_ran_automation_in_window: false });
     const d = reassignDecision(lane, stateWith([lane], rotations), NOW);
-    expect(d).toMatchObject({ kind: 'reassign', target: 'lane', to_actor: 'exafyltd', reason: 'stale_ready_24h' });
+    expect(d).toMatchObject({ kind: 'reassign', target: 'lane', to_actor: 'exafyltd', reason: 'stale_ready' });
   });
 
   it('ready >24h, no next seat for area → claude', () => {
@@ -253,7 +253,7 @@ describe('reassignDecision — stale ready / stale review', () => {
   it('review waiting >24h with no review entry → reassign review', () => {
     const lane = mergeableLane({ state: 'in-review', reviews: [], state_since: ISO(NOW - HOURS(30)) });
     const d = reassignDecision(lane, stateWith([lane], rotations), NOW);
-    expect(d).toMatchObject({ kind: 'reassign', target: 'review', reason: 'stale_review_24h' });
+    expect(d).toMatchObject({ kind: 'reassign', target: 'review', reason: 'stale_review' });
   });
 
   it('review waiting >24h but a review already exists → no reassign', () => {
@@ -291,7 +291,7 @@ describe('parkDecision — 3 CI fails / risk flag / stale claim', () => {
       pr: pr({ consecutive_ci_failures: 0 }),
       reviews: [],
     });
-    expect(parkDecision(lane, NOW)).toMatchObject({ kind: 'park', reason: 'stale_claim_48h', release_claim: true });
+    expect(parkDecision(lane, NOW)).toMatchObject({ kind: 'park', reason: 'stale_claim', release_claim: true });
   });
 
   it('claim >48h BUT with later branch activity → no park', () => {

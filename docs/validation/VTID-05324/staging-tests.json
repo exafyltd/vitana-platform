@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05324",
+  "service": "gateway",
+  "tests": [
+    { "kind": "http", "name": "gateway alive on the deployed build", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "npx jest test/mt-launch-pack-intake-pgtap.test.ts", "cwd": "services/gateway",
+      "reason": "DB-only lane: the two migrations are not applied on merge (Claude applies them via RUN-MIGRATION in MIGRATION-QUEUE order) and no gateway code changes, so staging has nothing new to probe; the suite pins the migration safety properties from source. Read-only." }
+  ]
+}

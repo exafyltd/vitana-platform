@@ -4,21 +4,18 @@ inclusion: always
 # Working in Kiro on Vitana (VTID-05059)
 
 - Kiro IDE has no Claude Code skills, hooks or subagents. The rules still apply unchanged:
-  - **Plan sparring is never skipped.** Spar a new plan through the Command Hub Operator or a Claude Code session
-    (skill `plan-sparring`) before any VTID is allocated.
+  - **Plan sparring is never skipped.** Every plan is a `plan(<slug>)` PR — never left only in this chat; CI
+    `PLAN-SPAR.yml` spars it (partner chain unchanged). Answer each round in `sparring/responses-<n>.md`. No VTID
+    before convergence; CI allocates it.
   - The Claude Code PreToolUse sparring reminder and the SessionStart morning-pack hook do not run here. To load
-    where a piece of work stands, run `scripts/dev/resume-vtid.sh <VTID>` and paste its output into the chat.
-- The always-included rules are the full `CLAUDE.md` (about 1,000 lines) — the same load a Claude Code session
-  carries. Path-scoped references (`.claude/rules/*.md`) load only when you work on matching files.
-- **Your role: implementer (VTID-05192).** Claude Code plans, spars, coordinates, reviews and merges; you implement
-  the lanes assigned to Kiro. You never: allocate a VTID; take a `_plan` claim or edit `handoff.md`; merge or approve a
-  PR; dispatch a workflow or deploy; write to a live system, even though your credentials allow it — no Supabase
-  writes (`execute_sql` with INSERT/UPDATE/DELETE/DDL, `apply_migration`, `deploy_edge_function`, branch/project/secret
-  tools) and no mutating AWS call (ECS, ELB, ECR, IAM or Secrets Manager writes). Reading for diagnosis is fine. A
-  database change is a migration file in the lane's PR. Blocked → a log entry and `next_actor: claude`, never a
-  workaround.
-- **Collaboration with Claude Code (VTID-05145).** At the start of every session: generate your session id
-  (`node <vitana-platform>/scripts/collab/queue.mjs session-id --agent kiro`) and say it, with your lane, in your first
-  reply; `git fetch --prune origin`; run the queue (`queue.mjs --repo <vitana-platform> --repo <vitana-v1>`) and work a
-  lane whose `next_actor` is kiro after claiming it (`queue.mjs claim <slug>/<lane-id> --session <id>`). A plan you
-  write is pushed as a PR — never left only in this chat. Full rules: `.claude/rules/collaboration.md`.
+    where a piece of work stands, run `scripts/dev/resume-vtid.sh <VTID>` from the vitana-platform checkout and paste its output into the chat.
+- The always-included rules are the full `CLAUDE.md` — the same load a Claude Code session carries. Path-scoped
+  references (`.claude/rules/*.md`) load only when you work on matching files.
+- **Your role — `.claude/rules/collaboration.md` §7–§7d on `origin/main` is the single source of truth.** You dispatch
+  staging, verification and CI workflows, re-runs and owner-approved migrations yourself (§7d). Kiro runs the pipeline end to
+  end: plans, builds and reviews (plan → CI sparring → CI VTID → build → reviewer agent → merge under §7b → staging →
+  STAGING-VERIFY → Gate 2); Claude Code is optional (§7 Claude-unavailable mode). What you never do (§7a): allocate a
+  VTID by hand (CI does), deploy to production except an owner-commanded publish (§7c: full, or one session's
+  changes only), merge except under §7b, write to a live system (Supabase, AWS, gateway)
+  from session tools, accept your own lane. The entry point for every owner task is
+  `.kiro/steering/vitana-pipeline.md`; session start is in `vitana-load-project-rules.md`.

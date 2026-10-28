@@ -63,6 +63,28 @@ jobs:
           test -s /tmp/pr_title.txt || (echo "REJECTED: empty PR title" && exit 2)
           test -s /tmp/pr_body.txt  || (echo "REJECTED: empty PR body" && exit 2)
 
+      - name: Require PR body declarations (profile + markers)
+        # VTID-05305 — one early, actionable failure instead of a bare `exit 11`.
+        #
+        # The VALIDATION_PROFILE check used to live in the "Extract VTID +
+        # Validation Profile" step and emit a bare `REJECTED: VALIDATION_PROFILE
+        # missing in PR body` with `exit 11` — no hint of what a valid profile
+        # is, and no mention of SCOPE_ALLOWLIST / ACCEPTANCE /
+        # MERGE_PAYLOAD_PREVIEW / OASIS_IMPACT, which were checked one step later
+        # (exit 12-15) and would red the NEXT push too. A PR opened without the
+        # body template failed one marker per push, costing a review round each
+        # time — the single biggest source of round-trips in this repo's CI.
+        #
+        # This step checks all five at once and prints every missing declaration
+        # with the exact line to add (the .github pull request template carries
+        # them all), so one edit satisfies the gate. The exit code is unchanged
+        # — the first missing item's historic code (11/12/13/14/15) — so the
+        # downstream contract this workflow documents is preserved; the later
+        # "Require PR markers" inline step is removed because this one supersedes
+        # it with a better message and the same codes.
+        run: |
+          node scripts/ci/validator-path-guard.cjs --pr-body-check /tmp/pr_body.txt
+
       - name: Extract VTID + Validation Profile
         id: meta
         run: |
@@ -98,12 +120,11 @@ jobs:
           echo "PROFILE=$PROFILE" >> $GITHUB_OUTPUT
           echo "Detected VTID=$VTID PROFILE=$PROFILE"
 
-      - name: Require PR markers (scope + acceptance + merge payload + oasis impact)
-        run: |
-          grep -q "SCOPE_ALLOWLIST:" /tmp/pr_body.txt || (echo "REJECTED: missing SCOPE_ALLOWLIST:" && exit 12)
-          grep -q "ACCEPTANCE:"     /tmp/pr_body.txt || (echo "REJECTED: missing ACCEPTANCE:" && exit 13)
-          grep -q "MERGE_PAYLOAD_PREVIEW:" /tmp/pr_body.txt || (echo "REJECTED: missing MERGE_PAYLOAD_PREVIEW:" && exit 14)
-          grep -q "OASIS_IMPACT:"   /tmp/pr_body.txt || (echo "REJECTED: missing OASIS_IMPACT:" && exit 15)
+      # VTID-05305 — the inline "Require PR markers" step (SCOPE_ALLOWLIST /
+      # ACCEPTANCE / MERGE_PAYLOAD_PREVIEW / OASIS_IMPACT, exit 12-15) was
+      # removed here: the "Require PR body declarations" step above now checks
+      # those same four markers with the same exit codes, alongside
+      # VALIDATION_PROFILE, in one actionable message instead of one-per-push.
 
       - name: Compute changed files
         id: diff

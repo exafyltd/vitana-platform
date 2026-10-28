@@ -65,6 +65,20 @@ test('existing suites are limited to test-runner commands and need a reason', ()
   assert.equal(ok([{ kind: 'existing', ref: 'npm run x && rm -rf /', reason: 'chaining is not allowed' }]).ok, false);
 });
 
+test('existing suites may set only allowlisted, non-production env (staging-verify-runner-fix)', () => {
+  const base = { kind: 'existing', ref: 'npm run bundle', cwd: 'apps/mobile', reason: 'the native bundle still builds' };
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'development' } }]).ok, true);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'test-g1' } }]).ok, true);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'production' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: { APP_PROFILE: 'development', GITHUB_TOKEN: 'x' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: { NODE_OPTIONS: '--require=/tmp/x.js' } }]).ok, false);
+  assert.equal(ok([{ ...base, env: ['APP_PROFILE=development'] }]).ok, false);
+  assert.equal(ok([{ ...base, env: 'APP_PROFILE=development' }]).ok, false);
+  assert.deepEqual(lib.existingEnv({ ...base, env: { APP_PROFILE: 'development' } }), { APP_PROFILE: 'development' });
+  assert.deepEqual(lib.existingEnv(base), {});
+  assert.deepEqual(lib.existingEnv({ ...base, env: { APP_PROFILE: 'production' } }), {});
+});
+
 test('manifest identity and shape are checked', () => {
   assert.equal(lib.validateManifest({ vtid: 'VTID-1', service: 'gateway', tests: [{ kind: 'http', path: '/' }] }, { vtid: 'VTID-09999' }).ok, false);
   assert.equal(lib.validateManifest({ vtid: 'VTID-09999', service: 'community-app', tests: [{ kind: 'http', path: '/' }] }, { service: 'gateway' }).ok, false);
@@ -712,4 +726,34 @@ test('VTID-05129: staging-guard.ts mirrors the shared list exactly', () => {
   const fromGuard = literals.map((l) => l.replace(/,$/, ''));
   assert.deepEqual(fromGuard, lib.DEFAULT_ALLOWED_ABORTS.map((r) => r.toString()));
   assert.match(src, /!DEFAULT_ALLOWED_ABORTS\.some\(\(r\) => r\.test\(b\)\) && !allow\.some/);
+});
+// VTID-05272 (plan kiro-autonomy-fallback §5 H): per-lane attribution of a STAGING-VERIFY run.
+test('VTID-05272: summarizeByVtid names the lane whose suite failed', () => {
+  const ok = (suite, name = 't') => ({ suite, name, ok: true });
+  const bad = (suite, name = 't') => ({ suite, name, ok: false, problems: ['x'] });
+  assert.deepEqual(lib.summarizeByVtid([ok('smoke'), ok('VTID-00001'), bad('VTID-00002'), ok('VTID-00002', 'u')]),
+    { smoke: 'passed', 'VTID-00001': 'passed', 'VTID-00002': 'failed' });
+});
+test('VTID-05272: summarizeByVtid fails every VTID when smoke or a deploy row failed', () => {
+  assert.deepEqual(lib.summarizeByVtid([bad0('smoke'), { suite: 'VTID-00001', name: 't', ok: true }], ['VTID-00002']),
+    { smoke: 'failed', 'VTID-00001': 'failed', 'VTID-00002': 'failed' });
+  assert.deepEqual(lib.summarizeByVtid([{ suite: 'smoke', name: 's', ok: true }, { ...bad0('deploy'), static: true }, { suite: 'VTID-00001', name: 't', ok: true }]),
+    { smoke: 'failed', 'VTID-00001': 'failed' });
+  function bad0(suite) { return { suite, name: 'x', ok: false, problems: ['down'] }; }
+});
+test('VTID-05272: summarizeByVtid marks unattributed suites and leaves the outcome rule alone', () => {
+  const results = [
+    { suite: 'smoke', name: 's', ok: true },
+    { suite: 'VTID-00001', name: 'late', ok: false, problems: ['x'], attributed: false },
+  ];
+  assert.deepEqual(lib.summarizeByVtid(results, ['VTID-00001', 'VTID-00003', 'not-a-vtid']),
+    { smoke: 'passed', 'VTID-00001': 'not_attributed', 'VTID-00003': 'not_attributed' });
+  assert.deepEqual(lib.summarizeByVtid([], []), { smoke: 'not_run' });
+  // decideOutcome is untouched: a failed row still fails a non-superseded run.
+  assert.equal(lib.decideOutcome({ superseded: false, results, plan: { missing: [], invalid: [] } }), 'failed');
+});
+test('VTID-05272: run.mjs writes record.per_vtid from summarizeByVtid', () => {
+  const src = require('fs').readFileSync(require('path').join(__dirname, 'run.mjs'), 'utf8');
+  assert.match(src, /per_vtid: lib\.summarizeByVtid\(results, /);
+  assert.match(src, /const outcome = lib\.decideOutcome\(\{ superseded, results, plan \}\);/);
 });
