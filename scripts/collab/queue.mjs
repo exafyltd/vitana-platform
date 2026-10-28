@@ -259,8 +259,50 @@ export function checkTransition(kind, before, after, { allowInitial = false } = 
 
 // ── Git helpers ─────────────────────────────────────────────────────────
 
+/** Number of git processes this module has started (the queue's spawn budget is asserted against it in tests). */
+export const gitSpawns = { count: 0 };
+
+function spawnGit(repo, args, opts = {}) {
+  gitSpawns.count++;
+  return execFileSync('git', ['-C', repo, ...args], { stdio: ['ignore', 'pipe', 'pipe'], ...opts });
+}
+
 function git(repo, args, opts = {}) {
-  return execFileSync('git', ['-C', repo, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trimEnd();
+  return spawnGit(repo, args, { encoding: 'utf8', ...opts }).trimEnd();
+}
+
+// Batch-style calls (cat-file --batch, rev-list, log) read far more than Node's 1 MB default; overflow (ENOBUFS) throws.
+const BIG_BUFFER = 256 * 1024 * 1024;
+
+/**
+ * Read many objects (`<rev>:<path>`, a commit sha, …) through ONE `git cat-file --batch` process.
+ * → Map<query, string|null>: the raw object text (UTF-8, untrimmed), or null when the object is missing or the query
+ * cannot be sent (contains a line break). Replies arrive in query order and are parsed by byte length.
+ */
+export function catFileBatch(repo, queries) {
+  const out = new Map();
+  const send = [];
+  for (const q of queries) {
+    if (out.has(q)) continue;
+    out.set(q, null);
+    if (!/[\r\n]/.test(q)) send.push(q);
+  }
+  if (send.length === 0) return out;
+  const buf = spawnGit(repo, ['cat-file', '--batch'], { input: `${send.join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: BIG_BUFFER });
+  let pos = 0;
+  for (const q of send) {
+    const nl = buf.indexOf(0x0a, pos);
+    if (nl < 0) throw new Error(`${repo}: git cat-file --batch: truncated reply`);
+    const header = buf.toString('utf8', pos, nl);
+    pos = nl + 1;
+    const m = /^[0-9a-f]{40,64} \S+ (\d+)$/.exec(header); // otherwise "<query> missing" / "<query> ambiguous"
+    if (!m) continue;
+    const size = Number(m[1]); // bytes
+    if (pos + size > buf.length) throw new Error(`${repo}: git cat-file --batch: short object for ${q}`);
+    out.set(q, buf.toString('utf8', pos, pos + size));
+    pos += size + 1; // the LF after the content
+  }
+  return out;
 }
 
 function gitOk(repo, args) {
@@ -283,45 +325,121 @@ function defaultRemoteBranch(repo) {
   return null;
 }
 
-/** Claims from remote-tracking refs (run `git fetch --prune origin` first). */
-export function listClaims(repo) {
-  const out = gitOk(repo, ['for-each-ref', '--format=%(refname)%09%(objectname)%09%(committerdate:unix)', `refs/remotes/origin/${CLAIM_PREFIX}`]);
-  if (!out) return [];
-  return out.split('\n').filter(Boolean).map((line) => {
-    const [ref, sha, ts] = line.split('\t');
-    const key = ref.slice(`refs/remotes/origin/${CLAIM_PREFIX}`.length);
-    const msg = gitOk(repo, ['log', '-1', '--format=%B', sha]) || '';
+const CLAIM_REF = `refs/remotes/origin/${CLAIM_PREFIX}`;
+const REFS_FMT = '%(refname)%09%(refname:short)%09%(objectname)%09%(committerdate:unix)';
+
+/** for-each-ref output in REFS_FMT → [{ ref, short, sha, ts }] in for-each-ref order. */
+function parseRefs(out) {
+  return (out || '').split('\n').filter(Boolean).map((l) => {
+    const [ref, short, sha, ts] = l.split('\t');
+    return { ref, short, sha, ts: Number(ts) };
+  });
+}
+
+/** Claim rows (refs under CLAIM_REF) + their commit objects from catFileBatch → claims. */
+function claimsFrom(claimRows, objects) {
+  return claimRows.map(({ ref, sha, ts }) => {
+    const key = ref.slice(CLAIM_REF.length);
+    const raw = objects.get(sha) ?? '';
+    const i = raw.indexOf('\n\n');
+    const msg = (i < 0 ? '' : raw.slice(i + 2)).trimEnd(); // a commit object's message follows the first blank line
     const session = (/^Collab-Session:\s*(\S+)/m.exec(msg) || [])[1] || null;
     const [slug, ...rest] = key.split('/');
-    return { key, slug, lane: rest.join('/'), sha, session, at: Number(ts) * 1000 };
+    return { key, slug, lane: rest.join('/'), sha, session, at: ts * 1000 };
   });
+}
+
+/** Claims from remote-tracking refs (run `git fetch --prune origin` first). Two git processes at most. */
+export function listClaims(repo) {
+  const rows = parseRefs(gitOk(repo, ['for-each-ref', `--format=${REFS_FMT}`, CLAIM_REF]));
+  return claimsFrom(rows, catFileBatch(repo, rows.map((r) => r.sha)));
 }
 
 // ── Queue ───────────────────────────────────────────────────────────────
 
-/** Newest version (by `updated`) of every handoff/lane file across main and recent branches. */
+const bytewise = (a, b) => (a < b ? -1 : a > b ? 1 : 0);
+
+/**
+ * Newest version (by `updated`) of every handoff/lane file across main and recent branches.
+ * A constant number of git processes per repo (≤ 6), whatever the number of branches, files or claims:
+ * symbolic-ref, for-each-ref, ls-tree, rev-list, log, cat-file --batch.
+ * A branch contributes a spec file it changed off main when the file is on main or the branch added it, so a file
+ * deleted from main does not come back through a stale branch.
+ */
 export function collect(repo, { days = 30, now = Date.now() } = {}) {
-  const main = defaultRemoteBranch(repo);
+  const sym = gitOk(repo, ['symbolic-ref', '--short', 'refs/remotes/origin/HEAD']);
+  const rows = parseRefs(gitOk(repo, ['for-each-ref', `--format=${REFS_FMT}`, 'refs/remotes/origin']));
+  const main = sym || ['origin/main', 'origin/master'].find((b) => rows.some((r) => r.short === b)) || null;
   if (!main) throw new Error(`${repo}: no origin/main — run git fetch origin`);
+  const mainRow = rows.find((r) => r.short === main);
+  const mainSha = mainRow?.sha ?? main;
+  const mainRef = mainRow?.ref ?? main;
+  const mainPaths = specFilesAt(repo, mainSha);
+  const onMain = new Set(mainPaths);
+
+  const since = Math.floor((now - days * 86400000) / 1000);
+  const recent = rows.filter((r) => r.short !== main && r.short !== 'origin/HEAD' && r.short !== 'origin'
+    && !r.short.startsWith(`origin/${CLAIM_PREFIX}`) && r.ts >= since);
+  const claimRows = rows.filter((r) => r.ref.startsWith(CLAIM_REF));
+
+  const branchPairs = [];
+  if (recent.length) {
+    const opts = { input: `${[...recent.map((r) => r.ref), `^${mainRef}`].join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: BIG_BUFFER };
+    // Every commit on a recent branch and not on main, with its parents.
+    const graph = new Map();
+    for (const line of git(repo, ['rev-list', '--parents', '--stdin'], opts).split('\n')) {
+      if (!line) continue;
+      const [sha, ...parents] = line.split(' ');
+      graph.set(sha, parents);
+    }
+    // The handoff/lane files each of those commits touched. `--cc` keeps a merge commit's own conflict resolutions
+    // (a combined status has one letter per parent; a file a merge took unchanged from one parent is not listed).
+    const touchedBy = new Map();
+    const log = git(repo, ['log', '--stdin', '--full-history', '--cc', '--no-renames', '--no-color',
+      '--format=%x00%H', '--name-status', '--', '.kiro/specs'], opts);
+    for (const chunk of log.split('\0').slice(1)) {
+      const [sha, ...lines] = chunk.split('\n');
+      const files = [];
+      for (const l of lines) {
+        const m = /^([A-Z]+)\d*\t/.exec(l);
+        const p = m && l.slice(l.lastIndexOf('\t') + 1); // the path is the last tab field
+        if (p && classifyPath(p)) files.push({ status: m[1], path: p });
+      }
+      touchedBy.set(sha.trim(), files);
+    }
+    for (const r of recent) {
+      const touched = new Map(); // path → added on this branch
+      const seen = new Set();
+      const stack = [r.sha];
+      while (stack.length) {
+        const c = stack.pop();
+        if (seen.has(c) || !graph.has(c)) continue; // on main (or the boundary)
+        seen.add(c);
+        for (const { status, path: p } of touchedBy.get(c) || []) touched.set(p, touched.get(p) || status.includes('A'));
+        stack.push(...graph.get(c));
+      }
+      const paths = [...touched].filter(([p, added]) => onMain.has(p) || added).map(([p]) => p).sort(bytewise);
+      if (paths.length) branchPairs.push({ ref: r.short, sha: r.sha, paths });
+    }
+  }
+
+  const objects = catFileBatch(repo, [
+    ...mainPaths.map((p) => `${mainSha}:${p}`),
+    ...branchPairs.flatMap(({ sha, paths }) => paths.map((p) => `${sha}:${p}`)),
+    ...claimRows.map((r) => r.sha),
+  ]);
   const best = new Map();
-  const consider = (ref, p) => {
-    const text = showFile(repo, ref, p);
-    if (text === null) return;
+  const consider = (ref, query, p) => {
+    const raw = objects.get(query);
+    if (raw === null || raw === undefined) return;
+    const text = raw.trimEnd();
     const fm = parseFrontMatter(text);
     const prev = best.get(p);
     if (!prev || (fm?.updated || '') > (prev.fm?.updated || '')) best.set(p, { path: p, ref, fm, text, ...classifyPath(p) });
   };
-  for (const p of specFilesAt(repo, main)) consider(main, p);
-  const since = Math.floor((now - days * 86400000) / 1000);
-  const refs = (gitOk(repo, ['for-each-ref', '--format=%(refname:short)%09%(committerdate:unix)', 'refs/remotes/origin']) || '')
-    .split('\n').filter(Boolean).map((l) => l.split('\t'))
-    .filter(([r, ts]) => r !== main && r !== 'origin/HEAD' && r !== 'origin' && !r.startsWith(`origin/${CLAIM_PREFIX}`) && Number(ts) >= since);
-  for (const [ref] of refs) {
-    const changed = gitOk(repo, ['diff', '--name-only', `${main}...${ref}`, '--', '.kiro/specs']);
-    if (!changed) continue;
-    for (const p of changed.split('\n')) if (classifyPath(p)) consider(ref, p);
-  }
-  return { main, files: [...best.values()], claims: listClaims(repo) };
+  for (const p of mainPaths) consider(main, `${mainSha}:${p}`, p);
+  for (const { ref, sha, paths } of branchPairs) for (const p of paths) consider(ref, `${sha}:${p}`, p);
+  return { main, files: [...best.values()], claims: claimsFrom(claimRows, objects) };
 }
 
 export function buildQueue(collected, repoName) {
@@ -666,8 +784,12 @@ export function ghFetcher(repoSlug = 'exafyltd/vitana-platform') {
 export function loadPrograms(repo, ref) {
   const out = gitOk(repo, ['ls-tree', '-r', '--name-only', ref, '--', 'docs/programs']);
   if (!out) return [];
-  return out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean)
-    .map((m) => ({ id: m[1], path: m[0], fm: parseFrontMatter(showFile(repo, ref, m[0])) }));
+  const found = out.split('\n').map((p) => /^docs\/programs\/([^/]+)\/program\.md$/.exec(p)).filter(Boolean);
+  const objects = catFileBatch(repo, found.map((m) => `${ref}:${m[0]}`)); // one process for every program.md
+  return found.map((m) => {
+    const raw = objects.get(`${ref}:${m[0]}`);
+    return { id: m[1], path: m[0], fm: parseFrontMatter(raw === null || raw === undefined ? null : raw.trimEnd()) };
+  });
 }
 
 export const PROGRAM_STATUSES = ['active', 'paused', 'done'];
