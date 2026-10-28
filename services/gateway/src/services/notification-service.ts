@@ -17,6 +17,7 @@ import * as admin from 'firebase-admin';
 import { SupabaseClient } from '@supabase/supabase-js';
 import * as repo from './notification-service-repository';
 import { dispatchPush } from './push-routing';
+import { CHAT_PUSH_TYPES, isViewingChat, messageIdOf } from './chat-viewing-presence';
 import {
   isNotificationTypeAllowed,
   isMemberCategoryAllowed,
@@ -275,7 +276,11 @@ export type PushOutcome =
   | 'dispatch_exception'
   // VTID-05137: a chat push held back because the recipient was already
   // pushed for this conversation moments ago (chat-push-coalescer.ts).
-  | 'coalesced';
+  | 'coalesced'
+  // VTID-05312: the recipient is viewing that conversation (chat-viewing-presence.ts).
+  | 'suppressed_viewing'
+  // VTID-05312: a second notification row for the same message and recipient.
+  | 'suppressed_duplicate';
 
 /**
  * VTID-05137: per-call options. `suppressPush: 'coalesced'` writes the in-app
@@ -870,7 +875,25 @@ export async function notifyUser(
   // VTID-05137: the caller held this push back (chat burst). The row is still
   // written, with push_sent_at set so the /push-dispatch cron never sends it.
   const pushCoalesced = pushAllowed && opts?.suppressPush === 'coalesced';
-  const shouldSendPush = pushAllowed && !pushCoalesced;
+  // VTID-05312: no push for the conversation the recipient is looking at. The
+  // row is written exactly like a coalesced one (push_sent_at set at INSERT, so
+  // /push-dispatch never sends it later) with outcome suppressed_viewing.
+  const pushViewing = pushAllowed && !pushCoalesced && CHAT_PUSH_TYPES.has(type)
+    && (await isViewingChat(supabase, userId, tenantId, type, payload.data));
+  const shouldSendPush = pushAllowed && !pushCoalesced && !pushViewing;
+
+  // VTID-05312: dedup — an unpushed row for the same recipient and message
+  // (e.g. written by the vitana-v1 trigger) is marked handled; this row is the
+  // one that pushes. Best effort.
+  const chatMessageId = CHAT_PUSH_TYPES.has(type) ? messageIdOf(payload.data) : null;
+  if (chatMessageId && meta.channel !== 'push') {
+    try {
+      const { error: dedupError } = (await repo.markUnpushedChatDuplicatesHandled(supabase, userId, chatMessageId)) ?? {};
+      if (dedupError) throw new Error(dedupError.message);
+    } catch (err: any) {
+      console.warn(`[Notifications] chat dedup failed (ignored): ${err?.message || err}`);
+    }
+  }
 
   // ── 4. Write in-app notification record ──────────────────
   // When shouldSendPush is true, set push_sent_at at INSERT time to prevent
@@ -895,7 +918,7 @@ export async function notifyUser(
       data: pushCoalesced ? { ...(payload.data || {}), push_coalesced: 'true' } : payload.data || {},
       ...(recipientVitanaId && { recipient_vitana_id: recipientVitanaId }),
     };
-    if (shouldSendPush || pushCoalesced) {
+    if (shouldSendPush || pushCoalesced || pushViewing) {
       insertData.push_sent_at = new Date().toISOString();
     }
     const { data: inserted, error } = await repo.insertUserNotification(supabase, insertData);
@@ -971,6 +994,8 @@ export async function notifyUser(
   if (notificationId && (meta.channel === 'push' || meta.channel === 'push_and_inapp')) {
     const outcome: PushOutcome = shouldSendPush
       ? classifyPushOutcome(fcmTally, appilixSent)
+      : pushViewing
+        ? 'suppressed_viewing'
       : pushCoalesced
         ? 'coalesced'
         : pushBlockedByDnd
@@ -984,6 +1009,7 @@ export async function notifyUser(
     `inapp=${inappWritten} push=${pushed} appilix=${appilixSent} ch=${meta.channel} pri=${meta.priority}` +
     (pushBlockedByDnd ? ' (DND)' : '') +
     (pushCoalesced ? ' (coalesced)' : '') +
+    (pushViewing ? ' (viewing)' : '') +
     (meta.channel === 'silent' ? ' (silent)' : '')
   );
 

@@ -1,6 +1,6 @@
 ---
 lane: workflow-off
-state: verified
+state: done
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -10,10 +10,9 @@ paths:
   - CLAUDE.md
   - scripts/i18n-audit-llm.mjs
   - docs/validation/**
-claimed_by: kiro-202610181950-f0b7
 branch: kiro/i18n-audit-nightly-off/workflow-off
 pr: https://github.com/exafyltd/vitana-v1/pull/1470
-updated: 2026-10-22T18:06Z
+updated: 2026-10-22T18:19Z
 vtid: VTID-05284
 ---
 # Lane: workflow-off
@@ -70,3 +69,5 @@ Collab-Reviewed-Head: e37417f14bf901dcd9c123b23bcc495ee9df76ff
 Merged under collaboration.md §7b (PM merge rule) on the owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping"): exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`). Reviewer accept: agent:vitana-lane-reviewer (claude-opus-5.5) on `e37417f14bf901dcd9c123b23bcc495ee9df76ff` (entry-only commit `8993e3b4e` on top). #4250 Lane scope red was the governance-artifact false positive (not required); merged without `--admin`. #1470: every check green, Lane scope green after the re-run. Next: verified (one edge per PR).
 ### 2026-10-22T18:06Z · kiro-202610181950-f0b7 · in-review → verified
 Acceptance met on vitana-v1 `main` (`2282b362`): `gh workflow view i18n-audit-llm.yml --repo exafyltd/vitana-v1` shows only `workflow_dispatch` under `on:` (no `schedule`/`cron`), provider default `deepseek`. Nothing user-facing deploys, so no Gate 2. §7b merges: exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`). Next: done.
+### 2026-10-22T18:19Z · kiro-202610181950-f0b7 · verified → done
+Lane closed under §7b (owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")); merges exafyltd/vitana-platform#4250 (`aa74e3d11369dcde888ab99dc8cbb4c64bb220e4`) and exafyltd/vitana-v1#1470 (`2282b362a4702db55e9af7549a7bd881701a8f0d`). Claim released.

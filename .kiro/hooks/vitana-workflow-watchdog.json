@@ -1,0 +1,23 @@
+{
+  "version": "v1",
+  "hooks": [
+    {
+      "name": "vitana-workflow-watchdog-start",
+      "description": "VTID-05337: at session start, report workflow runs of this workspace paused by an agent restart (or running with a stale heartbeat) and how to resume them. Read-only.",
+      "trigger": "SessionStart",
+      "action": {
+        "type": "command",
+        "command": "node scripts/collab/workflow-watchdog.mjs"
+      }
+    },
+    {
+      "name": "vitana-workflow-watchdog-prompt",
+      "description": "VTID-05337: on each prompt, report this session's own paused or stale workflow runs. Read-only, silent when there are none.",
+      "trigger": "UserPromptSubmit",
+      "action": {
+        "type": "command",
+        "command": "node scripts/collab/workflow-watchdog.mjs"
+      }
+    }
+  ]
+}

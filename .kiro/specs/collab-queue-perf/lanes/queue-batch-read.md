@@ -1,6 +1,6 @@
 ---
 lane: queue-batch-read
-state: in-review
+state: done
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -9,9 +9,8 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-22T18:02Z
+updated: 2026-10-22T18:28Z
 vtid: VTID-05300
-claimed_by: kiro-202610181950-f0b7
 branch: kiro/collab-queue-perf/queue-batch-read
 pr: https://github.com/exafyltd/vitana-platform/pull/4188
 ---
@@ -43,3 +42,7 @@ is mapped to the code in `docs/validation/VTID-05300/plan-sparring.md`; `scope.j
 Next: reviewer agent on the current head; Lane scope needs `executor: claude` handling for this governance lane.
 ### 2026-10-22T18:02Z · kiro-202610181950-f0b7 · executing → in-review
 Missing §7b record: exafyltd/vitana-platform#4188 (`84fc0ca6a0d116f4e41dfd77c5125cb329b95f15`) was merged under collaboration.md §7b (PM merge rule) on the owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping") (run end to end). Recorded now. Next: verified (one edge per PR).
+### 2026-10-22T18:13Z · kiro-202610181950-f0b7 · in-review → verified
+Acceptance met on `main` (`84fc0ca6`): batched `queue.mjs` reads are on main and in use by every queue run since (collab tests in #4188 green). Tooling only, nothing deploys, so no Gate 2. §7b merge: exafyltd/vitana-platform#4188 (`84fc0ca6a0d116f4e41dfd77c5125cb329b95f15`). Next: done.
+### 2026-10-22T18:28Z · kiro-202610181950-f0b7 · verified → done
+Lane closed under §7b (owner instruction 2026-10-21 (authorized the collaboration.md §7b merges of exafyltd/vitana-platform#4250 and exafyltd/vitana-v1#1470; "now you can run fully end to end without stopping")); merge exafyltd/vitana-platform#4188 (`84fc0ca6a0d116f4e41dfd77c5125cb329b95f15`). Claim released.
