@@ -1,0 +1,14 @@
+# red on base: origin/main 42b0d8b898 + the new tests only (no checkOwnerAutonomy, no rule file)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# Error: ENOENT: no such file or directory, open '.kiro/steering/vitana-owner-autonomy.md'
+not ok 1 - scripts/ci/kiro-steering/guard.test.cjs
+# tests 1
+# pass 0
+# fail 1
+
+# red 2: + .kiro/steering/vitana-owner-autonomy.md, guard.cjs still base (no checkOwnerAutonomy)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+not ok 1 - scripts/ci/kiro-steering/guard.test.cjs
+# tests 1
+# pass 0
+# fail 1

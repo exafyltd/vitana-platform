@@ -7,7 +7,11 @@
  *   GET    /conversation/:peer — Get messages between current user and peer (paginated)
  *   GET    /conversations      — List recent conversations (latest message per peer)
  *   POST   /read               — Mark messages from a peer as read
+ *   POST   /delivered          — Mark received DMs as delivered (VTID-05310)
+ *   POST   /viewing            — "viewing this conversation" heartbeat (VTID-05312, routes/chat-viewing.ts)
  *   GET    /unread-count       — Total unread message count
+ *   GET    /search             — Message search in the caller's DMs and groups (VTID-05309, routes/chat-search.ts)
+ *   GET    /shared-preview     — Card of a shared post/event/product/profile for the caller (VTID-05311)
  */
 
 import { Router, Request, Response } from 'express';
@@ -21,6 +25,7 @@ import { buildInviteForChat, CALENDAR_INVITE_TYPE } from '../services/calendar-i
 import { createClient } from '@supabase/supabase-js';
 import { notifyUser, type NotificationPayload, type NotifyUserOptions } from '../services/notification-service';
 import { coalesceChatPushes, chatConversationKey } from '../services/chat-push-coalescer';
+import { isNewMemberGreeting, prepareNewMemberGreetingPush } from '../services/new-member-greeting-push';
 import { VITANA_BOT_USER_ID, isVitanaBot } from '../lib/vitana-bot';
 import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
@@ -28,9 +33,68 @@ import { tt } from '../i18n/catalog';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
+import chatSearchRouter from './chat-search';
+import { createUserSupabaseClient } from '../lib/supabase-user';
+import { getBearerToken } from '../lib/tenant-role-auth';
+import { SHARED_CONTENT_TYPE, SHARED_CAPTION_MAX, parseSharedRef, resolveSharedPreview, senderCanShare } from '../services/chat-shared-content';
+import chatViewingRouter from './chat-viewing';
 import { markCompanionRepliedInBackground } from '../services/companion/companion-repository';
 
 const router = Router();
+
+/**
+ * VTID-05311: the send-side check of a shared item, shared by DM and group
+ * send. 400 invalid ref / caption too long, 401 no token, 403 the sender cannot
+ * see the item, 503 the check could not run. On success the item is stored as
+ * `{ kind, id }` only (the route may add its own server-validated fields:
+ * `reply_to`, a group's sanitized `mentions`). `content` is an optional
+ * caption of the sender's own words (≤ 1000 characters), never item data.
+ */
+export async function checkSharedContentSend(
+  req: Request,
+  contentData: unknown,
+  caption = '',
+): Promise<{ ok: true; metadata: { kind: string; id: string } } | { ok: false; status: number; error: string }> {
+  const ref = parseSharedRef(contentData);
+  if (!ref) return { ok: false, status: 400, error: 'invalid_shared_content' };
+  if (caption.length > SHARED_CAPTION_MAX) return { ok: false, status: 400, error: 'caption_too_long' };
+  const token = getBearerToken(req);
+  if (!token) return { ok: false, status: 401, error: 'unauthorized' };
+  try {
+    const allowed = await senderCanShare(createUserSupabaseClient(token), getSupabase(), ref);
+    if (!allowed) return { ok: false, status: 403, error: 'share_not_allowed' };
+  } catch (err: any) {
+    console.warn(`[Chat] shared-content check failed: ${err?.message || err}`);
+    return { ok: false, status: 503, error: 'share_check_unavailable' };
+  }
+  return { ok: true, metadata: { kind: ref.kind, id: ref.id } };
+}
+
+/**
+ * VTID-05311: GET /shared-preview?kind=&id= — the card of a shared item for
+ * the CALLER, resolved with the caller's own permissions (user-scoped client,
+ * RLS decides). `{ available:true, title, description, image_url, url }` or
+ * `{ available:false, reason:'deleted'|'restricted' }`.
+ */
+router.get('/shared-preview', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const ref = parseSharedRef({ kind: req.query.kind, id: req.query.id });
+  if (!ref) return res.status(400).json({ ok: false, error: 'invalid_shared_content' });
+  const token = getBearerToken(req);
+  if (!token) return res.status(401).json({ ok: false, error: 'unauthorized' });
+  try {
+    const preview = await resolveSharedPreview(createUserSupabaseClient(token), getSupabase(), ref);
+    res.setHeader('Cache-Control', 'private, max-age=60');
+    return res.json({ ok: true, ...preview });
+  } catch (err: any) {
+    console.warn(`[Chat] shared-preview failed: ${err?.message || err}`);
+    return res.status(503).json({ ok: false, error: 'preview_unavailable' });
+  }
+});
+
+// VTID-05309: GET /search — message search across the caller's DMs and groups (routes/chat-search.ts).
+router.use('/search', chatSearchRouter);
+// VTID-05312: viewing heartbeats (push suppression for the open conversation).
+router.use('/viewing', chatViewingRouter);
 
 // VTID-03459/VTID-03470: per-user in-flight guard for POST /vitana-reply
 // (see below). Module-level because this route file is a singleton Express
@@ -45,6 +109,8 @@ const router = Router();
 // fresh request is allowed through again.
 const vitanaReplyInFlight = new Map<string, number>();
 const VITANA_REPLY_STALE_MS = 90_000;
+// VTID-05310: POST /delivered accepts at most this many ids per call.
+const MAX_DELIVERED_IDS = 200;
 
 function getSupabase() {
   return createClient(
@@ -59,11 +125,13 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   const { identity } = req as AuthenticatedRequest;
   if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
 
-  const { receiver_id, content, message_type, content_data } = req.body as {
+  const { receiver_id, content, message_type, content_data, client_message_id, reply_to_message_id } = req.body as {
     receiver_id?: unknown;
     content?: unknown;
     message_type?: unknown;
     content_data?: unknown;
+    client_message_id?: unknown;
+    reply_to_message_id?: unknown;
   };
 
   if (!receiver_id || typeof receiver_id !== 'string') {
@@ -74,14 +142,25 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const msgType = typeof message_type === 'string' && message_type.length > 0 ? message_type : 'text';
-  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE]);
+  const allowedTypes = new Set(['text', 'attachment', 'voice', 'voice_transcript', CALENDAR_INVITE_TYPE, SHARED_CONTENT_TYPE]);
   if (!allowedTypes.has(msgType)) {
     return res.status(400).json({ ok: false, error: 'invalid_message_type' });
   }
 
   const rawContent = typeof content === 'string' ? content : '';
   let trimmedContent = rawContent.trim();
-  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object' ? (content_data as Record<string, unknown>) : {};
+  // VTID-05310: a reply target is never taken from client content_data.
+  let metadata: Record<string, unknown> = content_data && typeof content_data === 'object'
+    ? repo.stripClientReplyTo(content_data as Record<string, unknown>)
+    : {};
+
+  // VTID-05310: a retry of a send that already went through is answered with
+  // the stored row before any check that could refuse it (e.g. invite limits).
+  if (isUuidParam(client_message_id)) {
+    const prior = await repo.findPriorSend(getSupabase(), identity.user_id, client_message_id.toLowerCase(), { kind: 'dm', a: identity.user_id, b: receiver_id });
+    if (prior.kind === 'conflict') return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
+    if (prior.kind === 'duplicate') return res.status(200).json({ ok: true, data: withReplyId(prior.row), duplicate: true });
+  }
 
   // VTID-04917: an invite card is built on the server from the sender's own
   // calendar entry; the client sends only { entry_id }.
@@ -101,17 +180,37 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     metadata = { ...invite.metadata };
     trimmedContent = invite.content;
   }
+  // VTID-05311: a shared post / event / product / profile is stored as
+  // { kind, id } (+ the server's reply_to); the sender must be able to see it.
+  if (msgType === SHARED_CONTENT_TYPE) {
+    const shared = await checkSharedContentSend(req, content_data, trimmedContent);
+    if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
+    metadata = { ...shared.metadata };
+  }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
   if (msgType === 'text') {
     if (trimmedContent.length === 0) {
       return res.status(400).json({ ok: false, error: 'content is required' });
     }
-  } else if (trimmedContent.length === 0 && attachments.length === 0) {
+  } else if (msgType !== SHARED_CONTENT_TYPE && trimmedContent.length === 0 && attachments.length === 0) {
     return res.status(400).json({ ok: false, error: 'content_or_attachment_required' });
   }
 
   const supabase = getSupabase();
+
+  // VTID-05310: optional client_message_id (idempotent send) and reply target
+  // (must be a message of this DM pair). Stored as metadata.reply_to — an id
+  // only, never a copy of the parent's content.
+  const sendIdentity = client_message_id != null || reply_to_message_id != null
+    ? await repo.resolveSendIdentity(
+      supabase,
+      { client_message_id, reply_to_message_id },
+      { kind: 'dm', a: identity.user_id, b: receiver_id },
+    )
+    : NO_SEND_IDENTITY;
+  if (!sendIdentity.ok) return res.status(400).json({ ok: false, error: sendIdentity.error });
+  if (sendIdentity.replyTo) metadata = { ...metadata, reply_to: { message_id: sendIdentity.replyTo } };
 
   // VTID-01967: denormalize sender + receiver vitana_id at insert time so
   // support engineers and voice tooling can quote @<id> without joining
@@ -123,7 +222,7 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     resolveVitanaId(receiver_id),
   ]);
 
-  const { data, error } = await repo.insertChatMessage(supabase, {
+  const row = {
     tenant_id: identity.tenant_id,
     sender_id: identity.user_id,
     receiver_id,
@@ -132,11 +231,20 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     metadata,
     ...(sender_vitana_id && { sender_vitana_id }),
     ...(receiver_vitana_id && { receiver_vitana_id }),
-  });
+  };
+  const { data, error, duplicate, conflict } = sendIdentity.clientMessageId
+    ? await repo.insertChatMessageIdempotent(supabase, row, sendIdentity.clientMessageId, repo.insertChatMessage, { kind: 'dm', a: identity.user_id, b: receiver_id })
+    : { ...(await repo.insertChatMessage(supabase, row)), duplicate: false };
 
+  if (conflict) return res.status(409).json({ ok: false, error: 'client_message_id_conflict' });
   if (error) {
     console.error('[Chat] Send error:', error);
     return res.status(500).json({ ok: false, error: error.message });
+  }
+
+  // VTID-05310: a repeat of an already stored send — same row back, no push.
+  if (duplicate) {
+    return res.status(200).json({ ok: true, data: withReplyId(data), duplicate: true });
   }
 
   // VTID-03470: /send no longer triggers the Vitana bot reply itself — it
@@ -220,6 +328,11 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
       const receiverLocale = await getUserLocale(supabase, receiver_id);
       notifBodyFinal = tt('notif.calendar_invite.body', receiverLocale, { name: senderName });
     }
+    if (msgType === SHARED_CONTENT_TYPE) {
+      // VTID-05311: a generic line, never the shared item's content.
+      const receiverLocale = await getUserLocale(supabase, receiver_id);
+      notifBodyFinal = tt('notif.chat_shared_content.body', receiverLocale, { name: senderName });
+    }
 
     if (isListingInterest) {
       const receiverLocale = await getUserLocale(supabase, receiver_id);
@@ -243,10 +356,28 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     try {
       let payload: NotificationPayload = { title: notifTitle, body: notifBodyFinal, data: notifData };
       let notifyOpts: NotifyUserOptions | undefined;
+      let skipNotify = false;
+      // VTID-05208: a new-member greeting DM (metadata.source =
+      // 'new_member_greeting') is grouped per RECIPIENT over 24 h — one push a
+      // day however many members greet the newcomer. null = a test/service
+      // account is involved (or the exclusion lookup failed): no notification.
+      if (notifType === 'new_chat_message' && msgType === 'text' && isNewMemberGreeting(metadata)) {
+        const prepared = await prepareNewMemberGreetingPush(supabase, {
+          senderId: identity.user_id,
+          receiverId: receiver_id,
+          payload,
+        });
+        if (prepared) {
+          payload = prepared.payload;
+          notifyOpts = prepared.opts;
+        } else {
+          skipNotify = true;
+          console.warn('[Chat] Greeting DM notification skipped (excluded account or exclusion lookup failed)');
+        }
       // VTID-05137: plain chat messages are coalesced per conversation (one
       // push per burst). Calendar invites and listing-interest pushes are
       // events of their own and always go out unchanged.
-      if (notifType === 'new_chat_message' && msgType !== CALENDAR_INVITE_TYPE) {
+      } else if (notifType === 'new_chat_message' && msgType !== CALENDAR_INVITE_TYPE && msgType !== SHARED_CONTENT_TYPE) {
         const [prepared] = await coalesceChatPushes(
           supabase,
           chatConversationKey({ senderId: identity.user_id }),
@@ -255,7 +386,9 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
         payload = prepared.payload;
         notifyOpts = prepared.opts;
       }
-      if (notifyOpts) {
+      if (skipNotify) {
+        // VTID-05208: nothing to send (see above).
+      } else if (notifyOpts) {
         await notifyUser(receiver_id, identity.tenant_id!, notifType, payload, supabase, notifyOpts);
       } else {
         await notifyUser(receiver_id, identity.tenant_id!, notifType, payload, supabase);
@@ -265,8 +398,35 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     }
   }
 
-  return res.status(201).json({ ok: true, data });
+  return res.status(201).json({ ok: true, data: withReplyId(data) });
 });
+
+// VTID-05310 helpers. The repository's new functions are called only when a
+// request uses the new fields (or a row carries a reply target), so a request
+// without them makes exactly the calls it made before.
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+// Local (not repo.isUuid): tests mock the repository partially.
+export function isUuidParam(v: unknown): v is string {
+  return typeof v === 'string' && UUID_RE.test(v);
+}
+export const NO_SEND_IDENTITY = { ok: true as const, clientMessageId: null as string | null, replyTo: null as string | null };
+
+/** A row the gateway just validated exposes its own reply target. */
+export function withReplyId<T extends Record<string, any>>(row: T): T & { reply_to_message_id: string | null } {
+  const id = row?.metadata?.reply_to?.message_id;
+  return { ...row, reply_to_message_id: isUuidParam(id) ? id : null };
+}
+
+/** Read endpoints: reply targets checked against the conversation (I1); no query when no row has one. */
+export async function annotateReplies(
+  sb: ReturnType<typeof getSupabase>,
+  rows: any[] | null | undefined,
+  scope: repo.ConversationScope,
+): Promise<any[]> {
+  const list = rows ?? [];
+  if (!list.some((r) => r?.metadata?.reply_to?.message_id)) return list.map((r) => ({ ...r, reply_to_message_id: null }));
+  return repo.annotateReplyTargets(sb, list, scope);
+}
 
 // ── POST /vitana-reply — Explicitly generate + await a Vitana bot reply ──
 // VTID-03470: see the comment in /send above. This is AWAITED end-to-end by
@@ -338,17 +498,42 @@ router.get('/conversation/:peerId', requireAuth, requireTenant, async (req: Requ
   const { peerId } = req.params;
   const limit = Math.min(Number(req.query.limit) || 50, 100);
   const before = req.query.before as string | undefined; // ISO cursor
+  const after = req.query.after as string | undefined; // VTID-05310: ISO cursor, forward paging
+  const around = req.query.around as string | undefined; // VTID-05310: message id, context window
+
+  // VTID-05310: peerId is interpolated into the PostgREST or-filter below.
+  if (!isUuidParam(peerId)) return res.status(400).json({ ok: false, error: 'invalid_peer_id' });
+  if (around !== undefined && !isUuidParam(around)) return res.status(400).json({ ok: false, error: 'invalid_around' });
 
   const supabase = getSupabase();
+  const scope = { kind: 'dm' as const, a: identity.user_id, b: peerId };
 
-  const { data, error } = await repo.fetchConversationMessages(supabase, identity.tenant_id, identity.user_id, peerId, limit, before);
+  if (around) {
+    const win = await repo.fetchWindowAround(
+      supabase,
+      repo.dmScopeQuery(supabase, identity.tenant_id, identity.user_id, peerId),
+      around,
+      limit,
+    );
+    if ('error' in win) {
+      console.error('[Chat] Conversation window error:', win.error);
+      return res.status(500).json({ ok: false, error: win.error.message });
+    }
+    if ('notFound' in win) return res.status(404).json({ ok: false, error: 'message_not_found' });
+    const rows = await annotateReplies(supabase, win.data, scope);
+    return res.json({ ok: true, data: rows, has_older: win.has_older, has_newer: win.has_newer });
+  }
+
+  const { data, error } = after
+    ? await repo.fetchConversationMessagesAfter(supabase, identity.tenant_id, identity.user_id, peerId, limit, after)
+    : await repo.fetchConversationMessages(supabase, identity.tenant_id, identity.user_id, peerId, limit, before);
 
   if (error) {
     console.error('[Chat] Conversation fetch error:', error);
     return res.status(500).json({ ok: false, error: error.message });
   }
 
-  return res.json({ ok: true, data });
+  return res.json({ ok: true, data: await annotateReplies(supabase, data, scope) });
 });
 
 // ── GET /conversations — List recent conversations ───────────
@@ -439,6 +624,16 @@ router.post('/read', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   const supabase = getSupabase();
+  // VTID-05310: a read message is also delivered. Best effort (before the
+  // migration the column is missing and this is a no-op error).
+  try {
+    const delivered = await repo.markPeerMessagesDelivered(supabase, identity.tenant_id, peer_id, identity.user_id);
+    if (delivered?.error && !repo.isMissingColumn(delivered.error, 'delivered_at')) {
+      console.warn('[Chat] Mark delivered (on read) failed:', delivered.error.message);
+    }
+  } catch (err: any) {
+    console.warn('[Chat] Mark delivered (on read) failed:', err?.message || err);
+  }
   const { error } = await repo.markPeerMessagesRead(supabase, identity.tenant_id, peer_id, identity.user_id);
 
   if (error) {
@@ -447,6 +642,36 @@ router.post('/read', requireAuth, requireTenant, async (req: Request, res: Respo
   }
 
   return res.json({ ok: true });
+});
+
+// ── POST /delivered — Mark received DMs as delivered (VTID-05310) ──
+
+router.post('/delivered', requireAuth, requireTenant, async (req: Request, res: Response) => {
+  const { identity } = req as AuthenticatedRequest;
+  if (!identity) return res.status(401).json({ ok: false, error: 'unauthorized' });
+
+  // impact-allow-no-oasis: a delivery receipt is a routine per-message client
+  // acknowledgement like POST /read, not a governed state transition.
+  const ids = (req.body as { message_ids?: unknown })?.message_ids;
+  if (!Array.isArray(ids) || ids.length === 0) {
+    return res.status(400).json({ ok: false, error: 'message_ids is required' });
+  }
+  if (ids.length > MAX_DELIVERED_IDS) {
+    return res.status(400).json({ ok: false, error: 'too_many_message_ids' });
+  }
+  if (!ids.every((id) => isUuidParam(id))) {
+    return res.status(400).json({ ok: false, error: 'invalid_message_id' });
+  }
+
+  const supabase = getSupabase();
+  // Only rows the caller RECEIVED (receiver_id = caller) and not yet delivered.
+  const { error, count } = await repo.markMessagesDelivered(supabase, identity.tenant_id, identity.user_id, ids as string[]);
+  if (error) {
+    if (repo.isMissingColumn(error, 'delivered_at')) return res.json({ ok: true, updated: 0 });
+    console.error('[Chat] Mark delivered error:', error);
+    return res.status(500).json({ ok: false, error: error.message });
+  }
+  return res.json({ ok: true, updated: count ?? 0 });
 });
 
 // ── POST /read-all — Mark ALL of the caller's unread DMs as read ──

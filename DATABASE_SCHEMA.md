@@ -1619,6 +1619,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-16 | VTID-05208, **no migration**: new-member greeting DM notification rows (`user_notifications`, `type='new_chat_message'`, DM tagged `metadata.source='new_member_greeting'`) now also carry `data.greeting_group='new_member_greeting'` and `data.greeting_count` (distinct greeters in the recipient's 24 h window), with `data.tag='chat:new_member_greeting'`. Written/read by `services/new-member-greeting-push.ts` (one push per recipient per 24 h; later greetings `push_outcome='coalesced'`); the read uses the existing `idx_user_notifications_chat_conv` (leading `user_id`). Off switch `NEW_MEMBER_GREETING_PUSH_GROUPING_ENABLED=false`. | Kiro | VTID-05208 |
 | 2026-10-14 | VTID-05168 (Life Timeline P2), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014140000_vtid_05168_index_movements.sql`; capture `docs/validation/VTID-05168/pre-apply-capture.sql` first): `vitana_index_movements`; canonical compute renamed `health_compute_vitana_index_core`; `vitana_index_recompute_and_record()` (advisory-locked, service_role) is the only writer of `vitana_index_scores` — old-name wrapper, nightly scheduler, calendar trigger and both member overloads route through it. See the section "vitana_index_movements + the single locked Index writer". CI: `SQL-INDEX-MOVEMENTS.yml` (throwaway Postgres + two-connection concurrency). | Claude Code | VTID-05168 |
 | 2026-10-14 | VTID-05171 (Life Timeline P5), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014150000_vtid_05171_companion_wiring.sql`): `user_routines` kind check + `screen_habit`/`active_hours`/`feature_affinity`/`pillar_rhythm`; new `timeline_learning_prefs` (owner-only RLS, missing row = on). See the section "timeline_learning_prefs + four routine kinds". | Claude Code | VTID-05171 |
 | 2026-10-14 | VTID-05167 (Life Timeline P1), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014130000_vtid_05167_activity_tiers.sql`, additive + idempotent): `user_activity_log`/archive classification columns, `activity_catalog` + lookup, `classify_activity` trigger, newest-first pg_cron backfill (no deletes), tier-aware `archive_old_activity_logs()` (EXECUTE revoked from PUBLIC/anon/authenticated) scheduled daily, two timeline indexes. See the section "user_activity_log tiers + activity_catalog". CI: `SQL-ACTIVITY-TIERS.yml` (throwaway Postgres). | Claude Code | VTID-05167 |
@@ -2935,6 +2936,33 @@ Related caps to keep in sync:
 |---|---|---|
 | `GET /conversations` (gateway) | `?limit`, default **250**, max 500 | Inbox list |
 | `GET /conversation/:peerId` (gateway) | `?limit` default 50, max 100, `?before` ISO cursor | One page of thread history; `before` drives scrollback |
+| `GET /conversation/:peerId?around=<id>` / `?after=<iso>` (VTID-05310) | `limit/2` each side | Context window around one message (404 outside the DM pair) / forward paging; same on `GET /chat/groups/:id/messages` |
+| `POST /delivered` (VTID-05310) | ≤ 200 `message_ids` | Sets `delivered_at` only where `receiver_id` = caller and it is NULL |
+
+**Idempotency and delivery (VTID-05310, migration `20261021140000_vtid_05310_chat_send_reliability.sql`).**
+`chat_messages.client_message_id uuid NULL` with the partial unique index
+`uq_chat_messages_sender_client_message_id (sender_id, client_message_id) WHERE client_message_id IS NOT NULL`:
+`POST /chat/send` and `POST /chat/groups/:id/send` accept an optional `client_message_id`; a repeat (or a lost race,
+SQLSTATE 23505) returns `200 { duplicate: true }` with the stored row and sends no push.
+`chat_messages.delivered_at timestamptz NULL` (DMs only; `/chat/read` also fills it). Replies: an optional
+`reply_to_message_id` must be a message of the same DM pair or group and is stored as `metadata.reply_to =
+{ message_id }` (an id, never content); every read endpoint returns `reply_to_message_id` only when that target is in
+the same conversation (a forged value from a direct insert reads as null).
+
+Message search (VTID-05309): `idx_chat_messages_content_trgm` is a `pg_trgm` GIN index on `chat_messages.content`
+for `GET /api/v1/chat/search` (ILIKE, q ≥ 3 chars, scoped to the caller's tenant, DMs and groups). Migration:
+`supabase/migrations/20261022090000_vtid_05309_chat_message_search.sql`.
+
+### `chat_viewing_presence` (VTID-05312)
+One row per (member, device/tab) while a conversation is open, visible and focused: `user_id uuid`,
+`device_id text` (PK with user_id), `tenant_id uuid NOT NULL`, `conversation_key text` (`dm:<peer user id>` |
+`group:<group id>`), `expires_at timestamptz` (now + 45 s, refreshed by a 20 s heartbeat), `updated_at`.
+Written only by the gateway (`POST /api/v1/chat/viewing`, service role; RLS on, no client policies). A chat
+push (`new_chat_message`, `chat_mention`) whose recipient has an unexpired row of the same tenant for that
+conversation is not sent: the in-app row is written with `push_sent_at` set and
+`user_notifications.push_outcome = 'suppressed_viewing'`. A second notification row for the same recipient and
+chat message gets `'suppressed_duplicate'`. Both values were added to `user_notifications_push_outcome_check`.
+Migration: `supabase/migrations/20261021150000_vtid_05312_chat_viewing_presence.sql`.
 
 ---
 

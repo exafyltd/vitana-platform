@@ -30,6 +30,8 @@ on:
 permissions:
   contents: write
   pull-requests: write
+  actions: read # VTID-05272: the slot step lists PLAN-SPAR runs (read-only)
+  statuses: write # lane plan-spar-checks: post plan-spar/needs-rebase on the GITHUB_TOKEN bot-head push (an explicit permissions block sets every unlisted scope to none)
 
 concurrency:
   group: plan-spar-${{ github.event.pull_request.number }}
@@ -43,6 +45,10 @@ jobs:
       startsWith(github.event.pull_request.title, 'plan(')
     runs-on: ubuntu-latest
     timeout-minutes: 120
+    env:
+      # The `secrets` context is not allowed in a step `if:` (the file would not parse), so expose only whether the
+      # optional push token is set — 'true' or 'false', never the value. Read by the needs-rebase step below.
+      PLAN_SPAR_HAS_PUSH_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN != '' }}
     steps:
       - name: Base checkout (trusted code)
         uses: actions/checkout@v4
@@ -69,6 +75,17 @@ jobs:
           who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
           if [ "$who" = "ci-plan-spar" ]; then echo "skip=true" >> "$GITHUB_OUTPUT"; echo "➖ head commit is PLAN-SPAR's own" >> "$GITHUB_STEP_SUMMARY"; fi
 
+      # VTID-05272 (plan kiro-autonomy-fallback §7 rule 2): at most 2 sparring sessions in flight repo-wide (the
+      # Bedrock quota is shared with production). FIFO by run id; read-only; stops waiting after 90 min.
+      - name: Wait for a sparring slot
+        if: steps.guard.outputs.skip != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if [ ! -f base/scripts/ci/plan-spar-slot/slot.mjs ]; then echo "no slot script at the base commit — not waiting"; exit 0; fi
+          node base/scripts/ci/plan-spar-slot/slot.mjs --repo "${{ github.repository }}" --run-id "$GITHUB_RUN_ID" \
+            --cap 2 --poll-s 20 --max-wait-min 90 --summary "$GITHUB_STEP_SUMMARY"
+
       - name: Spar
         if: steps.guard.outputs.skip != 'true'
         env:
@@ -76,6 +93,7 @@ jobs:
           GATEWAY_SERVICE_TOKEN: ${{ secrets.GATEWAY_SERVICE_TOKEN }}
           PLAN_SPAR_ALLOCATE: ${{ vars.PLAN_SPAR_ALLOCATE }}
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
+          GITHUB_TOKEN: ${{ secrets.PLAN_SPAR_PUSH_TOKEN || github.token }}   # resolveRef reads a declared spar_refs companion (e.g. vitana-v1); unused when none is declared
         run: |
           git -C head diff --name-only "$BASE_SHA"...HEAD > "$RUNNER_TEMP/changed.txt"
           node base/scripts/collab/plan-spar.mjs --dir head --base-sha "$BASE_SHA" --repo "${{ github.repository }}" \
@@ -95,6 +113,30 @@ jobs:
             -m "Collab-Session: ci-plan-spar
           Collab-Lane: ${slug}/_plan"
           git push origin "HEAD:${HEAD_REF}"
+
+      # lane plan-spar-checks (VTID-05306, R3-F2 option B): producer-only needs-rebase signal.
+      # When PLAN_SPAR_PUSH_TOKEN is empty the round above was pushed with GITHUB_TOKEN, which starts no
+      # pull_request checks on the new bot head — so mark that head with a `plan-spar/needs-rebase` commit
+      # status. The consumer (a PM/land step that reads this status and runs `gh pr update-branch` so checks
+      # start under a re-push) is a gateway change needing a staging deploy and is deferred to a separate lane;
+      # until it exists this status is posted but never read, so today's behaviour is unchanged. Re-dispatch,
+      # re-run and the Checks API are not usable here (plan R2-F1). When the PAT secret is present the push
+      # already starts checks and this step is skipped.
+      - name: Signal needs-rebase on the bot head (GITHUB_TOKEN push)
+        if: steps.guard.outputs.skip != 'true' && env.PLAN_SPAR_HAS_PUSH_TOKEN != 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          RUN_URL: ${{ github.server_url }}/${{ github.repository }}/actions/runs/${{ github.run_id }}
+        run: |
+          sha=$(git -C head rev-parse HEAD)
+          who=$(git -C head log -1 --format='%(trailers:key=Collab-Session,valueonly)' | tr -d '[:space:]')
+          if [ "$who" != "ci-plan-spar" ]; then echo "head $sha is not a PLAN-SPAR round commit — no status posted"; exit 0; fi
+          gh api -X POST "repos/${{ github.repository }}/statuses/${sha}" \
+            -f context='plan-spar/needs-rebase' \
+            -f state='pending' \
+            -f target_url="$RUN_URL" \
+            -f description='GITHUB_TOKEN push started no checks — update the branch to re-run them'
+          echo "➖ posted plan-spar/needs-rebase on $sha" >> "$GITHUB_STEP_SUMMARY"
 
       - name: Comment
         if: steps.guard.outputs.skip != 'true'

@@ -114,9 +114,64 @@ export interface LLMRoutingPolicy {
  */
 export const PLAN_SPARRING_DEFAULT_MODEL = 'eu.anthropic.claude-opus-4-6-v1';
 
+/**
+ * VTID (sparring-model-fallback): explicit throttle fallback for the partner.
+ * Opus 4.6 is the primary (above); when a round's invoke fails with a RETRYABLE
+ * throttle (`Too many tokens per day` / rate limit) the partner pass retries
+ * ONCE on this model. It is NOT a router-level fallback (plan_sparring stays in
+ * NO_FALLBACK_STAGES below): the retry lives inside runPartnerPass, is logged
+ * loudly, and is Bedrock-only. Sonnet 4.6 is one of the 3 Anthropic profiles
+ * verified to actually invoke in eu-central-1 (backend §2b) and has no
+ * fresh-subscription daily cap, which is exactly the Opus 4.6 limit this works
+ * around. Owner decision 2026-10-18.
+ */
+export const PLAN_SPARRING_FALLBACK_MODEL = 'eu.anthropic.claude-sonnet-4-6';
+
 /** Resolved partner model: PLAN_SPARRING_MODEL env, else the placeholder above. */
 export function resolvePlanSparringModel(): string {
   return process.env.PLAN_SPARRING_MODEL || PLAN_SPARRING_DEFAULT_MODEL;
+}
+
+/** Resolved throttle-fallback partner model: PLAN_SPARRING_FALLBACK_MODEL env, else the constant above. */
+export function resolvePlanSparringFallbackModel(): string {
+  return process.env.PLAN_SPARRING_FALLBACK_MODEL || PLAN_SPARRING_FALLBACK_MODEL;
+}
+
+/**
+ * Plan-sparring LAST-RESORT tier (owner decision 2026-10-19, supersedes the
+ * "no DeepSeek" part of rule 53): when Opus 4.6 and then Sonnet 4.6 both fail
+ * (burned Bedrock quota), the partner pass continues on DeepSeek instead of
+ * escalating `model_unavailable`. `deepseek-v4-pro` verified live 2026-10-19
+ * (chat + forced tool call). Logged loudly and recorded in model_log with
+ * `fallback_tier: 'deepseek'`; never silent. Kill switch:
+ * PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false.
+ */
+export const PLAN_SPARRING_LAST_RESORT_MODEL = 'deepseek-v4-pro';
+
+/** Resolved last-resort partner model: PLAN_SPARRING_LAST_RESORT_MODEL env, else the constant above. */
+export function resolvePlanSparringLastResortModel(): string {
+  return process.env.PLAN_SPARRING_LAST_RESORT_MODEL || PLAN_SPARRING_LAST_RESORT_MODEL;
+}
+
+/** On unless PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED is exactly 'false'. */
+export function isPlanSparringDeepseekFallbackEnabled(): boolean {
+  return process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED !== 'false';
+}
+
+/**
+ * Models verified to accept Anthropic `output_config.effort` / adaptive
+ * `thinking` on Bedrock. Opus 4.6 accepts both; Opus 4.5 rejected
+ * `output_config.effort` ("Extra inputs are not permitted"). The partner pass
+ * and buildBedrockRequestBody consult this so a model never receives a field it
+ * rejects. Unknown models default conservative (no effort). Sonnet 4.6's entry
+ * is set from a real invoke before the fallback is relied on in production.
+ */
+export function modelAcceptsEffort(modelId: string): boolean {
+  const id = (modelId || '').toLowerCase();
+  // Opus 4.6 is the specced sparring partner with effort 'high'.
+  if (id.includes('opus-4-6')) return true;
+  // Everything else: conservative — do not send output_config.effort.
+  return false;
 }
 
 /**

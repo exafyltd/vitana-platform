@@ -1,0 +1,12 @@
+{ "schema": "vitana.plan-timings/v1", "plan_slug": "kiro-web-steering", "vtid": "VTID-05339", "vtids": ["VTID-05339"],
+  "generated_at": "2026-10-26T15:55:00Z", "generated_by": "kiro-exafyltd-202610261510-099d",
+  "plan_pr_opened_at": "2026-10-26T15:14:18Z", "converged_at": "2026-10-26T15:30:03Z", "policy_approved_at": "2026-10-26T15:26:40.965Z",
+  "vtids_allocated_at": "2026-10-26T15:30:03Z", "plan_merged_at": "2026-10-26T15:41:30Z", "gate2_sent_at": null,
+  "convergence_ms": 945000, "vtid_ms": 202035, "plan_merge_ms": 687000,
+  "lanes": [{ "lane": "web-steering", "vtid": "VTID-05339", "claimed_at": "2026-10-26T15:41:45Z", "pr_opened_at": "2026-10-26T15:44:05Z",
+              "accepted_at": "2026-10-26T15:48:48Z", "merged_at": "2026-10-26T15:52:19Z", "staging_verified_at": null,
+              "build_ms": 140000, "review_ms": 283000, "merge_ms": 211000, "review_rounds": 1, "ci_fix_attempts": 0 }],
+  "staging_verify_ms": null, "approved_to_verified_ms": null,
+  "merge_conflict_count": 0, "staging_verify_failure_count": 0,
+  "sources_unavailable": ["staging_verify: the change deploys nothing (no STAGING-VERIFY, no Gate 2)"],
+  "notes": ["All times from GitHub (PR created/merged) or git committer dates (claim ref, PLAN-SPAR and review-entry commits).", "build_ms understates build time: the lane code was drafted in the RUN folder while PLAN-SPAR ran and committed only after the VTID existed."] }

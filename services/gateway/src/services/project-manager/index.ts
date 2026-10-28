@@ -8,20 +8,25 @@
  *
  * The last tick's decision list is held in memory so the read route
  * (GET /api/v1/project-manager/status) can report it.
+ *
+ * VTID-05274 (plan kiro-autonomy-fallback §3, §5 C7): the snapshot also carries
+ * the Claude availability (`claude`, `fallback`), the build lanes per plan and
+ * the last lease outcome; the live loop is `startPmLoop` (loop.ts).
  */
 
-import { decide } from './decide';
+import { buildLanesInFlight, claudeAvailability, decide } from './decide';
 import { PmDecisionEmitter, defaultEmitter } from './emit';
 import { PmObserver, defaultObserver } from './observe';
 import { pmMode } from './config';
 import { actOnDecisions, ActDeps, ActTickResult } from './act';
-import { PmDecision, PmMode } from './types';
+import { getLastLease, LeaseState } from './lease';
+import { ClaudeAvailability, ObservedState, PmDecision, PmMode } from './types';
 
 export * from './types';
-export { decide } from './decide';
+export { decide, claudeAvailability, buildLanesInFlight } from './decide';
 export { PmObserver, StubObserver, defaultObserver } from './observe';
 export { PmDecisionEmitter, LoggingDecisionEmitter, defaultEmitter } from './emit';
-export { pmAgentEnabled, pmMode, pmTickIntervalMs } from './config';
+export { pmAgentEnabled, pmMode, pmTickIntervalMs, pmLeaseTtlMs } from './config';
 export {
   actOnDecisions,
   governanceMergeAllowed,
@@ -37,9 +42,17 @@ export type {
   Gate2Poster,
   Gate2Message,
   Gate2EvidenceResolver,
+  UpdateBranchFn,
+  LedgerWriter,
 } from './act';
-export { LeaseManager, NoLeaseManager, defaultLeaseManager } from './lease';
-export type { LeaseOutcome } from './lease';
+export { LeaseManager, NoLeaseManager, PgLeaseManager, defaultLeaseManager, getLastLease } from './lease';
+export type { LeaseOutcome, LeaseState } from './lease';
+export {
+  REVIEWER_AGENT,
+  PROTECTED_GATE_GLOBS,
+  touchesProtectedGate,
+  governanceMergeAllowed as governanceMergeCheck,
+} from './governance';
 
 /** A snapshot of the most recent decide tick, reported by the status route. */
 export interface PmStatusSnapshot {
@@ -47,6 +60,14 @@ export interface PmStatusSnapshot {
   /** ISO timestamp of the last decide tick, or null if none has run. */
   last_tick_at: string | null;
   decisions: PmDecision[];
+  /** VTID-05274: Claude availability at the last tick (absent = available). */
+  claude?: ClaudeAvailability;
+  /** VTID-05274: true when Claude is unavailable and Kiro (the exceptions seat) takes its jobs. */
+  fallback?: boolean;
+  /** VTID-05274: lanes executing|in-review per plan slug. */
+  build_lanes_in_flight?: Record<string, number>;
+  /** VTID-05274: the last pm_lease outcome. */
+  last_lease?: LeaseState | null;
 }
 
 let lastSnapshot: PmStatusSnapshot = {
@@ -55,9 +76,21 @@ let lastSnapshot: PmStatusSnapshot = {
   decisions: [],
 };
 
-/** Read the latest decide snapshot (status route). Reflects live PM_MODE. */
+/** Read the latest decide snapshot (status route). Reflects live PM_MODE and the last lease. */
 export function getStatusSnapshot(): PmStatusSnapshot {
-  return { ...lastSnapshot, mode: pmMode() };
+  return { ...lastSnapshot, mode: pmMode(), last_lease: getLastLease() };
+}
+
+function recordSnapshot(mode: PmMode, nowMs: number, state: ObservedState, decisions: PmDecision[]): void {
+  const claude = claudeAvailability(state.claude, nowMs);
+  lastSnapshot = {
+    mode,
+    last_tick_at: new Date(nowMs).toISOString(),
+    decisions,
+    claude,
+    fallback: !claude.available,
+    build_lanes_in_flight: buildLanesInFlight(state),
+  };
 }
 
 export interface RunDecideTickDeps {
@@ -82,17 +115,14 @@ export async function runDecideTick(deps: RunDecideTickDeps = {}): Promise<PmDec
 
   const mode = pmMode();
   const state = await observer.observe(mode);
-  const decisions = decide(state, now());
+  const nowMs = now();
+  const decisions = decide(state, nowMs);
 
   for (const d of decisions) {
     await emitter.emit(d);
   }
 
-  lastSnapshot = {
-    mode,
-    last_tick_at: new Date(now()).toISOString(),
-    decisions,
-  };
+  recordSnapshot(mode, nowMs, state, decisions);
 
   return decisions;
 }
@@ -109,8 +139,8 @@ export interface RunActTickDeps extends RunDecideTickDeps {
  * snapshot the same way, then acts on the decisions through the injected act
  * seams. The act step itself is a no-op unless `PM_MODE=live` AND the per-tick
  * lease is held (see `actOnDecisions`): in `off`/`dry_run`, or when the pm_lease
- * table is absent (P1 not merged) or another task holds the lease, nothing is
- * acted on. Returns both the decisions and the act result.
+ * table is absent or another task holds the lease, nothing is acted on.
+ * Returns both the decisions and the act result.
  */
 export async function runActTick(
   deps: RunActTickDeps,
@@ -121,17 +151,14 @@ export async function runActTick(
 
   const mode = pmMode();
   const state = await observer.observe(mode);
-  const decisions = decide(state, now());
+  const nowMs = now();
+  const decisions = decide(state, nowMs);
 
   for (const d of decisions) {
     await emitter.emit(d);
   }
 
-  lastSnapshot = {
-    mode,
-    last_tick_at: new Date(now()).toISOString(),
-    decisions,
-  };
+  recordSnapshot(mode, nowMs, state, decisions);
 
   const act = await actOnDecisions(decisions, state, deps.act);
 

@@ -1,0 +1,84 @@
+---
+lane: plan-spar-checks
+state: executing
+next_actor: kiro
+depends_on: []
+executor: claude
+seat: exafyltd
+reviewer_seat: claude
+claimed_by: kiro-202610211348-9f71
+branch: kiro/ci-github-modernization/plan-spar-checks
+paths:
+  - .github/workflows/PLAN-SPAR.yml
+  - scripts/collab/plan-spar.test.mjs
+  - scripts/ci/plan-spar-slot/slot.test.mjs
+  - docs/validation/**
+updated: 2026-10-21T15:30Z
+vtid: VTID-05306
+---
+# Lane: plan-spar-checks
+
+**Producer-only (owner decision 2026-10-21, R3-F2 option B).** This lane adds only the *producer* side of
+the needs-rebase signal: today a `GITHUB_TOKEN` push of a PLAN-SPAR round commit starts no `pull_request`
+checks, so after the round-commit push, when `secrets.PLAN_SPAR_PUSH_TOKEN` is empty (the `GITHUB_TOKEN`
+case), this lane posts a `plan-spar/needs-rebase` commit status on the new bot head via
+`POST /repos/{owner}/{repo}/statuses/{sha}` (`gh api`). Re-dispatch/re-run and the Checks API are not
+options here (see plan R2-F1). Task T1 in `tasks.md`.
+
+**The posted status has no effect until the consumer is built — today's behaviour is unchanged by this
+lane.** The *consumer* side (the PM / land step that reads `plan-spar/needs-rebase` on the PR head and runs
+`gh pr update-branch` so checks start under a re-push) lives in the gateway service
+(`services/gateway/src/services/project-manager/act.ts`, per R3-F2), is **not** a `scripts/ci/**` change,
+and requires a staging deploy — so it is **outside this plan's "deploys nothing" scope and is deferred to a
+separate gateway lane with its own staging deploy** (surfaced for Gate 2). Until that consumer exists the
+status is posted but never read; nothing else changes. This lane is therefore CI-only.
+
+**R3-F1 fix (blocker, in-lane code, not owner config):** `PLAN-SPAR.yml` has an explicit workflow-level
+`permissions:` block, so every unlisted scope is set to `none` and `GITHUB_TOKEN` would *not* have
+`statuses: write` by default — the status POST would 403. This lane adds `statuses: write` to that block
+(`PLAN-SPAR.yml` permissions). The proof test asserts both the `statuses: write` permission and the
+producer contract.
+
+`executor: claude` and `PLAN-SPAR.yml` is a **protected gate file**: with `CLAUDE_AVAILABLE=false` it is
+blocked on an owner instruction naming this plan before it can merge (surfaced for Gate 2). The repo
+secret `PLAN_SPAR_PUSH_TOKEN` (the PAT whose pushes start the PR's checks directly) is owner config →
+listed for Gate 2, not set here. No VTID yet.
+
+## Log
+
+### 2026-10-21T11:20Z · kiro-hotmail-202610210852-0b8e · ready
+Lane created with the plan. Scope: PLAN-SPAR.yml + the plan-spar/slot tests + validation docs. Evidence
+from inv-rules §7(1) / inv-code §3 / inv-tests §3(C). Flagged protected-gate + the secret-is-owner-config
+split. No VTID yet.
+
+### 2026-10-21T12:20Z · kiro-hotmail-202610210852-0b8e · spar s2 round-2 R2-F1 accepted
+Committed to one mechanism: on the empty-`PLAN_SPAR_PUSH_TOKEN` push, post a `plan-spar/needs-rebase`
+commit status on the new bot head (`POST /repos/{owner}/{repo}/statuses/{sha}`); PM/land step reads it and
+runs `gh pr update-branch`. Rejected the re-run and Checks-API alternatives (re-run hits the old SHA;
+Checks API needs `checks:write` the `pull_request_target` `GITHUB_TOKEN` lacks). Proof test pins that the
+empty-secret path posts that status on the bot head.
+
+### 2026-10-21T10:55Z · kiro-hotmail-202610210852-0b8e · owner escalation decision (R3-F1 + R3-F2)
+Owner accepted both round-3 findings. **R3-F1 [blocker]:** added `statuses: write` to `PLAN-SPAR.yml`'s
+explicit `permissions:` block (an explicit block zeroes every unlisted scope, so the status POST would 403
+without it) — one-line in-lane code fix, not owner config; the proof test asserts the addition. **R3-F2
+[major], option B:** narrowed this lane to **producer-only** — post the `plan-spar/needs-rebase` status on
+the bot head; the proof test asserts ONLY the producer contract. Stated explicitly that until the consumer
+is built the posted status has no effect and today's behaviour is unchanged. The consumer (the PM/land read
+in `services/gateway/src/services/project-manager/act.ts` that calls `gh pr update-branch`) is a gateway
+change needing a staging deploy, so it is **deferred to a separate gateway lane**, outside this plan's
+"deploys nothing" scope — NOT built in this plan (surfaced for Gate 2 with the PAT secret).
+
+### 2026-10-21T12:26Z · ci-plan-spar · ready (VTID allocated)
+VTID-05306 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-21T15:30Z u{00B7} kiro-202610211348-9f71 u{00B7} executing (VTID-05306)
+Claimed and implemented. T2: added one step `Signal needs-rebase on the bot head (GITHUB_TOKEN push)` after the round-commit push in PLAN-SPAR.yml, guarded by the empty-PLAN_SPAR_PUSH_TOKEN path; it posts a `plan-spar/needs-rebase` commit status on the bot head via `gh api .../statuses/{sha}` (no re-run/re-dispatch/Checks API). T1 (`statuses: write`) was already on main from the plan merge; left as-is. T3: added the producer-contract test to scripts/ci/plan-spar-slot/slot.test.mjs (asserts only the producer side) and updated the step-count assertion 7->8. Red on base / green on head in docs/validation/VTID-05306/. plan-spar.test.mjs 27/27 still green. Consumer (act.ts gh pr update-branch) deferred to a gateway lane; PLAN-SPAR.yml protected-gate + the PAT secret surfaced for Gate 2.
+
+### 2026-10-22T12:47Z · kiro-hotmail-202610212150-9646 · review
+review: changes
+head: 45ce9520915fbe50ed13c8631407083cb3096050
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4266
+Findings: blocking: PLAN-SPAR.yml step `if:` uses the `secrets` context, which is invalid there, so the workflow would fail to load after merge; blocking: slot.test.mjs asserts that invalid guard; non-blocking: red/green evidence files are garbled or binary and duplicated; non-blocking: lane log has a literal `u{00B7}` and impl-notes.md is missing; non-blocking: protected gate file .github/workflows/PLAN-SPAR.yml changed (blocks merge until a legacy Claude review or owner instruction)
+Next: the lane's seat fixes the blocking findings

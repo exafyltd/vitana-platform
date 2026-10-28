@@ -91,10 +91,12 @@ jobs:
         working-directory: services/gateway
         run: npm ci --no-audit --no-fund
 
-      - name: Gateway Build Check
-        working-directory: services/gateway
-        # VTID-04950 (plan E1): a failing build fails the check (it used to be masked).
-        run: pnpm run build
+      # VTID-05303 (fake-checks-dedupe): the "Gateway Build Check" step was
+      # removed here. The gateway `npm run build` is already a dedicated step in
+      # ENFORCE-FRONTEND-CANONICAL-SOURCE.yml (the required check, runs on every
+      # PR), so building again here duplicated it on the same PRs. The deps
+      # install above is kept because the Type Check and Dev-frontend-spec
+      # validation below still need the gateway's locked dependencies.
 
       - name: Validate Dev frontend navigation spec (17 modules / 87 screens)
         working-directory: services/gateway
@@ -110,12 +112,10 @@ jobs:
       # file") on every run, and `|| echo` reported success. Introducing a lint
       # regime is a separate decision; a step that cannot lint is not kept.
 
-      # TESTS DEFERRED TO DEV-CICDL-0035
-      # - name: Gateway Tests
-      #   working-directory: services/gateway
-      #   run: pnpm test
-      #   env:
-      #     DATABASE_URL: postgresql://postgres:postgres@localhost:5432/vitana_test?schema=public
+      # VTID-05303 (fake-checks-dedupe): the commented-out "Gateway Tests" block
+      # (marker "# TESTS DEFERRED TO DEV-CICDL-0035") was removed. Real gateway
+      # Jest already runs in TEST-SUITE.yml; the dead block was never re-enabled
+      # and only confused the job definition.
 
       - name: Report Validation Success
         if: success()
@@ -126,11 +126,10 @@ jobs:
           echo "- ✅ Postgres service: healthy"
           echo "- ✅ Prisma: generated, migrated, validated"
           echo "- ✅ Gateway: dependencies installed"
-          echo "- ✅ Gateway: builds successfully"
           echo "- ✅ Gateway: type-checked"
-          echo "- ✅ Gateway: linted"
+          echo "- ✅ Gateway: Dev frontend navigation spec validated"
           echo ""
-          echo "⏭️  **Tests deferred to VTID DEV-CICDL-0035**"
-          echo "🎯 **Purpose:** Unblock PR #25 for Gemini activation"
+          echo "ℹ️  Gateway build runs in ENFORCE-FRONTEND-CANONICAL-SOURCE (required check)"
+          echo "ℹ️  Gateway Jest runs in TEST-SUITE"
           echo ""
           echo "Self-contained CI with pnpm + local Postgres"
