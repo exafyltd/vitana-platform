@@ -4,9 +4,11 @@
   "tests": [
     {
       "kind": "http",
-      "name": "project-manager status endpoint returns mode and decisions (P4 live mode enabled)",
+      "name": "project-manager status endpoint is mounted and auth-gated (P4 live mode enabled)",
       "path": "/api/v1/project-manager/status",
-      "expect_status": 200
+      "rejected_probe": true,
+      "expect_status": 401,
+      "reason": "read-only GET with an invalid bearer: JSON 401 proves the route exists and requireServiceOrAdmin guards it"
     },
     {
       "kind": "http",

@@ -1,0 +1,11 @@
+{
+  "url": "https://github.com/exafyltd/vitana-platform/pull/4153",
+  "number": 4153,
+  "repo": "exafyltd/vitana-platform",
+  "title": "VTID-05208 (new-member-welcome/grouped-welcome-notifications): grouped greeting-DM notifications",
+  "branch": "kiro/new-member-welcome/grouped-welcome-notifications",
+  "base": "main",
+  "vtid": "VTID-05208",
+  "lane": "new-member-welcome/grouped-welcome-notifications",
+  "session": "kiro-202610151913-51bd"
+}

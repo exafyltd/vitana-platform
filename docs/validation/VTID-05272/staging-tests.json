@@ -1,0 +1,22 @@
+{
+  "vtid": "VTID-05272",
+  "service": "gateway",
+  "note": "Read-only. The only gateway file this lane changes is a test (H0: the VTID-05077 suite now expects the served app.js cache-bust pin). Nothing in the served build changes; staging proves the gateway still serves and the fixed suite runs green.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build carrying the H0 test fix boots and serves"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts",
+      "cwd": "services/gateway",
+      "reason": "H0: the planner-fallback chip test expects the served index.html pin and the chip markup in app.js"
+    }
+  ]
+}

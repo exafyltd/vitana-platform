@@ -203,6 +203,32 @@ describe('VTID-04868 router: plan_sparring never falls back', () => {
     expect(global.fetch).not.toHaveBeenCalled();
   });
 
+  it('runs on DeepSeek ONLY for an explicit last-resort call, never falling back from it', async () => {
+    getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
+    (global.fetch as jest.Mock).mockResolvedValueOnce({
+      ok: true,
+      json: async () => ({ choices: [{ message: { content: 'from deepseek' }, finish_reason: 'stop' }], usage: { prompt_tokens: 1, completion_tokens: 1 } }),
+      text: async () => '',
+    });
+    const r = await callViaRouter('plan_sparring', 'hi', {
+      service: 'test', providerOverride: 'deepseek', modelOverride: 'deepseek-v4-pro', planSparringLastResort: true,
+    });
+    expect(r.ok).toBe(true);
+    expect(r.provider).toBe('deepseek');
+    expect(r.fallbackUsed).toBe(false);
+    expect(sendMock).not.toHaveBeenCalled();
+  });
+
+  it('the last-resort flag never unlocks any provider other than DeepSeek', async () => {
+    getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
+    const r = await callViaRouter('plan_sparring', 'hi', {
+      service: 'test', providerOverride: 'openai', modelOverride: 'gpt-x', planSparringLastResort: true,
+    });
+    expect(r.ok).toBe(false);
+    expect(r.error).toMatch(/must run on bedrock/);
+    expect(global.fetch).not.toHaveBeenCalled();
+  });
+
   it('refuses a per-call provider override to a non-Bedrock provider', async () => {
     getActivePolicy.mockResolvedValue({ policy: LIVE_LIKE_POLICY });
     const r = await callViaRouter('plan_sparring', 'hi', { service: 'test', providerOverride: 'deepseek', modelOverride: 'deepseek-flash' });
@@ -242,12 +268,25 @@ describe('VTID-04868 Bedrock request extensions (thinking + output_config)', () 
     );
   });
 
-  it('thinking adaptive + effort are sent and temperature is dropped', () => {
+  it('thinking adaptive + effort are sent to a model that accepts effort (Opus 4.6) and temperature is dropped', () => {
     const body = buildBedrockRequestBody({
-      model: 'm', messages: [{ role: 'user', content: 'hi' }], thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, temperature: 0.2,
+      model: 'eu.anthropic.claude-opus-4-6-v1', messages: [{ role: 'user', content: 'hi' }], thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, temperature: 0.2,
     });
     expect(body.thinking).toEqual({ type: 'adaptive' });
     expect(body.output_config).toEqual({ effort: 'high' });
+    expect(body).not.toHaveProperty('temperature');
+  });
+
+  // VTID (sparring-model-fallback): output_config.effort is gated by model. A model that does
+  // not accept it (here the Sonnet 4.6 throttle fallback) still gets adaptive thinking, but no
+  // output_config — Opus 4.5 rejected that field ("Extra inputs are not permitted"), so the
+  // Sonnet fallback must never receive it.
+  it('output_config is withheld from a model that does not accept effort; thinking is still sent', () => {
+    const body = buildBedrockRequestBody({
+      model: 'eu.anthropic.claude-sonnet-4-6', messages: [{ role: 'user', content: 'hi' }], thinking: { type: 'adaptive' }, output_config: { effort: 'high' }, temperature: 0.2,
+    });
+    expect(body.thinking).toEqual({ type: 'adaptive' });
+    expect(body).not.toHaveProperty('output_config');
     expect(body).not.toHaveProperty('temperature');
   });
 
@@ -260,7 +299,15 @@ describe('VTID-04868 Bedrock request extensions (thinking + output_config)', () 
     });
   });
 
-  it('router passes thinking/effort through for Bedrock', async () => {
+  it('router passes thinking/effort through for Bedrock (effort reaches an Opus 4.6 primary)', async () => {
+    // VTID (sparring-model-fallback): output_config.effort is model-gated, so this asserts it
+    // with a plan_sparring primary that accepts it (Opus 4.6), not the test's default Sonnet fixture.
+    getActivePolicy.mockResolvedValue({
+      policy: {
+        ...LIVE_LIKE_POLICY,
+        plan_sparring: { primary_provider: 'bedrock', primary_model: 'eu.anthropic.claude-opus-4-6-v1', fallback_provider: null, fallback_model: null },
+      },
+    });
     sendMock.mockResolvedValueOnce(bedrockReply([{ type: 'text', text: 'ok' }]));
     await callViaRouter('plan_sparring', 'hello', { service: 'test', thinking: { type: 'adaptive' }, effort: 'high' });
     const body = sentBody();

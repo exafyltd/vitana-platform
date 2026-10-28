@@ -1,0 +1,18 @@
+# 2026-10-20, Kiro IDE (Windows), branch kiro/fix-4182-test-fallout/jest-05077-cachebuster (from origin/main 1acb6b92d)
+# Tests read local files only; the one network call is a read-only GET of staging. No production call, no write.
+cd services/gateway
+npm ci --no-audit --no-fund
+  -> exit 0 (799 packages)
+npx jest test/vtid-05077-planner-fallback-and-thinking.test.ts test/vtid-04696-staging-checks-follow-asset-bumps.test.ts --verbose
+  -> exit 0; 2 suites passed, 16 tests passed (re-run after adding docs/validation/VTID-05265/staging-tests.json)
+npm run typecheck   (tsc --noEmit)
+  -> exit 0
+cd ../..
+git grep -n "20261120-vtid-05148" -- services/gateway/test "docs/validation/*/staging-tests.json"
+  -> exit 1, no match
+node -e "JSON.parse(require('fs').readFileSync('docs/validation/VTID-05265/staging-tests.json','utf8'))"
+  -> parse ok, exit 0
+node -e "<lib.validateManifest(m,{vtid:'VTID-05265',service:'gateway'})>"   (scripts/ci/staging-verify/lib.cjs:187)
+  -> {"ok":true,"errors":[]}, exit 0
+GET https://preview-aws-gateway.vitanaland.com/command-hub/index.html   (read-only, unauthenticated, staging)
+  -> 200 text/html; contains /command-hub/app.js?v=20261121-vtid-05082: True; contains old key: False

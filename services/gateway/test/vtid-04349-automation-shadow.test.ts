@@ -205,7 +205,8 @@ describe('trigger routes and pins', () => {
     expect(stage).toContain('{name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"}');
     expect(stage).toContain('{name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"}');
     expect(stage).toContain('{name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"}');
-    expect(stage).toMatch(/"AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID"\) \| not/);
+    // The three names sit in the strip list before the re-add (VTID-05220 appended PM_* after them).
+    expect(stage).toMatch(/"AUTOMATIONS_DELIVERY_MODE","AUTOPILOT_HEARTBEAT_ENABLED","DEFAULT_TENANT_ID"[,\s"A-Z_]*\) \| not/);
     expect(prod).not.toContain('AUTOMATIONS_DELIVERY_MODE');
     expect(prod).not.toContain('AUTOPILOT_HEARTBEAT_ENABLED');
   });

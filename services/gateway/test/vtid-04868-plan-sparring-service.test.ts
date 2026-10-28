@@ -202,6 +202,8 @@ function review(over: Record<string, unknown> = {}) {
   };
 }
 const submit = (args: unknown, id = 'sub'): Step => () => ok({ toolCalls: [{ id, name: 'submit_review', arguments: args as Record<string, unknown> }], stopReason: 'tool_use' });
+/** Opus, Sonnet and DeepSeek all fail: the only way a pass ends model_unavailable. */
+const ALL_TIERS_DOWN = (): Step[] => [0, 1, 2].map(() => (): LLMRouterResult => ({ ok: false, error: 'down' }));
 const READ3 = readCalls(['services/gateway/src/index.ts', 'services/gateway/src/routes/vtid.ts', 'services/gateway/src/services/llm-router.ts']);
 
 function makeDeps(steps: Step[], over: Partial<PlanSparringDeps> = {}) {
@@ -356,16 +358,24 @@ describe('round 1: partner pass', () => {
     expect(session.final_plan_hash).toBe(session.plan_hash);
   });
 
-  it('model failure ⇒ escalated / model_unavailable after ONE call, nothing else called', async () => {
-    const { deps, llmCalls, ghCalls } = makeDeps([() => ({ ok: false, error: 'Bedrock invoke_failed: AccessDeniedException', provider: 'bedrock', model: 'm' })]);
+  it('every tier fails ⇒ escalated / model_unavailable after Opus, Sonnet and DeepSeek were each tried once', async () => {
+    const { deps, llmCalls, ghCalls } = makeDeps([
+      () => ({ ok: false, error: 'Bedrock invoke_failed: AccessDeniedException', provider: 'bedrock', model: 'm' }),
+      () => ({ ok: false, error: 'Bedrock invoke_failed: Too many tokens per day', provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' }),
+      () => ({ ok: false, error: 'DeepSeek 402: Insufficient Balance', provider: 'deepseek', model: 'deepseek-v4-pro' }),
+    ]);
     const { session } = await createSparringSession(createBody(), deps);
     expect(session.verdict).toBe('escalated');
     expect(session.escalation_reasons).toEqual(['model_unavailable']);
-    expect(session.rounds[0].partner_error).toMatch(/^model_unavailable: .*AccessDenied/);
+    expect(session.rounds[0].partner_error).toMatch(/^model_unavailable: .*DeepSeek 402/);
     expect(session.rounds[0].review).toBeUndefined();
-    expect(llmCalls).toHaveLength(1);
+    expect(llmCalls).toHaveLength(3);
     expect(ghCalls).toHaveLength(0);
-    expect(session.model_log).toEqual([expect.objectContaining({ ok: false, provider: 'bedrock' })]);
+    expect(session.model_log).toEqual([
+      expect.objectContaining({ ok: false, provider: 'bedrock' }),
+      expect.objectContaining({ ok: false, provider: 'bedrock', fallback: true, fallback_tier: 'bedrock_fallback' }),
+      expect.objectContaining({ ok: false, provider: 'deepseek', fallback: true, fallback_tier: 'deepseek' }),
+    ]);
   });
 
   it('refuses an answer that did not come from the Bedrock partner (fallbackUsed)', async () => {
@@ -413,7 +423,7 @@ describe('round 1: partner pass', () => {
   });
 
   it('re-runs instead of dedup when the earlier session never got a review (model_unavailable)', async () => {
-    const failed = makeDeps([() => ({ ok: false, error: 'down' })]);
+    const failed = makeDeps(ALL_TIERS_DOWN());
     const a = await createSparringSession(createBody(), failed.deps);
     const retry = makeDeps([READ3, submit(review())]);
     const b = await createSparringSession(createBody(), retry.deps);
@@ -546,12 +556,90 @@ describe('later rounds + verdict', () => {
 
   it('model failure in a later round escalates; no rounds accepted after a terminal verdict', async () => {
     const s = await round1();
-    const { deps, llmCalls } = makeDeps([() => ({ ok: false, error: 'throttled' })]);
+    // Every tier down: escalates after exactly one call per tier.
+    const { deps, llmCalls } = makeDeps(ALL_TIERS_DOWN());
     const after = await submitPlannerRound(s.id, { responses: [{ finding_id: 'R1-F1', disposition: 'accepted', rationale: 'ok' }], revised_plan_text: PLAN_V2 }, deps);
     expect(after.verdict).toBe('escalated');
     expect(after.escalation_reasons).toEqual(['model_unavailable']);
-    expect(llmCalls).toHaveLength(1);
+    expect(llmCalls).toHaveLength(3);
     await expect(submitPlannerRound(s.id, { responses: [], revised_plan_text: PLAN_V2 }, deps)).rejects.toMatchObject({ status: 409 });
+  });
+});
+
+// ===========================================================================
+// VTID (sparring-model-fallback): Opus 4.6 throttle → one Sonnet 4.6 fallback retry
+// ===========================================================================
+describe('sparring-model-fallback: throttle retries once on the Bedrock fallback', () => {
+  it('a "Too many tokens per day" throttle retries ONCE on the fallback model and the round proceeds on success', async () => {
+    // Turn 1 primary throttles (Opus 4.6 daily cap) → fallback retry returns the evidence-reading
+    // turn (READ3) → turn 2 submits the review. A normal round is [READ3, submit]; here the first
+    // READ3 is served by the fallback after the primary throttle.
+    const { deps, llmCalls } = makeDeps([
+      () => ({ ok: false, error: 'Bedrock invoke_failed: Too many tokens per day', provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' }),
+      READ3,
+      submit(review()),
+    ]);
+    const { session } = await createSparringSession(createBody(), deps);
+    // Three LLM calls: throttled primary, the fallback retry (READ3), then the submit turn.
+    expect(llmCalls).toHaveLength(3);
+    // The fallback retry carried the Bedrock Sonnet override, never a non-bedrock provider.
+    expect(llmCalls[1].opts.providerOverride).toBe('bedrock');
+    expect(llmCalls[1].opts.modelOverride).toBe('eu.anthropic.claude-sonnet-4-6');
+    // The round completed (not escalated on model_unavailable) because the fallback answered.
+    expect(session.verdict).not.toBe('escalated');
+    const fb = session.model_log.find((m) => (m as { fallback?: boolean }).fallback);
+    expect(fb).toBeDefined();
+  });
+
+  it('any Bedrock failure on Opus (AccessDenied) moves on to Sonnet — the round still proceeds', async () => {
+    const { deps, llmCalls } = makeDeps([
+      () => ({ ok: false, error: 'Bedrock invoke_failed: AccessDeniedException', provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' }),
+      READ3,
+      submit(review()),
+    ]);
+    const { session } = await createSparringSession(createBody(), deps);
+    expect(llmCalls).toHaveLength(3);
+    expect(llmCalls[1].opts.modelOverride).toBe('eu.anthropic.claude-sonnet-4-6');
+    expect(session.verdict).not.toBe('escalated');
+  });
+});
+
+// ===========================================================================
+// Owner decision 2026-10-19: Opus 4.6 → Sonnet 4.6 → DeepSeek last resort
+// ===========================================================================
+describe('plan-sparring DeepSeek last-resort tier', () => {
+  const OPUS_DOWN: Step = () => ({ ok: false, error: 'Bedrock invoke_failed: Too many tokens per day', provider: 'bedrock', model: 'eu.anthropic.claude-opus-4-6-v1' });
+  const SONNET_DOWN: Step = () => ({ ok: false, error: 'Bedrock invoke_failed: ThrottlingException: Too many tokens per day', provider: 'bedrock', model: 'eu.anthropic.claude-sonnet-4-6' });
+  const ds = (s: Step): Step => (o, p) => ({ ...s(o, p), provider: 'deepseek', model: 'deepseek-v4-pro' });
+  afterEach(() => { delete process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED; });
+
+  it('Opus and Sonnet out of quota ⇒ DeepSeek serves the round, sticky for every following turn', async () => {
+    const { deps, llmCalls } = makeDeps([OPUS_DOWN, SONNET_DOWN, ds(READ3), ds(submit(review()))]);
+    const { session } = await createSparringSession(createBody(), deps);
+    expect(llmCalls).toHaveLength(4);
+    expect(llmCalls[2].opts).toEqual(expect.objectContaining({
+      providerOverride: 'deepseek', modelOverride: 'deepseek-v4-pro', planSparringLastResort: true, deepseekThinking: 'disabled', allowFallback: false,
+    }));
+    // Sticky: turn 2 went straight to DeepSeek, no new Opus/Sonnet attempt.
+    expect(llmCalls[3].opts.providerOverride).toBe('deepseek');
+    expect(session.verdict).toBe('in_progress');
+    expect(session.rounds[0].review).toBeDefined();
+    expect(session.model_log.filter((m) => m.fallback_tier === 'deepseek' && m.ok)).toHaveLength(2);
+  });
+
+  it('kill switch PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED=false ⇒ no DeepSeek call, escalates after Sonnet', async () => {
+    process.env.PLAN_SPARRING_DEEPSEEK_FALLBACK_ENABLED = 'false';
+    const { deps, llmCalls } = makeDeps([OPUS_DOWN, SONNET_DOWN]);
+    const { session } = await createSparringSession(createBody(), deps);
+    expect(llmCalls).toHaveLength(2);
+    expect(llmCalls.some((c) => c.opts.providerOverride === 'deepseek')).toBe(false);
+    expect(session.escalation_reasons).toEqual(['model_unavailable']);
+  });
+
+  it('an answer from a provider other than the asked tier is still refused', async () => {
+    const { deps } = makeDeps([OPUS_DOWN, SONNET_DOWN, () => ok({ provider: 'openai', text: 'hi' })]);
+    const { session } = await createSparringSession(createBody(), deps);
+    expect(session.escalation_reasons).toEqual(['model_unavailable']);
   });
 });
 
@@ -586,7 +674,7 @@ describe('approval (verified exafy_admin actor only)', () => {
     const { deps } = makeDeps([]);
     await expect(approveSparringSession(session.id, { user_id: ADMIN }, {}, deps)).rejects.toMatchObject({ status: 409, code: 'not_ready_for_approval' });
 
-    const down = makeDeps([() => ({ ok: false, error: 'down' })]);
+    const down = makeDeps(ALL_TIERS_DOWN());
     const { session: esc } = await createSparringSession(createBody(plan('other plan')), down.deps);
     await expect(approveSparringSession(esc.id, { user_id: ADMIN }, { final_plan_hash: esc.final_plan_hash }, deps)).rejects.toMatchObject({ status: 400, code: 'acknowledge_escalation_required' });
     const ok2 = await approveSparringSession(esc.id, { user_id: ADMIN }, { final_plan_hash: esc.final_plan_hash, acknowledge_escalation: true }, deps);
@@ -610,14 +698,14 @@ describe('approval (verified exafy_admin actor only)', () => {
 });
 
 // ===========================================================================
-describe('real router path: model failure ⇒ zero other provider calls', () => {
-  it('a Bedrock AccessDenied escalates the session; Bedrock called once, DeepSeek/fetch never', async () => {
+describe('real router path: Opus → Sonnet → DeepSeek, one call each, nothing else', () => {
+  it('Bedrock down on both models and DeepSeek out of balance ⇒ escalated; Bedrock twice, DeepSeek once', async () => {
     process.env.BEDROCK_ROLE_ARN = 'arn:aws:iam::472838866351:role/test';
     process.env.DEEPSEEK_API_KEY = 'k';
     _resetPolicyCacheForTests();
     sendMock.mockReset();
     sendMock.mockRejectedValue(new Error('AccessDeniedException: not subscribed'));
-    const fetchSpy = jest.fn();
+    const fetchSpy = jest.fn().mockResolvedValue({ ok: false, status: 402, text: async () => 'Insufficient Balance', json: async () => ({}) });
     global.fetch = fetchSpy as unknown as typeof fetch;
 
     const { deps } = makeDeps([]);
@@ -626,12 +714,20 @@ describe('real router path: model failure ⇒ zero other provider calls', () => 
 
     expect(session.verdict).toBe('escalated');
     expect(session.escalation_reasons).toEqual(['model_unavailable']);
-    expect(sendMock).toHaveBeenCalledTimes(1);
-    expect(fetchSpy).not.toHaveBeenCalled();
+    expect(sendMock).toHaveBeenCalledTimes(2);
+    const modelIds = sendMock.mock.calls.map((c) => (c[0] as { input: { modelId: string } }).input.modelId);
+    expect(modelIds[1]).toBe('eu.anthropic.claude-sonnet-4-6');
     const body = JSON.parse((sendMock.mock.calls[0][0] as { input: { body: string } }).input.body);
     expect(body.thinking).toEqual({ type: 'adaptive' });
     expect(body.output_config).toEqual({ effort: 'high' });
     expect(body.tools.map((t: { name: string }) => t.name)).toEqual(['read_file', 'list_dir', 'search', 'submit_review']);
+    // Exactly one DeepSeek request, on the last-resort model, thinking off, same tools.
+    expect(fetchSpy).toHaveBeenCalledTimes(1);
+    expect(fetchSpy.mock.calls[0][0]).toBe('https://api.deepseek.com/chat/completions');
+    const ds = JSON.parse(fetchSpy.mock.calls[0][1].body);
+    expect(ds.model).toBe('deepseek-v4-pro');
+    expect(ds.thinking).toEqual({ type: 'disabled' });
+    expect(ds.tools.map((t: { function: { name: string } }) => t.function.name)).toEqual(['read_file', 'list_dir', 'search', 'submit_review']);
   });
 });
 
