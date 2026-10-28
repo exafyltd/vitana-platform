@@ -12,7 +12,8 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T10:10Z
+updated: 2026-10-28T10:22Z
+vtid: VTID-05365
 ---
 # validator-fix — Collab handoff: R1, stderr report, batched reads
 Plan: `.kiro/specs/collab-handoff-check-fix/plan.md`, `tasks.md` section `validator-fix`. **Held until PLAN-SPAR
@@ -22,3 +23,6 @@ the current head or the owner's instruction.
 ## Log
 ### 2026-10-28T10:10Z · kiro-hotmail-202610281000-73d4 · created → ready
 Created and held.
+
+### 2026-10-28T10:22Z · ci-plan-spar · ready (VTID allocated)
+VTID-05365 allocated after policy approval (converged-auto-v1).
