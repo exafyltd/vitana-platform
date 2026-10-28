@@ -1,0 +1,32 @@
+== 2026-10-28T13:20:08Z fresh clones (--depth 50) into an empty workspace
+   clones: 26 s; platform 1f0a8cf669d7ab3e8384f5117ea808650cff3d40
+== setup (empty HOME=<fresh>/home), from the workspace root
+kiro-web-session setup 2026-10-28T13:20:34.140Z (foreground; log <fresh>/home/.cache/vitana-kiro-web/setup.log)
+steering: ok — kiro-web-steering: ok
+hooks: written [vitana-web-guard.json, vitana-web-refresh.json] unchanged [] removed []
+reviewer agent: copied
+git hooks <fresh>/ws/vitana-platform: written [pre-commit, pre-push] unchanged []
+git hooks <fresh>/ws/vitana-v1: written [pre-commit, pre-push] unchanged []
+morning pack: skipped (DEV_MEMORY_PACK_TOKEN unset); task state comes from git: queue.mjs and the plan files
+installs: dependencies and code intelligence (~8 min on a fresh sandbox, seconds afterwards) …
+
+== (the setup tool call above was stopped by the 30-min tool limit during the code-intelligence index build; 2026-10-28T13:50:32Z) status --check afterwards:
+kiro-web-session status: ready
+OK    workspace-steering 15 file(s) in <fresh>/ws/.kiro/steering (kiro-web-steering --check ok)
+OK    hooks              vitana-web-guard + vitana-web-refresh in <fresh>/ws/.kiro/hooks
+OK    git-hooks          pre-commit + pre-push (marked, executable) in <fresh>/ws/vitana-platform/.git/hooks, <fresh>/ws/vitana-v1/.git/hooks
+OK    reviewer-agent     <fresh>/ws/.kiro/agents/vitana-lane-reviewer.md
+OK    gateway-deps       <fresh>/ws/vitana-platform/services/gateway/node_modules
+OK    v1-deps            present
+WARN  codeintel          vitana-platform: indexing; vitana-v1: never-run; CLI: <fresh>/home/.cache/vitana-codeintel/venv/bin/repowise, <fresh>/home/.cache/vitana-codeintel/venv/bin/graphify (no MCP in Kiro Web)
+OK    github             REST as jtadic-netizen; GraphQL and gh pr/issue are not supported by the Kiro Web proxy
+OK    tokens             DEV_MEMORY_PACK_TOKEN=unset, GATEWAY_SERVICE_TOKEN=unset
+WARN  installs           setup.start 2026-10-28T13:20:34.140Z; missing or older than it: codeintel (re-run setup; log <fresh>/home/.cache/vitana-kiro-web/setup.log)
+   status --check exit=0
+== second setup --no-codeintel (warm), output piped to head -3 (no EPIPE crash)
+kiro-web-session setup 2026-10-28T13:50:33.925Z (foreground; log <fresh>/home/.cache/vitana-kiro-web/setup.log)
+steering: ok — kiro-web-steering: ok
+hooks: written [] unchanged [vitana-web-guard.json, vitana-web-refresh.json] removed []
+   pipe status node=0 after 1 s
+kiro-web-session status: ready
+OK    installs           every step of the setup at 2026-10-28T13:50:33.925Z finished: steering, hooks, deps-_projects_sandbox_vitana-platform_.agents_tasks_pipeline-kiro-exafy-202610271051-d636_sr-scratch_fresh_ws_vitana-platform_services_gateway, deps-_projects_sandbox_vitana-platform_.agents_tasks_pipeline-kiro-exafy-202610271051-d636_sr-scratch_fresh_ws_vitana-v1, codeintel

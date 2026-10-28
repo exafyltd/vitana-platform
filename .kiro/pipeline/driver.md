@@ -1,10 +1,30 @@
 # Plan driver — Kiro Web (one continuous session) — VTID-05271
 
 One driver per approved plan runs it 24/7, weekends included, from the `plan(` PR to Gate 2 (`.claude/rules/collaboration.md`
-§8 and §8a). This file is the sequential version of the pipeline for **one Kiro Web
-session**: every step runs in this session, one after the other. It needs no subagents and no parallel workers; the
-only other agent it calls is the reviewer agent for a review (step 4), and the plan goes on without it when it cannot run.
+§8 and §8a). This file is the pipeline for **one Kiro Web session**. It needs no subagents to run: every step can run
+in this session, one after the other. To go faster it may build up to 6 independent lanes at once with one builder
+session per lane ("Parallel builders" below); the driver itself still reviews through the reviewer agent (step 4) and
+lands one merge at a time, and the plan goes on without the reviewer agent when it cannot run.
 Kiro IDE runs the same steps through `.kiro/workflows/vitana-pipeline.workflow.json` (lane `reviewer-agent`).
+
+## Session start (Kiro Web)
+From the workspace root, as the first action: `node vitana-platform/scripts/collab/kiro-web-session.mjs setup` (rules,
+Kiro hooks, git hooks, dependencies, code intelligence, all in the foreground; give the tool call a timeout of at
+least 15 min, about 8 min on a fresh sandbox; code intelligence runs last, so a timeout while it indexes leaves every
+required item done and a later `setup` resumes it; `--no-codeintel` skips only the code-intelligence indexes). The git
+`pre-commit` hook typechecks the gateway at commit time and the `pre-push` hook runs preflight on the commit being
+pushed; never bypass either. A lane push before its PR exists carries the title and the PR body:
+`PR_TITLE='VTID-xxxxx (<slug>/<lane>): …' PR_BODY_FILE=<file> git push …` (`kiro-web-session.mjs pr-body` writes a
+body with the five VALIDATOR-CHECK declarations).
+
+## Sequencing
+- A dependent action goes in the **same** bash command as the action it depends on, chained with `&&`: `git commit … &&
+  git push …`, `git worktree add … && <work in it>`, `git fetch … && git rev-parse …`.
+- Independent actions are separate tool calls issued in one parallel batch (reads, tests of different files, reviews of
+  different lanes).
+- A tool call never shares a batch with the call whose result it needs (an edit and the commit of that edit, a push and
+  the PR it opens): issue it in a later turn, after reading that result.
+- After a push, `git ls-remote origin refs/heads/<branch>` must show the pushed sha before the next step uses it.
 
 The rules of `.claude/rules/collaboration.md` (§2 spec layout, §5 claims, §7, §7a, §7b, §8, §8a) and `CLAUDE.md` Part 1
 are binding. The owner is asked only at Gate 2, for an escalated sparring verdict and for the stop cases of §7, each with
@@ -67,7 +87,8 @@ until it passes, then push.
    lanes on the same hot file never at once (§8a). Claim it, branch `kiro/<slug>/<lane>` from `origin/main`, write each
    new behaviour's test first and record it red on `origin/main`, implement only inside the lane's `paths`, run the
    checks of `tasks.md`, commit with `Collab-Session` / `Collab-Lane` trailers, run preflight, then push, open the PR
-   `VTID-xxxxx (<slug>/<lane>): …`, set the lane `in-review`.
+   `VTID-xxxxx (<slug>/<lane>): …`, set the lane `in-review`. Several independent `ready` lanes may be built at once,
+   one builder session per lane ("Parallel builders").
 6. **Land an accepted lane** under the §7b merge rule: accept on the current head, every check run green, up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. One merge per repo at a time. Record `merge: <sha>` and `authority: §7b PM rule` in the lane
@@ -83,6 +104,42 @@ until it passes, then push.
 9. **Done**: plan `done`, `_plan` claim released, and the heartbeat ref removed as the last action
    (`git push origin --delete refs/heads/collab-driver/<slug>`; it holds no work).
 10. **Wait**: nothing to do now (checks running, review pending) → heartbeat, poll every 2–3 min, loop.
+
+## Parallel builders
+The driver may build up to 6 independent `ready` lanes at once (`collaboration.md` §8a caps and hot files unchanged:
+two lanes on the same hot file or the same file are never dispatched together) by starting one builder agent session
+per lane, all in one batch. Each builder:
+- generates its own session id (`queue.mjs session-id --agent kiro --seat <lane seat>`) and claims its lane
+  (`queue.mjs claim <slug>/<lane> --session <id> --repo <repo>`; refused by a live holder → it stops and says so);
+- works only in its own worktree `<vitana-platform>/.agents/wt/<lane>` (`git worktree add … -b kiro/<slug>/<lane>
+  origin/main`), follows `lane-code.md`, the Sequencing rules above and `common-rules.md`;
+- pushes, opens its PR and returns `{lane, session, pr, head}`;
+- never merges, never reviews or accepts, never edits `handoff.md` or another lane's file, never allocates a VTID.
+
+The driver keeps the `_plan` claim, runs the reviewer agent per lane (reviews of different lanes may also run in
+parallel, each its own session on its PR's current head) and lands one merge at a time under §7b. A push race between
+builders (one shared object store) is fetched and retried up to 3 times (`common-rules.md` 8).
+
+Builder prompt (one per lane; fill the `<…>`):
+
+```text
+You are the BUILDER session for lane `<slug>/<lane>` (<VTID>) in <owner/repo>. You are not the plan driver and not
+the reviewer. Work autonomously. Main checkout: <vitana-platform> (never switch its branch). The plan is on
+origin/main: .kiro/specs/<slug>/plan.md (your lane's section), tasks.md (your lane group and its Acceptance),
+lanes/<lane>.md. Rules: .kiro/pipeline/common-rules.md, lane-code.md and driver.md "Sequencing" on origin/main.
+Other builders work other lanes at the same time in their own worktrees; you share no file with them.
+1. SID=$(node <vitana-platform>/scripts/collab/queue.mjs session-id --agent kiro --seat <seat>); claim
+   <slug>/<lane> with it. Refused → stop and return {"lane":"<lane>","error":"claim refused: <holder>"}.
+2. git -C <vitana-platform> fetch -q origin main && git -C <vitana-platform> worktree add -q -b kiro/<slug>/<lane>
+   <vitana-platform>/.agents/wt/<lane> origin/main — all work there.
+3. Tests first (red on origin/main, recorded in docs/validation/<VTID>/red-on-base.txt), then implement only inside
+   the lane's paths; the lane's checks and evidence per lane-code.md; lane file state ready → executing with a log entry.
+4. Commit (bot identity, Collab-Session + Collab-Lane trailers), write the PR body to a file
+   (kiro-web-session.mjs pr-body …), then in a later call: PR_TITLE='<title>' PR_BODY_FILE=<file> git push … &&
+   git ls-remote …; then open the PR and wait for its checks (kiro-web-session.mjs wait); fix forward at most 3 times.
+Never: merge, review or approve, edit handoff.md or another lane's file, allocate a VTID, force-push, write to a live
+system. Return only {"lane","session","pr","head","tests","checks"} as JSON.
+```
 
 ## Automation-started driver (wake-up item W)
 A driver started from an automation run never merges (steps 2 and 6 are left to the Project Manager or an

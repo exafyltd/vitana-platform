@@ -1,0 +1,8 @@
+== HEAD before: 191c352487960410d62b3ae4e5d74b9f8fc6fb02
+kiro-web-session pre-push: preflight passed on f7f1d04c47a3
+f7f1d04c47a3f8db5a3ed438d6404357c244e3fe	refs/heads/kiro/x/y
+   command exit=0
+== HEAD after the commit: f7f1d04c47a3f8db5a3ed438d6404357c244e3fe
+== stand-in preflight was called with: --repo <demo>/clone --base origin/main --head f7f1d04c47a3f8db5a3ed438d6404357c244e3fe --branch kiro/x/y --title VTID-05361 (kiro-web-reliability/session-reliability): demo
+   --head is the NEW commit
+RESULT: ls-remote equals the new commit f7f1d04c47a3f8db5a3ed438d6404357c244e3fe

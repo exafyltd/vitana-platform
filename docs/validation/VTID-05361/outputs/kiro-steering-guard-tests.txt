@@ -1,0 +1,412 @@
+TAP version 13
+# Subtest: a matching layout passes
+ok 1 - a matching layout passes
+  ---
+  duration_ms: 2.837686
+  type: 'test'
+  ...
+# Subtest: a rules file without a twin fails
+ok 2 - a rules file without a twin fails
+  ---
+  duration_ms: 0.576203
+  type: 'test'
+  ...
+# Subtest: globs that differ from paths fail
+ok 3 - globs that differ from paths fail
+  ---
+  duration_ms: 0.467003
+  type: 'test'
+  ...
+# Subtest: a link to a missing file fails
+ok 4 - a link to a missing file fails
+  ---
+  duration_ms: 1.51798
+  type: 'test'
+  ...
+# Subtest: no always file linking CLAUDE.md fails
+ok 5 - no always file linking CLAUDE.md fails
+  ---
+  duration_ms: 0.462696
+  type: 'test'
+  ...
+# Subtest: the twin must be fileMatch
+ok 6 - the twin must be fileMatch
+  ---
+  duration_ms: 0.597631
+  type: 'test'
+  ...
+# Subtest: this repository passes
+ok 7 - this repository passes
+  ---
+  duration_ms: 9.552843
+  type: 'test'
+  ...
+# Subtest: the Kiro notes say plan sparring is never skipped and how to load context
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+  ---
+  duration_ms: 0.175336
+  type: 'test'
+  ...
+# Subtest: agents: the shipped reviewer agent, workflow, hook and runbooks pass
+ok 9 - agents: the shipped reviewer agent, workflow, hook and runbooks pass
+  ---
+  duration_ms: 5.130682
+  type: 'test'
+  ...
+# Subtest: agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+ok 10 - agents: check() runs the agent checks only where scripts/collab/queue.mjs exists (vitana-v1 stays green)
+  ---
+  duration_ms: 1.006405
+  type: 'test'
+  ...
+# Subtest: agents: a missing reviewer agent fails
+ok 11 - agents: a missing reviewer agent fails
+  ---
+  duration_ms: 3.255305
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+ok 12 - agents: the reviewer front matter pins no model (the review step pins it) or a chain model only
+  ---
+  duration_ms: 21.749197
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+ok 13 - agents: the reviewer model chain mirrors governance.ts REVIEWER_AGENT_MODELS (Claude only)
+  ---
+  duration_ms: 0.545737
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer names the full model chain
+ok 14 - agents: the reviewer names the full model chain
+  ---
+  duration_ms: 3.320997
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer name is fixed
+ok 15 - agents: the reviewer name is fixed
+  ---
+  duration_ms: 3.668671
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer may only have the read and shell tools
+ok 16 - agents: the reviewer may only have the read and shell tools
+  ---
+  duration_ms: 6.498433
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer must exclude every write tool
+ok 17 - agents: the reviewer must exclude every write tool
+  ---
+  duration_ms: 10.090396
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer gets no MCP servers
+ok 18 - agents: the reviewer gets no MCP servers
+  ---
+  duration_ms: 3.540646
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer fails loudly when its model is unavailable
+ok 19 - agents: the reviewer fails loudly when its model is unavailable
+  ---
+  duration_ms: 3.264045
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+ok 20 - agents: the reviewer prompt carries the verdict keys and every review-entry trailer
+  ---
+  duration_ms: 16.720678
+  type: 'test'
+  ...
+# Subtest: agents: the reviewer treats protected gate files as blocking
+ok 21 - agents: the reviewer treats protected gate files as blocking
+  ---
+  duration_ms: 3.412773
+  type: 'test'
+  ...
+# Subtest: agents: every agent file needs front matter with a name
+ok 22 - agents: every agent file needs front matter with a name
+  ---
+  duration_ms: 7.641528
+  type: 'test'
+  ...
+# Subtest: workflow: the shipped recipe passes the workflow schema checks
+ok 23 - workflow: the shipped recipe passes the workflow schema checks
+  ---
+  duration_ms: 0.619898
+  type: 'test'
+  ...
+# Subtest: workflow: input is the owner task text only
+ok 24 - workflow: input is the owner task text only
+  ---
+  duration_ms: 0.365535
+  type: 'test'
+  ...
+# Subtest: workflow: a recipe that does not parse fails
+ok 25 - workflow: a recipe that does not parse fails
+  ---
+  duration_ms: 1.459127
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+ok 26 - workflow: every lane slot races one pinned vitana-lane-reviewer step per chain model in a joinPolicy any parallel
+  ---
+  duration_ms: 47.53634
+  type: 'test'
+  ...
+# Subtest: workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+ok 27 - workflow: nothing outside a review race branch reads a review output (a failed or aborted branch has none)
+  ---
+  duration_ms: 2.291387
+  type: 'test'
+  ...
+# Subtest: workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+ok 28 - workflow: every lane slot and each planning / approval step is gated by one run-gate skip/go pair
+  ---
+  duration_ms: 8.77236
+  type: 'test'
+  ...
+# Subtest: workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+ok 29 - workflow: a gate race in the wrong shape or with the wrong watch recipe fails
+  ---
+  duration_ms: 9.207268
+  type: 'test'
+  ...
+# Subtest: workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+ok 30 - workflow: no step outside a reviewer race pins a modelId, and every pin is a chain model (regression guard)
+  ---
+  duration_ms: 30.623035
+  type: 'test'
+  ...
+# Subtest: review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)
+ok 31 - review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)
+  ---
+  duration_ms: 3.742602
+  type: 'test'
+  ...
+# Subtest: review prompts: a model line naming another chain model fails (T-B)
+ok 32 - review prompts: a model line naming another chain model fails (T-B)
+  ---
+  duration_ms: 6.667941
+  type: 'test'
+  ...
+# Subtest: review prompts: a prompt without the model line fails (T-C)
+ok 33 - review prompts: a prompt without the model line fails (T-C)
+  ---
+  duration_ms: 7.807392
+  type: 'test'
+  ...
+# Subtest: review prompts: a prompt carrying the label twice fails (T-D)
+ok 34 - review prompts: a prompt carrying the label twice fails (T-D)
+  ---
+  duration_ms: 6.624454
+  type: 'test'
+  ...
+# Subtest: review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)
+ok 35 - review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)
+  ---
+  duration_ms: 15.723422
+  type: 'test'
+  ...
+# Subtest: workflow: at most 6 lanes build in parallel
+ok 36 - workflow: at most 6 lanes build in parallel
+  ---
+  duration_ms: 4.845446
+  type: 'test'
+  ...
+# Subtest: workflow: lane landing is serialized by the merge lock
+ok 37 - workflow: lane landing is serialized by the merge lock
+  ---
+  duration_ms: 3.417845
+  type: 'test'
+  ...
+# Subtest: workflow: schema errors are reported
+ok 38 - workflow: schema errors are reported
+  ---
+  duration_ms: 3.813262
+  type: 'test'
+  ...
+# Subtest: workflow: every .kiro/pipeline file the recipe names exists
+ok 39 - workflow: every .kiro/pipeline file the recipe names exists
+  ---
+  duration_ms: 3.809145
+  type: 'test'
+  ...
+# Subtest: workflow: the steering entry point may only name pipeline files that exist (driver.md exists)
+ok 40 - workflow: the steering entry point may only name pipeline files that exist (driver.md exists)
+  ---
+  duration_ms: 3.291562
+  type: 'test'
+  ...
+# Subtest: hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+ok 41 - hook: SessionStart agent action that loads the pipeline steering and resumes stale drivers
+  ---
+  duration_ms: 6.663671
+  type: 'test'
+  ...
+# Subtest: runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+ok 42 - runbooks: no slug-specific text, no machine paths, no owner questions outside Gate 2
+  ---
+  duration_ms: 13.070151
+  type: 'test'
+  ...
+# Subtest: steering: the session title is set once and never renamed (vitana-session-title.md)
+ok 43 - steering: the session title is set once and never renamed (vitana-session-title.md)
+  ---
+  duration_ms: 0.281533
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: the shipped rule file passes
+ok 44 - owner-autonomy: the shipped rule file passes
+  ---
+  duration_ms: 0.466623
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a missing rule file fails
+ok 45 - owner-autonomy: a missing rule file fails
+  ---
+  duration_ms: 0.172675
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: one anchor per stop row (13) plus end point, stop message and no-trailing-question rule
+ok 46 - owner-autonomy: one anchor per stop row (13) plus end point, stop message and no-trailing-question rule
+  ---
+  duration_ms: 0.15561
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: deleting the migration row fails even though §7d appears elsewhere
+ok 47 - owner-autonomy: deleting the migration row fails even though §7d appears elsewhere
+  ---
+  duration_ms: 0.376238
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "target database" fails
+ok 48 - owner-autonomy: dropping "target database" fails
+  ---
+  duration_ms: 0.29188
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§7c" fails
+ok 49 - owner-autonomy: dropping "§7c" fails
+  ---
+  duration_ms: 0.17613
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§3a" fails
+ok 50 - owner-autonomy: dropping "§3a" fails
+  ---
+  duration_ms: 0.157402
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "data-loss" fails
+ok 51 - owner-autonomy: dropping "data-loss" fails
+  ---
+  duration_ms: 0.186892
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "3 fix-forward attempts" fails
+ok 52 - owner-autonomy: dropping "3 fix-forward attempts" fails
+  ---
+  duration_ms: 0.135676
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "escalated sparring verdict" fails
+ok 53 - owner-autonomy: dropping "escalated sparring verdict" fails
+  ---
+  duration_ms: 0.198307
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "IF–THEN 31–32" fails
+ok 54 - owner-autonomy: dropping "IF–THEN 31–32" fails
+  ---
+  duration_ms: 0.164681
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "AGENTS.md" fails
+ok 55 - owner-autonomy: dropping "AGENTS.md" fails
+  ---
+  duration_ms: 0.134199
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Commerce UX contract" fails
+ok 56 - owner-autonomy: dropping "Commerce UX contract" fails
+  ---
+  duration_ms: 0.145631
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "design.md" fails
+ok 57 - owner-autonomy: dropping "design.md" fails
+  ---
+  duration_ms: 0.155587
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "§4.1" fails
+ok 58 - owner-autonomy: dropping "§4.1" fails
+  ---
+  duration_ms: 0.132182
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Gate 1" fails
+ok 59 - owner-autonomy: dropping "Gate 1" fails
+  ---
+  duration_ms: 0.128133
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "NEVER 34" fails
+ok 60 - owner-autonomy: dropping "NEVER 34" fails
+  ---
+  duration_ms: 0.12671
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "STAGING-VERIFY" fails
+ok 61 - owner-autonomy: dropping "STAGING-VERIFY" fails
+  ---
+  duration_ms: 0.13301
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "five-part" fails
+ok 62 - owner-autonomy: dropping "five-part" fails
+  ---
+  duration_ms: 0.130937
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: dropping "Never end a reply with an offer" fails
+ok 63 - owner-autonomy: dropping "Never end a reply with an offer" fails
+  ---
+  duration_ms: 0.127113
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a rule file that is not always-included fails
+ok 64 - owner-autonomy: a rule file that is not always-included fails
+  ---
+  duration_ms: 0.188234
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: vitana-pipeline.md without the pointer fails
+ok 65 - owner-autonomy: vitana-pipeline.md without the pointer fails
+  ---
+  duration_ms: 0.162544
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: a repo without the pipeline steering is not checked (fixtures stay green)
+ok 66 - owner-autonomy: a repo without the pipeline steering is not checked (fixtures stay green)
+  ---
+  duration_ms: 0.147496
+  type: 'test'
+  ...
+# Subtest: owner-autonomy: check() runs it
+ok 67 - owner-autonomy: check() runs it
+  ---
+  duration_ms: 0.191815
+  type: 'test'
+  ...
+1..67
+# tests 67
+# suites 0
+# pass 67
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 403.827545

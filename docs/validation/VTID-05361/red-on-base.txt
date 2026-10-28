@@ -1,0 +1,58 @@
+# red on base: scripts/collab/kiro-web-session.test.mjs (new tests) against origin/main 0d02707ba78fa2c1e37299c330a547b914842c8f scripts/collab/kiro-web-session.mjs
+## 1. as written (named imports of the new exports fail to link)
+# SyntaxError: The requested module './kiro-web-session.mjs' does not provide an export named 'GIT_HOOK_MARKER'
+# tests 1
+# pass 0
+# fail 1
+
+## 2. per test (same file, namespace import so each test runs; missing exports are undefined)
+## tests that pass on base are kept behaviours (unchanged or updated only where the plan changes the asserted behaviour)
+not ok 1 - setup writes exactly the generated hook files (guard + refresh), one entry each, with the right trigger/matcher/command
+not ok 2 - the guard hook description names every kiro/** and claude/** branch and the git hooks (not kiro/<slug>/<lane>)
+not ok 3 - setup removes a stale marked hook (incl. the old vitana-web-dirty.json), never touches an unmarked file, writes nothing inside a repository
+ok 4 - reviewer agent copy is byte-identical and a second setup is a no-op
+ok 5 - the old mark-dirty CLI is a silent no-op (a stale hook file from before setup re-ran never fails an edit)
+not ok 6 - parseCommand finds every push form with repo dir, branch, source, PR_TITLE and PR_BODY_FILE
+ok 7 - guard passes non-git commands and claim/driver/other pushes without running anything
+ok 8 - guard blocks a lane push on a failing preflight with its output, passes and caches a green one
+ok 9 - guard asks for PR_TITLE when the branch has no open PR, and passes a given title to preflight
+ok 10 - guard blocks a push whose sha is not the checked-out HEAD
+not ok 11 - guard allows `git commit && git push` and does not run the push check for a push after a commit (pre-push checks the real commit)
+not ok 12 - guard: `commit && push` into a checkout without the marked pre-push hook still blocks (nothing would check the new commit)
+not ok 13 - guard runs no gateway typecheck at `git commit` any more (the git pre-commit hook does it)
+ok 14 - guard never blocks on its own internal error
+not ok 15 - first push with PR_BODY_FILE reaches preflight as --body-file; without it (VALIDATOR-CHECK applies, no PR) the push is blocked naming PR_BODY_FILE
+not ok 16 - the open PR body is passed as --body-file when preflight supports it, and --body-file is never passed to a preflight without it
+not ok 17 - VALIDATOR-CHECK paths are read from the workflow and matched as globs
+not ok 18 - pr-body prints the five declarations (defaults) and passes validator-path-guard --pr-body-check
+not ok 19 - pr-body --profile command_hub_frontend --oasis yes passes the body check with those values; a bad profile is refused
+not ok 20 - git hooks are installed in <git common dir>/hooks with the marker, executable; an unmarked hook is never overwritten
+not ok 21 - status: git-hooks is a required item and fails for a missing, unmarked or non-executable hook
+not ok 22 - git-pre-commit: staged gateway file + tsc error → exit 1 with the errors; clean → 0; no gateway file → no tsc
+not ok 23 - git-pre-commit: an unstaged gateway type error also blocks and names the unstaged file
+not ok 24 - git-pre-commit in a linked worktree without node_modules runs npm ci there before tsc; an npm ci failure does not block
+not ok 25 - git-pre-commit never blocks on its own internal error
+not ok 26 - REAL GIT race: a background writer edits a gateway file after the PreToolUse check and before `git add`; the installed pre-commit hook still blocks
+not ok 27 - git-pre-push: stdin parsing — lane refs checked on the pushed sha, non-lane refs and deletions ignored, failing preflight → exit 1
+not ok 28 - git-pre-push shares the pass cache with the PreToolUse guard and never blocks on an internal error
+not ok 29 - REAL GIT: a push the PreToolUse parser cannot read (heredoc with an apostrophe) is still checked by pre-push, on the new commit
+ok 30 - wait returns 0 once every check run completed green, polling at the given interval
+ok 31 - wait returns 1 with the failed run name, link and log tail
+ok 32 - wait returns 3 on timeout naming what is still pending (and waits while no run exists yet)
+ok 33 - status reports missing hooks as required failures; --check --json exits 1 naming them
+not ok 34 - status: the hooks message lists exactly the generated hook names (from hookDefs)
+not ok 35 - status: installs is not ready while a step stamp is missing or older than setup.start, naming the steps
+ok 36 - status: workspace steering is the kiro-web-steering --check result when the generator exists
+not ok 37 - setup runs the steering generator first, writes setup.start and the step stamps, and deletes the stale mark-dirty hook
+ok 38 - setup --no-install never fetches the morning pack (no network), even with the token set
+not ok 39 - setup runs every install in the foreground (no detached child); --no-codeintel skips only the venv and index build
+not ok 40 - setup output survives a closed pipe (no EPIPE crash)
+not ok 41 - refresh regenerates stale steering, hooks and git hooks, logs one line, and is silent when ready
+ok 42 - the preflight failure shown to the agent drops the queue table and keeps every FAIL line
+ok 43 - only the ci-plan-spar _plan-session false positive passes; every other Collab handoff or FAIL line blocks
+ok 44 - from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
+ok 45 - the CLI writes every block to last-block.txt (the main session may show a blocked command as {})
+ok 46 - guard preflights every kiro/** and claude/** branch, not only kiro/<slug>/<lane>
+# tests 46
+# pass 18
+# fail 28

@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05361",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/kiro-web-session.mjs",
+    "scripts/collab/kiro-web-session.test.mjs",
+    "AGENTS.md",
+    ".kiro/pipeline/driver.md",
+    "docs/kiro-web-parity/**",
+    ".kiro/specs/kiro-web-reliability/lanes/session-reliability.md",
+    "docs/validation/VTID-05361/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05361/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

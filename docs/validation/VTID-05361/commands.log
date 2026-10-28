@@ -1,0 +1,58 @@
+# VTID-05361 (kiro-web-reliability/session-reliability) — commands and results
+# Session kiro-exafy-202610281256-15bb, worktree <vitana-platform>/.agents/wt/session-reliability, base origin/main 0d02707ba78fa2c1e37299c330a547b914842c8f
+
+node scripts/collab/queue.mjs session-id --agent kiro --seat exafy          → kiro-exafy-202610281256-15bb
+node scripts/collab/queue.mjs claim kiro-web-reliability/session-reliability --session kiro-exafy-202610281256-15bb
+   → first attempt: claim ref pushed (c5a3f06363, trailers Collab-Session: kiro-exafy-202610281256-15bb), then the fetch
+     inside queue.mjs hit a ref-lock race with the parallel builder; retries reported "held by kiro-exafy-202610281256-15bb"
+     (this session) — verified with git ls-remote + the claim commit's trailers.
+git worktree add -q -b kiro/kiro-web-reliability/session-reliability .agents/wt/session-reliability origin/main   → ok
+
+## base (before any change)
+node --test scripts/collab/*.test.mjs                                   → 204 tests: 203 pass, 0 fail, 1 skipped (outputs/base-collab-tests.txt)
+
+## red on base (new tests, base implementation)
+node --test scripts/collab/kiro-web-session.test.mjs                    → link error: no export GIT_HOOK_MARKER (red-on-base.txt §1)
+namespace-import variant of the same file                               → 46 tests: 18 pass, 28 fail (red-on-base.txt §2)
+   the 18 passing on base are kept behaviours (unchanged tests, or tests updated only where the plan changes the asserted shape)
+
+## tests updated because the plan changes the asserted behaviour (plan §3.2.2, §3.2.5-6)
+- "setup writes exactly the two marked hook files…" → guard + refresh (the mark-dirty PostToolUse hook is removed, §3.2.2; refresh added, §3.2.5)
+- "mark-dirty marks a gateway src edit…" → replaced by "the old mark-dirty CLI is a silent no-op" (hook removed, §3.2.2)
+- "parseCommand finds every push form…" → push objects gain `bodyFile` (PR_BODY_FILE parsed like PR_TITLE, §3.2.6)
+- "guard blocks … a commit+push in one command" → split: the HEAD-mismatch block is kept unchanged; commit && push is now allowed (§3.2.2)
+- "guard typechecks the gateway on commit…", "guard installs missing gateway dependencies…", "guard typechecks on commit when gateway src
+  differs from HEAD…" → moved to git-pre-commit tests (the PreToolUse commit typecheck is removed, §3.2.2); same assertions (tsc errors
+  block with the first 10 lines, clean passes, no gateway change → no tsc, npm ci before tsc), now on the git hook
+- "the CLI writes every block to last-block.txt" → triggered by a no-PR-title push instead of commit && push (which no longer blocks)
+- fakeRun: git diff answers split into staged / unstaged / changed (base…head)
+
+## green on the lane head
+node --check scripts/collab/kiro-web-session.mjs                        → ok
+node --test scripts/collab/kiro-web-session.test.mjs                    → 46 tests: 46 pass, 0 fail (outputs/kiro-web-session-tests.txt); 5 repeat runs: 46/46 each
+node --test scripts/collab/*.test.mjs                                   → 226 tests: 225 pass, 0 fail, 1 skipped (outputs/collab-tests.txt)
+node --test scripts/ci/kiro-steering/guard.test.cjs                     → 67 tests: 67 pass, 0 fail (outputs/kiro-steering-guard-tests.txt)
+node scripts/ci/kiro-steering/guard.cjs .                               → kiro-steering: OK (outputs/kiro-steering-guard.txt)
+node --test scripts/dev/context.test.mjs                                → 16 pass, 0 fail
+diff <(git show origin/main:AGENTS.md | head -14) <(head -14 AGENTS.md) → no output (Codex rule byte-identical)
+python3 acceptance mapping check (VALIDATOR-CHECK step script)          → 14 ACs, every one mapped to TEST: within 12 lines
+
+## demos (throwaway clones under the RUN folder; nothing pushed to any real remote; outputs with paths shortened to <demo>/<fresh>)
+bash outputs/demo-race.sh        → outputs/demo-race.txt: hooks installed (marker, 755); PreToolUse guard exit 0 at 13:16:58; background
+                                   writer injected a type error at 13:17:00; `git add -A && git commit` → pre-commit ran npm ci + the real
+                                   gateway tsc (59 s) → exit 1, TS2322 at src/routes/health.ts(826,14); HEAD unchanged. PASS (blocked)
+bash outputs/demo-push.sh        → outputs/demo-commit-push.txt: nonexistent remote fails in git before any hook (exit 128, expected);
+                                   throwaway bare remote: PreToolUse guard exit 0 ("the git pre-push hook checks the new commit");
+                                   `git commit && PR_TITLE=… PR_BODY_FILE=… git push` → pre-push ran the REAL preflight with head
+                                   191c3524… = the new commit (not the pre-command HEAD 7e1fbbe2…) → 3 governance FAILs (a demo branch is
+                                   no lane) → push blocked, remote ref absent. PASS (checked the new sha)
+                                   (a first run without PR_BODY_FILE was blocked by pre-push: "VALIDATOR-CHECK runs on this push … PR_BODY_FILE")
+bash outputs/demo-push-pass.sh   → outputs/demo-commit-push-pass.txt: same command with a passing stand-in preflight: `--head` = new commit
+                                   f7f1d04c…, push exit 0, `git ls-remote` equals the new commit. PASS
+bash outputs/demo-fresh-sandbox.sh → outputs/demo-fresh-sandbox.txt: fresh --depth 50 clones of both repos (26 s), empty HOME, single
+                                   `setup` from the workspace root: steering, Kiro hooks, git hooks (both checkouts), reviewer, deps
+                                   (gateway 9 s, v1 +20 s) done by 13:21:03 (29 s after setup.start); the code-intelligence index build
+                                   (repowise, empty HOME) was still running when the 30-min tool limit stopped the call. Afterwards
+                                   `status --check` → ready, exit 0 (codeintel WARN, non-required). Warm `setup --no-codeintel | head -3`:
+                                   1 s, node exit 0 (no EPIPE); installs then ok. Decision: code intelligence stays last, so a timeout
+                                   leaves every required item done; AGENTS.md / driver.md / README say so.
