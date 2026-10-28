@@ -53,3 +53,21 @@ test('the PR template has a Verification section and no extra VALIDATOR-CHECK ma
     assert.equal(t.split(marker).length - 1, 1, `${marker} must appear exactly once (VALIDATOR-CHECK reads the first match)`);
   }
 });
+
+// quality-checks-followup/merge-policy-text: the Merge section agrees with the policy actually in force.
+test('the Merge section cites the PM squash strategy, and the PM really merges with squash', () => {
+  const md = read(QC);
+  const merge = md.slice(md.indexOf('\n## Merge'));
+  assert.match(merge, /services\/gateway\/src\/services\/project-manager\/act\.ts/, 'Merge section must cite the PM act.ts');
+  assert.match(merge, /planRange/, 'Merge section must cite where STAGING-VERIFY decides (lib.cjs planRange)');
+  const act = read('services/gateway/src/services/project-manager/act.ts');
+  const strategies = [...act.matchAll(/merge_strategy:\s*'([a-z]+)'/g)].map((m) => m[1]);
+  assert.ok(strategies.length > 0, 'act.ts names no merge_strategy');
+  assert.deepEqual([...new Set(strategies)], ['squash'], `PM merge strategies: ${strategies.join(', ')}`);
+});
+
+test('DEPLOYMENT-PIPELINE.md does not present a default merge commit as carrying the VTID', () => {
+  const doc = read('docs/DEPLOYMENT-PIPELINE.md');
+  const para = doc.slice(doc.indexOf('**How the range is read (VTID-05076):**'));
+  assert.match(para.slice(0, 1200), /Merge pull request #/, 'the range paragraph must name GitHub\'s default merge subject');
+});

@@ -239,8 +239,10 @@ function isLockfileOnlyCommit(files, service) {
 // Every change that landed on main between production and the verified commit,
 // one entry each: a squash commit, a direct push, or a PR merge commit. Walking
 // the first-parent chain keeps a merge-committed PR's own branch commits out of
-// the list — the PR is judged by its merge commit, whose subject carries the PR
-// title and VTID (validate-pr enforces it) — while a direct push without a VTID
+// the list — the PR is judged by its merge commit's own subject. Only a squash
+// subject is the PR title (validate-pr enforces the VTID in the title); GitHub's
+// default merge subject "Merge pull request #n from …" has no VTID and fails
+// rule 47 unless edited — while a direct push without a VTID
 // is still a first-parent commit and still fails rule 47. Files come from the
 // first-parent diff, so a merge commit lists everything it brought into main
 // (git show's combined diff would list only conflict-resolved files).
