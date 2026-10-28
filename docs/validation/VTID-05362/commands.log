@@ -25,3 +25,18 @@ exit=0
 
 $ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362   (gate before the commit)
 land-guard evidence: refused — spawnSync git ENOBUFS
+
+## fix 1 (dogfood finding)
+The gate above refused with `spawnSync git ENOBUFS`: a whole-tree `git ls-files` overflowed the child-process buffer.
+The pipe through `tee` hid the exit code, so commit 971fd206 went ahead without a passing gate (the failure this lane
+exists to prevent). Fix: `evidence` lists only `docs/validation/<VTID>/` and child processes get a 64 MB buffer.
+Regression test: `evidence` on this repository for VTID-05343. From here on the gate runs with no pipe and its exit
+code decides.
+$ node --test scripts/collab/land-guard.test.mjs
+# tests 8
+# pass 8
+# fail 0
+exit=0
+$ node scripts/collab/land-guard.mjs evidence --repo . --vtid VTID-05362
+land-guard evidence: ok — VTID-05362 evidence present
+exit=0

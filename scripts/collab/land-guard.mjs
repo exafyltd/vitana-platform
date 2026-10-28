@@ -90,7 +90,7 @@ export function releaseDecision(lane, { laneState, planState, laneStates }) {
 }
 
 // ── IO ───────────────────────────────────────────────────────────────────────
-const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], ...opts }).trim();
+const run = (cmd, args, opts = {}) => execFileSync(cmd, args, { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], maxBuffer: 64 * 1024 * 1024, ...opts }).trim();
 const ghJson = (p) => JSON.parse(run('gh', ['api', p]) || 'null');
 const stateOf = (text) => (/^state:\s*(\S+)/m.exec(text || '') || [])[1] || 'missing';
 
@@ -153,8 +153,10 @@ export async function main(argv) {
   try {
     if (cmd === 'evidence') {
       need(o, 'repo', 'vtid');
-      const tracked = run('git', ['-C', o.repo, 'ls-files']).split('\n');
-      const staged = run('git', ['-C', o.repo, 'diff', '--cached', '--name-only']).split('\n');
+      // Only the evidence directory: a whole-tree ls-files overflows the child-process buffer on a large repo.
+      const dir = `docs/validation/${o.vtid}`;
+      const tracked = run('git', ['-C', o.repo, 'ls-files', '--', dir]).split('\n');
+      const staged = run('git', ['-C', o.repo, 'diff', '--cached', '--name-only', '--', dir]).split('\n');
       const miss = evidenceMissing([...tracked, ...staged], o.vtid);
       return miss.length ? say(1, `evidence missing (write and stage it before the commit): ${miss.join(', ')}`) : say(0, `${o.vtid} evidence present`);
     }

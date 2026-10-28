@@ -83,3 +83,9 @@ test('CLI: release of a verified lane exits 1 and leaves the claim ref in place'
   assert.match(refs, /collab-driver\/s/);
   assert.equal(cli('evidence', '--repo', work, '--vtid', 'VTID-9'), 1);
 });
+
+test('CLI: evidence passes on this repository for a VTID whose evidence is committed (no buffer overflow on a large tree)', () => {
+  const repo = execFileSync('git', ['-C', path.dirname(SCRIPT), 'rev-parse', '--show-toplevel'], { encoding: 'utf8' }).trim();
+  const out = execFileSync(process.execPath, [SCRIPT, 'evidence', '--repo', repo, '--vtid', 'VTID-05343'], { encoding: 'utf8' });
+  assert.match(out, /evidence present/);
+});
