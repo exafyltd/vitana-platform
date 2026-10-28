@@ -1,0 +1,5 @@
+﻿AC-1 stale cache-bust token removed from the VTID-05082 suite ASSERTIONS
+  (paths + expect_body_contains across all tests):
+  /alive | /command-hub/index.html | svg-preview.js,operator-console.js | /command-hub/svg-preview.js | sanitizeSvgMarkup,SvgPreview
+  token '20261121-vtid-05082' present in any assertion => False  (expected: False)
+  token present only in the explanatory 'note' field    => True  (historical reference, not an assertion)
