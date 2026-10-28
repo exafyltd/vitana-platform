@@ -122,6 +122,29 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
 // place for arbitrary shell.
 const EXISTING_REF = /^(npm run [\w:.-]+|npx (jest|vitest run)( [\w./@:=-]+)*)$/;
 const SAFE_PATH = /^(?!\/)(?!.*\.\.)[\w./@-]+$/;
+// staging-verify-runner-fix — the only variables an `existing` suite may set,
+// each with the only values it may take. The native bundle needs a build
+// profile (apps/mobile/app.config.ts refuses to run without one, and there is
+// no production profile). Never a secret, never a loader hook like NODE_OPTIONS.
+const EXISTING_ENV_ALLOW = { APP_PROFILE: /^(development|test-g1)$/ };
+
+function existingEnvErrors(env, where) {
+  if (env === undefined) return [];
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return [`${where}: env must be an object`];
+  const errors = [];
+  for (const [k, v] of Object.entries(env)) {
+    const allow = EXISTING_ENV_ALLOW[k];
+    if (!allow) errors.push(`${where}: env ${k} is not allowed (allowed: ${Object.keys(EXISTING_ENV_ALLOW).join(', ')})`);
+    else if (typeof v !== 'string' || !allow.test(v)) errors.push(`${where}: env ${k}=${JSON.stringify(v)} is not an allowed value`);
+  }
+  return errors;
+}
+
+/** The validated env of an `existing` suite; `{}` when it has none or it is invalid. */
+function existingEnv(t) {
+  if (!t || existingEnvErrors(t.env, 'env').length) return {};
+  return { ...(t.env || {}) };
+}
 
 function validateHttpTest(t, where) {
   const errors = [];
@@ -177,6 +200,7 @@ function validateTest(t, i) {
       if (typeof t.reason !== 'string' || t.reason.trim().length < 10) {
         errors.push(`${where}: reason must say why this suite covers the change`);
       }
+      errors.push(...existingEnvErrors(t.env, where));
       return errors;
     }
     default:
@@ -722,6 +746,7 @@ function isToleratedAbort(record, specAllow = []) {
 }
 
 module.exports = {
+  existingEnv,
   evaluateStampSamples,
   isRetriableFetchError,
   describeFetchError,

@@ -21,6 +21,8 @@ import { z } from 'zod';
 import { createUserSupabaseClient } from '../lib/supabase-user';
 import { emitOasisEvent } from '../services/oasis-event-service';
 import { dispatchEvent } from '../services/automation-executor';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
+import { resolveActorTenant, jwtSubject } from '../services/jobs/job-tenant-loop';
 import * as repo from './match-feedback-repository';
 
 const router = Router();
@@ -65,6 +67,30 @@ function getBearerToken(req: Request): string | null {
     return null;
   }
   return authHeader.slice(7);
+}
+
+/**
+ * VTID-05267 (mt-jobs/jobs-automation-actor-tenant): run `dispatch` for the
+ * tenant an actor's automation event belongs to.
+ * - MT_RESOLUTION_V2 off ⇒ DEFAULT_TENANT_ID, synchronously (today).
+ * - On ⇒ the actor's real tenant via resolveActorTenant (the user's primary
+ *   tenant); unresolvable ⇒ nothing is dispatched (the resolver logs it),
+ *   never DEFAULT_TENANT_ID.
+ */
+function dispatchForActorTenant(
+  actor: { tenantId?: string | null; userId?: string | null },
+  dispatch: (tenantId: string) => void
+): void {
+  if (!isMtResolutionV2Enabled()) {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) dispatch(tenantId);
+    return;
+  }
+  resolveActorTenant(actor)
+    .then((tenantId) => {
+      if (tenantId) dispatch(tenantId);
+    })
+    .catch((err) => console.warn(`[VTID-05267] actor tenant resolution failed:`, err?.message || err));
 }
 
 /**
@@ -277,13 +303,13 @@ router.post('/:id/feedback', async (req: Request, res: Response) => {
 
     // Dispatch automation event for positive feedback
     if (feedback_type === 'like') {
-      const tenantId = process.env.DEFAULT_TENANT_ID;
-      if (tenantId) {
+      // VTID-05267: actor = the bearer token's `sub` (the RPC above accepted the token).
+      dispatchForActorTenant({ userId: jwtSubject(token) }, (tenantId) => {
         dispatchEvent(tenantId, 'match.feedback.like', {
           feedback_id: data.feedback_id,
           match_id: matchId,
         }).catch(err => console.warn(`[VTID-01094] dispatch match.feedback.like failed:`, err.message));
-      }
+      });
     }
 
     // 10. Return success

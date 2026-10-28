@@ -1,0 +1,30 @@
+VTID-05305 review round 1 (blocking findings 1 & 2) — template must survive
+VALIDATOR-CHECK.yml's own first-match extractors.
+
+The gate reads github.event.pull_request.body (HTML comments kept) with:
+  PROFILE: grep -Eo 'VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+' | head -n 1 | awk '{print $2}'   (VALIDATOR-CHECK.yml:116)
+  IMPACT:  grep -Eo 'OASIS_IMPACT:\s*(yes|no)'             | head -n 1 | awk '{print $2}'   (VALIDATOR-CHECK.yml:328)
+
+Reviewed (hazardous) template at head 7c22c050 kept sample marker lines inside
+the guidance comment ("- VALIDATION_PROFILE: one of ...", "- OASIS_IMPACT: yes | no"),
+which the first-match extractor read BEFORE the real declarations:
+
+  === reviewed template (7c22c050) extraction ===
+  PROFILE=one      -> unknown VALIDATION_PROFILE -> exit 21
+  IMPACT=yes       -> requires OASIS_PROOF in acceptance.md -> exit 81
+
+Fix: the guidance comment now describes each field WITHOUT the literal "WORD:"
+marker form, so the first match for each extractor is the real declaration line.
+
+  === fixed template (head) extraction ===
+  PROFILE=gateway_backend
+  IMPACT=no
+
+Regression coverage (scripts/ci/validator-path-guard.test.cjs), three cases that
+apply the workflow's own regexes to the SHIPPED template file:
+  - 'extracts VALIDATION_PROFILE=gateway_backend under the workflow regex'
+  - 'extracts OASIS_IMPACT=no under the workflow regex'
+  - 'the shipped PR template passes prBodyRequirements (every marker present)'
+
+node --test scripts/ci/validator-path-guard.test.cjs -> 9 pass / 0 fail (head).
+The three template cases are red on the reviewed template (PROFILE=one, IMPACT=yes).

@@ -1,106 +1,43 @@
-## 🎯 VTID Reference
+<!--
+VTID-05305 — PR body template.
 
-**VTID:** `DEV-XXXX-NNNN` _(replace with actual VTID)_
+VALIDATOR-CHECK (the `validate-pr` gate) runs on PRs that touch the gateway
+trees (services/gateway/src|dist|openapi|test, docs/validation) and demands a
+VALIDATION_PROFILE plus the four markers below. This template carries all of
+them so a gateway PR passes on the first push instead of failing one marker per
+round. A PR that touches none of those trees can delete the "Validator
+declarations" block — the gate does not run for it — but leaving it in is
+harmless.
 
-**Layer:** _(e.g., CICDL, APIL, AGTL, UIUX)_
+Put the VTID in the PR TITLE, e.g.  VTID-05305 (slug/lane): short description
+-->
 
-**Priority:** _(P0, P1, P2, P3)_
+## Summary
 
----
+<!-- What this PR changes and why, in a sentence or two. -->
 
-## 📋 Summary
+## Tests
 
-_Brief description of what this PR accomplishes._
+<!-- The commands you ran and their pass/fail counts; the red→green proof. -->
 
----
+## Validator declarations
 
-## 🔁 Handoff (optional — VTID-05060)
+<!--
+Required by VALIDATOR-CHECK for gateway PRs. Keep every declaration line below
+and fill in its value. Do NOT write the marker names (the "WORD:" forms) inside
+this comment — VALIDATOR-CHECK extracts the profile and OASIS impact with a
+first-match grep, so a sample marker here would be read instead of your real
+value. The fields, described without the literal markers:
+- the validation profile is one of  command_hub_frontend  or  gateway_backend
+- the scope allowlist is the set of path globs this PR may touch
+- the acceptance value is the path to docs/validation/<VTID>/acceptance.md
+- the merge payload preview is what a merge deploys, or "none" for CI-only
+- the OASIS impact is yes or no (yes also needs an OASIS proof in acceptance.md)
+If this PR changes a lockfile, add a dependency-change line explaining why.
+-->
 
-_If the work stops before merge, say where: `scripts/dev/resume-vtid.sh <VTID>` and the Operator's `dev_resume_vtid` show the first 1,500 characters of this body to whoever picks it up._
-
-- **Where it stopped:**
-- **Open:**
-- **Next:**
-
----
-
-## ✅ Changes
-
-- [ ] Item 1
-- [ ] Item 2
-- [ ] Item 3
-
----
-
-## 🧪 Testing
-
-_How was this tested?_
-
-- [ ] Manual testing completed
-- [ ] Automated tests added/updated
-- [ ] Verified in staging/dev environment
-
----
-
-## 📝 Phase 2B Naming Compliance Checklist
-
-**All items must be checked before merging:**
-
-### GitHub Actions
-- [ ] All workflow files use **UPPERCASE** names (e.g., `DEPLOY-GATEWAY.yml`, not `deploy-gateway.yml`)
-- [ ] All workflows include `run-name` with VTID
-- [ ] No lowercase workflow names present
-
-### File Names
-- [ ] All new files follow **kebab-case** convention (e.g., `my-service.ts`, not `myService.ts` or `my_service.ts`)
-- [ ] Directory names use **kebab-case**
-- [ ] No files violate naming canon
-
-### Code Standards
-- [ ] VTID constants are in **UPPERCASE** (e.g., `const VTID = 'DEV-CICDL-0031'`)
-- [ ] Event types/kinds use **snake_case** (e.g., `workflow_run`, `task.init`)
-- [ ] Status values use **lowercase** (e.g., `success`, `failure`, `in_progress`)
-
-### Cloud Run Deployments
-- [ ] All Cloud Run services include required labels:
-  - `vtid`: Full VTID (e.g., `DEV-CICDL-0031`)
-  - `vt_layer`: Layer code (e.g., `CICDL`)
-  - `vt_module`: Module name (e.g., `GATEWAY`)
-- [ ] Deploy scripts use `ensure-vtid.sh` guard
-
-### Documentation
-- [ ] VTID mentioned in commit messages
-- [ ] Phase 2B compliance verified
-- [ ] No non-compliant files introduced
-
----
-
-## 🔗 Links
-
-- **VTID Tracker:** [Link if applicable]
-- **Related PRs:** [List related PRs]
-- **Documentation:** [Link to docs]
-
----
-
-## 🚨 Breaking Changes
-
-_List any breaking changes, or write "None"_
-
----
-
-## 📸 Screenshots (if applicable)
-
-_Add screenshots or recordings demonstrating the changes_
-
----
-
-## 👀 Reviewers
-
-@[username] - Required review
-
----
-
-## 📌 Additional Notes
-
-_Any other context or information for reviewers_
+VALIDATION_PROFILE: gateway_backend
+SCOPE_ALLOWLIST: services/gateway/src/**, docs/validation/**
+ACCEPTANCE: docs/validation/VTID-XXXXX/acceptance.md
+MERGE_PAYLOAD_PREVIEW: none (describe what a merge deploys, or keep "none")
+OASIS_IMPACT: no

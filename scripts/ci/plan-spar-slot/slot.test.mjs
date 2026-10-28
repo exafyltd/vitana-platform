@@ -47,7 +47,38 @@ test('PLAN-SPAR.yml: slot step before Spar with cap 2; paths, concurrency and th
   assert.match(y, /group: plan-spar-\$\{\{ github\.event\.pull_request\.number \}\}\n\s+cancel-in-progress: false/);
   assert.match(y, /actions: read/);
   assert.match(y, /node base\/scripts\/collab\/plan-spar\.mjs --dir head --base-sha "\$BASE_SHA"/);
-  assert.equal((y.match(/- name: /g) || []).length, 7, 'exactly one step added (6 → 7)');
+  // 6 original steps + the VTID-05272 slot step + the VTID-05306 needs-rebase producer step = 8.
+  assert.equal((y.match(/- name: /g) || []).length, 8, 'slot step + needs-rebase step added (6 → 8)');
+});
+
+// lane plan-spar-checks (VTID-05306) — producer-only needs-rebase proof. Asserts ONLY the producer
+// contract: the statuses: write permission, and that the empty-PLAN_SPAR_PUSH_TOKEN path posts a
+// plan-spar/needs-rebase commit status on the bot head. No consumer behaviour is asserted.
+test('PLAN-SPAR.yml: producer needs-rebase status on the GITHUB_TOKEN bot-head push (VTID-05306)', () => {
+  const y = readFileSync(path.join(ROOT, '.github/workflows/PLAN-SPAR.yml'), 'utf8');
+  // R3-F1: the explicit permissions block must grant statuses: write, else the POST 403s.
+  assert.match(y, /^permissions:\r?\n(?:[^\n]*\n)*?\s+statuses: write/m, 'permissions block grants statuses: write');
+  // The producer step exists, after "Commit the round" (the push), guarded by the empty-secret path.
+  const commitAt = y.indexOf('- name: Commit the round');
+  const stepAt = y.indexOf('- name: Signal needs-rebase on the bot head');
+  assert.ok(commitAt > 0 && stepAt > commitAt, 'the status step comes after the round-commit push');
+  const commentAt = y.indexOf('- name: Comment', stepAt);
+  const step = y.slice(stepAt, commentAt > stepAt ? commentAt : undefined);
+  // `secrets` is not allowed in a step `if:` (the file would not parse), so the job env carries a presence flag.
+  assert.match(y, /^\s+PLAN_SPAR_HAS_PUSH_TOKEN: \$\{\{ secrets\.PLAN_SPAR_PUSH_TOKEN != '' \}\}$/m,
+    'job env exposes only whether the PAT secret is set');
+  assert.match(step, /if: steps\.guard\.outputs\.skip != 'true' && env\.PLAN_SPAR_HAS_PUSH_TOKEN != 'true'/,
+    'skipped on our own commit and when the PAT secret is present');
+  assert.doesNotMatch(y, /^\s+if:.*secrets\./m, 'no step or job if: reads the secrets context');
+  assert.match(step, /git -C head rev-parse HEAD/, 'reads the pushed bot head SHA');
+  assert.match(step, /gh api -X POST "repos\/\$\{\{ github\.repository \}\}\/statuses\/\$\{sha\}"/,
+    'posts via the statuses API on the bot head');
+  assert.match(step, /context='plan-spar\/needs-rebase'/, 'the status context is plan-spar/needs-rebase');
+  // Exactly one producer mechanism: the commit status, never re-run / re-dispatch / the Checks API.
+  assert.doesNotMatch(step, /workflow run|\/dispatches|\/rerun|check-runs|checks:/,
+    'no re-dispatch, re-run or Checks API');
+  // Producer-only: the status step itself must not invoke the deferred consumer (the branch update).
+  assert.doesNotMatch(step, /gh pr update-branch/, 'the consumer (gh pr update-branch) is deferred, not run here');
 });
 test('PLAN-SPAR.yml differs from main only by the slot step and the actions: read permission', { skip: !hasOriginMain() }, () => {
   const base = execFileSync('git', ['-C', ROOT, 'show', 'origin/main:.github/workflows/PLAN-SPAR.yml'], { encoding: 'utf8' });

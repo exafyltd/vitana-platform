@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05339",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/kiro-web-steering.mjs",
+    "scripts/collab/kiro-web-steering.test.mjs",
+    "AGENTS.md",
+    "docs/kiro/**",
+    ".kiro/specs/kiro-web-steering/lanes/web-steering.md",
+    "docs/validation/VTID-05339/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05339/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

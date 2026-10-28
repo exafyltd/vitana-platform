@@ -336,16 +336,117 @@ function cspViolationsInAddedLines(diffLines) {
   return violations;
 }
 
+/**
+ * The PR-body declarations VALIDATOR-CHECK demands before any later gate can
+ * run, each with the exit code the workflow has always used for it and the one
+ * line a contributor adds to the PR body to satisfy it.
+ *
+ * VTID-05305 — the round-trip pain this exists to end.
+ *
+ * The workflow checked these inline, one `grep … || (echo … && exit N)` per
+ * marker, spread across two steps. A PR opened without the body template
+ * failed on the FIRST missing item with a bare `REJECTED: VALIDATION_PROFILE
+ * missing in PR body` and `exit 11` — no hint of what a valid profile is, and
+ * no mention of the four markers that were ALSO missing and would red the next
+ * push too. So a contributor fixed one line, pushed, failed on the next line,
+ * and burned a review round per marker. The VALIDATION_PROFILE line alone cost
+ * almost every lane in this plan a round.
+ *
+ * This function reports EVERY missing declaration at once, each with its fix,
+ * so one edit (or the PR template) satisfies the gate in a single push. The
+ * exit code is unchanged — the FIRST missing item's historic code — so nothing
+ * downstream that keys off these numbers changes.
+ */
+const PR_BODY_REQUIREMENTS = [
+  {
+    code: 11,
+    name: 'VALIDATION_PROFILE',
+    // A declaration line `VALIDATION_PROFILE: <profile>`; the extractor accepts
+    // `[a-zA-Z0-9_/-]+` as the value, matched here the same way.
+    present: (body) => /VALIDATION_PROFILE:\s*[a-zA-Z0-9_/-]+/.test(body),
+    fix: () =>
+      `  Add a line naming one of the known profiles (${Object.keys(PROFILES).join(', ')}):\n` +
+      '    VALIDATION_PROFILE: gateway_backend',
+  },
+  {
+    code: 12,
+    name: 'SCOPE_ALLOWLIST',
+    present: (body) => /SCOPE_ALLOWLIST:/.test(body),
+    fix: () =>
+      '  List the paths this PR is allowed to touch:\n' +
+      '    SCOPE_ALLOWLIST: services/gateway/src/**, docs/validation/**',
+  },
+  {
+    code: 13,
+    name: 'ACCEPTANCE',
+    present: (body) => /ACCEPTANCE:/.test(body),
+    fix: () =>
+      '  Point at the evidence acceptance file:\n' +
+      '    ACCEPTANCE: docs/validation/VTID-XXXXX/acceptance.md',
+  },
+  {
+    code: 14,
+    name: 'MERGE_PAYLOAD_PREVIEW',
+    present: (body) => /MERGE_PAYLOAD_PREVIEW:/.test(body),
+    fix: () =>
+      '  Describe what a merge of this PR deploys (or "none"):\n' +
+      '    MERGE_PAYLOAD_PREVIEW: none (CI-only change, deploys nothing)',
+  },
+  {
+    code: 15,
+    name: 'OASIS_IMPACT',
+    present: (body) => /OASIS_IMPACT:/.test(body),
+    fix: () =>
+      '  Declare whether this PR changes OASIS state (yes|no):\n' +
+      '    OASIS_IMPACT: no',
+  },
+];
+
+/**
+ * Check a PR body for every required declaration at once.
+ *
+ * @param {string} body  the raw PR body text
+ * @returns {{code:number, messages:string[], missing:string[]}}
+ *   code 0 and empty `missing` when every requirement is present; otherwise the
+ *   FIRST missing requirement's historic exit code, an actionable message per
+ *   missing item, and the list of missing marker names.
+ */
+function prBodyRequirements(body) {
+  const text = typeof body === 'string' ? body : '';
+  const missing = PR_BODY_REQUIREMENTS.filter((r) => !r.present(text));
+  if (missing.length === 0) {
+    return { code: 0, messages: ['PR body carries every required declaration.'], missing: [] };
+  }
+
+  const messages = [
+    `REJECTED: PR body is missing ${missing.length} required declaration(s): ${missing
+      .map((r) => r.name)
+      .join(', ')}`,
+    '',
+    'Fix all of them in one edit — the .github pull request template already',
+    'contains every line below. Add each missing declaration to the PR body:',
+    '',
+  ];
+  for (const r of missing) {
+    messages.push(`• ${r.name} (exit ${r.code}):`);
+    messages.push(r.fix());
+    messages.push('');
+  }
+  return { code: missing[0].code, messages, missing: missing.map((r) => r.name) };
+}
+
 module.exports = {
   evaluate,
   routeEvidenceRequired,
   cspScanTargets,
   cspViolationsInAddedLines,
   isDiffFileHeader,
+  prBodyRequirements,
   CSP_SURFACE,
   CSP_PATTERNS,
   REMIT,
   PROFILES,
+  PR_BODY_REQUIREMENTS,
   LOCKFILE,
   DOTENV,
   ROUTE_REGISTRATION,
@@ -358,6 +459,23 @@ module.exports = {
 // CLI: --csp-targets <changed_files.txt>  → prints the files worth CSP-scanning
 // CLI: --csp-added-lines <diff.txt>  → CSP_SURFACE-scoped diff; prints any
 //      violations found in ADDED lines only, exit 1 if any, else exit 0
+// CLI: --pr-body-check <pr_body.txt>  → checks the body for VALIDATION_PROFILE
+//      and the four required markers; prints an actionable message naming EVERY
+//      missing declaration with its fix; exits 0 if all present, else the first
+//      missing item's historic code (11/12/13/14/15)
+if (require.main === module && process.argv[2] === '--pr-body-check') {
+  const { readFileSync } = require('node:fs');
+  let body = '';
+  try {
+    body = readFileSync(process.argv[3], 'utf8');
+  } catch {
+    body = '';
+  }
+  const { code, messages } = prBodyRequirements(body);
+  messages.forEach((m) => console.log(m));
+  process.exit(code);
+}
+
 if (require.main === module && process.argv[2] === '--csp-targets') {
   const { readFileSync } = require('node:fs');
   let files = [];

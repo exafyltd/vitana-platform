@@ -4,16 +4,28 @@ Binding: `common-rules.md`. Paths as in `lane-code.md`. Always write `RUN/lanes/
 true` exactly when the status becomes `landed`, `parked` or `skipped`.
 
 1. Slot empty or state missing → write `{"status":"skipped","done":true,"notes":["no lane state"]}` when a lane id
-   exists, then go to 4.
-2. **New verdict** (status `in_review` and the review step's output for `head_sha` is a verdict): write the three
-   `RUN/reviews/<LANE>-<head7>.*` files (`lane-review.md`). The JSON must say `model: claude-sonnet-5.5` and `agent:
-   vitana-lane-reviewer` (else: blocker, ignore it, go to 4). `model_unavailable` → blocker, status stays
-   `in_review`, go to 4. Append the entry to the lane file log on BRANCH in WT (front matter unchanged), commit with
+   exists, then go to 4. An empty slot normally never reaches this step: the gate skips it (`slot-N-skip` /
+   `slot-N-go`, `node scripts/collab/run-gate.cjs`, zero agent sessions); this stays the fallback when the gate
+   cannot read RUN.
+2. **Review outputs** (status `in_review`): this iteration's review race (`lane-review.md`: one pinned review step
+   per chain model in a `joinPolicy: "any"` parallel, first finished wins) has ended; read the stored outputs
+   `RUN/reviews/<LANE>-<head7>.out-<model>.md` in chain order (`claude-sonnet-5.5`, `claude-opus-5.5`,
+   `claude-sonnet-4.5`). Never wait for a model and never re-run one; this step does not dispatch reviews.
+   **New verdict** (the first file that is a verdict for `head_sha`): write the three `RUN/reviews/<LANE>-<head7>.*`
+   files (`lane-review.md`). The JSON's `model` must equal the model in the file name (the pin of the step that
+   produced it), and the `Collab-Reviewer` must be `agent:vitana-lane-reviewer (<that model>)`;
+   `agent: vitana-lane-reviewer` (else: blocker, ignore that file and try the next; `unstated` or the bare identity
+   never counts on a new entry).
+   Append the entry to the lane file log on BRANCH in WT (front matter unchanged), commit with
    the entry's trailer lines and the bot identity, push (protocol); log in `decisions.md` that the land step committed
    it on the agent's behalf. `last_verdict` = `{"verdict","file","reviewed_head"}`; `head_sha` = the entry commit
    (an entry-only commit after the reviewed head keeps the review on the current head). `changes` →
    `changes_requested` (`parked` + `done` if `review_rounds` is already 3). `accept` → `accepted`; timing
    `lane_accepted`.
+   **No valid verdict for `head_sha`** although the race completed (a branch finished without a stored verdict, for
+   example the store watch could not find RUN): one blocker line in `blockers.md` naming the head and the files found, status `parked`, `done: true`, go to 4. The race already gave every chain model its
+   one try on this head, so it is not repeated. A new head starts fresh. (When all three models fail, the race itself
+   fails and this step does not run: `lane-review.md` "All three fail".)
 3. **`accepted` → land:**
    a. Order: a lane whose plan names a "lands first" lane waits until that lane is `landed` or `parked` (poll 2-3 min,
       max 90 min; else stay `accepted`, go to 4).
