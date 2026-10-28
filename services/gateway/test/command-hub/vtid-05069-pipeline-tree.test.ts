@@ -8,6 +8,7 @@
 import * as fs from 'fs';
 import * as path from 'path';
 import { FakeEl, fakeDocument } from './fixtures/fake-dom';
+import { readCommandHubBundle, readBundleFile } from './bundle';
 import { buildRunViewWith, resetRunViewCaches, type RunView } from '../../src/services/operator-runs/run-view';
 import { fixtureDeps, STATE_RUNNING, STATE_FIXING, STATE_GATE2, STATE_DONE, THREAD, T0, type FixtureState } from '../fixtures/operator-runs-fixtures';
 
@@ -16,6 +17,14 @@ const JS = fs.readFileSync(path.join(HUB, 'pipeline-tree.js'), 'utf8');
 const CSS = fs.readFileSync(path.join(HUB, 'pipeline-tree.css'), 'utf8');
 const INDEX = fs.readFileSync(path.join(HUB, 'index.html'), 'utf8');
 const APP = fs.readFileSync(path.join(HUB, 'app.js'), 'utf8');
+// VTID-05073: the two PipelineTree call sites live in Operator functions that
+// moved to operator-console.js. The two call-site strings are asserted against
+// the whole bundle; the count of PipelineTree references on the Operator side
+// (the 4 the test pins) is taken from operator-console.js, where they now live
+// — exactly as it was 4 in app.js before the move (not the pipeline-tree.js
+// module's own references).
+const BUNDLE = readCommandHubBundle();
+const OPERATOR_CONSOLE = readBundleFile('operator-console.js');
 
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const PT = require('../../src/frontend/command-hub/pipeline-tree.js');
@@ -172,14 +181,14 @@ describe('VTID-05069 wiring, CSP and styles', () => {
     const pt = INDEX.indexOf('<script src="/command-hub/pipeline-tree.js?v=20261112-vtid-05069"></script>');
     expect(pt).toBeGreaterThan(0);
     expect(pt).toBeLessThan(INDEX.indexOf('/command-hub/app.js?v='));
-    expect(INDEX).toContain('/command-hub/app.js?v=20261120-vtid-05148');
-    expect(INDEX).toContain('/command-hub/styles.css?v=20261120-vtid-05148');
+    expect(INDEX).toContain('/command-hub/app.js?v=20261121-vtid-05082');
+    expect(INDEX).toContain('/command-hub/styles.css?v=20261121-vtid-05082');
   });
 
   it('app.js only calls the two hooks', () => {
-    expect(APP).toContain('messages.appendChild(window.PipelineTree.renderThreadCards(state.operatorActiveThreadId));');
-    expect(APP).toContain('meta.appendChild(window.PipelineTree.threadDot(thread.id));');
-    expect((APP.match(/PipelineTree/g) || []).length).toBe(4);
+    expect(BUNDLE).toContain('messages.appendChild(window.PipelineTree.renderThreadCards(state.operatorActiveThreadId));');
+    expect(BUNDLE).toContain('meta.appendChild(window.PipelineTree.threadDot(thread.id));');
+    expect((OPERATOR_CONSOLE.match(/PipelineTree/g) || []).length).toBe(4);
   });
 
   it('CSP: no innerHTML, no inline styles, no eval, no external hosts; English admin text', () => {

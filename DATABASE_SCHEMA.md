@@ -1619,6 +1619,7 @@ CREATE TABLE my_new_table (
 
 | Date | Change | Author | VTID |
 |------|--------|--------|------|
+| 2026-10-16 | VTID-05208, **no migration**: new-member greeting DM notification rows (`user_notifications`, `type='new_chat_message'`, DM tagged `metadata.source='new_member_greeting'`) now also carry `data.greeting_group='new_member_greeting'` and `data.greeting_count` (distinct greeters in the recipient's 24 h window), with `data.tag='chat:new_member_greeting'`. Written/read by `services/new-member-greeting-push.ts` (one push per recipient per 24 h; later greetings `push_outcome='coalesced'`); the read uses the existing `idx_user_notifications_chat_conv` (leading `user_id`). Off switch `NEW_MEMBER_GREETING_PUSH_GROUPING_ENABLED=false`. | Kiro | VTID-05208 |
 | 2026-10-14 | VTID-05168 (Life Timeline P2), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014140000_vtid_05168_index_movements.sql`; capture `docs/validation/VTID-05168/pre-apply-capture.sql` first): `vitana_index_movements`; canonical compute renamed `health_compute_vitana_index_core`; `vitana_index_recompute_and_record()` (advisory-locked, service_role) is the only writer of `vitana_index_scores` — old-name wrapper, nightly scheduler, calendar trigger and both member overloads route through it. See the section "vitana_index_movements + the single locked Index writer". CI: `SQL-INDEX-MOVEMENTS.yml` (throwaway Postgres + two-connection concurrency). | Claude Code | VTID-05168 |
 | 2026-10-14 | VTID-05171 (Life Timeline P5), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014150000_vtid_05171_companion_wiring.sql`): `user_routines` kind check + `screen_habit`/`active_hours`/`feature_affinity`/`pillar_rhythm`; new `timeline_learning_prefs` (owner-only RLS, missing row = on). See the section "timeline_learning_prefs + four routine kinds". | Claude Code | VTID-05171 |
 | 2026-10-14 | VTID-05167 (Life Timeline P1), **committed, NOT applied — applied via `RUN-MIGRATION.yml` after Gate 2** (migration `20261014130000_vtid_05167_activity_tiers.sql`, additive + idempotent): `user_activity_log`/archive classification columns, `activity_catalog` + lookup, `classify_activity` trigger, newest-first pg_cron backfill (no deletes), tier-aware `archive_old_activity_logs()` (EXECUTE revoked from PUBLIC/anon/authenticated) scheduled daily, two timeline indexes. See the section "user_activity_log tiers + activity_catalog". CI: `SQL-ACTIVITY-TIERS.yml` (throwaway Postgres). | Claude Code | VTID-05167 |
@@ -2935,6 +2936,33 @@ Related caps to keep in sync:
 |---|---|---|
 | `GET /conversations` (gateway) | `?limit`, default **250**, max 500 | Inbox list |
 | `GET /conversation/:peerId` (gateway) | `?limit` default 50, max 100, `?before` ISO cursor | One page of thread history; `before` drives scrollback |
+| `GET /conversation/:peerId?around=<id>` / `?after=<iso>` (VTID-05310) | `limit/2` each side | Context window around one message (404 outside the DM pair) / forward paging; same on `GET /chat/groups/:id/messages` |
+| `POST /delivered` (VTID-05310) | ≤ 200 `message_ids` | Sets `delivered_at` only where `receiver_id` = caller and it is NULL |
+
+**Idempotency and delivery (VTID-05310, migration `20261021140000_vtid_05310_chat_send_reliability.sql`).**
+`chat_messages.client_message_id uuid NULL` with the partial unique index
+`uq_chat_messages_sender_client_message_id (sender_id, client_message_id) WHERE client_message_id IS NOT NULL`:
+`POST /chat/send` and `POST /chat/groups/:id/send` accept an optional `client_message_id`; a repeat (or a lost race,
+SQLSTATE 23505) returns `200 { duplicate: true }` with the stored row and sends no push.
+`chat_messages.delivered_at timestamptz NULL` (DMs only; `/chat/read` also fills it). Replies: an optional
+`reply_to_message_id` must be a message of the same DM pair or group and is stored as `metadata.reply_to =
+{ message_id }` (an id, never content); every read endpoint returns `reply_to_message_id` only when that target is in
+the same conversation (a forged value from a direct insert reads as null).
+
+Message search (VTID-05309): `idx_chat_messages_content_trgm` is a `pg_trgm` GIN index on `chat_messages.content`
+for `GET /api/v1/chat/search` (ILIKE, q ≥ 3 chars, scoped to the caller's tenant, DMs and groups). Migration:
+`supabase/migrations/20261022090000_vtid_05309_chat_message_search.sql`.
+
+### `chat_viewing_presence` (VTID-05312)
+One row per (member, device/tab) while a conversation is open, visible and focused: `user_id uuid`,
+`device_id text` (PK with user_id), `tenant_id uuid NOT NULL`, `conversation_key text` (`dm:<peer user id>` |
+`group:<group id>`), `expires_at timestamptz` (now + 45 s, refreshed by a 20 s heartbeat), `updated_at`.
+Written only by the gateway (`POST /api/v1/chat/viewing`, service role; RLS on, no client policies). A chat
+push (`new_chat_message`, `chat_mention`) whose recipient has an unexpired row of the same tenant for that
+conversation is not sent: the in-app row is written with `push_sent_at` set and
+`user_notifications.push_outcome = 'suppressed_viewing'`. A second notification row for the same recipient and
+chat message gets `'suppressed_duplicate'`. Both values were added to `user_notifications_push_outcome_check`.
+Migration: `supabase/migrations/20261021150000_vtid_05312_chat_viewing_presence.sql`.
 
 ---
 
@@ -4255,3 +4283,25 @@ each answers `STORE_PENDING` while the table is absent).
   owner read-only (policy `user_integrations_owner_select`, no browser INSERT/UPDATE/DELETE). Applied via
   `RUN-MIGRATION.yml` after Gate 2; until then the `FOR ALL` policy `user_integrations_owner_all` is live.
 - **Tests:** `scripts/ci/sql-tests/run-health-sources-test.sh` (CI `SQL-HEALTH-SOURCES.yml`, throwaway Postgres only).
+
+## Team welcome DMs — `welcome_team_claims` (VTID-05205, 2026-10-15) — applied after merge via `RUN-MIGRATION.yml`
+
+Migration: `supabase/migrations/20261015150000_vtid_05205_welcome_team_claims.sql` (additive, idempotent, no trigger). Each new MAXINA member gets three private welcome DMs, from Mariia (day 0), Jovana (day 1) and Alex Blue (day 2), written by the gateway tick `POST /api/v1/scheduled-notifications/welcome-team-tick` (production gateway only; staging answers 409). This table is the send-once guard. Plan: `.kiro/specs/new-member-welcome/plan-sparring.md` (Part A); build record `docs/validation/VTID-05205/`.
+
+### welcome_team_claims (service role only)
+
+| Column | Meaning |
+|---|---|
+| `user_id`, `sender_slug` | PK — the new member and the sender (`mariia` \| `jovana` \| `alex`, CHECK). One row per pair, so a welcome can never be sent twice (tick retries, repeat sign-ins) |
+| `tenant_id` | the member's primary tenant |
+| `status` | `pending` → `sent` \| `failed` |
+| `attempts` | 1..2 — a failed first attempt is retried once, never a third time |
+| `chat_message_id`, `sent_at` | the DM row and when it was written (`sent` only) |
+
+RLS on, zero policies; `anon`/`authenticated` have no grants. Index `idx_welcome_team_claims_user_sent (user_id, sent_at)`.
+
+Functions (SECURITY DEFINER, `service_role` only): `claim_welcome_message(user, tenant, sender_slug) → {ok, claimed, attempt | reason: already_sent|in_flight|retry_spent}`, `finish_welcome_message(user, sender_slug, status, chat_message_id)` (pending rows only). A pending row is never re-claimed: a tick that dies between the DM insert and finish leaves the member with one DM, never two.
+
+The DM itself is an ordinary `chat_messages` row authored by the sender's own account (`metadata.source = 'welcome_team'`, `sender_slug`, `automated = true`, `done_by_vitana = false`, `locale`), so a reply is an ordinary DM in that sender's inbox. Texts are `tt()` catalog keys `welcome_team.<sender>.body` / `.body_noname`. OASIS (`CicdEventType`): `welcome_team.message.sent`, `welcome_team.message.failed` (per real DM), `welcome_team.tick.completed` (one per tick that decided something).
+
+Gateway switches (all off by default): `FEATURE_WELCOME_TEAM_ENV`, `WELCOME_ROLLOUT_AT` (cohort = joined at/after it), `WELCOME_TEAM_MODE` (`shadow` | `live`), `WELCOME_TEAM_SEND_ENABLED=true` and `WELCOME_SENDER_NAMES_CONFIRMED=true` (both needed for `live`), `WELCOME_TEAM_AUDIENCE` (`pilot` default, `all`), `WELCOME_TEAM_PILOT_USER_IDS`, `WELCOME_SENDER_{MARIIA,JOVANA,ALEX}_ID`, `WELCOME_STAGGER_DAYS_{MARIIA,JOVANA,ALEX}`, `WELCOME_TEAM_MIN_GAP_HOURS`, `WELCOME_TEAM_MAX_SENDS_PER_TICK`, `WELCOME_TEAM_READY_LOCALES`. Read-only status: `GET /api/v1/welcome-team/status`.

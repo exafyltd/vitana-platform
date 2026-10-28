@@ -1,0 +1,10 @@
+collect({ days: 30 }) via the worktree queue.mjs, local reads only (no fetch), 2026-10-21 ~15:45Z, machine loaded by parallel sessions
+C:/Users/dstev/vitana-platform-1 run 1 4.05 s spawns 6 files 234 claims 62
+C:/Users/dstev/vitana-platform-1 run 2 4.45 s spawns 6 files 234 claims 62
+C:/Users/dstev/vitana-v1 run 1 9.24 s spawns 6 files 46 claims 19
+C:/Users/dstev/vitana-v1 run 2 7.15 s spawns 6 files 46 claims 19
+
+Full CLI: node queue.mjs --repo C:/Users/dstev/vitana-platform-1 --repo C:/Users/dstev/vitana-v1
+before (origin/main c74812569 queue.mjs): 238.2 s, 283 lines
+after (this branch): 12.8 s and 6.9 s, 283 lines
+Rows identical after dropping the updated / last-log columns; those differ only for lanes pm-agent pushed between the runs.

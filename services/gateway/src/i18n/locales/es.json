@@ -132,7 +132,10 @@
   "notif.listing_interest.body": "Alguien está interesado en «{title}».",
   "notif.chat_mention.title": "{sender} te mencionó en «{group}»",
   "notif.calendar_invite.body": "{name} te ha invitado a un evento",
+  "notif.chat_shared_content.body": "{name} ha compartido algo contigo",
   "notif.chat_burst.body": "{count} mensajes nuevos · {preview}",
+  "notif.new_member_greeting_burst.title": "Bienvenido/a a la comunidad 👋",
+  "notif.new_member_greeting_burst.body": "{count} personas te han saludado 👋",
   "notif.day_close.title": "Buenas noches 🌙",
   "notif.day_close.body": "El día ha terminado — si todavía tienes algo en mente, cuéntamelo.",
   "notif.partner_test_status_changed.title": "Actualización de {partner_name}",
@@ -197,5 +200,11 @@
   "autopilot.auto.share_milestone.summary": "Alcanzaste un logro. Compártelo con la comunidad: verás la publicación antes de que salga.",
   "sms.phone_verification.code": "Tu código de Vitanaland: {code}. No lo compartas con nadie.",
   "notif.vitana_companion_message.title": "Mensaje de Vitana",
-  "notif.vitana_companion_message.body": "Vitana te ha escrito: toca para leer su mensaje."
+  "notif.vitana_companion_message.body": "Vitana te ha escrito: toca para leer su mensaje.",
+  "welcome_team.mariia.body": "¡Hola {name}, qué alegría tenerte con nosotros! 💛 Te damos la bienvenida a MAXINA. Somos una comunidad que se apoya mutuamente en el camino hacia una mejor salud y bienestar, y me alegra mucho que estés aquí.",
+  "welcome_team.mariia.body_noname": "¡Hola, qué alegría tenerte con nosotros! 💛 Te damos la bienvenida a MAXINA. Somos una comunidad que se apoya mutuamente en el camino hacia una mejor salud y bienestar, y me alegra mucho que estés aquí.",
+  "welcome_team.jovana.body": "¡Hola {name}, te damos la bienvenida a la comunidad MAXINA! 👋 Cuando te apetezca, saluda y cuéntanos un poco sobre ti, y únete a cualquier conversación que te interese. Sin ninguna presión; nos alegra tenerte aquí.",
+  "welcome_team.jovana.body_noname": "¡Hola, te damos la bienvenida a la comunidad MAXINA! 👋 Cuando te apetezca, saluda y cuéntanos un poco sobre ti, y únete a cualquier conversación que te interese. Sin ninguna presión; nos alegra tenerte aquí.",
+  "welcome_team.alex.body": "Hola {name}, soy Alex 👋 Me ocupo de la parte técnica de MAXINA. Si algo no funciona o no sabes bien cómo usar una función, escríbeme aquí y con gusto te ayudo a resolverlo.",
+  "welcome_team.alex.body_noname": "Hola, soy Alex 👋 Me ocupo de la parte técnica de MAXINA. Si algo no funciona o no sabes bien cómo usar una función, escríbeme aquí y con gusto te ayudo a resolverlo."
 }

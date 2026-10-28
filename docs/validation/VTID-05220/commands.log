@@ -1,0 +1,1 @@
+VTID-05220 (pm-agent/p7-switch-on): flip PM_MODE dry_run -> live on staging gateway, per owner instruction 2026-10-16 (soak waived). PM now autonomously merges verified lanes by rule. Kill switch: PM_MODE=off. Prod untouched.

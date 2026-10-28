@@ -101,7 +101,13 @@ describe('gateway i18n catalog coverage', () => {
     // VTID-05095: the one key translated into Arabic by hand (the SMS with a
     // phone verification code — a member must be able to read it). Anything
     // else showing up in ar.json, or a value equal to English, fails here.
-    const AR_TRANSLATED = ['sms.phone_verification.code'];
+    // VTID-05208: the two new-member greeting push strings are hand-translated
+    // too (the lane's contract is "keys for every shipped locale").
+    const AR_TRANSLATED = [
+      'sms.phone_verification.code',
+      'notif.new_member_greeting_burst.title',
+      'notif.new_member_greeting_burst.body',
+    ];
     expect(missingKeysForLocale('ar')).toEqual(KEYS.filter((k) => !AR_TRANSLATED.includes(k)));
     for (const k of AR_TRANSLATED) expect(RAW.ar[k]).not.toBe(en[k]);
     expect(tt('notif.diary_reminder.title', 'ar')).toBe(en['notif.diary_reminder.title']);

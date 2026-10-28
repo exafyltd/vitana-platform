@@ -15,17 +15,23 @@
  */
 import { readFileSync } from 'fs';
 import { join } from 'path';
+import { readCommandHubBundle, extractedOperatorBlock } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
 const INDEX_HTML = readFileSync(join(FE, 'index.html'), 'utf8');
 const GUARD = readFileSync(join(__dirname, '../../../../scripts/ci/command-hub-ownership-guard.js'), 'utf8');
+// VTID-05073: several of these functions and call sites were extracted to
+// operator-console.js. Source-level reads use the full bundle (operator-console.js
+// + app.js + the rest) so a function resolves wherever it now lives; assertions
+// unchanged.
+const BUNDLE = readCommandHubBundle();
 
 function fnBody(name: string): string {
-  const start = APP_JS.search(new RegExp(`\\n(?:async )?function ${name}\\(`));
+  const start = BUNDLE.search(new RegExp(`\\n(?:async )?function ${name}\\(`));
   expect(start).toBeGreaterThan(-1);
-  const rest = APP_JS.slice(start + 1);
+  const rest = BUNDLE.slice(start + 1);
   const next = rest.slice(1).search(/\n(?:async )?function /);
   return next === -1 ? rest : rest.slice(0, next + 1);
 }
@@ -166,7 +172,16 @@ describe('VTID-05064 syncOperatorVoiceTurns', () => {
 });
 
 // ---- Kiro block: Stop, turn_end, stopped-early / workspace-lost, the banner ----
-const KIRO_BLOCK = APP_JS.slice(APP_JS.indexOf('function operatorThreadEngine(thread) {'), APP_JS.indexOf('function renderOperatorLiveTranscript() {'));
+// VTID-05073: these functions were extracted to operator-console.js; the module
+// vars and sibling helper kiroReplyMeta stayed in app.js. extractedOperatorBlock()
+// rebuilds the original executable slice (extracted functions + referenced app.js
+// bindings). Boundaries and assertions unchanged.
+const KIRO_BLOCK = extractedOperatorBlock(
+  'function operatorThreadEngine(thread) {',
+  'function renderOperatorLiveTranscript() {',
+  ['state', 'document', 'fetch', 'buildContextHeaders', 'renderApp', 'saveOperatorThreadsIndex', 'updateOperatorLiveTranscriptDom', 'showToast', 'console', 'switchOperatorThread'],
+  ['kiroReplyMeta'],
+);
 
 function loadKiro(over: any = {}) {
   const state: any = {
@@ -243,7 +258,7 @@ describe('VTID-05064 Kiro stopped early / workspace lost', () => {
   });
 
   it('the transcript renderer appends every bubble through it', () => {
-    expect(APP_JS).toContain('appendReplyWithKiroNotices(messages, bubble, isSent ? null : msg);');
+    expect(BUNDLE).toContain('appendReplyWithKiroNotices(messages, bubble, isSent ? null : msg);');
   });
 });
 
@@ -270,8 +285,8 @@ describe('VTID-05064 sendChatMessage binds the turn to its thread (source contra
   });
 
   it('the live transcript is gated on the turn thread; other threads get the banner', () => {
-    expect(APP_JS).toContain('if (state.chatSending && state.operatorActiveThreadId === state.chatTurnThreadId) {\n        messages.appendChild(renderOperatorLiveTranscript());');
-    expect(APP_JS).toContain('messages.appendChild(renderChatTurnElsewhereBanner());');
+    expect(BUNDLE).toContain('if (state.chatSending && state.operatorActiveThreadId === state.chatTurnThreadId) {\n        messages.appendChild(renderOperatorLiveTranscript());');
+    expect(BUNDLE).toContain('messages.appendChild(renderChatTurnElsewhereBanner());');
   });
 
   it('the sidebar row of the running thread carries a spinner', () => {

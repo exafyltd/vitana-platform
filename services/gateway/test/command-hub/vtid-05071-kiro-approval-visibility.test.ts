@@ -12,6 +12,7 @@
 import { readFileSync } from 'fs';
 import { join } from 'path';
 import { FakeEl, fakeDocument } from './fake-dom';
+import { readCommandHubBundle } from './bundle';
 
 const FE = join(__dirname, '../../src/frontend/command-hub');
 const MODULE = readFileSync(join(FE, 'kiro-console.js'), 'utf8');
@@ -167,7 +168,8 @@ describe('VTID-05071 AC-C6: "Needs your OK" and the tab title while a card waits
 
 describe('VTID-05071 wiring', () => {
   it('app.js adds the badge to each thread row next to the pipeline-tree dot', () => {
-    expect(APP_JS).toContain('if (window.KiroConsole && window.KiroConsole.waitingBadge) meta.appendChild(window.KiroConsole.waitingBadge(thread.id));');
+    // VTID-05073: the thread-row badge wiring moved to operator-console.js (renderOperatorThreadRow).
+    expect(readCommandHubBundle()).toContain('if (window.KiroConsole && window.KiroConsole.waitingBadge) meta.appendChild(window.KiroConsole.waitingBadge(thread.id));');
   });
   it('styles: badge, hidden empty badge, the timeout marker, and a reduced-motion still', () => {
     expect(KCSS).toMatch(/\.kiro-waiting-badge \{[^}]*animation: kiro-waiting-pulse/);
@@ -177,7 +179,7 @@ describe('VTID-05071 wiring', () => {
   });
   it('index.html serves the module at the new version; the ownership guard allowlists VTID-05071', () => {
     expect(INDEX_HTML).toContain('/command-hub/kiro-console.js?v=20261114-vtid-05071');
-    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261120-vtid-05148');
+    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261121-vtid-05082');
     expect(GUARD).toMatch(/ALLOWED_VTID_PATTERN = \/[^\n]*VTID-05071\|/);
   });
 });

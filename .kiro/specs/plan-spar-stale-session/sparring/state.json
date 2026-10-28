@@ -1,0 +1,17 @@
+{
+  "sessions": [
+    {
+      "id": "80edad05-1908-4025-ab32-de26dd7a4700",
+      "submitted": [
+        1
+      ],
+      "plan_text_sha": "f119a6e",
+      "rounds": 2,
+      "verdict": "converged",
+      "infra": false,
+      "retryable": false,
+      "final_plan_hash": "e66ff018195c817cd5e6d2e2460f56adc975c19381ba9e37b0e604c451610a56",
+      "policy_approved_at": "2026-10-20T10:06:09.608+00:00"
+    }
+  ]
+}

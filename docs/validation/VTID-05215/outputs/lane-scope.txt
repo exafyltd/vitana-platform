@@ -1,0 +1,6 @@
+✅ **lane scope** — lane pm-agent/p2-registry: every change is inside its paths
+
+⚠️ 1fec97e5: kiro-202610151913-51bd names no seat; lane pm-agent/p2-registry belongs to seat exafyltd
+⚠️ 3ab9f4f2: kiro-202610151913-51bd names no seat; lane pm-agent/p2-registry belongs to seat exafyltd
+⚠️ ee6c8f70: kiro-202610151913-51bd names no seat; lane pm-agent/p2-registry belongs to seat exafyltd
+exit=0

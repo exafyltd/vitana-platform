@@ -18,6 +18,7 @@
  *      every class it uses is styled, no inline styles / innerHTML.
  */
 import { readFileSync } from 'fs';
+import { readCommandHubBundle } from './bundle';
 import { join } from 'path';
 import { FakeEl, fakeDocument } from './fake-dom';
 
@@ -27,6 +28,10 @@ const KCSS = readFileSync(join(FE, 'kiro-console.css'), 'utf8');
 const CSS = readFileSync(join(FE, 'styles.css'), 'utf8');
 const INDEX_HTML = readFileSync(join(FE, 'index.html'), 'utf8');
 const APP_JS = readFileSync(join(FE, 'app.js'), 'utf8');
+// VTID-05073: the engine switch, model picker, Kiro host and the Operator
+// composer's image wiring were extracted to operator-console.js. Source-check
+// them against the whole bundle; assertions unchanged.
+const BUNDLE = readCommandHubBundle();
 
 const THREAD = 'a5067000-0000-4000-8000-000000000001';
 const R1 = 'b5067000-0000-4000-8000-000000000001';
@@ -559,8 +564,8 @@ describe('VTID-05067 wiring', () => {
   it('index.html loads the module and its styles (external, before app.js) with the bumped ?v=', () => {
     expect(INDEX_HTML).toContain('<link rel="stylesheet" href="/command-hub/kiro-console.css?v=20261114-vtid-05071" />');
     expect(INDEX_HTML).toContain('<script src="/command-hub/kiro-console.js?v=20261114-vtid-05071"></script>');
-    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261120-vtid-05148');
-    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261120-vtid-05148');
+    expect(INDEX_HTML).toContain('/command-hub/app.js?v=20261121-vtid-05082');
+    expect(INDEX_HTML).toContain('/command-hub/styles.css?v=20261121-vtid-05082');
     expect(INDEX_HTML.indexOf('kiro-console.js')).toBeLessThan(INDEX_HTML.indexOf('/command-hub/app.js'));
   });
 
@@ -584,15 +589,15 @@ describe('VTID-05067 wiring', () => {
   });
 
   it('app.js hands a Kiro thread to the module and keeps the thread list, engine switch, model picker and LLM path', () => {
-    expect(APP_JS).toContain("if (activeOperatorEngine() === 'kiro' && window.KiroConsole && state.operatorActiveThreadId) {");
-    expect(APP_JS).toContain('function initKiroConsoleHost() {');
-    expect(APP_JS).toContain('|| kiroThreadBusy(thread.id)');
-    expect(APP_JS).toContain('!kiroConsoleHasRuns(state.operatorActiveThreadId)');
-    expect(APP_JS).toContain('function renderOperatorEngineSwitch() {');
-    expect(APP_JS).toContain('function renderKiroModelSelect(threadId) {');
+    expect(BUNDLE).toContain("if (activeOperatorEngine() === 'kiro' && window.KiroConsole && state.operatorActiveThreadId) {");
+    expect(BUNDLE).toContain('function initKiroConsoleHost() {');
+    expect(BUNDLE).toContain('|| kiroThreadBusy(thread.id)');
+    expect(BUNDLE).toContain('!kiroConsoleHasRuns(state.operatorActiveThreadId)');
+    expect(BUNDLE).toContain('function renderOperatorEngineSwitch() {');
+    expect(BUNDLE).toContain('function renderKiroModelSelect(threadId) {');
     // The Operator composer uses the same image helper and sends media ids.
-    expect(APP_JS).toContain('window.KiroConsole.imageTray(state.operatorActiveThreadId)');
-    expect(APP_JS).toContain("attachments.push({ oasis_ref: m.oasis_ref, kind: 'image', media_id: m.media_id });");
+    expect(BUNDLE).toContain('window.KiroConsole.imageTray(state.operatorActiveThreadId)');
+    expect(BUNDLE).toContain("attachments.push({ oasis_ref: m.oasis_ref, kind: 'image', media_id: m.media_id });");
     expect(APP_JS).toContain('if (window.KiroConsole) window.KiroConsole.reset();');
   });
 });
