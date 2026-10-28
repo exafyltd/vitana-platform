@@ -1,0 +1,316 @@
+# red on base: origin/main 0d02707ba78fa2c1e37299c330a547b914842c8f scripts/collab/preflight.mjs with this lane's scripts/collab/preflight.test.mjs
+# command: node --test scripts/collab/preflight.test.mjs
+TAP version 13
+# Subtest: clean lane range → every check passes, exit 0
+ok 1 - clean lane range → every check passes, exit 0
+  ---
+  duration_ms: 668.76195
+  type: 'test'
+  ...
+# Subtest: three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+ok 2 - three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+  ---
+  duration_ms: 681.628414
+  type: 'test'
+  ...
+# Subtest: spec slug listed by no program.md → reported
+ok 3 - spec slug listed by no program.md → reported
+  ---
+  duration_ms: 690.556319
+  type: 'test'
+  ...
+# Subtest: invalid scope.json → reported
+ok 4 - invalid scope.json → reported
+  ---
+  duration_ms: 651.736525
+  type: 'test'
+  ...
+# Subtest: parity: preflight reports every error queue.mjs validate prints for the same range
+ok 5 - parity: preflight reports every error queue.mjs validate prints for the same range
+  ---
+  duration_ms: 823.121528
+  type: 'test'
+  ...
+# Subtest: scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+ok 6 - scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+  ---
+  duration_ms: 613.946069
+  type: 'test'
+  ...
+# Subtest: plan-PR lane lookup without gh → reported as not checked, never a silent pass
+ok 7 - plan-PR lane lookup without gh → reported as not checked, never a silent pass
+  ---
+  duration_ms: 737.345732
+  type: 'test'
+  ...
+# Subtest: no --title → the PR-GATE part is reported as not checked
+ok 8 - no --title → the PR-GATE part is reported as not checked
+  ---
+  duration_ms: 673.100233
+  type: 'test'
+  ...
+# Subtest: preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+ok 9 - preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+  ---
+  duration_ms: 707.821468
+  type: 'test'
+  ...
+# Subtest: lane-code.md names preflight.mjs and runs it before every push
+ok 10 - lane-code.md names preflight.mjs and runs it before every push
+  ---
+  duration_ms: 1.120412
+  type: 'test'
+  ...
+# Subtest: planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+ok 11 - planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+  ---
+  duration_ms: 0.357885
+  type: 'test'
+  ...
+# Subtest: driver.md runs preflight before every push of the loop
+ok 12 - driver.md runs preflight before every push of the loop
+  ---
+  duration_ms: 0.169377
+  type: 'test'
+  ...
+# Subtest: the runbook text check catches a push point without preflight
+ok 13 - the runbook text check catches a push point without preflight
+  ---
+  duration_ms: 0.122924
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: PR body missing a declaration → fails with the --pr-body-check message naming it
+not ok 14 - VALIDATOR-CHECK: PR body missing a declaration → fails with the --pr-body-check message naming it
+  ---
+  duration_ms: 150.552529
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:297:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:300:32)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: evidence dir without outputs/ → fails "missing …/outputs/"
+not ok 15 - VALIDATOR-CHECK: evidence dir without outputs/ → fails "missing …/outputs/"
+  ---
+  duration_ms: 147.454508
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:309:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:312:32)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: declarations and evidence complete → passes; Build Gate is reported as not run
+not ok 16 - VALIDATOR-CHECK: declarations and evidence complete → passes; Build Gate is reported as not run
+  ---
+  duration_ms: 151.75868
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:319:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:322:32)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: no changed file in the workflow paths (read from the file) → skip
+not ok 17 - VALIDATOR-CHECK: no changed file in the workflow paths (read from the file) → skip
+  ---
+  duration_ms: 737.728658
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:336:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:341:21)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: without --body-file the open PR body is read through gh; no body at all → fails naming PR_BODY_FILE
+not ok 18 - VALIDATOR-CHECK: without --body-file the open PR body is read through gh; no body at all → fails naming PR_BODY_FILE
+  ---
+  duration_ms: 658.600796
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:351:1'
+  failureType: 'testCodeFailure'
+  error: "Cannot read properties of undefined (reading 'status')"
+  code: 'ERR_TEST_FAILURE'
+  name: 'TypeError'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:360:33)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: `shell: bash` → a failing stage inside a pipeline fails the step (bash -eo pipefail)
+not ok 19 - VALIDATOR-CHECK: `shell: bash` → a failing stage inside a pipeline fails the step (bash -eo pipefail)
+  ---
+  duration_ms: 143.488071
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:369:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:372:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: a step without `shell:` runs in `bash -e` as on GitHub (a failing command fails, a pipe stage does not)
+not ok 20 - VALIDATOR-CHECK: a step without `shell:` runs in `bash -e` as on GitHub (a failing command fails, a pipe stage does not)
+  ---
+  duration_ms: 142.743044
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:379:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:385:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: the workflow is read from the head revision
+not ok 21 - VALIDATOR-CHECK: the workflow is read from the head revision
+  ---
+  duration_ms: 155.939255
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:393:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:398:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)
+not ok 22 - VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)
+  ---
+  duration_ms: 140.324552
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:414:1'
+  failureType: 'uncaughtException'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    ChildProcess.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:411:38)
+    ChildProcess.emit (node:events:519:28)
+    maybeClose (node:internal/child_process:1101:16)
+    Socket.<anonymous> (node:internal/child_process:456:11)
+    Socket.emit (node:events:519:28)
+    Pipe.<anonymous> (node:net:347:12)
+  ...
+# Subtest: VALIDATOR-CHECK: ${{ github.base_ref }} and ${{ steps.<id>.outputs.<K> }} are substituted
+not ok 23 - VALIDATOR-CHECK: ${{ github.base_ref }} and ${{ steps.<id>.outputs.<K> }} are substituted
+  ---
+  duration_ms: 138.683046
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:430:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:437:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: VALIDATOR-CHECK: an unsupported ${{ }} expression or an unparsable workflow fails loudly
+not ok 24 - VALIDATOR-CHECK: an unsupported ${{ }} expression or an unparsable workflow fails loudly
+  ---
+  duration_ms: 146.424099
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:443:1'
+  failureType: 'testCodeFailure'
+  error: 'Unexpected end of JSON input'
+  code: 'ERR_TEST_FAILURE'
+  name: 'SyntaxError'
+  stack: |-
+    JSON.parse (<anonymous>)
+    preflightJson (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:98:43)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/wt/preflight-validator/scripts/collab/preflight.test.mjs:446:24)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Error: Test "VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)" at scripts/collab/preflight.test.mjs:414:1 generated asynchronous activity after the test ended. This activity created the error "SyntaxError: Unexpected end of JSON input" and would have caused the test to fail, but instead triggered an uncaughtException event.
+1..24
+# tests 24
+# suites 0
+# pass 13
+# fail 11
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 9053.875927

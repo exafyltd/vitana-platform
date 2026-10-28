@@ -1,0 +1,36 @@
+# demo 3: both fixed (complete body, outputs/ added)
+$ node scripts/collab/preflight.mjs --repo <throwaway worktree> --base origin/main --head HEAD --branch pv-demo-throwaway --title 'VTID-05360 (kiro-web-reliability/preflight-validator): demo' --no-tests --json --body-file good.md
+head 20d94762f817b45657b975a04e9ac60ef2343ea5; preflight ok=false; failed: pr-gate-scope, pr-gate-sparring
+
+PASS  VALIDATOR-CHECK [required]
+ok   Load ruleset
+ok   Collect PR text (title/body)
+ok   Require PR body declarations (profile + markers)
+     PR body carries every required declaration.
+ok   Extract VTID + Validation Profile
+     Detected VTID=VTID-05360 PROFILE=gateway_backend
+ok   Compute changed files
+     Changed files: 3
+     From https://us-east-1.gateway.connections.autonomous-agents.kiro.dev/github/exafyltd/vitana-platform
+      * branch                  main       -> FETCH_HEAD
+ok   Enforce Path Ownership Guard (profile-based)
+     APPROVED: 3 in-remit file(s) match the gateway_backend allowlist
+ok   Evidence Pack Gate
+ok   Acceptance Mapping Gate (no unmapped ACs)
+     Acceptance mapping OK
+ok   CSP Governance Gate (scan added lines only)
+     No CSP pattern hits in added lines.
+ok   Route Mount Evidence Gate (conditional)
+     No route registration added — route-mount evidence not required for this diff.
+ok   OASIS Traceability Gate (conditional)
+ok   Merge Deploy Gate (VTID must be in merge title/message)
+ok   PASS summary
+     APPROVED
+     VTID=VTID-05360
+     PROFILE=gateway_backend
+     Evidence=docs/validation/VTID-05360/
+not run: Build Gate (see "Not run by preflight")
+
+SKIP  Not run by preflight [required (VALIDATOR-CHECK)]
+Not run by preflight: VALIDATOR-CHECK Build Gate (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check): a command_hub_frontend PR can pass preflight and still fail that CI step; run `cd services/gateway && npm ci && npm run build`
+

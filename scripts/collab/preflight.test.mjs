@@ -5,8 +5,8 @@
 // them rather than to re-implement them.
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { execFileSync, spawnSync } from 'node:child_process';
-import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync } from 'node:fs';
+import { execFileSync, spawn, spawnSync } from 'node:child_process';
+import { mkdtempSync, mkdirSync, writeFileSync, rmSync, readFileSync, copyFileSync, existsSync, chmodSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath, pathToFileURL } from 'node:url';
@@ -41,6 +41,8 @@ const SPARRING_OK = '# Plan sparring\nVerdict: CONVERGED\nOwner approval: policy
  * Head on kiro/cards/card-01: the lane moves to `executing` with the work and its validation folder.
  * `bad` turns on independent errors: `trailer` (a commit without trailers), `seat` (lane seat not in areas.yaml),
  * `hash` (plan-sparring.md without plan hash), `program` (spec slug in no program.md), `scope` (invalid scope.json).
+ * VTID-05360: `vc` puts a VALIDATOR-CHECK.yml on the base ('real' = this repository's own workflow with the guard and
+ * ruleset it runs, or the text of a test workflow) and an evidence pack on the head; `noOutputs` leaves out `outputs/`.
  */
 function fixture(bad = {}) {
   const dir = mkdtempSync(path.join(tmpdir(), 'preflight-'));
@@ -59,6 +61,12 @@ function fixture(bad = {}) {
   write(work, 'docs/programs/core/program.md', fm({ id: 'core', title: 'Core', status: 'active', priority: 1, specs: [bad.program ? 'origin:elsewhere' : 'origin:cards'] }));
   write(work, '.kiro/specs/cards/handoff.md', fm({ slug: 'cards', author: 'kiro', executor: 'kiro', next_actor: 'kiro', state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00001'], updated: '2026-10-22T10:00Z' }));
   write(work, '.kiro/specs/cards/lanes/card-01.md', lane());
+  if (bad.vc === 'real') {
+    for (const rel of [VC, 'scripts/ci/validator-path-guard.cjs', 'gov/validator-rules.yaml']) {
+      mkdirSync(path.dirname(path.join(work, rel)), { recursive: true });
+      copyFileSync(path.join(ROOT, rel), path.join(work, rel));
+    }
+  } else if (bad.vc) write(work, VC, bad.vc);
   commit(work, 'seed', { 'Collab-Session': 'session_01ABCdef', 'Collab-Lane': 'cards/_plan' });
   sh(work, 'push', '-q', 'origin', 'main');
   sh(work, 'remote', 'set-head', 'origin', 'main');
@@ -67,6 +75,11 @@ function fixture(bad = {}) {
   write(work, 'src/a.js', 'export const a = 1;\n');
   write(work, 'docs/validation/VTID-00001/scope.json', `${JSON.stringify({ vtid: 'VTID-00001', kind: bad.scope ? 'bogus' : 'feature', paths: ['src/**', '.kiro/specs/cards/**'] })}\n`);
   write(work, 'docs/validation/VTID-00001/plan-sparring.md', bad.hash ? SPARRING_OK.replace(/Plan hash.*\n/, '') : SPARRING_OK);
+  if (bad.vc) {
+    write(work, 'docs/validation/VTID-00001/acceptance.md', 'AC-1: a card exists\nTEST: scripts/collab/preflight.test.mjs\n');
+    write(work, 'docs/validation/VTID-00001/commands.log', 'node --test (1 pass)\n');
+    if (!bad.noOutputs) write(work, 'docs/validation/VTID-00001/outputs/test.txt', 'ok\n');
+  }
   commit(work, 'feat: card', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
   if (bad.trailer) {
     write(work, 'src/b.js', 'export const b = 2;\n');
@@ -259,4 +272,184 @@ test('driver.md runs preflight before every push of the loop', () => {
 test('the runbook text check catches a push point without preflight', () => {
   assert.equal(pushPointsWithoutPreflight('- commit, push (protocol)\n- run preflight, fix every error, then push\n').length, 1);
   assert.ok(existsSync(path.join(ROOT, '.kiro/pipeline/lane-code.md')));
+});
+
+// ── VALIDATOR-CHECK (VTID-05360, plan kiro-web-reliability §3.1) ──
+const VC = '.github/workflows/VALIDATOR-CHECK.yml';
+const BODY_OK = ['VALIDATION_PROFILE: gateway_backend', 'SCOPE_ALLOWLIST: src/**, docs/validation/**',
+  'ACCEPTANCE: docs/validation/VTID-00001/acceptance.md', 'MERGE_PAYLOAD_PREVIEW: none (deploys nothing)', 'OASIS_IMPACT: no', ''].join('\n');
+/** A test workflow: `paths` of on.pull_request and the steps of job validate-pr after a Checkout step. */
+function workflow(steps, paths = ["'docs/validation/**'"]) {
+  return ['name: VALIDATOR-CHECK', 'on:', '  pull_request:', '    paths:', ...paths.map((p) => `      - ${p}`),
+    'jobs:', '  validate-pr:', '    runs-on: ubuntu-latest', '    steps:', '      - name: Checkout', '        uses: actions/checkout@v4',
+    ...steps.map(({ name, id, env, run, shell }) => [`      - name: ${name}`, ...(id ? [`        id: ${id}`] : []),
+      ...(shell ? [`        shell: ${shell}`] : []),
+      ...(env ? ['        env:', ...Object.entries(env).map(([k, v]) => `          ${k}: ${v}`)] : []),
+      '        run: |', ...run.split('\n').map((l) => (l ? `          ${l}` : ''))].join('\n')), ''].join('\n');
+}
+function bodyFile(f, text, name = 'body.md') {
+  const file = path.join(f.dir, name);
+  writeFileSync(file, text);
+  return file;
+}
+const vcCheck = (report) => report.checks.find((c) => c.id === 'validator-check');
+
+test('VALIDATOR-CHECK: PR body missing a declaration → fails with the --pr-body-check message naming it', () => {
+  const f = fixture({ vc: 'real' });
+  try {
+    const { status, report } = preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK.replace(/OASIS_IMPACT.*\n/, ''))]);
+    assert.equal(status, 1);
+    const vc = vcCheck(report);
+    assert.equal(vc.status, 'fail', JSON.stringify(vc));
+    assert.equal(vc.ci, 'required');
+    assert.match(vc.output, /REJECTED: PR body is missing 1 required declaration\(s\): OASIS_IMPACT/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: evidence dir without outputs/ → fails "missing …/outputs/"', () => {
+  const f = fixture({ vc: 'real', noOutputs: true });
+  try {
+    const { status, report } = preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]);
+    assert.equal(status, 1);
+    assert.equal(vcCheck(report).status, 'fail');
+    assert.match(vcCheck(report).output, /REJECTED: missing docs\/validation\/VTID-00001\/outputs\//);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: declarations and evidence complete → passes; Build Gate is reported as not run', () => {
+  const f = fixture({ vc: 'real' });
+  try {
+    const { status, report } = preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]);
+    assert.deepEqual(failed(report), [], JSON.stringify(report, null, 2));
+    assert.equal(status, 0);
+    const vc = vcCheck(report);
+    assert.equal(vc.status, 'pass');
+    assert.match(vc.output, /Merge Deploy Gate/);
+    assert.doesNotMatch(vc.output, /npm ci/);
+    const nc = report.checks.find((c) => c.id === 'not-covered-validator');
+    assert.ok(nc, 'a not-covered entry for the Build Gate');
+    assert.match(nc.output, /Not run by preflight: VALIDATOR-CHECK Build Gate \(`npm run build`/);
+    assert.match(nc.output, /command_hub_frontend/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: no changed file in the workflow paths (read from the file) → skip', () => {
+  const f = fixture({ vc: workflow([{ name: 'Never', run: 'echo "REJECTED: ran"; exit 3' }], ["'services/gateway/src/**'"]) });
+  try {
+    const { report } = preflightJson(f.work);
+    const vc = vcCheck(report);
+    assert.equal(vc.status, 'skip');
+    assert.match(vc.output, /not in VALIDATOR-CHECK's paths/);
+    assert.ok(!report.checks.some((c) => c.id === 'not-covered-validator'));
+  } finally { f.done(); }
+});
+
+const COLLECT = [
+  { name: 'Collect PR text', env: { PR_BODY: '${{ github.event.pull_request.body }}' }, run: 'printf "%s" "$PR_BODY" > /tmp/pr_body.txt' },
+  { name: 'Body marker', run: 'grep -q "OASIS_IMPACT: no" /tmp/pr_body.txt || (echo "REJECTED: no marker" && exit 15)' },
+];
+test('VALIDATOR-CHECK: without --body-file the open PR body is read through gh; no body at all → fails naming PR_BODY_FILE', () => {
+  const f = fixture({ vc: workflow(COLLECT) });
+  try {
+    sh(f.work, 'remote', 'set-url', 'origin', 'https://github.com/exafyltd/fixture.git');
+    const log = path.join(f.dir, 'gh.log');
+    const gh = path.join(f.dir, 'gh');
+    writeFileSync(gh, `#!/bin/sh\necho "$@" >> '${log}'\nprintf 'Body\\nOASIS_IMPACT: no\\n'\n`);
+    chmodSync(gh, 0o755);
+    const { report } = preflightJson(f.work, [], { PREFLIGHT_GH: gh });
+    assert.equal(vcCheck(report).status, 'pass', JSON.stringify(vcCheck(report)));
+    assert.match(readFileSync(log, 'utf8'), /repos\/exafyltd\/fixture\/pulls\?head=exafyltd:kiro\/cards\/card-01&state=open/);
+
+    const none = preflightJson(f.work, [], { PREFLIGHT_GH: path.join(f.dir, 'no-such-gh') }).report;
+    assert.equal(vcCheck(none).status, 'fail');
+    assert.match(vcCheck(none).output, /no --body-file: VALIDATOR-CHECK reads the declarations from the PR body; on a first push pass PR_BODY_FILE=<file>/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: `shell: bash` → a failing stage inside a pipeline fails the step (bash -eo pipefail)', () => {
+  const f = fixture({ vc: workflow([{ name: 'Pipe', shell: 'bash', run: 'false | cat\necho "after the pipe"' }]) });
+  try {
+    const vc = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(vc.status, 'fail');
+    assert.match(vc.output, /Pipe/);
+    assert.doesNotMatch(vc.output, /after the pipe/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: a step without `shell:` runs in `bash -e` as on GitHub (a failing command fails, a pipe stage does not)', () => {
+  const f = fixture({ vc: workflow([
+    { name: 'Pipe', run: 'X="$(false | cat)"\necho "after the pipe"' },
+    { name: 'Errexit', run: 'false\necho "after false"' },
+  ]) });
+  try {
+    const vc = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(vc.status, 'fail');
+    assert.match(vc.output, /after the pipe/);
+    assert.match(vc.output, /step "Errexit" failed/);
+    assert.doesNotMatch(vc.output, /after false/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: the workflow is read from the head revision', () => {
+  const f = fixture({ vc: workflow([{ name: 'Base step', run: 'echo "base copy ran"' }]) });
+  try {
+    write(f.work, VC, workflow([{ name: 'Head step', run: 'echo "REJECTED: head copy ran"; exit 7' }]));
+    commit(f.work, 'chore: head workflow', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    const vc = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(vc.status, 'fail');
+    assert.match(vc.output, /head copy ran/);
+    assert.doesNotMatch(vc.output, /base copy ran/);
+  } finally { f.done(); }
+});
+
+function preflightAsync(work, extra) {
+  return new Promise((resolve) => {
+    const p = spawn(process.execPath, [PREFLIGHT, '--repo', work, '--base', 'origin/main', '--head', 'HEAD',
+      '--branch', 'kiro/cards/card-01', '--no-tests', '--json', ...extra], { env: ENV });
+    let out = '';
+    p.stdout.on('data', (d) => { out += d; });
+    p.on('close', () => resolve(JSON.parse(out.slice(out.indexOf('{')))));
+  });
+}
+test('VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)', async () => {
+  const probe = `/tmp/vc-probe-${process.pid}-${Date.now()}.txt`;
+  const f = fixture({ vc: workflow([
+    { name: 'Write', env: { T: '${{ github.event.pull_request.title }}' }, run: `printf "%s" "$T" > ${probe}\nsleep 1` },
+    { name: 'Read', env: { T: '${{ github.event.pull_request.title }}' }, run: `test "$(cat ${probe})" = "$T" || (echo "REJECTED: collided" && exit 9)` },
+  ]) });
+  try {
+    const body = bodyFile(f, BODY_OK);
+    const [a, b] = await Promise.all([preflightAsync(f.work, ['--title', TITLE, '--body-file', body]),
+      preflightAsync(f.work, ['--title', `${TITLE} (second run)`, '--body-file', body])]);
+    assert.equal(vcCheck(a).status, 'pass', JSON.stringify(vcCheck(a)));
+    assert.equal(vcCheck(b).status, 'pass', JSON.stringify(vcCheck(b)));
+    assert.ok(!existsSync(probe), `${probe} must not be written`);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: ${{ github.base_ref }} and ${{ steps.<id>.outputs.<K> }} are substituted', () => {
+  const f = fixture({ vc: workflow([
+    { name: 'Meta', id: 'meta', run: 'echo "VTID=VTID-00001" >> $GITHUB_OUTPUT\necho "NOTE<<EOF" >> $GITHUB_OUTPUT\necho "two" >> $GITHUB_OUTPUT\necho "lines" >> $GITHUB_OUTPUT\necho "EOF" >> $GITHUB_OUTPUT' },
+    { name: 'Use', env: { VTID: '${{ steps.meta.outputs.VTID }}', NOTE: '${{ steps.meta.outputs.NOTE }}' },
+      run: 'BASE="${{ github.base_ref }}"\necho "base=$BASE vtid=$VTID"\ntest "$BASE" = main && test "$VTID" = VTID-00001 && test "$NOTE" = "$(printf \'two\\nlines\')" || (echo "REJECTED: substitution" && exit 4)' },
+  ]) });
+  try {
+    const vc = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(vc.status, 'pass', JSON.stringify(vc));
+    assert.match(vc.output, /base=main vtid=VTID-00001/);
+  } finally { f.done(); }
+});
+
+test('VALIDATOR-CHECK: an unsupported ${{ }} expression or an unparsable workflow fails loudly', () => {
+  const f = fixture({ vc: workflow([{ name: 'Secret', env: { T: '${{ secrets.TOKEN }}' }, run: 'echo "$T"' }]) });
+  try {
+    const vc = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(vc.status, 'fail');
+    assert.match(vc.output, /unsupported expression \$\{\{ secrets\.TOKEN \}\}/);
+    write(f.work, VC, 'on:\n  pull_request:\n    paths:\n      - docs/validation/**\njobs:\n  validate-pr:\n    steps:\n      - name: A\n     bad: indent\n');
+    commit(f.work, 'chore: broken workflow', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    const broken = vcCheck(preflightJson(f.work, ['--body-file', bodyFile(f, BODY_OK)]).report);
+    assert.equal(broken.status, 'fail');
+    assert.match(broken.output, /cannot parse \.github\/workflows\/VALIDATOR-CHECK\.yml/);
+  } finally { f.done(); }
 });

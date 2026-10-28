@@ -1,0 +1,23 @@
+# demo 2: complete body, evidence dir docs/validation/VTID-05360 without outputs/
+$ node scripts/collab/preflight.mjs --repo <throwaway worktree> --base origin/main --head HEAD --branch pv-demo-throwaway --title 'VTID-05360 (kiro-web-reliability/preflight-validator): demo' --no-tests --json --body-file good.md
+head b5d7d52d80c1227cb5665304846a3e9e5907c606; preflight ok=false; failed: pr-gate-scope, pr-gate-sparring, validator-check
+
+FAIL  VALIDATOR-CHECK [required]
+ok   Load ruleset
+ok   Collect PR text (title/body)
+ok   Require PR body declarations (profile + markers)
+     PR body carries every required declaration.
+ok   Extract VTID + Validation Profile
+     Detected VTID=VTID-05360 PROFILE=gateway_backend
+ok   Compute changed files
+     Changed files: 2
+     From https://us-east-1.gateway.connections.autonomous-agents.kiro.dev/github/exafyltd/vitana-platform
+      * branch                  main       -> FETCH_HEAD
+ok   Enforce Path Ownership Guard (profile-based)
+     APPROVED: 2 in-remit file(s) match the gateway_backend allowlist
+step "Evidence Pack Gate" failed (exit 33):
+REJECTED: missing docs/validation/VTID-05360/outputs/
+
+SKIP  Not run by preflight [required (VALIDATOR-CHECK)]
+Not run by preflight: VALIDATOR-CHECK Build Gate (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check): a command_hub_frontend PR can pass preflight and still fail that CI step; run `cd services/gateway && npm ci && npm run build`
+
