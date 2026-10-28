@@ -13,7 +13,7 @@ paths:
   - scripts/collab/preflight.mjs
   - scripts/collab/preflight.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T13:26Z
+updated: 2026-10-28T13:31Z
 vtid: VTID-05360
 ---
 # Lane: preflight-validator (repo vitana-platform)
@@ -27,4 +27,6 @@ Lane created with the plan.
 ### 2026-10-28T09:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05360 allocated after policy approval (converged-auto-v1).
 ### 2026-10-28T13:26Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-28T13:31Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
