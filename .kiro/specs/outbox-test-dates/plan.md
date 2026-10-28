@@ -33,5 +33,6 @@ green in CI, but run locally today it fails the same way. So the cause is the cl
   `src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx`, `docs/validation/VTID-*/**`.
 
 ## Out of scope
+- Making `serverRow` (`:100`) and the other message-row dates relative. They are not pruned today; a later lane does all of them together (sparring R1-F1, deferred).
 - The `public.ecr.aws` "Data limit exceeded" on pr-gate's postgres service image (plan `ci-ecr-public-auth`, premise 4).
 <!-- plan:end -->
