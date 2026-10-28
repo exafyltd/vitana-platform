@@ -1,4 +1,4 @@
-# VTID-05381 commands (base c99af66c5f, head c99af66c5f)
+# VTID-05381 commands (base c99af66c5f, head a8ec3e0d99)
 $ node --test scripts/collab/quality-checks.test.mjs
 # tests 9
 # pass 9
@@ -24,12 +24,12 @@ exit 0
 $ node /projects/sandbox/vitana-platform/scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/quality-checks-followup/merge-policy-text --title VTID-05381 (quality-checks-followup/merge-policy-text): one merge-method answer (squash) and the merge-commit wording fixed
 PASS  Collab tests [required]
 PASS  Collab handoff [required]
-FAIL  Lane scope [required]
-FAIL  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
 FAIL  PR-GATE sparring [report-only in CI (until config.enforce=true)]
 PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
 PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
 PASS  Kiro steering [report-only in CI (until config.enforce=true)]
-preflight: 3 check(s) failed: Lane scope, PR-GATE scope, PR-GATE sparring — fix every error above, then push
+preflight: 1 check(s) failed: PR-GATE sparring — fix every error above, then push
 exit 1
 
