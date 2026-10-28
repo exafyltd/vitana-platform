@@ -16,3 +16,7 @@ Authoritative plan: `plan.md`. VTID from CI PLAN-SPAR. Branch `kiro/step-order-g
 - `release` reads `origin/main` and refuses while the lane (or, for `_plan` / heartbeat, any lane or the plan) is not
   `done` / `parked`.
 - Only the lane paths change; `queue.mjs` and other protected files are untouched; deploys nothing.
+- **R2-F1 (converging round, minor):** correction to plan §3. `driver.md` step 6 describes the merge inline and does
+  not refer to `lane-land.md` or bind `common-rules.md`. The follow-up for #4392 is therefore to route `driver.md`
+  step 6 through `land-guard.mjs merge`, bind `common-rules.md` rule 13 (or repeat it in `driver.md`), and point step 9
+  at `land-guard.mjs release` / `release-heartbeat`. It is posted on #4392.
