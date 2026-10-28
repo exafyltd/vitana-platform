@@ -5,7 +5,7 @@ const assert = require('node:assert');
 const fs = require('fs');
 const os = require('os');
 const path = require('path');
-const { check, checkAgents, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, REVIEWER_MODELS, STORE_COMMAND, GATE_COMMAND, GATED_STEPS } = require('./guard.cjs');
+const { check, checkAgents, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, REVIEWER_MODELS, REVIEW_MODEL_LABEL, STORE_COMMAND, GATE_COMMAND, GATED_STEPS } = require('./guard.cjs');
 
 function repo(files) {
   const root = fs.mkdtempSync(path.join(os.tmpdir(), 'kiro-steer-'));
@@ -58,7 +58,7 @@ const ROOT = path.resolve(__dirname, '..', '..', '..');
 const AGENT = '.kiro/agents/vitana-lane-reviewer.md';
 const WORKFLOW = '.kiro/workflows/vitana-pipeline.workflow.json';
 const HOOK = '.kiro/hooks/vitana-pipeline-start.json';
-const RUNBOOKS = ['README.md', 'common-rules.md', 'planning.md', 'lane-code.md', 'lane-review.md', 'lane-land.md'].map((f) => `.kiro/pipeline/${f}`);
+const RUNBOOKS = ['README.md', 'common-rules.md', 'planning.md', 'lane-code.md', 'lane-review.md', 'lane-land.md', 'driver.md'].map((f) => `.kiro/pipeline/${f}`);
 function real(p) { return fs.readFileSync(path.join(ROOT, p), 'utf8'); }
 function pipelineRepo(over = {}) {
   const files = { 'CLAUDE.md': 'x', '.kiro/steering/a.md': ALWAYS, 'scripts/collab/queue.mjs': '// marker\n' };
@@ -256,6 +256,47 @@ test('workflow: no step outside a reviewer race pins a modelId, and every pin is
   const w = wf(); node(w, 'review-2-b').modelId = 'claude-opus-4.8';
   assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /step review-2-b pins modelId claude-opus-4\.8/);
 });
+// VTID-05359 (plan reviewer-step-model D1-D4): every pinned review step's prompt opens with its own chain model.
+const MODEL_LINE = (m) => `${REVIEW_MODEL_LABEL}${m}. `;
+test('review prompts: every shipped reviewer step opens with "Reviewer chain model for this step: <its modelId>. " once (T-E)', () => {
+  assert.strictEqual(REVIEW_MODEL_LABEL, 'Reviewer chain model for this step: ');
+  let n = 0;
+  walk(wf().steps, (s) => {
+    if (s.type !== 'step' || s.agent !== 'vitana-lane-reviewer') return;
+    n++;
+    assert.ok(s.prompt.startsWith(MODEL_LINE(s.modelId)), s.id);
+    assert.strictEqual(s.prompt.split(REVIEW_MODEL_LABEL).length, 2, `${s.id}: label once`);
+  });
+  assert.strictEqual(n, 18);
+  assert.doesNotMatch(errs({}), /prompt must start with/);
+});
+test('review prompts: a model line naming another chain model fails (T-B)', () => {
+  assert.doesNotMatch(errs({}), /review step review-2-b prompt must start with/);
+  const w = wf(); const s = node(w, 'review-2-b');
+  assert.strictEqual(s.modelId, 'claude-opus-5.5');
+  s.prompt = MODEL_LINE('claude-sonnet-5.5') + s.prompt.slice(MODEL_LINE(s.modelId).length);
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /review step review-2-b prompt must start with "Reviewer chain model for this step: claude-opus-5\.5\. "/);
+});
+test('review prompts: a prompt without the model line fails (T-C)', () => {
+  assert.doesNotMatch(errs({}), /review step review-4 prompt must start with/);
+  const w = wf(); const s = node(w, 'review-4');
+  s.prompt = s.prompt.split(MODEL_LINE(s.modelId)).join('');
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /review step review-4 prompt must start with "Reviewer chain model for this step: claude-sonnet-5\.5\. "/);
+});
+test('review prompts: a prompt carrying the label twice fails (T-D)', () => {
+  assert.doesNotMatch(errs({}), /review step review-3-c prompt must start with/);
+  const w = wf(); const s = node(w, 'review-3-c');
+  s.prompt = s.prompt + ' ' + MODEL_LINE(s.modelId);
+  assert.match(errs({ [WORKFLOW]: JSON.stringify(w) }), /review step review-3-c prompt must start with/);
+});
+test('review prompts: the agent, lane-review.md and driver.md keep the label; driver.md is required (T-F)', () => {
+  assert.doesNotMatch(errs({}), /missing/);
+  const drop = (p) => real(p).split(REVIEW_MODEL_LABEL).join('Model for this step: ');
+  assert.match(errs({ [AGENT]: drop(AGENT) }), /vitana-lane-reviewer\.md: prompt is missing Reviewer chain model for this step: /);
+  assert.match(errs({ '.kiro/pipeline/lane-review.md': drop('.kiro/pipeline/lane-review.md') }), /lane-review\.md: is missing Reviewer chain model for this step: /);
+  assert.match(errs({ '.kiro/pipeline/driver.md': drop('.kiro/pipeline/driver.md') }), /driver\.md: is missing Reviewer chain model for this step: /);
+  assert.match(errs({ '.kiro/pipeline/driver.md': null }), /\.kiro\/pipeline\/driver\.md missing/);
+});
 test('workflow: at most 6 lanes build in parallel', () => {
   const w = wf();
   let lanes = null;
@@ -289,7 +330,7 @@ test('workflow: schema errors are reported', () => {
 test('workflow: every .kiro/pipeline file the recipe names exists', () => {
   assert.match(errs({ '.kiro/pipeline/lane-land.md': null }), /lane-land\.md does not exist/);
 });
-test('workflow: the steering entry point may only name pipeline files that exist (driver.md is text-only)', () => {
+test('workflow: the steering entry point may only name pipeline files that exist (driver.md exists)', () => {
   const steer = '# p\nKiro IDE: `.kiro/workflows/vitana-pipeline.workflow.json`. Kiro Web: `.kiro/pipeline/driver.md`. See `.kiro/pipeline/gone.md`.\n';
   const e = errs({ '.kiro/steering/vitana-pipeline.md': steer });
   assert.match(e, /vitana-pipeline\.md names \.kiro\/pipeline\/gone\.md/);
@@ -309,6 +350,20 @@ test('runbooks: no slug-specific text, no machine paths, no owner questions outs
   assert.match(errs({ '.kiro/pipeline/lane-code.md': real('.kiro/pipeline/lane-code.md') + '\nc:/Users/someone/x\n' }), /machine-specific path/);
   assert.match(errs({ '.kiro/pipeline/lane-code.md': real('.kiro/pipeline/lane-code.md') + '\nAsk the owner before you push.\n' }), /owner question/);
   assert.match(errs({ '.kiro/pipeline/lane-code.md': real('.kiro/pipeline/lane-code.md') + '\nDo you want me to merge?\n' }), /owner question/);
+});
+
+// plan session-title-stable: the owner's session-title rule ships as an always-included steering file in this repo
+// (byte-identical in vitana-platform and vitana-v1).
+test('steering: the session title is set once and never renamed (vitana-session-title.md)', () => {
+  const file = path.join(__dirname, '..', '..', '..', '.kiro', 'steering', 'vitana-session-title.md');
+  assert.ok(fs.existsSync(file), '.kiro/steering/vitana-session-title.md is missing');
+  const text = fs.readFileSync(file, 'utf8');
+  assert.match(text, /^---\r?\ninclusion: always\r?\n---\r?\n/);
+  assert.match(text, /Set the session title once, at the start, from the owner's original request/);
+  assert.match(text, /Never change it later/);
+  assert.match(text, /Never put a state in the title: no "Blocked:"/);
+  assert.match(text, /Change the title only when the owner explicitly asks/);
+  assert.doesNotMatch(text, /#\[\[file:/);
 });
 
 // Plan owner-autonomy: the standing owner instruction and its stop table stay in place.
