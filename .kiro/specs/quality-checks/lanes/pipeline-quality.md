@@ -1,6 +1,6 @@
 ---
 lane: pipeline-quality
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271220-68a5
 branch: kiro/quality-checks/pipeline-quality
@@ -20,7 +20,8 @@ paths:
   - .github/pull_request_template.md
   - scripts/collab/quality-checks.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T13:03Z
+pr: https://github.com/exafyltd/vitana-platform/pull/4407
+updated: 2026-10-28T11:29Z
 vtid: VTID-05346
 ---
 # Lane: pipeline-quality (repo vitana-platform)
@@ -57,3 +58,6 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4407
 Findings: none blocking. Non-blocking: some checks were still queued at review time; the land step confirms every required check green on the merge head before merging.
 Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2); the review ran as a separate read-only agent session.
 Next: the land step merges under collaboration.md §7b once the required checks are green on the up-to-date head.
+
+### 2026-10-28T11:29Z · kiro-jtadic-202610271220-68a5 · executing → in-review
+PR #4407 in review. Self-review `changes` on `21121452` (entry above); accepted on `2bdd55cb` by `agent-vitana-lane-reviewer-202610280846-e82e`, requested by session `kiro-ide-202610272306-27b0` (outside this executing log).
