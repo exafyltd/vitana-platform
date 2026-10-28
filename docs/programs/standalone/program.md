@@ -23,6 +23,7 @@ specs:
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
   - vitana-platform:outbox-test-dates
+  - vitana-platform:pm-reassign-idempotent
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
@@ -32,6 +33,7 @@ specs:
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
+  - vitana-platform:step-order-gate
   - vitana-platform:kiro-web-parity
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
@@ -41,6 +43,7 @@ specs:
   - vitana-platform:context-map
   - vitana-platform:quality-checks
   - vitana-platform:reviewer-step-model
+  - vitana-platform:collab-handoff-check-fix
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -69,6 +72,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
 - `vitana-platform:outbox-test-dates` — VTID-05320 send-status test fixtures relative to now (vitana-v1)
+- `vitana-platform:pm-reassign-idempotent` — the PM's stale-review reassignment writes nothing when nothing changed
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
@@ -77,6 +81,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
 - `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
 - `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:step-order-gate` — pipeline step order enforced in code (`scripts/collab/land-guard.mjs`)
 - `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
 - `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
 - `vitana-platform:pipeline-agent-wake-and-review` — wake an absent driver on sparring/review events, an independent reviewer tier gated by shadow qualification, CI merge of converged plan PRs
