@@ -1,0 +1,52 @@
+TAP version 13
+# Subtest: quality-checks.md exists
+ok 1 - quality-checks.md exists
+  ---
+  duration_ms: 0.812398
+  type: 'test'
+  ...
+# Subtest: quality-checks.md has one section per change type
+ok 2 - quality-checks.md has one section per change type
+  ---
+  duration_ms: 0.465285
+  type: 'test'
+  ...
+# Subtest: quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+ok 3 - quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+  ---
+  duration_ms: 0.471171
+  type: 'test'
+  ...
+# Subtest: planning, coding and review steps link quality-checks.md
+ok 4 - planning, coding and review steps link quality-checks.md
+  ---
+  duration_ms: 0.327104
+  type: 'test'
+  ...
+# Subtest: the review step reads the lane's change types from tasks.md
+ok 5 - the review step reads the lane's change types from tasks.md
+  ---
+  duration_ms: 0.230751
+  type: 'test'
+  ...
+# Subtest: the land step merges with squash so the subject keeps the VTID
+ok 6 - the land step merges with squash so the subject keeps the VTID
+  ---
+  duration_ms: 0.151751
+  type: 'test'
+  ...
+# Subtest: the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+ok 7 - the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+  ---
+  duration_ms: 0.264473
+  type: 'test'
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 7
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 97.777207
