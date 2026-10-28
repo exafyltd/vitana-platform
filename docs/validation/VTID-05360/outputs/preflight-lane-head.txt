@@ -1,0 +1,18 @@
+# preflight on the lane head with --body-file (the PR body); exit 0
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/kiro-web-reliability/preflight-validator --title 'VTID-05360 (kiro-web-reliability/preflight-validator): preflight runs VALIDATOR-CHECK' --body-file <PR body>
+preflight vitana-platform /projects/sandbox/vitana-platform/.agents/wt/preflight-validator
+  base 0d02707ba78fa2c1e37299c330a547b914842c8f  head f6abf68753f0b2fa7b4971e109a66817d9e3e41d  branch kiro/kiro-web-reliability/preflight-validator
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+PASS  VALIDATOR-CHECK [required]
+SKIP  Not run by preflight [required (VALIDATOR-CHECK)]
+      Not run by preflight: VALIDATOR-CHECK Build Gate (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check): a command_hub_frontend PR can pass preflight and still fail that CI step; run `cd services/gateway && npm ci && npm run build`
+
+preflight: every check passed

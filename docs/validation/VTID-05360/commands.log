@@ -10,3 +10,4 @@ preflight.mjs … --body-file bad.md              # demo 1, throwaway local bran
 preflight.mjs … --body-file good.md             # demo 2, evidence w/o outputs/  -> FAIL VALIDATOR-CHECK: REJECTED: missing docs/validation/VTID-05360/outputs/ (outputs/demo-2-missing-outputs.txt)
 preflight.mjs … --body-file good.md             # demo 3, both fixed             -> PASS VALIDATOR-CHECK (outputs/demo-3-fixed.txt)
 git diff --stat origin/main...HEAD              # lane scope                     -> preflight.mjs, preflight.test.mjs, lane file, docs/validation/VTID-05360/**
+preflight.mjs --repo . … --body-file <PR body>     # lane head f6abf68753 -> every check passed incl. VALIDATOR-CHECK, exit 0 (outputs/preflight-lane-head.txt)
