@@ -26,3 +26,5 @@
   }
 ]
 ```
+
+<!-- re-trigger after PLAN-SPAR repair; 2026-10-28T09:47:23.0862838+01:00 -->
