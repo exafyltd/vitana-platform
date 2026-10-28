@@ -122,6 +122,29 @@ const READ_METHODS = new Set(['GET', 'HEAD']);
 // place for arbitrary shell.
 const EXISTING_REF = /^(npm run [\w:.-]+|npx (jest|vitest run)( [\w./@:=-]+)*)$/;
 const SAFE_PATH = /^(?!\/)(?!.*\.\.)[\w./@-]+$/;
+// staging-verify-runner-fix — the only variables an `existing` suite may set,
+// each with the only values it may take. The native bundle needs a build
+// profile (apps/mobile/app.config.ts refuses to run without one, and there is
+// no production profile). Never a secret, never a loader hook like NODE_OPTIONS.
+const EXISTING_ENV_ALLOW = { APP_PROFILE: /^(development|test-g1)$/ };
+
+function existingEnvErrors(env, where) {
+  if (env === undefined) return [];
+  if (!env || typeof env !== 'object' || Array.isArray(env)) return [`${where}: env must be an object`];
+  const errors = [];
+  for (const [k, v] of Object.entries(env)) {
+    const allow = EXISTING_ENV_ALLOW[k];
+    if (!allow) errors.push(`${where}: env ${k} is not allowed (allowed: ${Object.keys(EXISTING_ENV_ALLOW).join(', ')})`);
+    else if (typeof v !== 'string' || !allow.test(v)) errors.push(`${where}: env ${k}=${JSON.stringify(v)} is not an allowed value`);
+  }
+  return errors;
+}
+
+/** The validated env of an `existing` suite; `{}` when it has none or it is invalid. */
+function existingEnv(t) {
+  if (!t || existingEnvErrors(t.env, 'env').length) return {};
+  return { ...(t.env || {}) };
+}
 
 function validateHttpTest(t, where) {
   const errors = [];
@@ -177,6 +200,7 @@ function validateTest(t, i) {
       if (typeof t.reason !== 'string' || t.reason.trim().length < 10) {
         errors.push(`${where}: reason must say why this suite covers the change`);
       }
+      errors.push(...existingEnvErrors(t.env, where));
       return errors;
     }
     default:
@@ -247,16 +271,41 @@ function commitsBetween(git, fromSha, toSha) {
 // ── Plan ─────────────────────────────────────────────────────────────────
 // commits: [{ sha, date, subject, files }] — every commit between production
 // and the verified commit (exclusive/inclusive). manifests: { [vtid]: obj|null }.
-function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }) {
+// VTID-05236: a commit that already landed on main WITHOUT a VTID in its
+// subject cannot get a suite after the fact (history is never rewritten).
+// docs/validation/commit-coverage.json names such a commit by its FULL sha and
+// the VTID whose change suite covers it, with an owner-approved reason. Only a
+// commit with no VTID of its own can be covered; the covering suite must exist
+// and is run like any other. Covered commits are listed in the summary.
+function parseCommitCoverage(json) {
+  const out = {};
+  const errors = [];
+  const entries = (json && Array.isArray(json.covers)) ? json.covers : [];
+  for (const [i, e] of entries.entries()) {
+    const where = `commit-coverage.json covers[${i}]`;
+    if (!e || !/^[0-9a-f]{40}$/.test(String(e.sha || ''))) { errors.push(`${where}: sha must be a full 40-char commit sha`); continue; }
+    if (!/^VTID-\d{4,5}$/.test(String(e.vtid || ''))) { errors.push(`${where}: vtid must be VTID-XXXXX`); continue; }
+    if (!String(e.reason || '').trim() || !String(e.approved_by || '').trim()) { errors.push(`${where}: reason and approved_by are required`); continue; }
+    out[e.sha] = e.vtid;
+  }
+  return { coverage: out, errors };
+}
+
+function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE, coverage = {} }) {
   const relevant = [];
   const suites = [];
   const missing = [];
   const legacy = [];
   const invalid = [];
   const lockfileOnly = [];
+  const covered = [];
   for (const c of commits) {
     if (!touchesService(c.files || [], service)) continue;
-    const vtids = extractVtids(c.subject);
+    let vtids = extractVtids(c.subject);
+    if (vtids.length === 0 && coverage[c.sha]) {
+      vtids = [coverage[c.sha]];
+      covered.push({ sha: c.sha, subject: c.subject, vtid: coverage[c.sha] });
+    }
     const enforced = new Date(c.date).getTime() >= new Date(enforceSince).getTime();
     relevant.push({ sha: c.sha, subject: c.subject, vtids, enforced });
     if (vtids.length === 0 && isLockfileOnlyCommit(c.files, service)) {
@@ -283,7 +332,7 @@ function planRange({ service, commits, manifests, enforceSince = ENFORCE_SINCE }
       suites.push({ vtid, tests: m.tests });
     }
   }
-  return { relevant, suites, missing, legacy, invalid, lockfileOnly };
+  return { relevant, suites, missing, legacy, invalid, lockfileOnly, covered };
 }
 
 // ── Live commit ──────────────────────────────────────────────────────────
@@ -460,6 +509,29 @@ function decideOutcome({ superseded, results, plan }) {
   return 'passed';
 }
 
+// VTID-05272 (plan kiro-autonomy-fallback §5 H): which lane a failed run is
+// about. `smoke` covers the service smoke suite and the static deploy rows;
+// when it failed, every VTID is `failed` (nothing in the build can be
+// trusted). Otherwise a VTID is `failed` when one of its own rows failed,
+// `passed` when all ran green, `not_attributed` when none of its rows count
+// (no suite ran for it, or the rows ran after a newer image took over).
+// Information only: decideOutcome stays the single outcome rule (rule 50).
+const VTID_SUITE_RE = /^VTID-\d{4,5}$/;
+function summarizeByVtid(results, vtids = []) {
+  const counted = (results || []).filter((r) => r && r.attributed !== false);
+  const smokeRows = counted.filter((r) => r.suite === 'smoke' || r.suite === 'deploy');
+  const smoke = smokeRows.length === 0 ? 'not_run' : smokeRows.every((r) => r.ok) ? 'passed' : 'failed';
+  const ids = new Set((vtids || []).filter((v) => VTID_SUITE_RE.test(v)));
+  for (const r of results || []) if (r && VTID_SUITE_RE.test(r.suite)) ids.add(r.suite);
+  const out = { smoke };
+  for (const v of [...ids].sort()) {
+    const rows = counted.filter((r) => r.suite === v);
+    if (smoke === 'failed') out[v] = 'failed';
+    else if (rows.length === 0) out[v] = 'not_attributed';
+    else out[v] = rows.every((r) => r.ok) ? 'passed' : 'failed';
+  }
+  return out;
+}
 function short(sha) {
   return String(sha || '').slice(0, 12);
 }
@@ -528,6 +600,12 @@ function buildReadyMessage({ service, sha, outcome, results, plan, shipping, pro
     lines.push('');
     lines.push('Missing change suite (rule 47 — no suite, no merge):');
     for (const m of plan.missing) lines.push(`- \`${short(m.sha)}\` ${m.vtid || '(no VTID)'} — ${m.subject}`);
+  }
+  const coveredList = plan.covered || [];
+  if (coveredList.length) {
+    lines.push('');
+    lines.push('Covered by another change suite (docs/validation/commit-coverage.json, owner-approved):');
+    for (const m of coveredList) lines.push(`- \`${short(m.sha)}\` → ${m.vtid} — ${m.subject}`);
   }
   if (plan.invalid.length) {
     lines.push('');
@@ -668,6 +746,7 @@ function isToleratedAbort(record, specAllow = []) {
 }
 
 module.exports = {
+  existingEnv,
   evaluateStampSamples,
   isRetriableFetchError,
   describeFetchError,
@@ -690,6 +769,7 @@ module.exports = {
   extractVtids,
   validateManifest,
   planRange,
+  parseCommitCoverage,
   commitMatches,
   parseFrontendVersion,
   MAX_HTTP_BODY_CHARS,
@@ -702,6 +782,7 @@ module.exports = {
   DEPLOY_COMPLETED_MARGIN_MS,
   DEPLOY_LOOKBACK_MS,
   decideOutcome,
+  summarizeByVtid,
   buildReadyMessage,
   isAutopilotCommit,
 };

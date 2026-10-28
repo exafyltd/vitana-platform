@@ -1,0 +1,76 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "pipeline-speed",
+  "vtid": "VTID-05336",
+  "vtids": [
+    "VTID-05336",
+    "VTID-05337",
+    "VTID-05338"
+  ],
+  "generated_at": "2026-10-22T19:20:00Z",
+  "generated_by": "kiro (pipeline wf_561cf354d2648029, staging step)",
+  "plan_pr_opened_at": "2026-10-22T11:25:22Z",
+  "converged_at": "2026-10-22T17:49:26Z",
+  "policy_approved_at": "2026-10-22T17:49:26Z",
+  "vtids_allocated_at": "2026-10-22T17:49:26Z",
+  "plan_merged_at": "2026-10-22T18:25:21Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 23044000,
+  "vtid_ms": null,
+  "plan_merge_ms": 25199000,
+  "lanes": [
+    {
+      "lane": "preflight",
+      "vtid": "VTID-05336",
+      "claimed_at": "2026-10-22T18:30:52Z",
+      "pr_opened_at": "2026-10-22T18:55:36Z",
+      "accepted_at": null,
+      "merged_at": null,
+      "staging_verified_at": null,
+      "build_ms": 1484000,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    },
+    {
+      "lane": "restart-watchdog",
+      "vtid": "VTID-05337",
+      "claimed_at": "2026-10-22T18:31:00Z",
+      "pr_opened_at": "2026-10-22T18:42:57Z",
+      "accepted_at": null,
+      "merged_at": null,
+      "staging_verified_at": null,
+      "build_ms": 717000,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    },
+    {
+      "lane": "slot-sizing",
+      "vtid": "VTID-05338",
+      "claimed_at": "2026-10-22T18:28:29Z",
+      "pr_opened_at": "2026-10-22T18:52:38Z",
+      "accepted_at": null,
+      "merged_at": null,
+      "staging_verified_at": null,
+      "build_ms": 1449000,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": 0,
+  "sources_unavailable": [
+    "vtid_ms: CI PLAN-SPAR allocated the 3 lane VTIDs on convergence (run 39825857008); no VTID-allocation timestamp distinct from policy_approved_at exists.",
+    "lane accepted_at / review_ms / merge_ms / merged_at: every lane review race returned model_unavailable for all three reviewer chain models (claude-sonnet-5.5, claude-opus-5.5, claude-sonnet-4.5), so no lane has an accept and none is merged; all three are parked with PRs #4337, #4339, #4340 open.",
+    "staging_verify_ms / approved_to_verified_ms / staging_verified_at: no lane landed, and no lane path matches any staging deploy workflow trigger (services/** or vitana-v1 src/**), so the plan deploys nothing and has no AWS-STAGE-DEPLOY / STAGING-VERIFY run.",
+    "gate2_sent_at: the plan deploys nothing, so it has no Gate 2."
+  ],
+  "note": "No dedicated plan VTID was bound to the sparring session (session 64363084-889a-4b1b-a227-b0edc72ee6f4); CI PLAN-SPAR allocated only the 3 lane VTIDs. This file is anchored on the lowest lane VTID (VTID-05336), as VTID-05301 did for ci-github-modernization. claimed_at = claim commit time (git); convergence_ms and plan_merge_ms are measured from the plan PR's GitHub createdAt."
+}

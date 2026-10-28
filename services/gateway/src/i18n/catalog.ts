@@ -261,9 +261,16 @@ export type GatewayI18nKey =
   | 'notif.chat_mention.title'
   // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
   | 'notif.calendar_invite.body'
+  // VTID-05311: push for a shared post / event / product / profile — never the item's content.
+  | 'notif.chat_shared_content.body'
   // VTID-05137: body of the one push a burst of chat messages gets
   // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
   | 'notif.chat_burst.body'
+  // VTID-05208: the push a newcomer gets when several members greeted them by
+  // private DM within 24 h ("{count} people said hello 👋") — see
+  // new-member-greeting-push.ts
+  | 'notif.new_member_greeting_burst.title'
+  | 'notif.new_member_greeting_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a
@@ -274,7 +281,16 @@ export type GatewayI18nKey =
   // VTID-05100: push for a Vitana Companion Message. The DM itself is composed
   // by the model (rule 41); the lock-screen title/body are fixed catalog text.
   | 'notif.vitana_companion_message.title'
-  | 'notif.vitana_companion_message.body';
+  | 'notif.vitana_companion_message.body'
+  // VTID-05205: the three team welcome DMs for new members (written messages
+  // from Mariia, Jovana and Alex Blue — catalog rule, not rule 41). {name} =
+  // the newcomer's first name; *_noname when the profile has none.
+  | 'welcome_team.mariia.body'
+  | 'welcome_team.mariia.body_noname'
+  | 'welcome_team.jovana.body'
+  | 'welcome_team.jovana.body_noname'
+  | 'welcome_team.alex.body'
+  | 'welcome_team.alex.body_noname';
 
 type LocaleCatalog = Record<GatewayI18nKey, string>;
 

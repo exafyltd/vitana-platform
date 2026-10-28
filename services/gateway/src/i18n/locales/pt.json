@@ -132,7 +132,10 @@
   "notif.listing_interest.body": "Alguém está interessado em «{title}».",
   "notif.chat_mention.title": "{sender} mencionou-te em «{group}»",
   "notif.calendar_invite.body": "{name} convidou-te para um evento",
+  "notif.chat_shared_content.body": "{name} partilhou algo contigo",
   "notif.chat_burst.body": "{count} novas mensagens · {preview}",
+  "notif.new_member_greeting_burst.title": "Bem-vindo/a à comunidade 👋",
+  "notif.new_member_greeting_burst.body": "{count} pessoas disseram-te olá 👋",
   "notif.day_close.title": "Boa noite 🌙",
   "notif.day_close.body": "O dia terminou — se ainda tiver algo em mente, me conte rapidinho.",
   "notif.partner_test_status_changed.title": "Atualização de {partner_name}",
@@ -197,5 +200,11 @@
   "autopilot.auto.share_milestone.summary": "Alcançaste uma conquista. Partilha-a com a comunidade — vais ver a publicação antes de sair.",
   "sms.phone_verification.code": "O teu código Vitanaland: {code}. Não o partilhes com ninguém.",
   "notif.vitana_companion_message.title": "Mensagem da Vitana",
-  "notif.vitana_companion_message.body": "A Vitana escreveu-te – toca para ler a mensagem dela."
+  "notif.vitana_companion_message.body": "A Vitana escreveu-te – toca para ler a mensagem dela.",
+  "welcome_team.mariia.body": "Olá {name}, que bom ter-te connosco! 💛 As boas-vindas à MAXINA. Somos uma comunidade que se apoia mutuamente no caminho para mais saúde e bem-estar, e fico mesmo contente por estares aqui.",
+  "welcome_team.mariia.body_noname": "Olá, que bom ter-te connosco! 💛 As boas-vindas à MAXINA. Somos uma comunidade que se apoia mutuamente no caminho para mais saúde e bem-estar, e fico mesmo contente por estares aqui.",
+  "welcome_team.jovana.body": "Olá {name}, as boas-vindas à comunidade MAXINA! 👋 Quando te apetecer, diz olá e conta-nos um pouco sobre ti, e junta-te a qualquer conversa que te interesse. Sem pressão nenhuma; estamos felizes por te ter aqui.",
+  "welcome_team.jovana.body_noname": "Olá, as boas-vindas à comunidade MAXINA! 👋 Quando te apetecer, diz olá e conta-nos um pouco sobre ti, e junta-te a qualquer conversa que te interesse. Sem pressão nenhuma; estamos felizes por te ter aqui.",
+  "welcome_team.alex.body": "Olá {name}, sou o Alex 👋 Trato da parte técnica da MAXINA. Se alguma coisa não estiver a funcionar ou não souberes bem como usar uma funcionalidade, escreve-me aqui e terei todo o gosto em ajudar-te a resolver.",
+  "welcome_team.alex.body_noname": "Olá, sou o Alex 👋 Trato da parte técnica da MAXINA. Se alguma coisa não estiver a funcionar ou não souberes bem como usar uma funcionalidade, escreve-me aqui e terei todo o gosto em ajudar-te a resolver."
 }

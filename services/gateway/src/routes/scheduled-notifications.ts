@@ -17,6 +17,7 @@
  *   POST /api/v1/scheduled-notifications/signal-cleanup
  *   POST /api/v1/scheduled-notifications/night-push
  *   POST /api/v1/scheduled-notifications/whats-new         (VTID-04733)
+ *   POST /api/v1/scheduled-notifications/welcome-team-tick (VTID-05205)
  */
 
 import { Router, Request, Response } from 'express';
@@ -40,6 +41,8 @@ import {
   WHATS_NEW_CREATED_BY_PREFIX, WHATS_NEW_MIN_GAP_HOURS,
 } from '../services/whats-new-publisher';
 import * as repo from './scheduled-notifications-repository';
+import { withJobTenants } from '../services/jobs/job-tenant-loop';
+import { CHAT_PUSH_TYPES, chatConversationKeyFromData, keysByMessageId, messageIdOf, viewingKey, viewingPairs } from '../services/chat-viewing-presence';
 import { isNotificationTypeAllowed, isMemberInQuietHours, normalizeSourceKey } from '../services/notification-controls/notification-controls-service';
 import { runRemindersTick, runRemindersSweeper } from '../services/reminders-dispatch';
 import { wideTodayWindow, pickFirstEventTodayPerUser } from '../services/calendar-today';
@@ -50,6 +53,8 @@ import { runCoachTick } from '../services/onboarding-coach/coach-service';
 import { resolveCoachConfig } from '../services/onboarding-coach/config';
 import { runCompanionTick } from '../services/companion/companion-service';
 import { resolveCompanionConfig, isSendMode } from '../services/companion/config';
+import { runWelcomeTeamTick } from '../services/welcome-team/welcome-team-service';
+import { resolveWelcomeTeamConfig } from '../services/welcome-team/config';
 const router = Router();
 
 // VTID-04677: every route below fans out notifications to members, so each
@@ -100,6 +105,16 @@ async function getActiveUsers(supabase: any, tenantId: string): Promise<Array<{ 
 // ── Helper: extract tenant_id from body or use default ───────
 function getTenantId(req: Request): string | null {
   return req.body?.tenant_id || process.env.DEFAULT_TENANT_ID || null;
+}
+
+// ── VTID-05270 (mt-jobs): tenant fan-out for the getTenantId-driven routes ──
+// Master off (MT_RESOLUTION_V2 unset) ⇒ the handler gets getTenantId(req) and
+// the live response, exactly as before. Master on ⇒ a body tenant_id runs once
+// for that tenant (AP-0501 → /morning-briefing never re-fans out); no body
+// tenant ⇒ one pass per active tenant (resolveJobTenants). Per-user timezones
+// and the findRecentlyNotified idempotency check stay inside each pass.
+function jobRoute(handler: (req: Request, res: Response, tenantId: string | null) => unknown) {
+  return withJobTenants(handler, getTenantId, { getClient: getServiceClient as any });
 }
 
 /**
@@ -471,8 +486,7 @@ function composeMorningBriefing(ctx: BriefingContext): string {
   return parts.join(' ');
 }
 
-router.post('/morning-briefing', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/morning-briefing', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -537,7 +551,7 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
     (skippedDuplicate ? `, ${skippedDuplicate} skipped as already briefed today` : ''),
   );
   return res.status(200).json({ ok: true, dispatched, skipped_duplicate: skippedDuplicate });
-});
+}));
 
 // =============================================================================
 // POST /daily-pace-notifications — Hourly UTC (claude/daily-pace-notifications)
@@ -564,9 +578,8 @@ router.post('/morning-briefing', async (req: Request, res: Response) => {
 // every user's local 19:00 hour regardless of their tz offset (including
 // fractional offsets like Asia/Kathmandu UTC+5:45).
 // =============================================================================
-router.post('/daily-pace-notifications', async (req: Request, res: Response) => {
+router.post('/daily-pace-notifications', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   // auth: scheduled-notifications-auth (VTID-04677)
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   // Debug params for on-call / manual testing:
@@ -738,13 +751,12 @@ router.post('/daily-pace-notifications', async (req: Request, res: Response) => 
   }
 
   return res.status(200).json({ ok: true, dispatched, skipped, errors });
-});
+}));
 
 // =============================================================================
 // POST /diary-reminder — Daily 9 PM UTC
 // =============================================================================
-router.post('/diary-reminder', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/diary-reminder', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -765,7 +777,7 @@ router.post('/diary-reminder', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] daily_diary_reminder → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /daily-feature-tip — Daily 17:00 UTC (BOOTSTRAP-DAILY-FEATURE-TIP)
@@ -782,8 +794,7 @@ function pickTipLocale(text: { en: string; de: string; [k: string]: string }, lo
 }
 
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/daily-feature-tip', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/daily-feature-tip', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -882,7 +893,7 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
     console.error('[Scheduled] daily_feature_tip exception:', err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
-});
+}));
 
 // =============================================================================
 // POST /whats-new — Daily 16:00 UTC (VTID-04733)
@@ -897,11 +908,10 @@ router.post('/daily-feature-tip', async (req: Request, res: Response) => {
 // WHATS_NEW_AUTOPUBLISH=false. Same fan-out shape as /daily-feature-tip.
 // =============================================================================
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/whats-new', async (req: Request, res: Response) => {
+router.post('/whats-new', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if ((process.env.WHATS_NEW_AUTOPUBLISH ?? 'true') === 'false') {
     return res.status(200).json({ ok: true, skipped: 'disabled' });
   }
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1004,13 +1014,12 @@ router.post('/whats-new', async (req: Request, res: Response) => {
     console.error('[Scheduled] whats_new exception:', err.message);
     return res.status(500).json({ ok: false, error: 'INTERNAL_ERROR' });
   }
-});
+}));
 
 // =============================================================================
 // POST /weekly-digest — Sunday 6 PM UTC
 // =============================================================================
-router.post('/weekly-digest', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-digest', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1031,13 +1040,12 @@ router.post('/weekly-digest', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_community_digest → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /weekly-summary — Sunday 8 AM UTC
 // =============================================================================
-router.post('/weekly-summary', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-summary', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1058,13 +1066,12 @@ router.post('/weekly-summary', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_activity_summary → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /weekly-reflection — Friday 8 PM UTC
 // =============================================================================
-router.post('/weekly-reflection', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/weekly-reflection', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1085,7 +1092,7 @@ router.post('/weekly-reflection', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] weekly_reflection_prompt → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /meetup-reminders — RETIRED (VTID-04374)
@@ -1110,12 +1117,11 @@ router.post('/meetup-reminders', (_req: Request, res: Response) => {
 // in-app inbox.
 // =============================================================================
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/upcoming-events', async (req: Request, res: Response) => {
+router.post('/upcoming-events', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   // impact-allow-no-oasis
   // Fan-out only — reads calendar_events and dispatches push notifications.
   // No state transition worth recording; mirrors the other scheduled-
   // notification handlers in this file (morning-briefing, diary-reminder).
-  const tenantId = getTenantId(req);
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1161,13 +1167,12 @@ router.post('/upcoming-events', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] upcoming_event_today → ${dispatched} users`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /recommendation-expiry — Daily 10 AM UTC
 // =============================================================================
-router.post('/recommendation-expiry', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/recommendation-expiry', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1197,13 +1202,12 @@ router.post('/recommendation-expiry', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] recommendation_expires_soon → ${dispatched} notifications`);
   return res.status(200).json({ ok: true, dispatched });
-});
+}));
 
 // =============================================================================
 // POST /signal-cleanup — Daily 3 AM UTC
 // =============================================================================
-router.post('/signal-cleanup', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/signal-cleanup', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   const supa = await getServiceClient();
@@ -1231,7 +1235,7 @@ router.post('/signal-cleanup', async (req: Request, res: Response) => {
 
   console.log(`[Scheduled] signal_cleanup → ${cleaned} signals expired`);
   return res.status(200).json({ ok: true, cleaned });
-});
+}));
 
 // =============================================================================
 // POST /push-dispatch — Cloud Scheduler, every minute
@@ -1308,8 +1312,71 @@ router.post('/push-dispatch', async (req: Request, res: Response) => {
     await recordPushOutcome(supa, id, outcome);
   };
 
+  // VTID-05312: chat rows of this batch, decided before anything is sent:
+  //   - duplicates: of rows for the same recipient and chat message the oldest
+  //     is kept; the others — and a kept row whose sibling was already pushed —
+  //     are marked suppressed_duplicate;
+  //   - viewing: the recipient is looking at that conversation → suppressed_viewing.
+  // Keys are resolved for the whole batch (one chat_messages read for rows that
+  // name neither group nor sender, one presence read). Fails open.
+  const chatDuplicateIds = new Set<string>();
+  const chatViewingIds = new Set<string>();
+  const chatRows = pending.filter((n: any) => CHAT_PUSH_TYPES.has(n.type));
+  if (chatRows.length > 0) {
+    try {
+      const keptByPair = new Map<string, string>();
+      for (const n of chatRows) {
+        const mid = messageIdOf(n.data);
+        if (!mid) continue;
+        const pair = `${n.user_id}|${mid}`;
+        if (keptByPair.has(pair)) chatDuplicateIds.add(n.id);
+        else keptByPair.set(pair, n.id);
+      }
+      const mids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[1])));
+      if (mids.length > 0) {
+        const uids = Array.from(new Set(Array.from(keptByPair.keys()).map((p) => p.split('|')[0])));
+        const { data: pushed, error: siblingError } = await repo.fetchPushedChatSiblings(supa, mids, uids);
+        if (siblingError) console.warn(`[PushDispatch] pushed-sibling read failed (dedup of already-pushed rows skipped this tick): ${siblingError.message}`);
+        for (const r of (pushed as Array<{ id: string; user_id: string; message_id: string }> | null) ?? []) {
+          const kept = keptByPair.get(`${r.user_id}|${r.message_id}`);
+          if (kept && kept !== r.id) chatDuplicateIds.add(kept);
+        }
+      }
+      const needLookup = chatRows
+        .filter((n: any) => !chatConversationKeyFromData(n.data))
+        .map((n: any) => messageIdOf(n.data))
+        .filter((x: string | null): x is string => !!x);
+      const keyByMessage = await keysByMessageId(supa, needLookup);
+      const keyByRow = new Map<string, string>();
+      for (const n of chatRows) {
+        const key = chatConversationKeyFromData(n.data) ?? keyByMessage.get(messageIdOf(n.data) ?? '') ?? null;
+        if (key) keyByRow.set(n.id, key);
+      }
+      const viewing = await viewingPairs(supa, chatRows
+        .filter((n: any) => keyByRow.has(n.id))
+        .map((n: any) => ({ userId: n.user_id, tenantId: n.tenant_id, key: keyByRow.get(n.id)! })));
+      for (const n of chatRows) {
+        const key = keyByRow.get(n.id);
+        if (key && viewing.has(viewingKey(n.user_id, n.tenant_id, key))) chatViewingIds.add(n.id);
+      }
+    } catch (err: any) {
+      console.warn(`[PushDispatch] chat dedup/viewing check failed (pushing as before): ${err?.message || err}`);
+    }
+  }
+
   for (const notif of pending) {
     try {
+      if (chatDuplicateIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_duplicate');
+        skipped++;
+        continue;
+      }
+      if (chatViewingIds.has(notif.id)) {
+        await markHandled(notif.id, 'suppressed_viewing');
+        skipped++;
+        continue;
+      }
+
       // VTID-04674: the admin switch. The row exists (it passed the database
       // guard when it was written), but a type switched off since must not
       // push. Marked handled so it is not picked up again.
@@ -1519,8 +1586,7 @@ router.post('/reminders-sweeper', async (_req: Request, res: Response) => {
 const NIGHT_PUSH_LOCAL_HOUR = 22;
 
 // auth: scheduled-notifications-auth (VTID-04677)
-router.post('/night-push', async (req: Request, res: Response) => {
-  const tenantId = getTenantId(req);
+router.post('/night-push', jobRoute(async (req: Request, res: Response, tenantId: string | null) => {
   if (!tenantId) return res.status(400).json({ ok: false, error: 'tenant_id required' });
 
   // Debug params for on-call / manual testing, same convention as
@@ -1631,7 +1697,7 @@ router.post('/night-push', async (req: Request, res: Response) => {
   }
 
   return res.status(200).json({ ok: true, dispatched, skipped, errors });
-});
+}));
 
 // =============================================================================
 // Health check
@@ -1705,6 +1771,34 @@ router.post('/companion-tick', async (req: Request, res: Response) => {
   } catch (err: any) {
     console.error('[companion] tick failed:', err?.message || err);
     return res.status(500).json({ ok: false, error: 'companion tick failed' });
+  }
+});
+
+// VTID-05205 — team welcome DMs tick (Mariia day 0, Jovana day 1, Alex Blue day 2).
+// Sibling of the coach tick, not part of it (plan S2): the coach has no live
+// mode yet, and these welcomes are not paced coaching touches. Same token rule
+// as the ticks above — enforced HERE whatever SCHEDULED_NOTIFICATIONS_AUTH_MODE
+// says — and the staging gateway refuses outright (shared production database).
+// auth: scheduled-notifications-auth (VTID-04677) + own enforcement (VTID-05205)
+router.post('/welcome-team-tick', async (req: Request, res: Response) => {
+  const auth = evaluateScheduledNotificationsAuth(req);
+  if (!auth.ok) return res.status(auth.status ?? 401).json({ ok: false, error: auth.error });
+  // impact-allow-no-oasis: runWelcomeTeamTick emits welcome_team.message.sent/failed per DM and one tick.completed per tick that decided something.
+
+  const config = resolveWelcomeTeamConfig();
+  if (config.mode === 'disabled-on-staging') {
+    return res.status(409).json({ ok: false, mode: config.mode, error: 'welcome-team tick does not run on staging' });
+  }
+  if (config.mode !== 'shadow' && config.mode !== 'live') return res.json({ ok: true, mode: config.mode, reason: config.reason });
+
+  const supa = await getServiceClient();
+  if (!supa) return res.status(503).json({ ok: false, error: 'Supabase not configured' });
+  try {
+    const result = await runWelcomeTeamTick({ sb: supa as any, config });
+    return res.status(result.ok ? 200 : 503).json(result);
+  } catch (err: any) {
+    console.error('[welcome-team] tick failed:', err?.message || err);
+    return res.status(500).json({ ok: false, error: 'welcome-team tick failed' });
   }
 });
 

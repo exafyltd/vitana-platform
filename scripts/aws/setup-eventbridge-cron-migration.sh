@@ -213,6 +213,16 @@ JOBS=(
   # COMPANION_MODE=shadow are set on the gateway (the tick answers {mode:"off"});
   # full silence: re-run with --only gateway-companion-tick --delete.
   "gateway-companion-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/companion-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
+  # VTID-05205 — team welcome DMs (Mariia day 0, Jovana day 1, Alex Blue day 2):
+  # every 15 minutes, production gateway only (staging answers 409 — shared
+  # database), so Mariia's welcome arrives within ~15 min of registration.
+  # Each member gets at most one welcome per tick and each welcome once
+  # (welcome_team_claims). Inert until FEATURE_WELCOME_TEAM_ENV, WELCOME_ROLLOUT_AT
+  # and WELCOME_TEAM_MODE are set on the gateway (the tick answers {mode:"off"});
+  # sending also needs WELCOME_TEAM_SEND_ENABLED=true and
+  # WELCOME_SENDER_NAMES_CONFIRMED=true. Full silence: re-run with
+  # --only gateway-welcome-team-tick --delete.
+  "gateway-welcome-team-tick|*/15 * * * *|UTC|/api/v1/scheduled-notifications/welcome-team-tick|{}|{\"auth\":\"gateway_internal\",\"token_secret_id\":\"$PROD_INTERNAL_TOKEN_SECRET_ID\"}"
 )
 
 # VTID-04352: --only narrows JOBS to the requested name prefixes.

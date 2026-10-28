@@ -132,7 +132,10 @@
   "notif.listing_interest.body": "Birisi \"{title}\" ile ilgilendi.",
   "notif.chat_mention.title": "{sender} seni \"{group}\" grubunda andı",
   "notif.calendar_invite.body": "{name} seni bir etkinliğe davet etti",
+  "notif.chat_shared_content.body": "{name} seninle bir şey paylaştı",
   "notif.chat_burst.body": "{count} yeni mesaj · {preview}",
+  "notif.new_member_greeting_burst.title": "Topluluğa hoş geldin 👋",
+  "notif.new_member_greeting_burst.body": "{count} kişi sana merhaba dedi 👋",
   "notif.day_close.title": "İyi geceler 🌙",
   "notif.day_close.body": "Gün sona erdi — aklında bir şey varsa, bana kısaca söyleyebilirsin.",
   "notif.partner_test_status_changed.title": "{partner_name} güncellemesi",
@@ -197,5 +200,11 @@
   "email.push_fallback.settings": "Bildirim ayarları",
   "sms.phone_verification.code": "Vitanaland kodun: {code}. Kimseyle paylaşma.",
   "notif.vitana_companion_message.title": "Vitana'dan mesaj",
-  "notif.vitana_companion_message.body": "Vitana sana yazdı – mesajını okumak için dokun."
+  "notif.vitana_companion_message.body": "Vitana sana yazdı – mesajını okumak için dokun.",
+  "welcome_team.mariia.body": "Merhaba {name}, aramızda olman çok güzel! 💛 MAXINA'ya hoş geldin. Daha iyi sağlık ve esenlik yolunda birbirine destek olan bir topluluğuz ve burada olduğun için gerçekten çok mutluyum.",
+  "welcome_team.mariia.body_noname": "Merhaba, aramızda olman çok güzel! 💛 MAXINA'ya hoş geldin. Daha iyi sağlık ve esenlik yolunda birbirine destek olan bir topluluğuz ve burada olduğun için gerçekten çok mutluyum.",
+  "welcome_team.jovana.body": "Selam {name}, MAXINA topluluğuna hoş geldin! 👋 Canın istediğinde bir merhaba de ve bize biraz kendinden bahset; ilgini çeken her sohbete katılabilirsin. Hiçbir baskı yok; burada olmana çok seviniyoruz.",
+  "welcome_team.jovana.body_noname": "Selam, MAXINA topluluğuna hoş geldin! 👋 Canın istediğinde bir merhaba de ve bize biraz kendinden bahset; ilgini çeken her sohbete katılabilirsin. Hiçbir baskı yok; burada olmana çok seviniyoruz.",
+  "welcome_team.alex.body": "Merhaba {name}, ben Alex 👋 MAXINA'nın teknik tarafıyla ilgileniyorum. Bir şey çalışmıyorsa ya da bir özelliğin nasıl kullanıldığından emin değilsen, bana buradan yazman yeterli; çözmene memnuniyetle yardımcı olurum.",
+  "welcome_team.alex.body_noname": "Merhaba, ben Alex 👋 MAXINA'nın teknik tarafıyla ilgileniyorum. Bir şey çalışmıyorsa ya da bir özelliğin nasıl kullanıldığından emin değilsen, bana buradan yazman yeterli; çözmene memnuniyetle yardımcı olurum."
 }

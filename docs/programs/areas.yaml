@@ -8,11 +8,14 @@
 # Each seat's Kiro Web automation only takes lanes with its own seat (.kiro/automations/<seat>.md).
 # Seats are 1-12 lowercase letters; session ids are kiro-<seat>-YYYYMMDDHHMM-xxxx.
 
+# VTID-05271 (kiro-autonomy-fallback): the seat that does the jobs the Claude Routine did (items E1-E6 of its automation).
+exceptions_seat: exafyltd
+
 seats:
   jtadic:   { account: j.tadic@exafy.io,        surface: kiro-web, automation: .kiro/automations/jtadic.md }
   exafyltd: { account: exafyltd@gmail.com,      surface: kiro-web, automation: .kiro/automations/exafyltd.md }
   hotmail:  { account: dstevanovic@hotmail.com, surface: kiro-ide }   # also the key on the server-side Kiro runner
-  exafy:    { account: d.stevanovic@exafy.io,   surface: kiro-ide }
+  exafy:    { account: d.stevanovic@exafy.io,   surface: kiro-web, automation: .kiro/automations/exafy.md }
 
 areas:
   backoffice:
@@ -33,6 +36,15 @@ areas:
         - "services/gateway/src/routes/chat*.ts"
         - "services/gateway/src/services/chat/**"
         - "services/gateway/src/services/chat-*.ts"
+  platform:
+    seat: exafy
+    priority: 10
+    paths:
+      vitana-platform:
+        - "services/gateway/src/routes/**"
+        - "services/gateway/src/services/**"
+        - "supabase/migrations/**"
+        - "scripts/**"
   frontend:
     seat: exafyltd
     priority: 1          # catch-all: only when no specific area matches

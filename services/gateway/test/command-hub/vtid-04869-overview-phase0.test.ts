@@ -68,7 +68,11 @@ function fnBody(signature: string): string {
  */
 function overviewRegion(): string {
   const start = SRC.indexOf('// VTID-01864: Supervisor Dashboard — Utility Functions');
-  const end = SRC.indexOf('async function fetchOperatorTaskQueue(');
+  // VTID-05073: fetchOperatorTaskQueue (the former end marker) was extracted to
+  // operator-console.js. The overview region's content stays in app.js and now
+  // ends where the extracted Operator block began: the next function that
+  // stayed, stopOperatorEventStreamRefresh. Same staying-code slice as before.
+  const end = SRC.indexOf('function stopOperatorEventStreamRefresh(');
   expect(start).toBeGreaterThan(-1);
   expect(end).toBeGreaterThan(start);
   return SRC.slice(start, end);

@@ -132,7 +132,10 @@
   "notif.listing_interest.body": "Neko je zainteresovan za „{title}\".",
   "notif.chat_mention.title": "{sender} te pominje u „{group}“",
   "notif.calendar_invite.body": "{name} te poziva na događaj",
+  "notif.chat_shared_content.body": "{name} je podelio nešto sa tobom",
   "notif.chat_burst.body": "Novih poruka: {count} · {preview}",
+  "notif.new_member_greeting_burst.title": "Dobro došao/la u zajednicu 👋",
+  "notif.new_member_greeting_burst.body": "Pozdravilo te je ljudi: {count} 👋",
   "notif.day_close.title": "Лаку ноћ 🌙",
   "notif.day_close.body": "Дан је прошао — ако ти нешто још увек пролази кроз главу, реци ми.",
   "notif.partner_test_status_changed.title": "Ažuriranje od {partner_name}",
@@ -197,5 +200,11 @@
   "autopilot.auto.share_milestone.summary": "Dostigao si prekretnicu. Podeli je sa zajednicom — videćeš objavu pre nego što izađe.",
   "sms.phone_verification.code": "Tvoj Vitanaland kod: {code}. Ne deli ga ni sa kim.",
   "notif.vitana_companion_message.title": "Poruka od Vitane",
-  "notif.vitana_companion_message.body": "Vitana ti je pisala – dodirni da pročitaš njenu poruku."
+  "notif.vitana_companion_message.body": "Vitana ti je pisala – dodirni da pročitaš njenu poruku.",
+  "welcome_team.mariia.body": "Zdravo {name}, baš je lepo što si sa nama! 💛 Dobrodošlica u MAXINA. Mi smo zajednica u kojoj podržavamo jedni druge na putu ka boljem zdravlju i blagostanju, i zaista mi je drago što si ovde.",
+  "welcome_team.mariia.body_noname": "Zdravo, baš je lepo što si sa nama! 💛 Dobrodošlica u MAXINA. Mi smo zajednica u kojoj podržavamo jedni druge na putu ka boljem zdravlju i blagostanju, i zaista mi je drago što si ovde.",
+  "welcome_team.jovana.body": "Ćao {name}, dobrodošlica u MAXINA zajednicu! 👋 Kad god poželiš, javi se i reci nam ponešto o sebi, i slobodno se uključi u bilo koji razgovor koji te zanima. Bez ikakvog pritiska; drago nam je što si tu.",
+  "welcome_team.jovana.body_noname": "Ćao, dobrodošlica u MAXINA zajednicu! 👋 Kad god poželiš, javi se i reci nam ponešto o sebi, i slobodno se uključi u bilo koji razgovor koji te zanima. Bez ikakvog pritiska; drago nam je što si tu.",
+  "welcome_team.alex.body": "Zdravo {name}, ja sam Alex 👋 Brinem o tehničkoj strani MAXINA-e. Ako nešto ne radi ili ti nije jasno kako funkcioniše neka opcija, samo mi piši ovde i rado ću ti pomoći da to rešimo.",
+  "welcome_team.alex.body_noname": "Zdravo, ja sam Alex 👋 Brinem o tehničkoj strani MAXINA-e. Ako nešto ne radi ili ti nije jasno kako funkcioniše neka opcija, samo mi piši ovde i rado ću ti pomoći da to rešimo."
 }

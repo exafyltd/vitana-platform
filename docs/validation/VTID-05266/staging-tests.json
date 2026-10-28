@@ -1,0 +1,32 @@
+{
+  "vtid": "VTID-05266",
+  "service": "gateway",
+  "note": "Read-only. VTID-05266 is a test-data-only fix: the VTID-05082 staging suite now looks for the SVG sanitizer in svg-preview.js (where #4182 moved it) instead of operator-console.js. No product code, no API routes, no writes. This lane changes only docs/validation/**, so it deploys nothing; this suite is its record and is proven by the next gateway deploy that contains it.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the staging gateway build is up"
+    },
+    {
+      "kind": "http",
+      "name": "deployed svg-preview.js contains the SVG sanitizer/renderer",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/command-hub/svg-preview.js?v=20261121-vtid-05082",
+      "expect_status": 200,
+      "expect_body_contains": "sanitizeSvgMarkup",
+      "reason": "read-only GET: the file the corrected VTID-05082 test #3 now targets is served on staging and carries the sanitizer"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04696-staging-checks-follow-asset-bumps.test.ts",
+      "cwd": "services/gateway",
+      "reason": "every docs/validation/*/staging-tests.json asset?v= pin (both VTID-05082 and this suite) matches a version index.html loads"
+    }
+  ]
+}

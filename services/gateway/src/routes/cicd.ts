@@ -39,6 +39,7 @@ import { Router, Request, Response } from 'express';
 import {
   CreatePrRequestSchema,
   SafeMergeRequestSchema,
+  SafeMergeRequest,
   DeployServiceRequestSchema,
   ALLOWED_DEPLOY_SERVICES,
   CreatePrResponse,
@@ -296,27 +297,56 @@ router.post('/create-pr', requireServiceOrAdmin, async (req: Request, res: Respo
   }
 });
 
-// ==================== POST /safe-merge ====================
-// Mounted at /api/v1/github -> final path: /api/v1/github/safe-merge
-// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may merge.
-router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
+// ==================== Safe-merge: in-process function (VTID-05217 / P4) ====================
+// The POST /safe-merge route body refactored into a callable function so the
+// Project Manager act layer can run the SAME gate in-process (plan §6.3) with
+// NO behaviour change to the HTTP route. The route below is now a thin adapter:
+// it builds the typed outcome and replays the identical status + JSON payload.
+//
+// `result` classifies the outcome for in-process callers:
+//   - 'merged'         : the PR was merged by this call.
+//   - 'already_merged' : the PR was not open (plan Risks / cicd.ts:344 pr_not_open) —
+//                        a no-op success for in-process callers, NOT a failure.
+//                        The HTTP route still returns the identical 400 pr_not_open
+//                        body, so route behaviour is unchanged.
+//   - 'refused'        : any other gate failure (unauthorized repo, pr_not_found,
+//                        invalid base, checks failed, governance blocked, error).
+
+export type SafeMergeResult = 'merged' | 'already_merged' | 'refused';
+
+export interface SafeMergeOutcome {
+  result: SafeMergeResult;
+  /** HTTP status the route replays. */
+  status: number;
+  /** The exact JSON body the route replays. */
+  body: SafeMergeResponse;
+}
+
+/**
+ * Run the safe-merge gate for a PR, in-process. Behaviour-preserving extraction
+ * of the POST /safe-merge route body. Emits the same OASIS events, returns the
+ * same payloads. `require_checks`/`merge_strategy` default to the schema defaults
+ * (true / 'squash') so an in-process caller can omit them.
+ */
+export async function safeMerge(input: SafeMergeRequest): Promise<SafeMergeOutcome> {
+  const { vtid, repo, pr_number } = input;
+  const require_checks = input.require_checks ?? true;
+  const merge_strategy = input.merge_strategy ?? 'squash';
+
   try {
-    const validation = SafeMergeRequestSchema.safeParse(req.body);
-    if (!validation.success) {
-      return handleZodError(validation.error, res);
-    }
-
-    const { vtid, repo, pr_number, require_checks, merge_strategy } = validation.data;
-
     // Validate repo is an allowed one (VTID-05014: both Vitana repos)
     if (!PR_WRITE_REPOS.includes(repo)) {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'unauthorized_repo', { repo });
-      return res.status(403).json({
-        ok: false,
-        reason: 'unauthorized_repo',
-        vtid,
-        details: { message: `Only ${PR_WRITE_REPOS.join(', ')} are allowed` },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 403,
+        body: {
+          ok: false,
+          reason: 'unauthorized_repo',
+          vtid,
+          details: { message: `Only ${PR_WRITE_REPOS.join(', ')} are allowed` },
+        } as SafeMergeResponse,
+      };
     }
     const tokenArgs = repoTokenArgs(repo);
 
@@ -330,36 +360,50 @@ router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Resp
     } catch (error) {
       const errorMessage = error instanceof Error ? error.message : 'Unknown error';
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'pr_not_found', { error: errorMessage });
-      return res.status(404).json({
-        ok: false,
-        reason: 'pr_not_found',
-        vtid,
-        details: { error: errorMessage },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 404,
+        body: {
+          ok: false,
+          reason: 'pr_not_found',
+          vtid,
+          details: { error: errorMessage },
+        } as SafeMergeResponse,
+      };
     }
 
     const { pr, checks, allPassed } = prStatus;
 
-    // Validate PR is open
+    // Validate PR is open. A non-open PR is treated as ALREADY MERGED: a no-op
+    // success for in-process callers (plan Risks: safe-merge returns pr_not_open
+    // at cicd.ts:344 if a lease was lost mid-merge). The HTTP body is unchanged.
     if (pr.state !== 'open') {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'pr_not_open', { state: pr.state });
-      return res.status(400).json({
-        ok: false,
-        reason: 'pr_not_open',
-        vtid,
-        details: { pr_state: pr.state },
-      } as SafeMergeResponse);
+      return {
+        result: 'already_merged',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'pr_not_open',
+          vtid,
+          details: { pr_state: pr.state },
+        } as SafeMergeResponse,
+      };
     }
 
     // Validate base is main
     if (pr.base.ref !== 'main') {
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'invalid_base', { base: pr.base.ref });
-      return res.status(400).json({
-        ok: false,
-        reason: 'invalid_base',
-        vtid,
-        details: { base: pr.base.ref, message: 'PRs must target main branch' },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'invalid_base',
+          vtid,
+          details: { base: pr.base.ref, message: 'PRs must target main branch' },
+        } as SafeMergeResponse,
+      };
     }
 
     // Check CI status if required
@@ -368,17 +412,21 @@ router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Resp
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'checks_failed', {
         checks: failedChecks,
       });
-      return res.status(400).json({
-        ok: false,
-        reason: 'checks_failed',
-        vtid,
-        details: {
-          pr_state: pr.state,
-          base: pr.base.ref,
-          head: pr.head.ref,
-          checks: failedChecks,
-        },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 400,
+        body: {
+          ok: false,
+          reason: 'checks_failed',
+          vtid,
+          details: {
+            pr_state: pr.state,
+            base: pr.base.ref,
+            head: pr.head.ref,
+            checks: failedChecks,
+          },
+        } as SafeMergeResponse,
+      };
     }
 
     // Run governance evaluation
@@ -396,21 +444,25 @@ router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Resp
       await cicdEvents.safeMergeBlocked(vtid, pr_number, 'governance_blocked', {
         blocked_reasons: governance.blocked_reasons,
       });
-      return res.status(403).json({
-        ok: false,
-        reason: 'governance_blocked',
-        vtid,
-        details: {
-          pr_state: pr.state,
-          base: pr.base.ref,
-          head: pr.head.ref,
-          checks,
-          files_touched: governance.files_touched,
-          services_impacted: governance.services_impacted,
-          governance_decision: governance.decision,
-          blocked_reasons: governance.blocked_reasons,
-        },
-      } as SafeMergeResponse);
+      return {
+        result: 'refused',
+        status: 403,
+        body: {
+          ok: false,
+          reason: 'governance_blocked',
+          vtid,
+          details: {
+            pr_state: pr.state,
+            base: pr.base.ref,
+            head: pr.head.ref,
+            checks,
+            files_touched: governance.files_touched,
+            services_impacted: governance.services_impacted,
+            governance_decision: governance.decision,
+            blocked_reasons: governance.blocked_reasons,
+          },
+        } as SafeMergeResponse,
+      };
     }
 
     // All checks passed and governance approved - proceed with merge
@@ -431,29 +483,63 @@ router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Resp
     // Detect service for auto-deploy hint
     const primaryService = githubService.detectServiceFromFiles(governance.files_touched);
 
-    return res.status(200).json({
-      ok: true,
-      merged: true,
-      branch: 'main',
-      repo,
-      vtid,
-      details: {
-        pr_state: 'merged',
-        base: pr.base.ref,
-        head: pr.head.ref,
-        checks,
-        files_touched: governance.files_touched,
-        services_impacted: governance.services_impacted,
-        governance_decision: 'approved',
-      },
-      next: primaryService
-        ? {
-            can_auto_deploy: true,
-            service: primaryService,
-            environment: 'dev',
-          }
-        : undefined,
-    } as SafeMergeResponse);
+    return {
+      result: 'merged',
+      status: 200,
+      body: {
+        ok: true,
+        merged: true,
+        branch: 'main',
+        repo,
+        vtid,
+        details: {
+          pr_state: 'merged',
+          base: pr.base.ref,
+          head: pr.head.ref,
+          checks,
+          files_touched: governance.files_touched,
+          services_impacted: governance.services_impacted,
+          governance_decision: 'approved',
+        },
+        next: primaryService
+          ? {
+              can_auto_deploy: true,
+              service: primaryService,
+              environment: 'dev',
+            }
+          : undefined,
+      } as SafeMergeResponse,
+    };
+  } catch (error) {
+    const errorMessage = error instanceof Error ? error.message : 'Unknown error';
+    console.error(`[CICD] Safe merge failed for ${vtid} PR #${pr_number}: ${errorMessage}`);
+    await cicdEvents.safeMergeBlocked(vtid, pr_number, 'internal_error', { error: errorMessage });
+    return {
+      result: 'refused',
+      status: 500,
+      body: {
+        ok: false,
+        reason: 'internal_error',
+        vtid,
+        details: { error: errorMessage },
+      } as SafeMergeResponse,
+    };
+  }
+}
+
+// ==================== POST /safe-merge ====================
+// Mounted at /api/v1/github -> final path: /api/v1/github/safe-merge
+// VTID-05019: only the gateway's own callers (service token) or an exafy_admin may merge.
+// Thin adapter over safeMerge() (VTID-05217 / P4) — same validation, events, payloads.
+router.post('/safe-merge', requireServiceOrAdmin, async (req: Request, res: Response) => {
+  try {
+    const validation = SafeMergeRequestSchema.safeParse(req.body);
+    if (!validation.success) {
+      return handleZodError(validation.error, res);
+    }
+
+    const outcome = await safeMerge(validation.data);
+    return res.status(outcome.status).json(outcome.body);
   } catch (error) {
     const errorMessage = error instanceof Error ? error.message : 'Unknown error';
     const vtid = req.body?.vtid || 'UNKNOWN';

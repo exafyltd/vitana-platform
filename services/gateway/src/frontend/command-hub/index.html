@@ -4,7 +4,7 @@
   <meta charset="UTF-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Vitana Command Hub</title>
-  <link rel="stylesheet" href="/command-hub/styles.css?v=20261120-vtid-05148" />
+  <link rel="stylesheet" href="/command-hub/styles.css?v=20261121-vtid-05082" />
   <!-- VTID-05067: the Kiro console (one owner of the Kiro view in the Operator Console) -->
   <link rel="stylesheet" href="/command-hub/kiro-console.css?v=20261114-vtid-05071" />
   <link rel="stylesheet" href="/command-hub/voice-self-healing.css?v=20261014-vtid-04626" />
@@ -25,7 +25,11 @@
   <script src="/command-hub/kiro-console.js?v=20261114-vtid-05071"></script>
   <!-- VTID-05084: before app.js, which hands Autonomy → Loops to window.LoopsCatalog -->
   <script src="/command-hub/loops-catalog.js?v=20261121-vtid-05153"></script>
-  <script src="/command-hub/app.js?v=20261120-vtid-05148"></script>
+  <!-- VTID-05082: inline SVG preview module; before operator-console.js, which calls window.SvgPreview -->
+  <script src="/command-hub/svg-preview.js?v=20261121-vtid-05082"></script>
+  <!-- VTID-05073: Operator Console functions extracted from app.js (before app.js; app.js calls them at call time) -->
+  <script src="/command-hub/operator-console.js?v=20261121-vtid-05082"></script>
+  <script src="/command-hub/app.js?v=20261121-vtid-05082"></script>
   <!-- VTID-04626: Voice Self-Healing screen -->
   <script src="/command-hub/voice-self-healing.js?v=20261014-vtid-04626-2"></script>
   <!-- VTID-04777..04780: Voice supervisor (Overview / Tenants & Roles / Sessions / Fix Impact) -->
