@@ -30,6 +30,7 @@ specs:
   - vitana-platform:staging-verify-runner-fix
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
+  - vitana-platform:fix-deeplink-scroll-test
   - vitana-platform:pipeline-speed
   - vitana-platform:kiro-web-steering
   - vitana-platform:owner-autonomy
