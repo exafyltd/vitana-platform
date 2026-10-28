@@ -20,7 +20,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/profileNative.json
   - docs/validation/**
-updated: 2026-10-21T17:59Z
+updated: 2026-10-28T10:39Z
+vtid: VTID-05373
 ---
 # Profile port — `/me/profile` (view + edit), `/u/:identifier` (+ `?match_intent=`), `/profile/me/privacy`, `/profile/:id`
 Plan: `.kiro/specs/native-wave2-profile-settings/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -69,3 +70,6 @@ Lane drafted with the plan (`state: drafted` in `handoff.md`). The 5 rows (→ 4
 computed from the parity ledger and `src/App.tsx` so no file belongs to two lanes; no `depends_on`. Next: PLAN-SPAR
 spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-profile-settings/profile --session <id>`). Reviewer seat `hotmail`.
+
+### 2026-10-28T10:39Z · ci-plan-spar · ready (VTID allocated)
+VTID-05373 allocated after policy approval (converged-auto-v1).

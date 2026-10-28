@@ -2,12 +2,14 @@
 slug: native-wave2-profile-settings
 author: kiro
 executor: kiro
-next_actor: claude
-state: drafted
+next_actor: kiro
+state: approved
 author_seat: exafyltd
-updated: 2026-10-21T17:59Z
+updated: 2026-10-28T10:39Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-profile-settings/sparring/verdict.md
+vtids: [VTID-05373, VTID-05374, VTID-05375]
 ---
 # Handoff — Native Wave 2: Profile / Settings / Support / Connectors screen ports
 Wave 2 screen-port batch of the Maxina native app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -48,3 +50,6 @@ Next: **PLAN-SPAR** spars the `plan(native-wave2-profile-settings)` PR; on conve
 approves it and CI writes the VTIDs into the lanes. Then seat `exafyltd` claims the three lanes (all parallel, no
 deps) — reviewer seat `hotmail` reviews each. Device-runtime parity (the last G1 task in each lane) waits on the
 owner's G1 isolated test environment.
+
+### 2026-10-28T10:39Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

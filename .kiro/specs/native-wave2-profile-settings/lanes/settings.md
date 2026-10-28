@@ -21,7 +21,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/settingsNative.json
   - docs/validation/**
-updated: 2026-10-21T17:59Z
+updated: 2026-10-28T10:39Z
+vtid: VTID-05374
 ---
 # Settings port — the `MobileSettings` `?mode=` hub + `/settings/preferences`, `/settings/limitations`, `/settings/tenant-role`, `/delete-account`
 Plan: `.kiro/specs/native-wave2-profile-settings/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -83,3 +84,6 @@ computed from the parity ledger,
 directory is split from `support-connectors` by explicit file names (design §1a); no `depends_on`. Next: PLAN-SPAR
 spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-profile-settings/settings --session <id>`). Reviewer seat `hotmail`.
+
+### 2026-10-28T10:39Z · ci-plan-spar · ready (VTID allocated)
+VTID-05374 allocated after policy approval (converged-auto-v1).
