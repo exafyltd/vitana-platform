@@ -44,7 +44,10 @@ message is exactly `no review needed (<status>)` (the store watch then writes no
 
 ## What the review step's prompt gives the agent
 Lane key `<slug>/<LANE>`, PR URL(s) and number(s), the head SHA per repo, the repo checkout paths, the spec paths on
-`origin/main`, `RUN/lanes/<LANE>/impl-notes.md`, and any lane-specific check. If the plan carries an owner instruction
+`origin/main`, `RUN/lanes/<LANE>/impl-notes.md`, and any lane-specific check. Checklist item 10 always includes, read from the
+`Change types:` bullet of the lane's Acceptance group in `tasks.md`, the "Reviewer" lines of those sections of
+`quality-checks.md` and its Acceptance template fields; a missing `Change types:` bullet, a field left empty, or an
+outcome only unit-tested but reported as verified is a finding. If the plan carries an owner instruction
 covering its protected gate files, the prompt names it (checklist item 9).
 
 ## What the agent checks (its checklist, in its definition)

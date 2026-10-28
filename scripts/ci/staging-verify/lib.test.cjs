@@ -757,3 +757,48 @@ test('VTID-05272: run.mjs writes record.per_vtid from summarizeByVtid', () => {
   assert.match(src, /per_vtid: lib\.summarizeByVtid\(results, /);
   assert.match(src, /const outcome = lib\.decideOutcome\(\{ superseded, results, plan \}\);/);
 });
+
+// quality-checks/staging-manifest-bom: eight vitana-v1 commits (e.g. 36d702bfd) only removed a UTF-8 BOM that made
+// STAGING-VERIFY reject a valid staging-tests.json as invalid JSON. The manifest reader removes one leading BOM.
+test('quality-checks: parseJsonText reads a manifest with a leading UTF-8 BOM as the same object', () => {
+  const text = JSON.stringify({ vtid: 'VTID-00001', service: 'community-app', tests: [{ kind: 'http', url: '/alive' }] });
+  assert.deepEqual(lib.parseJsonText('\uFEFF' + text), JSON.parse(text));
+  assert.deepEqual(lib.parseJsonText(text), JSON.parse(text));
+});
+
+test('quality-checks: parseJsonText still rejects invalid JSON, empty input and a BOM that is not leading', () => {
+  assert.throws(() => lib.parseJsonText('\uFEFF{"a":'), SyntaxError);
+  assert.throws(() => lib.parseJsonText(''), SyntaxError);
+  assert.throws(() => lib.parseJsonText('\uFEFF'), SyntaxError);
+  assert.throws(() => lib.parseJsonText('\uFEFF\uFEFF{}'), SyntaxError);
+  assert.throws(() => lib.parseJsonText('{"a":1}\uFEFF'), SyntaxError);
+});
+
+test('quality-checks: a commit-coverage.json with a leading BOM gives the same coverage as without', () => {
+  const sha = 'a'.repeat(40);
+  const text = JSON.stringify({ covers: [{ sha, vtid: 'VTID-00001', reason: 'merge commit without a VTID', approved_by: 'owner' }] });
+  const withBom = lib.parseCommitCoverage(lib.parseJsonText('\uFEFF' + text));
+  assert.deepEqual(withBom, { coverage: { [sha]: 'VTID-00001' }, errors: [] });
+  assert.deepEqual(withBom, lib.parseCommitCoverage(JSON.parse(text)));
+});
+
+test('quality-checks: run.mjs loadManifest reads a BOM staging-tests.json from disk and still flags invalid JSON', async () => {
+  const fs = require('node:fs');
+  const path = require('node:path');
+  const { loadManifest } = await import('./run.mjs');
+  const root = fs.mkdtempSync(path.join(require('node:os').tmpdir(), 'qc-bom-'));
+  const write = (vtid, text) => {
+    fs.mkdirSync(path.join(root, 'docs', 'validation', vtid), { recursive: true });
+    fs.writeFileSync(path.join(root, 'docs', 'validation', vtid, 'staging-tests.json'), text, 'utf8');
+  };
+  const manifest = { vtid: 'VTID-00001', service: 'community-app', tests: [] };
+  write('VTID-00001', '\uFEFF' + JSON.stringify(manifest));
+  write('VTID-00002', '{"vtid":');
+  try {
+    assert.deepEqual(loadManifest(root, 'VTID-00001'), manifest);
+    assert.equal(typeof loadManifest(root, 'VTID-00002').__parseError, 'string');
+    assert.equal(loadManifest(root, 'VTID-00003'), null);
+  } finally {
+    fs.rmSync(root, { recursive: true, force: true });
+  }
+});
