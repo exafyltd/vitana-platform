@@ -148,3 +148,5 @@ parallel; `product-cart-checkout` waits for `discover` (the `AddToCartButton` tw
   (`discoverNative.json` / `cartOrdersNative.json` / `marketplaceOrdersNative.json`); default mirrors the model's
   single-shard-per-spec pattern.
 <!-- plan:end -->
+
+<!-- cross-repo plan; vitana-v1 read via spar_refs. fresh session after PLAN-SPAR repair; 2026-10-28T09:49:52.3357947+01:00 -->
