@@ -4,10 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: in-review
+state: verified
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 vtids: [VTID-05362]
-updated: 2026-10-28T11:13Z
+updated: 2026-10-28T11:21Z
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 ---
 # Handoff — step-order-gate
@@ -34,3 +34,6 @@ Lane `land-guard` built (#4439).
 
 ### 2026-10-28T11:13Z · kiro-exafyltd-202610261510-099d · executing → in-review
 The lane is in review and accepted.
+
+### 2026-10-28T11:21Z · kiro-exafyltd-202610261510-099d · in-review → verified
+Lane merged (6f4bea7b). It deploys nothing, so there is no Gate 2.
