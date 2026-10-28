@@ -20,7 +20,9 @@ instruction (protected gate file).
 ## program-registry
 - [ ] P1. Test first, red on base: `scripts/collab/program-registry.test.mjs` (each spec of `plan.md` item 5 → its
   programme; slug pattern; listed exactly once; `validatePrograms` = `[]`). Slugs read from `main` / the open PR heads
-  (`git ls-tree -d`), source recorded in `commands.log`.
+  (`git ls-tree -d`), source recorded in `commands.log`. Round 2 (R2-F1): the test also asserts that each programme's
+  `repos` contains the repo prefix of every spec this lane adds (`desktop-redesign` gains `vitana-platform`); no CI
+  gate checks that otherwise.
 - [ ] P2. Add the specs to `docs/programs/native-app/program.md`, `docs/programs/desktop-redesign/program.md` (+ repo
   `vitana-platform`), `docs/programs/standalone/program.md`; re-check open `native-wave2-*` plan PRs at build time.
 - [ ] P3. `docs/validation/<VTID>/commands.log`: the test run, and `queue.mjs validate` on #4373's head with no
