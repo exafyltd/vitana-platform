@@ -66,25 +66,28 @@ Observed in Kiro Web (probes in `docs/validation/VTID-05340/probes.md`, plus thi
 1. New option `--body-file <path>` (the PR body). New check `VALIDATOR-CHECK` (label `required` — it is a required
    check on PRs it runs on), only when a changed file (base…head) matches the workflow's `on.pull_request.paths`
    (read from the file, not hard-coded); otherwise `skip` "not in VALIDATOR-CHECK's paths".
-2. It runs the workflow's own step scripts, read from the **base** revision of `.github/workflows/VALIDATOR-CHECK.yml`
-   (as Lane scope uses the base `queue.mjs`): every step of job `validate-pr` that has a `run:` block, in order, except
+2. It runs the workflow's own step scripts, read from the **head** (checked-out) revision of
+   `.github/workflows/VALIDATOR-CHECK.yml`, which is what a `pull_request` run executes (neither lane changes that file,
+   so base and head are identical for this plan): every step of job `validate-pr` that has a `run:` block, in order, except
    `Build Gate` (`:274-290`): a new platform-side `not-covered` entry "Not run by preflight: VALIDATOR-CHECK Build Gate
    (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check `:282-289`)" is added whenever the
    check applies (the existing `:202-203` entry is v1-only). A `command_hub_frontend` PR can therefore pass preflight
    and still fail that CI step; the README says so.
-   Each runs in `bash -e` with cwd = `--repo`, env = the step's `env:` with `${{ github.base_ref }}` → the `--base`
+   Each runs in `bash --noprofile --norc -eo pipefail` (the GitHub Actions default shell) with cwd = `--repo`, env = the step's `env:` with `${{ github.base_ref }}` → the `--base`
    ref's branch name (`main` default), `${{ github.event.pull_request.title }}` → `--title`,
    `${{ github.event.pull_request.body }}` → the body file's text, `${{ steps.<id>.outputs.<K> }}` → values earlier
    steps wrote to their `$GITHUB_OUTPUT` file; every `/tmp/` path in a script is rewritten to the preflight temp dir
    (parallel preflights never share files). The first failing step ends the check; its output (the `REJECTED:` lines)
    is the failure. A step whose script uses another `${{ … }}` expression → the check fails "unsupported expression"
    (never a silent pass).
-3. No `--body-file` while the check applies → fail "no --body-file: VALIDATOR-CHECK reads the declarations from the PR
+3. Body source, in order: `--body-file`; else the open PR's body via `gh api` (as the guard already finds the open PR's
+   title). No body from either while the check applies → fail "no --body-file: VALIDATOR-CHECK reads the declarations from the PR
    body; on a first push pass PR_BODY_FILE=<file> (see docs/kiro-web-parity/README.md)". Minimal YAML reading without dependencies: job → `steps:` list items → `name`, `id`, `env` map, `run: |`
    block scalar by indentation; a parse failure fails the check.
 4. Tests (red on base: the option and check do not exist): body missing a declaration → fail naming it (the real
    `--pr-body-check` message); evidence dir without `outputs/` → fail `missing …/outputs/`; both fixed → pass; a change
-   outside the paths → skip; `/tmp/` rewrite (two runs in parallel do not collide); `${{ github.base_ref }}` and
+   outside the paths → skip; open-PR body fallback when `--body-file` is absent; a failing stage inside a pipeline fails
+   the step (pipefail); the workflow is read from the head revision; `/tmp/` rewrite (two runs in parallel do not collide); `${{ github.base_ref }}` and
    `steps.meta.outputs` substitution; unsupported expression → fail; `Build Gate` reported not run.
 
 ### 3.2 Lane `session-reliability` — `scripts/collab/kiro-web-session.mjs`, `scripts/collab/kiro-web-session.test.mjs`, `AGENTS.md`, `.kiro/pipeline/driver.md`, `docs/kiro-web-parity/**`, `docs/validation/VTID-*/**`
@@ -174,7 +177,11 @@ glob), and the reviewer agent checks the folder is the lane's own. No file is ed
 
 ### 3.3 Interface between the lanes
 `preflight.mjs --body-file <path>`: lane `session-reliability` passes it only when the preflight source on disk
-contains `'body-file'`, so either lane can merge first.
+contains `'body-file'`. Either lane can merge first: when `preflight-validator` merges first, the existing PreToolUse
+push check (no `--body-file`) still passes for a branch with an open PR, because preflight then reads that PR's body
+(§3.1.3); a first push before the PR exists fails VALIDATOR-CHECK with the message naming `PR_BODY_FILE` until
+`session-reliability` lands — **so the driver merges `session-reliability` first** and `preflight-validator` second
+(one merge at a time anyway); neither lane `depends_on` the other for building.
 
 ## 4. Validation (owner items)
 - (1) A simulated fresh sandbox (§2.15 method) with the new single `setup` (+ `--codeintel`); `status --check` exit 0, timings recorded. What is automatic vs instruction-driven is documented (§2.9-10).
