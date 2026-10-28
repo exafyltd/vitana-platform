@@ -1,0 +1,42 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "reviewer-step-model",
+  "vtid": "VTID-05359",
+  "vtids": ["VTID-05359"],
+  "generated_at": "2026-10-28T10:40:00Z",
+  "generated_by": "kiro-202610230600-758b",
+  "plan_pr_opened_at": "2026-10-23T06:15:23Z",
+  "converged_at": "2026-10-27T23:09:16Z",
+  "policy_approved_at": "2026-10-27T23:09:16Z",
+  "vtids_allocated_at": "2026-10-27T23:14:00Z",
+  "plan_merged_at": "2026-10-27T23:25:42Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 406433000,
+  "vtid_ms": 284000,
+  "plan_merge_ms": 702000,
+  "lanes": [
+    {
+      "lane": "step-model-line",
+      "vtid": "VTID-05359",
+      "claimed_at": "2026-10-27T23:28:32Z",
+      "pr_opened_at": "2026-10-28T10:00:01Z",
+      "accepted_at": "2026-10-28T10:04:55Z",
+      "merged_at": "2026-10-28T10:15:38Z",
+      "staging_verified_at": null,
+      "build_ms": 37889000,
+      "review_ms": 294000,
+      "merge_ms": 643000,
+      "review_rounds": 1,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": null,
+  "sources_unavailable": [
+    "staging_verify (deploys nothing: no AWS-STAGE-DEPLOY-* path touched by merges 499ad9fcea or 6bac46208a)",
+    "gate2 (deploys nothing)"
+  ],
+  "notes": "convergence_ms spans the previous run wf_c8815f087aa0d547, which stopped on a Kiro usage limit (plan PR opened 2026-10-23, round 2 ran 2026-10-27). Claim time = committer date of the claim commit 3ddba1212497. Build time includes a session interruption after the claim. pr_opened_at / merged_at = PR #4431 createdAt / mergedAt; accepted_at = committer date of the review entry commit f3981b30dd (accept on head 3fc0bbb525)."
+}

@@ -11,7 +11,7 @@ paths:
   - supabase/migrations/20261101090000_vtid_05245_tenant_email_branding.sql
   - docs/validation/VTID-05245/**
   - docs/multitenancy/MIGRATION-QUEUE.md
-updated: 2026-10-20T08:46Z
+updated: 2026-10-20T12:18Z
 vtid: VTID-05245
 ---
 # email-brand-db — tenant-keyed email branding helper (repo vitana-v1, DB)
@@ -51,6 +51,11 @@ separate platform PR: https://github.com/exafyltd/vitana-platform/pull/4204
 ### 2026-10-20T08:46Z · kiro-hotmail-202610151618-b437 · ready → in-review
 Migration `20261101090000_vtid_05245_tenant_email_branding.sql` + rollback/pre/post-check/scope.json shipped
 (not applied), PR https://github.com/exafyltd/vitana-v1/pull/1464 opened; awaiting review by seat exafyltd.
+### 2026-10-20T12:18Z · kiro-hotmail-202610151618-b437 · plan merged (§7b owner-directed)
+Plan PR https://github.com/exafyltd/vitana-platform/pull/4172 (`plan(mt-frontend-brand)`) is merged to main as
+`975a1bdb82b111f7bd8363dcdfec9a7c34993b55` under collaboration.md §7b. Owner instruction in conversation
+2026-10-20: "you do it, claude is off , you have to do it, we have changed the rule" (in reply to the list naming
+#4172, #4206, #4208). This lane's state is unchanged. #1464 (vitana-v1) and #4204 were not merged.
 ### 2026-10-21T19:13Z · kiro-exafyltd-202610211913-904e · review
 review: accept
 head: 9f431c7c72a238be89ffb2f479ef1422be290065
