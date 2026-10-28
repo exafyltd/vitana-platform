@@ -37,9 +37,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      # VTID-05307: cache npm keyed on the gateway lockfile so the conditional
+      # "Gateway deps" npm ci below reuses a warm cache on a fix PR. This is a
+      # speed-only change: PR-GATE keeps running on every pull_request with no
+      # path filter (a path-filtered required gate stays pending and wedges
+      # merges — inv-code §5), and `enforce` is untouched.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: services/gateway/package-lock.json
 
       - name: Gate self-test
         run: node --test scripts/ci/pr-gate/__tests__/*.test.mjs
@@ -58,18 +65,6 @@ jobs:
         run: |
           node --test scripts/ci/kiro-steering/guard.test.cjs
           node scripts/ci/kiro-steering/guard.cjs .
-
-      # VTID-05145: Claude Code ↔ Kiro handoff/lane files, state transitions and session/lane trailers
-      # (scripts/collab/queue.mjs; rules: .claude/rules/collaboration.md). Report-only until 2026-10-20:
-      # it is not in the Verdict OUTCOMES yet; add `collab=${{ steps.collab.outcome }}` there to make it count.
-      - name: Collab handoff
-        id: collab
-        continue-on-error: true
-        env:
-          HEAD_REF: ${{ github.head_ref }}
-        run: |
-          node --test scripts/collab/queue.test.mjs
-          node scripts/collab/queue.mjs validate --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"
 
       - name: Scope guard
         id: scope
@@ -121,13 +116,14 @@ jobs:
           echo "### ⚠️ PR-GATE (report-only) would fail: $FAILED" >> "$GITHUB_STEP_SUMMARY"
           echo "::warning::PR-GATE report-only — would fail: $FAILED"
 
-  # VTID-05213: Lane scope — a lane PR changes only its lane's declared `paths`; governance paths need an
-  # `executor: claude` lane; a kiro/ branch names its lane in trailers. Its own job and check run (not part of the
-  # report-only Verdict) because the Project Manager merges only when this check is green.
-  lane-scope:
-    name: Lane scope
+  # VTID-05145: Claude Code ↔ Kiro handoff/lane files, state transitions and session/lane trailers
+  # (scripts/collab/queue.mjs; rules: .claude/rules/collaboration.md). VTID-05276: its own job and check run named
+  # exactly "Collab handoff" (the Project Manager requires it green before a merge), running every
+  # scripts/collab/*.test.mjs so a new collab test file runs in CI the moment it exists.
+  collab-handoff:
+    name: Collab handoff
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    timeout-minutes: 15
     env:
       BASE: ${{ github.event.pull_request.base.sha }}
       HEAD: ${{ github.event.pull_request.head.sha }}
@@ -140,5 +136,38 @@ jobs:
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+      - name: Collab tests
+        run: node --test scripts/collab/*.test.mjs
+      - name: Collab handoff
+        run: node scripts/collab/queue.mjs validate --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"
+
+  # VTID-05213: Lane scope — a lane PR changes only its lane's declared `paths`; governance paths need an
+  # `executor: claude` lane (VTID-05276: or executor kiro reviewed by agent:vitana-lane-reviewer from a trusted lane
+  # file; protected gate files never); a kiro/ branch names its lane in trailers. Its own job and check run (not part
+  # of the report-only Verdict) because the Project Manager merges only when this check is green.
+  # VTID-05276: the BASE revision's checker judges the PR (head is data), as vitana-v1 and PLAN-SPAR do, so a PR never
+  # grades itself; GH_TOKEN lets it read the lane file of an open plan( PR of this repository.
+  lane-scope:
+    name: Lane scope
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      BASE: ${{ github.event.pull_request.base.sha }}
+      HEAD: ${{ github.event.pull_request.head.sha }}
+      HEAD_REF: ${{ github.head_ref }}
+      GH_TOKEN: ${{ github.token }}
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.pull_request.head.sha }}
+          fetch-depth: 0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
       - name: Lane scope
-        run: node scripts/collab/queue.mjs scope-check --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --summary "$GITHUB_STEP_SUMMARY"
+        run: |
+          git show "$BASE:scripts/collab/queue.mjs" > "$RUNNER_TEMP/queue.mjs"
+          if git cat-file -e "$BASE:scripts/collab/protected-gate-files.json" 2>/dev/null; then
+            git show "$BASE:scripts/collab/protected-gate-files.json" > "$RUNNER_TEMP/protected-gate-files.json"
+          fi
+          node "$RUNNER_TEMP/queue.mjs" scope-check --repo . --base "$BASE" --head "$HEAD" --branch "$HEAD_REF" --plan-repo "${{ github.repository }}" --summary "$GITHUB_STEP_SUMMARY"

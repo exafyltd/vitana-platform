@@ -1,0 +1,9 @@
+# VTID-05310 (messenger-ux-v2/api-send-reliability) — session kiro-exafyltd-202610211130-c65e
+$ npx jest test/vtid-05310-chat-send-reliability.test.ts        # origin/main c74812569 (test copied): 21 failed, 1 passed (outputs/red-on-base.txt)
+$ npx jest test/vtid-05310-chat-send-reliability.test.ts        # head: 22 passed
+$ npx jest <18 chat/push/roles suites incl. vtid-04560 role separation, 04962, 05104, 04928, 05208, 04917, 04926, 05137 deps>   # head: 366 passed, 0 failed
+$ npx tsc --noEmit -p services/gateway   # head: no errors (TS2742 lines only from the symlinked node_modules in this sandbox, also on untouched files)
+The case "without the migration the send still succeeds" passes on base too: it pins today's behaviour, which must hold until the migration is applied.
+# independent review (semantic_reviewer; agent:vitana-lane-reviewer returned model_unavailable in this Kiro Web session): approve, 6 non-blocking findings — all fixed:
+#   content_data.reply_to stripped; prior-send lookup scoped (409 on conflict) and run before invite limits; group duplicate uses the stored reply; migration lock comment corrected; 3 tests added
+$ npx jest vtid-05310 + chat-vitana-reply + 04917 + 04926 + 05104 + 05137   # head: 113 passed

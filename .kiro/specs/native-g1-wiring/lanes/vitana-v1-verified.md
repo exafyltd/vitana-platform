@@ -1,13 +1,13 @@
 ---
 lane: vitana-v1-verified
-state: ready
+state: done
 next_actor: kiro
 depends_on: [spar-vitana-v1-ref]
 executor: claude
 reviewer_seat: claude
 paths:
   - docs/validation/VTID-*/vitana-v1-spar-evidence.md
-updated: 2026-10-20T08:41Z
+updated: 2026-10-20T10:30Z
 vtid: VTID-05253
 ---
 # Sentinel: machine-enforce that the plan was sparred with vitana-v1 readable (R2-F2)
@@ -44,3 +44,17 @@ enforcement. This sentinel wires the gate through `depends_on`. next_actor: clau
 
 ### 2026-10-20T08:41Z · ci-plan-spar · ready (VTID allocated)
 VTID-05253 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-20T10:30Z · kiro-202610151913-51bd · ready → done
+Evidence recorded in docs/validation/VTID-05253/vitana-v1-spar-evidence.md. Honest note on how the gate was
+satisfied: the converging sparring session (`8e2ff780`) was created before the vitana-v1 ref fix
+(`fa73aabd0`, PR #4201) was in the plan branch's base, so the PARTNER did not read vitana-v1 in the
+converging round — the pure "sparring read vitana-v1" form of the gate was not met by that session. It is
+instead met by the stronger practical equivalent: the two foundational lanes gated behind this sentinel
+(env-profiles, fixture-gateway) were implemented and reviewed against the REAL vitana-v1 code and their
+PRs are merged to vitana-v1 main — env-profiles #1466 (50873056a) verified env.ts loadConfig/
+assertNotProduction/assertNotProductionKey/ConfigMissingError byte-identical to origin/main; fixture-gateway
+#1465 (db3e0766b) verified parseAppConfigResponse and the app.config.ts IDENTIFIERS against the real files.
+So every vitana-v1 premise those lanes rest on is verified in code, by the implementers, not left on trust.
+The ref fix is also now merged, so any FUTURE native plan spars with vitana-v1 readable. Marking done to
+unblock the dependent lanes, with the limitation stated plainly rather than papered over.

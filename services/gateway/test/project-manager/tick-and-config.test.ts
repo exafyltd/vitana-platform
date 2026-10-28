@@ -29,10 +29,11 @@ describe('config switches', () => {
     expect(pmMode({ PM_MODE: 'nonsense' } as any)).toBe('dry_run');
   });
 
-  it('tick interval defaults to 10 minutes', () => {
-    expect(pmTickIntervalMs({} as any)).toBe(600000);
+  // VTID-05274 (plan kiro-autonomy-fallback §5 C3): the default tick is 2 minutes (was 10).
+  it('tick interval defaults to 2 minutes', () => {
+    expect(pmTickIntervalMs({} as any)).toBe(120000);
     expect(pmTickIntervalMs({ PM_TICK_INTERVAL_MS: '1000' } as any)).toBe(1000);
-    expect(pmTickIntervalMs({ PM_TICK_INTERVAL_MS: 'bad' } as any)).toBe(600000);
+    expect(pmTickIntervalMs({ PM_TICK_INTERVAL_MS: 'bad' } as any)).toBe(120000);
   });
 });
 
