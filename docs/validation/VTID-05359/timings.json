@@ -1,0 +1,43 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "reviewer-step-model",
+  "vtid": "VTID-05359",
+  "vtids": ["VTID-05359"],
+  "generated_at": "2026-10-28T08:40:00Z",
+  "generated_by": "kiro-exafy-202610272309-57d7",
+  "plan_pr_opened_at": "2026-10-23T06:15:23Z",
+  "converged_at": "2026-10-27T23:09:16Z",
+  "policy_approved_at": "2026-10-27T23:09:16Z",
+  "vtids_allocated_at": "2026-10-27T23:14:00Z",
+  "plan_merged_at": "2026-10-27T23:25:42Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 406433000,
+  "vtid_ms": 284000,
+  "plan_merge_ms": 702000,
+  "lanes": [
+    {
+      "lane": "step-model-line",
+      "vtid": "VTID-05359",
+      "claimed_at": "2026-10-27T23:28:32Z",
+      "pr_opened_at": null,
+      "accepted_at": null,
+      "merged_at": null,
+      "staging_verified_at": null,
+      "build_ms": null,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": null,
+  "sources_unavailable": [
+    "staging_verify (deploys nothing)",
+    "gate2 (deploys nothing)",
+    "pr_opened_at / accepted_at / merged_at: filled in by the land step from GitHub"
+  ],
+  "notes": "convergence_ms spans the previous run wf_c8815f087aa0d547, which stopped on a Kiro usage limit (plan PR opened 2026-10-23, round 2 ran 2026-10-27). Claim time = committer date of the claim commit 3ddba1212497. Build time includes a session interruption after the claim."
+}
