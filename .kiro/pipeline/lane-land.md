@@ -36,7 +36,8 @@ true` exactly when the status becomes `landed`, `parked` or `skipped`.
    d. Up to date with latest `main`: if behind, `gh pr update-branch <n>` (no force); clean → keep the accept (log:
       only `main`'s commits added); conflict → `merge_conflicts`+1, status `needs_update`, release the lock, go to 4.
       Wait (poll 2-3 min, max 60 min) for every required check green on that exact head, then merge at once under
-      the §7b rule (common rule 4) with the method recent merged PRs use; `--admin` only for the governance-artifact
+      the §7b rule (common rule 4) with **squash** (the subject keeps the PR title's VTID, which STAGING-VERIFY reads;
+      a merge commit fails rule 47, `quality-checks.md` "Merge"); `--admin` only for the governance-artifact
       false positive (log why); never over a real red. A lane spanning both repos merges both PRs.
       Infra or flake (runner lost, network, a known flake on `main`) → `gh run rerun <id> --failed` once per check per
       head; the rerun allowlist is PR checks, PLAN-SPAR, PR-GATE and STAGING-VERIFY only, never `AWS-PROD-*`. Real

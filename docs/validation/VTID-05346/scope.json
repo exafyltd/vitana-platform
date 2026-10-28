@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05346",
+  "kind": "infra",
+  "paths": [
+    ".kiro/pipeline/quality-checks.md",
+    ".kiro/pipeline/planning.md",
+    ".kiro/pipeline/lane-code.md",
+    ".kiro/pipeline/lane-review.md",
+    ".kiro/pipeline/lane-land.md",
+    ".github/pull_request_template.md",
+    "scripts/collab/quality-checks.test.mjs",
+    ".kiro/specs/quality-checks/lanes/pipeline-quality.md",
+    "docs/validation/VTID-05346/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05346/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
