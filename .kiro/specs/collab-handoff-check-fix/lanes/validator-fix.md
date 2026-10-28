@@ -12,7 +12,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T13:31Z
+updated: 2026-10-28T13:35Z
 vtid: VTID-05365
 ---
 # validator-fix — Collab handoff: R1, stderr report, batched reads
@@ -29,4 +29,6 @@ VTID-05365 allocated after policy approval (converged-auto-v1).
 ### 2026-10-28T13:26Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-28T13:31Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-28T13:35Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
