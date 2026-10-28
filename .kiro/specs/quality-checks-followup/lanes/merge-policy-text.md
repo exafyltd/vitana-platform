@@ -1,6 +1,6 @@
 ---
 lane: merge-policy-text
-state: ready
+state: executing
 next_actor: kiro
 branch: kiro/quality-checks-followup/merge-policy-text
 depends_on: []
@@ -16,7 +16,8 @@ paths:
   - scripts/ci/staging-verify/lib.cjs
   - scripts/collab/quality-checks.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T11:56Z
+claimed_by: kiro-jtadic-202610271220-68a5
+updated: 2026-10-28T12:36Z
 vtid: VTID-05381
 ---
 # Lane: merge-policy-text (repo vitana-platform)
@@ -28,3 +29,6 @@ Lane created with the plan.
 
 ### 2026-10-28T11:56Z · ci-plan-spar · ready (VTID allocated)
 VTID-05381 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-28T12:36Z · kiro-jtadic-202610271220-68a5 · ready → executing
+Claimed. Test appended to `scripts/collab/quality-checks.test.mjs` first, red on `origin/main` (2 fail, `docs/validation/VTID-05381/red-on-base.txt`); then the Merge section, the DEPLOYMENT-PIPELINE.md range paragraph and the `lib.cjs` comment. Local checks in `commands.log`.

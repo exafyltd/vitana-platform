@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05381",
+  "kind": "infra",
+  "paths": [
+    ".kiro/pipeline/quality-checks.md",
+    "docs/DEPLOYMENT-PIPELINE.md",
+    "scripts/ci/staging-verify/lib.cjs",
+    "scripts/collab/quality-checks.test.mjs",
+    ".kiro/specs/quality-checks-followup/lanes/merge-policy-text.md",
+    "docs/validation/VTID-05381/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05381/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -115,6 +115,12 @@ from the user's side; "n/a: <reason>" is a valid answer, an empty field is not.
 - A test is red on `origin/main` for the reason the change fixes, not for a module-resolution or setup error.
 
 ## Merge
-Squash merge, so the subject carries the PR title's VTID: STAGING-VERIFY reads VTIDs from commit subjects
-(`scripts/ci/staging-verify/run.mjs`, `lib.extractVtids(c.subject)`), and a `Merge pull request #n from …` subject has
-none, which fails rule 47 for the whole release [v1 #1447/#1450/#1451/#1452; STAGING-VERIFY 39952660840].
+Squash merge. This is the policy already in force: the Project Manager merges with `merge_strategy: 'squash'`
+(`services/gateway/src/services/project-manager/act.ts`) and `planning.md` §6 merges the plan PR the same way; both
+repositories still allow other methods, so this file is what fixes the choice for an agent. The reason: STAGING-VERIFY
+decides rule 47 from each first-parent commit's subject (`scripts/ci/staging-verify/lib.cjs` `planRange`,
+`extractVtids(c.subject)`; `run.mjs` loads manifests the same way). A squash commit's subject is the PR title with its
+VTID. A GitHub merge commit counts only if its subject carries the VTID, and GitHub's default subject
+(`Merge pull request #n from …`, title in the body) does not, which fails rule 47 for the whole release [v1
+#1447/#1450/#1451/#1452; STAGING-VERIFY 39952660840]. Updating a lane branch by merging `origin/main` into it
+(`lane-code.md`) is not a PR merge and is unaffected.
