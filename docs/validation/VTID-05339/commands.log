@@ -1,0 +1,51 @@
+$ node --test scripts/collab/kiro-web-steering.test.mjs
+# Subtest: case 3: the driver file is always-included and links driver, common-rules, planning
+ok 3 - case 3: the driver file is always-included and links driver, common-rules, planning
+# Subtest: R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+ok 7 - R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+# tests 7
+# pass 7
+# fail 0
+# skipped 0
+exit=0
+
+$ node --test scripts/collab/automations.test.mjs scripts/collab/kiro-web-steering.test.mjs scripts/collab/plan-driver.test.mjs scripts/collab/plan-spar.test.mjs scripts/collab/preflight.test.mjs scripts/collab/queue.test.mjs scripts/collab/run-gate.test.mjs scripts/collab/workflow-watchdog.test.mjs
+# Subtest: case 3: the driver file is always-included and links driver, common-rules, planning
+ok 12 - case 3: the driver file is always-included and links driver, common-rules, planning
+# Subtest: R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+ok 16 - R2-F1: a known Vitana checkout without .kiro/steering is skipped with a note, not an error
+# Subtest: fresh run: no planning or approval step is skipped
+ok 124 - fresh run: no planning or approval step is skipped
+# Subtest: malformed JSON is skipped, the rest is still reported
+ok 149 - malformed JSON is skipped, the rest is still reported
+# tests 153
+# pass 152
+# fail 0
+# skipped 1
+exit=0
+
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# Subtest: the Kiro notes say plan sparring is never skipped and how to load context
+ok 8 - the Kiro notes say plan sparring is never skipped and how to load context
+# tests 37
+# pass 37
+# fail 0
+# skipped 0
+exit=0
+
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+exit=0
+
+$ node scripts/collab/kiro-web-steering.mjs --workspace /projects/sandbox
+kiro-web-steering: /projects/sandbox/.kiro/steering (vitana-platform@55cc5bbadc, vitana-v1@fb9b6d843)
+  always-included, links inlined: 123398 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+kiro-web-steering: ok
+exit=0
+
+$ node scripts/collab/kiro-web-steering.mjs --workspace /projects/sandbox --check
+kiro-web-steering: /projects/sandbox/.kiro/steering (vitana-platform@55cc5bbadc, vitana-v1@fb9b6d843)
+  always-included, links inlined: 123398 B (Kiro may truncate a long inlined link; see docs/kiro/kiro-web-bootstrap.md)
+kiro-web-steering: ok
+exit=0
+

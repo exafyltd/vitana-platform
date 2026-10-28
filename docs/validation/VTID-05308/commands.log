@@ -1,0 +1,40 @@
+VTID-05308 (ci-github-modernization/stale-tests) — vitana-platform commands
+===========================================================================
+
+[source check, lane base] substrings asserted by the updated staging-tests.json
+  index.html has 'svg-preview.js'        => True
+  index.html has 'operator-console.js'   => True
+  svg-preview.js has 'sanitizeSvgMarkup' => True
+  svg-preview.js has 'SvgPreview'        => True
+
+[static serving] services/gateway/src/index.ts:1655
+  app.use('/command-hub', express.static(staticPath, ...))  (query string ignored;
+  unversioned /command-hub/svg-preview.js returns the same file as the ?v= path)
+
+[manifest schema] node (staging-verify lib.validateManifest, service=gateway, vtid=VTID-05082)
+  => { "ok": true, "errors": [] }
+
+Note: STAGING-VERIFY's HTTP assertions run only against the live staging gateway,
+which must not be probed from this session (CLAUDE.md rule 48 / common-rules §6).
+Red-on-base for T2 is the documented permanent-red of the staging suite; it is not
+reproducible locally because it is a live-staging read-only suite. Fix verified by
+source + schema + static-serving semantics above.
+
+[VALIDATOR-CHECK evidence pack — CI fix attempt 1]
+  The platform PR triggers VALIDATOR-CHECK.yml (paths: docs/validation/**). The
+  validate-pr job's Evidence Pack Gate requires docs/validation/VTID-05308/
+  {acceptance.md, commands.log, outputs/} and the PR body requires
+  VALIDATION_PROFILE + SCOPE_ALLOWLIST/ACCEPTANCE/MERGE_PAYLOAD_PREVIEW/OASIS_IMPACT.
+  Added acceptance.md (AC-1..AC-4 each mapped to a TEST: within 12 lines),
+  outputs/ (no-token.txt, test-count.txt, source-check.txt) and the required PR
+  body markers. Profile = gateway_backend (the PR is docs-only; the path guard's
+  gateway_backend allowlist admits docs/validation/; the .kiro lane-log file is
+  out-of-remit and reported, not rejected).
+  Evidence regenerated against the committed suite:
+    assertions scanned for '20261121-vtid-05082' => not present (note-only, historical)
+    test objects present (none deleted)          => 3
+    index.html 'svg-preview.js' / 'operator-console.js' => True / True
+    svg-preview.js 'sanitizeSvgMarkup' / 'SvgPreview'   => True / True
+  Build Gate (npm ci && npm run build in services/gateway) runs the same gateway
+  source as origin/main — this PR changes no gateway source, only docs — so the
+  build outcome is determined by main (all other PR checks are green on base).

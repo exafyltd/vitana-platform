@@ -1,7 +1,7 @@
 {
   "vtid": "VTID-05082",
   "service": "gateway",
-  "note": "Read-only. VTID-05082 is a Command Hub frontend change: the operator chat renders SVG that appears in an assistant reply as a sanitized <img> (code in the standalone module svg-preview.js, loaded by index.html, not in operator-console.js, which the VTID-05072/05073 guards freeze; styles in styles.css, ?v= bumped in index.html). No API routes added, no writes. The suite proves the gateway serves the bumped command-hub assets and that the shipped SVG renderer is present in the deployed svg-preview.js. AC-7 lightbox screenshots (desktop 1400x900 + mobile 390x844) are captured manually during the staging UI walkthrough.",
+  "note": "Read-only. VTID-05082 is a Command Hub frontend change: the operator chat renders SVG that appears in an assistant reply as a sanitized <img> (code in the standalone module svg-preview.js, loaded by index.html BEFORE operator-console.js so window.SvgPreview exists when the console runs; not in operator-console.js, which the VTID-05072/05073 guards freeze; styles in styles.css). No API routes added, no writes. The suite proves the gateway serves the command-hub SVG-preview assets and that the shipped SVG renderer is present in the deployed svg-preview.js. AC-7 lightbox screenshots (desktop 1400x900 + mobile 390x844) are captured manually during the staging UI walkthrough. ci-github-modernization/stale-tests (VTID-05308): the two body/path assertions below no longer pin the transient ?v= cache-bust token (originally ?v=20261121-vtid-05082). That token is bumped by any later Command Hub change, which made this read-only staging suite permanently red once staging moved past the VTID-05082 build. The durable VTID-05082 contract is what is now asserted: index.html wires BOTH modules, and the served svg-preview.js carries the sanitizer and the window.SvgPreview global the console depends on. express.static (gateway src/index.ts) serves svg-preview.js regardless of query string, so the unversioned path returns the same file. Nothing is deleted or loosened: the renderer check is strengthened (SvgPreview added), serving and wiring are still proven.",
   "tests": [
     {
       "kind": "http",
@@ -14,13 +14,13 @@
     },
     {
       "kind": "http",
-      "name": "command-hub index serves the bumped operator-console.js cache key",
+      "name": "command-hub index wires the svg-preview and operator-console modules",
       "target": "gateway",
       "method": "GET",
       "path": "/command-hub/index.html",
       "expect_status": 200,
-      "expect_body_contains": "operator-console.js?v=20261121-vtid-05082",
-      "reason": "read-only GET: proves index.html carries the VTID-05082 cache-bust so operators reload the new bundle"
+      "expect_body_contains": ["svg-preview.js", "operator-console.js"],
+      "reason": "read-only GET: proves index.html loads both the SVG-preview module and the operator console (the durable VTID-05082 wiring), without pinning the transient ?v= cache token that later Command Hub changes bump"
     },
     {
       "kind": "http",
@@ -29,8 +29,8 @@
       "method": "GET",
       "path": "/command-hub/svg-preview.js?v=20261121-vtid-05082",
       "expect_status": 200,
-      "expect_body_contains": "sanitizeSvgMarkup",
-      "reason": "read-only GET: proves the shipped svg-preview.js on staging actually contains the SVG inline-render code"
+      "expect_body_contains": ["sanitizeSvgMarkup", "SvgPreview"],
+      "reason": "read-only GET: proves the shipped svg-preview.js on staging contains the SVG inline-render code and the window.SvgPreview global the console calls; served by express.static at the stable path (query string is a browser cache key only)"
     }
   ]
 }
