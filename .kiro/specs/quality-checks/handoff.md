@@ -25,3 +25,14 @@ improvements. Pushed as a `plan(` PR. No VTID, no code.
 
 ### 2026-10-27T12:54Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
+### 2026-10-28T10:06Z · kiro-ide-202610272306-27b0 · merge records (§7b)
+The land step of the backlog cleanup (parent session kiro-ide-202610272306-27b0) merged the three lanes serially, each
+on an up-to-date head with every required check green and an `accept` review entry from
+`agent:vitana-lane-reviewer (claude-sonnet-5.5)`:
+- `pipeline-quality` (VTID-05346): https://github.com/exafyltd/vitana-platform/pull/4407 — merge: 9e9170c6b377f0b0c2ff2ac63cb0162b006c1cb5 — authority: §7b PM rule. Review entry on the PR branch (reviewed head 2bdd55cb; later commits only the review entry and `main` merges).
+- `staging-manifest-bom` (VTID-05347): https://github.com/exafyltd/vitana-platform/pull/4408 — merge: 28aaab23316f374ceddc667870d60dc40dfad807 — authority: §7b PM rule. Review entry on the PR branch (reviewed head 0f24a3b4; later commits only the review entry and `main` merges).
+- `v1-pr-template` (VTID-05348): https://github.com/exafyltd/vitana-v1/pull/1503 — merge: 5bc8d10cd2ceaf994320bc8d7d3f88c2db7edc31 — authority: §7b PM rule. Merged at the reviewed head; review entry in this PR. Deploys nothing (the push-triggered production workflow's `cutover_gate` skipped `aws_prod`).
+No lane deploys a service (`.kiro/pipeline/**`, `scripts/ci/staging-verify/**`, a PR template), so there is no Gate 2.
+The lane files' front matter stays as the lanes' own session left it (`claimed_by` kiro-jtadic-202610271220-68a5,
+seat jtadic): this land session is not that seat, so the `executing → done` moves are left to the seat or the
+Project Manager. `.kiro/pipeline/**` is rule text: the main checkout was on another branch, so no fast-forward.
