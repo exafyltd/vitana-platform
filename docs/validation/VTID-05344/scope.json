@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05344",
+  "kind": "infra",
+  "paths": [
+    ".kiro/specs/owner-autonomy/lanes/v1-rules.md",
+    ".kiro/specs/owner-autonomy/handoff.md",
+    "docs/validation/VTID-05344/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05343/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "note": "Lane v1-rules is built in exafyltd/vitana-v1 (#1500, evidence there under docs/validation/VTID-05344/). This copy covers the lane's state records in vitana-platform; the plan's sparring record is shared with VTID-05343."
+}

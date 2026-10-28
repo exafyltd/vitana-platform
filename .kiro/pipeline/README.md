@@ -19,7 +19,10 @@ Runtimes:
   steps read these files; review steps run the workspace agent `.kiro/agents/vitana-lane-reviewer.md`, one step pinned
   per chain model `claude-sonnet-5.5` / `claude-opus-5.5` / `claude-sonnet-4.5`, racing in a `joinPolicy: "any"`
   parallel so an unavailable model never blocks the slot (`lane-review.md` "Model chain"). The SessionStart hook `.kiro/hooks/vitana-pipeline-start.json` loads the steering entry point.
+  The command hooks `.kiro/hooks/vitana-workflow-watchdog.json` (SessionStart + UserPromptSubmit) report workflow runs
+  paused by an agent restart or running with a stale heartbeat, and how to resume them (`restart-watchdog.md`).
 - **Kiro Web:** follow `.kiro/pipeline/driver.md` in one continuous session (no workflow engine there).
 
 The owner is asked only Gate 2 and an escalated sparring verdict (plus the §7 stop cases). Everything in between
-runs without questions. VTIDs come only from CI PLAN-SPAR. Production only via the owner's PUBLISH.
+runs without questions. VTIDs come only from CI PLAN-SPAR. Production only via the owner's PUBLISH, or a publish Kiro runs on
+the owner's explicit command in the conversation (full, or one session's changes only; `collaboration.md` §7c).

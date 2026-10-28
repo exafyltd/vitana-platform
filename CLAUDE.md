@@ -80,8 +80,9 @@ allocates its VTIDs; the Project Manager merges under the PM merge rule §7b (st
 driver applies the same rule while the PM is not live) and sends Gate 2; Claude Code is optional and handles
 exceptions (`executor: claude` lanes, parked plans, partner outages; the exceptions seat takes them while Claude is
 unavailable). A protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs a
-legacy Claude review on the current head or the owner's instruction. Kiro never deploys to production and never
-writes a live system from session tools. See `.claude/rules/collaboration.md` §7–§8b.
+legacy Claude review on the current head or the owner's instruction. Kiro deploys to production only on the owner's
+explicit command in the conversation (§7c: a full publish, or only one session's changes) and never writes a live
+system from session tools. See `.claude/rules/collaboration.md` §7–§8b.
 
 ---
 
