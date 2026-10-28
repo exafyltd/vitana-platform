@@ -146,6 +146,17 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
   let tierIndex = 0;
 
   const fail = (reason: EscalationReason, error: string): PartnerPassResult => ({ ok: false, reason, error, toolLog, modelLog });
+  // plan-spar-stuck-session: no awaited model call or tool call outlives the pass deadline (it was only checked
+  // between turns, so a call that never returned left the session without a round). The losing promise is not
+  // cancelled: llm-router / the Bedrock handler take no AbortSignal (follow-up, see the plan).
+  const TIMED_OUT = Symbol('timed-out');
+  const withinDeadline = async <T>(p: Promise<T>): Promise<T | typeof TIMED_OUT> => {
+    const remaining = Math.max(1, input.deadlineMs - (now() - startedAt));
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([p, new Promise<typeof TIMED_OUT>((res) => { timer = setTimeout(() => res(TIMED_OUT), remaining); })]);
+    } finally { if (timer) clearTimeout(timer); }
+  };
 
   const invoke = (p: string, tier: PartnerTier): Promise<LLMRouterResult> =>
     input.callLlm(PARTNER_STAGE, p, {
@@ -177,7 +188,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
     for (;;) {
       const tier = tiers[tierIndex];
       const t0 = now();
-      r = await invoke(prompt, tier);
+      const raced = await withinDeadline(invoke(prompt, tier));
+      if (raced === TIMED_OUT) return fail('deadline_exceeded', `partner model call exceeded the pass deadline (${input.deadlineMs}ms)`);
+      r = raced;
       modelLog.push({
         round: input.round,
         provider: r.provider,
@@ -269,7 +282,9 @@ export async function runPartnerPass(input: PartnerPassInput): Promise<PartnerPa
         continue;
       }
       toolCallsUsed += 1;
-      const exec = await input.executeTool(call.name, call.arguments ?? {});
+      const execOrTimeout = await withinDeadline(input.executeTool(call.name, call.arguments ?? {}));
+        if (execOrTimeout === TIMED_OUT) return fail('deadline_exceeded', `partner tool call ${call.name} exceeded the pass deadline (${input.deadlineMs}ms)`);
+        const exec = execOrTimeout;
       toolLog.push(exec.log);
       results.push({ id: call.id, name: call.name, result: exec.result, ...(exec.isError ? { isError: true } : {}) });
     }

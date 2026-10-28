@@ -1,0 +1,87 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/.agents/wt/sr/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/plan-sparring-stuck-session.test.ts (30.483 s)
+  plan-spar-stuck-session
+    ✕ (1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline (15008 ms)
+    ✕ (1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline (15001 ms)
+    ✕ (2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min) (1 ms)
+    ✕ (3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup) (2 ms)
+
+  ● plan-spar-stuck-session › (1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline
+
+    thrown: "Exceeded timeout of 15000 ms for a test.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      12 |
+      13 | describe('plan-spar-stuck-session', () => {
+    > 14 |   it('(1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline', async () => {
+         |   ^
+      15 |     const callLlm = jest.fn(() => new Promise<never>(() => { /* the model never answers */ }));
+      16 |     const t0 = Date.now();
+      17 |     const r = await runPartnerPass({
+
+      at test/plan-sparring-stuck-session.test.ts:14:3
+      at Object.<anonymous> (test/plan-sparring-stuck-session.test.ts:13:1)
+
+  ● plan-spar-stuck-session › (1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline
+
+    thrown: "Exceeded timeout of 15000 ms for a test.
+    Add a timeout value to this test to increase the timeout, if this is a long-running test. See https://jestjs.io/docs/api#testname-fn-timeout."
+
+      24 |   });
+      25 |
+    > 26 |   it('(1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline', async () => {
+         |   ^
+      27 |     const callLlm = jest.fn(async () => ({
+      28 |       ok: true, provider: 'bedrock', model: 'm', text: '', usage: { inputTokens: 1, outputTokens: 1 },
+      29 |       toolCalls: [{ id: 't1', name: 'read_file', arguments: { path: 'CLAUDE.md' } }],
+
+      at test/plan-sparring-stuck-session.test.ts:26:3
+      at Object.<anonymous> (test/plan-sparring-stuck-session.test.ts:13:1)
+
+  ● plan-spar-stuck-session › (2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min)
+
+    expect(received).toBeLessThan(expected)
+
+    Expected: < 1500000
+    Received:   3600000
+
+      40 |   it('(2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min)', () => {
+      41 |     expect(STALE_AFTER_MS).toBeGreaterThan(15 * 60_000);
+    > 42 |     expect(STALE_AFTER_MS).toBeLessThan(25 * 60_000);
+         |                            ^
+      43 |   });
+      44 |
+      45 |   it('(3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup)', () => {
+
+      at Object.<anonymous> (test/plan-sparring-stuck-session.test.ts:42:28)
+
+  ● plan-spar-stuck-session › (3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+      46 |     const NOW = Date.parse('2026-10-27T12:00:00Z');
+      47 |     const s = (min: number) => ({ verdict: 'in_progress', rounds: [], updated_at: new Date(NOW - min * 60_000).toISOString() }) as never;
+    > 48 |     expect(isDeadRoundOne(s(21), NOW)).toBe(true);
+         |                                        ^
+      49 |     expect(isDeadRoundOne(s(19), NOW)).toBe(false);
+      50 |   });
+      51 | });
+
+      at Object.<anonymous> (test/plan-sparring-stuck-session.test.ts:48:40)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        30.653 s
+Ran all test suites matching /test\/plan-sparring-stuck-session.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

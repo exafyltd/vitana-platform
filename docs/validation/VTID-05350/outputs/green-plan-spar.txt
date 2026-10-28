@@ -1,0 +1,196 @@
+TAP version 13
+# Subtest: detectSlug / parseResponses / setFrontMatter
+ok 1 - detectSlug / parseResponses / setFrontMatter
+  ---
+  duration_ms: 2.212982
+  type: 'test'
+  ...
+# Subtest: round 1 is written, then the session waits for the planner
+ok 2 - round 1 is written, then the session waits for the planner
+  ---
+  duration_ms: 2.700627
+  type: 'test'
+  ...
+# Subtest: responses → converged + policy-approved; without allocation the plan goes to Claude as sparred
+ok 3 - responses → converged + policy-approved; without allocation the plan goes to Claude as sparred
+  ---
+  duration_ms: 1.698067
+  type: 'test'
+  ...
+# Subtest: with allocation on: one VTID per lane, the first bound to the sparring record; plan approved, lanes to Kiro
+ok 4 - with allocation on: one VTID per lane, the first bound to the sparring record; plan approved, lanes to Kiro
+  ---
+  duration_ms: 2.574177
+  type: 'test'
+  ...
+# Subtest: escalation: one re-plan session on a changed plan, a second escalation parks the plan
+ok 5 - escalation: one re-plan session on a changed plan, a second escalation parks the plan
+  ---
+  duration_ms: 1.418996
+  type: 'test'
+  ...
+# Subtest: a partner outage hands the plan to Claude, is never parked, and the retry does not use up a session
+ok 6 - a partner outage hands the plan to Claude, is never parked, and the retry does not use up a session
+  ---
+  duration_ms: 0.791594
+  type: 'test'
+  ...
+# Subtest: gateway client: a lost long call is recovered by polling the session
+ok 7 - gateway client: a lost long call is recovered by polling the session
+  ---
+  duration_ms: 0.740142
+  type: 'test'
+  ...
+# Subtest: review fix: a round is only submitted to this plan's own in-progress session
+ok 8 - review fix: a round is only submitted to this plan's own in-progress session
+  ---
+  duration_ms: 0.875673
+  type: 'test'
+  ...
+# Subtest: review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)
+ok 9 - review fix: partner_output_invalid goes to Claude but is not auto-retried (the gateway would dedup it)
+  ---
+  duration_ms: 0.872772
+  type: 'test'
+  ...
+# Subtest: late lane: a converged, policy-approved plan allocates a lane added after convergence
+ok 10 - late lane: a converged, policy-approved plan allocates a lane added after convergence
+  ---
+  duration_ms: 2.026516
+  type: 'test'
+  ...
+# Subtest: late lane: the retry never re-sends the sparring id once the session is bound
+ok 11 - late lane: the retry never re-sends the sparring id once the session is bound
+  ---
+  duration_ms: 1.533942
+  type: 'test'
+  ...
+# Subtest: no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"
+ok 12 - no lanes at convergence: handoff goes to kiro with reason lanes_missing, not "allocation is off"
+  ---
+  duration_ms: 0.847857
+  type: 'test'
+  ...
+# Subtest: lanes added later to a lane-less converged plan: first lane gets the bound VTID
+ok 13 - lanes added later to a lane-less converged plan: first lane gets the bound VTID
+  ---
+  duration_ms: 2.25296
+  type: 'test'
+  ...
+# Subtest: allocation failure keeps the VTIDs already allocated and retries the rest on the next run
+ok 14 - allocation failure keeps the VTIDs already allocated and retries the rest on the next run
+  ---
+  duration_ms: 1.595209
+  type: 'test'
+  ...
+# Subtest: orphaned bound VTID is adopted, not re-allocated
+ok 15 - orphaned bound VTID is adopted, not re-allocated
+  ---
+  duration_ms: 0.857959
+  type: 'test'
+  ...
+# Subtest: retry refuses a state.json that names another plan's session
+ok 16 - retry refuses a state.json that names another plan's session
+  ---
+  duration_ms: 1.812563
+  type: 'test'
+  ...
+# Subtest: retry with every lane allocated is a no-op with zero writes
+ok 17 - retry with every lane allocated is a no-op with zero writes
+  ---
+  duration_ms: 0.641302
+  type: 'test'
+  ...
+# Subtest: allocation off: a converged plan with a late lane is not retried and still goes to claude
+ok 18 - allocation off: a converged plan with a late lane is not retried and still goes to claude
+  ---
+  duration_ms: 0.466918
+  type: 'test'
+  ...
+# Subtest: spar_refs: a declared 40-hex SHA is forwarded as extra_refs with no GitHub API call (AC2, AC4)
+ok 19 - spar_refs: a declared 40-hex SHA is forwarded as extra_refs with no GitHub API call (AC2, AC4)
+  ---
+  duration_ms: 0.752212
+  type: 'test'
+  ...
+# Subtest: spar_refs: a declared branch is resolved to a SHA via the GitHub API and forwarded (AC3)
+ok 20 - spar_refs: a declared branch is resolved to a SHA via the GitHub API and forwarded (AC3)
+  ---
+  duration_ms: 0.753299
+  type: 'test'
+  ...
+# Subtest: spar_refs: absent → the create body is byte-identical to the current 6-key body, no extra_refs (AC1, AC6)
+ok 21 - spar_refs: absent → the create body is byte-identical to the current 6-key body, no extra_refs (AC1, AC6)
+  ---
+  duration_ms: 0.595428
+  type: 'test'
+  ...
+# Subtest: spar_refs: an inline-commented or multi-token entry fails loud rather than silently truncating (AC5)
+ok 22 - spar_refs: an inline-commented or multi-token entry fails loud rather than silently truncating (AC5)
+  ---
+  duration_ms: 0.847379
+  type: 'test'
+  ...
+# Subtest: spar_refs: a disallowed repo and the plan's own repo both fail loud (AC5, FR5)
+ok 23 - spar_refs: a disallowed repo and the plan's own repo both fail loud (AC5, FR5)
+  ---
+  duration_ms: 0.761613
+  type: 'test'
+  ...
+# Subtest: spar_refs: a resolve failure (non-200) is fatal and nothing is sent to create (AC5)
+ok 24 - spar_refs: a resolve failure (non-200) is fatal and nothing is sent to create (AC5)
+  ---
+  duration_ms: 0.579674
+  type: 'test'
+  ...
+# Subtest: spar_refs: a re-plan reuses the same resolved companion ref on the second create (round reuse)
+ok 25 - spar_refs: a re-plan reuses the same resolved companion ref on the second create (round reuse)
+  ---
+  duration_ms: 0.955213
+  type: 'test'
+  ...
+# Subtest: parseSparRefs: parses entries, defaults to [] when absent, and rejects malformed entries
+ok 26 - parseSparRefs: parses entries, defaults to [] when absent, and rejects malformed entries
+  ---
+  duration_ms: 0.255871
+  type: 'test'
+  ...
+# Subtest: resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch resolves via the API
+ok 27 - resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch resolves via the API
+  ---
+  duration_ms: 0.274683
+  type: 'test'
+  ...
+# Subtest: gateway client: a stuck round-1 session is re-posted once and recovers on the fresh session
+ok 28 - gateway client: a stuck round-1 session is re-posted once and recovers on the fresh session
+  ---
+  duration_ms: 1.77849
+  type: 'test'
+  ...
+# Subtest: gateway client: a session still stuck after the re-post fails with an explicit stuck error (no loop)
+ok 29 - gateway client: a session still stuck after the re-post fails with an explicit stuck error (no loop)
+  ---
+  duration_ms: 1.812284
+  type: 'test'
+  ...
+# Subtest: gateway client: the lost-response path (POST lost → re-post → stuck) also recovers on a fresh session, 3 posts
+ok 30 - gateway client: the lost-response path (POST lost → re-post → stuck) also recovers on a fresh session, 3 posts
+  ---
+  duration_ms: 2.12573
+  type: 'test'
+  ...
+# Subtest: timing invariant: the client waits longer than the gateway stale window (re-post recovery needs it)
+ok 31 - timing invariant: the client waits longer than the gateway stale window (re-post recovery needs it)
+  ---
+  duration_ms: 0.462309
+  type: 'test'
+  ...
+1..31
+# tests 31
+# suites 0
+# pass 31
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 134.111813
