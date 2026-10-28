@@ -13,7 +13,7 @@ paths:
   - scripts/collab/plan-spar.mjs
   - scripts/collab/plan-spar.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T21:43Z
+updated: 2026-10-28T21:47Z
 vtid: VTID-05273
 branch: kiro/kiro-autonomy-fallback/plan-spar-allocation
 pr: https://github.com/exafyltd/vitana-platform/pull/4227
@@ -2283,4 +2283,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-28T21:19Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-10-28T21:43Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-28T21:47Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
