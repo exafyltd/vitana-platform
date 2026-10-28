@@ -31,8 +31,8 @@ byte-identical.
 <!-- lane: platform-claude-md -->
 ## Lane `platform-claude-md` — vitana-platform (executor: claude; protected gate file CLAUDE.md; depends_on: platform-governance)
 - [ ] C1 `CLAUDE.md`: apply I2 (delete the Autonomy Contract sentence "A plan Claude Code spars with its own local
-      partner still goes to the owner as Gate 1."), I3 (rule 2b → "via CI policy `converged-auto-v1`"), I4 (§4.1 → "CI
-      policy `converged-auto-v1` for a `plan(` PR"). No other line changes.
+      partner still goes to the owner as Gate 1."), I3 (rule 2b → "(rules 51–55): CI policy `converged-auto-v1`."),
+      I4 (§4.1 → "CI policy `converged-auto-v1` for a `plan(` PR"). No other line changes.
 - [ ] C2 Evidence in `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`. Record in the lane log:
       `authority: §7b PM rule + owner named-plan instruction (protected gate file CLAUDE.md)` for the merge.
 

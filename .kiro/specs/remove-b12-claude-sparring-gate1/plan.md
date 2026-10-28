@@ -80,9 +80,10 @@ The paragraph then reads (unchanged except the deletion):
 
 ### I3 — CLAUDE.md rule 2b (`vitana-platform/CLAUDE.md:102`)
 Change `(rules 51–55): owner Gate 1 for a locally sparred plan, or CI policy ` + "`converged-auto-v1`" + `.` to:
-`(rules 51–55): via CI policy ` + "`converged-auto-v1`" + `.` so the locally-sparred-plan carve-out is gone; the rest
+`(rules 51–55): CI policy ` + "`converged-auto-v1`" + `.` so the locally-sparred-plan carve-out is gone; the rest
 of the sentence (including the `(rules 51–55)` reference and the "A Kiro plan's VTIDs are allocated by CI PLAN-SPAR on
-convergence, never by hand." that follows) is unchanged.
+convergence, never by hand." that follows) is unchanged. (The colon introduces the path, so no leading "via" — the
+same colon-introduces-the-path style as I4; R1-F1.)
 
 ### I4 — CLAUDE.md §4.1 (`vitana-platform/CLAUDE.md:499`)
 Change `(Part 1 rules 51–55): owner Gate 1 for a plan sparred with a local partner (skill ` + "`plan-sparring`" +
