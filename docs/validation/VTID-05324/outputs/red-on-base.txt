@@ -1,0 +1,367 @@
+# red on base: clean origin/main 84fc0ca6a0d116f4e41dfd77c5125cb329b95f15 with ONLY services/gateway/test/mt-launch-pack-intake-pgtap.test.ts added
+# (every other lane change reverted in the worktree for the run, then restored. The git status lines are relative to
+# the lane head, i.e. the reverted lane files; `git diff --stat <base>` after them shows the only difference from base:
+# the test file. Failures are assertion failures on the missing migrations/queue rows/baseline entries/rollback; no
+# module-resolution error. 2 tests pass on base by design: the WS5 no-write guard and the health-table guard self-test.)
+--- diff vs origin/main (84fc0ca6a0d116f4e41dfd77c5125cb329b95f15) during the base run ---
+M  .kiro/specs/mt-launch/lanes/pack-intake-db.md
+M  docs/multitenancy/MIGRATION-QUEUE.md
+ D docs/validation/VTID-05324/acceptance.md
+ D docs/validation/VTID-05324/commands.log
+ D docs/validation/VTID-05324/outputs/build.txt
+ D docs/validation/VTID-05324/outputs/drift-test.txt
+ D docs/validation/VTID-05324/outputs/green-head.txt
+ D docs/validation/VTID-05324/outputs/queue-validate.txt
+ D docs/validation/VTID-05324/outputs/red-on-base.txt
+ D docs/validation/VTID-05324/outputs/scope-check.txt
+ D docs/validation/VTID-05324/outputs/validate-pr.txt
+ D docs/validation/VTID-05324/pgtap-pack-intake.sql
+ D docs/validation/VTID-05324/post-check.sql
+ D docs/validation/VTID-05324/pre-check.sql
+ D docs/validation/VTID-05324/rollback-pack-intake.sql
+ D docs/validation/VTID-05324/staging-tests.json
+ D docs/validation/VTID-05324/verification.md
+M  scripts/ci/migration-drift-baseline.json
+ D supabase/migrations/20261101110000_mt_launch_tenant_pack_intake.sql
+ D supabase/migrations/20261101110100_mt_launch_tenant_content_pipeline.sql
+ .../test/mt-launch-pack-intake-pgtap.test.ts       | 246 +++++++++++++++++++++
+ 1 file changed, 246 insertions(+)
+--- npx jest test/mt-launch-pack-intake-pgtap.test.ts ---
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/AppData/Local/Temp/mtl-wt-pack-intake-db/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/mt-launch-pack-intake-pgtap.test.ts
+  VTID-05324 migration files
+    ├ù both files exist, in order, and no other migration shares their version (22 ms)
+    ├ù are expand-only: one transaction each, no drop/alter of an existing object, no backfill (3 ms)
+  VTID-05324 P1 tenant_pack_intake
+    ├ù is keyed (tenant_id, item_key) with an FK to the live tenants key (1 ms)
+    ├ù constrains item_key to the WS8 checklist and status to the four states (11 ms)
+  VTID-05324 P2 tenant_content_pipeline
+    ├ù is unique on (tenant_id, locale, key) with the plan columns (1 ms)
+    ├ù constrains review_state to the pipeline states (4 ms)
+    ΓêÜ never writes to WS5 tenant_content_overrides (3 ms)
+  VTID-05324 P1/P2 service-role-only access (a client read fails)
+    ├ù tenant_pack_intake: RLS on, client privileges revoked, only a service_role policy (2 ms)
+    ├ù tenant_content_pipeline: RLS on, client privileges revoked, only a service_role policy (1 ms)
+  VTID-05324 P3 get_tenant_launch_readiness
+    ├ù is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER (2 ms)
+    ├ù EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role (2 ms)
+    ├ù is read-only and reads only tenant_pack_intake + tenants (no health table) (2 ms)
+    ΓêÜ the health-table guard catches a planted read (self-test) (1 ms)
+    ├ù its checklist equals the item_key CHECK constraint, and an unknown tenant returns NULL (3 ms)
+  VTID-05324 P4 queue, drift baseline, rollback
+    ├ù MIGRATION-QUEUE lists both files after WS5 tenant_content_overrides with rollback + checks (7 ms)
+    ├ù the drift baseline lists both unapplied tables and its count matches (7 ms)
+    ├ù rollback drops exactly the new objects; pre/post checks and the pgTAP plan are read-only (1 ms)
+
+  ΓùÅ VTID-05324 migration files ΓÇ║ both files exist, in order, and no other migration shares their version
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: true
+    Received: false
+
+    [0m [90m 58 |[39m describe([32m'VTID-05324 migration files'[39m[33m,[39m () [33m=>[39m {
+     [90m 59 |[39m   it([32m'both files exist, in order, and no other migration shares their version'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 60 |[39m     expect(exists([33mINTAKE[39m))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m    |[39m                            [31m[1m^[22m[39m
+     [90m 61 |[39m     expect(exists([33mPIPELINE[39m))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 62 |[39m     expect(path[33m.[39mbasename([33mINTAKE[39m) [33m<[39m path[33m.[39mbasename([33mPIPELINE[39m))[33m.[39mtoBe([36mtrue[39m)[33m;[39m
+     [90m 63 |[39m     [36mconst[39m versions [33m=[39m fs[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:60:28)
+
+  ΓùÅ VTID-05324 migration files ΓÇ║ are expand-only: one transaction each, no drop/alter of an existing object, no backfill
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /^BEGIN;/m
+    Received string:  ""
+
+    [0m [90m 71 |[39m   it([32m'are expand-only: one transaction each, no drop/alter of an existing object, no backfill'[39m[33m,[39m () [33m=>[39m {
+     [90m 72 |[39m     [36mfor[39m ([36mconst[39m sql [36mof[39m [intake[33m,[39m pipeline]) {
+    [31m[1m>[22m[39m[90m 73 |[39m       expect(sql)[33m.[39mtoMatch([35m/^BEGIN;/m[39m)[33m;[39m
+     [90m    |[39m                   [31m[1m^[22m[39m
+     [90m 74 |[39m       expect(sql)[33m.[39mtoMatch([35m/^COMMIT;/m[39m)[33m;[39m
+     [90m 75 |[39m       expect(sql)[33m.[39mnot[33m.[39mtoMatch([35m/\bDROP\s+(TABLE|FUNCTION|COLUMN|SCHEMA|INDEX)\b/i[39m)[33m;[39m
+     [90m 76 |[39m       expect(sql)[33m.[39mnot[33m.[39mtoMatch([35m/\bTRUNCATE\b/i[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:73:19)
+
+  ΓùÅ VTID-05324 P1 tenant_pack_intake ΓÇ║ is keyed (tenant_id, item_key) with an FK to the live tenants key
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "CREATE TABLE IF NOT EXISTS public.tenant_pack_intake ("
+    Received string:    ""
+
+    [0m [90m 85 |[39m describe([32m'VTID-05324 P1 tenant_pack_intake'[39m[33m,[39m () [33m=>[39m {
+     [90m 86 |[39m   it([32m'is keyed (tenant_id, item_key) with an FK to the live tenants key'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 87 |[39m     expect(intake)[33m.[39mtoContain([32m'CREATE TABLE IF NOT EXISTS public.tenant_pack_intake ('[39m)[33m;[39m
+     [90m    |[39m                    [31m[1m^[22m[39m
+     [90m 88 |[39m     expect(intake)[33m.[39mtoMatch([35m/tenant_id\s+uuid\s+NOT NULL REFERENCES public\.tenants\(tenant_id\) ON DELETE CASCADE/[39m)[33m;[39m
+     [90m 89 |[39m     expect(intake)[33m.[39mtoContain([32m'CONSTRAINT tenant_pack_intake_pkey PRIMARY KEY (tenant_id, item_key)'[39m)[33m;[39m
+     [90m 90 |[39m     [36mfor[39m ([36mconst[39m col [36mof[39m [[32m'status'[39m[33m,[39m [32m'evidence'[39m[33m,[39m [32m'decided_by'[39m[33m,[39m [32m'decided_at'[39m[33m,[39m [32m'updated_at'[39m]) {[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:87:20)
+
+  ΓùÅ VTID-05324 P1 tenant_pack_intake ΓÇ║ constrains item_key to the WS8 checklist and status to the four states
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 15
+    + Received  +  1
+
+    - Array [
+    -   "anchor_person_consent",
+    -   "brand_kit",
+    -   "copy",
+    -   "persona_facts",
+    -   "brand_kb_docs",
+    -   "season0_approval",
+    -   "events_calendar_90d",
+    -   "seed_groups",
+    -   "host_moderator_support_sla",
+    -   "founding_invites_30",
+    -   "revenue_share",
+    -   "locales",
+    -   "health_claims_signoff",
+    - ]
+    + Array []
+
+    [0m [90m  95 |[39m
+     [90m  96 |[39m   it([32m'constrains item_key to the WS8 checklist and status to the four states'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m  97 |[39m     expect(quotedList(intake[33m,[39m [32m'tenant_pack_intake_item_key_check'[39m))[33m.[39mtoEqual([33mCHECKLIST[39m)[33m;[39m
+     [90m     |[39m                                                                     [31m[1m^[22m[39m
+     [90m  98 |[39m     expect(quotedList(intake[33m,[39m [32m'tenant_pack_intake_status_check'[39m))[33m.[39mtoEqual([
+     [90m  99 |[39m       [32m'not_started'[39m[33m,[39m
+     [90m 100 |[39m       [32m'in_progress'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:97:69)
+
+  ΓùÅ VTID-05324 P2 tenant_content_pipeline ΓÇ║ is unique on (tenant_id, locale, key) with the plan columns
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "CREATE TABLE IF NOT EXISTS public.tenant_content_pipeline ("
+    Received string:    ""
+
+    [0m [90m 107 |[39m describe([32m'VTID-05324 P2 tenant_content_pipeline'[39m[33m,[39m () [33m=>[39m {
+     [90m 108 |[39m   it([32m'is unique on (tenant_id, locale, key) with the plan columns'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 109 |[39m     expect(pipeline)[33m.[39mtoContain([32m'CREATE TABLE IF NOT EXISTS public.tenant_content_pipeline ('[39m)[33m;[39m
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 110 |[39m     expect(pipeline)[33m.[39mtoMatch([35m/tenant_id\s+uuid\s+NOT NULL REFERENCES public\.tenants\(tenant_id\) ON DELETE CASCADE/[39m)[33m;[39m
+     [90m 111 |[39m     expect(pipeline)[33m.[39mtoContain([32m'UNIQUE (tenant_id, locale, key)'[39m)[33m;[39m
+     [90m 112 |[39m     [36mfor[39m ([36mconst[39m col [36mof[39m [[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:109:22)
+
+  ΓùÅ VTID-05324 P2 tenant_content_pipeline ΓÇ║ constrains review_state to the pipeline states
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 8
+    + Received  + 1
+
+    - Array [
+    -   "generated",
+    -   "linted",
+    -   "in_review",
+    -   "signed_off",
+    -   "published",
+    -   "rejected",
+    - ]
+    + Array []
+
+    [0m [90m 127 |[39m
+     [90m 128 |[39m   it([32m'constrains review_state to the pipeline states'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 129 |[39m     expect(quotedList(pipeline[33m,[39m [32m'tenant_content_pipeline_review_state_check'[39m))[33m.[39mtoEqual([
+     [90m     |[39m                                                                                [31m[1m^[22m[39m
+     [90m 130 |[39m       [32m'generated'[39m[33m,[39m
+     [90m 131 |[39m       [32m'linted'[39m[33m,[39m
+     [90m 132 |[39m       [32m'in_review'[39m[33m,[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:129:80)
+
+  ΓùÅ VTID-05324 P1/P2 service-role-only access (a client read fails) ΓÇ║ tenant_pack_intake: RLS on, client privileges revoked, only a service_role policy
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ALTER TABLE public.tenant_pack_intake ENABLE ROW LEVEL SECURITY;"
+    Received string:    ""
+
+    [0m [90m 148 |[39m   ])([32m'%s: RLS on, client privileges revoked, only a service_role policy'[39m[33m,[39m (table[33m,[39m src) [33m=>[39m {
+     [90m 149 |[39m     [36mconst[39m sql [33m=[39m src()[33m;[39m
+    [31m[1m>[22m[39m[90m 150 |[39m     expect(sql)[33m.[39mtoContain([32m`ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`[39m)[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 151 |[39m     expect(sql)[33m.[39mtoContain([32m`REVOKE ALL ON TABLE public.${table} FROM PUBLIC, anon, authenticated;`[39m)[33m;[39m
+     [90m 152 |[39m     expect(sql)[33m.[39mtoContain([32m`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.${table} TO service_role;`[39m)[33m;[39m
+     [90m 153 |[39m     expect(sql)[33m.[39mnot[33m.[39mtoMatch([35m/GRANT[^;]*\sTO\s+[^;]*\b(anon|authenticated|PUBLIC)\b/[39m)[33m;[39m[0m
+
+      at test/mt-launch-pack-intake-pgtap.test.ts:150:17
+
+  ΓùÅ VTID-05324 P1/P2 service-role-only access (a client read fails) ΓÇ║ tenant_content_pipeline: RLS on, client privileges revoked, only a service_role policy
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "ALTER TABLE public.tenant_content_pipeline ENABLE ROW LEVEL SECURITY;"
+    Received string:    ""
+
+    [0m [90m 148 |[39m   ])([32m'%s: RLS on, client privileges revoked, only a service_role policy'[39m[33m,[39m (table[33m,[39m src) [33m=>[39m {
+     [90m 149 |[39m     [36mconst[39m sql [33m=[39m src()[33m;[39m
+    [31m[1m>[22m[39m[90m 150 |[39m     expect(sql)[33m.[39mtoContain([32m`ALTER TABLE public.${table} ENABLE ROW LEVEL SECURITY;`[39m)[33m;[39m
+     [90m     |[39m                 [31m[1m^[22m[39m
+     [90m 151 |[39m     expect(sql)[33m.[39mtoContain([32m`REVOKE ALL ON TABLE public.${table} FROM PUBLIC, anon, authenticated;`[39m)[33m;[39m
+     [90m 152 |[39m     expect(sql)[33m.[39mtoContain([32m`GRANT SELECT, INSERT, UPDATE, DELETE ON TABLE public.${table} TO service_role;`[39m)[33m;[39m
+     [90m 153 |[39m     expect(sql)[33m.[39mnot[33m.[39mtoMatch([35m/GRANT[^;]*\sTO\s+[^;]*\b(anon|authenticated|PUBLIC)\b/[39m)[33m;[39m[0m
+
+      at test/mt-launch-pack-intake-pgtap.test.ts:150:17
+
+  ΓùÅ VTID-05324 P3 get_tenant_launch_readiness ΓÇ║ is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /CREATE OR REPLACE FUNCTION public\.get_tenant_launch_readiness\(p_tenant_id uuid\)\s+RETURNS jsonb\s+LANGUAGE sql\s+STABLE\s+SECURITY INVOKER\s+SET search_path = public, pg_catalog\s+AS \$fn\$/
+    Received string:  ""
+
+    [0m [90m 165 |[39m
+     [90m 166 |[39m   it([32m'is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 167 |[39m     expect(pipeline)[33m.[39mtoMatch(
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 168 |[39m       [35m/CREATE OR REPLACE FUNCTION public\.get_tenant_launch_readiness\(p_tenant_id uuid\)\s+RETURNS jsonb\s+LANGUAGE sql\s+STABLE\s+SECURITY INVOKER\s+SET search_path = public, pg_catalog\s+AS \$fn\$/[39m[33m,[39m
+     [90m 169 |[39m     )[33m;[39m
+     [90m 170 |[39m     expect(pipeline)[33m.[39mnot[33m.[39mtoMatch([35m/SECURITY DEFINER/i[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:167:22)
+
+  ΓùÅ VTID-05324 P3 get_tenant_launch_readiness ΓÇ║ EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "REVOKE ALL ON FUNCTION public.get_tenant_launch_readiness(uuid) FROM PUBLIC, anon, authenticated;"
+    Received string:    ""
+
+    [0m [90m 172 |[39m
+     [90m 173 |[39m   it([32m'EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 174 |[39m     expect(pipeline)[33m.[39mtoContain(
+     [90m     |[39m                      [31m[1m^[22m[39m
+     [90m 175 |[39m       [32m'REVOKE ALL ON FUNCTION public.get_tenant_launch_readiness(uuid) FROM PUBLIC, anon, authenticated;'[39m[33m,[39m
+     [90m 176 |[39m     )[33m;[39m
+     [90m 177 |[39m     expect(pipeline)[33m.[39mtoContain([32m'GRANT EXECUTE ON FUNCTION public.get_tenant_launch_readiness(uuid) TO service_role;'[39m)[33m;[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:174:22)
+
+  ΓùÅ VTID-05324 P3 get_tenant_launch_readiness ΓÇ║ is read-only and reads only tenant_pack_intake + tenants (no health table)
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   0
+
+    [0m [90m 180 |[39m
+     [90m 181 |[39m   it([32m'is read-only and reads only tenant_pack_intake + tenants (no health table)'[39m[33m,[39m () [33m=>[39m {
+    [31m[1m>[22m[39m[90m 182 |[39m     expect(body[33m.[39mlength)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m                         [31m[1m^[22m[39m
+     [90m 183 |[39m     expect(body)[33m.[39mnot[33m.[39mtoMatch([35m/\b(INSERT|UPDATE|DELETE|TRUNCATE|MERGE|CREATE|DROP|ALTER|GRANT|REVOKE)\b/i[39m)[33m;[39m
+     [90m 184 |[39m     [36mconst[39m refs [33m=[39m [[33m...[39mbody[33m.[39mmatchAll([35m/\bpublic\.(\w+)/g[39m)][33m.[39mmap((m) [33m=>[39m m[[35m1[39m])[33m;[39m
+     [90m 185 |[39m     expect([36mnew[39m [33mSet[39m(refs))[33m.[39mtoEqual([36mnew[39m [33mSet[39m([[32m'tenants'[39m[33m,[39m [32m'tenant_pack_intake'[39m]))[33m;[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:182:25)
+
+  ΓùÅ VTID-05324 P3 get_tenant_launch_readiness ΓÇ║ its checklist equals the item_key CHECK constraint, and an unknown tenant returns NULL
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 15
+    + Received  +  1
+
+    - Array [
+    -   "anchor_person_consent",
+    -   "brand_kit",
+    -   "copy",
+    -   "persona_facts",
+    -   "brand_kb_docs",
+    -   "season0_approval",
+    -   "events_calendar_90d",
+    -   "seed_groups",
+    -   "host_moderator_support_sla",
+    -   "founding_invites_30",
+    -   "revenue_share",
+    -   "locales",
+    -   "health_claims_signoff",
+    - ]
+    + Array []
+
+    [0m [90m 202 |[39m       [35m/\('([^']+)'\)/g[39m[33m,[39m
+     [90m 203 |[39m     )][33m.[39mmap((m) [33m=>[39m m[[35m1[39m])[33m;[39m
+    [31m[1m>[22m[39m[90m 204 |[39m     expect(values)[33m.[39mtoEqual([33mCHECKLIST[39m)[33m;[39m
+     [90m     |[39m                    [31m[1m^[22m[39m
+     [90m 205 |[39m     expect(body)[33m.[39mtoContain([32m'WHEN NOT EXISTS (SELECT 1 FROM t) THEN NULL'[39m)[33m;[39m
+     [90m 206 |[39m     expect(body)[33m.[39mtoContain([32m"COALESCE(i.status, 'not_started')"[39m)[33m;[39m
+     [90m 207 |[39m   })[33m;[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:204:20)
+
+  ΓùÅ VTID-05324 P4 queue, drift baseline, rollback ΓÇ║ MIGRATION-QUEUE lists both files after WS5 tenant_content_overrides with rollback + checks
+
+    expect(received).toBeGreaterThan(expected)
+
+    Expected: > 0
+    Received:   -1
+
+    [0m [90m 214 |[39m     [36mconst[39m i [33m=[39m rows[33m.[39mfindIndex((l) [33m=>[39m l[33m.[39mincludes(path[33m.[39mbasename([33mINTAKE[39m)))[33m;[39m
+     [90m 215 |[39m     [36mconst[39m j [33m=[39m rows[33m.[39mfindIndex((l) [33m=>[39m l[33m.[39mincludes(path[33m.[39mbasename([33mPIPELINE[39m)))[33m;[39m
+    [31m[1m>[22m[39m[90m 216 |[39m     expect(i)[33m.[39mtoBeGreaterThan([35m0[39m)[33m;[39m
+     [90m     |[39m               [31m[1m^[22m[39m
+     [90m 217 |[39m     expect(j)[33m.[39mtoBe(i [33m+[39m [35m1[39m)[33m;[39m
+     [90m 218 |[39m     expect(rows[i])[33m.[39mtoContain([32m'tenant_content_overrides'[39m)[33m;[39m
+     [90m 219 |[39m     [36mfor[39m ([36mconst[39m r [36mof[39m [rows[i][33m,[39m rows[j]]) {[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:216:15)
+
+  ΓùÅ VTID-05324 P4 queue, drift baseline, rollback ΓÇ║ the drift baseline lists both unapplied tables and its count matches
+
+    expect(received).toEqual(expected) // deep equality
+
+    Expected: ArrayContaining ["tenant_pack_intake", "tenant_content_pipeline"]
+    Received: ["activity_catalog", "analytics_celebrate_events", "assistant_promises", "autopilot_logs", "autopilot_prompt_prefs", "autopilot_prompts", "availability_assessments", "availability_config", "availability_overrides", "awareness_config", ΓÇª]
+
+    [0m [90m 226 |[39m   it([32m'the drift baseline lists both unapplied tables and its count matches'[39m[33m,[39m () [33m=>[39m {
+     [90m 227 |[39m     [36mconst[39m b [33m=[39m [33mJSON[39m[33m.[39mparse(read([32m'scripts/ci/migration-drift-baseline.json'[39m))[33m;[39m
+    [31m[1m>[22m[39m[90m 228 |[39m     expect(b[33m.[39mknown_missing_tables)[33m.[39mtoEqual(expect[33m.[39marrayContaining([[32m'tenant_pack_intake'[39m[33m,[39m [32m'tenant_content_pipeline'[39m]))[33m;[39m
+     [90m     |[39m                                    [31m[1m^[22m[39m
+     [90m 229 |[39m     expect(b[33m.[39mcount)[33m.[39mtoBe(b[33m.[39mknown_missing_tables[33m.[39mlength)[33m;[39m
+     [90m 230 |[39m   })[33m;[39m
+     [90m 231 |[39m[0m
+
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:228:36)
+
+  ΓùÅ VTID-05324 P4 queue, drift baseline, rollback ΓÇ║ rollback drops exactly the new objects; pre/post checks and the pgTAP plan are read-only
+
+    ENOENT: no such file or directory, open '<worktree>\docs\validation\VTID-05324\rollback-pack-intake.sql'
+
+    [0m [90m 14 |[39m
+     [90m 15 |[39m [36mconst[39m [33mREPO[39m [33m=[39m path[33m.[39mjoin(__dirname[33m,[39m [32m'../../..'[39m)[33m;[39m
+    [31m[1m>[22m[39m[90m 16 |[39m [36mconst[39m read [33m=[39m (p[33m:[39m string) [33m=>[39m fs[33m.[39mreadFileSync(path[33m.[39mjoin([33mREPO[39m[33m,[39m p)[33m,[39m [32m'utf8'[39m)[33m;[39m
+     [90m    |[39m                                [31m[1m^[22m[39m
+     [90m 17 |[39m [36mconst[39m strip [33m=[39m (sql[33m:[39m string) [33m=>[39m sql[33m.[39mreplace([35m/--[^\n]*/g[39m[33m,[39m [32m''[39m)[33m;[39m
+     [90m 18 |[39m
+     [90m 19 |[39m [36mconst[39m [33mINTAKE[39m [33m=[39m [32m'supabase/migrations/20261101110000_mt_launch_tenant_pack_intake.sql'[39m[33m;[39m[0m
+
+      at read (test/mt-launch-pack-intake-pgtap.test.ts:16:32)
+      at Object.<anonymous> (test/mt-launch-pack-intake-pgtap.test.ts:233:22)
+
+Test Suites: 1 failed, 1 total
+Tests:       15 failed, 2 passed, 17 total
+Snapshots:   0 total
+Time:        8.638 s
+Ran all test suites matching /test\\mt-launch-pack-intake-pgtap.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit=1
+--- restored; status after restore ---

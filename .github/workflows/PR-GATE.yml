@@ -37,9 +37,16 @@ jobs:
           ref: ${{ github.event.pull_request.head.sha }}
           fetch-depth: 0
 
+      # VTID-05307: cache npm keyed on the gateway lockfile so the conditional
+      # "Gateway deps" npm ci below reuses a warm cache on a fix PR. This is a
+      # speed-only change: PR-GATE keeps running on every pull_request with no
+      # path filter (a path-filtered required gate stays pending and wedges
+      # merges — inv-code §5), and `enforce` is untouched.
       - uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
+          cache-dependency-path: services/gateway/package-lock.json
 
       - name: Gate self-test
         run: node --test scripts/ci/pr-gate/__tests__/*.test.mjs
