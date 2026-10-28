@@ -125,3 +125,5 @@ The two lanes have no dependency on each other and run in parallel.
 - The exact new-dependency choice for native audio capture (`expo-audio` vs `expo-av`) and the native STT provider —
   the `diary` lane picks the one consistent with the rest of `apps/mobile/` at implementation time.
 <!-- plan:end -->
+
+<!-- re-trigger after PLAN-SPAR repair; 2026-10-28T09:51:27.8876625+01:00 -->
