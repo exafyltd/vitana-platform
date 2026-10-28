@@ -229,6 +229,22 @@ export function fetchPendingPushNotifications(sb: any, lookbackCutoff: string) {
     .limit(100);
 }
 
+/**
+ * VTID-05312: chat rows already pushed for these (recipient, message) pairs
+ * (dedup of a second row). Scoped to the batch's recipients, so a big group
+ * message can't push the needed sibling past the limit (batch ≤ 100 rows).
+ */
+export function fetchPushedChatSiblings(sb: any, messageIds: string[], userIds: string[]) {
+  return sb
+    .from('user_notifications')
+    .select('id, user_id, message_id:data->>message_id')
+    .in('user_id', userIds)
+    .in('type', ['new_chat_message', 'chat_mention'])
+    .in('data->>message_id', messageIds)
+    .not('push_sent_at', 'is', null)
+    .limit(1000);
+}
+
 export function fetchUserNotificationPreferences(sb: any, args: { userId: string; tenantId: string }) {
   return sb
     .from('user_notification_preferences')

@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05353",
+  "kind": "infra",
+  "paths": [
+    ".github/workflows/UNIT.yml",
+    ".github/workflows/PHASE-2B-DOC-GATE.yml",
+    "scripts/ci/workflow-concurrency/**",
+    "docs/validation/VTID-05353/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05353/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
