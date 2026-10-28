@@ -7,8 +7,38 @@ repos: [vitana-platform, vitana-v1]
 specs:
   - vitana-platform:pm-agent
   - vitana-platform:claude-sessions-handover
+  - vitana-platform:retire-claude-code
+  - vitana-platform:plan-spar-stale-session
+  - vitana-platform:fix-4182-test-fallout
+  - vitana-platform:collab-queue-perf
   - vitana-v1:chat-ux
   - vitana-v1:vitana-chat-markdown
+  - vitana-platform:collab-multi-builder-handoff
+  - vitana-platform:collab-kiro-governance
+  - vitana-platform:kiro-primary-executor
+  - vitana-platform:kiro-autonomy-fallback
+  - vitana-platform:kaf-fallback-env
+  - vitana-platform:claude-md-cleanup
+  - vitana-platform:messenger-ux-v2
+  - vitana-platform:ci-github-modernization
+  - vitana-platform:ci-ecr-public-auth
+  - vitana-platform:matches-scroll-end
+  - vitana-platform:spotlight-commit-coverage
+  - vitana-platform:profile-posts-full-width
+  - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:reviewer-model-fallback
+  - vitana-platform:i18n-audit-nightly-off
+  - vitana-platform:pipeline-speed
+  - vitana-platform:kiro-web-steering
+  - vitana-platform:owner-autonomy
+  - vitana-platform:kiro-web-parity
+  - vitana-platform:plan-spar-stuck-session
+  - vitana-platform:session-title-stable
+  - vitana-platform:pipeline-lane-state-efficiency
+  - vitana-platform:pm-ci-load
+  - vitana-platform:context-map
+  - vitana-platform:quality-checks
+  - vitana-platform:reviewer-step-model
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -25,5 +55,30 @@ belong to none of the named programmes are listed here until the owner assigns t
 
 - `vitana-platform:pm-agent` — Project Manager Agent
 - `vitana-platform:claude-sessions-handover` — handover of ongoing Claude Code sessions to Kiro
+- `vitana-platform:plan-spar-stale-session` — PLAN-SPAR re-runs dead in_progress sparring sessions
+- `vitana-platform:fix-4182-test-fallout` — staging suite + Jest pin left stale by #4182 (VTID-05082)
+- `vitana-platform:collab-queue-perf` — collab queue reads git in a constant number of processes
 - `vitana-v1:chat-ux` — chat UX
 - `vitana-v1:vitana-chat-markdown` — Vitana chat replies render Markdown
+- `vitana-platform:messenger-ux-v2` — Messenger: reliable sending, scroll, replies, media, search, sharing, push suppression
+- `vitana-platform:kiro-autonomy-fallback` — Claude Code optional; Kiro runs the pipeline end to end
+- `vitana-platform:kaf-fallback-env` — fix-forward: the staging PM sees Kiro-fallback mode (VTID-05277)
+- `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
+- `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
+- `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
+- `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
+- `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
+- `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
+- `vitana-platform:staging-verify-runner-fix` — STAGING-VERIFY: pinned runner image, native suite commands, bundle profile (both repos)
+- `vitana-platform:reviewer-model-fallback` — retroactive spar + VTID + read-only staging coverage for the reviewer-agent three-model fallback chain merged in #4295
+- `vitana-platform:pipeline-speed` — Kiro pipeline time-to-completion: zero-cost empty slots, one-pass preflight, restart watchdog
+- `vitana-platform:kiro-web-steering` — Kiro Web sessions load both repos' steering and the pipeline driver (generated workspace-root steering, AGENTS.md trigger, Configuration Sync file)
+- `vitana-platform:owner-autonomy` — one standing autonomy rule for every Vitana session and process; one complete stop table; guard-checked (both repos)
+- `vitana-platform:pipeline-lane-state-efficiency` — one closing record may carry a chain of legal lane/plan transitions (every edge, its evidence and the append-only log checked)
+- `vitana-platform:pm-ci-load` — superseded PR runs cancel; the Project Manager gets its own GitHub App identity (own rate limit)
+- `vitana-platform:kiro-web-parity` — Kiro Web session kit: ready tools, enforced local typecheck/preflight before commit/push, CI wait with failed logs
+- `vitana-platform:plan-spar-stuck-session` — a PLAN-SPAR session whose partner never answers recovers inside the same run
+- `vitana-platform:session-title-stable` — always-included steering rule in both repos: the session title is set once and never renamed
+- `vitana-platform:context-map` — one read-only command and one linked page to find routes, screens, areas, importers, rules and prior work; stale-link check
+- `vitana-platform:quality-checks` — proportional quality checks per change type for planning, building, review and staging proof; BOM-tolerant manifests; PR templates (both repos)
+- `vitana-platform:reviewer-step-model` — every pinned review step's prompt opens with its own chain model, so the reviewer agent's self-check stops returning `model_unavailable`

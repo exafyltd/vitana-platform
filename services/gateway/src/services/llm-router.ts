@@ -168,7 +168,20 @@ export interface LLMRouterOpts {
    * request body is byte-identical to before.
    */
   deepseekThinking?: 'enabled' | 'disabled';
+  /**
+   * Plan-sparring last-resort tier (owner decision 2026-10-19): when Bedrock
+   * Opus 4.6 AND Sonnet 4.6 are both out of quota, the partner pass may run one
+   * turn on DeepSeek. Only `runPartnerPass` sets this, together with
+   * `providerOverride: 'deepseek'`; the router then lets the no-fallback
+   * `plan_sparring` stage run on that one provider for that one call. Every
+   * other non-Bedrock primary for the stage is still refused, and the router
+   * itself still never falls back for it.
+   */
+  planSparringLastResort?: boolean;
 }
+
+/** Plan-sparring last-resort tier: the only non-Bedrock provider the stage may run on. */
+export const PLAN_SPARRING_LAST_RESORT_PROVIDERS: readonly LLMProvider[] = ['deepseek'];
 
 /** VTID-05077: providers a per-call fallback override may never name. */
 export const REFUSED_FALLBACK_OVERRIDE_PROVIDERS: readonly string[] = ['vertex', 'anthropic', 'claude_subscription'];
@@ -1190,7 +1203,14 @@ export async function callViaRouter(
   // VTID-04868: a no-fallback stage never falls back, whatever the caller or
   // the stored policy says, and only ever runs on Bedrock — a stored
   // non-Bedrock primary is refused before any provider is called.
-  if (noFallbackStage && stageConfig.primary_provider !== 'bedrock') {
+  // Plan-sparring last-resort tier: an explicit per-call DeepSeek override,
+  // flagged by the partner pass after both Bedrock models failed, is allowed.
+  const lastResortOverride =
+    opts.planSparringLastResort === true &&
+    opts.providerOverride !== undefined &&
+    PLAN_SPARRING_LAST_RESORT_PROVIDERS.includes(opts.providerOverride) &&
+    stageConfig.primary_provider === opts.providerOverride;
+  if (noFallbackStage && stageConfig.primary_provider !== 'bedrock' && !lastResortOverride) {
     return {
       ok: false,
       error: `Stage '${stage}' must run on bedrock; refusing configured provider '${stageConfig.primary_provider}'`,

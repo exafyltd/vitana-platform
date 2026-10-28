@@ -1,0 +1,6 @@
+# [sources at 0e93e3701f82230ed73a2f73d73b148aab3c2317; lane code unchanged since b62b27556 (git diff --stat b62b27556 0e93e3701f82230ed73a2f73d73b148aab3c2317 -- services/ is empty)]
+# npm run typecheck; exit 0
+
+> @vitana/gateway@1.0.1 typecheck
+> tsc --noEmit
+

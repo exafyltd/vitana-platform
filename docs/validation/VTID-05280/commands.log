@@ -1,0 +1,106 @@
+# VTID-05280 — claude-md-cleanup/rules-trim — commands run (Windows, PowerShell 5.1, node 20+), all read-only
+# except the lane worktree edits, the claim ref push and the branch push. Session kiro-202610201939-ee07.
+
+## Setup
+$ git -C <wt> fetch --prune origin
+$ git -C <wt> log --oneline HEAD..origin/main          # lane branch was 4 behind, none touching lane paths
+$ git -C <wt> diff --stat HEAD origin/main -- CLAUDE.md .kiro/steering   # => empty
+$ git -C <wt> merge --ff-only origin/main             # => HEAD 2ca278872a97f66f657570a1415836b98a7c5829
+$ gh pr view 4232 --repo exafyltd/vitana-platform --json state   # => OPEN (plan PR not merged)
+$ node scripts/collab/queue.mjs claim claude-md-cleanup/rules-trim --session kiro-202610201939-ee07 --repo <wt>
+{"ok":true,"sha":"a725d9edffcfd10c5f433fffb3b11b4c9e5f8c9d"}
+# Lane file .kiro/specs/claude-md-cleanup/lanes/rules-trim.md lives only on the unmerged plan branch: the claim log
+# entry ("Owner exception: executor: claude, built by Kiro") cannot be committed from this lane (lane paths exclude
+# the spec; a _plan commit may not edit a lane file). Recorded in the PR body's first section instead.
+
+## Line counts (before = origin/main 2ca278872, after = branch)
+$ (Get-Content <file>).Count
+CLAUDE.md                                   1021 -> 612
+.kiro/steering/vitana-kiro-notes.md           23 -> 19
+.kiro/steering/vitana-load-project-rules.md   26 -> 26
+.claude/CLAUDE.md                           unchanged (git diff --quiet origin/main...HEAD -- .claude/CLAUDE.md => exit 0)
+
+## Numbering before the change (origin/main)
+$ node - <<'labels on origin/main'   # same parser as check.mjs labels, run on `git show origin/main:CLAUDE.md`
+origin/main duplicate labels within a section: 21, 22, 26, 16, 17, 18, 19, 20, 21, 22, 23, 24, 25, 26, 27, 28, 29, 30, 31
+
+## Evidence generation
+$ node <task-dir>/evidence.mjs <wt> <v1-wt> docs/validation/VTID-05280/outputs
+{ "mustKeepMissing": 0, "tokens": 76, "duplicates": 0, "xrefListed": 711,
+  "loadedRules": [ ".claude/rules/backend.md:61/243/308/583 -> IF-THEN 31 = AI-31",
+                   ".claude/rules/infrastructure.md:500/504 -> IF-THEN 26 = CI/CD 26 (kept)" ] }
+# outputs/must-keep-check.txt   76 tokens (22 required + 54 further MUST KEEP anchors), counts origin/main vs branch: 0 missing
+# outputs/duplicate-labels.txt  PASS — no label used twice within a section
+# outputs/xref-sweep.md         1477 grep hits (platform 1335, vitana-v1 142, read-only); 711 name a changed/retired label
+#                               or an unnamed-section "rule n" < 41; all resolve; loaded rules files: 6 hits, all resolve
+
+## Acceptance checks (head d73093e4c034061f9c73cd77f1b7f32c9ad37edf, base origin/main 2ca278872)
+$ node docs/validation/VTID-05280/check.mjs tokens
+PASS 22/22 tokens present                                                            # exit=0
+$ node docs/validation/VTID-05280/check.mjs labels
+PASS no Part 1 label used twice within a section                                      # exit=0
+$ node docs/validation/VTID-05280/check.mjs lines
+CLAUDE.md 612 / .kiro/steering/vitana-kiro-notes.md 19 / .kiro/steering/vitana-load-project-rules.md 26   # exit=0
+$ node docs/validation/VTID-05280/check.mjs xref
+PASS every label cited in .claude/rules/** and .kiro/steering/** resolves             # exit=0
+$ git grep -n "git reset --hard" -- CLAUDE.md
+CLAUDE.md: one hit, the retired-number index row ("IF–THEN 20 … | deleted")          # exit=0
+$ git grep -c "There is no" -- CLAUDE.md
+CLAUDE.md:1                                                                           # exit=0
+$ git grep -c "Mandatory Codebase Intelligence" -- CLAUDE.md
+(no output)                                                                           # exit=1 (0 matches)
+$ git grep -c "8 Jun 2026" -- CLAUDE.md
+(no output)                                                                           # exit=1 (0 matches)
+$ git diff --name-only origin/main...HEAD
+.kiro/steering/vitana-kiro-notes.md, .kiro/steering/vitana-load-project-rules.md, CLAUDE.md,
+docs/validation/VTID-05280/{acceptance.md,check.mjs,plan-sparring.md,scope.json,outputs/*}   # exit=0
+$ git diff --quiet origin/main...HEAD -- .claude/CLAUDE.md                            # exit=0
+$ git grep -c "1,000 lines" -- .kiro/steering
+(no output)                                                                           # exit=1 (0 matches)
+$ git grep -c "session-id --agent kiro" -- .kiro/steering
+.kiro/steering/vitana-load-project-rules.md:1                                         # exit=0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+tests 31, pass 31, fail 0                                                             # exit=0
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK                                                                     # exit=0
+
+## Collab checks (known false positives while the plan PR #4232 is unmerged)
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/claude-md-cleanup/rules-trim
+❌ collab handoff — 1 problem: Collab-Lane claude-md-cleanup/rules-trim:
+   .kiro/specs/claude-md-cleanup/lanes/rules-trim.md does not exist                   # exit=1
+$ node scripts/collab/queue.mjs scope-check --repo . --base origin/main --head HEAD --branch kiro/claude-md-cleanup/rules-trim --plan-repo exafyltd/vitana-platform
+❌ lane scope — lane claude-md-cleanup/rules-trim: .kiro/specs/claude-md-cleanup/lanes/rules-trim.md not found in
+   this repo, an open plan( PR or vitana-platform                                    # exit=1
+# Cause: the lane file exists only on the open plan PR #4232. scope-check's plan-PR lookup (ghPlanLaneFetcher) finds
+# no PR because GitHub search returns nothing for "plan(claude-md-cleanup) in:title":
+$ gh pr list --repo exafyltd/vitana-platform --state open --search "plan(claude-md-cleanup) in:title" --json number
+[]
+$ gh pr list --repo exafyltd/vitana-platform --state open --search "claude-md-cleanup in:title" --json number
+[{"number":4232}]
+# Both clear once #4232 merges (lane file on main). collaboration.md §7b names "lane file not found because the spec
+# is not on main yet" as a known governance-artifact false positive. scripts/collab is outside this lane: not changed.
+
+## Hot-file check (plan Decision 8)
+$ gh pr list --repo exafyltd/vitana-platform --state open --search "CLAUDE.md in:files" --json number,title
+#4232 plan(claude-md-cleanup) (this plan), #4203, #4195, #4193, #4155 (search hits; none of them is a lane PR of
+this plan; the branch is rebased on latest origin/main 2ca278872)
+
+## Doc lint
+# No markdown/doc linter is configured in this repository (no markdownlint config, no docs lint workflow; CI lint is
+# CICDL-CORE-LINT-SERVICES.yml for services only). The Kiro steering guard above is the doc check that applies.
+## Review fixes (reviewer agent, base head 00c9eb98a0f47f45d73d14a5a7d070874b039a9d)
+# Rule 48 cites "test-account rules IF–THEN 31, 31b, 32"; IF–THEN 26 restores "never dispatch EXEC-DEPLOY.yml, for
+# this or any other reason"; vitana-kiro-notes.md says "write to a live system (Supabase, AWS, gateway)"
+# (vitana-load-project-rules.md already said "live system": unchanged); AC-10 states the known false positive.
+# CLAUDE.md 611 -> 612 lines (rule 48 wraps one line longer); AC-3 and the counts above updated.
+$ node <task-dir>/evidence.mjs <wt> <v1-wt> <tmp>      # => mustKeepMissing 0, tokens 76, duplicates 0, xrefListed 711
+# outputs/must-keep-check.txt refreshed (only change: EXEC-DEPLOY.yml 1 -> 2 on the branch); other outputs identical
+$ node docs/validation/VTID-05280/check.mjs tokens|labels|xref   # => PASS / PASS / PASS, exit=0 each
+$ node docs/validation/VTID-05280/check.mjs lines
+CLAUDE.md 612 / .kiro/steering/vitana-kiro-notes.md 19 / .kiro/steering/vitana-load-project-rules.md 26   # exit=0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+tests 31, pass 31, fail 0                                                             # exit=0
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK                                                                     # exit=0
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/claude-md-cleanup/rules-trim
+collab handoff — 1 problem: .kiro/specs/claude-md-cleanup/lanes/rules-trim.md does not exist   # exit=1 (known false positive, AC-10)

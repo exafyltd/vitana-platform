@@ -1,0 +1,130 @@
+TAP version 13
+# Subtest: empty slot: skip ends the race at its first poll (terminal-state), go stays idle
+ok 1 - empty slot: skip ends the race at its first poll (terminal-state), go stays idle
+  ---
+  duration_ms: 2.321028
+  type: 'test'
+  ...
+# Subtest: filled slot: go fires (new-activity); skip is idle on every poll, also after RUN files change
+ok 2 - filled slot: go fires (new-activity); skip is idle on every poll, also after RUN files change
+  ---
+  duration_ms: 1.28448
+  type: 'test'
+  ...
+# Subtest: fresh run: no planning or approval step is skipped
+ok 3 - fresh run: no planning or approval step is skipped
+  ---
+  duration_ms: 0.580519
+  type: 'test'
+  ...
+# Subtest: resumed mid-planning (steps_done setup/investigate/spec, plan_pr null, no slots.json): investigate and spec skip, plan-pr runs
+ok 4 - resumed mid-planning (steps_done setup/investigate/spec, plan_pr null, no slots.json): investigate and spec skip, plan-pr runs
+  ---
+  duration_ms: 0.53134
+  type: 'test'
+  ...
+# Subtest: plan-pr done (plan_pr set): all three planning steps skip, spar-loop still runs
+ok 5 - plan-pr done (plan_pr set): all three planning steps skip, spar-loop still runs
+  ---
+  duration_ms: 1.364516
+  type: 'test'
+  ...
+# Subtest: slots.json present: spar-loop and merge-plan (and planning) skip
+ok 6 - slots.json present: spar-loop and merge-plan (and planning) skip
+  ---
+  duration_ms: 0.458152
+  type: 'test'
+  ...
+# Subtest: terminal rule: failed-at-repeat → terminal-state and exactly one blockers.md line
+ok 7 - terminal rule: failed-at-repeat → terminal-state and exactly one blockers.md line
+  ---
+  duration_ms: 10.592561
+  type: 'test'
+  ...
+# Subtest: terminal rule: failed-inner-step-in-repeat → terminal-state and exactly one blockers.md line
+ok 8 - terminal rule: failed-inner-step-in-repeat → terminal-state and exactly one blockers.md line
+  ---
+  duration_ms: 0.553633
+  type: 'test'
+  ...
+# Subtest: terminal rule: failed-inner-step-in-wrapper → terminal-state and exactly one blockers.md line
+ok 9 - terminal rule: failed-inner-step-in-wrapper → terminal-state and exactly one blockers.md line
+  ---
+  duration_ms: 0.618214
+  type: 'test'
+  ...
+# Subtest: terminal rule: failed planning step → terminal-state and exactly one blockers.md line
+ok 10 - terminal rule: failed planning step → terminal-state and exactly one blockers.md line
+  ---
+  duration_ms: 0.594249
+  type: 'test'
+  ...
+# Subtest: not terminal: running → idle, no blockers line
+ok 11 - not terminal: running → idle, no blockers line
+  ---
+  duration_ms: 0.381881
+  type: 'test'
+  ...
+# Subtest: not terminal: paused (pinned non-terminal) → idle, no blockers line
+ok 12 - not terminal: paused (pinned non-terminal) → idle, no blockers line
+  ---
+  duration_ms: 0.242604
+  type: 'test'
+  ...
+# Subtest: not terminal: a race branch failed while the others still run → idle, no blockers line
+ok 13 - not terminal: a race branch failed while the others still run → idle, no blockers line
+  ---
+  duration_ms: 0.276397
+  type: 'test'
+  ...
+# Subtest: not terminal: race won, losers aborted, land not started yet → idle, no blockers line
+ok 14 - not terminal: race won, losers aborted, land not started yet → idle, no blockers line
+  ---
+  duration_ms: 0.25025
+  type: 'test'
+  ...
+# Subtest: not terminal: an earlier iteration had failed / aborted losers → idle, no blockers line
+ok 15 - not terminal: an earlier iteration had failed / aborted losers → idle, no blockers line
+  ---
+  duration_ms: 0.250038
+  type: 'test'
+  ...
+# Subtest: idle-then-detect-failure: run → idle, running → idle, paused → idle, inner step failed → terminal-state
+ok 16 - idle-then-detect-failure: run → idle, running → idle, paused → idle, inner step failed → terminal-state
+  ---
+  duration_ms: 0.474459
+  type: 'test'
+  ...
+# Subtest: missing or malformed data: go runs (fail open), skip stays idle and pins run
+ok 17 - missing or malformed data: go runs (fail open), skip stays idle and pins run
+  ---
+  duration_ms: 1.328346
+  type: 'test'
+  ...
+# Subtest: writes nothing outside RUN/blockers.md
+ok 18 - writes nothing outside RUN/blockers.md
+  ---
+  duration_ms: 1.025247
+  type: 'test'
+  ...
+# Subtest: CLI: one JSON result line on stdout, exit 0, also for bad stdin; engine state found under the home dir
+ok 19 - CLI: one JSON result line on stdout, exit 0, also for bad stdin; engine state found under the home dir
+  ---
+  duration_ms: 127.194661
+  type: 'test'
+  ...
+# Subtest: simulated walk: an empty slot and a resumed plan's planning + approval cost 0 agent steps; a filled slot is unchanged
+ok 20 - simulated walk: an empty slot and a resumed plan's planning + approval cost 0 agent steps; a filled slot is unchanged
+  ---
+  duration_ms: 2.792915
+  type: 'test'
+  ...
+1..20
+# tests 20
+# suites 0
+# pass 20
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 240.743684

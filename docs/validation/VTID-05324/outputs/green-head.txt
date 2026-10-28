@@ -1,0 +1,40 @@
+# green on head: kiro/mt-launch/pack-intake-db merged with origin/main 84fc0ca6a0d116f4e41dfd77c5125cb329b95f15
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/AppData/Local/Temp/mtl-wt-pack-intake-db/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    âœ… Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/mt-launch-pack-intake-pgtap.test.ts
+  VTID-05324 migration files
+    âˆš both files exist, in order, and no other migration shares their version (27 ms)
+    âˆš are expand-only: one transaction each, no drop/alter of an existing object, no backfill (18 ms)
+  VTID-05324 P1 tenant_pack_intake
+    âˆš is keyed (tenant_id, item_key) with an FK to the live tenants key (10 ms)
+    âˆš constrains item_key to the WS8 checklist and status to the four states (4 ms)
+  VTID-05324 P2 tenant_content_pipeline
+    âˆš is unique on (tenant_id, locale, key) with the plan columns (7 ms)
+    âˆš constrains review_state to the pipeline states (3 ms)
+    âˆš never writes to WS5 tenant_content_overrides (1 ms)
+  VTID-05324 P1/P2 service-role-only access (a client read fails)
+    âˆš tenant_pack_intake: RLS on, client privileges revoked, only a service_role policy (1 ms)
+    âˆš tenant_content_pipeline: RLS on, client privileges revoked, only a service_role policy (2 ms)
+  VTID-05324 P3 get_tenant_launch_readiness
+    âˆš is SECURITY INVOKER, STABLE, search_path pinned, never DEFINER (1 ms)
+    âˆš EXECUTE is revoked from PUBLIC/anon/authenticated and granted only to service_role (1 ms)
+    âˆš is read-only and reads only tenant_pack_intake + tenants (no health table) (4 ms)
+    âˆš the health-table guard catches a planted read (self-test) (2 ms)
+    âˆš its checklist equals the item_key CHECK constraint, and an unknown tenant returns NULL (2 ms)
+  VTID-05324 P4 queue, drift baseline, rollback
+    âˆš MIGRATION-QUEUE lists both files after WS5 tenant_content_overrides with rollback + checks (3 ms)
+    âˆš the drift baseline lists both unapplied tables and its count matches (5 ms)
+    âˆš rollback drops exactly the new objects; pre/post checks and the pgTAP plan are read-only (12 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       17 passed, 17 total
+Snapshots:   0 total
+Time:        3.589 s, estimated 4 s
+Ran all test suites matching /test\\mt-launch-pack-intake-pgtap.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,31 @@
+{
+  "vtid": "VTID-05236",
+  "service": "gateway",
+  "note": "Read-only. Adds the DeepSeek last-resort tier to the plan-sparring partner (Opus 4.6 -> Sonnet 4.6 -> deepseek-v4-pro). No endpoint changes; the tier logic is proven by the Jest suites below, and staging proves the gateway still serves.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive after deploy",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build with the new partner tiers boots and serves"
+    },
+    {
+      "kind": "http",
+      "name": "vtid health endpoint unaffected",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/api/v1/vtid/health",
+      "expect_status": 200,
+      "reason": "read-only GET: the ledger routes the sparring flow allocates through still answer"
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-04868-plan-sparring-service.test.ts test/vtid-04868-plan-sparring-stage.test.ts",
+      "cwd": "services/gateway",
+      "reason": "tier order, stickiness, kill switch, router last-resort gate and the real-router Opus -> Sonnet -> DeepSeek path"
+    }
+  ]
+}

@@ -307,7 +307,8 @@ function runExisting(repoRoot, t) {
     cwd: cwdAbs,
     encoding: 'utf8',
     timeout: 20 * 60_000,
-    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test' },
+    // Plus only the manifest's allowlisted, non-secret env (lib.existingEnv), e.g. the native bundle's APP_PROFILE.
+    env: { PATH: process.env.PATH, HOME: process.env.HOME, CI: '1', NODE_ENV: 'test', ...lib.existingEnv(t) },
   });
   const output = `${r.stdout || ''}${r.stderr || ''}`;
   process.stdout.write(output);
@@ -372,7 +373,14 @@ async function verify(args) {
   const commits = baseline.state === 'same' || baseline.state === 'ahead' ? [] : lib.commitsBetween((a) => git(repoRoot, a, { allowFail: true }), baseline.rangeFrom, sha);
   const manifests = {};
   for (const c of commits) for (const v of lib.extractVtids(c.subject)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
-  const plan = lib.planRange({ service, commits, manifests });
+  // VTID-05236: owner-approved coverage for commits that landed without a VTID.
+  const coveragePath = join(repoRoot, 'docs', 'validation', 'commit-coverage.json');
+  let coverageJson = null;
+  try { coverageJson = existsSync(coveragePath) ? JSON.parse(readFileSync(coveragePath, 'utf8')) : null; } catch (e) { log(`commit-coverage.json unreadable: ${e.message} — ignored`); }
+  const { coverage, errors: coverageErrors } = lib.parseCommitCoverage(coverageJson);
+  for (const e of coverageErrors) log(e);
+  for (const v of Object.values(coverage)) if (!(v in manifests)) manifests[v] = loadManifest(repoRoot, v);
+  const plan = lib.planRange({ service, commits, manifests, coverage });
   const shipping = commits.filter((c) => lib.touchesService(c.files, service));
   log(`production=${prodStamp || 'unknown'} range=${commits.length} commits, ${shipping.length} touch ${service}; suites=${plan.suites.map((s) => s.vtid).join(',') || '(none)'} missing=${plan.missing.length} lockfileOnly=${plan.lockfileOnly.length}`);
 
@@ -439,6 +447,8 @@ async function verify(args) {
     full: args.full === 'true',
     superseded_by: supersededBy || null,
     attribution_cutoff: attributionCutoff,
+    // VTID-05272: per-lane attribution for the PM / plan driver; the outcome above is unchanged.
+    per_vtid: lib.summarizeByVtid(results, [...shipping.flatMap((c) => lib.extractVtids(c.subject)), ...plan.suites.map((s) => s.vtid)]),
     chain,
     results,
     plan: { suites: plan.suites.map((s) => s.vtid), missing: plan.missing, invalid: plan.invalid, legacy_count: plan.legacy.length, lockfile_only: plan.lockfileOnly },
