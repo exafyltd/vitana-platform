@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05356",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/project-manager/types.ts",
+    "services/gateway/src/services/project-manager/observe-live.ts",
+    "services/gateway/test/project-manager/observe-live-fallback-reason.test.ts",
+    "docs/validation/VTID-05356/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05356/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

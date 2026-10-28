@@ -1,0 +1,77 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/wt/rft/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/project-manager/observe-live-fallback-reason.test.ts
+  mergeTrailerReviews: Collab-Fallback-Reason
+    ✕ sets fallback_reason from the trailer (8 ms)
+    ✕ is null when the trailer is absent (1 ms)
+    ✕ keeps any other value verbatim
+    ✕ a log entry merged with its trailer commit takes the trailer value; other lanes are ignored (1 ms)
+
+  ● mergeTrailerReviews: Collab-Fallback-Reason › sets fallback_reason from the trailer
+
+    TypeError: (0 , observe_live_1.mergeTrailerReviews) is not a function or its return value is not iterable
+
+      25 | describe('mergeTrailerReviews: Collab-Fallback-Reason', () => {
+      26 |   it('sets fallback_reason from the trailer', () => {
+    > 27 |     const [r] = mergeTrailerReviews([], [commit({ ...base, 'Collab-Fallback-Reason': 'chain_unavailable' })] as never, LANE, 'agent:vitana-lane-reviewer');
+         |                                    ^
+      28 |     expect(r.fallback_reason).toBe('chain_unavailable');
+      29 |     expect(r.reviewer).toBe('agent:vitana-lane-reviewer-independent (gpt-5.6-terra)');
+      30 |     expect(r.head_sha).toBe(HEAD);
+
+      at Object.<anonymous> (test/project-manager/observe-live-fallback-reason.test.ts:27:36)
+
+  ● mergeTrailerReviews: Collab-Fallback-Reason › is null when the trailer is absent
+
+    TypeError: (0 , observe_live_1.mergeTrailerReviews) is not a function or its return value is not iterable
+
+      32 |
+      33 |   it('is null when the trailer is absent', () => {
+    > 34 |     const [r] = mergeTrailerReviews([], [commit(base)] as never, LANE, 'agent:vitana-lane-reviewer');
+         |                                    ^
+      35 |     expect(r.fallback_reason).toBeNull();
+      36 |   });
+      37 |
+
+      at Object.<anonymous> (test/project-manager/observe-live-fallback-reason.test.ts:34:36)
+
+  ● mergeTrailerReviews: Collab-Fallback-Reason › keeps any other value verbatim
+
+    TypeError: (0 , observe_live_1.mergeTrailerReviews) is not a function or its return value is not iterable
+
+      37 |
+      38 |   it('keeps any other value verbatim', () => {
+    > 39 |     const [r] = mergeTrailerReviews([], [commit({ ...base, 'Collab-Fallback-Reason': 'something_else' })] as never, LANE, 'agent:vitana-lane-reviewer');
+         |                                    ^
+      40 |     expect(r.fallback_reason).toBe('something_else');
+      41 |   });
+      42 |
+
+      at Object.<anonymous> (test/project-manager/observe-live-fallback-reason.test.ts:39:36)
+
+  ● mergeTrailerReviews: Collab-Fallback-Reason › a log entry merged with its trailer commit takes the trailer value; other lanes are ignored
+
+    TypeError: (0 , observe_live_1.mergeTrailerReviews) is not a function
+
+      43 |   it('a log entry merged with its trailer commit takes the trailer value; other lanes are ignored', () => {
+      44 |     const fromLog = [{ session_id: base['Collab-Session'], reviewer_seat: 'agent:vitana-lane-reviewer', verdict: 'accept' as const, head_sha: HEAD, at: '2026-10-28T12:00:00.000Z', reviewer: null }];
+    > 45 |     const out = mergeTrailerReviews(fromLog, [
+         |                                    ^
+      46 |       commit({ ...base, 'Collab-Fallback-Reason': 'chain_unavailable' }),
+      47 |       commit({ ...base, 'Collab-Review': 'other/lane', 'Collab-Fallback-Reason': 'x' }),
+      48 |     ] as never, LANE, 'agent:vitana-lane-reviewer');
+
+      at Object.<anonymous> (test/project-manager/observe-live-fallback-reason.test.ts:45:36)
+
+Test Suites: 1 failed, 1 total
+Tests:       4 failed, 4 total
+Snapshots:   0 total
+Time:        0.514 s
+Ran all test suites matching /test\/project-manager\/observe-live-fallback-reason.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
