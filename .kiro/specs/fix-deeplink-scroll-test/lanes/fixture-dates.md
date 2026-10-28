@@ -13,7 +13,8 @@ repos: [exafyltd/vitana-v1]
 paths:
   - src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-28T10:20Z
+updated: 2026-10-28T13:11Z
+vtid: VTID-05394
 ---
 # Lane: fixture-dates (repo vitana-v1)
 Repo: **exafyltd/vitana-v1** (paths are relative to that repo). Tasks T1–T5 in `tasks.md` (lane `fixture-dates`).
@@ -21,3 +22,6 @@ Repo: **exafyltd/vitana-v1** (paths are relative to that repo). Tasks T1–T5 in
 ## Log
 ### 2026-10-28T10:20Z · kiro-dstev-202610280954-a005 · ready
 Lane created with the plan.
+
+### 2026-10-28T13:11Z · ci-plan-spar · ready (VTID allocated)
+VTID-05394 allocated after policy approval (converged-auto-v1).
