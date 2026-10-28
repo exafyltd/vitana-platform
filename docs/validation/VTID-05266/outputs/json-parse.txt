@@ -1,0 +1,4 @@
+docs/validation/VTID-05082/staging-tests.json -> parse ok
+exit=0
+docs/validation/VTID-05266/staging-tests.json -> parse ok
+exit=0

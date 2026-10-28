@@ -25,6 +25,8 @@ import { emitOasisEvent } from '../services/oasis-event-service';
 import { notifyUserAsync } from '../services/notification-service';
 import { sendProactiveMatchMessages, ProactiveMatchResult } from '../services/proactive-match-messenger';
 import { dispatchEvent } from '../services/automation-executor';
+import { isMtResolutionV2Enabled } from '../services/mt-flags';
+import { resolveActorTenant, jwtSubject } from '../services/jobs/job-tenant-loop';
 import * as repo from './matchmaking-repository';
 
 const router = Router();
@@ -90,6 +92,30 @@ function getBearerToken(req: Request): string | null {
     return null;
   }
   return authHeader.slice(7);
+}
+
+/**
+ * VTID-05267 (mt-jobs/jobs-automation-actor-tenant): run `dispatch` for the
+ * tenant an actor's automation event belongs to.
+ * - MT_RESOLUTION_V2 off ⇒ DEFAULT_TENANT_ID, synchronously (today).
+ * - On ⇒ the actor's real tenant via resolveActorTenant (the user's primary
+ *   tenant); unresolvable ⇒ nothing is dispatched (the resolver logs it),
+ *   never DEFAULT_TENANT_ID.
+ */
+function dispatchForActorTenant(
+  actor: { tenantId?: string | null; userId?: string | null },
+  dispatch: (tenantId: string) => void
+): void {
+  if (!isMtResolutionV2Enabled()) {
+    const tenantId = process.env.DEFAULT_TENANT_ID;
+    if (tenantId) dispatch(tenantId);
+    return;
+  }
+  resolveActorTenant(actor)
+    .then((tenantId) => {
+      if (tenantId) dispatch(tenantId);
+    })
+    .catch((err) => console.warn(`[VTID-05267] actor tenant resolution failed:`, err?.message || err));
 }
 
 /**
@@ -573,13 +599,13 @@ router.post('/:id/state', async (req: Request, res: Response) => {
 
     // Dispatch automation event for match acceptance
     if (newState === 'accepted') {
-      const tenantId = process.env.DEFAULT_TENANT_ID;
-      if (tenantId) {
+      // VTID-05267: actor = the bearer token's `sub` (the RPC above accepted the token).
+      dispatchForActorTenant({ userId: jwtSubject(token) }, (tenantId) => {
         dispatchEvent(tenantId, 'match.state.accepted', {
           match_id: matchId,
           edge_created: data.edge_created || false,
         }).catch(err => console.warn(`[${VTID}] dispatch match.state.accepted failed:`, err.message));
-      }
+      });
     }
 
     console.log(`[${VTID}] POST /match/:id/state - Success: ${matchId} -> ${newState}`);

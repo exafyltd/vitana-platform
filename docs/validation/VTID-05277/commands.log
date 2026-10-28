@@ -1,0 +1,27 @@
+# VTID-05277 local verification (Windows, worktree on branch kiro/kiro-autonomy-fallback/staging-proof, base origin/main 8e7d44a81)
+# Red on base (plan base e6ed415a9, before pm-fallback landed; detached worktree, new test copied in, src untouched)
+$ cd services/gateway && npx jest test/kiro-autonomy-fallback-proof.test.ts
+Tests: 12 failed, 1 passed, 13 total (exit 1) — claudeAvailability / runDecideTick snapshot / /mode / EXCEPTIONS_SEAT
+are missing on base; only "/status 401 without a token" already held.
+# Green on head (origin/main 8e7d44a81 + this lane)
+$ cd services/gateway && npx jest test/kiro-autonomy-fallback-proof.test.ts
+Test Suites: 1 passed, 1 total; Tests: 13 passed, 13 total (exit 0)
+$ cd services/gateway && npm run typecheck
+exit 0, 0 errors
+$ cd services/gateway && npm run build   (script shell: Git bash; the prebuild `rm -rf dist` needs a POSIX shell)
+exit 0
+$ node -e "validateManifest(docs/validation/VTID-05277/staging-tests.json, 'VTID-05277')"
+{"ok":true,"errors":[]}
+# Precondition read (plan §5 F; driver, once per tick, read-only, staging only, bearer = GATEWAY_SERVICE_TOKEN, never printed)
+$ gh run list --workflow AWS-STAGE-DEPLOY-GATEWAY.yml   -> 39492705377 success on 8e7d44a81 (pm-fallback merge)
+$ GET https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info -> git_commit 8e7d44a81551bf486549831e648451ef71addfe7
+$ gh variable set CLAUDE_AVAILABLE --body false   (2026-10-20T21:00:47Z, plan §5 F precondition)
+$ GET /api/v1/project-manager/status (auth, 2026-10-20T21:06Z) -> mode "live", last_lease "acquired",
+  claude {available: true, reason: null}, fallback false
+$ GET /api/v1/project-manager/mode -> {"ok":true,"enabled":true,"mode":"live","executor_mode":"claude_primary"}
+Finding: the staging PM holds its lease and runs live, but does not observe CLAUDE_AVAILABLE=false two ticks after it
+was set (see the lane log, "PM does not observe the flag"). The staging suite keeps the plan's expectation
+(`executor_mode: kiro_fallback`); it is not loosened.
+# Review round 1 fix (Evidence Pack Gate exit 33): outputs/ added
+$ cd services/gateway && npx jest test/kiro-autonomy-fallback-proof.test.ts --json
+Tests: 13 passed, 0 failed, 13 total (exit 0) -> outputs/jest-kiro-autonomy-fallback-proof.txt
