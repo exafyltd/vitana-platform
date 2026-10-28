@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: verified
-updated: 2026-10-26T16:03Z
+state: done
+updated: 2026-10-27T10:32Z
 sparring_record: .kiro/specs/kiro-web-steering/sparring/verdict.md
 vtids: [VTID-05339]
 ---
@@ -37,3 +37,6 @@ Lane `web-steering` went to review. The reviewer agent accepted it on `9c4778eb`
 
 ### 2026-10-26T16:03Z · kiro-exafyltd-202610261510-099d · in-review → verified
 Lane `web-steering` merged under §7b (`b117ce6216c9555169feff28e96b03cf4e64b02b`). It deploys nothing, so there is no Gate 2.
+
+### 2026-10-27T10:32Z · kiro-exafyltd-202610261510-099d · verified → done
+Plan done. Its only lane, `web-steering`, is done. Timings: `docs/validation/VTID-05339/timings.json`. The `_plan` claim and the driver heartbeat ref are removed after this record merges.
