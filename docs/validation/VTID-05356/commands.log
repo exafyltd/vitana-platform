@@ -1,0 +1,9 @@
+# VTID-05356 commands (kiro-exafyltd-202610271503-9458, 2026-10-28T11:09:00Z), base origin/main c1f0b0847e
+$ npx jest test/project-manager/observe-live-fallback-reason.test.ts   (base: mergeTrailerReviews not exported)
+Tests:       4 failed, 4 total
+$ npx jest test/project-manager   (head)
+Tests:       202 passed, 202 total
+$ npx jest test/vtid-04465-operator-pipeline-regression.test.ts   (head)
+Tests:       71 passed, 71 total
+$ npx tsc --noEmit -p services/gateway   (head) exit 0
+$ validateManifest(staging-tests.json) → ok
