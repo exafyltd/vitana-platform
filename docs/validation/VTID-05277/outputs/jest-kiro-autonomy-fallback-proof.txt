@@ -1,0 +1,20 @@
+# VTID-05277 — npx jest test/kiro-autonomy-fallback-proof.test.ts (services/gateway)
+# Head: a6ef6e8fe (origin/main 8e7d44a81 + lane), Windows, 2026-10-20. Source: jest --json result.
+Test Suites: 1 passed, 1 total
+Tests: 13 passed, 0 failed, 13 total (exit 0)
+
+passed | proof 1: claudeAvailability — flag false -> unavailable (flag_false)
+passed | proof 1: claudeAvailability — flag true, unknown, or nothing observed -> available (no silent fallback)
+passed | proof 1: claudeAvailability — 4 h without a Claude Code action -> unavailable (no_action_4h), flag true does not override
+passed | proof 2: /mode is public and carries exactly ok, enabled, mode, executor_mode = kiro_fallback
+passed | proof 2: /status stays auth-gated (401 without a token, 401 with an invalid bearer)
+passed | proof 2: /status with the service token carries claude, fallback and last_lease
+passed | proof 2: a tick that observes CLAUDE_AVAILABLE=false makes the default /mode report kiro_fallback
+passed | proof 2: a tick with Claude available keeps the default /mode on claude_primary
+passed | proof 3: stale ready lane at the end of the rotation -> exceptions seat, not claude
+passed | proof 3: a stale review at the end of the rotation -> exceptions seat, not claude
+passed | proof 3: no decision of a fallback tick routes any job to claude
+passed | proof 3: a parked lane goes to the exceptions seat while unavailable
+passed | proof 3: control: Claude available -> end of rotation still goes to claude (today's routing)
+
+# Red on base (plan base e6ed415a9, detached worktree, test copied in, src untouched): 12 failed, 1 passed, 13 total (exit 1).

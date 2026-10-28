@@ -261,9 +261,16 @@ export type GatewayI18nKey =
   | 'notif.chat_mention.title'
   // VTID-05104: generic calendar-invite push body (no title/time/place on the lock screen)
   | 'notif.calendar_invite.body'
+  // VTID-05311: push for a shared post / event / product / profile — never the item's content.
+  | 'notif.chat_shared_content.body'
   // VTID-05137: body of the one push a burst of chat messages gets
   // ("{count} new messages · {preview}") — see chat-push-coalescer.ts
   | 'notif.chat_burst.body'
+  // VTID-05208: the push a newcomer gets when several members greeted them by
+  // private DM within 24 h ("{count} people said hello 👋") — see
+  // new-member-greeting-push.ts
+  | 'notif.new_member_greeting_burst.title'
+  | 'notif.new_member_greeting_burst.body'
   // VTID-03604: nightly goodnight push — the "you didn't open ORB tonight"
   // counterpart to the spoken day-close. Fixed catalog text, not
   // LLM-composed: unlike the ORB voice path (CLAUDE.md NEVER-rule 41), a

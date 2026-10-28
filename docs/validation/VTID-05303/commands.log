@@ -1,0 +1,18 @@
+VTID-05303 — fake-checks-dedupe — local verification
+
+[YAML parse] js-yaml load of both touched/adjacent workflow files
+  CICDL-GATEWAY-CI.yml  -> OK  jobs=gateway-validation  steps=12
+  ENFORCE-FRONTEND-CANONICAL-SOURCE.yml -> OK  jobs=validate  steps=5
+  Result: PASS (both parse; `jobs` present; step counts as expected)
+
+[before/after step diff] git show origin/main:CICDL-GATEWAY-CI.yml vs head
+  BASE: 13 steps (incl. "Gateway Build Check")
+  HEAD: 12 steps ("Gateway Build Check" removed; commented "Gateway Tests" block removed)
+  ENFORCE: 5 steps (unchanged; "Build gateway" retained)
+  Result: PASS (exactly one live step removed, no step added, ENFORCE untouched)
+
+Notes:
+- Workflow-YAML-only lane: no gateway build/test run applies here (no code
+  changed; the changed file is a GitHub Actions workflow). The gateway build it
+  de-duplicates continues to run in the required ENFORCE check on every PR.
+- No test re-enabled, deleted, or loosened.
