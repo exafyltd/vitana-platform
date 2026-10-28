@@ -16,7 +16,8 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-27T11:30Z
+updated: 2026-10-28T10:16Z
+vtid: VTID-05363
 ---
 # reassign-noop — idempotent PM stale-review reassignment
 Plan: `.kiro/specs/pm-reassign-idempotent/plan.md`, `tasks.md` section `reassign-noop`. **Held until PLAN-SPAR
@@ -25,3 +26,6 @@ allocates this lane's VTID.** `executor: claude` (`.github/**`); while Claude is
 ## Log
 ### 2026-10-27T11:30Z · kiro-exafyltd-202610220833-d231 · created → ready
 Created and held.
+
+### 2026-10-28T10:16Z · ci-plan-spar · ready (VTID allocated)
+VTID-05363 allocated after policy approval (converged-auto-v1).
