@@ -1,6 +1,6 @@
 ---
 lane: pipeline-quality
-state: verified
+state: done
 next_actor: kiro
 claimed_by: kiro-jtadic-202610271220-68a5
 branch: kiro/quality-checks/pipeline-quality
@@ -21,7 +21,7 @@ paths:
   - scripts/collab/quality-checks.test.mjs
   - docs/validation/VTID-*/**
 pr: https://github.com/exafyltd/vitana-platform/pull/4407
-updated: 2026-10-28T11:50Z
+updated: 2026-10-28T12:01Z
 vtid: VTID-05346
 ---
 # Lane: pipeline-quality (repo vitana-platform)
@@ -64,3 +64,6 @@ PR #4407 in review. Self-review `changes` on `21121452` (entry above); accepted 
 
 ### 2026-10-28T11:50Z · kiro-jtadic-202610271220-68a5 · in-review → verified
 Accepted (agent:vitana-lane-reviewer, claude-sonnet-5.5) on `2bdd55cb`; every required check green on the merged head `9fd3559a`; squash-merged `9e9170c6` (#4407). Deploys nothing: verified by its tests (7/7) on the merged head.
+
+### 2026-10-28T12:01Z · kiro-jtadic-202610271220-68a5 · verified → done
+Merged and verified; nothing deploys, so no STAGING-VERIFY and no Gate 2 (plan §3). Follow-ups tracked in plan `quality-checks-followup` (#4454).
