@@ -56,12 +56,17 @@ files are read-only. Only the land step sets `done`.
    `npm run build` (+ `npm run test:operator` / `test:support` / `test:roles` when their area is touched); frontend →
    `npm test`, `npm run lint`, `npm run build`; workflow YAML → parse each file; Kiro files → `node --test
    scripts/ci/kiro-steering/guard.test.cjs` and `node scripts/ci/kiro-steering/guard.cjs .`. On Windows compare any red
-   against the same command on base before calling it the lane's.
+   against the same command on base before calling it the lane's. Then the build and evidence items of
+   `quality-checks.md` for every change type the lane touches (UI screenshots, contract, kept defaults, sibling
+   sweep, test quality), each recorded in `commands.log`.
 8. A deploying lane (touches a path a staging deploy workflow watches) ships
    `docs/validation/<VTID>/staging-tests.json`: read-only (GET or a rejected probe), staging only, never production.
+   It asserts the changed outcome where a read-only path exists ("Staging proof" in `quality-checks.md`), not only
+   that the page or route exists.
 9. Commit with the trailers and bot identity, run preflight (step 7) on that commit, fix every error, then push
    (protocol), open the PR (base `main`, ready when local checks are
-   green; title `VTID-NNNNN (<slug>/<LANE>): <lane title>`), body: summary, tests + counts, red → green proof, paths,
+   green; title `VTID-NNNNN (<slug>/<LANE>): <lane title>`), body: summary, tests + counts, red → green proof,
+   verification (what was observed where, or "not verified on staging: <reason>", `quality-checks.md`), paths,
    `Review: agent:vitana-lane-reviewer (claude-sonnet-5.5)`, session id, merge authority (collaboration.md §7b). A lane
    spanning both repos opens one PR per repo with the same VTID.
 10. State: status `in_review`, `branch`, `worktree`, `pr_urls`, `head_sha` (+ `v1_head_sha`). Timings `lane_started`,
