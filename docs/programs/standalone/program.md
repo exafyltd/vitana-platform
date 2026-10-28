@@ -40,6 +40,7 @@ specs:
   - vitana-platform:context-map
   - vitana-platform:quality-checks
   - vitana-platform:reviewer-step-model
+  - vitana-platform:collab-handoff-check-fix
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
