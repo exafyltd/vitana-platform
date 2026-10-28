@@ -4,8 +4,10 @@ author: kiro
 author_seat: jtadic
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-28T14:05Z
+state: approved
+updated: 2026-10-28T14:25Z
+sparring_record: .kiro/specs/remove-b12-claude-sparring-gate1/sparring/verdict.md
+vtids: [VTID-05402, VTID-05403, VTID-05404]
 ---
 # Handoff — remove-b12-claude-sparring-gate1
 Planner and driver: Kiro seat `jtadic` (session kiro-jtadic-202610281355-d593, Kiro Web). Plan: `plan.md`. Tasks:
@@ -26,3 +28,6 @@ CLAUDE.md, merge authority = owner named-plan instruction this session; (3) `v1-
 agent, depends_on platform-governance) — v1 collaboration.md + vitana-owner-autonomy.md, wording copied from the
 merged platform wording. Cross-plan contention with operating-workflow (relocates the same files, preserves B12) and
 retire-claude-code surfaced in plan.md §6 R2/R5 for sparring to adjudicate.
+
+### 2026-10-28T14:25Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
