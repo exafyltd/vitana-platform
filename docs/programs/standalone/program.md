@@ -22,6 +22,7 @@ specs:
   - vitana-platform:messenger-ux-v2
   - vitana-platform:ci-github-modernization
   - vitana-platform:ci-ecr-public-auth
+  - vitana-platform:pm-reassign-idempotent
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
@@ -67,6 +68,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:claude-md-cleanup` — trim CLAUDE.md to project-specific rules (both repos)
 - `vitana-platform:ci-github-modernization` — modernize CI/GitHub for both repos (dead removal, false-positive fixes, speed, CI-health)
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
+- `vitana-platform:pm-reassign-idempotent` — the PM's stale-review reassignment writes nothing when nothing changed
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
