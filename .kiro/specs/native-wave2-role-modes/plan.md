@@ -19,7 +19,12 @@ in-app system browser).
 ## Measured state (frontend repo `exafyltd/vitana-v1` origin/main, parity ledger `apps/mobile/parity/ledger.json` version 2)
 - **35 rows** carry `"lane": "role-modes"`, **all `status: "not_started"`** (34 `source: role-route`, 1
   `source: exclusion` — `/commerce/connect/authorize`); **435 rows total**. Counted with `node -e` over the
-  committed ledger. The 35 rows and their web paths are listed in `requirements.md` R0.2–R0.5.
+  committed ledger. **R1-F2 confirmation:** the `/commerce/connect/authorize` row DOES exist — it sits in the
+  **exclusion section** of the ledger (around `apps/mobile/parity/ledger.json:2477`), NOT in the `role-route`
+  commerce block at `:4337-4455` the partner read, which is why its budget-limited read found only the 10 role-route
+  commerce rows. The exclusion row is `"lane": "role-modes"`, `"source": "exclusion"`, `"status": "not_started"`
+  (verified with `node -e`: 11 commerce `role-modes` rows total = 10 role-route + 1 exclusion). The 8+8+8+11 = 35
+  partition is therefore correct. The 35 rows and their web paths are listed in `requirements.md` R0.2–R0.5.
 - **Partition by role prefix into 4 disjoint lanes: patient 8 + professional 8 + staff 8 + business 11 = 35**,
   **0 overlap, 0 orphan** (verified with `node -e`: every row classified by `web_path.startsWith('/patient/' |
   '/professional/' | '/staff/' | '/commerce')`). Native file subtrees are disjoint
@@ -31,15 +36,22 @@ in-app system browser).
 - **ADMIN excluded:** 93 `/admin/*` rows, every one `scope: out:system-browser` (verified). Admin is opened in an
   in-app system browser (SFSafariViewController / Custom Tabs) per `NATIVE-APP-PLAN.md` §2 decisions 3/7; no native
   port. Stated in `requirements.md` "Out of scope" and `design.md` §2.
-- **Class split (verified by imports on origin/main):** **class-A core-extractable** = `src/lib/business-mode.ts`,
-  `src/config/drawer-nav.config.ts`, `src/lib/role-switch-destination.ts`. `business-mode` and `drawer-nav` are
-  ALREADY in `packages/core/src/extracted/*.generated.ts`; `src/lib/permissions.ts` is ALREADY re-exported in
-  `packages/core/manifest.json`. `role-switch-destination.ts`'s imports are the type-only `UserRole` + the pure
-  `getCommandHubUrl` config → class A, the only new core extraction. **class-B re-implemented natively** =
-  `usePatientAccess`, `useActivateReseller`, `useResellerSales` and the other data hooks — all import
-  `@/integrations/supabase/client` (verified), so they would fail `core-closure --check` and are NOT moved into
-  core. **Core extraction is class-A ONLY.** A native `usePatientAccess` twin already exists at
-  `apps/mobile/src/identity/usePatientAccess.ts`.
+- **Class split (verified by imports on origin/main):** **class-A, ALREADY in core** = `src/lib/business-mode.ts`
+  and `src/config/drawer-nav.config.ts` (already in `packages/core/src/extracted/*.generated.ts`); `src/lib/permissions.ts`
+  is ALREADY re-exported in `packages/core/manifest.json`. **No NEW core extraction is needed by this plan**
+  (corrected per sparring R1-F1 — see next bullet). **`role-switch-destination.ts` is NOT class A and is NOT
+  extracted:** it value-imports `getCommandHubUrl` from `src/config/devHub.config.ts` (a **value** import, not
+  type-only — `role-switch-destination.ts:2`), and `devHub.config.ts` reads `import.meta.env.VITE_DEV_HUB_ENABLED`
+  / `VITE_DEV_HUB_READONLY` / `VITE_GATEWAY_BASE` (`:8-12`), which the extraction tooling marks as a `vite` signal →
+  own-class **B** (`extraction-deps.mjs:207-211`, `:231-233`). The `core-closure.mjs` BFS (`:145-156`) would traverse
+  the non-type-only edge into `devHub.config.ts`, find `m.own !== 'A'`, and **fail `--check`**. So
+  `role-switch-destination.ts` is re-implemented natively in the `business` lane (option (c)), alongside the data
+  hooks — the business lane's role-switch destination mapping is a small native helper (it may take the
+  command-hub URL as an injected value rather than importing `devHub.config.ts`), not a core re-export. **class-B
+  re-implemented natively** = `usePatientAccess`, `useActivateReseller`, `useResellerSales` and the other data hooks
+  — all import `@/integrations/supabase/client` (verified), so they would fail `core-closure --check` and are NOT
+  moved into core. **This plan adds NO new `@vitana/core` entry at all.** A native `usePatientAccess` twin already
+  exists at `apps/mobile/src/identity/usePatientAccess.ts`.
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging
@@ -53,17 +65,18 @@ in-app system browser).
    0 orphan (re-verified against the ledger). **All four are independent — no `depends_on` — and run in parallel.**
 2. **ADMIN is not ported.** All 93 `/admin/*` rows are `scope: out:system-browser` — opened in an in-app system
    browser (program §2 decisions 3/7). No native admin route, no admin ledger row touched by this plan.
-3. **Only class-A (pure) role-chrome modules move into `@vitana/core`; the data hooks do NOT.** The only new core
-   extraction is `role-switch-destination.ts` (`business-mode` and `drawer-nav` are already extracted; `permissions`
-   already re-exported). The data hooks (`usePatientAccess`, `useActivateReseller`, `useResellerSales`, …)
-   runtime-import `@/integrations/supabase/client`, a class-B module, so a core entry would pull the client into the
-   `core-closure.mjs` BFS and fail `--check` (`m.own !== 'A'`); each lane **re-implements the fetching natively**
-   (native Supabase client + native auth context) and consumes only the class-A helpers from core. **The one core
-   extraction is owned by the `business` lane** (its chrome needs `role-switch-destination`): the business PR adds
-   the `packages/core/src/role-switch-destination.ts` re-export + the `packages/core/manifest.json` line, and **in
-   the same PR** runs `node scripts/native/core-closure.mjs --write` and commits the regenerated
-   `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json`, so `--check` passes.
-   The other three lanes consume core but add no core entry.
+3. **Only already-extracted class-A role-chrome modules are consumed from `@vitana/core`; this plan adds NO new core
+   entry** (corrected per sparring R1-F1). `business-mode` and `drawer-nav` are already in core and `permissions` is
+   already re-exported — the lanes consume those as-is. **`role-switch-destination.ts` is NOT extracted:** it is
+   class B through its value import of `getCommandHubUrl` → `devHub.config.ts`'s `import.meta.env` reads, so a core
+   entry would fail `core-closure --check` (measured state above). The `business` lane **re-implements the
+   role-switch destination mapping natively** (option (c)) — a small native helper that takes the command-hub URL as
+   an injected value instead of importing `devHub.config.ts` — exactly as it re-implements the data hooks. The data
+   hooks (`usePatientAccess`, `useActivateReseller`, `useResellerSales`, …) runtime-import
+   `@/integrations/supabase/client`, a class-B module, so each lane **re-implements the fetching natively** (native
+   Supabase client + native auth context) and consumes only the already-present class-A helpers from core. **No lane
+   adds a `packages/core/src/**` re-export or a `manifest.json` line, and no lane runs `core-closure.mjs --write`**
+   — the generated files are unchanged, so `--check` passes as-is.
 4. **Bottom tabs differ by mode.** Patient, professional and business modes each carry their own bottom tabs (the
    web mode's tab bar ported to the N3 `BottomNav`); **staff mode has no bottom tabs** (its web mode has none) and
    the native staff screens render without a tab bar. A lane does not invent or drop a mode's tab bar.
@@ -77,7 +90,8 @@ in-app system browser).
    and `staging-tests.json`. Matches the program's "fixture / fake-gateway tests only until G1" model.
 7. **Mobile-web parity, not desktop.** Each native screen mirrors the `useIsMobile()` ≤ 1024 px branch of its
    source, composed through N3/N2, every visual value from `@vitana/tokens`; the N2-documented web defects are not
-   reproduced and no web file is touched beyond a DE-first i18n key and the one `@vitana/core` class-A re-export line.
+   reproduced and no web file is touched beyond a DE-first i18n key (no `@vitana/core` re-export line is added — this
+   plan extracts nothing new, decision 3).
 
 ## Lanes (all `ready`, executor kiro; seat → reviewer_seat; `vtid:` filled by CI on convergence)
 | Lane | Seat → reviewer | Scope (web destinations) | depends_on |
@@ -85,7 +99,7 @@ in-app system browser).
 | `patient` | exafyltd → hotmail | 8 `/patient/*` rows (appointments, care-team, dashboard, goals, health, insurance, notifications, results); own bottom tabs | — |
 | `professional` | exafyltd → hotmail | 8 `/professional/*` rows (billing, dashboard, education, patients, profile, referrals, schedule, tools); own bottom tabs | — |
 | `staff` | exafyltd → hotmail | 8 `/staff/*` rows (communications, dashboard, queue, reports, schedule, tasks, time, tools); **no bottom tabs** | — |
-| `business` | exafyltd → hotmail | 11 commerce rows (4 core + 7 join/invite/connect/team/connections incl. the `/commerce/connect/authorize` exclusion row); own bottom tabs; **owns the one class-A core extraction** `role-switch-destination.ts` | — |
+| `business` | exafyltd → hotmail | 11 commerce rows (4 core + 7 join/invite/connect/team/connections incl. the `/commerce/connect/authorize` exclusion row); own bottom tabs; **re-implements `role-switch-destination` natively** (not a core extraction — class B via `devHub.config.ts`, sparring R1-F1) | — |
 Exact `paths` globs are in each `lanes/<id>.md`; the 35 parity rows partition **8 (patient) + 8 (professional) +
 8 (staff) + 11 (business)** with 0 overlap and 0 orphan. All four lanes are independent and run in parallel.
 
@@ -96,13 +110,13 @@ Exact `paths` globs are in each `lanes/<id>.md`; the 35 parity rows partition **
   `ReactElement`), `APP_PROFILE=development npm run bundle`,
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check`. From the repo root —
   `node scripts/native/parity-ledger.mjs --check` (rows `native`, routes present).
-- **Core extraction deliverable (business lane): run `--write` AND commit the generated files, not just `--check`.**
-  The PR that adds the `role-switch-destination` re-export entry to `packages/core/src/` MUST also run
-  `node scripts/native/core-closure.mjs --write` and commit the regenerated
-  `packages/core/closure.generated.json` and `scripts/native/mobile-ci-paths.generated.json` in the SAME PR, then
-  `node scripts/native/core-closure.mjs --check` passes. Without the `--write`+commit, `--check` fails in NATIVE-CI
-  with "stale generated file". Class-A premise confirmed on origin/main (type-only `UserRole` import + pure
-  `getCommandHubUrl`).
+- **No new core extraction (corrected per sparring R1-F1).** This plan adds no `packages/core/src/**` re-export and
+  no `manifest.json` line, so no lane runs `core-closure.mjs --write`; the generated files
+  (`packages/core/closure.generated.json`, `scripts/native/mobile-ci-paths.generated.json`) are unchanged and
+  `node scripts/native/core-closure.mjs --check` passes as-is. `role-switch-destination.ts` is NOT extracted (it is
+  class B through `devHub.config.ts`'s `import.meta.env` reads, verified on origin/main) — the `business` lane
+  re-implements its mapping natively. `business-mode`/`drawer-nav`/`permissions` are already in core and are consumed
+  unchanged.
 - NATIVE-CI (shell source-pin + ports), PR-GATE **Collab handoff** + **Lane scope** green.
 - **i18n:** 11 locales (de en es sr fr pl pt ru tr zh ar), any new key DE-first (du-form) then mirrored; register /
   form rules — **pt Brazilian você (not teu/tua), fr tu (not vous), ru ты (not вы)**, sr ti, es tú; RTL (`ar`)
