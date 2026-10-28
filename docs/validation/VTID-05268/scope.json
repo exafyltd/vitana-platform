@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05268",
+  "lane": "mt-jobs/jobs-community-scan-tenant",
+  "kind": "code",
+  "paths": [
+    "services/gateway/src/services/community-autopilot/scan-runner.ts",
+    "services/gateway/src/routes/autopilot-recommendations.ts",
+    "services/gateway/src/services/memory-embedding-backfill-loop.ts",
+    "services/gateway/test/vtid-05268-community-scan-tenant.test.ts",
+    "docs/validation/VTID-05268/**"
+  ],
+  "migrations": [],
+  "depends_on": ["mt-jobs/jobs-tenant-loop (VTID-05270, merged 5f76b3ab2d97577f43af0a1e33c95e44cceb587e)"],
+  "plan": "docs/validation/VTID-05268/plan.md (copy of .kiro/specs/mt-jobs/plan.md at origin/kiro/mt-jobs/plan 0cb0efd5)",
+  "dark_by_default": "MT_RESOLUTION_V2 unset => /community-scan is today's platform-wide run with today's event payload; the backfill loop reads MEMORY_EMBEDDING_BACKFILL_TENANT_IDS as today",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
