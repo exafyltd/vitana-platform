@@ -741,11 +741,19 @@ const DEFAULT_ALLOWED_ABORTS = [
 ];
 const DEFAULT_ALLOWED_ABORTS_CAP = 16;
 
+// quality-checks/staging-manifest-bom: Windows tools (PowerShell 5.1 `Set-Content -Encoding utf8`) write a UTF-8 BOM.
+// It carries no data, so one leading U+FEFF is removed before JSON.parse; anything else is parsed unchanged.
+function parseJsonText(text) {
+  const s = String(text);
+  return JSON.parse(s.charCodeAt(0) === 0xfeff ? s.slice(1) : s);
+}
+
 function isToleratedAbort(record, specAllow = []) {
   return DEFAULT_ALLOWED_ABORTS.some((r) => r.test(record)) || specAllow.some((r) => r.test(record));
 }
 
 module.exports = {
+  parseJsonText,
   existingEnv,
   evaluateStampSamples,
   isRetriableFetchError,
