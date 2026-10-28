@@ -53,7 +53,9 @@ until it passes, then push.
    five-part message. A failed PLAN-SPAR, PR-GATE or STAGING-VERIFY run on attempt 1 that failed for infra reasons may
    be re-run once (`collaboration.md` §7a re-run allowlist, matched on the workflow path).
 4. **Review an `in-review` lane** with the reviewer agent `vitana-lane-reviewer` (model chain `claude-sonnet-5.5` →
-   `claude-opus-5.5` → `claude-sonnet-4.5`), run as its own agent session on the PR's current head. Write its §4.2 verdict
+   `claude-opus-5.5` → `claude-sonnet-4.5`), run as its own agent session on the PR's current head. Each review
+   session's prompt starts with exactly `Reviewer chain model for this step: <model>. `, naming the chain model that
+   session runs on (the line the agent's self-check keys on). Write its §4.2 verdict
    as the §4.1 review entry (trailers `Collab-Session`, `Collab-Review: <slug>/<lane>`, `Collab-Verdict`,
    `Collab-Reviewer: agent:vitana-lane-reviewer (<model it ran on>)`, `Collab-Reviewed-Head`). The driver never
    reviews a lane itself and never uses a model outside the chain: `model_unavailable` or a model failure → note the

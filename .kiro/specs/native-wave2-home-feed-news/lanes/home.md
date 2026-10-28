@@ -17,7 +17,7 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/homeNative.json
   - docs/validation/**
-updated: 2026-10-21T11:19Z
+updated: 2026-10-23T12:10Z
 vtid: VTID-05297
 ---
 # Home / feed port — `/home` (+ tabs, compose) + its deep-link / overlay surfaces (the composed feed)
@@ -70,3 +70,13 @@ owned by `news`. Next: PLAN-SPAR spars the plan; once a VTID is written here, se
 
 ### 2026-10-21T11:19Z · ci-plan-spar · ready (VTID allocated)
 VTID-05297 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-23T12:10Z · kiro-exafyltd-202610220818-5273 · ready (owner takeover; STAGING-VERIFY fix merged)
+Owner instruction in Kiro Web 2026-10-23: "Take over native-wave2-home-feed-news/home and merge the APP_PROFILE fix."
+Released the claim of `kiro-202610151913-51bd` and claimed the lane. The lane's code was merged earlier as
+exafyltd/vitana-v1#1493 (`a705e2182`); its state here was never advanced past `ready` (left unchanged).
+STAGING-VERIFY run https://github.com/exafyltd/vitana-platform/actions/runs/39870086198 (staging `77cb11280`) failed
+only on this lane's `npm run bundle` (no APP_PROFILE). merge: f36cd6b63d1fb487bb5900b798413bc8afb9f52d
+(exafyltd/vitana-v1#1495, docs only: `env: {APP_PROFILE: development}` on that entry; every check green after one
+re-run of an infra failure). authority: the owner instruction above (§7b owner-named). Reviewer agent not available
+in this session; no model substituted. Next: STAGING-VERIFY on the first staging deploy at or after `f36cd6b6`.
