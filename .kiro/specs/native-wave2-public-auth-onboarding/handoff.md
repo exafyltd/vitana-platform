@@ -3,11 +3,13 @@ slug: native-wave2-public-auth-onboarding
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-21T18:06Z
+updated: 2026-10-28T10:35Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-public-auth-onboarding/sparring/verdict.md
+vtids: [VTID-05369, VTID-05370, VTID-05371]
 ---
 # Handoff — Native Wave 2: Public / Auth / Onboarding / Legal screen ports
 Wave 2 public/auth/onboarding/legal screen-port batch of the native Maxina app program
@@ -41,3 +43,6 @@ into this front matter (`state: drafted → approved`); then seat `exafyltd` cla
 onboarding redirect target and shares the auth session seam). Reviewer seat `hotmail` reviews each lane. Device-runtime
 parity and the live OAuth browser round-trip (the last device task in each lane) wait on the owner's G1 isolated test
 environment.
+
+### 2026-10-28T10:35Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

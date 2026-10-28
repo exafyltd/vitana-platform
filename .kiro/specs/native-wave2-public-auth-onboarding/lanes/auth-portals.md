@@ -27,7 +27,8 @@ paths:
   - apps/mobile/maestro/auth/**
   - src/i18n/*/authPortalsNative.json
   - docs/validation/**
-updated: 2026-10-21T18:06Z
+updated: 2026-10-28T10:35Z
+vtid: VTID-05369
 ---
 # Portals / OAuth / reset / confirm port — `/maxina`, `/alkalma`, `/:tenantSlug`, confirm ×3, OAuth ×2, reset, logout
 Plan: `.kiro/specs/native-wave2-public-auth-onboarding/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -80,3 +81,6 @@ ledger and `src/App.tsx` so no file belongs to two lanes; `depends_on: []` — n
 `public-legal`. Five rows are `in_progress` (N3 functional core) and are completed to parity, not greenfield-ported.
 Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd` claims the lane
 (`queue.mjs claim native-wave2-public-auth-onboarding/auth-portals --session <id>`). Reviewer seat `hotmail`.
+
+### 2026-10-28T10:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05369 allocated after policy approval (converged-auto-v1).

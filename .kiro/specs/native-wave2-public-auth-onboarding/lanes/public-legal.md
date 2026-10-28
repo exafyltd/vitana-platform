@@ -23,7 +23,8 @@ paths:
   - apps/mobile/maestro/public/**
   - src/i18n/*/publicLegalNative.json
   - docs/validation/**
-updated: 2026-10-21T18:06Z
+updated: 2026-10-28T10:35Z
+vtid: VTID-05371
 ---
 # Public landing / legal / invite / apply port — the signed-out `PublicAppShell` branch (+ 2 kept-exception rows)
 Plan: `.kiro/specs/native-wave2-public-auth-onboarding/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -70,3 +71,6 @@ this lane never claims an `auth-portals` route). `depends_on: []` — no deps, r
 two `exception` rows stay web pages. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat `exafyltd`
 claims the lane (`queue.mjs claim native-wave2-public-auth-onboarding/public-legal --session <id>`). Reviewer seat
 `hotmail`.
+
+### 2026-10-28T10:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05371 allocated after policy approval (converged-auto-v1).

@@ -17,7 +17,8 @@ paths:
   - apps/mobile/maestro/onboarding/**
   - src/i18n/*/onboardingNative.json
   - docs/validation/**
-updated: 2026-10-21T18:06Z
+updated: 2026-10-28T10:35Z
+vtid: VTID-05370
 ---
 # Onboarding welcome port — `/onboarding/welcome` (post-sign-up Vitana-speech + name/handle form, AuthGuard)
 Plan: `.kiro/specs/native-wave2-public-auth-onboarding/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -60,3 +61,6 @@ ledger and `src/App.tsx` so no file belongs to two lanes; `depends_on: [auth-por
 redirect target and shares the auth session seam. Next: PLAN-SPAR spars the plan; once a VTID is written here, seat
 `exafyltd` claims the lane (`queue.mjs claim native-wave2-public-auth-onboarding/onboarding --session <id>`) after
 `auth-portals` is `done`. Reviewer seat `hotmail`.
+
+### 2026-10-28T10:35Z · ci-plan-spar · ready (VTID allocated)
+VTID-05370 allocated after policy approval (converged-auto-v1).
