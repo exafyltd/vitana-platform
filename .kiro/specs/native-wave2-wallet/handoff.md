@@ -3,12 +3,13 @@ slug: native-wave2-wallet
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-10-22T13:00Z
+updated: 2026-10-28T11:22Z
 sparring_record: .kiro/specs/native-wave2-wallet/sparring/verdict.md
 spar_refs:
   - exafyltd/vitana-v1: main
+vtids: [VTID-05378, VTID-05379, VTID-05380]
 ---
 # Handoff — Native Wave 2: Wallet screen ports
 A Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`, program
@@ -43,3 +44,6 @@ Next: PLAN-SPAR spars the `plan(native-wave2-wallet)` PR (it reads `exafyltd/vit
 session answers each round in `sparring/responses-<n>.md`. On convergence CI writes the VTIDs into the lanes; then
 seat `exafyltd` claims the three lanes in parallel (no inter-lane deps). Reviewer seat `hotmail` reviews each lane.
 Device-runtime parity (the last task in each lane) waits on the owner's G1 isolated test environment.
+
+### 2026-10-28T11:22Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

@@ -22,7 +22,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/walletHomeNative.json
   - docs/validation/**
-updated: 2026-10-22T13:00Z
+updated: 2026-10-28T11:22Z
+vtid: VTID-05378
 ---
 # Wallet hub + balance port — `/wallet` (+ popup overlay, tabs) and `/wallet/balance` (+ tabs); owns the core extraction
 Plan: `.kiro/specs/native-wave2-wallet/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -74,3 +75,6 @@ ledger on `origin/main` and `src/App.tsx` so no file belongs to two lanes; no in
 the `exchangeRates` core re-export (the only class-A wallet helper). Next: PLAN-SPAR spars the plan; once a VTID is
 written here, seat `exafyltd` claims the lane (`queue.mjs claim native-wave2-wallet/wallet-home --session <id>`).
 Runs in parallel with `wallet-rewards` and `wallet-subscriptions`.
+
+### 2026-10-28T11:22Z · ci-plan-spar · ready (VTID allocated)
+VTID-05378 allocated after policy approval (converged-auto-v1).
