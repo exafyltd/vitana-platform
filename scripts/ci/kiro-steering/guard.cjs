@@ -86,6 +86,8 @@ function check(root) {
   // VTID-05275: the reviewer agent and the pipeline recipe live only in vitana-platform (the repo with
   // scripts/collab/queue.mjs); vitana-v1 ships the same guard without them and stays green.
   if (fs.existsSync(path.join(root, 'scripts', 'collab', 'queue.mjs'))) errors.push(...checkAgents(root));
+  // Plan owner-autonomy: the standing owner instruction and its complete stop table.
+  errors.push(...checkOwnerAutonomy(root));
   return errors;
 }
 
@@ -199,6 +201,14 @@ function checkAgents(root) {
     for (const s of reviewSteps) {
       if (!raced.has(s.id)) errors.push(`${WORKFLOW}: review step ${s.id} must be a branch of a lane slot's joinPolicy any review race`);
     }
+    // VTID-05338 item 3: a pinned model outside the reviewer race is a single model that can stall the pipeline.
+    walkNodes(wf.steps, (n) => {
+      if (n.type !== 'step' || n.modelId === undefined) return;
+      if (!raced.has(n.id) || !REVIEWER_MODELS.includes(n.modelId)) {
+        errors.push(`${WORKFLOW}: step ${n.id} pins modelId ${n.modelId}; only reviewer race steps pin a model, and only a chain model (${REVIEWER_MODELS.join(', ')})`);
+      }
+    });
+    for (const e of gateErrors(wf)) errors.push(`${WORKFLOW}: ${e}`);
     walkNodes(wf.steps, (n) => {
       if (n.type === 'parallel' && JSON.stringify(n).includes('"vitana-lane-reviewer"') && (n.branches || []).length > MAX_PARALLEL_LANES) {
         errors.push(`${WORKFLOW}: ${n.id} has more than ${MAX_PARALLEL_LANES} parallel lane branches`);
@@ -266,6 +276,91 @@ function reviewRace(slot) {
       errors.push(`review race ${race.id} branch ${i + 1} must be a sequence [vitana-lane-reviewer step, command watch '${STORE_COMMAND}' storing that step's output for its model]`);
     }
   });
+  return errors;
+}
+
+/*
+ * VTID-05338 (plan pipeline-speed D1-D4, D3a): skip gates. Every lane slot and each planning / approval step sits in
+ * its own `parallel` joinPolicy `any` race `[watch <x>-skip, <work>]`; the work is the lane slot repeat with the
+ * `-go` watch as its first child, or a `sequence [watch <x>-go, <step>]`. Both watches run GATE_COMMAND with the
+ * same recipe, so an empty slot or an already finished step starts no agent session.
+ */
+const GATE_COMMAND = 'node scripts/collab/run-gate.cjs';
+const GATED_STEPS = Object.freeze(['investigate', 'spec', 'plan-pr', 'spar-loop', 'merge-plan']);
+const GATE_POLL_SEC = 30;
+const GATE_COMMAND_TIMEOUT_SEC = 30;
+const GATE_IDLE_TIMEOUT_SEC = 86400;
+
+function isGateWatch(n) {
+  return !!(n && n.type === 'watch' && n.config && n.config.command === GATE_COMMAND);
+}
+function stepIdsOf(n, out = []) {
+  if (!n || typeof n !== 'object') return out;
+  if (n.type === 'step') out.push(n.id);
+  for (const c of [...(n.steps || []), ...(n.branches || [])]) stepIdsOf(c, out);
+  return out;
+}
+/** The D3a recipe of one gate watch; `slot` = the lane slot's repeat node, or null for a planning / approval step. */
+function gateWatchErrors(w, target, role, slot) {
+  const where = `gate watch ${w && w.id} of ${target}`;
+  const c = (w && w.config) || {};
+  const errors = [];
+  if (!w || w.type !== 'watch' || w.handler !== 'command' || c.command !== GATE_COMMAND) return [`${where} must be a command watch running '${GATE_COMMAND}'`];
+  if (c.role !== role) errors.push(`${where}: config.role must be ${role}`);
+  if (c.gatedNodeId !== target) errors.push(`${where}: config.gatedNodeId must be ${target}`);
+  if (c.run !== '{{setup.output}}') errors.push(`${where}: config.run must be {{setup.output}}`);
+  if (c.pollIntervalSec !== GATE_POLL_SEC || c.commandTimeoutSec !== GATE_COMMAND_TIMEOUT_SEC) {
+    errors.push(`${where}: pollIntervalSec and commandTimeoutSec must be ${GATE_POLL_SEC}`);
+  }
+  if (typeof w.idleTimeoutSec !== 'number' || w.idleTimeoutSec < GATE_IDLE_TIMEOUT_SEC) errors.push(`${where}: idleTimeoutSec must be at least ${GATE_IDLE_TIMEOUT_SEC}`);
+  if (slot) {
+    if (JSON.stringify(c.gatedStepIds) !== JSON.stringify(stepIdsOf(slot))) errors.push(`${where}: config.gatedStepIds must list the slot's step ids ${JSON.stringify(stepIdsOf(slot))}`);
+    const n = /^lane-slot-(\d+)$/.exec(target);
+    if (typeof c.slot !== 'string' || (n && c.slot !== n[1])) errors.push(`${where}: config.slot must be the slot number as a string`);
+  } else if (c.gatedStepIds !== undefined || c.slot !== undefined) {
+    errors.push(`${where}: gatedStepIds and slot are for lane slots only`);
+  }
+  return errors;
+}
+/** Every lane slot (a repeat holding the reviewer) and every GATED_STEPS node is gated by exactly one skip/go pair. */
+function gateErrors(wf) {
+  const errors = [];
+  const nodes = new Map();
+  const slots = [];
+  const gates = new Map();
+  walkNodes(wf.steps, (n) => {
+    if (typeof n.id === 'string') nodes.set(n.id, n);
+    if (n.type === 'repeat' && JSON.stringify(n.steps || []).includes('"vitana-lane-reviewer"')) slots.push(n.id);
+    if (isGateWatch(n)) {
+      const t = String(n.config.gatedNodeId);
+      gates.set(t, [...(gates.get(t) || []), n]);
+    }
+  });
+  const targets = [...GATED_STEPS, ...slots];
+  for (const t of gates.keys()) if (!targets.includes(t)) errors.push(`gate watches name ${t}, which is not a lane slot or a gated step`);
+  const races = [];
+  walkNodes(wf.steps, (n) => { if (n.type === 'parallel' && (n.branches || []).some(isGateWatch)) races.push(n); });
+  for (const t of targets) {
+    const target = nodes.get(t);
+    if (!target) { errors.push(`gated node ${t} missing`); continue; }
+    const slot = slots.includes(t) ? target : null;
+    const pair = gates.get(t) || [];
+    if (pair.length !== 2) { errors.push(`${t} must be gated by exactly one ${GATE_COMMAND} skip/go pair (got ${pair.length} gate watches)`); continue; }
+    const race = races.find((r) => (r.branches || []).includes(target) || (r.branches || []).some((b) => b && b.type === 'sequence' && (b.steps || []).includes(target)));
+    const [skip, work, ...rest] = (race && race.branches) || [];
+    if (!race || race.joinPolicy !== 'any' || rest.length || !isGateWatch(skip)) {
+      errors.push(`${t} must sit in a parallel joinPolicy any [watch ${t}-skip, work] gate race`);
+      continue;
+    }
+    const go = slot ? (work === target ? (target.steps || [])[0] : null)
+      : (work && work.type === 'sequence' && (work.steps || []).length === 2 && work.steps[1] === target ? work.steps[0] : null);
+    if (!isGateWatch(go)) {
+      errors.push(slot ? `${t}: the gate race's work branch must be the slot repeat with its go watch as first child`
+        : `${t}: the gate race's work branch must be a sequence [go watch, ${t}]`);
+      continue;
+    }
+    errors.push(...gateWatchErrors(skip, t, 'skip', slot), ...gateWatchErrors(go, t, 'go', slot));
+  }
   return errors;
 }
 
@@ -388,7 +483,62 @@ function validateWorkflow(wf, workspaceAgents) {
   return errors;
 }
 
-module.exports = { check, checkAgents, validateWorkflow, parseFrontMatter, frontMatter, fileLinks, REVIEWER_MODELS, STORE_COMMAND };
+/*
+ * Plan owner-autonomy: the standing owner instruction and its complete stop table live in one always-included steering
+ * file, identical in vitana-platform and vitana-v1. A later edit that drops the file, makes it optional, or removes a
+ * stop from its table is a red check, not a quiet change. Runs where the pipeline steering exists.
+ */
+const OWNER_AUTONOMY = '.kiro/steering/vitana-owner-autonomy.md';
+// One anchor per stop row of the table. Each must occur in a table row (a line starting with `| <n> |`), so deleting a
+// row cannot stay green because the same words appear elsewhere in the file.
+const OWNER_AUTONOMY_ROW_ANCHORS = Object.freeze([
+  ['target database', 'stop: migration apply needs owner approval of the file(s) and the target database (§7d)'],
+  ['§7c', 'stop: production'],
+  ['§3a', 'stop: protected gate files'],
+  ['data-loss', 'stop: security or data-loss risk'],
+  ['3 fix-forward attempts', 'stop: the same failure after 3 attempts'],
+  ['escalated sparring verdict', 'stop: escalated sparring'],
+  ['IF–THEN 31–32', 'stop: verification needing a live write'],
+  ['AGENTS.md', 'stop: another repository'],
+  ['Commerce UX contract', 'stop: Commerce onboarding friction'],
+  ['design.md', 'stop: design-contract change'],
+  ['§4.1', 'stop: VTID allocator down'],
+  ['Gate 1', 'stop: Gate 1 for Claude-local sparring'],
+  ['NEVER 34', 'stop: turning on product autonomy'],
+]);
+// The end point, the stop message and the no-trailing-question rule, anywhere in the file.
+const OWNER_AUTONOMY_TEXT_ANCHORS = Object.freeze([
+  ['STAGING-VERIFY', 'the default end point'],
+  ['five-part', 'the stop message'],
+  ['Never end a reply with an offer', 'the no-trailing-question rule'],
+]);
+const OWNER_AUTONOMY_ANCHORS = Object.freeze([...OWNER_AUTONOMY_ROW_ANCHORS, ...OWNER_AUTONOMY_TEXT_ANCHORS]);
+
+function checkOwnerAutonomy(root) {
+  const errors = [];
+  const pipeline = path.join(root, '.kiro', 'steering', 'vitana-pipeline.md');
+  if (!fs.existsSync(pipeline)) return errors;
+  const file = path.join(root, OWNER_AUTONOMY);
+  if (!fs.existsSync(file)) return [`${OWNER_AUTONOMY} missing (the standing owner instruction and its stop table)`];
+  const text = fs.readFileSync(file, 'utf8');
+  if (parseFrontMatter(frontMatter(text)).inclusion !== 'always') errors.push(`${OWNER_AUTONOMY}: inclusion must be always`);
+  const rows = text.split(/\r?\n/).filter((l) => /^\|\s*\d+\s*\|/.test(l)).join('\n');
+  for (const [anchor, what] of OWNER_AUTONOMY_ROW_ANCHORS) {
+    if (!rows.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} in a stop-table row (${what})`);
+  }
+  for (const [anchor, what] of OWNER_AUTONOMY_TEXT_ANCHORS) {
+    if (!text.includes(anchor)) errors.push(`${OWNER_AUTONOMY}: no longer names ${anchor} (${what})`);
+  }
+  if (!fs.readFileSync(pipeline, 'utf8').includes('vitana-owner-autonomy.md')) {
+    errors.push('.kiro/steering/vitana-pipeline.md must point to vitana-owner-autonomy.md (the complete stop table)');
+  }
+  return errors;
+}
+
+module.exports = {
+  check, checkAgents, checkOwnerAutonomy, OWNER_AUTONOMY_ANCHORS, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, fileLinks,
+  REVIEWER_MODELS, STORE_COMMAND, GATE_COMMAND, GATED_STEPS, GATE_IDLE_TIMEOUT_SEC,
+};
 
 if (require.main === module) {
   const errors = check(path.resolve(process.argv[2] || '.'));
