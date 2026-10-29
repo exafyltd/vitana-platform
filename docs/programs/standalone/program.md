@@ -50,6 +50,7 @@ specs:
   - vitana-platform:reviewer-step-model
   - vitana-platform:collab-handoff-check-fix
   - vitana-platform:remove-b12-claude-sparring-gate1
+  - vitana-platform:reviewer-session-id-permission
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -101,3 +102,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:reviewer-step-model` — every pinned review step's prompt opens with its own chain model, so the reviewer agent's self-check stops returning `model_unavailable`
 - `vitana-platform:quality-checks-followup` — merge-method wording (squash), quality checks inlined into Kiro Web steering, reviewer requester rule (protected)
 - `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics
+- `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
