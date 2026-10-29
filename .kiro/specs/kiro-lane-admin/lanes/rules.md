@@ -8,7 +8,8 @@ seat: jtadic
 area: frontend
 reviewer_seat: agent:vitana-lane-reviewer
 repos: [exafyltd/vitana-platform, exafyltd/vitana-v1]
-updated: 2026-10-29T10:55Z
+updated: 2026-10-29T11:49Z
+vtid: VTID-05409
 ---
 # Lane `rules`: human-facing rule text, consistently Claude-free
 Plan: `.kiro/specs/kiro-lane-admin/` — `plan.md` and the `tasks.md` section `<!-- lane: rules -->` are authoritative.
@@ -35,3 +36,6 @@ reviewer agent on the current head. `scripts/ci/kiro-steering/guard.cjs` must st
 ### 2026-10-29T10:45Z · kiro-jtadic-202610291040-a0e6 · created → ready
 Lane drafted with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat `jtadic` claims it (after `enforcement` is
 `done`).
+
+### 2026-10-29T11:49Z · ci-plan-spar · ready (VTID allocated)
+VTID-05409 allocated after policy approval (converged-auto-v1).

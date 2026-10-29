@@ -3,9 +3,11 @@ slug: kiro-lane-admin
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: jtadic
-updated: 2026-10-29T10:45Z
+updated: 2026-10-29T11:49Z
+sparring_record: .kiro/specs/kiro-lane-admin/sparring/verdict.md
+vtids: [VTID-05408, VTID-05409]
 ---
 # Handoff — kiro-lane-admin
 
@@ -46,3 +48,6 @@ and 2 lanes. No VTID allocated (CI PLAN-SPAR owns that), no code changed, no liv
 dormant, unclaimed-for-build `retire-claude-code` plan is called out in plan.md for sparring (different, superseded
 model; this plan builds on the model on main today). Next: PLAN-SPAR spars this PR; this session answers each round in
 `sparring/responses-<n>.md`.
+
+### 2026-10-29T11:49Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 2 lane(s) got a VTID and are handed to Kiro.
