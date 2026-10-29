@@ -4,9 +4,10 @@ author: kiro
 author_seat: exafy
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-29T10:49Z
+state: approved
+updated: 2026-10-29T11:18Z
 sparring_record: .kiro/specs/reviewer-session-id-permission/sparring/verdict.md
+vtids: [VTID-05407]
 ---
 # Handoff — reviewer-session-id-permission
 
@@ -28,3 +29,6 @@ Owner instruction (Kiro Web conversation) authorized the narrowly scoped protect
 `reviewer-session-id-permission`, kept entirely within Kiro. Pushed as a `plan(` PR. No VTID, no code yet — the lane
 VTID is allocated by CI PLAN-SPAR on convergence. Next: CI PLAN-SPAR spars this plan; the planner answers each round
 in `sparring/responses-<n>.md`.
+
+### 2026-10-29T11:18Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

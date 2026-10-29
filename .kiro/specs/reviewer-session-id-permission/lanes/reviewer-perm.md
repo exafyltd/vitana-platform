@@ -12,7 +12,8 @@ paths:
   - .kiro/agents/vitana-lane-reviewer.md
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-updated: 2026-10-29T10:49Z
+updated: 2026-10-29T11:18Z
+vtid: VTID-05407
 ---
 # Lane: reviewer-perm (repo vitana-platform)
 Tasks T1–T4 in `tasks.md`. Permit exactly the reviewer session-id command
@@ -27,3 +28,6 @@ instruction naming this plan, not a reviewer-agent self-approval.
 
 ### 2026-10-29T10:49Z · kiro-exafy-202610291049-1dc8 · ready
 Lane created with the plan. No VTID yet (CI PLAN-SPAR allocates it on convergence).
+
+### 2026-10-29T11:18Z · ci-plan-spar · ready (VTID allocated)
+VTID-05407 allocated after policy approval (converged-auto-v1).
