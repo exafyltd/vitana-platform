@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-hotmail-202610151618-b437
 branch: kiro/multi-tenant/provisioning-ui
 pr: https://github.com/exafyltd/vitana-v1/pull/1438
-updated: 2026-10-29T00:26Z
+updated: 2026-10-29T00:48Z
 ---
 # Exafy-admin "New community" panel — VTID-05221 (repo vitana-v1)
 
@@ -307,4 +307,6 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-29T00:22Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-29T00:26Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
+### 2026-10-29T00:48Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
