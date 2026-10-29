@@ -1,6 +1,6 @@
 ---
 lane: reviewer-perm
-state: in-review
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -35,8 +35,9 @@ Lane created with the plan. No VTID yet (CI PLAN-SPAR allocates it on convergenc
 ### 2026-10-29T11:18Z · ci-plan-spar · ready (VTID allocated)
 VTID-05407 allocated after policy approval (converged-auto-v1).
 
-### 2026-10-29T11:52Z · kiro-exafy-202610291049-1dc8 · ready → in-review
-Built lane reviewer-perm. Changed only the three lane paths:
+### 2026-10-29T11:52Z · kiro-exafy-202610291049-1dc8 · ready → executing (PR open, awaiting review)
+Built lane reviewer-perm and opened the PR; the lane is handed to the independent reviewer agent next (FEAT-003 moves
+it executing → in-review when the review runs). Changed only the three lane paths:
 - `.kiro/agents/vitana-lane-reviewer.md` — added the narrowest pattern
   `*scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer` to BOTH the allow `match:` and deny
   `exclude:` (metachar guard intact, nothing else added); updated instructions to run the command at review start and
