@@ -1,0 +1,44 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "reviewer-session-id-permission",
+  "vtid": "VTID-05407",
+  "vtids": ["VTID-05407"],
+  "generated_at": "2026-10-29T11:45:00Z",
+  "generated_by": "kiro (FEAT-002 build lane, seat exafy, session kiro-exafy-202610291049-1dc8)",
+  "plan_pr_opened_at": "2026-10-29T10:49:00Z",
+  "converged_at": "2026-10-29T11:12:36Z",
+  "policy_approved_at": "2026-10-29T11:12:36Z",
+  "vtids_allocated_at": "2026-10-29T11:18:00Z",
+  "plan_merged_at": null,
+  "gate2_sent_at": null,
+  "convergence_ms": null,
+  "vtid_ms": null,
+  "plan_merge_ms": null,
+  "lanes": [
+    {
+      "lane": "reviewer-perm",
+      "vtid": "VTID-05407",
+      "claimed_at": "2026-10-29T11:40:00Z",
+      "pr_opened_at": null,
+      "accepted_at": null,
+      "merged_at": null,
+      "staging_verified_at": null,
+      "build_ms": null,
+      "review_ms": null,
+      "merge_ms": null,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": 0,
+  "sources_unavailable": [
+    "plan_merged_at / plan_merge_ms: FEAT-001 reports the plan( PR #4494 converged and was policy-approved; whether the spec-only plan PR was already squash-merged to main at build time is not re-derivable from this build sub-agent's context, so left null rather than guessed.",
+    "convergence_ms / vtid_ms: only timestamps are recorded (plan_pr_opened_at, converged_at, vtids_allocated_at); the exact plan-PR-created instant to the minute is from FEAT-001 findings, so interval ms are left null rather than computed from coarse values.",
+    "lane pr_opened_at / accepted_at / merged_at and the derived ms: this file is written during the build step before the lane PR is opened and before any reviewer accept or merge; populated by the land/staging step.",
+    "staging_verify_ms / approved_to_verified_ms / staging_verified_at: the change deploys nothing (a Kiro agent definition + collab unit tests + evidence); there is no staging surface and no Gate 2, so these stay null."
+  ],
+  "note": "Plan reviewer-session-id-permission has a single lane (reviewer-perm) and a single CI-allocated VTID (VTID-05407). Deploys nothing, so no staging/Gate 2. Anchored on VTID-05407."
+}

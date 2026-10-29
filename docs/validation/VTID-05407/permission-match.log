@@ -1,0 +1,28 @@
+PATTERN UNDER TEST: *scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer
+====================================================================================================
+PASS  expect ADMIT  got ADMIT  | exact session-id (this checkout)
+PASS  expect ADMIT  got ADMIT  | exact session-id (different <path>)
+PASS  expect DENY   got DENY   | queue.mjs claim
+PASS  expect DENY   got DENY   | queue.mjs release
+PASS  expect DENY   got DENY   | queue.mjs validate
+PASS  expect DENY   got DENY   | queue.mjs scope-check
+PASS  expect DENY   got DENY   | session-id for kiro seat (not the reviewer agent)
+PASS  expect DENY   got DENY   | session-id + appended --seat (not exact)
+PASS  expect DENY   got DENY   | session-id for another agent
+PASS  expect DENY   got DENY   | arbitrary shell: ls
+PASS  expect DENY   got DENY   | arbitrary shell: cat
+PASS  expect DENY   got DENY   | arbitrary node eval
+PASS  expect DENY   got DENY   | session-id ; chained
+PASS  expect DENY   got DENY   | session-id && chained
+PASS  expect DENY   got DENY   | session-id | piped
+PASS  expect DENY   got DENY   | session-id > redirect
+PASS  expect DENY   got DENY   | session-id $() subshell
+PASS  expect ADMIT  got ADMIT  | git diff (existing)
+PASS  expect ADMIT  got ADMIT  | gh pr view (existing)
+====================================================================================================
+Narrowness comparison against rejected broader candidates:
+  node *       : admits "queue.mjs claim …"? YES (too broad — rejected)
+  *queue.mjs * : admits "queue.mjs claim …"? YES (too broad — rejected)
+chosen *scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer: admits "queue.mjs claim …"? no
+====================================================================================================
+19 pass, 0 fail

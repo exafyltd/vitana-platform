@@ -1006,6 +1006,24 @@ test('VTID-05276 T8: agent session ids — format, agentOf, session-id for a lis
   for (const bad of ['agent-202610201700-ab12', 'agent-X-202610201700-ab12', 'agent-vitana-lane-reviewer-2026102017-ab12']) assert.ok(!isSessionId(bad), bad);
 });
 
+// VTID-05407 (reviewer-session-id-permission): the reviewer agent now runs `queue.mjs session-id --agent
+// agent:vitana-lane-reviewer` itself (no --seat) and uses the printed id. The agent's own round-trip and the
+// "a reviewer agent id names no seat" guard are the contract the agent relies on; T8 covers the id shape and
+// agentOf() round-trip but not the seat-rejection path, so assert it explicitly here.
+test('VTID-05407: reviewer session-id round-trips to its agent and a reviewer id names no seat', () => {
+  // The id the reviewer mints for itself (agent, no seat) round-trips back to the reviewer_seat the validator checks.
+  const id = sessionId(AG, new Date(Date.UTC(2026, 9, 29, 10, 49)));
+  assert.match(id, /^agent-vitana-lane-reviewer-202610291049-[0-9a-f]{4}$/);
+  assert.ok(isSessionId(id), 'minted reviewer id matches SESSION_RE');
+  assert.equal(Q.agentOf(id), AG, 'agentOf(sessionId(agent)) === agent — the scope-check accepts-the-entry invariant');
+  // A reviewer agent id names no seat: passing a --seat is a usage error, with that exact message. The reviewer
+  // runs the command with no --seat; this guard is why a stray seat can never produce a mis-scoped reviewer id.
+  assert.throws(() => sessionId(AG, new Date(Date.UTC(2026, 9, 29, 10, 49)), 'someseat'),
+    /a reviewer agent id names no seat/);
+  assert.throws(() => sessionId(AG, new Date(Date.UTC(2026, 9, 29, 10, 49)), 'exafy'),
+    /a reviewer agent id names no seat/);
+});
+
 test('VTID-05276 T9: a lane only on a qualifying open plan( PR is read from there and trusted', () => {
   const f = fixture();
   try {
