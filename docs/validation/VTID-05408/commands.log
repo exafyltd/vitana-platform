@@ -25,3 +25,8 @@ tsc --noEmit: clean (exit 0)
 # red-on-base (new T-A..T-K against origin/main queue.mjs): see red-on-base.log
 #   RED  : T-A T-B T-D T-G T-J T-K (new behaviour)
 #   GREEN: T-C T-E T-F T-H T-I (preservation controls — guardrails kept, green on base by design)
+
+# Evidence outputs (docs/validation/VTID-05408/outputs/):
+node --test scripts/collab/queue.test.mjs  -> outputs/queue.test.txt (64/64 pass)
+npx jest test/project-manager/governance.test.ts (cwd services/gateway) -> outputs/governance.test.txt
+red-on-base negative control -> outputs/red-on-base.log
