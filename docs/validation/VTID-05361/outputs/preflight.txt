@@ -1,0 +1,13 @@
+preflight vitana-platform /projects/sandbox/vitana-platform/.agents/wt/session-reliability
+  base 0d02707ba78fa2c1e37299c330a547b914842c8f  head 0e9aa184d4d8de514c2ac3f035248afae3cddd3a  branch kiro/kiro-web-reliability/session-reliability
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed

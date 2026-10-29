@@ -1,61 +1,92 @@
-# Kiro Web session kit (plan `kiro-web-parity`)
+# Kiro Web session kit (plans `kiro-web-parity`, `kiro-web-reliability`)
 
-A Kiro Web session gets ready with one command, run from the workspace root (the folder both repos are cloned into):
+A Kiro Web session gets ready with one command, run from the workspace root (the folder both repos are cloned into).
+`AGENTS.md` (auto-injected into every Kiro Web session) tells the session to run it first:
 
 ```bash
-node vitana-platform/scripts/collab/kiro-web-steering.mjs   # rules: workspace-root steering (plan kiro-web-steering)
-node vitana-platform/scripts/collab/kiro-web-session.mjs setup   # hooks, reviewer agent, deps, code intelligence
-node vitana-platform/scripts/collab/kiro-web-session.mjs status  # what is ready; --check exits 1 if a required item is not
+node vitana-platform/scripts/collab/kiro-web-session.mjs setup    # rules, Kiro hooks, git hooks, reviewer agent, deps, code intelligence
+node vitana-platform/scripts/collab/kiro-web-session.mjs status   # what is ready; --check exits 1 if a required item is not
 ```
 
-`setup` returns at once; dependencies and the RepoWise/Graphify indexes install in the background (log
-`~/.cache/vitana-kiro-web/setup.log`, about 3 min on a fresh sandbox; `setup --wait` runs them in the foreground).
+`setup` runs everything **in the foreground** (Kiro Web stops every process a tool call started once the call returns,
+so a background install never finished): about 8 min on a fresh sandbox (deps ~25 s, code-intelligence indexes the
+rest), seconds afterwards. Give the tool call a timeout of at least 15 min. Code intelligence runs last, after every
+required item: in this lane's fresh-sandbox run the index build was still running when the 30-min tool limit stopped
+the call, and `status --check` already exited 0 (`docs/validation/VTID-05361/outputs/demo-fresh-sandbox.txt`); a later
+`setup` resumes the index build. `--no-codeintel` skips only the venv and index build; `--no-install` skips dependencies and code intelligence. Each step writes a stamp in
+`~/.cache/vitana-kiro-web/` (`setup.start`, `steering.done`, `hooks.done`, `deps-<checkout>.done`, `codeintel.done` or
+`codeintel.skipped`); `status` counts a stamp only when it is not older than `setup.start`. Output survives a closed
+pipe (`setup | head -2` does not crash). Log: `~/.cache/vitana-kiro-web/setup.log`.
 
 ## What it gives a session
 
 | Claude Code has | Kiro Web, with the kit |
 |---|---|
-| `.claude/settings.json` PostToolUse: `tsc --noEmit` after each gateway edit, blocks | `vitana-web-dirty` (PostToolUse) records a `services/gateway/src` edit; `vitana-web-guard` (PreToolUse on `execute_bash`) runs an incremental `tsc --noEmit` at `git commit` when a gateway edit was recorded or `services/gateway/src` differs from `HEAD`, and blocks it with the first 10 errors |
-| — (preflight is a manual step in `driver.md:43`) | `vitana-web-guard` runs `scripts/collab/preflight.mjs` before every push of a `kiro/**` or `claude/**` branch and blocks it with preflight's FAIL lines; a passed head is cached |
+| `.claude/settings.json` PostToolUse: `tsc --noEmit` after each gateway edit, blocks | git `pre-commit` hook: incremental `tsc --noEmit` when a change under `services/gateway/src` is staged (or unstaged: tsc reads the working tree), blocks with the first 10 errors. It runs after `git add`, so an edit that lands while the command runs is still checked. In a linked worktree without `node_modules` it runs `npm ci` there first (an `npm ci` failure does not block; CI typechecks) |
+| — (preflight is a manual step in `driver.md`) | git `pre-push` hook: `scripts/collab/preflight.mjs` on the commit actually pushed, for every `kiro/**` or `claude/**` branch, blocks with preflight's FAIL lines. `vitana-web-guard` (PreToolUse on `execute_bash`) runs the same check before a push command starts; a passed head is cached and shared by both |
+| SessionStart hooks keep a session current | `vitana-web-refresh` (UserPromptSubmit): regenerates stale steering, rewrites stale Kiro and git hooks, prints one line only when it fixed something or the session is not ready (log `refresh.log`) |
 | RepoWise MCP + Graphify from SessionStart hooks | venv `~/.cache/vitana-codeintel/venv` (`~/.local` is read-only here) + the unchanged `scripts/codeintel/session-setup.sh`; use the CLI: `repowise search/context/risk`, `graphify query/path/explain` |
 | gateway `node_modules` from SessionStart | `npm ci` in `services/gateway` and vitana-v1 when missing or the lockfile changed |
 | GitHub MCP / `gh pr checks --watch` | `kiro-web-session.mjs wait --repo <owner/repo> --sha <sha>`: polls check runs every 120 s (max 1800 s) and prints each failed run's `--log-failed` tail |
 | reviewer subagent | `.kiro/agents/vitana-lane-reviewer.md` copied to `<workspace>/.kiro/agents/` (byte-identical) |
 
-The guard only adds checks. It never skips or loosens one and never passes `--no-verify`. It blocks only on a real
-typecheck/preflight failure, on a pushed commit that is not the checked-out HEAD, or on `git commit && git push` in one
-command (preflight would check the old commit). Its own errors never block. CI stays the gate. One narrow exception
-does not block: Collab handoff failing **only** because PLAN-SPAR's `ci-plan-spar` commit and the planner both commit
-on `<slug>/_plan` (`queue.mjs:595` counts it as a second session; CI shows it red and §7b handles it at merge). A lane
-push before its PR exists names the title: `PR_TITLE='VTID-xxxxx (<slug>/<lane>): …' git push …`.
+The git hooks live in each main checkout's `<git common dir>/hooks` (shared by its linked worktrees), carry the
+marker line `# generated by vitana-platform/scripts/collab/kiro-web-session.mjs`, and an existing hook without that
+line is never overwritten (`status` then reports `git-hooks` as failed). They block only on a real typecheck/preflight
+failure; a crash or a missing script never blocks. Never bypass them; CI stays the gate either way.
 
-## What Kiro Web does — observed 2026-10-26 (evidence: `docs/validation/<VTID>/probes.md`)
+The PreToolUse guard is best effort (it reads the command text; a heredoc with an apostrophe can hide a push from it).
+It blocks a failing preflight, a pushed commit that is not the checked-out HEAD, and a lane push with no PR title. It
+**allows** `git commit … && git push …` in one command and does not check that push itself (the commit does not exist
+yet): the `pre-push` hook checks the real commit. Without the marked `pre-push` hook in that checkout it still blocks
+such a command and says to run `setup`. One narrow exception does not block: Collab handoff failing **only** because
+PLAN-SPAR's `ci-plan-spar` commit and the planner both commit on `<slug>/_plan` (CI shows it red and §7b handles it at
+merge).
+
+## First push of a lane (no PR yet)
+
+Preflight needs the PR title, and VALIDATOR-CHECK (it runs on PRs touching `services/gateway/{src,dist,openapi,test}`
+or `docs/validation/**`) reads five declarations from the PR body. Write the body to a file, then push with both:
+
+```bash
+node vitana-platform/scripts/collab/kiro-web-session.mjs pr-body --vtid VTID-xxxxx \
+  --scope 'scripts/collab/x.mjs, docs/validation/VTID-xxxxx/**' --acceptance docs/validation/VTID-xxxxx/acceptance.md \
+  --payload 'VTID-xxxxx (<slug>/<lane>): …. Deploys nothing.' > /path/body.md    # [--profile command_hub_frontend] [--oasis yes]
+git commit … && PR_TITLE='VTID-xxxxx (<slug>/<lane>): …' PR_BODY_FILE=/path/body.md git push origin HEAD:refs/heads/kiro/<slug>/<lane>
+```
+
+`PR_TITLE` / `PR_BODY_FILE` reach the `pre-push` hook as environment variables of `git push`; the PreToolUse guard
+reads them from the same command (prefix or an earlier `export`). With an open PR, its title and body are used.
+Without a PR and without `PR_BODY_FILE`, a push that VALIDATOR-CHECK would run on is blocked with this form. The body
+is passed to preflight as `--body-file` once preflight supports it (lane `preflight-validator`). `--oasis yes` needs
+an `OASIS_PROOF:` line in `acceptance.md`. Preflight does not run VALIDATOR-CHECK's Build Gate (`npm run build`, and for
+`command_hub_frontend` the src+dist both-updated check), so such a PR can pass preflight and still fail that CI step.
+
+## What Kiro Web does — observed 2026-10-26/27 (evidence: `docs/validation/VTID-05340/probes.md`, plan `kiro-web-reliability` §2)
 
 - Command hooks run from `<workspace>/.kiro/hooks/*.json`, not from a repo's `.kiro/hooks/`; new files are picked up
-  mid-session and also apply inside sub-agents.
-- Only the **first** hook entry of a file runs; the kit writes one hook per file.
-- `PreToolUse` exit 2 blocks the tool. A sub-agent sees the hook's stderr; the main session showed only `{}` on
-  2026-10-26 and the full stderr on 2026-10-27, so the guard also writes every block to `~/.cache/vitana-kiro-web/last-block.txt` — when a command returns `{}`, read
-  that file. `PostToolUse` output never reaches the agent. A `SessionStart` hook was not seen to fire.
-- New sub-agents inherit the workspace hooks without being told (both guards blocked inside fresh sub-agents).
-- An edit and a commit issued in one parallel batch race: the edit's PostToolUse can land after the commit's
-  PreToolUse, so the guard also typechecks whenever `services/gateway/src` differs from `HEAD`.
-- `<workspace>/.kiro/steering/*.md` (`inclusion: always`) loads on the next turn, also in sub-agents.
+  mid-session and also apply inside sub-agents. Only the **first** hook entry of a file runs; the kit writes one per file.
+- `PreToolUse` exit 2 blocks the tool. A sub-agent sees the hook's stderr; the main session sometimes showed only `{}`,
+  so every block is also written to `~/.cache/vitana-kiro-web/last-block.txt` — when a command returns `{}`, read it.
+  `PostToolUse` output never reaches the agent. `SessionStart` and `UserPromptSubmit` did not fire for a sub-agent;
+  whether `UserPromptSubmit` fires for the main session is untested.
+- Auto-injected into every session: `vitana-platform/AGENTS.md` and the account learnings; not the repos'
+  `.kiro/steering`, `.kiro/hooks` or `.claude/settings.json`.
+- A process started inside a tool call does not outlive it (`nohup`, detached children and `run_in_background` loops
+  stopped), hence the foreground `setup`.
+- An edit and a commit in one parallel batch race (P23 committed a seeded type error); the `pre-commit` hook runs after
+  `git add` and closes that race.
 - `~/.local` is read-only; `~/.cache`, `/tmp` and the workspace are writable. Nothing survives a new sandbox.
-- `<workspace>/.kiro/settings/mcp.json` cannot be written (platform permission rule): no MCP server registration.
+- `<workspace>/.kiro/settings/mcp.json` cannot be written: no MCP server registration.
 - `gh api` (REST) works; GraphQL, `gh pr`/`gh issue` and `gh variable get` do not; `gh run view --log-failed` works.
-- Sub-agents run concurrently.
+- Sub-agents run concurrently and inherit the workspace hooks: the driver can build independent lanes in parallel,
+  one builder session per lane (`.kiro/pipeline/driver.md` "Parallel builders").
 
 ## Still not at Claude Code parity
 
 - **No MCP** for RepoWise/Graphify (CLI only).
 - **Typecheck at commit, not after each edit** (PostToolUse output is not surfaced).
-- **Main-session block reasons were sometimes hidden** (`{}`); the reason is always in `last-block.txt`.
-- **No SessionStart trigger:** a fresh session runs the three commands above because its account learning or the
-  workspace steering tells it to; a session that ignores both starts without hooks.
-- **Fresh sandbox = fresh install** (~3 min in the background).
-- **Writing pipeline steps stay sequential** (`driver.md`): sub-agents run in parallel, but Kiro Web has no workflow
-  engine to run lanes in parallel worktrees with their own claims.
+- **No SessionStart trigger:** a fresh session runs `setup` because `AGENTS.md` tells it to; a session that ignores it
+  starts without hooks (`refresh` then cannot fire either, because its hook is written by `setup`).
+- **Fresh sandbox = fresh install** (~8 min in the foreground).
 - **`CLAUDE_AVAILABLE` is unreadable** (403): treated as no override, as `collaboration.md` §7 says.
-- **No direct Claude Code comparison** was run, so parity of speed and quality is unverified; the measured before/after
-  numbers are in `docs/validation/<VTID>/parity-report.md`.

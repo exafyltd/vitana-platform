@@ -1,6 +1,6 @@
 ---
 lane: session-reliability
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -16,8 +16,10 @@ paths:
   - .kiro/pipeline/driver.md
   - docs/kiro-web-parity/**
   - docs/validation/VTID-*/**
-updated: 2026-10-28T09:26Z
+updated: 2026-10-28T13:52Z
 vtid: VTID-05361
+claimed_by: kiro-exafy-202610281256-15bb
+branch: kiro/kiro-web-reliability/session-reliability
 ---
 # Lane: session-reliability (repo vitana-platform)
 Tasks in `tasks.md`. `executor: kiro` with the reviewer agent (`scripts/collab/**` is a governance path; no protected
@@ -29,3 +31,27 @@ Lane created with the plan.
 
 ### 2026-10-28T09:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05361 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-28T13:52Z · kiro-exafy-202610281256-15bb · ready → executing
+Claimed by builder session kiro-exafy-202610281256-15bb (parallel builder, plan §3.2.4), worktree `.agents/wt/session-reliability`. Built plan
+§3.2: foreground `setup` (steering first, per-step stamps, `--no-codeintel`, EPIPE-safe); git `pre-commit` / `pre-push`
+hooks with the marker in `<git common dir>/hooks` (`git-pre-commit`, `git-pre-push`; `npm ci` in a linked worktree
+without node_modules); `pr-body`; `PR_BODY_FILE`; PreToolUse guard allows `commit && push` (pre-push checks the real
+commit) and no longer typechecks; mark-dirty hook removed; `refresh` + `vitana-web-refresh.json`; `status` git-hooks
+item, stamp-based installs, hooks message from hookDefs(); fixed hook description; AGENTS.md, driver.md (Sequencing,
+Parallel builders), README. Tests: 46 in kiro-web-session.test.mjs (28 red on base), collab suite 225/226 + 1 skip.
+Evidence: docs/validation/VTID-05361/.
+
+### 2026-10-28T14:45Z · kiro-kiroweb-202610281427-97fb · review
+review: accept
+head: cf882eb7fbb52b3a72ffd2f061072c7dbd4f9f81
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4485
+Findings: Non-blocking: reviewer could not independently re-fetch GitHub check-runs with its read-only toolset — all 11 required checks confirmed green on this head by the caller; committed evidence red-on-base 46 tests 18pass/28fail, head 46/46, full collab suite 225 pass + 1 pre-existing skip. Acceptance met; all changed files within lane paths; no protected gate file touched; test-assertion changes are intentional, plan-documented contract changes replaced by stronger real-git tests, no weakening; red→green proven; evidence read-only/throwaway clones, no live writes; no hand VTID allocation; builder session distinct from reviewer (no self-review).
+Next: the land step merges under §7b
+
+Collab-Session: kiro-kiroweb-202610281427-97fb
+Collab-Review: kiro-web-reliability/session-reliability
+Collab-Verdict: accept
+Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+Collab-Reviewed-Head: cf882eb7fbb52b3a72ffd2f061072c7dbd4f9f81

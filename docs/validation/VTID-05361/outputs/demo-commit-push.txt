@@ -1,0 +1,38 @@
+clone reset to HEAD (the race demo left its type error staged)
+clone origin = throwaway bare repo whose main = origin/main 0d02707ba78fa2c1e37299c330a547b914842c8f
+PR body written by pr-body: 5 of 5 declarations
+== 1. nonexistent remote: git fails before connecting, so no hook can run (shown for completeness)
+fatal: 'nonexistent-remote' does not appear to be a git repository
+fatal: Could not read from remote repository.
+
+Please make sure you have the correct access rights
+and the repository exists.
+   exit=128
+== 2. throwaway local bare remote <demo>/throwaway-remote.git
+== PreToolUse guard on: git -C <demo>/clone commit -q -m 'demo 2' && PR_TITLE='VTID-05361 (kiro-web-reliability/session-reliability): demo' PR_BODY_FILE=<demo>/body.md git -C <demo>/clone push <demo>/throwaway-remote.git HEAD:refs/heads/kiro/x/y
+kiro-web-session guard: push of kiro/x/y after a commit in this command — the git pre-push hook checks the new commit
+   guard exit=0 (HEAD before the command: 7e1fbbe261c7bd3146d49e5a481a27d467c45a27)
+== the command runs (commit, then push → pre-push hook → preflight on the new commit)
+kiro-web-session pre-push: preflight failed on 191c35248796 (kiro/x/y) — CI would fail the same way. Fix every error below, commit, then push again:
+preflight vitana-platform <demo>/clone
+  base 0d02707ba78fa2c1e37299c330a547b914842c8f  head 191c352487960410d62b3ae4e5d74b9f8fc6fb02  branch kiro/x/y
+FAIL  Lane scope [required]
+      ➖ **lane scope** — not a lane PR
+FAIL  PR-GATE scope [report-only in CI (until config.enforce=true)]
+      ❌ **scope** — missing `docs/validation/<VTID>/scope.json` for VTID-05361 (create it with `node scripts/ci/pr-gate/vtid-scope.mjs init <VTID> --kind <kind> --paths "<glob>,…"`)
+FAIL  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+      ❌ **sparring record**:
+      - VTID-05361: no sparring record at `docs/validation/VTID-05361/plan-sparring.md` (set "sparring_record" in scope.json when the plan's record lives under another VTID)
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+preflight: 3 check(s) failed: Lane scope, PR-GATE scope, PR-GATE sparring — fix every error above, then push
+(also in ~/.cache/vitana-kiro-web/last-block.txt)
+error: failed to push some refs to '<demo>/throwaway-remote.git'
+   command exit=1 after 9 s; HEAD after the commit: 191c352487960410d62b3ae4e5d74b9f8fc6fb02
+== which commit did preflight judge? (head shown in its header line)
+kiro-web-session pre-push: preflight failed on 191c35248796 (kiro/x/y) — CI would fail the same way. Fix every error below, commit, then push again:
+preflight vitana-platform <demo>/clone
+  base 0d02707ba78fa2c1e37299c330a547b914842c8f  head 191c352487960410d62b3ae4e5d74b9f8fc6fb02  branch kiro/x/y
+== remote ref: 
+RESULT: push BLOCKED by pre-push — preflight judged the new commit 191c352487960410d62b3ae4e5d74b9f8fc6fb02 (not 7e1fbbe261c7bd3146d49e5a481a27d467c45a27)
