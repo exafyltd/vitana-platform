@@ -61,6 +61,23 @@ Pattern: `*scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewe
 - Permission admit/deny matrix: `permission-match.log`.
 - Live reviewer-agent demonstration: `live-demonstration.md`.
 
+## Preflight — two expected, non-defect failures (the rest PASS)
+`node scripts/collab/preflight.mjs … --branch kiro/reviewer-session-id-permission/reviewer-perm` reports PASS for
+Collab tests, Collab handoff, PR-GATE scope, PR-GATE weakening, PR-GATE red-green and Kiro steering. Two checks fail,
+both by design, neither a code defect, and only the three lane paths change:
+1. **Lane scope [required]** — `.kiro/agents/vitana-lane-reviewer.md is a protected gate file … executor kiro (needs
+   claude — an agent review cannot unlock it)`. This is the WHOLE POINT of the plan: `queue.mjs` scope-check flags any
+   protected-gate-file change on a non-claude lane unconditionally (`queue.mjs:698`). It cannot be satisfied on the
+   Kiro side; the merge authority is the OWNER INSTRUCTION naming this plan (`reviewer-session-id-permission`),
+   recorded in the handoff/lane log, resolved at merge (FEAT-003), NOT a reviewer-agent accept and NOT self-approval.
+   The file is the only protected path changed; the other two lane paths (`queue.test.mjs`, `docs/validation/**`) are
+   inside scope and clean.
+2. **PR-GATE sparring [report-only in CI]** — `verdict.md … no owner-approval line`. This plan converged and was
+   approved by **policy** `converged-auto-v1` (CI PLAN-SPAR), not by owner Gate 1, so the sparring verdict has no
+   literal "owner approval" line (`evaluateSparringRecord` in `scripts/ci/pr-gate/lib.mjs` predates policy approval).
+   The check is report-only (not enforced) and the fact it reports is true; the sparring record is not edited to
+   invent an owner-approval line.
+
 ## Protected gate file
 `.kiro/agents/vitana-lane-reviewer.md` is listed in `scripts/collab/protected-gate-files.json`. Per
 `collaboration.md` §3a it never merges on a reviewer-agent accept alone: the merge authority is the OWNER INSTRUCTION
