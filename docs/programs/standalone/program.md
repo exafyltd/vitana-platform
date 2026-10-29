@@ -50,6 +50,7 @@ specs:
   - vitana-platform:reviewer-step-model
   - vitana-platform:collab-handoff-check-fix
   - vitana-platform:remove-b12-claude-sparring-gate1
+  - vitana-platform:kiro-lane-admin
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
