@@ -11,7 +11,7 @@ repos: [exafyltd/vitana-v1]
 paths:
   - src/hooks/useGlobalMessages.send-status.vtid-05320.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-10-28T12:00Z
+updated: 2026-10-29T12:05Z
 branch: kiro/outbox-test-dates/relative-dates
 pr: https://github.com/exafyltd/vitana-v1/pull/1507
 vtid: VTID-05372
@@ -41,3 +41,5 @@ automation or another interactive session, not in this lane's executing log) run
 current head and commits the review entry. Setting `reviewer_seat` here is refused by Lane scope, because lane
 permissions come from the base revision. The builder session released its
 claim and runs no driver for this plan. The owner's merge approval is not a substitute for this review.
+### 2026-10-29T12:05Z · pm-agent · update
+reassign review →exafyltd (stale_review, Claude unavailable)
