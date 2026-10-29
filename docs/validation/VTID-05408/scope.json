@@ -1,0 +1,17 @@
+{
+  "vtid": "VTID-05408",
+  "slug": "kiro-lane-admin",
+  "lane": "enforcement",
+  "kind": "infra",
+  "sparring_record": "docs/validation/VTID-05408/plan-sparring.md",
+  "summary": "Reviewed, auditable Kiro lane administration: the lane_admin marker + target-only PERM carve-out + cross-lane-file exemption in scripts/collab/queue.mjs, and the retirement (not transfer) of the legacy-claude protected-gate unlock in the PM governance.ts mirror.",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    "scripts/collab/protected-gate-files.json",
+    "services/gateway/src/services/project-manager/governance.ts",
+    "services/gateway/test/project-manager/governance.test.ts",
+    "docs/validation/VTID-05408/**",
+    ".kiro/specs/kiro-lane-admin/lanes/enforcement.md"
+  ]
+}

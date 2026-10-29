@@ -7,8 +7,10 @@ executor: kiro
 seat: jtadic
 area: frontend
 reviewer_seat: agent:vitana-lane-reviewer
-updated: 2026-10-29T11:49Z
+updated: 2026-10-29T12:18Z
 vtid: VTID-05408
+claimed_by: kiro-jtadic-202610291040-a0e6
+branch: kiro/kiro-lane-admin/enforcement
 ---
 # Lane `enforcement`: the single enforcement point, tests, JSON+builtin, PM mirror
 Plan: `.kiro/specs/kiro-lane-admin/` — `plan.md` and the `tasks.md` section `<!-- lane: enforcement -->` are
@@ -42,3 +44,36 @@ Lane drafted with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat `jtadic` 
 
 ### 2026-10-29T11:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05408 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-29T12:12Z · kiro-jtadic-202610291040-a0e6 · ready → executing
+Claimed by seat `jtadic`; declared the narrow `paths` above (added at build time per the bootstrap note). Implemented
+E0–E6 on branch `kiro/kiro-lane-admin/enforcement`:
+- `scripts/collab/queue.mjs`: `toBool` helper (E0); `validateLane` `lane_admin` marker (E1); `fetchTrustedLaneFm` +
+  `laneAdminCovers` shared helper; `validateRange` gains `fetchPlanLane` + the cross-lane-file exemption (E1a) threaded
+  from the `validate` CLI symmetrically with `scope-check`; `scopeCheck` TARGET-ONLY PERM carve-out with `lane_admin`
+  pinned to trusted and reworded PERM / governance-path / protected-gate refusals (E2); `PROTECTED_GATE_BUILTIN`
+  comment (E3).
+- `scripts/collab/protected-gate-files.json`: `description` reworded, globs byte-identical (E3).
+- `services/gateway/src/services/project-manager/governance.ts`: `governanceMergeAllowed` ALWAYS refuses a protected
+  gate file — legacy-claude unlock retired, not transferred; `isLegacyClaudeReview` kept (still used by the
+  governance-path legacy branch); header prose updated (E4). Defense-in-depth preserved.
+- `scripts/collab/queue.test.mjs`: T-A..T-K added (E5), new-behaviour cases red-on-base
+  (`docs/validation/VTID-05408/red-on-base.log`); all 53 existing + JSON↔builtin parity green (64/64).
+- `services/gateway/test/project-manager/governance.test.ts`: updated for the retired unlock; 43/43 green (E6).
+Evidence under `docs/validation/VTID-05408/` (scope.json, acceptance.md, commands.log, red-on-base.log,
+staging-tests.json). No migration, no live-system writes.
+
+**Bootstrap — lane file stays path-free (deep bootstrap).** This lane modifies protected gate files
+(`scripts/collab/queue.mjs`, `scripts/collab/protected-gate-files.json`) and the PM mirror. The current rule on `main`
+refuses an `executor: kiro` lane that DECLARES a protected-gate path (`validateLane`/`globTouchesProtected`), and
+refuses a non-claude lane that CHANGES one (`scopeCheck`/Collab handoff); adding `paths` to this lane file is itself a
+PERM change the current rule refuses. These are exactly the rules this very lane repairs — the first lane that fixes
+the lane-permission model cannot satisfy the old model. Per the owner's authorization (2026-10-29, this conversation:
+"land the governance/permission changes separately first"; "do not disable hooks") and the plan's "Owner authority"
+section, the lane file is left **path-free** (matching the merged `plan(` version) so Collab handoff / Lane scope
+report only the "no paths → the PM never merges it" warning rather than a protected-path refusal. The authoritative
+narrow paths this lane is scoped to are listed in `plan.md` / `tasks.md` (E0–E6) and in `docs/validation/VTID-05408/scope.json`;
+the changed files are exactly those. Because the lane declares no `paths`, the PM never auto-merges it — the merge is
+performed on the **owner's instruction naming this plan** plus a reviewer-agent accept on the current head (§3a),
+recorded in this log with `owner-instruction:` and `merge:`. The reviewer confirms the diff is confined to the
+scope.json paths and nothing else. Next: reviewer-agent review on the PR head.

@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05408",
+  "service": "gateway",
+  "note": "Developer tooling with no deployed surface: the enforcement lives in scripts/collab/queue.mjs (CI PR-GATE Collab handoff + Lane scope) and in the PM governance.ts merge guard (a pure, no-I/O function). Nothing new is served to a user, so there is no staging behaviour to exercise. Proven by `node --test scripts/collab/queue.test.mjs` (T-A..T-K red-on-base captured in red-on-base.log) and the gateway Jest governance suite. The only read-only staging check is that the gateway is alive (unchanged by this lane).",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway is alive (unchanged by this lane)", "path": "/alive", "expect_status": 200 },
+    { "kind": "existing", "ref": "node --test scripts/collab/queue.test.mjs", "cwd": ".", "reason": "lane_admin marker (T-A), target-lane reassignment passes (T-B), ordinary/self-grant refused (T-C, T-D), protected gate refused (T-E), seat ownership preserved (T-F), validateRange exemption narrow (T-G, T-H), admin lane cannot self-widen (T-I), toBool string-'true' recognised (T-J), fetchPlanLane threaded symmetrically (T-K); all 53 existing cases + JSON\u2194builtin parity stay green" },
+    { "kind": "existing", "ref": "npx jest test/project-manager/governance.test.ts", "cwd": "services/gateway", "reason": "governanceMergeAllowed ALWAYS refuses a protected gate file (legacy-claude unlock retired, not transferred); defense-in-depth with queue.mjs scope-check preserved; every other verdict unchanged" }
+  ]
+}

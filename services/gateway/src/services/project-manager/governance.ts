@@ -2,8 +2,9 @@
  * VTID-05274 — Project Manager: the governance guard (plan kiro-autonomy-fallback §4.1, §4.3, §5 C1).
  *
  * PROTECTED GATE FILE. This file is itself on the protected list below, so a
- * change to it never merges on a reviewer-agent accept alone: it needs a legacy
- * `claude` review on the current head or the owner's instruction.
+ * change to it never merges on a reviewer-agent accept alone: it needs the
+ * owner's instruction naming the plan plus a reviewer-agent accept on the
+ * current head (Claude Code is retired, VTID-05408).
  *
  * The one place that decides whether a review entry lets a lane PR merge:
  *   - an `accept` by the reviewer agent `agent:vitana-lane-reviewer
@@ -11,8 +12,11 @@
  *     satisfies any lane;
  *   - a legacy seat `approve` keeps today's rule (reviewer_seat match, exact
  *     head; a governance lane additionally needs `reviewer_seat: claude`);
- *   - a PR that changes a protected gate file needs a legacy `claude` review on
- *     the current head — an agent accept alone never unlocks it.
+ *   - a PR that changes a protected gate file is ALWAYS refused in code
+ *     (`protected_gate_file`): no review ever unlocks it programmatically; the
+ *     owner's instruction naming the plan is the out-of-band authority, recorded
+ *     in the lane log (VTID-05408 §5). Defense-in-depth with queue.mjs
+ *     scope-check, which refuses the same files independently.
  *
  * `PROTECTED_GATE_GLOBS` is a compiled-in constant literal (= plan §4.3). The
  * runtime never reads scripts/collab/protected-gate-files.json, so a missing or
@@ -71,7 +75,7 @@ export const GOVERNANCE_PATHS = [
   'docs/programs/areas.yaml',
 ] as const;
 
-/** The legacy reviewer value that unlocks a governance-path (and protected-file) merge. */
+/** The legacy reviewer value that unlocks a governance-path merge (never a protected gate file — VTID-05408 §5). */
 export const GOVERNANCE_REVIEWER = 'claude';
 
 /** Glob → RegExp, same semantics as scripts/collab/queue.mjs `globToRegex`. */
@@ -134,7 +138,8 @@ export function isAgentReview(r: ReviewEntry): boolean {
   return r.verdict === 'accept' && typeof r.reviewer === 'string' && AGENT_REVIEWER_VALUES.has(r.reviewer.trim());
 }
 
-/** A legacy `claude` approve (no agent reviewer value). */
+/** A legacy `claude` approve (no agent reviewer value). Unlocks a governance-path merge only — never a protected gate
+ * file, which is always refused in code (VTID-05408 §5). */
 export function isLegacyClaudeReview(r: ReviewEntry): boolean {
   return r.verdict === 'approve' && r.reviewer_seat === GOVERNANCE_REVIEWER && !r.reviewer;
 }
@@ -183,10 +188,14 @@ export function governanceMergeAllowed(
   review: ReviewEntry | null,
 ): GovernanceVerdict {
   const files = pr?.files ?? lane.paths;
+  // VTID-05408 (kiro-lane-admin §5): the PM ALWAYS refuses a protected gate file in code — no review (legacy-claude or
+  // agent) ever unlocks one programmatically. The legacy-claude unlock is RETIRED, not transferred: the authority for a
+  // protected-gate merge is the owner's instruction naming the plan, recorded out-of-band in the lane log
+  // (collaboration.md §7b), never a code-level unlock the PM can forge. Both independent layers (queue.mjs scope-check
+  // AND this guard) keep refusing protected gate files, so a `--admin` override of Lane scope is still caught here —
+  // defense-in-depth preserved, nothing less protected than before (R1-F3).
   if (touchesProtectedGate(files)) {
-    const unlocked =
-      review != null && pr != null && isLegacyClaudeReview(review) && review.head_sha === pr.head_sha;
-    return unlocked ? { ok: true } : { ok: false, reason: 'protected_gate_file' };
+    return { ok: false, reason: 'protected_gate_file' };
   }
   if (!laneTouchesGovernance(lane)) return { ok: true };
   if (review == null) {
