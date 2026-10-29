@@ -8,9 +8,29 @@ the PERM carve-out is **target-lane-only and never applies to the admin lane's o
 **always refuses** protected gate files in code — the legacy-claude unlock is retired, not transferred to an agent
 accept (§5, R1-F3). Line numbers corrected throughout (R1-F4).
 
+Round-2 sparring changed two more: `lane_admin` is parsed as a **string**, so every test of it uses a `toBool` helper,
+never boolean strict equality (§1/§1a/§2, R2-F1); and `fetchPlanLane` is threaded into `validateRange` so
+`laneAdminCovers` resolves the same trusted-source chain as `scopeCheck` (§1a, R2-F2).
+
+## §0 `toBool` helper (R2-F1)
+`parseFrontMatter` (:149-173) assigns every scalar as a **string** (`out[kv[1]] = clean(v)` at :167; `clean` returns a
+`String`). So `lane_admin: true` in front matter parses to the string `'true'`, and `trustedFm.lane_admin === true`
+(strict boolean equality) is ALWAYS false — the whole mechanism would be dead on arrival. There is no existing
+`=== true` comparison on any parsed front-matter field in `queue.mjs` to be consistent with; booleans today are gated
+by presence (`!!trustedFrom`) or string equality (`fm.executor === 'kiro'`). Add one module-level helper next to
+`asList`:
+```js
+const toBool = (v) => v === true || v === 'true';
+```
+and use `toBool(...)` EVERYWHERE `lane_admin` is tested — §1 (`validateLane` marker), §2 (`selfTrustedLaneAdmin` in
+`scopeCheck`), and §1a (the trusted predicate inside `laneAdminCovers`). It accepts the boolean form too, so it stays
+correct if `parseFrontMatter` is ever hardened to emit real booleans. T-J pins it: a lane whose front matter carries
+the literal `lane_admin: true` (parsed as `'true'`) is recognised AND unlocks the carve-outs, and the test fails if any
+`lane_admin` comparison is reverted to `=== true`.
+
 ## §1 `validateLane` (:206) — the `lane_admin` marker
-Add recognition of `lane_admin` (boolean, default absent/false) on a lane file:
-- When `fm.lane_admin === true` (accept the string `true` the same way other booleans are parsed): require
+Add recognition of `lane_admin` (parsed as a string, default absent/false) on a lane file:
+- When `toBool(fm.lane_admin)` (§0 — the string `'true'`, never boolean `=== true`): require
   `fm.executor === 'kiro'` AND `isReviewerAgent(fm.reviewer_seat)` (i.e. `agent:vitana-lane-reviewer`) AND at least one
   declared `paths` glob that targets a lane file (`.kiro/specs/*/lanes/*.md`). Otherwise push a clear error
   (`lane_admin: true needs executor: kiro, reviewer_seat: <agent>, and a lane-file path`).
@@ -33,17 +53,27 @@ Add ONE narrow exemption in that loop (after the existing `:584` continue and th
 before the :591 error), gated identically to the scopeCheck carve-out:
 ```js
 // A reviewed, trusted lane-admin lane may edit a target lane file it administers (kiro-lane-admin).
-if (c.kind === 'lane' && k.lane && k.lane !== key && laneAdminCovers(repo, base, head, k.lane, f)) continue;
+if (c.kind === 'lane' && k.lane && k.lane !== key && laneAdminCovers(repo, base, head, k.lane, f, fetchPlanLane)) continue;
 ```
-`laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile)` returns true only when ALL hold:
-- `adminLaneKey` resolves to a lane file whose **trusted** front matter (merge-base, else a qualifying open `plan(`
-  PR, else the other repo's main — exactly `scopeCheck`'s `trustedFm`/`trustedFrom` sources, never the PR head) has
-  `lane_admin === true`, `executor === 'kiro'` and `isReviewerAgent(reviewer_seat)`;
+`laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile, fetchPlanLane)` returns true only when ALL hold:
+- `adminLaneKey` resolves to a lane file whose **trusted** front matter has `toBool(lane_admin)` (§0 — the string
+  `'true'`, never boolean `=== true`), `executor === 'kiro'` and `isReviewerAgent(reviewer_seat)`;
 - `targetLaneFile` matches one of that trusted admin lane's `paths` globs (`matchesAny`, same glob semantics).
+
+**Trusted-source chain — symmetric with `scopeCheck` (R2-F2).** The helper resolves the admin lane's trusted front
+matter through the **identical** chain `scopeCheck` uses (:664-670): the merge-base, else a qualifying open `plan(` PR
+(`planLaneQualifies(fetchPlanLane(slug, path))`, :728), else the other repo's main (`fetchLane`) — never the PR head.
+To reach the plan-PR link, `validateRange` must RECEIVE `fetchPlanLane`, which it does not today (:528 destructures only
+`fetchLane`, and its `validate` CLI site :967-968 passes only `fetchLane`). So this design adds `fetchPlanLane = null`
+to `validateRange`'s options and threads it from the `validate` CLI command exactly as `scope-check` does (:989-997):
+build `planFetchers` from `--plan-repo` (repeatable), else `$GITHUB_REPOSITORY`, else `--lane-repo`, map each through
+`ghPlanLaneFetcher`, collapse to one `fetchPlanLane`, pass it into `validateRange`, and from there into
+`laneAdminCovers`. Without this, a brand-new admin lane whose file exists only in its qualifying `plan(` PR (not yet on
+main or in the merge-base) would be recognised by Lane scope but NOT by Collab handoff — the asymmetry R2-F2 names.
 Because the admin lane's qualifying front matter is read from the trusted revision, a PR cannot write `lane_admin: true`
 into its own head to unlock the exemption. The helper is shared with §2 (one source of truth for "is this a trusted
-lane-admin lane, and does it cover this target file"). Covered by T-G (passes) and T-H (an ordinary cross-lane-file
-edit — no trusted lane_admin — is still refused).
+lane-admin lane, and does it cover this target file"). Covered by T-G (passes), T-H (an ordinary cross-lane-file edit —
+no trusted lane_admin — is still refused) and T-K (the plan-PR trusted-source path resolves through `fetchPlanLane`).
 
 ## §2 `scopeCheck` — the lane-administration carve-out for PERM changes (target-lane-only; R1-F2)
 Current (:679-686):
@@ -85,7 +115,7 @@ cover `lanePath` for some OTHER target lane** — i.e. when `key` is a lane-admi
 The precise, non-defensive form used in code:
 ```js
 const selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat)
-  && trustedFm.lane_admin === true && !!trustedFrom;
+  && toBool(trustedFm.lane_admin) && !!trustedFrom;  // §0: toBool, never `=== true` (lane_admin parses as a string)
 // A PERM change is carved out only for a TARGET lane file the admin lane covers, never for the admin lane's own file.
 const targetLaneFilesChanged = /* lane files in the diff that are NOT `lanePath` and match trusted admin paths */;
 const permAllowed = (trustedFm.executor === 'claude' && claudeOnly)
@@ -183,6 +213,16 @@ body edit).
 - T-I `scopeCheck`: a trusted `lane_admin` lane that tries to widen/change its OWN `paths` / `executor` /
   `reviewer_seat` / `seat` / `lane_admin` in its PR head → refused; its own PERM fields are pinned back to trusted
   (self-widen is impossible, R1-F2).
+- T-J `toBool` (R2-F1): a lane whose front matter carries the literal `lane_admin: true` (parsed by
+  `parseFrontMatter` as the STRING `'true'`) is recognised as a lane-admin lane by `validateLane` and unlocks both the
+  `scopeCheck` PERM carve-out and the `validateRange` cross-lane-file exemption. Written so that reverting any
+  `lane_admin` comparison to boolean strict equality (`=== true`) leaves the string-`'true'` lane unrecognised and
+  fails the assertion — the dead-on-arrival regression is caught. (Covers §0/§1/§1a/§2.)
+- T-K `validateRange` plan-PR trusted source (R2-F2): a trusted `lane_admin` admin lane whose file is resolvable ONLY
+  via `fetchPlanLane` (a qualifying open `plan(` PR — `planLaneQualifies` true, not on main or in the merge-base),
+  committing with `Collab-Lane: <admin>/<admin-lane>` and editing a target lane file within its trusted `paths`, passes
+  the §1a cross-lane-file exemption. Fails if `fetchPlanLane` is not threaded into `validateRange`/`laneAdminCovers`
+  (proves the chain is symmetric with `scopeCheck`).
 - Parity: JSON `globs` === builtin content (existing assertion) stays green.
 All 53 existing tests stay green.
 Gateway: `governance.ts` Jest suite updated and green, incl. the "protected gate file with an agent accept →

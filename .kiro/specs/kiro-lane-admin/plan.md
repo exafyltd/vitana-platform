@@ -45,6 +45,14 @@ owner's words + date) and `merge: <sha>`; a reviewer-agent accept alone never un
   (`classifyPath` at :575) and continues only when the commit's `Collab-Lane` equals the file's own key (:584); a
   mismatch is refused at :591. A lane-admin PR edits a TARGET lane file whose key differs from the admin lane's own
   `Collab-Lane`, so without a new exemption every lane-admin PR fails Collab handoff (round-1 R1-F1, blocker).
+  `validateRange` (:528) destructures only `fetchLane`, and its `validate` CLI site (:967-968) passes only `fetchLane`
+  — NO `fetchPlanLane`, unlike `scopeCheck` (:628) and its `scope-check` CLI site (:989-997). So the shared
+  `laneAdminCovers` helper cannot reach the plan-PR link of the trusted-source chain inside `validateRange`, an
+  asymmetry between the two checks (round-2 R2-F2, major; fixed by threading `fetchPlanLane`).
+- **Front-matter parsing (`parseFrontMatter`, :149-173).** Every scalar is assigned as a STRING (`out[kv[1]] =
+  clean(v)` at :167; `clean` returns a `String` at :171-174). So `lane_admin: true` parses to the string `'true'`, and
+  any `=== true` comparison on it is always false (round-2 R2-F1, blocker; fixed by a `toBool` helper). No existing
+  parsed front-matter field is compared with `=== true` in `queue.mjs`.
 - Governance-path carve-out already present (VTID-05276): a changed governance file passes for
   `fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom` (:702). A protected gate file never
   passes for a non-claude lane, whatever its reviewer (:699).
@@ -121,20 +129,32 @@ Preserved, by construction:
 1. `enforcement` (platform) — the single enforcement point, its tests, the JSON + builtin, and the PM mirror's
    protected-gate authority. Files:
    - `scripts/collab/queue.mjs`:
-     - `validateLane` (:206): accept `lane_admin` (boolean marker); a `lane_admin: true` lane must be `executor: kiro`
-       with `reviewer_seat: agent:vitana-lane-reviewer` and must declare at least one target lane-file path
-       (`.kiro/specs/*/lanes/*.md`); refuse `lane_admin: true` on any other shape. `lane_admin` is NOT a permission
-       field; it is added to the trusted-pinned set in `scopeCheck` so a PR cannot self-grant it. The existing
-       protected-gate / governance-path checks in `validateLane` (:232-235) are untouched. (design §1)
-     - `validateRange` (:528) — **new cross-lane-file exemption (R1-F1).** In the section-2 loop, before the :591
-       error, add: a changed lane file (`c.kind === 'lane'`) whose key differs from the commit's `Collab-Lane` passes
-       when a shared helper `laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile)` is true — i.e. the
-       committing admin lane's TRUSTED front matter (merge-base / qualifying plan( PR / other-repo main, never the
-       head) is `lane_admin: true` + `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer` and the target
-       lane file matches that trusted admin lane's `paths`. Otherwise the :591 refusal stands. (design §1a)
+     - **`toBool` helper (R2-F1).** `parseFrontMatter` (:149-173) assigns every scalar as a STRING, so
+       `lane_admin: true` parses to `'true'` and `=== true` is always false (dead on arrival). Add a module-level
+       `const toBool = (v) => v === true || v === 'true';` next to `asList` and use `toBool(...)` EVERYWHERE
+       `lane_admin` is tested (the `validateLane` marker, `selfTrustedLaneAdmin` in `scopeCheck`, the trusted predicate
+       in `laneAdminCovers`); never boolean strict equality. There is no existing `=== true` on parsed front matter to
+       be consistent with. (design §0)
+     - `validateLane` (:206): accept `lane_admin` (string marker); a lane with `toBool(fm.lane_admin)` must be
+       `executor: kiro` with `reviewer_seat: agent:vitana-lane-reviewer` and must declare at least one target lane-file
+       path (`.kiro/specs/*/lanes/*.md`); refuse `lane_admin: true` on any other shape. `lane_admin` is NOT a
+       permission field; it is added to the trusted-pinned set in `scopeCheck` so a PR cannot self-grant it. The
+       existing protected-gate / governance-path checks in `validateLane` (:232-235) are untouched. (design §1)
+     - `validateRange` (:528) — **new cross-lane-file exemption (R1-F1) + `fetchPlanLane` threading (R2-F2).** Add
+       `fetchPlanLane = null` to `validateRange`'s options and thread it from the `validate` CLI command exactly as
+       `scope-check` does (:989-997: `--plan-repo` repeatable, else `$GITHUB_REPOSITORY`, else `--lane-repo`, mapped
+       through `ghPlanLaneFetcher`). In the section-2 loop, before the :591 error, add: a changed lane file
+       (`c.kind === 'lane'`) whose key differs from the commit's `Collab-Lane` passes when a shared helper
+       `laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile, fetchPlanLane)` is true — i.e. the committing
+       admin lane's TRUSTED front matter (merge-base / qualifying plan( PR via `fetchPlanLane` / other-repo main, never
+       the head) has `toBool(lane_admin)` + `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer` and the
+       target lane file matches that trusted admin lane's `paths`. Threading `fetchPlanLane` keeps the trusted-source
+       chain SYMMETRIC between Collab handoff and Lane scope, so a new admin lane created inside a plan( PR is
+       recognised by both. Otherwise the :591 refusal stands. (design §1a)
      - `scopeCheck` (:664-686) — **target-only PERM carve-out (R1-F2).** Compute
        `selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat) &&
-       trustedFm.lane_admin === true && !!trustedFrom`, from the TRUSTED revision. The PERM-change allow condition
+       toBool(trustedFm.lane_admin) && !!trustedFrom`, from the TRUSTED revision (R2-F1: `toBool`, not `=== true`). The
+       PERM-change allow condition
        (:684,:686) becomes `(trustedFm.executor === 'claude' && claudeOnly) || (selfTrustedLaneAdmin &&
        changedFileIsAdministeredTarget(lanePath, trustedFm))` — the carve-out applies ONLY when the lane under check is
        a TARGET lane file the admin lane administers, never to the admin lane's own file. When not allowed, pin ALL of
@@ -147,14 +167,17 @@ Preserved, by construction:
        lane PR still cannot rewrite another seat's lane. (design §3)
      - Protected-gate behaviour in `scopeCheck` (:699) unchanged (still refused for every non-claude lane); only the
        human-facing refusal and the authority wording stop citing Claude.
-   - `scripts/collab/queue.test.mjs`: new cases T-A..T-I (design §7), each red on origin/main first — the
+   - `scripts/collab/queue.test.mjs`: new cases T-A..T-K (design §7), each red on origin/main first — the
      `validateLane` marker cases; a trusted `lane_admin` lane reassigning a TARGET lane's `seat`/`paths` passes (T-B);
      the same from an ordinary lane refused (T-C); a self-granted `lane_admin: true` in the head refused (T-D); a
      `lane_admin` lane touching a protected gate file refused (T-E); seat-ownership still refuses a foreign-seat edit
      (T-F); **the `validateRange` cross-lane-file exemption passes for a trusted admin lane (T-G) and an ordinary
      cross-lane-file edit is still refused (T-H)**; **a trusted `lane_admin` lane that tries to widen/change its OWN
-     PERM fields or `lane_admin` is refused (T-I, the self-widen guard)**. Every refusal that held on origin/main still
-     holds; all 53 existing cases + the JSON↔builtin parity assertion stay green.
+     PERM fields or `lane_admin` is refused (T-I, the self-widen guard)**; **a `lane_admin: true` lane (parsed as the
+     string `'true'`) is recognised and unlocks the carve-outs, and reverting any comparison to `=== true` fails the
+     test (T-J, R2-F1)**; **the `validateRange` exemption resolves a trusted admin lane via `fetchPlanLane` from a
+     qualifying plan( PR (T-K, R2-F2)**. Every refusal that held on origin/main still holds; all 53 existing cases +
+     the JSON↔builtin parity assertion stay green.
    - `scripts/collab/protected-gate-files.json` `description`: replace "needs a legacy claude review on the current
      head or the owner's instruction" with "needs the owner's instruction naming the plan plus a reviewer-agent accept
      on the current head (Claude Code is retired)". `PROTECTED_GATE_BUILTIN` content unchanged (globs identical); keep
