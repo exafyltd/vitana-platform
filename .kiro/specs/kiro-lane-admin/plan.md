@@ -35,24 +35,31 @@ instruction naming the plan plus a reviewer-agent accept on the current head**. 
 orchestrator / Project Manager citing this owner instruction, recorded in the lane log with `owner-instruction:` (the
 owner's words + date) and `merge: <sha>`; a reviewer-agent accept alone never unlocks it.
 
-## Measured state (origin/main, 2026-10-29, `scripts/collab/queue.mjs`)
+## Measured state (branch head `c3ca9f601b` = origin/main @ d729406d4c, 2026-10-29, `scripts/collab/queue.mjs`)
 - `PERM = ['executor', 'seat', 'reviewer_seat', 'paths']` (`scopeCheck`, :679). A change to any of these in a lane PR
-  is refused (:683-684) unless `trustedFm.executor === 'claude'` AND every session that edited the lane file is a
+  is refused (:684) unless `trustedFm.executor === 'claude'` AND every session that edited the lane file is a
   `session_…` id (`claudeOnly`, :682). The trusted revision is the merge-base, else a qualifying open `plan(` PR, else
-  the other repo's main (`trustedFm`/`trustedFrom`, :671-677). When allowed, the PERM fields are taken from the trusted
+  the other repo's main (`trustedFm`/`trustedFrom`, :664-670). When allowed, the PERM fields are taken from the trusted
   revision (:686); when refused, they are still pinned to trusted so the rest of the check uses the honest values.
+- **Collab handoff cross-lane-file check (`validateRange`, :528).** Its section-2 loop classifies every changed file
+  (`classifyPath` at :575) and continues only when the commit's `Collab-Lane` equals the file's own key (:584); a
+  mismatch is refused at :591. A lane-admin PR edits a TARGET lane file whose key differs from the admin lane's own
+  `Collab-Lane`, so without a new exemption every lane-admin PR fails Collab handoff (round-1 R1-F1, blocker).
 - Governance-path carve-out already present (VTID-05276): a changed governance file passes for
-  `fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom` (:701). A protected gate file never
+  `fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom` (:702). A protected gate file never
   passes for a non-claude lane, whatever its reviewer (:699).
-- Seat ownership (:711-715): a build commit whose session seat `!== fm.seat` of the lane it edits is refused
+- Seat ownership (:714-715): a build commit whose session seat `!== fm.seat` of the lane it edits is refused
   (`edits lane … which belongs to seat …`). `fm` here is already pinned to the trusted PERM values, so a lane PR
   cannot dodge this by rewriting `seat` in its own head.
-- `validateLane` (:around 190): a `kiro` lane whose declared `paths` reach a governance path needs
-  `reviewer_seat: agent:vitana-lane-reviewer`; one that reaches a protected gate file needs `executor: claude`.
-- Mirror: `services/gateway/src/services/project-manager/governance.ts` holds `PROTECTED_GATE_GLOBS`,
-  `GOVERNANCE_PATHS`, the agent-accept / legacy-claude rule. `isLegacyClaudeReview` and the protected-gate unlock
-  still require a legacy `claude` review. It does NOT model the PERM-change rule (that lives only in `scopeCheck`), so
-  the mirror change here is confined to the protected-gate authority wording/behaviour, not the lane-admin path.
+- `validateLane` (:206): a `kiro` lane whose declared `paths` reach a governance path needs
+  `reviewer_seat: agent:vitana-lane-reviewer`; one that reaches a protected gate file needs `executor: claude`
+  (the `fm.executor === 'kiro'` block at :232-235, `globTouchesProtected` push at :233).
+- Mirror: `services/gateway/src/services/project-manager/governance.ts` holds the protected-gate / governance-path
+  rule. `governanceMergeAllowed` (:184) returns `{ok:true}` for a protected gate file only when
+  `isLegacyClaudeReview(review)` on the current head (:186-188); `queue.mjs` scope-check (:699) refuses protected gate
+  files independently — two independent defense-in-depth layers (round-1 R1-F3). It does NOT model the PERM-change
+  rule (that lives only in `scopeCheck`), so the mirror change here is confined to the protected-gate authority
+  wording/behaviour, not the lane-admin path.
 - `scripts/collab/protected-gate-files.json` `description` and `PROTECTED_GATE_BUILTIN` (queue.mjs) both say a
   protected gate file "needs a legacy claude review on the current head or the owner's instruction." The JSON `globs`
   and the builtin list are byte-identical in content and must stay so.
@@ -70,13 +77,27 @@ owner's words + date) and `merge: <sha>`; a reviewer-agent accept alone never un
 
 ## The new capability (minimal, auditable, reviewer-agent-gated)
 A **lane-administration lane**: an `executor: kiro` lane carrying a new marker `lane_admin: true`, whose
-`reviewer_seat` is `agent:vitana-lane-reviewer`, whose declared `paths` include the target lane file(s)
+`reviewer_seat` is `agent:vitana-lane-reviewer`, whose declared `paths` include the TARGET lane file(s)
 (`.kiro/specs/<slug>/lanes/<id>.md`) it is authorized to administer. Such a lane — and only such a lane — may change
-the PERM fields (`executor`, `seat`, `reviewer_seat`, `paths`) of a target lane, when the target lane's permissions it
-is changing FROM come from a trusted source (`trustedFrom` set: merge-base, a qualifying `plan(` PR, or the other
-repo's main — exactly the sources VTID-05276 already trusts). This is the direct analogue of the governance-path
-carve-out: reviewer-agent review replaces the retired Claude-Code review, and the change must originate from trusted
-state, never be self-granted in the lane PR head.
+the PERM fields (`executor`, `seat`, `reviewer_seat`, `paths`) of a **target** lane it administers, when the target
+lane's permissions it is changing FROM come from a trusted source (`trustedFrom` set: merge-base, a qualifying `plan(`
+PR, or the other repo's main — exactly the sources VTID-05276 already trusts). This is the direct analogue of the
+governance-path carve-out: reviewer-agent review replaces the retired Claude-Code review, and the change must originate
+from trusted state, never be self-granted in the lane PR head.
+
+**Target-only — the admin lane can never self-widen (round-1 R1-F2).** The carve-out applies ONLY to a target lane
+file the admin lane administers, never to the admin lane's own PERM fields. The admin lane's own
+`paths`/`executor`/`seat`/`reviewer_seat` (and `lane_admin` itself) stay trusted-pinned exactly as today — a PR that
+tries to widen the admin lane's own `paths` or flip its own `executor`/`reviewer_seat` is refused and those fields are
+pinned back to trusted. So an admin lane cannot widen itself and then reach further; 'narrow paths stay narrow' is
+literally true for the admin lane too (design §2).
+
+**Collab handoff exemption (round-1 R1-F1).** Because the admin lane edits a target lane file whose key differs from
+its own `Collab-Lane`, `validateRange`'s cross-lane-file check (:591) would refuse it. A new, narrow exemption in that
+loop (design §1a) lets the edit pass — but only when the committing admin lane's TRUSTED front matter has
+`lane_admin: true` + `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer` AND the changed target lane file is
+within that trusted admin lane's `paths`. Read from the trusted revision, so it cannot be self-granted in the PR head;
+shares one helper with the scopeCheck carve-out.
 
 Preserved, by construction:
 - **Seat ownership.** A lane-admin lane never lets an arbitrary session edit an arbitrary seat's lane. Three gates
@@ -85,11 +106,11 @@ Preserved, by construction:
   accepts it; (3) a lane-admin change is recognised only when the admin lane's own permissions are trusted — a PR
   cannot promote an ordinary lane to `lane_admin: true` in its own head and then use that to rewrite a foreign seat,
   because the trusted (base/plan-PR/main) revision of that lane is not `lane_admin`. The target lane's existing
-  seat-ownership check is unchanged; what becomes legitimate is the documented, reviewed REASSIGNMENT of `seat`, not a
-  silent cross-seat edit.
+  seat-ownership check is unchanged; what becomes legitimate is the documented, reviewed REASSIGNMENT of a target
+  lane's `seat`, not a silent cross-seat edit.
 - **Scope checks.** The admin lane's own `paths` still bound every file it changes (it must list each target lane file
-  it administers); the target lane's narrowed `paths` are still enforced on the target lane's own PRs. Narrow paths
-  stay narrow.
+  it administers) and can never be widened by its own PR; the target lane's narrowed `paths` are still enforced on the
+  target lane's own PRs. Narrow paths stay narrow.
 - **Independent review.** `lane_admin: true` requires `reviewer_seat: agent:vitana-lane-reviewer` and `executor: kiro`
   (validated); the builder of the admin lane never reviews it.
 - **Protected gate files stay owner-gated.** A lane-admin lane is NOT a protected-gate unlock. Protected gate files
@@ -100,44 +121,63 @@ Preserved, by construction:
 1. `enforcement` (platform) — the single enforcement point, its tests, the JSON + builtin, and the PM mirror's
    protected-gate authority. Files:
    - `scripts/collab/queue.mjs`:
-     - `validateLane`: accept `lane_admin` (boolean marker); a `lane_admin: true` lane must be `executor: kiro` with
-       `reviewer_seat: agent:vitana-lane-reviewer` and must declare at least one target lane-file path
+     - `validateLane` (:206): accept `lane_admin` (boolean marker); a `lane_admin: true` lane must be `executor: kiro`
+       with `reviewer_seat: agent:vitana-lane-reviewer` and must declare at least one target lane-file path
        (`.kiro/specs/*/lanes/*.md`); refuse `lane_admin: true` on any other shape. `lane_admin` is NOT a permission
-       field (it is itself trusted-source-pinned via the existing PERM logic? — no: see design §2; it is added to the
-       trusted-pinned set so a PR cannot self-grant it).
-     - `scopeCheck`: add `laneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat) &&
-       trustedFm.lane_admin === true && !!trustedFrom`, computed from the TRUSTED revision of the lane that performs
-       the change. The PERM-change allow condition (:683,:686) becomes
-       `(trustedFm.executor === 'claude' && claudeOnly) || laneAdmin`. When `laneAdmin`, a PERM change to the target
-       lane file(s) the admin lane declares is permitted and NOT pinned back to trusted; the refusal message is
-       reworded to name the lane-admin path as the Kiro alternative. Pin `lane_admin` itself to the trusted revision
-       so it can never be self-granted in the lane PR head.
-     - Seat-ownership check (:711-715): unchanged in substance; it keeps refusing a cross-seat edit of a lane whose
+       field; it is added to the trusted-pinned set in `scopeCheck` so a PR cannot self-grant it. The existing
+       protected-gate / governance-path checks in `validateLane` (:232-235) are untouched. (design §1)
+     - `validateRange` (:528) — **new cross-lane-file exemption (R1-F1).** In the section-2 loop, before the :591
+       error, add: a changed lane file (`c.kind === 'lane'`) whose key differs from the commit's `Collab-Lane` passes
+       when a shared helper `laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile)` is true — i.e. the
+       committing admin lane's TRUSTED front matter (merge-base / qualifying plan( PR / other-repo main, never the
+       head) is `lane_admin: true` + `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer` and the target
+       lane file matches that trusted admin lane's `paths`. Otherwise the :591 refusal stands. (design §1a)
+     - `scopeCheck` (:664-686) — **target-only PERM carve-out (R1-F2).** Compute
+       `selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat) &&
+       trustedFm.lane_admin === true && !!trustedFrom`, from the TRUSTED revision. The PERM-change allow condition
+       (:684,:686) becomes `(trustedFm.executor === 'claude' && claudeOnly) || (selfTrustedLaneAdmin &&
+       changedFileIsAdministeredTarget(lanePath, trustedFm))` — the carve-out applies ONLY when the lane under check is
+       a TARGET lane file the admin lane administers, never to the admin lane's own file. When not allowed, pin ALL of
+       `['executor','seat','reviewer_seat','paths','lane_admin']` back to trusted (so the admin lane can never
+       self-widen and `lane_admin` can never be self-granted). Reword the PERM and governance-path refusals to name the
+       Kiro lane-admin / reviewer-agent route. (design §2)
+     - Seat-ownership check (:714-715): unchanged in substance; it keeps refusing a cross-seat edit of a lane whose
        trusted `seat` differs — a reassignment is the admin lane editing the target lane file and is governed by the
-       `laneAdmin` branch above, which is what makes the new `seat` legitimate. Add a test proving an ordinary lane PR
-       still cannot rewrite another seat's lane.
-     - Protected-gate behaviour unchanged (still refused for every non-claude lane); only the human-facing refusal and
-       the authority wording stop citing Claude.
-   - `scripts/collab/queue.test.mjs`: new cases, each red on origin/main first — (a) a `lane_admin: true` reviewer-
-     agent lane from a trusted source reassigns a target lane's `seat` and narrows its `paths`: passes; (b) the same
-     change from an ordinary (non-`lane_admin`) kiro lane: still refused; (c) a lane PR that self-grants
-     `lane_admin: true` in its own head: refused (trusted revision is not lane_admin); (d) a `lane_admin` lane that
-     touches a protected gate file: still refused; (e) seat-ownership still refuses a foreign-seat edit outside the
-     admin path; plus `validateLane` cases for the new marker. Every refusal that held on origin/main still holds.
+       target-only PERM carve-out above, which is what makes the new `seat` legitimate. Add a test proving an ordinary
+       lane PR still cannot rewrite another seat's lane. (design §3)
+     - Protected-gate behaviour in `scopeCheck` (:699) unchanged (still refused for every non-claude lane); only the
+       human-facing refusal and the authority wording stop citing Claude.
+   - `scripts/collab/queue.test.mjs`: new cases T-A..T-I (design §7), each red on origin/main first — the
+     `validateLane` marker cases; a trusted `lane_admin` lane reassigning a TARGET lane's `seat`/`paths` passes (T-B);
+     the same from an ordinary lane refused (T-C); a self-granted `lane_admin: true` in the head refused (T-D); a
+     `lane_admin` lane touching a protected gate file refused (T-E); seat-ownership still refuses a foreign-seat edit
+     (T-F); **the `validateRange` cross-lane-file exemption passes for a trusted admin lane (T-G) and an ordinary
+     cross-lane-file edit is still refused (T-H)**; **a trusted `lane_admin` lane that tries to widen/change its OWN
+     PERM fields or `lane_admin` is refused (T-I, the self-widen guard)**. Every refusal that held on origin/main still
+     holds; all 53 existing cases + the JSON↔builtin parity assertion stay green.
    - `scripts/collab/protected-gate-files.json` `description`: replace "needs a legacy claude review on the current
      head or the owner's instruction" with "needs the owner's instruction naming the plan plus a reviewer-agent accept
      on the current head (Claude Code is retired)". `PROTECTED_GATE_BUILTIN` content unchanged (globs identical); keep
      JSON `globs` ↔ builtin byte-identical (the existing parity assertion stays green).
-   - `services/gateway/src/services/project-manager/governance.ts`: the protected-gate unlock replaces the legacy
-     `claude` review with the owner-instruction-backed reviewer-agent accept, consistent with the rule text. Keep the
-     agent-accept + head-currency logic. Update the file header prose that says "needs a legacy `claude` review".
-     Gateway Jest for `governance.ts` stays green (update its tests in the same lane).
+   - `services/gateway/src/services/project-manager/governance.ts` (:184) — **PM always refuses protected gate files
+     (R1-F3).** `governanceMergeAllowed` ALWAYS returns `{ ok: false, reason: 'protected_gate_file' }` when
+     `touchesProtectedGate(files)` — the legacy-claude programmatic unlock is RETIRED, not transferred to an
+     agent-accept. The owner's instruction naming the plan is the out-of-band human authority recorded in the lane log
+     (collaboration.md §7b), never a code-level unlock the PM can forge. This keeps BOTH independent layers (queue.mjs
+     scope-check AND governance.ts) refusing protected gate files, so a `--admin` override of Lane scope is still
+     caught by the PM — defense-in-depth preserved, nothing less protected than today. Remove the dead
+     `isLegacyClaudeReview` protected-gate branch (delete `isLegacyClaudeReview` only if it has no other caller). Every
+     other verdict (non-protected governance path with an agent accept on the current head, stale head, non-governance)
+     is unchanged. Update the file header prose that says "needs a legacy `claude` review". Gateway Jest for
+     `governance.ts` updated in the same lane (incl. a protected-gate PR with an agent accept → `protected_gate_file`)
+     and green. (design §5)
 2. `rules` (platform, governance path — `reviewer_seat: agent:vitana-lane-reviewer`) — human-facing rule text,
    consistently, Claude-free:
    - `.claude/rules/collaboration.md` §3a and §7b: the protected-gate authority becomes "the owner's instruction
      naming the plan plus a reviewer-agent accept on the current head"; §7/§7a gain one sentence that an authorized
      reviewed lane-administration lane (`lane_admin: true`, `reviewer_seat: agent:vitana-lane-reviewer`) may reassign a
-     lane's `seat` and narrow its `paths`, preserving seat ownership, scope and independent review.
+     TARGET lane's `seat` and narrow its `paths`, preserving seat ownership, scope and independent review, and never
+     widening the admin lane's own `paths`.
    - `.kiro/steering/vitana-collaboration.md` is the generated twin and stays a `#[[file:]]` link to the above — no
      edit needed; the workspace mirror `vitana-platform--vitana-*.md` is regenerated by
      `scripts/collab/kiro-web-steering.mjs` (not committed rule source). Confirm the steering guard
