@@ -18,13 +18,17 @@ reviewer-agent self-approval. Acceptance below is what the reviewer agent `vitan
 - [ ] T2 `.kiro/agents/vitana-lane-reviewer.md`: update the instructions so the agent runs
       `node <path>/scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer` at the START of a review
       and uses the printed id as its reviewer session in BOTH output blocks (the lane-log entry's `### … ·
-      <reviewer session> · review` line and the `Collab-Session: <reviewer session>` line). The verdict JSON (no
-      session) is unchanged; the other hard limits (read-only; never edit/commit/push/merge; no live calls) stay.
-- [ ] T3 `scripts/collab/queue.test.mjs`: add cases (red→green) — `sessionId('agent:vitana-lane-reviewer')` returns an
-      `agent-vitana-lane-reviewer-…` id and throws on `--seat`; `agentOf()` maps it back to
-      `agent:vitana-lane-reviewer`; the scope-check validator accepts a review entry whose `Collab-Session` is such an
-      id on a lane with `reviewer_seat: agent:vitana-lane-reviewer`, and rejects a non-agent id there. No existing
-      test weakened, skipped or loosened.
+      <reviewer session> · review` line and the `Collab-Session: <reviewer session>` line). **Expand the Hard limits
+      shell-command enumeration (`:48-49`) in the SAME edit (R1-F1)** to include that command, so "only these shell
+      commands" agrees with the new permission rule and the agent does not read its own instructions as forbidding
+      the command it is told to run. The verdict JSON (no session) is unchanged; the other hard limits (read-only;
+      never edit/commit/push/merge; no live calls) stay.
+- [ ] T3 `scripts/collab/queue.test.mjs`: add the genuinely new case(s), not duplicates of existing T7/T8 (R1-F2).
+      `VTID-05276 T8` (`:994`) already covers `sessionId('agent:vitana-lane-reviewer')` id shape + `agentOf()`;
+      `VTID-05276 T7` (`:976`) already covers scope-check accepting an agent review entry and rejecting it from a Kiro
+      seat. New: `sessionId('agent:vitana-lane-reviewer', date, '<seat>')` throws `a reviewer agent id names no seat`
+      (`queue.mjs:911`); optionally a case strengthening the non-agent-id rejection in scope-check. Each new case is
+      red on `origin/main` and green on the head. No existing test weakened, skipped or loosened.
 - [ ] T4 `docs/validation/<VTID>/`: `acceptance.md`, `commands.log`, `scope.json`, plus the LIVE reviewer-agent
       demonstration evidence — a fresh `vitana-lane-reviewer` generated its own id, reviewed a specified head, and
       returned a record whose `Collab-Session` passes `queue.mjs scope-check`; an unrelated command stayed denied.

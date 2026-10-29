@@ -53,7 +53,12 @@ Executor kiro, seat `exafy`, reviewer agent `vitana-lane-reviewer`, platform. Pa
 2. Updates the agent's instructions so it runs the command at the **start** of a review and uses the printed id as
    its reviewer session in **both** output blocks (the verdict JSON is not changed — it carries no session; the
    lane-log review entry's `### … · <reviewer session> · review` line and `Collab-Session: <reviewer session>`
-   line now carry the id the agent itself generated, instead of being left literal for the caller).
+   line now carry the id the agent itself generated, instead of being left literal for the caller). **The Hard
+   limits shell-command enumeration must move with it (sparring R1-F1):** the sentence at
+   `.kiro/agents/vitana-lane-reviewer.md:48-49` lists "only these shell commands: `git -C <repo>
+   diff|log|show|fetch origin|merge-base|rev-parse`, `gh pr view`, `gh pr checks`, `gh run view`." The lane adds the
+   session-id command to that enumeration in the same edit, so the instruction text and the permission rule agree and
+   the agent does not read "only these shell commands" as forbidding the command it is told to run.
 3. Adds `queue.test.mjs` cases and records the live reviewer-agent demonstration evidence under
    `docs/validation/<VTID>/`.
 
@@ -80,12 +85,18 @@ Executor kiro, seat `exafy`, reviewer agent `vitana-lane-reviewer`, platform. Pa
   nothing else.
 
 ## Tests
-`node --test scripts/collab/queue.test.mjs`. New cases assert the policy the permission relies on (not the Kiro engine,
-which is validated live): `sessionId('agent:vitana-lane-reviewer')` returns an `agent-vitana-lane-reviewer-…` id and
-refuses a `--seat`; `agentOf()` maps that id back to `agent:vitana-lane-reviewer`; the scope-check validator
-(`:710-713`) accepts a review entry whose `Collab-Session` is such an id on a lane with
-`reviewer_seat: agent:vitana-lane-reviewer`, and rejects a non-agent id there. Red→green is recorded in the lane's
-evidence. No existing test is weakened, skipped or loosened.
+`node --test scripts/collab/queue.test.mjs`. **Existing coverage (sparring R1-F2):** `VTID-05276 T8`
+(`queue.test.mjs:994`) already asserts `sessionId('agent:vitana-lane-reviewer')` returns an
+`agent-vitana-lane-reviewer-…` id, `agentOf()` maps it back, and `isReviewerAgent` recognises it; `VTID-05276 T7`
+(`:976`) already asserts the scope-check validator accepts an agent review entry and rejects the same entry from a
+Kiro seat. The lane does not duplicate those assertions. **The genuinely new case** this change adds asserts that
+`sessionId('agent:vitana-lane-reviewer', date, '<seat>')` throws `a reviewer agent id names no seat`
+(`queue.mjs:911`) — the one behaviour T7/T8 do not cover — plus, if needed, a case that `agentOf()` returns `''` for
+a non-agent id used as a review `Collab-Session` so scope-check rejects it (strengthening, not loosening, the
+non-agent-id path of T7). Each new case is red on `origin/main` for the reason the change proves and green on the
+head; red→green is recorded in the lane's evidence. No existing test is weakened, skipped or loosened. Note: which
+pattern the Kiro permission engine admits is validated live (the live reviewer-agent demonstration), not by a unit
+test.
 
 ## Measurement
 `docs/validation/<plan VTID>/timings.json` (schema `vitana.plan-timings/v1`), fields `null` where a source is
