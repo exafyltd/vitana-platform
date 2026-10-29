@@ -1,6 +1,6 @@
 {
   "vtid": "VTID-05407",
-  "kind": "tooling",
+  "kind": "docs",
   "paths": [
     ".kiro/agents/vitana-lane-reviewer.md",
     "scripts/collab/queue.test.mjs",
