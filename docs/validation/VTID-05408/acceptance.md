@@ -2,6 +2,44 @@
 
 Change types: Tooling/docs, Backend.
 
+## Acceptance criteria (AC- entries with test mappings)
+
+AC-1: `validateLane` recognises a `lane_admin: true` lane only when it is `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer` + declares a lane-file path; any other shape errors.
+TEST: scripts/collab/queue.test.mjs (T-A)
+
+AC-2: A trusted `lane_admin` lane (from merge-base) may reassign a TARGET lane's `seat` and narrow its `paths`.
+TEST: scripts/collab/queue.test.mjs (T-B)
+
+AC-3: The same PERM change from an ordinary (non-`lane_admin`) kiro lane is still refused.
+TEST: scripts/collab/queue.test.mjs (T-C)
+
+AC-4: A PR that self-grants `lane_admin: true` in its own head (trusted revision is not lane_admin) cannot perform the PERM change — `lane_admin` is pinned to trusted.
+TEST: scripts/collab/queue.test.mjs (T-D)
+
+AC-5: A `lane_admin` lane that changes a protected gate file is still refused by `scopeCheck`.
+TEST: scripts/collab/queue.test.mjs (T-E)
+
+AC-6: Seat ownership is preserved — an ordinary lane PR editing a foreign seat's lane is still refused.
+TEST: scripts/collab/queue.test.mjs (T-F)
+
+AC-7: The `validateRange` cross-lane-file exemption passes for a trusted admin lane (T-G) and an ordinary cross-lane-file edit is still refused (T-H).
+TEST: scripts/collab/queue.test.mjs (T-G, T-H)
+
+AC-8: A trusted `lane_admin` lane can never self-widen its own `paths`/`executor`/`seat`/`reviewer_seat`/`lane_admin`.
+TEST: scripts/collab/queue.test.mjs (T-I)
+
+AC-9: `lane_admin` is compared via `toBool` (string `'true'`), never boolean `=== true`; a string-`'true'` lane is recognised and reverting to strict equality fails.
+TEST: scripts/collab/queue.test.mjs (T-J)
+
+AC-10: `fetchPlanLane` is threaded into `validateRange` so `laneAdminCovers` resolves the plan-PR trusted source symmetrically with `scopeCheck`.
+TEST: scripts/collab/queue.test.mjs (T-K)
+
+AC-11: `governanceMergeAllowed` ALWAYS returns `{ok:false, reason:'protected_gate_file'}` for a protected gate file — the legacy-claude programmatic unlock is retired, not transferred; every other verdict unchanged.
+TEST: services/gateway/test/project-manager/governance.test.ts
+
+AC-12: All 53 pre-existing `queue.test.mjs` cases and the JSON↔builtin parity assertion stay green (no regression).
+TEST: scripts/collab/queue.test.mjs
+
 The single enforcement point (`scripts/collab/queue.mjs`), its tests, the JSON + compiled-in builtin, and the PM
 `governance.ts` mirror now carry the reviewed, auditable Kiro lane-administration mechanism and retire the legacy-claude
 protected-gate authority. Design: `.kiro/specs/kiro-lane-admin/design.md` §0–§5, §7; tasks E0–E6.
