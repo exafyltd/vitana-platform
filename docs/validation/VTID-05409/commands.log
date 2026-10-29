@@ -1,0 +1,22 @@
+# VTID-05409 (kiro-lane-admin/rules) — verification commands
+# Run from /projects/sandbox/vitana-platform on branch kiro/kiro-lane-admin/rules.
+# All read-only / CI checks; no migration, no live-system writes.
+
+# 1. Kiro steering guard (must stay green) -> outputs/kiro-steering-guard.txt
+node scripts/ci/kiro-steering/guard.cjs
+# => kiro-steering: OK   (rc=0)
+
+# 2. Collab handoff validator (must stay green) -> outputs/queue-validate.txt
+node scripts/collab/queue.mjs validate --base origin/main --head HEAD --branch kiro/kiro-lane-admin/rules --lane-repo exafyltd/vitana-v1
+# => ✅ collab handoff — 1 handoff/lane file(s) changed, all valid   (rc=0)
+
+# 3. No "legacy claude review" option remains in the changed rule files -> outputs/no-legacy-claude.txt
+grep -nEi 'legacy claude|a Claude review' .claude/rules/collaboration.md CLAUDE.md .kiro/pipeline/common-rules.md .kiro/steering/vitana-owner-autonomy.md
+# => no matches (grep rc=1)
+
+# 4. The §7a lane-administration sentence is present -> outputs/lane-admin-sentence.txt
+
+# 5. Platform & vitana-v1 CLAUDE.md protected-gate sentences are byte-identical -> outputs/claude-md-sha256.txt
+#    (normalized of soft-wrap; both sha256 = 6aa1041d27f8f5511155b5c13003dce8e20dbda303e0c60e45261afbca9928f5)
+python3 (extract 'A protected gate file (§3a … Claude Code is retired).' from each CLAUDE.md, collapse whitespace, sha256)
+# => BYTE-IDENTICAL: True
