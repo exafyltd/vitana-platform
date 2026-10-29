@@ -97,6 +97,19 @@ own (the lanes carry VTID-05205/5206/5208):
   forward; it is never closed to satisfy §7b.
 - This also serves the owner's request to verify the three merged lanes in staging against the approved spec: the
   reviewer verdict and the STAGING-VERIFY evidence are what close them.
+- **Claims (R1-F1).** `new-member-card-optin` (`claimed_by: kiro-exafyltd-202610161022-9aff`) and `team-welcome-backend`
+  (`claimed_by: kiro-202610150924-9ecd`) carry a stale `claimed_by` that `validate` (`queue.mjs:622`) rejects for a
+  `kiro-jtadic-…` commit. Origin holds no `collab-claim/new-member-welcome/*` ref (checked with `git ls-remote`), so
+  no live claim exists to break and no other seat's claim is touched. Each closing PR therefore starts with: `queue.mjs claim
+  new-member-welcome/<lane> --session kiro-jtadic-… ` (accepted only because no ref is held), then its first commit
+  sets `claimed_by` in the lane front matter to the jtadic session, which satisfies the check. Were a ref found held by a live
+  session, the closing PR would not proceed: it uses `release --stale` only after the 24 h rule of §5 (no new commit on the lane
+  branch) and logs it in the lane log. `grouped-welcome-notifications` has no `claimed_by` (released when parked).
+- **Who merges them (R1-F2).** These lanes declare no `paths`, so the Project Manager never merges them
+  (`decide.ts:179`). The plan driver (Kiro, seat jtadic) merges each closing PR by applying the §7b rule (§7b: the plan driver applies the same rule
+  while the PM is not `live`; driver.md step 6): reviewer-agent accept on the current head, every required check green, up to date
+  with `main`, no conflict. The lane log records `merge: <sha>` and `authority: §7b plan-driver rule`. No `paths`, `executor` or
+  `reviewer_seat` are added to these lanes (scope not widened); Lane scope only warns for them.
 Until the two dependency lanes are `done`, the feature PRs of `say-hello-composer` may be pushed, opened and reviewed but are not
 merged (§7b, `decide.ts:172`).
 

@@ -21,7 +21,7 @@ Plan: `.kiro/specs/say-hello-lane-reassign/plan.md` (plan block authoritative).
       pushed); `preflight.mjs`. PR body declarations: VALIDATION_PROFILE, SCOPE_ALLOWLIST, ACCEPTANCE,
       MERGE_PAYLOAD_PREVIEW, OASIS_IMPACT.
 - [ ] A6 Reviewer agent `vitana-lane-reviewer` reviews the PR head independently (never the builder); merge under §7b
-      after every check is green and the PR is up to date. Then run plan §4 (closing PRs) and hand to the feature PRs.
+      after every check is green and the PR is up to date. Then run plan §4 (closing PRs: claim lane, set claimed_by to own session in first commit; merged by the plan driver under §7b) and hand to the feature PRs.
 
 **Acceptance:**
 - Change types: Tooling/docs.
