@@ -13,7 +13,8 @@ paths:
   - .kiro/specs/new-member-welcome/lanes/say-hello-composer.md
   - .kiro/specs/new-member-welcome/lanes/new-member-card-optin.md
   - .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
-updated: 2026-10-29T17:30Z
+updated: 2026-10-29T17:41Z
+vtid: VTID-05410
 ---
 # Lane `reassign`: reassign say-hello-composer (VTID-05207) to seat jtadic through the reviewed lane_admin path
 Plan: `.kiro/specs/say-hello-lane-reassign/` — `plan.md` and the `tasks.md` section `<!-- lane: reassign -->` are
@@ -27,3 +28,6 @@ log line of a target is edited. Evidence under `docs/validation/<this VTID>/`.
 ## Log
 ### 2026-10-29T17:30Z · kiro-jtadic-202610291040-a0e6 · created → ready
 Lane drafted with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat `jtadic` claims it.
+
+### 2026-10-29T17:41Z · ci-plan-spar · ready (VTID allocated)
+VTID-05410 allocated after policy approval (converged-auto-v1).

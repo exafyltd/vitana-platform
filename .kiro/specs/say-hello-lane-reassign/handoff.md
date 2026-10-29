@@ -4,8 +4,10 @@ author: kiro
 author_seat: jtadic
 executor: kiro
 next_actor: kiro
-state: drafted
-updated: 2026-10-29T17:30Z
+state: approved
+updated: 2026-10-29T17:41Z
+sparring_record: .kiro/specs/say-hello-lane-reassign/sparring/verdict.md
+vtids: [VTID-05410]
 ---
 # Handoff — say-hello-lane-reassign
 
@@ -18,3 +20,6 @@ touched here. One lane: `reassign`.
 
 Next actor: Kiro (this session). CI PLAN-SPAR spars the `plan(` PR; on convergence CI allocates the VTID into the lane
 and `handoff.md`. No hand-allocated VTIDs. No protected gate file, no governance path, no code and no migration here.
+
+### 2026-10-29T17:41Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
