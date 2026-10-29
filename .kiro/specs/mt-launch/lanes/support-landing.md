@@ -14,7 +14,7 @@ paths:
   - services/gateway/src/routes/community-invites.ts
   - services/gateway/test/mt-launch-support-landing.test.ts
   - docs/validation/VTID-mt-launch-support-landing/**
-updated: 2026-10-29T04:56Z
+updated: 2026-10-29T05:00Z
 vtid: VTID-05325
 ---
 # support-landing — per-tenant support routing + landing SEO/OG (repo vitana-platform)
@@ -2963,4 +2963,6 @@ reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-29T04:52Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-29T04:56Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-29T05:00Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
