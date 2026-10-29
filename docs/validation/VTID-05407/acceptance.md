@@ -37,13 +37,13 @@ Pattern: `*scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewe
   argument (`--agent agent:vitana-lane-reviewer`). The single leading `*` absorbs only `node ` and the varying
   `<path>` prefix (the Kiro Web clone path vs. the IDE path), which is required because the checkout path is not
   fixed. There is **no trailing `*`**, so an appended `--seat …` or any extra argument does not match.
-- Candidates considered and rejected as too broad (see `permission-match.log`):
+- Candidates considered and rejected as too broad (see `outputs/permission-match.log`):
   - `node *` — admits ANY node command (including `queue.mjs claim/release/validate/scope-check`). Rejected.
   - `*queue.mjs *` — admits every `queue.mjs` subcommand. Rejected.
   - `*scripts/collab/queue.mjs session-id *` (trailing `*`) — would also admit `session-id --agent kiro --seat …`
     and `--agent agent:other`. Rejected: not pinned to the reviewer agent.
   The chosen pattern is the smallest that admits exactly the one command and denies all the above.
-- `permission-match.log` is the output of `permsim.mjs`, a faithful model of the Kiro shell-permission engine
+- `outputs/permission-match.log` is the output of `permsim.mjs`, a faithful model of the Kiro shell-permission engine
   (`*` = any chars incl. spaces, anchored full-string match; allow `match` + metachar `exclude`, deny `exclude`
   mirrors allow). All 19 admit/deny cases pass: the exact command (both this checkout and a different `<path>`) is
   ADMITTED; `queue.mjs claim/release/validate/scope-check`, `session-id --agent kiro --seat`, `session-id --agent
@@ -53,12 +53,47 @@ Pattern: `*scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewe
 - **The authoritative check is the live reviewer-agent dispatch.** `permsim.mjs` is a model of the engine, not the
   engine itself; see `live-demonstration.md` for the live dispatch status and exact instructions.
 
+## Acceptance criteria (AC- mapping)
+Each `AC-N` line maps to the real evidence this lane produced. (Tooling/docs change → `TEST:` mappings.)
+
+AC-1 — The reviewer agent is permitted exactly one new command (the session-id generator) and nothing else new.
+  TEST: the 19/19 admit/deny matrix in `outputs/permission-match.log` (the `permsim.mjs` engine model) ADMITS the
+  exact `scripts/collab/queue.mjs session-id --agent agent:vitana-lane-reviewer` command for any `<path>` prefix, and
+  DENIES `queue.mjs claim/release/validate/scope-check`, the `--seat` variants, `--agent kiro`, `--agent agent:other`,
+  `ls`/`cat`/`node -e`, and every metachar-chained variant (`;`, `&&`, `|`, `>`, `$()`).
+
+AC-2 — The reviewer stays read-only with respect to repository files.
+  TEST: the agent def still denies `fs_write`/`fs_append`/`str_replace`/`delete_file`/`web_fetch`/`web_search`/`mcp`
+  and never commits/pushes/merges/approves (enumerated in the "What changed" section above and in the agent-def diff);
+  command chaining stays blocked by the unchanged allow-rule metachar `exclude:` guard.
+
+AC-3 — The agent runs the session-id command at review start and uses the printed id in both output blocks, failing
+loud if it is denied or errors.
+  TEST: the "Your reviewer session id — generate it first" section of `.kiro/agents/vitana-lane-reviewer.md` (R2-F1
+  fail-loud clause → verdict `changes` + one blocking finding if denied/errored/no id; R1-F1 Hard-limits enumeration
+  now listing that one node command).
+
+AC-4 — `agentOf(sessionId('agent:vitana-lane-reviewer')) === 'agent:vitana-lane-reviewer'` and a reviewer id names no
+seat.
+  TEST: the new `node:test` case `VTID-05407: reviewer session-id round-trips to its agent and a reviewer id names no
+  seat` in `scripts/collab/queue.test.mjs` (red→green in `outputs/red-green.log`; full suite 54 pass / 0 fail).
+
+AC-5 — A review entry whose `Collab-Session` is a self-minted reviewer id is ACCEPTED by `queue.mjs scope-check`
+(`agentOf(Collab-Session) === reviewer_seat`), while the same entry from a Kiro seat is rejected.
+  TEST: the end-to-end node-level proof recorded in `live-demonstration.md` (`scope-check` exit 0 for the self-minted
+  reviewer id, exit 1 for the Kiro-seat id).
+
+AC-6 — `.kiro/agents/vitana-lane-reviewer.md` is a protected gate file; the merge authority is the owner instruction
+naming this plan, not a Claude review and not self-approval.
+  TEST: documented in the "Protected gate file" section below and in `plan-sparring.md`; CI Lane scope is the expected
+  §7b governance artifact, cleared at merge by the owner authority (not resolvable Kiro-side).
+
 ## Verification
 - `node --check scripts/collab/queue.mjs` → OK. See `commands.log`.
 - `node --test scripts/collab/queue.test.mjs` → 54 pass, 0 fail (53 pre-existing + the new VTID-05407 case). See
   `commands.log`.
-- Red→green of the new case: `red-green.log` (RED when the `names no seat` guard is absent; GREEN with it present).
-- Permission admit/deny matrix: `permission-match.log`.
+- Red→green of the new case: `outputs/red-green.log` (RED when the `names no seat` guard is absent; GREEN with it present).
+- Permission admit/deny matrix: `outputs/permission-match.log`.
 - Live reviewer-agent demonstration: `live-demonstration.md`.
 
 ## Preflight — two expected, non-defect failures (the rest PASS)
