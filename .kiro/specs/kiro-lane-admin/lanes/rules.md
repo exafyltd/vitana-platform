@@ -39,3 +39,24 @@ Lane drafted with the plan. Next: PLAN-SPAR; once `vtid:` is set, seat `jtadic` 
 
 ### 2026-10-29T11:49Z · ci-plan-spar · ready (VTID allocated)
 VTID-05409 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-29T11:55Z · kiro-jtadic-202610291040-a0e6 · build (front matter unchanged; left ready/path-free)
+Built the Claude-free rule-text changes on branch `kiro/kiro-lane-admin/rules` in both repos, matching the merged
+VTID-05408 enforcement (`fdd6436ca8`). Platform edits:
+- `.claude/rules/collaboration.md` — §3a and §7b protected-gate authority → "the owner's instruction naming the plan
+  plus a reviewer-agent accept on the current head (Claude Code is retired)"; §7a adds one sentence on the authorized
+  `lane_admin` / `reviewer_seat: agent:vitana-lane-reviewer` lane-administration path (reassign a TARGET lane's `seat`,
+  narrow its `paths`; preserves seat ownership, scope, independent review; never widens the admin lane's own `paths`;
+  trusted-source only, never self-granted in the PR head) — wording matched to the `queue.mjs` refusal strings and the
+  `validateLane` marker.
+- `CLAUDE.md` (platform) — protected-gate sentence → Claude-free wording.
+- `.kiro/pipeline/common-rules.md` rule 4 and `.kiro/steering/vitana-owner-autonomy.md` stop #3 — same reword.
+vitana-v1 edit (sibling PR on branch `kiro/kiro-lane-admin/rules`): `CLAUDE.md` protected-gate sentence, byte-identical
+to the platform sentence (normalized sha256 `6aa1041d27f8f5511155b5c13003dce8e20dbda303e0c60e45261afbca9928f5`,
+`docs/validation/VTID-05409/outputs/claude-md-sha256.txt`).
+`.kiro/steering/vitana-collaboration.md` left as a `#[[file:]]` link (no body edit). `scripts/ci/kiro-steering/guard.cjs`
+and `node scripts/collab/queue.mjs validate` both green (`outputs/`). Validation records under
+`docs/validation/VTID-05409/`. Front matter unchanged; lane kept `ready` and path-free so `validateLane` passes (the
+protected-gate paths are recorded in `docs/validation/VTID-05409/scope.json`, not the lane file). Merge under the
+owner-instruction authority in `plan.md`/`handoff.md` plus a reviewer-agent accept. The orchestrator pushes both
+branches, opens the PR(s), runs the reviewer agent and merges.
