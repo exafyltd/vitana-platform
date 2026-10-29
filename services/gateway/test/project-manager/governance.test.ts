@@ -176,10 +176,16 @@ describe('M1 protected gate files never merge on an agent accept alone', () => {
     expect(calls).toHaveLength(0);
   });
 
-  it('a legacy claude review on the current head unlocks a protected file', () => {
+  it('VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred)', () => {
     const l = lane({ reviewer_seat: 'claude', pr: pr({ files: ['CLAUDE.md'] }) });
     const r: ReviewEntry = { session_id: 'session_x', reviewer_seat: 'claude', verdict: 'approve', head_sha: HEAD, at: ISO(NOW) };
-    expect(governanceMergeAllowed(l, l.pr, r)).toEqual({ ok: true });
+    expect(governanceMergeAllowed(l, l.pr, r)).toEqual({ ok: false, reason: 'protected_gate_file' });
+    expect(mergeDecision(l, [l])).toBeNull();
+  });
+
+  it('VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)', () => {
+    const l = lane({ pr: pr({ files: ['scripts/collab/queue.mjs'] }) });
+    expect(governanceMergeAllowed(l, l.pr, null)).toEqual({ ok: false, reason: 'protected_gate_file' });
   });
 
   it('the compiled-in list is never empty', () => {

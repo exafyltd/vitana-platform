@@ -1,0 +1,32 @@
+# VTID-05408 enforcement — commands.log
+# base: origin/main @ f3f6822587f2eb3c5a859a3a196f28125b5827fa
+# node v22.23.4
+
+$ node --test scripts/collab/queue.test.mjs
+# tests 64
+# suites 0
+# pass 64
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+
+$ (cd services/gateway && npx jest test/project-manager/governance.test.ts)
+Test Suites: 1 passed, 1 total
+Tests:       43 passed, 43 total
+
+$ (cd services/gateway && npx jest test/project-manager/)  # all PM suites unaffected
+Test Suites: 10 passed, 10 total
+Tests:       199 passed, 199 total
+
+$ (cd services/gateway && npx tsc --noEmit)
+tsc --noEmit: clean (exit 0)
+
+# red-on-base (new T-A..T-K against origin/main queue.mjs): see red-on-base.log
+#   RED  : T-A T-B T-D T-G T-J T-K (new behaviour)
+#   GREEN: T-C T-E T-F T-H T-I (preservation controls — guardrails kept, green on base by design)
+
+# Evidence outputs (docs/validation/VTID-05408/outputs/):
+node --test scripts/collab/queue.test.mjs  -> outputs/queue.test.txt (64/64 pass)
+npx jest test/project-manager/governance.test.ts (cwd services/gateway) -> outputs/governance.test.txt
+red-on-base negative control -> outputs/red-on-base.log
