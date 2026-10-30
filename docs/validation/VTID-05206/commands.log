@@ -8,3 +8,4 @@ $ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --rep
 $ node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <pr body>   -> APPROVED (lane file not judged: outside the gate remit)
 $ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/close/new-member-welcome/new-member-card-optin-i1 --title ...   -> outputs/preflight.txt
 $ node scripts/collab/preflight.mjs ...   -> run before push (see PR body)
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/close/new-member-welcome/new-member-card-optin-done --title "VTID-05206 (new-member-welcome/new-member-card-optin): close lane record — verified → done"   -> outputs/done-preflight.txt
