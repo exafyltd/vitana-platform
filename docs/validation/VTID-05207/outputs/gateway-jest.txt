@@ -1,0 +1,376 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (blocked) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:240:71)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:156:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (muted) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:241:69)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:161:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (not_greetable_newcomer) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:245:60)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:166:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (not_greetable_newcomer) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:245:60)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:172:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (test_account) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:237:76)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:177:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (test_account) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:237:76)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:182:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (already_greeted) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:253:34)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:187:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (hourly_cap) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:253:34)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:205:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (allowlist_lookup_failed) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:236:30)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:211:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (lookup_error:user_blocked_authors: user_blocked_authors boom) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:257:12)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:216:15)
+
+  console.warn
+    [NewMemberGreetingGuard] refused (bad_receiver) sender=sender-1
+
+      222 |   const refuse = (reason: string): GreetingCheckResult => {
+      223 |     // The reason stays on the server; the caller only ever sees the generic code.
+    > 224 |     console.warn(`${LOG_PREFIX} refused (${reason}) sender=${input.senderId}`);
+          |             ^
+      225 |     return { ok: false, code: GREETING_REFUSED_CODE };
+      226 |   };
+      227 |   try {
+
+      at refuse (src/services/new-member-greeting-guard.ts:224:13)
+      at checkGreetingSend (src/services/new-member-greeting-guard.ts:232:68)
+      at Object.<anonymous> (test/vtid-05207-greeting-guard.test.ts:221:38)
+
+PASS test/vtid-05207-greeting-guard.test.ts
+  pure helpers
+    ✓ receiverIsGreetableNewcomer: opted-in and inside the 7-day window (15 ms)
+    ✓ receiverIsGreetableNewcomer: not opted in → false (1 ms)
+    ✓ receiverIsGreetableNewcomer: joined more than 7 days ago → false (1 ms)
+    ✓ receiverIsGreetableNewcomer: missing row → false (1 ms)
+    ✓ evaluateGreetingHistory: an earlier greeting to the pair → already_greeted (1 ms)
+    ✓ evaluateGreetingHistory: an ordinary (untagged) earlier DM to the pair does NOT block
+    ✓ evaluateGreetingHistory: at the hourly cap → hourly_cap (1 ms)
+    ✓ evaluateGreetingHistory: only greeting rows count toward the cap (1 ms)
+    ✓ greetingMaxPerSenderHour: env override, else default (1 ms)
+  checkGreetingSend — golden scenarios
+    ✓ allows a clean greeting to an opted-in newcomer (2 ms)
+    ✓ refuses when the receiver blocked the sender (31 ms)
+    ✓ refuses when the receiver muted the sender (5 ms)
+    ✓ refuses a non-opted-in receiver (2 ms)
+    ✓ refuses a receiver who joined more than 7 days ago (3 ms)
+    ✓ refuses when the SENDER is a test/service account (2 ms)
+    ✓ refuses when the RECEIVER is a test/service account (2 ms)
+    ✓ refuses a second greeting from the same sender to the same receiver (2 ms)
+    ✓ refuses when the sender is over the per-sender hourly cap (3 ms)
+    ✓ refuses (fail-closed) when the exclusion lookup errors (2 ms)
+    ✓ refuses (fail-closed) when a block/mute lookup errors (2 ms)
+    ✓ refuses greeting yourself (2 ms)
+
+  console.warn
+    [NewMemberGreeting] suggestion failed (router_failed) viewer=viewer-1
+
+      101 |     const result = await composeGreetingSuggestion({ firstName, senderLocale, avoid });
+      102 |     if (!result.ok) {
+    > 103 |       console.warn(`[NewMemberGreeting] suggestion failed (${result.error}) viewer=${identity.user_id}`);
+          |               ^
+      104 |       return res.status(503).json({ ok: false, error: 'suggestion_unavailable' });
+      105 |     }
+      106 |     return res.json({ ok: true, suggestion: result.suggestion, language: result.language });
+
+      at src/routes/new-member-greeting.ts:103:15
+
+PASS test/vtid-05207-greeting-suggestion-route.test.ts
+  POST /api/v1/community/new-member/:userId/greeting-suggestion
+    ✓ returns { suggestion, language } composed in the sender locale, honouring the avoid list (61 ms)
+    ✓ rejects an invalid user id without calling the composer (6 ms)
+    ✓ rejects greeting yourself (3 ms)
+    ✓ answers 503 when composition fails, and never sends a DM (7 ms)
+
+PASS test/vtid-05207-greeting-suggestion.test.ts
+  validateGreetingSuggestion
+    ✓ accepts a short warm greeting (7 ms)
+    ✓ rejects empty
+    ✓ rejects over-length
+    ✓ rejects a link (1 ms)
+    ✓ rejects markdown (1 ms)
+    ✓ rejects an @mention or #hashtag (1 ms)
+    ✓ rejects a greeting on the avoid list (case/punct-insensitive) (1 ms)
+    ✓ rejects wrong script for the locale
+    ✓ accepts correct script (1 ms)
+  buildGreetingSuggestionPrompt
+    ✓ names the newcomer and lists the avoid set
+    ✓ handles an unknown name
+  composeGreetingSuggestion
+    ✓ returns { suggestion, language } in the sender locale (1 ms)
+    ✓ passes the SENDER locale into the system prompt (du-form for de) (1 ms)
+    ✓ defaults language to en for an unsupported sender locale
+    ✓ fails when a non-Bedrock provider answers (defence in depth)
+    ✓ fails when the suggestion is unusable (contains a link) (1 ms)
+    ✓ rejects a suggestion that repeats one on the avoid list
+  allowViewerHit (per-viewer rate limit)
+    ✓ allows up to the cap then refuses within the window (4 ms)
+    ✓ refills after the window
+
+PASS test/vtid-05104-calendar-invite-guard.test.ts
+  limits and pure helpers
+    ✓ defaults 30 / 5 / 20 and is overridable by env; bad values fall back (6 ms)
+    ✓ evaluateInviteQuota windows: 24h and 7d (2 ms)
+    ✓ groupAllowsInvite and involvesExcludedAccount (1 ms)
+  checkInviteSend — direct invites
+    ✓ allows a related, in-tenant, unlimited invite (1 ms)
+    ✓ refuses a test/service account as sender and as receiver (both allowlists) (2 ms)
+    ✓ refuses a receiver in another tenant, an unknown receiver, a missing tenant, yourself and the Vitana bot (1 ms)
+    ✓ refuses with no relationship (1 ms)
+    ✓ relationship via dm is enough (1 ms)
+    ✓ relationship via dm_reverse is enough (1 ms)
+    ✓ relationship via group is enough
+    ✓ relationship via follow is enough (1 ms)
+    ✓ relationship via follow_reverse is enough
+    ✓ a prior invite alone is not a relationship (1 ms)
+    ✓ a group the sender is in without the receiver is not a relationship
+    ✓ the 31st invite in a day is refused, the 30th is allowed
+    ✓ the 6th invite to one person in a week is refused, the 5th is allowed (1 ms)
+    ✓ refusals are the same for every rule: one code, one shape, no reason in the result (1 ms)
+  checkInviteSend — group invites
+    ✓ allows a member of a group of 20, refuses 21, refuses a non-member (1 ms)
+    ✓ the group cap is env-adjustable and a group invite counts against the daily quota (1 ms)
+    ✓ refuses both a receiver and a group, or neither (1 ms)
+  checkInviteSend — fails closed
+    ✓ a service_bot_accounts lookup error refuses with the generic code
+    ✓ a notification_test_actors lookup error refuses with the generic code
+    ✓ a app_users lookup error refuses with the generic code (1 ms)
+    ✓ a user_follows lookup error refuses with the generic code
+    ✓ a chat_group_members lookup error refuses with the generic code (1 ms)
+    ✓ a chat_messages lookup error refuses (relationship (a) and quota) (1 ms)
+    ✓ a thrown error refuses
+    ✓ the quota read carries tenant_id, sender_id and a bounded created_at window
+  POST /chat/send with calendar_invite
+    ✓ allowed: inserts the server-built card and pushes a generic body (no title, time or place) (30 ms)
+    ✓ refused (a test account receiver): generic 403, nothing inserted, no push (4 ms)
+    ✓ refused (another tenant): generic 403, nothing inserted, no push (3 ms)
+    ✓ refused (no relationship): generic 403, nothing inserted, no push (3 ms)
+    ✓ refused over the daily limit with the very same body (2 ms)
+    ✓ non-invite messages do not go through the guard (3 ms)
+  POST /chat/groups/:id/send with calendar_invite
+    ✓ allowed in a group of 20: inserts the card, each member gets the generic push in their locale (6 ms)
+    ✓ refused in a group of 21: generic 403, nothing inserted, no push (3 ms)
+    ✓ refused for a test-account sender and over the daily limit (7 ms)
+    ✓ a non-member still gets not_a_member; text messages are unaffected and keep their push (4 ms)
+  voice tool send_calendar_invite_in_chat
+    ✓ stores a v2 card that the respond/GET path accepts, and pushes a generic body (14 ms)
+    ✓ the message text carries the card title, and the place only when shown (2 ms)
+    ✓ a confirmed send must carry the previewed card: no token, a dropped title or an added place sends nothing (2 ms)
+    ✓ a health appointment is sent only with sensitive_ack, never on a bare confirmation (1 ms)
+    ✓ refuses a past entry and inserts nothing (1 ms)
+    ✓ refuses a recurring entry and inserts nothing
+    ✓ refuses a cancelled entry and inserts nothing
+    ✓ refuses a recipient the guard refuses (no relationship / test account) with a generic message (2 ms)
+    ✓ the voice quota stays per user: the 6th send is rate limited, whatever the recipient (2 ms)
+    ✓ asks for confirmation without sending, and the unconfirmed stage inserts nothing (1 ms)
+  generic invite push text
+    ✓ exists in DE, EN, ES and SR with the name placeholder and no event detail (1 ms)
+
+PASS test/vtid-05207-greeting-guard-send-route.test.ts
+  POST /send — greeting guard wiring
+    ✓ refuses a tagged greeting DM with one generic 403 when the guard refuses — no insert, no notification (31 ms)
+    ✓ lets an allowed greeting flow on to the Lane-D push grouping (4 ms)
+    ✓ REGRESSION: an untagged ordinary DM never touches the guard and is unchanged (3 ms)
+    ✓ REGRESSION: a DM with a different source value is an ordinary DM (guard untouched) (2 ms)
+
+  console.warn
+    [Chat] Greeting DM notification skipped (excluded account or exclusion lookup failed)
+
+      388 |         } else {
+      389 |           skipNotify = true;
+    > 390 |           console.warn('[Chat] Greeting DM notification skipped (excluded account or exclusion lookup failed)');
+          |                   ^
+      391 |         }
+      392 |       // VTID-05137: plain chat messages are coalesced per conversation (one
+      393 |       // push per burst). Calendar invites and listing-interest pushes are
+
+      at src/routes/chat.ts:390:19
+
+PASS test/vtid-05208-greeting-send-route.test.ts
+  POST /send — new-member greeting DMs
+    ✓ a tagged text DM goes through the greeting grouping, not the conversation coalescer (34 ms)
+    ✓ an untagged DM is unchanged: per-conversation coalescing keyed dm:<sender> (4 ms)
+    ✓ a DM with another source value is an ordinary DM (3 ms)
+    ✓ a tagged DM whose prepare step returns null is sent (201) but writes no notification (13 ms)
+
+Test Suites: 6 passed, 6 total
+Tests:       101 passed, 101 total
+Snapshots:   0 total
+Time:        5.202 s
+Ran all test suites matching /test\/vtid-05207|test\/vtid-05208-greeting-send-route.test.ts|test\/vtid-05104/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
+exit 0

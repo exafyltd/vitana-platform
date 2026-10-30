@@ -463,6 +463,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   const communityMembersRouter = require('./routes/community-members').default;
   // VTID-02754: find-one-community-member voice search endpoint
   const communityFindMemberRouter = require('./routes/community-find-member').default;
+  // VTID-05207: "Say Hello 👋" greeting-suggestion endpoint (new-member welcome).
+  const newMemberGreetingRouter = require('./routes/new-member-greeting').default;
   // E2: profile partner_preferences + service_offerings PATCH endpoints
   const profilePrefsRouter = require('./routes/profile-prefs').default;
   // VTID-DANCE-D7: open-asks public feed (cold-start primer; flag-gated with intent engine)
@@ -1392,6 +1394,8 @@ if (process.env.K_SERVICE === 'vitana-dev-gateway') {
   // VTID-DANCE-D4: members directory, mounted under /api/v1 (route paths self-include 'community/members')
   mountRouterSync(app, '/api/v1', communityMembersRouter, { owner: 'community-members' });
   mountRouterSync(app, '/api/v1', communityFindMemberRouter, { owner: 'community-find-member' });
+  // VTID-05207: greeting-suggestion route self-includes 'community/new-member/...'.
+  mountRouterSync(app, '/api/v1', newMemberGreetingRouter, { owner: 'new-member-greeting' });
   mountRouterSync(app, '/api/v1', profilePrefsRouter, { owner: 'profile-prefs' });
   if (intentOpenAsksRouter) mountRouterSync(app, '/api/v1', intentOpenAsksRouter, { owner: 'intent-open-asks' });
   if (intentScanRouter) mountRouterSync(app, '/api/v1', intentScanRouter, { owner: 'intent-scan' });
