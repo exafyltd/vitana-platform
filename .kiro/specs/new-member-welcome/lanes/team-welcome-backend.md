@@ -1,13 +1,13 @@
 ---
 lane: team-welcome-backend
-state: executing
-next_actor: claude
+state: in-review
+next_actor: kiro
 vtid: VTID-05205
 depends_on: []
-claimed_by: kiro-202610150924-9ecd
+claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/new-member-welcome/team-welcome-backend
 pr: https://github.com/exafyltd/vitana-platform/pull/4133
-updated: 2026-10-15T14:35Z
+updated: 2026-10-30T15:50Z
 ---
 # Three team welcome DMs (gateway + migration)
 
@@ -56,3 +56,17 @@ Other decisions are listed in `docs/validation/VTID-05205/acceptance.md` → "De
 After merge (not mine): apply the migration (`RUN-MIGRATION.yml`), deploy, STAGING-VERIFY, then the go-live steps in the
 acceptance file (sender display names confirmed → set `WELCOME_SENDER_NAMES_CONFIRMED`, pilot allowlist, flags, EventBridge job).
 next_actor: claude (review + merge).
+
+### 2026-10-30T15:50Z · kiro-jtadic-202610291040-a0e6 · executing → in-review
+Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. The previous claimant
+(`kiro-202610150924-9ecd`, a Kiro session of 2026-10-15) has been inactive for over 24 h and no
+`collab-claim/new-member-welcome/team-welcome-backend` ref existed; this session claimed the lane (§5) and took over `claimed_by`.
+- code: exafyltd/vitana-platform#4133, merge `995e27a236731f95d6e1af6b266e3cc7aecaa765` (`docs/validation/VTID-05205/outputs/gh-merge-shas.txt`);
+- migration `20261015150000_vtid_05205_welcome_team_claims.sql` is present in the shared database (read-only check:
+  `welcome_team_claims` table and `claim_welcome_message` / `finish_welcome_message` exist);
+- sender mapping verified against the approved spec and the owner's 2026-10-30 confirmation: Mariia Maksina = @mariia04 =
+  `67c971fc-48f3-49ce-aaa8-cddb6fa9e63a` (vitana_id `mariia11` is the same account), Jovana Tadić = @jovana4, Alex BLUE = @dragan1
+  (`docs/validation/VTID-05205/outputs/sender-mapping.txt`);
+- nothing is sent from staging (`disabled-on-staging`); sending, timing, retries, send-once and reply routing are covered by
+  `test/vtid-05205-welcome-team.test.ts` (36 tests). Go-live (`WELCOME_TEAM_MODE=live` etc. in production) is a separate owner/release step and is NOT done.
+next_actor: kiro (independent review by vitana-lane-reviewer, then verified).
