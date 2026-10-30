@@ -20,3 +20,6 @@ the required/report-only labels preflight already prints. No VTID allocated, no 
 
 ### 2026-10-30T12:59Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-30T13:01Z · kiro-jtadic-202610291040-a0e6 · approved (driver)
+Plan converged (round 2, policy converged-auto-v1); CI allocated the lane VTID. The PLAN-SPAR bot-head push started no checks (plan-spar/needs-rebase), so this driver log commit re-triggers them. Next: merge the plan( PR, then build lane `guard-required-only` from the prepared patch.
