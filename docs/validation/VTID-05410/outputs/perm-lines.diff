@@ -1,0 +1,57 @@
+diff --git a/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md b/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+index a947922277..3b238bd49c 100644
+--- a/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
++++ b/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+@@ -3,7 +3,7 @@ lane: grouped-welcome-notifications
+ state: parked
+ next_actor: kiro
+ vtid: VTID-05208
+-seat: exafyltd
++seat: jtadic
+ area: messenger
+ depends_on: []
+ branch: kiro/new-member-welcome/grouped-welcome-notifications
+diff --git a/.kiro/specs/new-member-welcome/lanes/new-member-card-optin.md b/.kiro/specs/new-member-welcome/lanes/new-member-card-optin.md
+index 38d3a0bbf8..6fd9d5d6c5 100644
+--- a/.kiro/specs/new-member-welcome/lanes/new-member-card-optin.md
++++ b/.kiro/specs/new-member-welcome/lanes/new-member-card-optin.md
+@@ -3,7 +3,7 @@ lane: new-member-card-optin
+ state: executing
+ next_actor: claude
+ vtid: VTID-05206
+-seat: exafyltd
++seat: jtadic
+ area: frontend
+ depends_on: []
+ claimed_by: kiro-exafyltd-202610161022-9aff
+diff --git a/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md b/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+index a6a31ee022..9e8ba15ebb 100644
+--- a/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
++++ b/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+@@ -3,7 +3,25 @@ lane: say-hello-composer
+ state: ready
+ next_actor: kiro
+ vtid: VTID-05207
+-seat: exafyltd
++seat: jtadic
++executor: kiro
++reviewer_seat: agent:vitana-lane-reviewer
++paths:
++  - services/gateway/src/services/new-member-greeting-guard.ts
++  - services/gateway/src/services/new-member-greeting-suggestion.ts
++  - services/gateway/src/routes/new-member-greeting.ts
++  - services/gateway/src/routes/new-member-greeting-repository.ts
++  - services/gateway/src/routes/chat.ts
++  - services/gateway/src/index.ts
++  - services/gateway/test/vtid-05207-*.ts
++  - services/gateway/test/vtid-05208-greeting-send-route.test.ts
++  - docs/validation/VTID-05207/**
++  - src/components/home/NewMemberCard.tsx
++  - src/components/home/NewMemberCard.test.tsx
++  - src/components/home/NewMemberGreetingComposer.tsx
++  - src/components/home/NewMemberGreetingComposer.test.tsx
++  - src/i18n/de/newsCard.json
++  - src/i18n/en/newsCard.json
+ area: messenger
+ depends_on: [new-member-card-optin, grouped-welcome-notifications]
+ updated: 2026-10-15T13:00Z

@@ -3,7 +3,7 @@ lane: grouped-welcome-notifications
 state: parked
 next_actor: kiro
 vtid: VTID-05208
-seat: exafyltd
+seat: jtadic
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
