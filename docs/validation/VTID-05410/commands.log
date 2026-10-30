@@ -9,3 +9,4 @@ $ (platform, vitana-v1) git diff --name-only $(git merge-base origin/main kiro/n
 $ node cmp.mjs paths-name-only.txt   (imports matchesAny/parseFrontMatter from scripts/collab/queue.mjs; source embedded in outputs/paths-vs-diff.txt header)   -> outputs/paths-vs-diff.txt (0 unmatched files, 0 unused globs)
 $ bash negative-proofs.sh   (local scratch worktree off origin/main 4de4e62c28, never pushed, removed; full commands in outputs/negative-proofs.sh)   -> outputs/negative-proofs.txt, outputs/negative-proofs-summary.txt
 $ git worktree remove --force <scratch> && git branch -D scratch/neg-*   (cleanup)
+$ node scripts/collab/preflight.mjs ... --head HEAD (640807e6ff)   -> outputs/preflight-final.txt (all PASS, exit 0); re-run on the follow-up head, all PASS
