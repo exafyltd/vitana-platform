@@ -16,3 +16,9 @@ node -e JSON.parse(scope.json, staging-tests.json, all 11 locale files) -> ok
 fc.exe /b .kiro/specs/new-member-welcome/plan-sparring.md docs/validation/VTID-05208/plan-sparring.md -> no differences
 
 Not run: anything against staging or production (no gateway calls made; GATEWAY_SERVICE_TOKEN not needed).
+# --- closing record, parked -> in-review (2026-10-30, kiro-jtadic-202610291040-a0e6) ---
+$ node scripts/collab/queue.mjs claim new-member-welcome/grouped-welcome-notifications --session kiro-jtadic-202610291040-a0e6 --repo <vitana-platform>   -> {"ok":true,"sha":"e12fcc1adc59b25d44e0b50b1a378aa7e5b3178f"}
+$ gh api repos/exafyltd/vitana-platform/pulls/4153 --jq ...   -> outputs/closing-gh-merge-sha.txt
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo .   -> outputs/closing-validate.txt
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/close/new-member-welcome/grouped-welcome-notifications-i1   -> outputs/closing-scope-check.txt
+$ node scripts/collab/preflight.mjs ...   -> outputs/closing-preflight.txt

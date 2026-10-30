@@ -1,14 +1,15 @@
 ---
 lane: grouped-welcome-notifications
-state: parked
+state: in-review
 next_actor: kiro
 vtid: VTID-05208
 seat: jtadic
+claimed_by: kiro-jtadic-202610291040-a0e6
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-27T13:43Z
+updated: 2026-10-30T12:35Z
 parked_from: in-review
 ---
 # Grouped greeting-DM notifications
@@ -3441,3 +3442,11 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-27T13:43Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
+
+### 2026-10-30T12:35Z · kiro-jtadic-202610291040-a0e6 · parked → in-review
+Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. The lane was parked from
+`in-review` (`parked_from: in-review`), so `in-review` is its only legal return. Fact read with `gh`
+(`docs/validation/VTID-05208/outputs/closing-gh-merge-sha.txt`): the code merged as exafyltd/vitana-platform#4153, merge
+`0d35512b7ab4504fb90542bd452f901240de4ce9` (2026-10-20). No migration. The merged lane now goes to independent review by the
+reviewer agent `vitana-lane-reviewer` on the merged code. No review verdict is written by the builder.
+next_actor: kiro (reviewer agent, then `verified`, then `done`).
