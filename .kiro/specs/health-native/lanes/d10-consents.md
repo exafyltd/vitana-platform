@@ -19,7 +19,7 @@ paths:
   - "docs/SCREEN_INVENTORY.md"
   - "docs/validation/**"
   - "tests/**"
-updated: 2026-10-30T15:47Z
+updated: 2026-10-30T15:51Z
 ---
 # D10 WP1+WP2 (+C3 copy) — per-category health consent
 
@@ -4008,4 +4008,6 @@ reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-30T15:43Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
 ### 2026-10-30T15:47Z · pm-agent · update
+reassign review claude→exafyltd (stale_review, Claude unavailable)
+### 2026-10-30T15:51Z · pm-agent · update
 reassign review claude→exafyltd (stale_review, Claude unavailable)
