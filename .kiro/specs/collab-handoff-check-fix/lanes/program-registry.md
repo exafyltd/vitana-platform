@@ -15,7 +15,7 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-30T15:27Z
+updated: 2026-10-30T15:31Z
 vtid: VTID-05364
 ---
 # program-registry — list the unregistered specs in their programmes
@@ -1084,4 +1084,6 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-30T15:23Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-30T15:27Z · pm-agent · update
+reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-30T15:31Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
