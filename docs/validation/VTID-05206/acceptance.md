@@ -6,7 +6,7 @@ This PR only records, in the lane file, that the lane's code already merged (exa
 migration was applied by owner instruction. It deploys nothing in vitana-platform, so staging-tests.json holds only the
 read-only `/alive` check. The feature itself is proven by the vitana-v1 PRs and their staging spec.
 
-VALIDATION_PROFILE: docs_only
+VALIDATION_PROFILE: gateway_backend (the only profile besides command_hub_frontend; no gateway code changes in this PR)
 
 AC-1: The lane moves `executing` -> `in-review` through a legal edge, with `claimed_by` set to the committing session and
 `next_actor: kiro`; `seat`, `paths`, `executor`, `reviewer_seat`, `depends_on` and `vtid` are unchanged.
