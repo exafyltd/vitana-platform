@@ -1,0 +1,29 @@
+{
+  "vtid": "VTID-05207",
+  "service": "gateway",
+  "note": "READ-ONLY staging checks for the Say Hello greeting feature (gateway side). The suggestion route is only probed unauthenticated; no greeting is generated or sent on staging. The Send path and guard are proven by the jest suites below.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway answers on the deployed build",
+      "path": "/alive",
+      "expect_status": 200
+    },
+    {
+      "kind": "http",
+      "name": "greeting-suggestion route is mounted and requires auth (JSON, not an SPA HTML fallback)",
+      "method": "POST",
+      "path": "/api/v1/community/new-member/00000000-0000-4000-8000-000000000001/greeting-suggestion",
+      "rejected_probe": true,
+      "expect_status": 401,
+      "expect_json": true,
+      "reason": "A mounted API route rejects the unauthenticated caller with a JSON 401; an HTML body (200 text/html) would mean the route is missing and the SPA index was served instead. The probe sends no credentials and only READS the route's auth behaviour \u2014 it never generates or sends a greeting."
+    },
+    {
+      "kind": "existing",
+      "ref": "npx jest test/vtid-05207 test/vtid-05208-greeting-send-route.test.ts",
+      "cwd": "services/gateway",
+      "reason": "Write-path proof of the greeting guard (403 refusals, fail-closed, untagged DM unchanged) and the suggestion route (suggest-only, 503 on failure) over an in-memory DB; nothing is written to a live system."
+    }
+  ]
+}

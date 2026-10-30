@@ -61,6 +61,14 @@ jest.mock('../src/services/new-member-greeting-push', () => {
   return { ...actual, prepareNewMemberGreetingPush: jest.fn() };
 });
 
+// VTID-05207: a greeting DM now passes through checkGreetingSend before the
+// push path. This Lane-D suite covers the push grouping, so the guard is
+// mocked as allowing — its own logic is covered by vtid-05207-greeting-guard*.
+jest.mock('../src/services/new-member-greeting-guard', () => {
+  const actual = jest.requireActual('../src/services/new-member-greeting-guard');
+  return { ...actual, checkGreetingSend: jest.fn().mockResolvedValue({ ok: true }) };
+});
+
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const chatRouter = require('../src/routes/chat').default;
 // eslint-disable-next-line @typescript-eslint/no-var-requires

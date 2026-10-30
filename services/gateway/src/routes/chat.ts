@@ -31,6 +31,7 @@ import { processConversationTurn } from '../services/conversation-client';
 import { extractDmActions } from '../services/chat/dm-tool-actions';
 import { tt } from '../i18n/catalog';
 import { checkInviteSend, inviteRefusedBody, INVITE_REFUSED_STATUS } from '../services/calendar-invite-guard';
+import { checkGreetingSend, greetingRefusedBody, GREETING_REFUSED_STATUS, NEW_MEMBER_GREETING_SOURCE } from '../services/new-member-greeting-guard';
 import { getUserLocale } from '../i18n/server-locale';
 import * as repo from './chat-repository';
 import chatSearchRouter from './chat-search';
@@ -186,6 +187,20 @@ router.post('/send', requireAuth, requireTenant, async (req: Request, res: Respo
     const shared = await checkSharedContentSend(req, content_data, trimmedContent);
     if (!shared.ok) return res.status(shared.status).json({ ok: false, error: shared.error });
     metadata = { ...shared.metadata };
+  }
+  // VTID-05207: a DM tagged metadata.source='new_member_greeting' is a "Say
+  // Hello 👋" greeting to a newcomer. It runs a fail-closed guard (block/mute,
+  // opt-in + 7-day card window, test/service accounts, one-per-pair, hourly
+  // cap) BEFORE the insert and the Lane-D push grouping. The tag only ADDS
+  // these restrictions — an untagged DM takes exactly the path it does today.
+  if (metadata.source === NEW_MEMBER_GREETING_SOURCE) {
+    const allowed = await checkGreetingSend({
+      sb: getSupabase(),
+      senderId: identity.user_id,
+      receiverId: receiver_id,
+      tenantId: identity.tenant_id,
+    });
+    if (!allowed.ok) return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
   }
   const attachments = Array.isArray((metadata as any).attachments) ? (metadata as any).attachments : [];
 
