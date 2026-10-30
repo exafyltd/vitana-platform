@@ -1,6 +1,6 @@
 ---
 lane: grouped-welcome-notifications
-state: in-review
+state: verified
 next_actor: kiro
 vtid: VTID-05208
 seat: jtadic
@@ -9,7 +9,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-30T12:29Z
+updated: 2026-10-30T13:48Z
 parked_from: in-review
 ---
 # Grouped greeting-DM notifications
@@ -3460,3 +3460,30 @@ Lane record (this PR): accept — only state parked → in-review, claimed_by, u
 Merged lane code (merge 0d35512b7ab4504fb90542bd452f901240de4ce9) against plan block S4 / tasks D1–D2: accept. Tagged text DMs get a recipient-keyed 24 h rule: first greeting pushes, later ones write the in-app row with suppressPush='coalesced'; summary "{n} people said hello 👋" via tt() in 11 locales; window not reset by reading; one sender counts once; read errors and NEW_MEMBER_GREETING_PUSH_GROUPING_ENABLED=false fall back to per-conversation coalescing; test/service accounts fail closed; ordinary DMs unchanged; tests cover 5 senders → 5 rows / 1 push, DE/EN summaries, 23 h / 25 h boundary, fail-open, off switch, 11-locale keys.
 Findings: non-blocking — no lock between read and write, so simultaneous greetings can occasionally push more than once. Non-blocking — reviewer shell denied; diff verified from captured output; required checks must be green on this head.
 Next: merge under §7b when every required check is green; the next hop (in-review → verified) cites this accept of the merged code.
+
+### 2026-10-30T13:48Z · kiro-jtadic-202610291040-a0e6 · in-review → verified
+Reviewer-agent accept recorded on main: the lane log carries the `Collab-Verdict: accept` review entry from agent:vitana-lane-reviewer (claude-sonnet-5.5) on head cdeef220b6ce5d16085e41c904eae04bfe070172, covering the in-review record (exafyltd/vitana-platform#4508) and the merged code (exafyltd/vitana-platform 0d35512b7a, #4153). No open blocking findings; the non-blocking findings in that entry are unchanged. Lane record only: state in-review → verified, `updated`, one appended log entry; `next_actor: kiro` kept.
+
+### 2026-10-30T13:55Z · agent-vitana-lane-reviewer-202610301355-2b10 · review
+review: accept
+head: 992fa057f59d1ea01f83ba65d893a5bf8c4307b2
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4511
+Findings: non-blocking — AC-2 in verified-acceptance.md names branch .../deps-verified instead of .../grouped-verified. Non-blocking — commands.log preflight line is a placeholder with no output file. Non-blocking — stale parked_from: in-review in front matter, unchanged. Non-blocking — PR check status not readable by the reviewer; required checks must be green on this head.
+Next: the land step merges under §7b when every required check is green and the PR is up to date; then the lane moves verified → done.
+
+### 2026-10-30T16:22Z · agent-vitana-lane-reviewer-202610301622-e5b7 · review
+review: accept
+head: a297ebd73016976c11e65a10d63ff22b51d51f39
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4511
+Findings: non-blocking — AC-2 in verified-acceptance.md names branch .../deps-verified instead of .../grouped-verified (carried over); commands.log preflight line is a placeholder with no output file (carried over); stale parked_from: in-review in front matter, unchanged; CI not readable by the reviewer, the land step confirmed 11/11 green. Head a297ebd730 is a merge of main a206af8ab9 into the previously accepted 7883c6d518; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
+Next: the land step merges under §7b; then the lane moves verified → done.
+
+### 2026-10-30T16:48Z · agent-vitana-lane-reviewer-202610301648-1b29 · review
+review: accept
+head: 2b16082bb68eb579691989c03f68beb0e7e6eeab
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4511
+Findings: non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 2b16082bb6 is a merge of main 85d95454d2 (with the merged sibling record #4510) into the previously accepted 33d390dfd6; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
+Next: the land step merges under §7b
