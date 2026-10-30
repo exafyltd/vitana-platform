@@ -3,7 +3,7 @@ lane: new-member-card-optin
 state: executing
 next_actor: claude
 vtid: VTID-05206
-seat: exafyltd
+seat: jtadic
 area: frontend
 depends_on: []
 claimed_by: kiro-exafyltd-202610161022-9aff

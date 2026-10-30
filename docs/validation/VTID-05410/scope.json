@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05410",
+  "slug": "say-hello-lane-reassign",
+  "lane": "reassign",
+  "kind": "infra",
+  "sparring_record": "docs/validation/VTID-05410/plan-sparring.md",
+  "summary": "Reassign lane say-hello-composer (VTID-05207) to seat jtadic through the reviewed lane_admin path: PERM front-matter lines only (seat, executor, reviewer_seat, paths) on say-hello-composer, seat only on new-member-card-optin and grouped-welcome-notifications.",
+  "paths": [
+    ".kiro/specs/new-member-welcome/lanes/say-hello-composer.md",
+    ".kiro/specs/new-member-welcome/lanes/new-member-card-optin.md",
+    ".kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md",
+    "docs/validation/VTID-05410/**"
+  ]
+}
