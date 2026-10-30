@@ -1,15 +1,15 @@
 ---
 lane: new-member-card-optin
-state: executing
-next_actor: claude
+state: in-review
+next_actor: kiro
 vtid: VTID-05206
 seat: jtadic
 area: frontend
 depends_on: []
-claimed_by: kiro-exafyltd-202610161022-9aff
+claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/new-member-welcome/new-member-card-optin
 pr: https://github.com/exafyltd/vitana-v1/pull/1441
-updated: 2026-10-16T11:40Z
+updated: 2026-10-30T12:30Z
 ---
 # New-member card opt-in + feed source
 
@@ -57,3 +57,17 @@ Nothing is sent or posted; the migration only adds a column and is applied after
 No local screenshot (the sandbox cannot sign in); the staging spec writes the phone screenshots during STAGING-VERIFY.
 `say-hello-composer` (VTID-05207) depends on this lane: its gateway guard reads this column.
 next_actor: claude (review + merge; then the migration workflow, deploy, STAGING-VERIFY).
+
+### 2026-10-30T12:30Z · kiro-jtadic-202610291040-a0e6 · executing → in-review
+Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. Facts read with `gh`
+(`docs/validation/VTID-05206/outputs/gh-merge-shas.txt`):
+- code: exafyltd/vitana-v1#1441, merge `b73e6d298f5995c1c6ac67ab7e3245260835010f` (2026-10-16);
+- staging spec fix: exafyltd/vitana-v1#1444, merge `704b5def4cfa0296776d21507b8d19bc5a47c31b` (2026-10-16).
+migration: https://github.com/exafyltd/vitana-v1/actions/runs/41051243641 supabase/migrations/20261016110000_vtid_05206_community_intro_opt_in.sql target:supabase authority: owner instruction 2026-10-30
+The owner approved it in the conversation ("approve migration 20261016110000_vtid_05206 on Supabase", 2026-10-30); the
+`Apply VTID-05206 community_intro_opt_in migration` run finished `success`, step output `Apply OK, status 201`
+(`outputs/migration-run-excerpt.txt`). Read-only post-check (result reported to this session by the orchestrator, not re-run here): column `community_intro_opt_in` is boolean NOT NULL default true,
+REPLICA IDENTITY FULL, the table is in `supabase_realtime`, the owner policy is present, and 0 of 251 rows are opted in
+(existing members are false by design; only new signups default to true).
+The merged lane now goes to independent review by the reviewer agent `vitana-lane-reviewer` on the merged code. No review
+verdict is written by the builder. next_actor: kiro (reviewer agent, then `verified`, then `done`).
