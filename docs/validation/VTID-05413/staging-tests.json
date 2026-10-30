@@ -1,0 +1,9 @@
+{
+  "vtid": "VTID-05413",
+  "service": "gateway",
+  "note": "Developer tooling (scripts/collab) only; nothing deploys and nothing is served to a user. Proven in CI by the Collab tests (node --test scripts/collab/*.test.mjs). The only staging check is read-only: the gateway is alive (unchanged by this lane).",
+  "read_only": true,
+  "tests": [
+    { "kind": "http", "name": "gateway is alive (unchanged by this lane)", "path": "/alive", "expect_status": 200 }
+  ]
+}

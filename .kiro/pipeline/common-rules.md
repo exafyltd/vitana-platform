@@ -21,8 +21,8 @@
    the PR's current head, every required check green on that head incl. Lane scope and Collab handoff, PR up to date
    with latest `main` and re-checked on that head, no conflict, every `depends_on` lane done, target `main` with a
    staging-only deploy path. A change to a protected gate file (`scripts/collab/protected-gate-files.json`) never
-   merges on the agent's accept alone: it needs a `claude` review on the current head or an owner instruction that
-   names the plan; log each such file in `decisions.md`. `gh pr merge --admin` only when the one red check is a
+   merges on the agent's accept alone: it needs the owner's instruction naming the plan plus a reviewer-agent accept
+   on the current head (Claude Code is retired); log each such file in `decisions.md`. `gh pr merge --admin` only when the one red check is a
    governance-artifact false positive for this change (Lane scope failing solely on the executor / governance-path /
    reviewer rule, or because the spec is not on `main` yet), with the run log linked in `merges.md`. A real red test,
    build, typecheck or STAGING-VERIFY is never overridden. Record every merge (lane log + `merges.md`: authority,

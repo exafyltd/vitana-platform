@@ -1,14 +1,15 @@
 ---
 lane: grouped-welcome-notifications
-state: parked
+state: in-review
 next_actor: kiro
 vtid: VTID-05208
-seat: exafyltd
+seat: jtadic
+claimed_by: kiro-jtadic-202610291040-a0e6
 area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-27T13:43Z
+updated: 2026-10-30T12:29Z
 parked_from: in-review
 ---
 # Grouped greeting-DM notifications
@@ -3441,3 +3442,21 @@ reassign review →exafyltd (stale_review, Claude unavailable)
 reassign review →exafyltd (stale_review, Claude unavailable)
 ### 2026-10-27T13:43Z · pm-agent · update
 reassign review →exafyltd (stale_review, Claude unavailable)
+
+### 2026-10-30T12:29Z · kiro-jtadic-202610291040-a0e6 · parked → in-review
+Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. The lane was parked from
+`in-review` (`parked_from: in-review`), so `in-review` is its only legal return. Fact read with `gh`
+(`docs/validation/VTID-05208/outputs/closing-gh-merge-sha.txt`): the code merged as exafyltd/vitana-platform#4153, merge
+`0d35512b7ab4504fb90542bd452f901240de4ce9` (2026-10-20). No migration. The merged lane now goes to independent review by the
+reviewer agent `vitana-lane-reviewer` on the merged code. No review verdict is written by the builder.
+next_actor: kiro (reviewer agent, then `verified`, then `done`).
+
+### 2026-10-30T12:49Z · agent-vitana-lane-reviewer-202610301249-92a8 · review
+review: accept
+head: cdeef220b6ce5d16085e41c904eae04bfe070172
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4508
+Lane record (this PR): accept — only state parked → in-review, claimed_by, updated and one appended log entry change (seat, depends_on, vtid, branch unchanged; seat history from lane_admin #4501); additions only under docs/validation/VTID-05208/**, originals untouched, commands.log append-only; merge 0d35512b7a for #4153 confirmed. (First review on 109779094a returned changes only because the reviewer could not diff; the diff was then committed as outputs/closing-pr-diff.txt.)
+Merged lane code (merge 0d35512b7ab4504fb90542bd452f901240de4ce9) against plan block S4 / tasks D1–D2: accept. Tagged text DMs get a recipient-keyed 24 h rule: first greeting pushes, later ones write the in-app row with suppressPush='coalesced'; summary "{n} people said hello 👋" via tt() in 11 locales; window not reset by reading; one sender counts once; read errors and NEW_MEMBER_GREETING_PUSH_GROUPING_ENABLED=false fall back to per-conversation coalescing; test/service accounts fail closed; ordinary DMs unchanged; tests cover 5 senders → 5 rows / 1 push, DE/EN summaries, 23 h / 25 h boundary, fail-open, off switch, 11-locale keys.
+Findings: non-blocking — no lock between read and write, so simultaneous greetings can occasionally push more than once. Non-blocking — reviewer shell denied; diff verified from captured output; required checks must be green on this head.
+Next: merge under §7b when every required check is green; the next hop (in-review → verified) cites this accept of the merged code.

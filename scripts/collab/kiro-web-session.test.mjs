@@ -468,3 +468,29 @@ test('guard preflights every kiro/** and claude/** branch, not only kiro/<slug>/
     assert.equal(run.calls.filter((c) => c.cmd === process.execPath).length, 0);
   } finally { f.done(); }
 });
+
+test('guard asks preflight for required-only status: a report-only failure is printed, not blocking, and not cached', () => {
+  const f = fixture();
+  try {
+    const out = 'FAIL  Collab handoff [report-only in CI (vitana-v1 Collab handoff step)]\n  1465834a: a lane PR needs Collab-Session and Collab-Lane trailers on every commit\nPASS  Lane scope [required]';
+    const run = fakeRun({ preflight: { status: 0, output: out } });
+    const r = guard(hookInput('git -C /w/vitana-platform push origin kiro/s/l'), { run, cacheDir: f.cache, platformRoot: f.platform, exists: () => true });
+    assert.equal(r.code, 0);
+    assert.match(r.stdout, /report-only in CI and failed/);
+    assert.match(r.stdout, /needs Collab-Session/);
+    assert.ok(run.calls.find((x) => x.cmd === process.execPath).args.includes('--required-only'));
+    const again = fakeRun({ preflight: { status: 0, output: out } });
+    guard(hookInput('git -C /w/vitana-platform push origin kiro/s/l'), { run: again, cacheDir: f.cache, platformRoot: f.platform, exists: () => true });
+    assert.equal(again.calls.filter((x) => x.cmd === process.execPath).length, 1, 'not cached, so printed again');
+  } finally { f.done(); }
+});
+
+test('guard still blocks when preflight exits non-zero (a required failure under --required-only)', () => {
+  const f = fixture();
+  try {
+    const run = fakeRun({ preflight: { status: 1, output: 'FAIL  Lane scope [required]\n  out of scope\nFAIL  PR-GATE scope [report-only in CI]' } });
+    const r = guard(hookInput('git -C /w/vitana-platform push origin kiro/s/l'), { run, cacheDir: f.cache, platformRoot: f.platform, exists: () => true });
+    assert.equal(r.code, 2);
+    assert.match(r.stderr, /Lane scope/);
+  } finally { f.done(); }
+});

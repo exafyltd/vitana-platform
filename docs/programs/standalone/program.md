@@ -28,6 +28,7 @@ specs:
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:guard-required-only-preflight
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test
@@ -51,6 +52,8 @@ specs:
   - vitana-platform:collab-handoff-check-fix
   - vitana-platform:remove-b12-claude-sparring-gate1
   - vitana-platform:reviewer-session-id-permission
+  - vitana-platform:kiro-lane-admin
+  - vitana-platform:say-hello-lane-reassign
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md

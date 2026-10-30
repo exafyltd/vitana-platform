@@ -1197,3 +1197,199 @@ test('VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test
   assert.match(lane, /node "\$RUNNER_TEMP\/queue\.mjs" scope-check/);
   assert.doesNotMatch(lane, /node scripts\/collab\/queue\.mjs scope-check/);
 });
+
+// ── VTID-05408 (kiro-lane-admin): reviewed, auditable Kiro lane administration. T-A..T-K (design §7). ──
+// An admin lane: executor: kiro, reviewer_seat: agent:vitana-lane-reviewer, lane_admin: true, whose paths cover the
+// TARGET lane file(s) it administers. Only such a lane (from a trusted source) may reassign a target lane's seat /
+// narrow its paths; the admin lane can never self-widen; protected gate files and seat ownership stay as before.
+const ADMIN_PATHS = ['.kiro/specs/feat/lanes/*.md'];
+const ADMIN_LANE_FM = { executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ADMIN_PATHS };
+
+/**
+ * A spec `admin` holding a lane-admin lane `admin-01` (paths cover `.kiro/specs/feat/lanes/*.md`) and a target spec
+ * `feat` with an ordinary lane `target-01` owned by seat `other`. Returns the base sha on `main` and checks out a
+ * branch for the admin PR. `o.adminFm` overrides the admin lane front matter.
+ */
+function adminFixture(f, o = {}) {
+  write(f.work, '.kiro/specs/admin/handoff.md', planMd({ slug: 'admin', state: 'executing', sparring_record: 'x.md', vtids: ['VTID-05408'], executor: 'kiro', next_actor: 'kiro' }));
+  write(f.work, '.kiro/specs/admin/lanes/admin-01.md', laneMd('admin-01', { next_actor: 'kiro', vtid: 'VTID-05408', ...ADMIN_LANE_FM, ...o.adminFm }));
+  write(f.work, '.kiro/specs/feat/handoff.md', planMd({ slug: 'feat', state: 'executing', sparring_record: 'x.md', vtids: ['VTID-05409'], executor: 'kiro', next_actor: 'kiro' }));
+  write(f.work, '.kiro/specs/feat/lanes/target-01.md', laneMd('target-01', { next_actor: 'kiro', vtid: 'VTID-05409', executor: 'kiro', seat: 'other', reviewer_seat: 'jtadic', paths: ['src/wide/**'] }));
+  const base = commit(f.work, 'seed admin + feat', { 'Collab-Session': S2, 'Collab-Lane': 'admin/_plan' });
+  sh(f.work, 'push', '-q', 'origin', 'main');
+  sh(f.work, 'checkout', '-q', '-b', 'kiro/admin/admin-01');
+  return base;
+}
+// the reassigned target lane file: narrower paths, reassigned to seat jtadic — the audited outcome
+const targetReassigned = () => laneMd('target-01', { next_actor: 'kiro', vtid: 'VTID-05409', executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['src/narrow/**'] });
+
+test('VTID-05408 T-A: validateLane recognises the lane_admin marker and requires kiro + the reviewer agent + a lane-file path', () => {
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  // a well-formed lane-admin lane passes
+  assert.deepEqual(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ['.kiro/specs/feat/lanes/target-01.md'] }), []);
+  assert.deepEqual(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ['.kiro/specs/*/lanes/*.md'] }), []);
+  // without the reviewer agent / without kiro / without a lane-file path → a clear error
+  const needsAgent = v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', lane_admin: 'true', paths: ['.kiro/specs/feat/lanes/target-01.md'] });
+  assert.ok(needsAgent.some((e) => e.includes('lane_admin: true needs')), needsAgent.join('\n'));
+  const needsKiro = v({ executor: 'claude', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ['.kiro/specs/feat/lanes/target-01.md'] });
+  assert.ok(needsKiro.some((e) => e.includes('lane_admin: true needs')), needsKiro.join('\n'));
+  const needsLaneFile = v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ['src/**'] });
+  assert.ok(needsLaneFile.some((e) => e.includes('lane_admin: true needs')), needsLaneFile.join('\n'));
+  // a non-lane_admin lane is unchanged
+  assert.deepEqual(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['src/**'] }), []);
+});
+
+test('VTID-05408 T-B: a trusted lane_admin lane reassigns a TARGET lane seat + narrows its paths → Collab handoff and Lane scope pass', () => {
+  const f = fixture();
+  try {
+    const base = adminFixture(f);
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', targetReassigned());
+    const head = commit(f.work, 'reassign target-01 to jtadic, narrow paths', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors, []);
+    assert.deepEqual(scopeCheck(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-C: the same cross-lane-file reassignment from an ordinary (non lane_admin) lane is refused', () => {
+  const f = fixture();
+  try {
+    const base = adminFixture(f, { adminFm: { lane_admin: undefined } }); // ordinary kiro lane (no lane_admin)
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', targetReassigned());
+    const head = commit(f.work, 'ordinary lane edits a foreign lane file', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    const e = validateRange(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors;
+    assert.ok(e.some((x) => x.includes('target-01.md but its Collab-Lane')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-D: a PR that self-grants lane_admin: true in its own head does not unlock the exemption (lane_admin pinned to trusted)', () => {
+  const f = fixture();
+  try {
+    // trusted admin-01 is an ORDINARY lane (no lane_admin); the PR head rewrites it to lane_admin: true and uses that
+    // to reassign the foreign target lane file
+    const base = adminFixture(f, { adminFm: { lane_admin: undefined, reviewer_seat: AG } });
+    write(f.work, '.kiro/specs/admin/lanes/admin-01.md', laneMd('admin-01', { next_actor: 'kiro', vtid: 'VTID-05408', ...ADMIN_LANE_FM, state: 'executing', claimed_by: JT }));
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', targetReassigned());
+    const head = commit(f.work, 'self-grant lane_admin + reassign', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    // the shared predicate reads the TRUSTED admin-01 (not lane_admin) → the head self-grant does not qualify it
+    assert.equal(Q.laneAdminCovers(f.work, base, head, 'admin/admin-01', '.kiro/specs/feat/lanes/target-01.md'), false);
+    // Collab handoff therefore refuses the cross-lane-file edit
+    assert.ok(validateRange(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors.some((x) => x.includes('target-01.md but its Collab-Lane')));
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-E: a lane_admin lane that changes a protected gate file is still refused', () => {
+  const f = fixture();
+  try {
+    const base = adminFixture(f, { adminFm: { paths: [...ADMIN_PATHS, 'scripts/collab/queue.mjs'] } });
+    write(f.work, 'scripts/collab/queue.mjs', '// x\n');
+    const head = commit(f.work, 'lane_admin touches a protected gate file', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors;
+    assert.ok(e.some((x) => x.startsWith('scripts/collab/queue.mjs is a protected gate file')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-F: an ordinary lane PR editing a foreign seat\u2019s own lane file is still refused (seat ownership preserved)', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['src/**'] });
+    // EX (seat exafyltd) edits card-01, which belongs to seat jtadic
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', executor: 'kiro', seat: 'jtadic', reviewer_seat: 'exafyltd', paths: ['src/**'] })}### edit\n`);
+    const head = commit(f.work, 'foreign seat edits a lane', { 'Collab-Session': EX, 'Collab-Lane': 'cards/card-01' });
+    const e = scopeCheck(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors;
+    assert.ok(e.some((x) => x.includes('belongs to seat jtadic')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-G: validateRange cross-lane-file exemption passes only for a trusted lane_admin lane', () => {
+  const f = fixture();
+  try {
+    const base = adminFixture(f);
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', `${targetReassigned()}### admin edit\n`);
+    const head = commit(f.work, 'admin edits the target lane file', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-H: an ordinary cross-lane-file edit with a mismatched Collab-Lane is still refused', () => {
+  const f = fixture();
+  try {
+    const base = seedSpec(f); // cards/_plan with card-01 + card-02
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/specs/cards/lanes/card-02.md', `${laneMd('card-02', { next_actor: 'kiro', depends_on: ['card-01'] })}### edit\n`);
+    const head = commit(f.work, 'card-01 edits card-02', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    assert.ok(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors.some((x) => x.includes('card-02.md but its Collab-Lane')));
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-I: a lane_admin lane cannot widen/change its OWN PERM fields or lane_admin (self-widen impossible)', () => {
+  for (const [label, headFm] of [
+    ['paths', { paths: ['src/wide/**', ...ADMIN_PATHS] }],
+    ['executor', { executor: 'claude' }],
+    ['reviewer_seat', { reviewer_seat: 'exafyltd' }],
+    ['seat', { seat: 'exafyltd' }],
+  ]) {
+    const f = fixture();
+    try {
+      const base = adminFixture(f);
+      write(f.work, '.kiro/specs/admin/lanes/admin-01.md', laneMd('admin-01', { next_actor: 'kiro', vtid: 'VTID-05408', ...ADMIN_LANE_FM, state: 'executing', claimed_by: JT, ...headFm }));
+      const head = commit(f.work, `admin widens its own ${label}`, { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+      const r = scopeCheck(f.work, { base, head, branch: 'kiro/admin/admin-01' });
+      assert.ok(r.errors.some((x) => x.includes('lane admin/admin-01:') && x.includes('changed in a lane PR')), `${label}: ${r.errors.join('\n')}`);
+      // the admin lane's own permissions are pinned back to the trusted (narrow) values
+      assert.deepEqual(r.paths, ADMIN_PATHS, `${label}: paths pinned to trusted`);
+    } finally { f.done(); }
+  }
+});
+
+test('VTID-05408 T-J: lane_admin parses as the STRING \u2018true\u2019 and still unlocks the carve-outs (toBool, never === true)', () => {
+  // validateLane recognises the string marker
+  const v = (o) => validateLane(parseFrontMatter(laneMd('a', o)), 'cards', 'a', new Set(['a']));
+  assert.deepEqual(parseFrontMatter(laneMd('a', { lane_admin: 'true' })).lane_admin, 'true', 'parseFrontMatter yields the STRING true');
+  assert.deepEqual(v({ executor: 'kiro', seat: 'jtadic', reviewer_seat: AG, lane_admin: 'true', paths: ['.kiro/specs/feat/lanes/target-01.md'] }), []);
+  // the shared predicate recognises a trusted string-'true' admin lane and its coverage
+  const f = fixture();
+  try {
+    const base = adminFixture(f);
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', `${targetReassigned()}### edit\n`);
+    const head = commit(f.work, 'admin edits target', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    // laneAdminCovers returns true for the string-'true' admin lane over the target file, false over an unrelated file
+    assert.equal(Q.laneAdminCovers(f.work, base, head, 'admin/admin-01', '.kiro/specs/feat/lanes/target-01.md'), true);
+    assert.equal(Q.laneAdminCovers(f.work, base, head, 'admin/admin-01', '.kiro/specs/other/lanes/x.md'), false);
+    // the cross-lane-file exemption (which only fires via toBool) passes — reverting any comparison to === true breaks this
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/admin/admin-01' }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05408 T-K: the validateRange exemption resolves a trusted admin lane via fetchPlanLane from a qualifying plan( PR (symmetric with scope-check)', () => {
+  const f = fixture();
+  try {
+    // Only the TARGET spec exists on main (the merge-base). The admin spec is brand-new in this PR and its trusted
+    // qualification is resolvable ONLY via fetchPlanLane (a qualifying open plan( PR) — the asymmetry R2-F2 fixes.
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    write(f.work, '.kiro/specs/feat/handoff.md', planMd({ slug: 'feat', state: 'executing', sparring_record: 'x.md', vtids: ['VTID-05409'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', laneMd('target-01', { next_actor: 'kiro', vtid: 'VTID-05409', executor: 'kiro', seat: 'other', reviewer_seat: 'jtadic', paths: ['src/wide/**'] }));
+    const seeded = commit(f.work, 'seed feat', { 'Collab-Session': S2, 'Collab-Lane': 'feat/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/admin/admin-01', seeded);
+    // the admin spec is created in this PR by its _plan commit (valid new files: handoff drafted, lane ready)
+    write(f.work, '.kiro/specs/admin/handoff.md', planMd({ slug: 'admin', state: 'drafted', executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, '.kiro/specs/admin/lanes/admin-01.md', laneMd('admin-01', { next_actor: 'kiro', ...ADMIN_LANE_FM }));
+    commit(f.work, 'create admin spec', { 'Collab-Session': S2, 'Collab-Lane': 'admin/_plan' });
+    // the admin lane reassigns the target lane file (cross-lane-file edit with Collab-Lane: admin/admin-01)
+    write(f.work, '.kiro/specs/feat/lanes/target-01.md', `${targetReassigned()}### edit\n`);
+    const head = commit(f.work, 'admin reassigns the target', { 'Collab-Session': JT, 'Collab-Lane': 'admin/admin-01' });
+    // the admin lane's qualifying front matter lives only in the open plan( PR, resolved via fetchPlanLane
+    const adminPlanLane = {
+      text: laneMd('admin-01', { next_actor: 'kiro', vtid: 'VTID-05408', ...ADMIN_LANE_FM }),
+      handoffText: planMd({ slug: 'admin', state: 'approved', sparring_record: 'x.md', vtids: ['VTID-05408'], executor: 'kiro', next_actor: 'kiro' }),
+      lastSession: 'ci-plan-spar', pr: 4242, sha: 'f'.repeat(40),
+    };
+    const asked = [];
+    const fetchPlanLane = (slug, p) => { asked.push([slug, p]); return slug === 'admin' ? adminPlanLane : null; };
+    // with fetchPlanLane the exemption resolves the trusted admin lane → Collab handoff passes
+    assert.deepEqual(validateRange(f.work, { base: seeded, head, branch: 'kiro/admin/admin-01', allowInitial: ['admin'], fetchPlanLane }).errors, []);
+    assert.ok(asked.some(([s]) => s === 'admin'), 'fetchPlanLane was consulted for the admin slug');
+    // without fetchPlanLane threaded, the admin lane's trusted qualification is unreachable (head is untrusted) → refused
+    assert.ok(validateRange(f.work, { base: seeded, head, branch: 'kiro/admin/admin-01', allowInitial: ['admin'] }).errors.some((x) => x.includes('target-01.md but its Collab-Lane')));
+  } finally { f.done(); }
+});

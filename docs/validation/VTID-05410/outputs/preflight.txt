@@ -1,0 +1,13 @@
+preflight vitana-platform /projects/sandbox/vitana-platform
+  base 4de4e62c2849fa31fafc6c7e271fc9fb0fdf947b  head 21bc69368d4a3fcbb5f902a11ab2f50725899055  branch kiro/say-hello-lane-reassign/reassign
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed

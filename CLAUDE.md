@@ -79,8 +79,8 @@ never by its builder; CI spars every `plan(` PR (`PLAN-SPAR.yml`), a converged p
 allocates its VTIDs; the Project Manager merges under the PM merge rule §7b (staging-only deploy paths; the plan
 driver applies the same rule while the PM is not live) and sends Gate 2; Claude Code is optional and handles
 exceptions (`executor: claude` lanes, parked plans, partner outages; the exceptions seat takes them while Claude is
-unavailable). A protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs a
-legacy Claude review on the current head or the owner's instruction. Kiro deploys to production only on the owner's
+unavailable). A protected gate file (§3a, e.g. `CLAUDE.md`) never merges on a reviewer-agent accept alone: it needs
+the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). Kiro deploys to production only on the owner's
 explicit command in the conversation (§7c: a full publish, or only one session's changes) and never writes a live
 system from session tools. See `.claude/rules/collaboration.md` §7–§8b.
 
