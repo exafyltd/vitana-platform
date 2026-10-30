@@ -1,6 +1,6 @@
 ---
 lane: grouped-welcome-notifications
-state: verified
+state: done
 next_actor: kiro
 vtid: VTID-05208
 seat: jtadic
@@ -9,8 +9,7 @@ area: messenger
 depends_on: []
 branch: kiro/new-member-welcome/grouped-welcome-notifications
 pr: https://github.com/exafyltd/vitana-platform/pull/4153
-updated: 2026-10-30T13:48Z
-parked_from: in-review
+updated: 2026-10-30T18:00Z
 ---
 # Grouped greeting-DM notifications
 
@@ -3487,3 +3486,6 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4511
 Findings: non-blocking: CI on the current head was not verifiable by the reviewer; the land step confirms required checks are green on this head. Head 2b16082bb6 is a merge of main 85d95454d2 (with the merged sibling record #4510) into the previously accepted 33d390dfd6; the PR's own diff is unchanged (lane file + docs/validation/VTID-05208 only).
 Next: the land step merges under §7b
+
+### 2026-10-30T18:00Z · kiro-jtadic-202610291040-a0e6 · verified → done
+Lane complete. The reviewer-agent accept of the lane is on main (`verified` record exafyltd/vitana-platform#4511, merge `cf009eca8f`), the code is merged (exafyltd/vitana-platform `0d35512b7a` (#4153)), and no blocking finding is open. Follow-ups that are NOT part of this lane are tracked in plan `welcome-finish`: the owner's final decision of 2026-10-30 (community introductions are an explicit choice, supersedes D1 = default on) is carried by its lane `explicit-intro-choice`, and the NEVER 45 gap in the new-member listings by `new-members-feed-api` / `new-members-feed-client`. Lane record only: state verified → done, `updated`, one appended log entry.
