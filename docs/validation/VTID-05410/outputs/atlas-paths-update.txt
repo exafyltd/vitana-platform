@@ -10,3 +10,4 @@
 
 # Rule: platform CLAUDE.md NEVER 42h — a new route file gets an atlas domain (services/gateway/src/orb/developer/domain-atlas.ts).
 # Change: add exactly one path to lane new-member-welcome/say-hello-composer: services/gateway/src/orb/developer/domain-atlas.ts
+# Also: tests/e2e/staging/vtid-05207-*.staging.spec.ts — the vitana-v1 read-only STAGING-VERIFY Playwright spec for the composer (rules 46-48: no suite, no merge; same convention as VTID-05206's tests/e2e/staging/vtid-05206-community-intro.staging.spec.ts).
