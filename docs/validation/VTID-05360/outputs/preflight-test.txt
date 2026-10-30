@@ -1,0 +1,154 @@
+TAP version 13
+# Subtest: clean lane range → every check passes, exit 0
+ok 1 - clean lane range → every check passes, exit 0
+  ---
+  duration_ms: 705.847485
+  type: 'test'
+  ...
+# Subtest: three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+ok 2 - three independent errors (missing trailer, unknown seat, no plan hash) → all reported in one run, exit 1
+  ---
+  duration_ms: 684.818427
+  type: 'test'
+  ...
+# Subtest: spec slug listed by no program.md → reported
+ok 3 - spec slug listed by no program.md → reported
+  ---
+  duration_ms: 664.020808
+  type: 'test'
+  ...
+# Subtest: invalid scope.json → reported
+ok 4 - invalid scope.json → reported
+  ---
+  duration_ms: 653.570182
+  type: 'test'
+  ...
+# Subtest: parity: preflight reports every error queue.mjs validate prints for the same range
+ok 5 - parity: preflight reports every error queue.mjs validate prints for the same range
+  ---
+  duration_ms: 824.611242
+  type: 'test'
+  ...
+# Subtest: scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+ok 6 - scope-check runs the BASE revision of queue.mjs, validate the HEAD revision
+  ---
+  duration_ms: 673.993609
+  type: 'test'
+  ...
+# Subtest: plan-PR lane lookup without gh → reported as not checked, never a silent pass
+ok 7 - plan-PR lane lookup without gh → reported as not checked, never a silent pass
+  ---
+  duration_ms: 744.627168
+  type: 'test'
+  ...
+# Subtest: no --title → the PR-GATE part is reported as not checked
+ok 8 - no --title → the PR-GATE part is reported as not checked
+  ---
+  duration_ms: 657.471775
+  type: 'test'
+  ...
+# Subtest: preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+ok 9 - preflight writes nothing outside its temp dir (fixture tree and refs unchanged)
+  ---
+  duration_ms: 704.607279
+  type: 'test'
+  ...
+# Subtest: lane-code.md names preflight.mjs and runs it before every push
+ok 10 - lane-code.md names preflight.mjs and runs it before every push
+  ---
+  duration_ms: 1.101703
+  type: 'test'
+  ...
+# Subtest: planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+ok 11 - planning.md names preflight.mjs and runs it before every push (§3, §4, §5)
+  ---
+  duration_ms: 0.393636
+  type: 'test'
+  ...
+# Subtest: driver.md runs preflight before every push of the loop
+ok 12 - driver.md runs preflight before every push of the loop
+  ---
+  duration_ms: 0.192011
+  type: 'test'
+  ...
+# Subtest: the runbook text check catches a push point without preflight
+ok 13 - the runbook text check catches a push point without preflight
+  ---
+  duration_ms: 0.129097
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: PR body missing a declaration → fails with the --pr-body-check message naming it
+ok 14 - VALIDATOR-CHECK: PR body missing a declaration → fails with the --pr-body-check message naming it
+  ---
+  duration_ms: 752.43671
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: evidence dir without outputs/ → fails "missing …/outputs/"
+ok 15 - VALIDATOR-CHECK: evidence dir without outputs/ → fails "missing …/outputs/"
+  ---
+  duration_ms: 861.904886
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: declarations and evidence complete → passes; Build Gate is reported as not run
+ok 16 - VALIDATOR-CHECK: declarations and evidence complete → passes; Build Gate is reported as not run
+  ---
+  duration_ms: 1100.845524
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: no changed file in the workflow paths (read from the file) → skip
+ok 17 - VALIDATOR-CHECK: no changed file in the workflow paths (read from the file) → skip
+  ---
+  duration_ms: 686.862151
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: without --body-file the open PR body is read through gh; no body at all → fails naming PR_BODY_FILE
+ok 18 - VALIDATOR-CHECK: without --body-file the open PR body is read through gh; no body at all → fails naming PR_BODY_FILE
+  ---
+  duration_ms: 1328.246033
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: `shell: bash` → a failing stage inside a pipeline fails the step (bash -eo pipefail)
+ok 19 - VALIDATOR-CHECK: `shell: bash` → a failing stage inside a pipeline fails the step (bash -eo pipefail)
+  ---
+  duration_ms: 670.015841
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: a step without `shell:` runs in `bash -e` as on GitHub (a failing command fails, a pipe stage does not)
+ok 20 - VALIDATOR-CHECK: a step without `shell:` runs in `bash -e` as on GitHub (a failing command fails, a pipe stage does not)
+  ---
+  duration_ms: 672.173157
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: the workflow is read from the head revision
+ok 21 - VALIDATOR-CHECK: the workflow is read from the head revision
+  ---
+  duration_ms: 704.298156
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)
+ok 22 - VALIDATOR-CHECK: /tmp/ paths are rewritten to the preflight temp dir (two parallel runs do not collide)
+  ---
+  duration_ms: 1718.702532
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: ${{ github.base_ref }} and ${{ steps.<id>.outputs.<K> }} are substituted
+ok 23 - VALIDATOR-CHECK: ${{ github.base_ref }} and ${{ steps.<id>.outputs.<K> }} are substituted
+  ---
+  duration_ms: 706.129632
+  type: 'test'
+  ...
+# Subtest: VALIDATOR-CHECK: an unsupported ${{ }} expression or an unparsable workflow fails loudly
+ok 24 - VALIDATOR-CHECK: an unsupported ${{ }} expression or an unparsable workflow fails loudly
+  ---
+  duration_ms: 1343.446623
+  type: 'test'
+  ...
+1..24
+# tests 24
+# suites 0
+# pass 24
+# fail 0
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 16949.667969

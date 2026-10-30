@@ -1,0 +1,13 @@
+# VTID-05360 (kiro-web-reliability/preflight-validator) — commands and results, session kiro-exafy-202610281256-b5ea
+# base origin/main 0d02707ba78fa2c1e37299c330a547b914842c8f (plan PR #4392 merged); worktree .agents/wt/preflight-validator
+
+node --test scripts/collab/preflight.test.mjs   # base preflight.mjs, lane tests -> tests 24, pass 13, fail 11 (all 11 new), red-on-base.txt
+node --test scripts/collab/preflight.test.mjs   # head, 1st run                  -> pass 21, fail 2: real CSP Governance Gate failed under pipefail; open-PR slug lost to url.insteadOf
+gh run view 40690281167 --log | grep 'shell: ' # VALIDATOR-CHECK runner log      -> every step 'shell: /usr/bin/bash -e {0}' (GitHub default without shell:)
+node --test scripts/collab/preflight.test.mjs   # head, after fix (bash -e default, configured origin URL) -> tests 24, pass 24, fail 0 (outputs/preflight-test.txt)
+node --test scripts/collab/*.test.mjs           # head (PR-GATE.yml)             -> tests 215, pass 214, fail 0, skipped 1 (outputs/collab-tests.txt)
+preflight.mjs … --body-file bad.md              # demo 1, throwaway local branch -> FAIL VALIDATOR-CHECK: REJECTED: PR body is missing 1 required declaration(s): OASIS_IMPACT (outputs/demo-1-missing-declaration.txt)
+preflight.mjs … --body-file good.md             # demo 2, evidence w/o outputs/  -> FAIL VALIDATOR-CHECK: REJECTED: missing docs/validation/VTID-05360/outputs/ (outputs/demo-2-missing-outputs.txt)
+preflight.mjs … --body-file good.md             # demo 3, both fixed             -> PASS VALIDATOR-CHECK (outputs/demo-3-fixed.txt)
+git diff --stat origin/main...HEAD              # lane scope                     -> preflight.mjs, preflight.test.mjs, lane file, docs/validation/VTID-05360/**
+preflight.mjs --repo . … --body-file <PR body>     # lane head f6abf68753 -> every check passed incl. VALIDATOR-CHECK, exit 0 (outputs/preflight-lane-head.txt)

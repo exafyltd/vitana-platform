@@ -1,0 +1,20 @@
+# demo 1: PR body without OASIS_IMPACT; local throwaway branch pv-demo-throwaway (never pushed)
+$ node scripts/collab/preflight.mjs --repo <throwaway worktree> --base origin/main --head HEAD --branch pv-demo-throwaway --title 'VTID-05360 (kiro-web-reliability/preflight-validator): demo' --no-tests --json --body-file bad.md
+head b5d7d52d80c1227cb5665304846a3e9e5907c606; preflight ok=false; failed: pr-gate-scope, pr-gate-sparring, validator-check
+
+FAIL  VALIDATOR-CHECK [required]
+ok   Load ruleset
+ok   Collect PR text (title/body)
+step "Require PR body declarations (profile + markers)" failed (exit 15):
+REJECTED: PR body is missing 1 required declaration(s): OASIS_IMPACT
+
+Fix all of them in one edit — the .github pull request template already
+contains every line below. Add each missing declaration to the PR body:
+
+• OASIS_IMPACT (exit 15):
+  Declare whether this PR changes OASIS state (yes|no):
+    OASIS_IMPACT: no
+
+SKIP  Not run by preflight [required (VALIDATOR-CHECK)]
+Not run by preflight: VALIDATOR-CHECK Build Gate (`npm run build`, and for `command_hub_frontend` the src+dist both-updated check): a command_hub_frontend PR can pass preflight and still fail that CI step; run `cd services/gateway && npm ci && npm run build`
+
