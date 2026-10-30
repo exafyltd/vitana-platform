@@ -1,1 +1,1 @@
-NOTE: the lane file itself is the lane's own log (log entries only); every other file matches.
+NOTE: the only NOMATCH is the lane file itself (the lane's own log, log entries only, permission fields unchanged).
