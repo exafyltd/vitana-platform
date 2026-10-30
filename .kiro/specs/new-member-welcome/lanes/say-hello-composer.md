@@ -21,8 +21,8 @@ paths:
   - src/components/home/NewMemberCard.test.tsx
   - src/components/home/NewMemberGreetingComposer.tsx
   - src/components/home/NewMemberGreetingComposer.test.tsx
-  - src/i18n/de/newsCard.json
-  - src/i18n/en/newsCard.json
+  - src/i18n/*/*.json
+  - i18n-source-stamps/*.json
   - tests/e2e/staging/vtid-05207-*.staging.spec.ts
 area: messenger
 depends_on: [new-member-card-optin, grouped-welcome-notifications]

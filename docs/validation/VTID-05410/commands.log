@@ -11,3 +11,4 @@ $ bash negative-proofs.sh   (local scratch worktree off origin/main 4de4e62c28, 
 $ git worktree remove --force <scratch> && git branch -D scratch/neg-*   (cleanup)
 $ node scripts/collab/preflight.mjs ... --head HEAD (640807e6ff)   -> outputs/preflight-final.txt (all PASS, exit 0); re-run on the follow-up head, all PASS
 $ (atlas update) node scripts/collab/queue.mjs scope-check|validate --base origin/main --head HEAD --branch kiro/say-hello-lane-reassign/reassign -> outputs/atlas-scope-check.txt, outputs/atlas-validate.txt; why: outputs/atlas-paths-update.txt
+$ (i18n paths update) scope-check/validate --branch kiro/say-hello-lane-reassign/reassign -> outputs/i18n-scope-check.txt, outputs/i18n-validate.txt; why: outputs/i18n-paths-update.txt
