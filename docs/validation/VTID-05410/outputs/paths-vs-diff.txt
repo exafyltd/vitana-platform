@@ -1,0 +1,61 @@
+# paths vs real diff for lane new-member-welcome/say-hello-composer (VTID-05207), produced by the script below
+# Input: outputs/paths-name-only.txt. Lane file: .kiro/specs/new-member-welcome/lanes/say-hello-composer.md at PR head.
+# --- script (cmp.mjs) ---
+# import { readFileSync } from 'node:fs';
+# import { matchesAny, parseFrontMatter } from '/projects/sandbox/vitana-platform/scripts/collab/queue.mjs';
+# const txt = readFileSync('/projects/sandbox/vitana-platform/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md','utf8');
+# const fm = parseFrontMatter(txt); const fmo = fm.fm || fm.data || fm;
+# const globs = fmo.paths;
+# const files=[]; let repo='';
+# for (const l of readFileSync(process.argv[2],'utf8').split('\n')) {
+#   if (l.startsWith('## ')) { repo=l.slice(3).split(':')[0]; continue; }
+#   if (!l.trim()) continue;
+#   if (l === '.kiro/specs/new-member-welcome/lanes/say-hello-composer.md') { console.log(`EXCLUDED (stale feature-branch lane-file edit): ${repo}:${l}`); continue; }
+#   files.push([repo,l]);
+# }
+# console.log('globs:', globs.length);
+# let bad=0;
+# for (const [r,f] of files) { const m = matchesAny(f, globs); if(!m) bad++; console.log(`${m?'MATCH  ':'NOMATCH'} ${r}: ${f}`); }
+# let unused=0;
+# for (const g of globs) { const n = files.filter(([,f])=>matchesAny(f,[g])).length; if(!n) unused++; console.log(`glob ${n?'used  ':'UNUSED'} (${n} files) ${g}`); }
+# console.log(`VERDICT: unmatched files=${bad}, unused globs=${unused} -> ${bad||unused?'MISMATCH':'OK'}`);
+# --- output ---
+EXCLUDED (stale feature-branch lane-file edit): vitana-platform:.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+globs: 15
+MATCH   vitana-platform: docs/validation/VTID-05207/acceptance.md
+MATCH   vitana-platform: docs/validation/VTID-05207/plan-sparring.md
+MATCH   vitana-platform: docs/validation/VTID-05207/scope.json
+MATCH   vitana-platform: docs/validation/VTID-05207/staging-tests.json
+MATCH   vitana-platform: services/gateway/src/index.ts
+MATCH   vitana-platform: services/gateway/src/routes/chat.ts
+MATCH   vitana-platform: services/gateway/src/routes/new-member-greeting-repository.ts
+MATCH   vitana-platform: services/gateway/src/routes/new-member-greeting.ts
+MATCH   vitana-platform: services/gateway/src/services/new-member-greeting-guard.ts
+MATCH   vitana-platform: services/gateway/src/services/new-member-greeting-suggestion.ts
+MATCH   vitana-platform: services/gateway/test/vtid-05207-greeting-guard-send-route.test.ts
+MATCH   vitana-platform: services/gateway/test/vtid-05207-greeting-guard.test.ts
+MATCH   vitana-platform: services/gateway/test/vtid-05207-greeting-suggestion-route.test.ts
+MATCH   vitana-platform: services/gateway/test/vtid-05207-greeting-suggestion.test.ts
+MATCH   vitana-platform: services/gateway/test/vtid-05208-greeting-send-route.test.ts
+MATCH   vitana-v1: src/components/home/NewMemberCard.test.tsx
+MATCH   vitana-v1: src/components/home/NewMemberCard.tsx
+MATCH   vitana-v1: src/components/home/NewMemberGreetingComposer.test.tsx
+MATCH   vitana-v1: src/components/home/NewMemberGreetingComposer.tsx
+MATCH   vitana-v1: src/i18n/de/newsCard.json
+MATCH   vitana-v1: src/i18n/en/newsCard.json
+glob used   (1 files) services/gateway/src/services/new-member-greeting-guard.ts
+glob used   (1 files) services/gateway/src/services/new-member-greeting-suggestion.ts
+glob used   (1 files) services/gateway/src/routes/new-member-greeting.ts
+glob used   (1 files) services/gateway/src/routes/new-member-greeting-repository.ts
+glob used   (1 files) services/gateway/src/routes/chat.ts
+glob used   (1 files) services/gateway/src/index.ts
+glob used   (4 files) services/gateway/test/vtid-05207-*.ts
+glob used   (1 files) services/gateway/test/vtid-05208-greeting-send-route.test.ts
+glob used   (4 files) docs/validation/VTID-05207/**
+glob used   (1 files) src/components/home/NewMemberCard.tsx
+glob used   (1 files) src/components/home/NewMemberCard.test.tsx
+glob used   (1 files) src/components/home/NewMemberGreetingComposer.tsx
+glob used   (1 files) src/components/home/NewMemberGreetingComposer.test.tsx
+glob used   (1 files) src/i18n/de/newsCard.json
+glob used   (1 files) src/i18n/en/newsCard.json
+VERDICT: unmatched files=0, unused globs=0 -> OK
