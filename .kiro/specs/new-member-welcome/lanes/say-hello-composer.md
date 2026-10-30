@@ -13,6 +13,7 @@ paths:
   - services/gateway/src/routes/new-member-greeting-repository.ts
   - services/gateway/src/routes/chat.ts
   - services/gateway/src/index.ts
+  - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/test/vtid-05207-*.ts
   - services/gateway/test/vtid-05208-greeting-send-route.test.ts
   - docs/validation/VTID-05207/**
