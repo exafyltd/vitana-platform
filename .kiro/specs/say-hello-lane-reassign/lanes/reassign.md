@@ -57,3 +57,12 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4505
 History: review on 74d375adca returned `changes` only because the reviewer's shell was denied and the diff was not visible; the diff, admin-lane-unchanged check and protected/governance classification were then committed as tool output (outputs/i18n-pr-diff.txt) and the re-review on b8a1bc0394 accepted.
 Findings: non-blocking — i18n-pr-diff.txt is captured output the reviewer could not re-run (shell denied). CI was queued at review time; every check on the head must be green before merge.
 Next: the land step merges under §7b once every check on the current head is green.
+
+### 2026-10-30T11:16Z · agent-vitana-lane-reviewer-202610301116-3800 · review
+review: accept
+head: 15f194a39ab74a90c16e65dd0c1fe3f44b331bf7
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4505
+Supersedes the accept on b8a1bc0394: before merge the glob was widened from src/i18n/*/newsCard.json to src/i18n/*/*.json.
+Findings: accept — widening justified by I18N-PROPAGATE (stage 1 `git add src/i18n/en`, stage 2 `git add src/i18n`), bot commit b27354288 touching en/{inbox,screens,vcal}, main's run committing nothing, precedent #1438; enumerating files is not workable; globs not protected/governance. Non-blocking — Lane scope cannot enforce the per-commit condition, so the feature-PR reviewer must check it (lane commits touch only src/i18n/{de,en}/newsCard.json under src/i18n; all other src/i18n/** and i18n-source-stamps/** changes come from github-actions[bot] VTID-03509 commits) and it should be named in that lane's acceptance. Shell denied; judged from evidence files and the workflow source. CI queued at review time; merge only when green.
+Next: land under §7b once every check on the current head is green.
