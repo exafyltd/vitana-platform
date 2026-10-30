@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/new-member-welcome/new-member-card-optin
 pr: https://github.com/exafyltd/vitana-v1/pull/1441
-updated: 2026-10-30T12:30Z
+updated: 2026-10-30T12:29Z
 ---
 # New-member card opt-in + feed source
 
@@ -58,7 +58,7 @@ No local screenshot (the sandbox cannot sign in); the staging spec writes the ph
 `say-hello-composer` (VTID-05207) depends on this lane: its gateway guard reads this column.
 next_actor: claude (review + merge; then the migration workflow, deploy, STAGING-VERIFY).
 
-### 2026-10-30T12:30Z · kiro-jtadic-202610291040-a0e6 · executing → in-review
+### 2026-10-30T12:29Z · kiro-jtadic-202610291040-a0e6 · executing → in-review
 Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. Facts read with `gh`
 (`docs/validation/VTID-05206/outputs/gh-merge-shas.txt`):
 - code: exafyltd/vitana-v1#1441, merge `b73e6d298f5995c1c6ac67ab7e3245260835010f` (2026-10-16);
