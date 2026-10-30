@@ -4,6 +4,12 @@ Change types: Backend, Integration (guard branch in POST /api/v1/chat/send). No 
 
 Plan: `docs/validation/VTID-05207/plan-sparring.md` (plan hash `f7cdefc3043249c5`). Owner decision D2 = b: the greeting is a private DM on explicit Send, never auto-sent.
 
+ROUTE_MOUNT: `POST /api/v1/community/new-member/:userId/greeting-suggestion` — defined in `services/gateway/src/routes/new-member-greeting.ts` (`router.post('/community/new-member/:userId/greeting-suggestion', requireAuth, requireTenant, …)`), mounted in `services/gateway/src/index.ts` by `mountRouterSync(app, '/api/v1', newMemberGreetingRouter, { owner: 'new-member-greeting' })`.
+
+FINAL_URL: https://preview-aws-gateway.vitanaland.com/api/v1/community/new-member/00000000-0000-4000-8000-000000000001/greeting-suggestion (staging; only an unsigned rejected probe is sent)
+
+CURL_PROOF: not yet observed. The read-only STAGING-VERIFY probe in `docs/validation/VTID-05207/staging-tests.json` ("greeting-suggestion route is mounted and requires auth") sends an unsigned `POST` to that path (`rejected_probe: true`) and expects `expect_status: 401` with `expect_json: true`, i.e. a JSON 401 and not an SPA HTML page, on the deployed staging build. The suggestion and send paths are proven in CI only (CLAUDE.md rule 48); no greeting is generated or sent on staging.
+
 AC-1: `POST /api/v1/community/new-member/:userId/greeting-suggestion` is authenticated, rate limited per viewer, returns `{ suggestion, language }` composed in the sender's locale, Bedrock only, capped, first name only.
   TEST: `npx jest test/vtid-05207-greeting-suggestion.test.ts` (services/gateway)
 AC-2: The suggestion route only suggests: it never inserts a DM, and a composer failure answers 503.
