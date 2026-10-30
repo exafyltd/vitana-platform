@@ -1,4 +1,4 @@
-✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+✅ **collab handoff** — 2 handoff/lane file(s) changed, all valid
 
 <details><summary>Collab queue</summary>
 
