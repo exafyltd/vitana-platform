@@ -35,7 +35,8 @@ a push the same way.
    `ciLabel` and the label logic stay the single source of what is required.
 - Tests (red on base): `preflight.test.mjs` — report-only-only failure (`scope` fixture) exits 1 by default but 0 with
   `--required-only` and is still printed, `requiredOk` true; a required failure (`trailer` fixture) exits 1 with
-  `requiredOk` false. `kiro-web-session.test.mjs` — preflight is invoked with `--required-only`; exit 0 with a
+  `requiredOk` false; a mixed failure (`{ trailer: true, scope: true }`) exits 1 by default and with `--required-only`,
+  `requiredOk` false, and the report-only `PR-GATE scope` failure is still printed. `kiro-web-session.test.mjs` — preflight is invoked with `--required-only`; exit 0 with a
   report-only `FAIL` is allowed, printed and not cached; exit 1 still blocks; the existing PLAN-SPAR exemption test stays green.
 - Commands: `node --test scripts/collab/preflight.test.mjs scripts/collab/kiro-web-session.test.mjs`, then
   `node --test scripts/collab/*.test.mjs`, `node scripts/collab/queue.mjs validate`.

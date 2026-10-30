@@ -3,7 +3,7 @@ Authoritative plan: `plan.md`. VTID: allocated by PLAN-SPAR.
 
 <!-- lane: guard-required-only -->
 ## guard-required-only
-- [ ] G1. Tests first (red on base): the four cases in `plan.md` in `preflight.test.mjs` and `kiro-web-session.test.mjs`.
+- [ ] G1. Tests first (red on base): the five cases in `plan.md` (incl. the mixed required + report-only failure) in `preflight.test.mjs` and `kiro-web-session.test.mjs`.
 - [ ] G2. `preflight.mjs`: `isRequired`, `requiredOk`, `--required-only` (usage header updated).
 - [ ] G3. `kiro-web-session.mjs` `checkPush`: pass `--required-only`; allow and print report-only failures; no cache then.
 - [ ] G4. `docs/validation/<VTID>/commands.log` with the test runs and the red-on-base run.
