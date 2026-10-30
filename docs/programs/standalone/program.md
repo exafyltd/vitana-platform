@@ -28,6 +28,7 @@ specs:
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
   - vitana-platform:staging-verify-runner-fix
+  - vitana-platform:guard-required-only-preflight
   - vitana-platform:reviewer-model-fallback
   - vitana-platform:i18n-audit-nightly-off
   - vitana-platform:fix-deeplink-scroll-test

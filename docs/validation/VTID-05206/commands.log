@@ -1,0 +1,9 @@
+# VTID-05206 closing record - commands.log
+$ node scripts/collab/queue.mjs claim new-member-welcome/new-member-card-optin --session kiro-jtadic-202610291040-a0e6 --repo <vitana-platform>   -> {"ok":true,"sha":"adf6df6c38b0447bd888f9462ac1022fae3efd8c"}
+$ gh run view 41051243641 --repo exafyltd/vitana-v1 --log | grep -E 'Apply OK|status'   -> outputs/migration-run-excerpt.txt
+$ gh run view 41051243641 --repo exafyltd/vitana-v1 --json conclusion,headSha,displayTitle,createdAt,url   -> outputs/migration-run-summary.json
+$ gh api repos/exafyltd/vitana-v1/pulls/{1441,1444} --jq ...   -> outputs/gh-merge-shas.txt
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo .   -> outputs/validate.txt
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/close/new-member-welcome/new-member-card-optin-i1   -> outputs/scope-check.txt
+$ node scripts/ci/validator-path-guard.cjs <changed files> gateway_backend <pr body>   -> APPROVED (lane file not judged: outside the gate remit)
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/close/new-member-welcome/new-member-card-optin-i1 --title ...   -> outputs/preflight.txt
