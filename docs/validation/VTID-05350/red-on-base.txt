@@ -1,0 +1,13 @@
+# red on origin/main 3d3b4e6f17: new tests applied, the three source files at base
+not ok 28 - gateway client: a stuck round-1 session is re-posted once and recovers on the fresh session
+not ok 29 - gateway client: a session still stuck after the re-post fails with an explicit stuck error (no loop)
+not ok 30 - gateway client: the lost-response path (POST lost → re-post → stuck) also recovers on a fresh session, 3 posts
+not ok 31 - timing invariant: the client waits longer than the gateway stale window (re-post recovery needs it)
+# tests 31
+# pass 27
+# fail 4
+    ✕ (1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline (15008 ms)
+    ✕ (1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline (15001 ms)
+    ✕ (2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min) (1 ms)
+    ✕ (3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup) (2 ms)
+Tests:       4 failed, 4 total

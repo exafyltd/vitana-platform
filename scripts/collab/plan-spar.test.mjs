@@ -550,3 +550,61 @@ test('resolveRef: a 40-hex SHA is returned verbatim with no fetch; a branch reso
   const bad = async () => ({ status: 500, json: async () => ({}) });
   await assert.rejects(resolveRef('exafyltd/vitana-v1', 'main', { token: 't', fetchImpl: bad }), /HTTP 500/);
 });
+
+test('gateway client: a stuck round-1 session is re-posted once and recovers on the fresh session', async () => {
+  const seq = [];
+  let posts = 0;
+  const fetchImpl = async (url, opts) => {
+    seq.push(`${opts.method} ${url.replace('https://g', '')}`);
+    if (opts.method === 'POST') {
+      posts += 1;
+      const s = posts === 1 ? { id: 'STUCK', verdict: 'in_progress', rounds: [] } : { id: 'FRESH', verdict: 'in_progress', rounds: [{ round: 1 }] };
+      return { status: 200, text: async () => JSON.stringify({ ok: true, session: s }) };
+    }
+    return { status: 200, text: async () => JSON.stringify({ ok: true, session: { id: 'STUCK', verdict: 'in_progress', rounds: [] } }) };
+  };
+  let t = 0;
+  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
+  const s = await c.create({ plan_text: 'x' });
+  assert.equal(s.id, 'FRESH');
+  assert.equal(posts, 2);
+});
+
+test('gateway client: a session still stuck after the re-post fails with an explicit stuck error (no loop)', async () => {
+  let posts = 0;
+  const stuck = { id: 'STUCK', verdict: 'in_progress', rounds: [] };
+  const fetchImpl = async (url, opts) => {
+    if (opts.method === 'POST') posts += 1;
+    return { status: 200, text: async () => JSON.stringify({ ok: true, session: stuck }) };
+  };
+  let t = 0;
+  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
+  await assert.rejects(c.create({ plan_text: 'x' }), /stuck/);
+  assert.equal(posts, 2);
+});
+
+test('gateway client: the lost-response path (POST lost → re-post → stuck) also recovers on a fresh session, 3 posts', async () => {
+  let posts = 0;
+  const fetchImpl = async (url, opts) => {
+    if (opts.method === 'POST') {
+      posts += 1;
+      if (posts === 1) return { status: 504, text: async () => '<html>timeout</html>' };
+      const s = posts === 2 ? { id: 'STUCK', verdict: 'in_progress', rounds: [] } : { id: 'FRESH', verdict: 'in_progress', rounds: [{ round: 1 }] };
+      return { status: 200, text: async () => JSON.stringify({ ok: true, session: s }) };
+    }
+    return { status: 200, text: async () => JSON.stringify({ ok: true, session: { id: 'STUCK', verdict: 'in_progress', rounds: [] } }) };
+  };
+  let t = 0;
+  const c = gatewayClient({ baseUrl: 'https://g', token: 'tok', fetchImpl, sleep: async (ms) => { t += ms; }, now: () => t });
+  const s = await c.create({ plan_text: 'x' });
+  assert.equal(s.id, 'FRESH');
+  assert.equal(posts, 3);
+});
+
+test('timing invariant: the client waits longer than the gateway stale window (re-post recovery needs it)', async () => {
+  const { WAIT_MS } = await import('./plan-spar.mjs');
+  const src = (await import('node:fs')).readFileSync(new URL('../../services/gateway/src/services/plan-sparring/plan-sparring-service.ts', import.meta.url), 'utf8');
+  const m = /export const STALE_AFTER_MS = (\d+) \* 60_000;/.exec(src);
+  assert.ok(m, 'STALE_AFTER_MS declaration not found');
+  assert.ok(WAIT_MS > Number(m[1]) * 60_000, `WAIT_MS ${WAIT_MS} must exceed STALE_AFTER_MS ${m[1]} min`);
+});

@@ -1,0 +1,53 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/.agents/wt/sr/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/.agents/wt/sr/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/plan-sparring-stale-session.test.ts
+  VTID-05254 stale round-1 session dedup
+    ✓ (a) escalates a stale in_progress session with 0 rounds and re-runs round 1 on a fresh session (16 ms)
+    ✓ (b) a fresh in_progress session with 0 rounds is still deduped, with no model call (1 ms)
+    ✓ (c) an old in_progress session with round 1 written (waiting on the planner) is still deduped (1 ms)
+    ✓ (d) an escalated session with a non-retryable reason is still deduped
+    ✓ (d2) the existing retryable-escalated path is unchanged: re-run without escalating again (1 ms)
+    ✓ (e) lost race: the guard updates nothing, the re-read row comes back deduplicated, no insert, no model call (1 ms)
+    ✓ (g) isDeadRoundOne is false for a missing/unparsable timestamp or an approved session (1 ms)
+    ✓ (h) partial failure: escalation succeeds, insert fails → 502; the next create recovers via the retryable branch (1 ms)
+    ✓ (i) a store error from the escalation throws 502 store_error, with no insert and no re-read
+    (f) boundary, light
+      ✓ STALE_AFTER_MS - 1 ms is deduped (1 ms)
+      ✓ STALE_AFTER_MS + 1 ms is re-run (1 ms)
+    (f) boundary, standard
+      ✓ STALE_AFTER_MS - 1 ms is deduped (1 ms)
+      ✓ STALE_AFTER_MS + 1 ms is re-run
+    (f) boundary, expedited
+      ✓ STALE_AFTER_MS - 1 ms is deduped
+      ✓ STALE_AFTER_MS + 1 ms is re-run (3 ms)
+  VTID-05254 escalateDeadRoundOne (real guard chain)
+    ✓ updates only an unapproved in_progress row older than the cutoff and selects the ids (1 ms)
+    ✓ passes a store error through
+
+PASS test/plan-sparring-stuck-session.test.ts
+  plan-spar-stuck-session
+    ✓ (1) a partner model call that never resolves ends the pass with deadline_exceeded at the deadline (213 ms)
+    ✓ (1b) a code-access tool call that never resolves ends the pass with deadline_exceeded at the deadline (301 ms)
+    ✓ (2) STALE_AFTER_MS is above the longest pass deadline (15 min) and below the CI wait (25 min) (1 ms)
+    ✓ (3) a 0-round in_progress session 21 min old is dead (re-run), 19 min old is not (dedup) (1 ms)
+
+Test Suites: 2 passed, 2 total
+Tests:       21 passed, 21 total
+Snapshots:   0 total
+Time:        1.593 s
+Ran all test suites matching /test\/plan-sparring-stuck-session.test.ts|test\/plan-sparring-stale-session.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?
