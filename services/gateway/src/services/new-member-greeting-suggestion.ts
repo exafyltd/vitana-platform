@@ -82,6 +82,7 @@ const SCRIPT_CHECK: Record<string, RegExp> = {
   ar: /[\u0600-\u06ff]/,
   zh: /[\u4e00-\u9fff]/,
   ru: /[\u0400-\u04ff]/,
+  // Serbian is written in both scripts, so Latin or Cyrillic is accepted by design.
   sr: /[\u0400-\u04ff]|[a-z]/i,
 };
 

@@ -191,12 +191,17 @@ export async function fetchNewMemberProfile(sb: SupabaseClient, receiverId: stri
  * sender_id + receiver_id + created_at BEFORE the tag is tested (F13). The
  * window matches the card window, so an earlier greeting to a still-greetable
  * newcomer is always in range.
+ *
+ * Newest first so the bounded read is deterministic. The per-pair check is
+ * best-effort under concurrency (read-then-send, not atomic): two simultaneous
+ * sends could both pass. That is acceptable because the hourly per-sender cap
+ * and the push grouping bound the effect.
  */
 export async function fetchPairDms(sb: SupabaseClient, senderId: string, receiverId: string, now: Date): Promise<SentGreetingRow[]> {
   const since = new Date(now.getTime() - GREETING_CARD_WINDOW_MS).toISOString();
   return rows<SentGreetingRow>(
     sb.from('chat_messages').select('created_at, metadata')
-      .eq('sender_id', senderId).eq('receiver_id', receiverId).gte('created_at', since).limit(ROW_LIMIT),
+      .eq('sender_id', senderId).eq('receiver_id', receiverId).gte('created_at', since).order('created_at', { ascending: false }).limit(ROW_LIMIT),
     'chat_messages(pair)',
   );
 }
@@ -209,7 +214,7 @@ export async function fetchSenderHourDms(sb: SupabaseClient, senderId: string, n
   const since = new Date(now.getTime() - HOUR_MS).toISOString();
   return rows<SentGreetingRow>(
     sb.from('chat_messages').select('created_at, metadata')
-      .eq('sender_id', senderId).gte('created_at', since).limit(ROW_LIMIT),
+      .eq('sender_id', senderId).gte('created_at', since).order('created_at', { ascending: false }).limit(ROW_LIMIT),
     'chat_messages(sender_hour)',
   );
 }

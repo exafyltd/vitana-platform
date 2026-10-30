@@ -22,6 +22,15 @@ jest.mock('../src/middleware/auth-supabase-jwt', () => ({
   },
   requireTenant: (_req: any, _res: any, next: any) => next(),
 }));
+const mockExcluded = jest.fn();
+jest.mock('../src/lib/excluded-test-service-accounts', () => ({
+  fetchExcludedTestServiceAccountIdsStrict: (...a: any[]) => mockExcluded(...a),
+}));
+const mockProfile = jest.fn();
+jest.mock('../src/services/new-member-greeting-guard', () => {
+  const actual = jest.requireActual('../src/services/new-member-greeting-guard');
+  return { ...actual, fetchNewMemberProfile: (...a: any[]) => mockProfile(...a) };
+});
 jest.mock('../src/i18n/server-locale', () => ({ getUserLocale: jest.fn().mockResolvedValue('de') }));
 jest.mock('../src/routes/new-member-greeting-repository', () => ({ resolveFirstName: jest.fn().mockResolvedValue('Anna') }));
 jest.mock('../src/services/new-member-greeting-suggestion', () => {
@@ -35,6 +44,9 @@ const greetingRouter = require('../src/routes/new-member-greeting').default;
 const { composeGreetingSuggestion: composeMock } = require('../src/services/new-member-greeting-suggestion');
 // eslint-disable-next-line @typescript-eslint/no-var-requires
 const { getUserLocale } = require('../src/i18n/server-locale');
+
+// eslint-disable-next-line @typescript-eslint/no-var-requires
+const repoMock = require('../src/routes/new-member-greeting-repository');
 
 const NEWCOMER = '11111111-2222-3333-4444-555555555555';
 
@@ -51,6 +63,52 @@ describe('POST /api/v1/community/new-member/:userId/greeting-suggestion', () => 
     mockSb = {};
     getUserLocale.mockResolvedValue('de');
     composeMock.mockResolvedValue({ ok: true, suggestion: 'Hey Anna! 👋', language: 'de' });
+    mockExcluded.mockResolvedValue({ ok: true, ids: new Set<string>() });
+    mockProfile.mockResolvedValue({ community_intro_opt_in: true, created_at: new Date(Date.now() - 2 * 24 * 3_600_000).toISOString() });
+  });
+
+  describe('privacy: only a greetable newcomer may be suggested for', () => {
+    const REFUSED = { ok: false, error: 'greeting_not_allowed' };
+    async function expectRefused() {
+      const res = await request(makeApp()).post(`/api/v1/community/new-member/${NEWCOMER}/greeting-suggestion`).send({});
+      expect(res.status).toBe(403);
+      expect(res.body).toEqual(REFUSED);
+      expect(composeMock).not.toHaveBeenCalled();
+      expect(repoMock.resolveFirstName).not.toHaveBeenCalled();
+    }
+    it('refuses a target who has not opted in', async () => {
+      mockProfile.mockResolvedValue({ community_intro_opt_in: false, created_at: new Date().toISOString() });
+      await expectRefused();
+    });
+    it('refuses a target who joined more than 7 days ago', async () => {
+      mockProfile.mockResolvedValue({ community_intro_opt_in: true, created_at: new Date(Date.now() - 8 * 24 * 3_600_000).toISOString() });
+      await expectRefused();
+    });
+    it('refuses a missing profile', async () => {
+      mockProfile.mockResolvedValue(null);
+      await expectRefused();
+    });
+    it('refuses a test/service account target', async () => {
+      mockExcluded.mockResolvedValue({ ok: true, ids: new Set([NEWCOMER]) });
+      await expectRefused();
+    });
+    it('refuses when the viewer is a test/service account', async () => {
+      mockExcluded.mockResolvedValue({ ok: true, ids: new Set(['viewer-1']) });
+      await expectRefused();
+    });
+    it('refuses when the exclusion lookup fails', async () => {
+      mockExcluded.mockResolvedValue({ ok: false });
+      await expectRefused();
+    });
+    it('refuses when the profile lookup throws', async () => {
+      mockProfile.mockRejectedValue(new Error('boom'));
+      await expectRefused();
+    });
+    it('still suggests for a greetable newcomer', async () => {
+      const res = await request(makeApp()).post(`/api/v1/community/new-member/${NEWCOMER}/greeting-suggestion`).send({});
+      expect(res.status).toBe(200);
+      expect(repoMock.resolveFirstName).toHaveBeenCalled();
+    });
   });
 
   it('returns { suggestion, language } composed in the sender locale, honouring the avoid list', async () => {

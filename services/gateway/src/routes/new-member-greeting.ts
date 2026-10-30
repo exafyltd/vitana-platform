@@ -21,6 +21,13 @@ import { getSupabase } from '../lib/supabase';
 import { getUserLocale } from '../i18n/server-locale';
 import { composeGreetingSuggestion } from '../services/new-member-greeting-suggestion';
 import * as repo from './new-member-greeting-repository';
+import {
+  fetchNewMemberProfile,
+  receiverIsGreetableNewcomer,
+  GREETING_REFUSED_STATUS,
+  greetingRefusedBody,
+} from '../services/new-member-greeting-guard';
+import { fetchExcludedTestServiceAccountIdsStrict } from '../lib/excluded-test-service-accounts';
 
 const router = Router();
 
@@ -88,6 +95,24 @@ router.post(
 
     const supabase = getSupabase();
     if (!supabase) return res.status(500).json({ ok: false, error: 'supabase_unavailable' });
+
+    // Privacy: only a greetable newcomer (opted in, joined within 7 days) may be
+    // looked up, and never a test/service account. Checked BEFORE any name is
+    // resolved or the LLM is called. One generic refusal; the reason stays in
+    // the server log. A failed lookup refuses (fail closed).
+    const refuse = (reason: string) => {
+      console.warn(`[NewMemberGreeting] suggestion refused (${reason}) viewer=${identity.user_id}`);
+      return res.status(GREETING_REFUSED_STATUS).json(greetingRefusedBody());
+    };
+    try {
+      const excluded = await fetchExcludedTestServiceAccountIdsStrict(supabase);
+      if (!excluded.ok) return refuse('allowlist_lookup_failed');
+      if (excluded.ids.has(identity.user_id) || excluded.ids.has(userId)) return refuse('test_account');
+      const profile = await fetchNewMemberProfile(supabase, userId);
+      if (!receiverIsGreetableNewcomer(profile, new Date())) return refuse('not_greetable_newcomer');
+    } catch (err) {
+      return refuse(`lookup_error:${err instanceof Error ? err.message : 'unknown'}`);
+    }
 
     const avoid = sanitizeAvoid((req.body as { avoid?: unknown } | undefined)?.avoid);
 

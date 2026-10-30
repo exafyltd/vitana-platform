@@ -24,7 +24,9 @@ AC-6: In POST /chat/send a refused greeting is a 403 with no insert and no notif
   TEST: `npx jest test/vtid-05207-greeting-guard-send-route.test.ts test/vtid-05208-greeting-send-route.test.ts` (services/gateway)
 AC-7: The calendar invite guard and adjacent chat send behaviour are unaffected.
   TEST: `npx jest test/vtid-05104` (services/gateway)
+AC-9: The suggestion route refuses (one generic 403 `greeting_not_allowed`, reason logged server-side only) unless the target is a greetable newcomer (opted in, joined within 7 days) and neither party is a test or service account; a lookup error refuses. In every refused case no name is resolved and the LLM is not called.
+  TEST: `npx jest test/vtid-05207-greeting-suggestion-route.test.ts` (services/gateway)
 AC-8: The gateway type checks.
   TEST: `npx tsc --noEmit` (services/gateway)
 
-Captured real output is in `docs/validation/VTID-05207/outputs/`. Red-on-base: the guard and suggestion modules do not exist on `origin/main` (import failure), and the base `chat.ts` has no guard call, so the refusal scenarios fail there.
+Captured real output is in `docs/validation/VTID-05207/outputs/`. Red-on-base evidence: `outputs/gateway-jest-base-red.txt` (5 suites fail on the merge-base sources). Scope evidence: `outputs/pr-name-status.txt`, `outputs/pr-scope-vs-lane-paths.txt`. Red-on-base: the guard and suggestion modules do not exist on `origin/main` (import failure), and the base `chat.ts` has no guard call, so the refusal scenarios fail there.

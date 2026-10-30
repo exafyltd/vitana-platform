@@ -36,6 +36,8 @@ interface Seed {
   errorOn?: string; // a table whose read returns { error }
 }
 
+const orderCalls: Array<[string, any]> = [];
+
 function makeSb(seed: Seed): any {
   return {
     from(table: string) {
@@ -49,6 +51,10 @@ function makeSb(seed: Seed): any {
         },
         gte: (_col: string, val: string) => {
           gte = val;
+          return builder;
+        },
+        order: (col: string, opts: any) => {
+          orderCalls.push([col, opts]);
           return builder;
         },
         limit: () => builder,
@@ -220,5 +226,15 @@ describe('checkGreetingSend — golden scenarios', () => {
   it('refuses greeting yourself', async () => {
     const r = await checkGreetingSend({ sb: makeSb(baseSeed()), senderId: SENDER, receiverId: SENDER, tenantId: 'tenant-1', now: NOW });
     expect(r).toEqual({ ok: false, code: GREETING_REFUSED_CODE });
+  });
+
+  it('reads the bounded DM history newest-first (deterministic)', async () => {
+    orderCalls.length = 0;
+    await checkGreetingSend({ sb: makeSb(baseSeed()), senderId: SENDER, receiverId: RECEIVER, tenantId: 'tenant-1', now: NOW });
+    expect(orderCalls.length).toBe(2);
+    for (const [col, opts] of orderCalls) {
+      expect(col).toBe('created_at');
+      expect(opts).toEqual({ ascending: false });
+    }
   });
 });
