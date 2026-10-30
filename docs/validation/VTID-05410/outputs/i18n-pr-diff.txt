@@ -1,0 +1,33 @@
+# git diff --stat origin/main..HEAD (origin/main 52d45eded4, head before this file: 74d375adca)
+ .../new-member-welcome/lanes/say-hello-composer.md |   4 +-
+ docs/validation/VTID-05410/commands.log            |   1 +
+ .../VTID-05410/outputs/i18n-paths-update.txt       |  12 +
+ .../VTID-05410/outputs/i18n-scope-check.txt        |   1 +
+ .../VTID-05410/outputs/i18n-validate.txt           | 406 +++++++++++++++++++++
+ 5 files changed, 422 insertions(+), 2 deletions(-)
+
+# git diff origin/main..HEAD -- .kiro/
+diff --git a/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md b/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+index 85e85e240a..bee2601b11 100644
+--- a/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
++++ b/.kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+@@ -21,8 +21,8 @@ paths:
+   - src/components/home/NewMemberCard.test.tsx
+   - src/components/home/NewMemberGreetingComposer.tsx
+   - src/components/home/NewMemberGreetingComposer.test.tsx
+-  - src/i18n/de/newsCard.json
+-  - src/i18n/en/newsCard.json
++  - src/i18n/*/newsCard.json
++  - i18n-source-stamps/*.json
+   - tests/e2e/staging/vtid-05207-*.staging.spec.ts
+ area: messenger
+ depends_on: [new-member-card-optin, grouped-welcome-notifications]
+
+# admin lane file unchanged vs origin/main:
+YES (no diff under .kiro/specs/say-hello-lane-reassign/)
+# protected-gate-files.json globs vs changed files:
+not-protected not-governance .kiro/specs/new-member-welcome/lanes/say-hello-composer.md
+not-protected not-governance docs/validation/VTID-05410/commands.log
+not-protected not-governance docs/validation/VTID-05410/outputs/i18n-paths-update.txt
+not-protected not-governance docs/validation/VTID-05410/outputs/i18n-scope-check.txt
+not-protected not-governance docs/validation/VTID-05410/outputs/i18n-validate.txt
