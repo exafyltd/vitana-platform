@@ -13,6 +13,7 @@ paths:
   - services/gateway/src/routes/new-member-greeting-repository.ts
   - services/gateway/src/routes/chat.ts
   - services/gateway/src/index.ts
+  - services/gateway/src/orb/developer/domain-atlas.ts
   - services/gateway/test/vtid-05207-*.ts
   - services/gateway/test/vtid-05208-greeting-send-route.test.ts
   - docs/validation/VTID-05207/**
@@ -22,6 +23,7 @@ paths:
   - src/components/home/NewMemberGreetingComposer.test.tsx
   - src/i18n/de/newsCard.json
   - src/i18n/en/newsCard.json
+  - tests/e2e/staging/vtid-05207-*.staging.spec.ts
 area: messenger
 depends_on: [new-member-card-optin, grouped-welcome-notifications]
 updated: 2026-10-15T13:00Z
