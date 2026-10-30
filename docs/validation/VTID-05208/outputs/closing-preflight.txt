@@ -1,0 +1,13 @@
+preflight vitana-platform /projects/sandbox/wt-close-grouped
+  base ee1d363dd2e5bb6a15c8444c69372ed031e7b67a  head 3197fe2d882b39536d3c88081f9e15c517a7ae95  branch kiro/close/new-member-welcome/grouped-welcome-notifications-i1
+
+PASS  Collab tests [required]
+PASS  Collab handoff [required]
+PASS  Lane scope [required]
+PASS  PR-GATE scope [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE sparring [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE weakening [report-only in CI (until config.enforce=true)]
+PASS  PR-GATE red-green [report-only in CI (until config.enforce=true)]
+PASS  Kiro steering [report-only in CI (until config.enforce=true)]
+
+preflight: every check passed
