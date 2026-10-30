@@ -1,6 +1,6 @@
 ---
 lane: new-member-card-optin
-state: in-review
+state: verified
 next_actor: kiro
 vtid: VTID-05206
 seat: jtadic
@@ -9,7 +9,7 @@ depends_on: []
 claimed_by: kiro-jtadic-202610291040-a0e6
 branch: kiro/new-member-welcome/new-member-card-optin
 pr: https://github.com/exafyltd/vitana-v1/pull/1441
-updated: 2026-10-30T12:29Z
+updated: 2026-10-30T13:48Z
 ---
 # New-member card opt-in + feed source
 
@@ -81,3 +81,22 @@ Lane record (this PR): accept — only state executing → in-review, claimed_by
 Merged lane code (exafyltd/vitana-v1 b73e6d298f + 704b5def4c) against plan block Part B / S3 and tasks B1–B4: accept. B1 migration: existing rows false, default true, no backfill, self-check of column / REPLICA IDENTITY FULL / realtime publication / owner policy, idempotent and transactional. B2 both feed tabs filter community_intro_opt_in = true, a failed read shows no card (tests cover true/false/undefined/null/error). B3 Settings switch (desktop Privacy, MobileSettings) writes only that column on the member's own row; registration wizard defaults on and writes only an explicit off; German du-form keys first, t()/notifyError. B4 tests not weakened; #1444 adds diagnostics only; staging spec read-only.
 Findings: non-blocking — the database post-check has no outputs/ file (it was reported by the driver); validate.txt is abbreviated; the lane has no paths, so the plan driver merges under §7b. Non-blocking, tracked for a fix before production — neither new-member listing excludes service_bot_accounts / notification_test_actors (CLAUDE.md NEVER 45); pre-existing, but post-migration signups default to opted in.
 Next: merge under §7b when every required check is green; the next hop (in-review → verified) cites this accept of the merged code.
+
+### 2026-10-30T13:48Z · kiro-jtadic-202610291040-a0e6 · in-review → verified
+Reviewer-agent accept recorded on main: the lane log carries the `Collab-Verdict: accept` review entry from agent:vitana-lane-reviewer (claude-sonnet-5.5) on head 40d357f93c3074d6fd0d94b1af7e91479c2e93a2, covering the in-review record (exafyltd/vitana-platform#4507) and the merged code (vitana-v1 b73e6d298f + 704b5def4c). No open blocking findings; the non-blocking findings in that entry are unchanged. Lane record only: state in-review → verified, `updated`, one appended log entry; `next_actor: kiro` kept.
+
+### 2026-10-30T13:55Z · agent-vitana-lane-reviewer-202610301355-2acb · review
+review: accept
+head: e6ec0c8226bfb464567022bbabd70376450dc8cf
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4510
+Findings: non-blocking — the commands.log line "run before push (see PR body)" is not a real command record; verified-acceptance.md has no recorded outputs (CI governance checks are the proof); CI on the current head was not readable by the reviewer, so the land step must confirm every required check is green and the PR is up to date with main; the earlier non-blocking NEVER 45 finding (service_bot_accounts / notification_test_actors not excluded from the new-member listings) is unchanged and must be fixed before production.
+Next: the land step merges under §7b once every required check is green on this head; then the lane can move verified → done.
+
+### 2026-10-30T16:22Z · agent-vitana-lane-reviewer-202610301622-f826 · review
+review: accept
+head: 53a4474436ef37b345b59ed2e1f825b0fbefcfa9
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4510
+Findings: non-blocking — commands.log last line is a placeholder, not a real command record; verified-acceptance.md has no recorded outputs and its AC-2 names branch deps-verified; the earlier NEVER 45 finding (service_bot_accounts / notification_test_actors not excluded from the new-member listings) is unchanged and is being fixed in plan welcome-finish before production; CI on this head was not readable by the reviewer, the land step confirmed 11/11 green. Head 53a4474436 is a merge of main a206af8ab9 into the previously accepted 78db76e483; the PR's own diff is unchanged (lane file + docs/validation/VTID-05206 only; front matter changes only state and updated).
+Next: the land step merges under §7b; then the lane can move verified → done.

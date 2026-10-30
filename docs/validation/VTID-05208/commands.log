@@ -22,3 +22,4 @@ $ gh api repos/exafyltd/vitana-platform/pulls/4153 --jq ...   -> outputs/closing
 $ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo .   -> outputs/closing-validate.txt
 $ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/close/new-member-welcome/grouped-welcome-notifications-i1   -> outputs/closing-scope-check.txt
 $ node scripts/collab/preflight.mjs ...   -> outputs/closing-preflight.txt
+$ node scripts/collab/preflight.mjs ...   -> run before push (see PR body)
