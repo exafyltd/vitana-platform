@@ -1,0 +1,132 @@
+✖ VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session (5448.9871ms)
+✖ VTID-05365 R1 negative: a second kiro session on `_plan` still fails (6819.3139ms)
+✔ VTID-05365 R1 negative: a ci-plan-spar commit that edits the paths of a lane past `ready` still fails (5921.1479ms)
+✖ VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr (8538.3548ms)
+✖ VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped (6834.1113ms)
+✖ VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference (119861.1319ms)
+✖ VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names) (4497.6979ms)
+ℹ tests 7
+ℹ suites 0
+ℹ pass 1
+ℹ fail 6
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 158193.9136
+
+✖ failing tests:
+
+test at scripts\collab\queue.test.mjs:1419:1
+✖ VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session (5448.9871ms)
+  AssertionError [ERR_ASSERTION]: Expected values to be strictly deep-equal:
+  + actual - expected
+  
+  + [
+  +   'lane cards/_plan: commits from 2 sessions (ci-plan-spar, kiro-202610131200-ab12) — one session per lane'
+  + ]
+  - []
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1423:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: [ 'lane cards/_plan: commits from 2 sessions (ci-plan-spar, kiro-202610131200-ab12) — one session per lane' ],
+    expected: [],
+    operator: 'deepStrictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\collab\queue.test.mjs:1427:1
+✖ VTID-05365 R1 negative: a second kiro session on `_plan` still fails (6819.3139ms)
+  AssertionError [ERR_ASSERTION]: lane cards/_plan: commits from 3 sessions (kiro-exafy-202610281200-cd34, ci-plan-spar, kiro-202610131200-ab12) — one session per lane
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1436:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: false,
+    expected: true,
+    operator: '==',
+    diff: 'simple'
+  }
+
+test at scripts\collab\queue.test.mjs:1459:1
+✖ VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr (8538.3548ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^::error::collab handoff: \.kiro\/specs\/cards\/lanes\/card-01\.md: illegal transition "ready" → "done"$/m. Input:
+  
+  ''
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1469:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /^::error::collab handoff: \.kiro\/specs\/cards\/lanes\/card-01\.md: illegal transition "ready" → "done"$/m,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at scripts\collab\queue.test.mjs:1484:1
+✖ VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped (6834.1113ms)
+  AssertionError [ERR_ASSERTION]: The input did not match the regular expression /^::error::lane scope: src\/elsewhere\/x\.ts is outside lane cards\/card-01 \(paths: src\/backoffice\/\*\*\)$/m. Input:
+  
+  ''
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1493:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: true,
+    code: 'ERR_ASSERTION',
+    actual: '',
+    expected: /^::error::lane scope: src\/elsewhere\/x\.ts is outside lane cards\/card-01 \(paths: src\/backoffice\/\*\*\)$/m,
+    operator: 'match',
+    diff: 'simple'
+  }
+
+test at scripts\collab\queue.test.mjs:1639:1
+✖ VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference (119861.1319ms)
+  AssertionError [ERR_ASSERTION]: validateRange spawns: 3 commits 36, 30 commits 117
+  
+  36 !== 117
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1659:10)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 36,
+    expected: 117,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\collab\queue.test.mjs:1663:1
+✖ VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names) (4497.6979ms)
+  TypeError: Q.commitsInRange is not a function
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-vf/scripts/collab/queue.test.mjs:1675:19)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async Test.processPendingSubtests (node:internal/test_runner/test:788:7)

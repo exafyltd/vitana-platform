@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05365",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    ".kiro/specs/collab-handoff-check-fix/lanes/validator-fix.md",
+    "docs/validation/VTID-05365/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05365/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
