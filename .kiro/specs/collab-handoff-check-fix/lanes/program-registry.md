@@ -1,6 +1,6 @@
 ---
 lane: program-registry
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,8 +15,11 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T10:22Z
+updated: 2026-10-28T16:00Z
 vtid: VTID-05364
+claimed_by: kiro-exafy-202610281324-f088
+branch: kiro/collab-handoff-check-fix/program-registry
+pr: https://github.com/exafyltd/vitana-platform/pull/4531
 ---
 # program-registry — list the unregistered specs in their programmes
 Plan: `.kiro/specs/collab-handoff-check-fix/plan.md`, `tasks.md` section `program-registry`. **Held until PLAN-SPAR
@@ -27,3 +30,17 @@ Created and held.
 
 ### 2026-10-28T10:22Z · ci-plan-spar · ready (VTID allocated)
 VTID-05364 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-28T14:10Z · kiro-exafy-202610281324-f088 · ready → executing
+Claimed (collab-claim ref) and built in worktree `.worktrees/chcf-pr` from `origin/main`. P1: `scripts/collab/program-registry.test.mjs`, red on base (`docs/validation/VTID-05364/red-on-base.txt`). P2: 13 `native-wave2-*` specs in `native-app`, `desktop-spotlight-finish` in `desktop-redesign` (+ repo `vitana-platform`), `i18n-propagate-stale-write` and `sparring-floor-retry` in `standalone`. Slug sources in `docs/validation/VTID-05364/commands.log`. Next: reviewer agent.
+
+### 2026-10-28T16:00Z · kiro-exafy-202610281324-f088 · executing (PR opened)
+PR https://github.com/exafyltd/vitana-platform/pull/4531. Local tests and preflight green (`docs/validation/`). Lane stays `executing` in this PR (`ready → in-review` is not a lane edge between base and head); in-review is set by the Project Manager / review entry. Next: reviewer agent `agent:vitana-lane-reviewer`.
+### 2026-10-31T22:05Z · agent-vitana-lane-reviewer-202610312202-e6fc · review
+review: accept
+head: b47b14f283ac73ea84cc32b551250d93541a5d67
+reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
+PR: https://github.com/exafyltd/vitana-platform/pull/4531
+Findings: non-blocking only. The registry entries (13 native-wave2-* specs in native-app, desktop-spotlight-finish in desktop-redesign, i18n-propagate-stale-write and sparring-floor-retry in standalone) and scripts/collab/program-registry.test.mjs are correct; all 11 checks green on the head. No protected gate file in the diff.
+Stored by the landing session on the agent's behalf (lane-land.md step 2).
+Next: land under §7b once every required check is green on the head.
