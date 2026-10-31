@@ -1,0 +1,60 @@
+# git diff --stat origin/main..HEAD (origin/main ee1d363dd2, head before this file: 109779094a)
+ .../lanes/grouped-welcome-notifications.md           | 13 +++++++++++--
+ docs/validation/VTID-05208/closing-acceptance.md     | 20 ++++++++++++++++++++
+ docs/validation/VTID-05208/commands.log              |  6 ++++++
+ .../VTID-05208/outputs/closing-gh-merge-sha.txt      |  1 +
+ .../VTID-05208/outputs/closing-preflight.txt         | 13 +++++++++++++
+ .../VTID-05208/outputs/closing-scope-check.txt       |  3 +++
+ .../VTID-05208/outputs/closing-validate.txt          |  1 +
+ 7 files changed, 55 insertions(+), 2 deletions(-)
+
+# git diff origin/main..HEAD -- .kiro/
+diff --git a/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md b/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+index 3b238bd49c..e0b0b910a8 100644
+--- a/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
++++ b/.kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+@@ -1,14 +1,15 @@
+ ---
+ lane: grouped-welcome-notifications
+-state: parked
++state: in-review
+ next_actor: kiro
+ vtid: VTID-05208
+ seat: jtadic
++claimed_by: kiro-jtadic-202610291040-a0e6
+ area: messenger
+ depends_on: []
+ branch: kiro/new-member-welcome/grouped-welcome-notifications
+ pr: https://github.com/exafyltd/vitana-platform/pull/4153
+-updated: 2026-10-27T13:43Z
++updated: 2026-10-30T12:29Z
+ parked_from: in-review
+ ---
+ # Grouped greeting-DM notifications
+@@ -3441,3 +3442,11 @@ reassign review →exafyltd (stale_review, Claude unavailable)
+ reassign review →exafyltd (stale_review, Claude unavailable)
+ ### 2026-10-27T13:43Z · pm-agent · update
+ reassign review →exafyltd (stale_review, Claude unavailable)
++
++### 2026-10-30T12:29Z · kiro-jtadic-202610291040-a0e6 · parked → in-review
++Closing record for the merged lane (plan `say-hello-lane-reassign` §4); no code changes in this PR. The lane was parked from
++`in-review` (`parked_from: in-review`), so `in-review` is its only legal return. Fact read with `gh`
++(`docs/validation/VTID-05208/outputs/closing-gh-merge-sha.txt`): the code merged as exafyltd/vitana-platform#4153, merge
++`0d35512b7ab4504fb90542bd452f901240de4ce9` (2026-10-20). No migration. The merged lane now goes to independent review by the
++reviewer agent `vitana-lane-reviewer` on the merged code. No review verdict is written by the builder.
++next_actor: kiro (reviewer agent, then `verified`, then `done`).
+
+# original evidence files unchanged (diff --stat restricted to them; empty = unchanged):
+(end)
+# commands.log change is append-only:
+removed lines: 0
+# seat history: seat exafyltd -> jtadic was merged by lane_admin PR #4501 (VTID-05410), see .kiro/specs/say-hello-lane-reassign/lanes/reassign.md
+64ef6213aa VTID-05410 (say-hello-lane-reassign/reassign): reassign say-hello-composer to seat jtadic via lane_admin (#4501)
+# protected/governance classification of every changed file:
+not-protected not-governance .kiro/specs/new-member-welcome/lanes/grouped-welcome-notifications.md
+not-protected not-governance docs/validation/VTID-05208/closing-acceptance.md
+not-protected not-governance docs/validation/VTID-05208/commands.log
+not-protected not-governance docs/validation/VTID-05208/outputs/closing-gh-merge-sha.txt
+not-protected not-governance docs/validation/VTID-05208/outputs/closing-preflight.txt
+not-protected not-governance docs/validation/VTID-05208/outputs/closing-scope-check.txt
+not-protected not-governance docs/validation/VTID-05208/outputs/closing-validate.txt

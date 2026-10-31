@@ -111,7 +111,16 @@ const HOOK = '.kiro/hooks/vitana-pipeline-start.json';
 const PIPELINE_DIR = '.kiro/pipeline';
 const PIPELINE_STEERING = '.kiro/steering/vitana-pipeline.md';
 // Named as text only and owned by another lane (plan section 7, "text-only cross references"); not required to exist.
-const TEXT_ONLY_REFS = new Set(['.kiro/pipeline/driver.md']);
+// VTID-05359: driver.md left this set; it is a required runbook with required content (RUNBOOK_REQUIRED below).
+const TEXT_ONLY_REFS = new Set([]);
+// VTID-05359 (plan reviewer-step-model D1-D3): every pinned review step's prompt starts with exactly
+// `Reviewer chain model for this step: <its modelId>. `; the agent's self-check keys on that line.
+const REVIEW_MODEL_LABEL = 'Reviewer chain model for this step: ';
+// Runbooks that must exist and carry these strings (a missing file or string is a `missing` error).
+const RUNBOOK_REQUIRED = Object.freeze({
+  '.kiro/pipeline/lane-review.md': [REVIEW_MODEL_LABEL],
+  '.kiro/pipeline/driver.md': [REVIEW_MODEL_LABEL],
+});
 const ALLOWED_TOOLS = new Set(['read', 'shell']);
 const REQUIRED_EXCLUDED = ['fs_write', 'fs_append', 'str_replace', 'delete_file'];
 const REQUIRED_BODY = [
@@ -121,6 +130,7 @@ const REQUIRED_BODY = [
   'Collab-Reviewer: agent:vitana-lane-reviewer (<model>)', 'Collab-Reviewed-Head:',
   'protected-gate-files.json',
   `Model chain: ${REVIEWER_MODELS.map((m) => '`' + m + '`').join(' → ')}`,
+  REVIEW_MODEL_LABEL,
 ];
 // Bundled Kiro workflow agents a recipe may use; workspace agents come from .kiro/agents/*.md.
 const BUNDLED_AGENTS = ['wf-coder', 'wf-planner', 'wf-code-reviewer', 'wf-design', 'wf-design-reviewer'];
@@ -188,6 +198,11 @@ function checkAgents(root) {
       if (!REVIEWER_MODELS.includes(s.modelId)) {
         errors.push(`${WORKFLOW}: review step ${s.id} modelId must be one of ${REVIEWER_MODELS.join(', ')}`);
       }
+      const line = REVIEW_MODEL_LABEL + s.modelId + '. ';
+      const p = typeof s.prompt === 'string' ? s.prompt : '';
+      if (!p.startsWith(line) || p.split(REVIEW_MODEL_LABEL).length !== 2) {
+        errors.push(`${WORKFLOW}: review step ${s.id} prompt must start with "${line}"`);
+      }
     }
     const raced = new Set();
     walkNodes(wf.steps, (n) => {
@@ -235,6 +250,11 @@ function checkAgents(root) {
       || typeof first.action.prompt !== 'string' || !first.action.prompt.includes(PIPELINE_STEERING))) {
       errors.push(`${HOOK}: must be version v1 with a SessionStart hook whose agent action prompt loads ${PIPELINE_STEERING}`);
     }
+  }
+  for (const [rel, required] of Object.entries(RUNBOOK_REQUIRED)) {
+    const text = readText(root, rel);
+    if (text === null) { errors.push(`${rel} missing`); continue; }
+    for (const s of required) if (!text.includes(s)) errors.push(`${rel}: is missing ${s}`);
   }
   const pipeDir = path.join(root, PIPELINE_DIR);
   const runbooks = fs.existsSync(pipeDir) ? fs.readdirSync(pipeDir).filter((f) => f.endsWith('.md')) : [];
@@ -537,7 +557,7 @@ function checkOwnerAutonomy(root) {
 
 module.exports = {
   check, checkAgents, checkOwnerAutonomy, OWNER_AUTONOMY_ANCHORS, validateWorkflow, gateErrors, parseFrontMatter, frontMatter, fileLinks,
-  REVIEWER_MODELS, STORE_COMMAND, GATE_COMMAND, GATED_STEPS, GATE_IDLE_TIMEOUT_SEC,
+  REVIEWER_MODELS, REVIEW_MODEL_LABEL, STORE_COMMAND, GATE_COMMAND, GATED_STEPS, GATE_IDLE_TIMEOUT_SEC,
 };
 
 if (require.main === module) {

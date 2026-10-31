@@ -1,0 +1,5 @@
+# VTID-05413 guard-required-only — commands.log
+$ git apply .agents/tmp/guard-required-only-preflight-lane.patch   (prepared lane patch, 4 files under scripts/collab)
+$ git apply -R <impl diff of preflight.mjs + kiro-web-session.mjs>; node --test scripts/collab/preflight.test.mjs scripts/collab/kiro-web-session.test.mjs   -> outputs/red-on-base.txt (42 tests, 38 pass, 4 fail: new tests red on base scripts; exit 1)
+$ git apply <impl diff>; node --test scripts/collab/preflight.test.mjs scripts/collab/kiro-web-session.test.mjs   -> outputs/green.txt (42 pass, 0 fail; exit 0)
+$ node --test scripts/collab/*.test.mjs   -> outputs/collab-suite.txt (220 tests, 219 pass, 0 fail; exit 0)

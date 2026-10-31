@@ -408,7 +408,7 @@ function checkPush(a, { run, cacheDir, platformRoot }) {
   run('git', ['-C', top, 'fetch', '-q', 'origin', 'main'], { timeoutMs: 60000 });
   const url = run('git', ['-C', top, 'remote', 'get-url', 'origin']).output || '';
   const slug = REPO_SLUGS.find((s) => url.replace(/\.git$/, '').endsWith(s));
-  const args = [path.join(platformRoot, 'scripts', 'collab', 'preflight.mjs'), '--repo', top, '--base', 'origin/main', '--head', sha, '--branch', branch];
+  const args = [path.join(platformRoot, 'scripts', 'collab', 'preflight.mjs'), '--repo', top, '--base', 'origin/main', '--head', sha, '--branch', branch, '--required-only'];
   let title = a.title;
   if (!title && slug) {
     const t = run('gh', ['api', `repos/${slug}/pulls?head=${slug.split('/')[0]}:${branch}&state=open`, '--jq', '.[0].title // ""'], { timeoutMs: 30000 });
@@ -425,6 +425,12 @@ function checkPush(a, { run, cacheDir, platformRoot }) {
       + `second _plan session (a known governance-artifact false positive; CI shows it red, §7b handles it at merge). Not blocking.`);
   }
   if (p.status === 0) {
+    // --required-only: exit 0 means every check CI requires passed. Report-only failures are shown, never blocking,
+    // and the pass is not cached so they are printed again on the next push.
+    const reportOnly = /^FAIL /m.test(p.output);
+    if (reportOnly) {
+      return ok(`kiro-web-session guard: preflight passed every check CI requires on ${sha.slice(0, 12)}${note}; these checks are report-only in CI and failed (not blocking):\n${condensePreflight(p.output)}`);
+    }
     mkdirSync(path.dirname(okFile), { recursive: true });
     writeFileSync(okFile, `${new Date().toISOString()}\n`);
     return ok(`kiro-web-session guard: preflight passed on ${sha.slice(0, 12)}${note}`);

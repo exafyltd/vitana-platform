@@ -1,0 +1,17 @@
+# VTID-05359 commands (reviewer-step-model/step-model-line) — session kiro-exafy-202610272309-57d7, Windows, Node test runner
+1. Red on base (plan section 5): git archive origin/main 499ad9fcea into a temp dir, copy only the new guard.cjs + guard.test.cjs,
+   node --test scripts/ci/kiro-steering/guard.test.cjs  -> FAIL (exit 1): tests 66, pass 58, fail 8 (see red-on-base.txt)
+2. One-off edit script (plan D6, not committed): node <temp>/rsm-prepend.cjs .kiro/workflows/vitana-pipeline.workflow.json
+   -> "prepended the model line to 18 reviewer prompts" (script aborts if the file is not plain 2-space JSON or a prompt already has the label)
+3. Prefix-only check: node script comparing origin/main and head workflow JSON
+   -> "prefix-only changes on 18 reviewer prompts; nothing else differs"; git diff --numstat: 18 insertions, 18 deletions
+4. node --test scripts/ci/kiro-steering/guard.test.cjs (head)  -> PASS: tests 66, pass 66, fail 0 (outputs/guard-test-green.txt)
+5. node scripts/ci/kiro-steering/guard.cjs .  -> "kiro-steering: OK", exit 0 (outputs/guard-run-green.txt)
+6. node --test scripts/collab/store-review.test.cjs  -> PASS: tests 7, pass 7, fail 0 (unchanged)7. Preflight (node scripts/collab/preflight.mjs --repo <WT> --base origin/main --head HEAD --branch kiro/reviewer-step-model/step-model-line --title "VTID-05359 (reviewer-step-model/step-model-line): review prompts open with their chain model"), head 2c05b0308c:
+   Collab handoff PASS, Lane scope PASS, PR-GATE weakening PASS, PR-GATE red-green PASS, Kiro steering PASS;
+   PR-GATE sparring FAIL (no "owner approval" line in plan-sparring.md) -> fixed in the next commit;
+   PR-GATE scope FAIL (report-only; no scope.json by plan section 5, VTID-05338 precedent);
+   Collab tests FAIL 6/177: 3 x automations.test.mjs ENOENT docs/programs/areas.yaml (sparse worktree did not check out docs/programs; added, re-run below),
+   3 x Windows-only path tests (kiro-web-session "parseCommand", "from a linked worktree", kiro-web-steering "case 6").
+8. Same 3 Windows-only tests on base (git archive origin/main 499ad9fcea, node --test scripts/collab/kiro-web-session.test.mjs scripts/collab/kiro-web-steering.test.mjs):
+   FAIL 3/31, the same three tests -> red on base on Windows, not this lane's (CI runs Linux).
