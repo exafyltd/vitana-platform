@@ -1,0 +1,16 @@
+{
+  "vtid": "VTID-05348",
+  "kind": "infra",
+  "paths": [
+    ".kiro/specs/quality-checks/**",
+    "docs/validation/VTID-05348/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05346/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": [
+    {
+      "file": ".kiro/specs/quality-checks/lanes/v1-pr-template.md",
+      "reason": "closing record for a lane whose code PR (exafyltd/vitana-v1#1503) is merged; state records only"
+    }
+  ]
+}

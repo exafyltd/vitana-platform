@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05409",
+  "slug": "kiro-lane-admin",
+  "lane": "rules",
+  "kind": "docs",
+  "sparring_record": "docs/validation/VTID-05409/plan-sparring.md",
+  "summary": "Human-facing rule text made consistently Claude-free and consistent with the merged VTID-05408 enforcement: the protected-gate authority becomes the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired), and collaboration.md gains one sentence describing the authorized lane_admin reviewer-agent lane-administration path. The vitana-v1 CLAUDE.md protected-gate sentence is the byte-identical mirror, carried in the sibling vitana-v1 PR.",
+  "paths": [
+    ".claude/rules/collaboration.md",
+    "CLAUDE.md",
+    ".kiro/pipeline/common-rules.md",
+    ".kiro/steering/vitana-owner-autonomy.md",
+    "docs/validation/VTID-05409/**"
+  ]
+}

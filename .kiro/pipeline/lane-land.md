@@ -35,7 +35,9 @@ true` exactly when the status becomes `landed`, `parked` or `skipped`.
    c. `gh pr ready` if draft. Already merged by the PM → `merged_by: PM`, go to f.
    d. Up to date with latest `main`: if behind, `gh pr update-branch <n>` (no force); clean → keep the accept (log:
       only `main`'s commits added); conflict → `merge_conflicts`+1, status `needs_update`, release the lock, go to 4.
-      Wait (poll 2-3 min, max 60 min) for every required check green on that exact head, then merge at once under
+      Merge with `node <vitana-platform>/scripts/collab/land-guard.mjs merge --gh <owner/repo> --pr <n> --reviewed-head
+      <Collab-Reviewed-Head> --title "<title>" --wait 3600` (common rule 13: it waits for every required check green on
+      that exact head and refuses a stale review, a red check, a PR behind its base and a protected gate file), at once under
       the §7b rule (common rule 4) with **squash** (the subject keeps the PR title's VTID, which STAGING-VERIFY reads;
       a merge commit fails rule 47, `quality-checks.md` "Merge"); `--admin` only for the governance-artifact
       false positive (log why); never over a real red. A lane spanning both repos merges both PRs.
@@ -49,7 +51,9 @@ true` exactly when the status becomes `landed`, `parked` or `skipped`.
    f. Record the merge SHA (`gh pr view <n> --json mergeCommit,mergedBy,mergedAt`), who merged (PM or §7b rule),
       `--admin` and why → `merges.md`, lane log and state; a PR comment on PRs this step merged:
       `Merged under collaboration.md §7b (PM merge rule): merge commit <sha>`; status `landed`, `done: true`; timing
-      `lane_merged` (`mergedAt`). Release the claim (`queue.mjs release <slug>/<LANE> --session <id>`).
+      `lane_merged` (`mergedAt`). Release the claim only after the lane's closing record
+      (`state: done`) is merged to `origin/main`: `land-guard.mjs release --repo <dir> --slug <slug> --lane <LANE> --session
+      <id>` (it refuses, and prints the file and the state it found, otherwise; common rule 13).
    g. A rule-text lane (steering / collaboration.md) right after landing: for both repos, fetch; if the main
       checkout is on `main` with a clean `git status --porcelain` → `git merge --ff-only origin/main`, else skip and
       log, so the next steps load the new rules.

@@ -1,0 +1,23 @@
+{
+  "vtid": "VTID-05268",
+  "service": "gateway",
+  "note": "Read-only (rule 48). mt-jobs/jobs-community-scan-tenant ships dark: MT_RESOLUTION_V2 is not set on staging, so /community-scan runs today's platform-wide scan and the backfill loop keeps its env tenant list. No scan is triggered against staging and no POST is sent; the per-tenant passes, the single aggregated OASIS event and the backfill tenant source are proven by Jest. Nothing here targets production.",
+  "tests": [
+    {
+      "kind": "http",
+      "name": "gateway alive",
+      "target": "gateway",
+      "method": "GET",
+      "path": "/alive",
+      "expect_status": 200,
+      "reason": "read-only GET: the build with the changed scan-runner, route and backfill loop boots"
+    },
+    {
+      "kind": "existing",
+      "name": "community scan + memory backfill per active tenant",
+      "ref": "npx jest test/vtid-05268-community-scan-tenant.test.ts",
+      "cwd": "services/gateway",
+      "reason": "the fan-out writes rows and emits an event, so it is never triggered on staging"
+    }
+  ]
+}

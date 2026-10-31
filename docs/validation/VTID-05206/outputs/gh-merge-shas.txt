@@ -1,0 +1,2 @@
+vitana-v1#1441 merged=true merge_commit_sha=b73e6d298f5995c1c6ac67ab7e3245260835010f merged_at=2026-10-16T12:17:03Z title=VTID-05206 (new-member-welcome/new-member-card-optin): Introduce me to the community — opt-in for the new-member card
+vitana-v1#1444 merged=true merge_commit_sha=704b5def4cfa0296776d21507b8d19bc5a47c31b merged_at=2026-10-16T12:57:39Z title=VTID-05206 (new-member-welcome/new-member-card-optin): staging spec reports why the switch row is missing

@@ -15,6 +15,15 @@ Owner decisions (2026-09-26), not to be re-asked:
    human in between.
 3. `CLAUDE.md` size cleanup is a separate change, not part of this one.
 
+Owner decisions (2026-10-22/23): **Kiro is a merging session too**. It may
+also publish itself when the owner commands it in the conversation:
+- a full publish of the verified staging build; or
+- only the changes made in one specific session — not necessarily everything
+  on staging.
+
+The Command Hub PUBLISH stays the default. Details: §6; platform CLAUDE.md
+rule 50a; `.claude/rules/collaboration.md` §7c.
+
 ---
 
 ## 1. The pipeline
@@ -33,9 +42,11 @@ PR reviewed + approved
        ├─ smoke suite for the deployed service (always)
        └─ change suites of every commit between production and this commit (§3.2)
   → result recorded in OASIS: staging.verify.passed | failed | superseded
-       ├─ passed → ready message to Claude Code + Operator Chat (§5)
+       ├─ passed → ready message to the Kiro / Claude Code session + Operator Chat (§5)
        │            "Staging verified — ready for deployment to production?"
-       │            → yes → PUBLISH (§6) → production deploy check (§7)
+       │            → yes → PUBLISH (§6): Command Hub button, or the session on the
+       │              owner's command — full, or only one session's changes
+       │            → production deploy check (§7)
        └─ failed → no production prompt; fix, merge, redeploy, re-verify (§8)
 ```
 
@@ -198,7 +209,8 @@ before any test ran (runner/checkout/install) — the same rule as PR CI.
 
 Sent only on `staging.verify.passed`, to exactly two channels:
 
-- **Claude Code** — the session that merged the change keeps watching until
+- **The merging session (Kiro or Claude Code)** — the session that merged the
+  change (for a Kiro plan, its plan driver) keeps watching until
   STAGING-VERIFY for its merge commit finishes (workflow run / OASIS event,
   with a scheduled check-in if it has the means). Merging is not the end of
   the task; the verification result is. The session then asks the developer
@@ -230,20 +242,43 @@ build staging serves; gateway via `AWS-PROD-DEPLOY-GATEWAY.yml` in
 `promote-staging` mode with `expected_commit` pinned, frontend via its prod
 workflow).
 
-- **From Operator Chat** — the Publish action calls the PUBLISH endpoint
-  under the chat user's exafy_admin session.
-- **From Claude Code** — the session dispatches the same prod workflows PUBLISH
-  dispatches, pinned to the verified commit (`expected_commit` /
-  `commit_sha`), with `reason` naming the VTID and the STAGING-VERIFY run.
+- **From Operator Chat / Command Hub** — the Publish action calls the PUBLISH
+  endpoint under the chat user's exafy_admin session.
+- **From a Kiro or Claude Code session, on the owner's command** — when the
+  owner explicitly commands the publish in that conversation, the session
+  dispatches the same prod workflows PUBLISH dispatches, pinned to the
+  verified commit (`expected_commit` / `commit_sha`). Its `reason` names the
+  VTID(s), the scope, the session id and the STAGING-VERIFY run. A question,
+  "later", silence or an inference is not a command. An unattended run (seat
+  automation, workflow step, automation-started driver) or a reviewer agent
+  never publishes. Rules: `.claude/rules/collaboration.md` §7c. A session
+  publish has two scopes:
+  - **Full publish** — exactly what the Command Hub button does: the whole
+    verified staging build.
+  - **Session-scoped publish** — only the changes one session made (this
+    session, or a session id the owner names), found by the `Collab-Session`
+    trailer or the session id in the PR body, and only the services they
+    touch. It does **not** have to ship everything on staging. It is pinned per
+    service to that session's last merge commit (platform CLAUDE.md
+    IF–THEN 26).
+    - A pinned commit ships all its ancestors, so first diff it against the
+      commit production build-info reports live. If the range holds a commit
+      that is neither that session's nor owner-approved, stop and tell the
+      owner exactly what else would ship; nothing is cherry-picked onto
+      production.
+    - If the workflow cannot pin that commit, stop and say so.
 
 Guards, both channels:
 
 - The commit promoted must be the commit that passed. If staging now serves a
   newer, unverified commit, PUBLISH is refused until that commit has its own
   green STAGING-VERIFY and its own ready message.
-- The "yes" covers the commit list shown in the ready message and nothing
-  else. That list is what makes this compatible with platform IF-THEN 26: the
-  developer approved every commit in the range explicitly.
+- The "yes" covers the commit list shown in the ready message (or, for a
+  session-scoped publish, the session's own range) and nothing else. That
+  list is what makes this compatible with platform IF-THEN 26: the developer
+  approved every commit in the range explicitly.
+- A migration in the range is named to the owner first; a publish never
+  applies one. Never `publish-to-prod.sh` or `EXEC-DEPLOY.yml`.
 - Anything other than a clear yes (a question, "later", silence) is not a yes.
 
 ---
