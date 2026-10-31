@@ -14,8 +14,15 @@ node --test --test-name-pattern=VTID-05365 scripts/collab/queue.test.mjs   → t
 node --test --test-name-pattern=VTID-05365 scripts/collab/queue.test.mjs   → tests 8, pass 8, fail 0
 (8th test: commitFileReader equals git show in memory and through the temporary file, 2 git spawns)
 
-## Collab suite
-see "Collab suite" below
+## Collab suite (Windows, linked worktree)
+node --test scripts/collab/*.test.mjs   → tests 229, pass 226, fail 3
+The 3 failures are Kiro Web / Windows-worktree tests and fail identically on base cf009eca8f
+(kiro-web-session.test.mjs + kiro-web-steering.test.mjs on base → 33 tests, 30 pass, 3 fail): parseCommand finds every push
+form …; from a linked worktree the workspace is the main checkout's parent …; case 6: the real checkout(s) generate a
+clean set. CI (Linux) is the arbiter for those.
+
+## Preflight (--no-tests), head 196880def4
+Collab handoff PASS, Lane scope PASS, PR-GATE scope/sparring/weakening/red-green PASS, Kiro steering PASS
 
 ## V5 validate on the heads of #4415 and #4333 (before = origin/main queue.mjs, after = this head), local Windows
 node <queue.mjs> validate --repo <vitana-platform> --base <base> --head <head> --branch <branch> --summary <tmp>
