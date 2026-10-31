@@ -1,6 +1,6 @@
 ---
 lane: program-registry
-state: executing
+state: done
 next_actor: kiro
 depends_on: []
 executor: kiro
@@ -15,9 +15,9 @@ paths:
   - docs/programs/standalone/program.md
   - scripts/collab/program-registry.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-28T16:00Z
+updated: 2026-10-31T23:52Z
 vtid: VTID-05364
-claimed_by: kiro-exafy-202610281324-f088
+claimed_by: kiro-exafy-202610312350-74cb
 branch: kiro/collab-handoff-check-fix/program-registry
 pr: https://github.com/exafyltd/vitana-platform/pull/4531
 ---
@@ -52,3 +52,9 @@ PR: https://github.com/exafyltd/vitana-platform/pull/4531
 Findings: non-blocking only. Re-review after the main merge (ba709c62 via update-branch): the PR diff against main is still the same 13 files, and the registry entries match the queue.mjs from ba709c62. Land only after CI is green on the head. Reviewer workflow wf_a524234a0c5bde9f.
 Stored by the landing session on the agent's behalf (lane-land.md step 2).
 Next: land under §7b once every required check is green on the head.
+### 2026-10-31T23:49Z · kiro-exafy-202610312350-74cb · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4531 (exafyltd/vitana-platform#4531) reviewed by agent:vitana-lane-reviewer; closing record written by the land step of parent session kiro-ide-202610272306-27b0. Stale claim of kiro-exafy-202610281324-f088 (2026-10-28) broken with `queue.mjs release --stale` and re-claimed by kiro-exafy-202610312350-74cb.
+### 2026-10-31T23:50Z · kiro-exafy-202610312350-74cb · in-review → verified
+Accepted by agent:vitana-lane-reviewer (claude-sonnet-5.5) on head `5da1d46e06a690a40541e2be6f39b349b0784a93` (review entry above). merge: f5891c6d9a5cdbe3e8ba481ff4e6510264346973 · authority: §7b PM rule (applied by the plan driver while the PM is not live), squash, all required checks green.
+### 2026-10-31T23:51Z · kiro-exafy-202610312350-74cb · verified → done
+merge: f5891c6d9a5cdbe3e8ba481ff4e6510264346973 · authority: §7b PM rule. Collab tooling and registry only, nothing deploys, so no STAGING-VERIFY and no Gate 2. Claim released after this record merges.
