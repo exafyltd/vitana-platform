@@ -1,132 +1,104 @@
-# Design — spotlight-compact-hero
+# Design: spotlight-compact-hero (approved blend v2)
 
-All `file:line` references are into `exafyltd/vitana-v1` on `origin/main` (the PLAN-SPAR
-partner reads them through the `spar_refs` companion pinned in `handoff.md`).
+All `file:line` references are into `exafyltd/vitana-v1` `origin/main` at `847a9f68`.
+`plan.md` (D1–D7) is the source of truth; this file explains the geometry and the reasoning.
 
-## 1. What "too big" actually is
+## 1. Why the card is "a dinosaur" today
 
-The `dashboard` archetype maps to layout width `stage-rail`
-(`src/components/layout/spotlight/archetypes.ts:34`), but is a **single centred stage** on the
-real pages because none of them pass a `rail`:
+- `ARCHETYPE_WIDTH.dashboard = 'stage-rail'` (`src/components/layout/spotlight/archetypes.ts:28`)
+  puts the stage in one centred column capped at `--sp-stage-max: 760px`
+  (`src/index.css:188`, `.sp-grid` at :426).
+- Inside that column the Spotlight VCard spans the full width and stacks a tall body.
+- The rest of a 1920 px viewport is left empty.
+- A smaller card inside a 760 px column cannot reach the owner's proportion: it would be either tiny or
+  still full width. So the archetype needs a wider stage.
 
-- `src/pages/Health.tsx:442` — `<ScreenFrame archetype="dashboard" …>` with only `children`.
-- `src/pages/Wallet.tsx:546` — same, plus `tabs`.
-- `src/pages/health/VitanaIndexDetail.tsx:650` — same.
-- `src/pages/AutopilotDashboard.tsx:484` — same.
+## 2. Width: `full` (existing token)
 
-`SpotlightLayout` renders the rail only when `width === 'stage-rail' && rail != null`
-(`src/components/layout/spotlight/SpotlightLayout.tsx:38`), and the CSS only widens the grid
-to two columns for `.sp-grid:has(> .sp-rail)` (`src/index.css:443-444`). So the stage is a
-single column capped at `--sp-stage-max: 760px` (`src/index.css:188`).
+- `.sp-layout[data-width="full"] .sp-grid { grid-template-columns: minmax(0, 1fr) }`
+  (`src/index.css:436-437`) is already in the contract (SR-14).
+- `SpotlightLayout` renders a rail only for `stage-rail` (`SpotlightLayout.tsx:34`), so `full` has
+  no rail.
+- My Journey's `JourneyRail` (`AutopilotDashboard.tsx:508`, `JourneySpotlight.tsx:116`) folds into
+  the grid as tiles with the same props and handlers.
 
-The hero is a `spotlight` VCard filling that 760px width with a 16:9 media box
-(`src/components/ui/vcard/VCard.tsx` `mediaBoxClass` → `aspect-video w-full`) and a tall body.
-For Health / Vitana Index it is the shared `VitanaIndexHeroCard`
-(`src/components/spotlight/tier-b/VitanaIndexHeroCard.tsx:18`); for Wallet it is an inline
-`<VCard size="spotlight">` (`src/pages/Wallet.tsx:573`); for My Journey it is a
-`size="spotlight"` card inside `AutopilotDashboard.tsx`. The hero has no media image passed
-in practice, so the "dinosaur" is the full-width card with a large padded body (`p-5`,
-`VCard.tsx` stacked branch) and, for Health, the five-pillar list.
+## 3. Bento geometry
 
-## 2. Contract tension to resolve (the real design decision)
+Layout at `xl` and above, matching the v2 mock:
 
-Three mechanisms require **exactly one `spotlight`-size element** on every dashboard screen:
+```
+grid grid-cols-10 gap-4
+┌───────── col-span-4 row-span-2 ─────────┬── col-span-3 ──┬── col-span-3 ──┐
+│ SPOTLIGHT (gradient art 16:9 + ring,     │ tile           │ tile           │
+│ +N pill; eyebrow, headline, insight)     ├────────────────┼────────────────┤
+│                                          │ tile           │ tile           │
+├── col-span-2 ──┬──── col-span-4 ────┬── col-span-2 ──┬── col-span-2 ──┤
+│ tile           │ tile (list)        │ tile           │ tile           │
+└────────────────┴────────────────────┴────────────────┴────────────────┘
+QUICK ACTIONS  ( pill ) ( pill ) ( pill ) ( pill )        ← full-width strip, not a VCard
+long-form TierBSection blocks (full width)
+```
 
-1. `docs/design-system/SPOTLIGHT_RULES.md` SR-06 / SR-07.
-2. The Tier B composition test
-   `src/pages/spotlight-tier-b.vtid-05111.test.tsx:223-228`: for each `dashboard` route it
-   counts `size="spotlight"` + `<VitanaIndexHeroCard` and asserts the count is 1–2.
-3. The staging design-lint `tests/e2e/staging/design-contract.staging.spec.ts:137` and
-   `tests/e2e/staging/vtid-05111-tier-b.staging.spec.ts:137`: exactly one
-   `[data-vcard-size="spotlight"]` in the first viewport.
+- The Spotlight card takes 4 of 10 columns, so it is 40% of the stage width, and spans 2 rows.
+- No `standard` tile is wider than the Spotlight card.
+- Every row adds up to 10 columns (SR-13).
+- `row-span-2` stretches the four neighbours to the card's height, so no row has holes.
+- Below `xl` the grid falls back to the `TIER_B_GRID` columns (`TierBKit.tsx:18`).
+- Only default Tailwind grid utilities are used. `tailwind.config.ts` does not override them.
+- No `h-[…]`/`w-[…]` sizes (SR-12/14).
 
-**Decision: keep the compact hero as the ONE `spotlight` VCard, in a new compact
-presentation — do NOT drop the `spotlight` size and do NOT add a new size token.** The
-`spotlight` VCard already supports a text-only card (no `media` prop → no media box,
-`VCard.tsx` `hasMedia` is false). The compact band is a `spotlight` VCard rendered *without*
-media and with a short, single-row body (ring + headline + "+N this week" + one-line insight),
-so its height is content-driven (~1/3 of today's) and uses only the 4px spacing scale and the
-fixed type scale (SR-15, SR-16). This satisfies all three mechanisms unchanged while making
-the card small. SR-06/SR-07 are preserved verbatim; the contract text gains a *presentation*
-clause for `dashboard`, not a new size.
+## 4. Spotlight identity with existing tokens
 
-If, during build, the compact band cannot hit ~1/3 height without a fixed pixel height (which
-`design/no-arbitrary-size` forbids, SR-12/SR-14), that is a genuine contract addition (a new
-hero-band height token) and is **flagged to the owner in `plan.md`, not invented**. The design
-avoids it: dropping the media box and collapsing the body to one row already removes the bulk.
+The card stays a `<VCard size="spotlight">`, so every one-spotlight check still holds:
 
-## 3. The bento grid
+- `design-contract.staging.spec.ts`, the `SINGLE` block;
+- `vtid-05111-tier-b.staging.spec.ts`;
+- `spotlight-tier-b.vtid-05111.test.tsx:222-227`.
 
-Below the compact hero, a bento grid of `standard` VCards (media ratio 4:3, `VCard.tsx`
-`mediaBoxClass` `standard` branch). The existing Tier B grid tokens already express this:
-`TIER_B_GRID = 'grid grid-cols-1 gap-4 md:grid-cols-2 xl:grid-cols-3'`
-(`src/components/spotlight/tier-b/TierBKit.tsx:18`). On the 760px stage a 2-col grid gives
-tiles of ~360px and a 3-col grid ~240px — a 2-col tile is ~47% and a 3-col tile ~31% of the
-stage. **To keep "no tile > ~40% of the stage width" (R1), the dashboard bento uses the 3-col
-grid at the stage's full width (`TIER_B_GRID`, which is 3-col from `xl`), and any full-row
-emphasis tile spans the whole row rather than being a wider single tile.** No tile is given a
-width greater than one grid column. This is tokens-only and needs no new CSS.
+Its parts:
 
-"Up Next" becomes one `standard` tile in this grid (see §4).
+- **Media:** a `mediaSlot` with token gradient artwork (for example `from-status-success/30
+  to-status-info/30`, the §E Vitana Index ring mapping, or `category-*`) in the 16:9 box
+  (`VCard.tsx` `aspect-video`). The Vitana Index ring and the "+N this week" pill sit on top of it.
+- **Body:** eyebrow, headline, one-line insight.
+- **Accent:** `shadow-vcard-raised` (`tailwind.config.ts:272`), `border-primary/50` and
+  `ring-1 ring-primary/30`. Standard tiles use `shadow-vcard`.
 
-## 4. Rail decision — KEEP where it exists, add none (revised, sparring R1-F1)
+**Flagged for the owner:** a true coloured glow would need a new elevation token, because only the
+neutral `--sp-elevation-1/2` exist (`src/index.css:195-196`). The plan ships without it.
 
-Correction to §1: My Journey (`/autopilot`, `/autopilot/audiobook`) DOES pass a rail —
-`rail={<JourneyRail …/>}` at `src/pages/AutopilotDashboard.tsx:508` (compact VCards only,
-`JourneySpotlight.tsx:116`). That rail is KEPT unchanged: it already satisfies SR-08 and the
-stage-rail layout, and removing it would drop the autopilot-count context and the toggle sheet.
-Health, Vitana Index and Wallet stay rail-less (no rail added); their "Up Next" content becomes
-a `standard` tile in the bento grid. `plan.md` D1 is the source of truth.
+## 5. Data honesty (SR-24/25/26)
 
-## 5. Shared component + per-page adoption
+- Tiles use only hooks each page already calls. For Health that is `useVitanaIndexCache()`
+  (total, trend, five pillar scores), `useAutopilot()` (pending count, latest actions),
+  `NextBestActionCard`, and the pillar agents.
+- The mock's figures are illustrative, not data.
+- A tile with no data shows the shared empty state or is left out, and the row is rebalanced so it
+  stays full.
+- Quick-action pills reuse existing handlers. Wallet keeps `CurrencyToggle` in the card body
+  (`Wallet.tsx:581`) and moves its secondary actions into pills, with the same `isIAPRestricted()`
+  guards.
 
-A new shared component `DashboardHeroBand` (compact `spotlight` band) and a grid helper live in
-`src/components/spotlight/tier-b/`, beside `VitanaIndexHeroCard` and `TierBKit`. Each dashboard
-page swaps its current full hero for the compact band and arranges its existing content cards
-into the bento grid. `VitanaIndexHeroCard` gains a `compact` presentation (no media, one-row
-body, pillars off) so Health and Vitana Index reuse it; Wallet and My Journey render their own
-compact `spotlight` band via `DashboardHeroBand`. Every dashboard page keeps exactly one
-`spotlight` element.
+## 6. Skeletons (SR-20/21)
 
-## 6. Skeleton parity (R3)
+- The `dashboard` case of `ArchetypeSkeleton` (`ArchetypeSkeleton.tsx:39`) mirrors the same
+  10-column bento.
+- `VCardSkeleton size="spotlight"` already carries the 16:9 box (`VCardSkeleton.tsx`). It sits at
+  `col-span-4 row-span-2`, with `standard` skeletons in the D4 spans and a pill-strip skeleton row.
+- The mobile `MobileShape` (`SpotlightLoading.tsx:59`) is unchanged.
 
-`src/components/layout/spotlight/skeletons/ArchetypeSkeleton.tsx:42-51` currently renders a
-`VCardSkeleton size="spotlight"` (tall, with the 16:9 box) + a 3-col `standard` grid for
-`dashboard`. The media-less compact band must have a matching skeleton so CLS stays < 0.1
-(SR-21). `VCardSkeleton` renders the `spotlight` media box unconditionally
-(`src/components/ui/vcard/VCardSkeleton.tsx:12-20`). Add a `compact`/media-less skeleton shape
-(a short band skeleton with no media box) and use it in the `dashboard` branch of both
-`ArchetypeSkeleton` and `SpotlightLoading` (`SpotlightLoading.tsx` `MobileShape` dashboard
-branch stays mobile and unchanged; only the desktop `ArchetypeSkeleton` path changes). The
-grid skeleton switches to 3 columns to mirror §3. `SpotlightLoading.test.tsx` and the
-skeleton's own tests are updated to the new shape.
+## 7. Enforcement and verification
 
-## 7. ESLint, ratchet, manifest (R4)
+- New read-only staging spec `spotlight-dashboard-proportion.staging.spec.ts`. It runs at 1440×900
+  and 1920×1080, plus RTL, and checks:
+  - exactly one spotlight card;
+  - its width relative to the stage is between 0.30 and 0.45, and it is not full width;
+  - its area is at most 0.45 of the first-viewport stage area;
+  - it sits at the inline start;
+  - there is no horizontal scroll and no empty band larger than 25% of the viewport.
 
-- The compact band and the grid use only existing tokens and the 4px scale, so new component
-  files are `design/*`-clean. No `h-[…]`/`w-[…]`, no raw palette, logical props only.
-- The **contract ESLint rules** (`eslint-rules/design/**`) only change if the enforceable
-  surface changes. The compact-hero rule is a *presentation* rule, enforced by the existing
-  SR-06/SR-07 count (unchanged) and the staging spec, so `eslint-rules/design/**` is expected
-  to be **untouched** — meaning no `design.json` baseline rewrite is required. If a lane does
-  touch `eslint-rules/design/**`, that PR must commit a `scripts/ci/pr-gate/baseline/
-  design.json` equal to the current counts (the contract-change exception,
-  `SPOTLIGHT_RULES.md` §C). The design ratchet otherwise only needs to stay ≤ the base-commit
-  counts; new files at 0 keep it green.
-- No manifest archetype or route changes: the five `dashboard` routes keep `archetype:
-  "dashboard"` and `status: "migrated"`. `npm run design:manifest` is run to confirm no drift.
-
-## 8. Verification (R7, local only)
-
-- `npx eslint <changed files>` → 0 `design/*`.
-- `node scripts/ci/pr-gate/gate.mjs ratchet-design` style check green vs `origin/main`.
-- `npm test` (or scoped vitest) — manifest test, `spotlight-tier-b.vtid-05111.test.tsx`,
-  `VitanaIndexHeroCard` test, `SpotlightLoading.test.tsx`, `spotlight.vtid-05105.test.tsx` all
-  green; `tsc` via the build.
-- `npm run build` then `npm run preview`; Playwright signed-out / mocked at 1400×900 desktop:
-  before/after screenshots of `/health?spotlight=1`, `/wallet?spotlight=1`,
-  `/health/vitana-index?spotlight=1`, `/autopilot?spotlight=1` showing the compact band + bento
-  grid and one spotlight element in the first viewport; a 390×844 shot of `/health` proving the
-  phone layout is unchanged. No live systems.
-- `npm run i18n:inventory` only if any user-visible string is added (commit the regenerated
-  `docs/SCREEN_INVENTORY.md`).
+  The spec also runs locally against `npm run preview`.
+- Vitest checks the card's identity (media box, accent classes), the composition (`/autopilot` added,
+  `<JourneyHero` and `<DashboardSpotlight` counted, `DASHBOARD_BENTO` used, no `rail=`), and the
+  folded rail's handlers.
+- `eslint-rules/design/**` is untouched, so `design.json` keeps its base counts.
