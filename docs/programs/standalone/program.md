@@ -42,6 +42,7 @@ specs:
   - vitana-platform:kiro-web-reliability
   - vitana-platform:plan-spar-stuck-session
   - vitana-platform:session-title-stable
+  - vitana-platform:communication-style
   - vitana-platform:pipeline-lane-state-efficiency
   - vitana-platform:operating-workflow
   - vitana-platform:pm-ci-load
@@ -108,3 +109,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:quality-checks-followup` — merge-method wording (squash), quality checks inlined into Kiro Web steering, reviewer requester rule (protected)
 - `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
+- `vitana-platform:communication-style` — always-included steering rule in both repos: agents talk to the owner as a friendly product-building partner; safeguards unchanged
