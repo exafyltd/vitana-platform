@@ -24,6 +24,7 @@ specs:
   - vitana-platform:ci-ecr-public-auth
   - vitana-platform:outbox-test-dates
   - vitana-platform:pm-reassign-idempotent
+  - vitana-platform:pm-reassign-idempotent-r2
   - vitana-platform:matches-scroll-end
   - vitana-platform:spotlight-commit-coverage
   - vitana-platform:profile-posts-full-width
@@ -56,6 +57,7 @@ specs:
   - vitana-platform:say-hello-lane-reassign
   - vitana-platform:i18n-propagate-stale-write
   - vitana-platform:sparring-floor-retry
+  - vitana-platform:ci-dockerhub-mirror
 docs:
   - vitana-platform:.kiro/specs/pm-agent/plan-sparring.md
   - vitana-platform:.kiro/specs/claude-sessions-handover/handoff.md
@@ -85,6 +87,7 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:ci-ecr-public-auth` — authenticated public.ecr.aws base-image pulls in stage/prod image builds (both repos)
 - `vitana-platform:outbox-test-dates` — VTID-05320 send-status test fixtures relative to now (vitana-v1)
 - `vitana-platform:pm-reassign-idempotent` — the PM's stale-review reassignment writes nothing when nothing changed
+- `vitana-platform:pm-reassign-idempotent-r2` — re-plan of `pm-reassign-idempotent/reassign-noop` with a Kiro executor and `types.ts` in its paths (supersedes VTID-05363)
 - `vitana-platform:matches-scroll-end` — the phone Matches list (`/me/matches`) scrolls to its last card (vitana-v1)
 - `vitana-platform:spotlight-commit-coverage` — STAGING-VERIFY coverage for the 10 desktop-spotlight merges without a VTID (vitana-v1)
 - `vitana-platform:profile-posts-full-width` — profile Posts tab: avatar header on top, post text/media full width (vitana-v1)
@@ -108,3 +111,4 @@ belong to none of the named programmes are listed here until the owner assigns t
 - `vitana-platform:quality-checks-followup` — merge-method wording (squash), quality checks inlined into Kiro Web steering, reviewer requester rule (protected)
 - `vitana-platform:operating-workflow` — one authoritative operating policy, central review independence, durable driver record, CI activity guard, proportional path, workflow metrics
 - `vitana-platform:reviewer-session-id-permission` — the reviewer agent generates its own reviewer session id via the existing queue.mjs command (narrowest shell permission; protected gate file, owner-authorized)
+- `vitana-platform:ci-dockerhub-mirror` — vitana-v1 PR CI pulls its Postgres service image from Docker Hub, not the capped ECR Public mirror
