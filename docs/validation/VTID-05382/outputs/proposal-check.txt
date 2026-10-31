@@ -1,0 +1,17 @@
+# VTID-05382 proposal check on a scratch copy of origin/main c810ca1a49
+$ node --test scripts/collab/reviewer-independence.test.mjs   (base)
+not ok 1 - self-review is keyed on the reviewer session id, not on the caller
+not ok 2 - independence guarantees are kept and tightened
+# pass 1
+# fail 2
+$ node --test scripts/collab/reviewer-independence.test.mjs   (proposed text)
+# pass 3
+# fail 0
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+# pass 67
+# fail 0
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+$ git diff --stat
+ .kiro/agents/vitana-lane-reviewer.md | 12 ++++++++++--
+ 1 file changed, 10 insertions(+), 2 deletions(-)
