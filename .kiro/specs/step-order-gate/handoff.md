@@ -4,10 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: verified
+state: done
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 vtids: [VTID-05362]
-updated: 2026-10-28T11:21Z
+updated: 2026-10-28T12:42Z
 sparring_record: .kiro/specs/step-order-gate/sparring/verdict.md
 ---
 # Handoff — step-order-gate
@@ -37,3 +37,6 @@ The lane is in review and accepted.
 
 ### 2026-10-28T11:21Z · kiro-exafyltd-202610261510-099d · in-review → verified
 Lane merged (6f4bea7b). It deploys nothing, so there is no Gate 2.
+
+### 2026-10-28T12:42Z · kiro-exafyltd-202610261510-099d · verified → done
+Plan done. `scripts/collab/land-guard.mjs`, common-rules rule 13 and lane-land 3d/3f are on `main`. Claims and the heartbeat are released by `land-guard.mjs` after this record merges.
