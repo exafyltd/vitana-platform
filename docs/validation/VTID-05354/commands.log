@@ -1,0 +1,23 @@
+# VTID-05354 commands (kiro-exafyltd-202610271503-9458, 2026-10-28T11:14:49Z), base origin/main 850dfeb90a
+$ node --test scripts/collab/driver-wake.test.mjs   (base: module missing)
+# tests 1
+# pass 0
+# fail 1
+$ node --test scripts/collab/driver-wake.test.mjs   (head)
+# tests 9
+# pass 9
+# fail 0
+$ node --test scripts/collab/*.test.mjs   (head)
+# tests 203
+# pass 202
+# fail 0
+# skipped 1
+$ mutation checks (guard disabled alone → driver-wake tests fail): no KIRO_API_KEY guard fail 2; no live-driver guard fail 1; no budget fail 1; no fork guard fail 1
+$ ruby -ryaml DRIVER-WAKE.yml
+triggers=["workflow_run", "push", "workflow_dispatch"] push.paths=[".kiro/specs/*/lanes/*.md"] permissions={"contents" => "write"} checkout ref=main
+$ Kiro CLI installer: kiro.dev/docs/cli/headless documents `curl -fsSL https://cli.kiro.dev/install | bash` and no version pin or checksum; recorded, not invented
+$ node --test scripts/ci/kiro-steering/guard.test.cjs; node scripts/ci/kiro-steering/guard.cjs .
+# pass 66
+# fail 0
+kiro-steering: OK
+$ fix-forward 1 (wake=failure on 3add720f: the push run checked out main, where the script did not exist yet): bootstrap skip + continue-on-error on both steps; new test 9 red against the previous workflow file, green now

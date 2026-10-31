@@ -1,6 +1,6 @@
 ---
 lane: platform-rules
-state: verified
+state: done
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610261510-099d
 branch: kiro/owner-autonomy/platform-rules
@@ -18,7 +18,7 @@ paths:
   - scripts/ci/kiro-steering/guard.test.cjs
   - docs/kiro/**
   - docs/validation/VTID-*/**
-updated: 2026-10-27T12:29Z
+updated: 2026-10-28T09:26Z
 vtid: VTID-05343
 ---
 # Lane: platform-rules (repo exafyltd/vitana-platform)
@@ -77,3 +77,6 @@ PR #4394 was opened 2026-10-27. Reviewer agent: changes on `8eb643af` (NEVER 34 
 
 ### 2026-10-27T12:29Z · kiro-exafyltd-202610261510-099d · in-review → verified
 merge: d63df38e6c5fd64a82fba8c30b59a9a76a24a0a8 (#4394) · authority: §7b PM rule. Accept on `41e22dd6`; the merged head adds only that review entry; 10/10 checks green; up to date; no protected gate file; no `--admin`. Deploys nothing, so there is no STAGING-VERIFY.
+
+### 2026-10-28T09:26Z · kiro-exafyltd-202610261510-099d · verified → done
+Lane closed under §7b (merge d63df38e, #4394). The claim is released after this record merges.

@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05354",
+  "kind": "feature",
+  "paths": [
+    ".github/workflows/DRIVER-WAKE.yml",
+    "scripts/collab/driver-wake.mjs",
+    "scripts/collab/driver-wake.test.mjs",
+    "docs/kiro/driver-wake.md",
+    "docs/validation/VTID-05354/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05354/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

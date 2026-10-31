@@ -1,0 +1,28 @@
+# VTID-05408 enforcement — red-on-base evidence (origin/main @ f3f6822587)
+# Generated 2026-10-29T12:11:50Z
+
+## 1. Baseline: all 53 existing collab tests + governance Jest are green on origin/main (see commands.log).
+
+## 2. New T-A..T-K run against origin/main queue.mjs + protected-gate-files.json (new test file kept):
+##    the NEW-BEHAVIOUR tests (T-A, T-B, T-D, T-G, T-J, T-K) are RED; the PRESERVATION controls
+##    (T-C, T-E, T-F, T-H, T-I) are GREEN on base by design (they assert guardrails that must be kept).
+
+not ok 1 - VTID-05408 T-A: validateLane recognises the lane_admin marker and requires kiro + the reviewer agent + a lane-file path
+not ok 2 - VTID-05408 T-B: a trusted lane_admin lane reassigns a TARGET lane seat + narrows its paths → Collab handoff and Lane scope pass
+ok 3 - VTID-05408 T-C: the same cross-lane-file reassignment from an ordinary (non lane_admin) lane is refused
+not ok 4 - VTID-05408 T-D: a PR that self-grants lane_admin: true in its own head does not unlock the exemption (lane_admin pinned to trusted)
+ok 5 - VTID-05408 T-E: a lane_admin lane that changes a protected gate file is still refused
+ok 6 - VTID-05408 T-F: an ordinary lane PR editing a foreign seat’s own lane file is still refused (seat ownership preserved)
+not ok 7 - VTID-05408 T-G: validateRange cross-lane-file exemption passes only for a trusted lane_admin lane
+ok 8 - VTID-05408 T-H: an ordinary cross-lane-file edit with a mismatched Collab-Lane is still refused
+ok 9 - VTID-05408 T-I: a lane_admin lane cannot widen/change its OWN PERM fields or lane_admin (self-widen impossible)
+not ok 10 - VTID-05408 T-J: lane_admin parses as the STRING ‘true’ and still unlocks the carve-outs (toBool, never === true)
+not ok 11 - VTID-05408 T-K: the validateRange exemption resolves a trusted admin lane via fetchPlanLane from a qualifying plan( PR (symmetric with scope-check)
+# tests 11
+# pass 5
+# fail 6
+
+## 3. Restored patched files; full suite (53 existing + 11 new) all green:
+# tests 64
+# pass 64
+# fail 0

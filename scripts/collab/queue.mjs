@@ -15,7 +15,7 @@
  *   node scripts/collab/queue.mjs release <slug>/<lane-id> --session <id> [--stale] [--repo <path>]
  *   node scripts/collab/queue.mjs claims  [--repo <path>]          (claims with age; housekeeping input)
  *   node scripts/collab/queue.mjs validate --base <sha> --head <sha> [--repo .] [--branch <name>]
- *                                         [--allow-initial=<slug>] [--lane-repo <owner/repo>] [--summary <file>]
+ *                                         [--allow-initial=<slug>] [--lane-repo <owner/repo>] [--plan-repo <owner/repo>]... [--summary <file>]
  *   node scripts/collab/queue.mjs scope-check --base <sha> --head <sha> [--repo .] [--branch <name>]
  *                                         [--lane-repo <owner/repo>] [--plan-repo <owner/repo>]... [--summary <file>]
  *                                         (VTID-05213 Lane scope; VTID-05276: lane files of an open plan( PR)
@@ -85,10 +85,11 @@ export const agentOf = (s) => {
 export const GOVERNANCE_PATHS = ['.github/**', '.claude/**', '.kiro/steering/**', '.kiro/automations/**', 'scripts/collab/**',
   'CLAUDE.md', 'docs/programs/areas.yaml'];
 
-// VTID-05276 (plan §4.3): protected gate files — the gates themselves. A Kiro lane never changes one, whatever its
-// reviewer (owner or Claude review stays required). The list lives in protected-gate-files.json next to this script;
-// CI and vitana-v1 run single-file copies of queue.mjs, so the same list is compiled in for when the JSON is absent.
-// A JSON that is present but unreadable, malformed or empty fails loudly (the list is never silently emptied).
+// VTID-05276 (plan §4.3), VTID-05408 (kiro-lane-admin §4): protected gate files — the gates themselves. A Kiro lane
+// never changes one on a reviewer-agent accept alone; it needs the owner's instruction naming the plan plus a
+// reviewer-agent accept on the current head (Claude Code is retired). The list lives in protected-gate-files.json next
+// to this script; CI and vitana-v1 run single-file copies of queue.mjs, so the same list is compiled in for when the
+// JSON is absent. A JSON that is present but unreadable, malformed or empty fails loudly (never silently emptied).
 export const PROTECTED_GATE_BUILTIN = ['CLAUDE.md', 'scripts/collab/plan-spar.mjs', 'scripts/collab/queue.mjs',
   'scripts/collab/protected-gate-files.json', 'services/gateway/src/services/plan-sparring/**',
   'services/gateway/src/services/project-manager/governance.ts', '.github/workflows/PLAN-SPAR.yml',
@@ -173,6 +174,11 @@ function clean(s) {
 }
 
 const asList = (v) => (v === undefined || v === '' ? [] : Array.isArray(v) ? v : [v]);
+// VTID-05408 (kiro-lane-admin §0): parseFrontMatter assigns every scalar as a STRING, so `lane_admin: true` parses to
+// the string 'true' and a `=== true` comparison on it is always false (dead on arrival). Every test of `lane_admin`
+// uses toBool, never boolean strict equality; it also accepts a real boolean, so it stays correct if parseFrontMatter
+// is ever hardened to emit booleans.
+const toBool = (v) => v === true || v === 'true';
 
 /** `.kiro/specs/<slug>/handoff.md` → {slug, lane:'_plan'}; `.kiro/specs/<slug>/lanes/<id>.md` → {slug, lane:id}. */
 export function classifyPath(p) {
@@ -233,6 +239,14 @@ export function validateLane(fm, slug, lane, laneIds) {
       if (globTouchesProtected(g)) e.push(`paths "${g}" reaches a protected gate file (a governance path an agent review cannot unlock, scripts/collab/protected-gate-files.json); such a lane needs executor: claude`);
       else if (globTouchesGovernance(g) && !isReviewerAgent(fm.reviewer_seat)) e.push(`paths "${g}" reaches a governance path; such a lane needs executor: claude, or reviewer_seat: ${REVIEWER_AGENTS[0]}`);
     }
+  }
+  // VTID-05408 (kiro-lane-admin §1): the lane-administration marker. A `lane_admin` lane (string marker via toBool; §0)
+  // may, through the carve-outs in scopeCheck/validateRange, change the PERM fields of a TARGET lane it administers —
+  // so it must be executor: kiro, reviewer-agent-gated, and declare at least one lane-file path it administers.
+  // `lane_admin` is NOT a permission field; scopeCheck pins it to the trusted revision so a lane PR can never
+  // self-grant it. The protected-gate / governance-path checks above are unchanged.
+  if (toBool(fm.lane_admin) && !(fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && paths.some((g) => globToRegex('.kiro/specs/*/lanes/*.md').test(g)))) {
+    e.push(`lane_admin: true needs executor: kiro, reviewer_seat: ${REVIEWER_AGENTS[0]}, and a lane-file path (.kiro/specs/*/lanes/*.md)`);
   }
   if (fm.state === 'parked' && !LANE_EDGES[fm.parked_from]) e.push('parked_from must name the non-terminal state the lane was parked from');
   for (const d of asList(fm.depends_on)) {
@@ -525,7 +539,7 @@ function frontMatterChanged(repo, sha, p) {
   return fm(a) !== fm(b);
 }
 
-export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null }) {
+export function validateRange(repo, { base, head, branch = '', allowInitial = [], fetchLane = null, fetchPlanLane = null }) {
   const errors = [];
   const warnings = [];
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -588,6 +602,11 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
         && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
       if (c.kind === 'lane' && k.review === key && !frontMatterChanged(repo, k.sha, f)) continue; // reviewer appends a log entry
+      // VTID-05408 (kiro-lane-admin §1a): a reviewed, trusted lane-admin lane may edit a target lane file it
+      // administers, even though that file's own key differs from the commit's Collab-Lane. Gated identically to the
+      // scopeCheck carve-out (shared laneAdminCovers, trusted source resolved via fetchPlanLane symmetrically with
+      // scopeCheck — never the PR head), so it cannot be self-granted.
+      if (c.kind === 'lane' && k.lane && k.lane !== key && laneAdminCovers(repo, base, head, k.lane, f, fetchPlanLane, fetchLane)) continue;
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
   }
@@ -677,13 +696,27 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
   }
   if (trustedFm) {
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
+    // VTID-05408 (kiro-lane-admin §2): `lane_admin` is NOT a permission field but is pinned to the trusted revision
+    // alongside PERM, so a lane PR can never self-grant it (T-D) and a head-written value cannot leak downstream.
+    const TRUSTED_PINNED = [...PERM, 'lane_admin'];
     const changed = PERM.filter((k) => JSON.stringify(asList(trustedFm[k])) !== JSON.stringify(asList(fm[k])));
     const sessions = new Set(commits.filter((k) => k.files.includes(lanePath) && k.session !== PM_AGENT).map((k) => k.session));
     const claudeOnly = sessions.size > 0 && [...sessions].every((x) => /^session_/.test(x));
-    if (changed.length && !(trustedFm.executor === 'claude' && claudeOnly)) {
-      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (only Claude Code may change them, on an executor: claude lane)`);
+    // VTID-05408 (kiro-lane-admin §2): TARGET-ONLY PERM carve-out. A reviewed, trusted lane-admin lane (its OWN
+    // qualification read from the trusted revision via toBool — never the head, R2-F1) may change a target lane's PERM
+    // fields. scopeCheck keys on one lane per PR, so `lanePath` is the admin lane's OWN file; a lane never administers
+    // its own file (laneAdminCovers tests `matchesAny(lanePath, trusted paths)`, and the admin lane's paths list the
+    // TARGET files, not itself), so `targetOfAdmin` is false for the admin lane's own PERM fields — the admin lane can
+    // never self-widen (T-I). The target lane file's own change passes the paths check below and the §1a validateRange
+    // exemption; its new seat/paths are the reviewed, audited reassignment outcome.
+    const selfTrustedLaneAdmin = trustedFm.executor === 'kiro' && isReviewerAgent(trustedFm.reviewer_seat)
+      && toBool(trustedFm.lane_admin) && !!trustedFrom;
+    const targetOfAdmin = selfTrustedLaneAdmin && laneAdminCovers(repo, base, head, key, lanePath, fetchPlanLane, fetchLane);
+    const permAllowed = (trustedFm.executor === 'claude' && claudeOnly) || targetOfAdmin;
+    if (changed.length && !permAllowed) {
+      errors.push(`lane ${key}: ${changed.join(', ')} changed in a lane PR — lane permissions come from the base revision (reassign a target lane through an executor: kiro, reviewer_seat: ${REVIEWER_AGENTS[0]} lane with lane_admin: true from a trusted source whose paths cover it, or change an executor: claude Claude Code lane)`);
     }
-    if (!(trustedFm.executor === 'claude' && claudeOnly)) fm = { ...fm, ...Object.fromEntries(PERM.map((k) => [k, trustedFm[k]])) };
+    if (!permAllowed) fm = { ...fm, ...Object.fromEntries(TRUSTED_PINNED.map((k) => [k, trustedFm[k]])) };
   }
   const paths = asList(fm.paths);
   const changed = git(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
@@ -696,10 +729,10 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
       if (!matchesAny(f, paths)) errors.push(`${f} is outside lane ${key} (paths: ${paths.join(', ')})`);
       else if (fm.executor === 'claude') continue;
       // VTID-05276 (plan §4.3): a protected gate file never passes for a non-claude lane, whatever its reviewer.
-      else if (matchesAny(f, PROTECTED_GATE_PATHS)) errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} (needs claude — an agent review cannot unlock it)`);
+      else if (matchesAny(f, PROTECTED_GATE_PATHS)) errors.push(`${f} is a protected gate file (governance path, scripts/collab/protected-gate-files.json); lane ${key} has executor ${fm.executor || 'unset'} — a reviewer-agent accept alone never unlocks it (the owner's instruction naming the plan is the authority; Claude Code is retired)`);
       else if (!matchesAny(f, GOVERNANCE_PATHS)) continue;
       else if (fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat) && trustedFrom) continue;
-      else errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs claude, or executor kiro with reviewer_seat ${REVIEWER_AGENTS[0]} from main or an approved plan( PR)`);
+      else errors.push(`${f} is a governance path; lane ${key} has executor ${fm.executor || 'unset'} (needs executor kiro with reviewer_seat ${REVIEWER_AGENTS[0]} from main or an approved plan( PR — or a legacy executor claude lane)`);
     }
   }
   for (const k of commits) {
@@ -731,6 +764,41 @@ export function planLaneQualifies(planLane) {
   const l = parseFrontMatter(planLane.text);
   return !!h && !!l && ['approved', 'executing'].includes(h.state) && !!h.sparring_record && !!l.vtid
     && asList(h.vtids).includes(l.vtid) && planLane.lastSession === CI_PLAN_SPAR;
+}
+
+/**
+ * VTID-05408 (kiro-lane-admin §1a/§2): the TRUSTED front matter of a lane, resolved through the SAME source chain
+ * scopeCheck uses (merge-base, else a qualifying open `plan(` PR via `fetchPlanLane`, else the other repo's main via
+ * `fetchLane`) — never the PR head. Returns `{ fm, from }` or `{ fm: null, from: null }`. Keeping this symmetric with
+ * scopeCheck is what lets a lane-admin lane created inside a `plan(` PR be recognised by Collab handoff and Lane scope
+ * alike (R2-F2); fetchPlanLane threading in validateRange is the other half.
+ */
+export function fetchTrustedLaneFm(repo, { base, head, laneSlug, laneFile, fetchLane = null, fetchPlanLane = null }) {
+  const mergeBase = gitOk(repo, ['merge-base', base, head]);
+  let fm = mergeBase ? parseFrontMatter(showFile(repo, mergeBase, laneFile)) : null;
+  if (fm) return { fm, from: 'merge-base' };
+  const plan = fetchPlanLane ? (fetchPlanLane(laneSlug, laneFile) || null) : null;
+  if (planLaneQualifies(plan)) { fm = parseFrontMatter(plan.text); if (fm) return { fm, from: 'plan-pr' }; }
+  if (fetchLane) { fm = parseFrontMatter(fetchLane(laneFile)); if (fm) return { fm, from: 'vitana-platform' }; }
+  return { fm: null, from: null };
+}
+
+/**
+ * VTID-05408 (kiro-lane-admin §1a/§2): is `adminLaneKey` (`<slug>/<id>`) a reviewed, trusted lane-administration lane
+ * whose authority covers `targetLaneFile`? True only when the admin lane's TRUSTED front matter (never the PR head)
+ * has `toBool(lane_admin)` + `executor: kiro` + `reviewer_seat: agent:vitana-lane-reviewer`, and `targetLaneFile`
+ * matches one of that trusted admin lane's `paths` globs. One source of truth for both the validateRange cross-lane-file
+ * exemption (§1a) and the scopeCheck target-only PERM carve-out (§2). Reading the admin lane's qualification from the
+ * trusted revision is what stops a PR self-granting `lane_admin: true` in its own head.
+ */
+export function laneAdminCovers(repo, base, head, adminLaneKey, targetLaneFile, fetchPlanLane = null, fetchLane = null) {
+  const [laneSlug, laneId] = String(adminLaneKey).split('/');
+  if (!laneSlug || !laneId || laneId === PLAN_LANE) return false;
+  const adminFile = `.kiro/specs/${laneSlug}/lanes/${laneId}.md`;
+  const { fm } = fetchTrustedLaneFm(repo, { base, head, laneSlug, laneFile: adminFile, fetchLane, fetchPlanLane });
+  if (!fm) return false;
+  if (!(toBool(fm.lane_admin) && fm.executor === 'kiro' && isReviewerAgent(fm.reviewer_seat))) return false;
+  return matchesAny(targetLaneFile, asList(fm.paths));
 }
 
 /** VTID-05276: the single open same-repo PR titled `plan(<slug>)…` in `gh pr list` JSON; none or several → null. */
@@ -964,8 +1032,14 @@ function main(argv) {
       if (!/^docs\/validation\/VTID-\d{5}\/scope\.json$/.test(p)) continue;
       try { allowInitial.push(...asList(JSON.parse(showFile(repo, args.head, p) || '{}').collab_allow_initial)); } catch { /* scope guard reports bad JSON */ }
     }
+    // VTID-05408: lane files of an open plan( PR — --plan-repo (repeatable), else $GITHUB_REPOSITORY, then --lane-repo.
+    // Threaded into validateRange so laneAdminCovers (§1a) resolves the admin lane's trusted source symmetrically with
+    // scope-check (R2-F2).
+    const planRepos = [...new Set((args.planRepo.length ? args.planRepo : [process.env.GITHUB_REPOSITORY, args['lane-repo']]).filter(Boolean))];
+    const planFetchers = planRepos.map((r) => ghPlanLaneFetcher(r));
+    const fetchPlanLane = planFetchers.length ? (slug, p) => { for (const f of planFetchers) { const x = f(slug, p); if (x) return x; } return null; } : null;
     const r = validateRange(repo, { base: args.base, head: args.head, branch: args.branch || '', allowInitial,
-      fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
+      fetchPlanLane, fetchLane: args['lane-repo'] ? ghFetcher(args['lane-repo']) : null });
     const programs = loadPrograms(repo, args.head);
     r.errors.push(...validatePrograms(programs));
     // Seats are checked against areas.yaml from this repo, else from vitana-platform main (fetchLane reads any file).

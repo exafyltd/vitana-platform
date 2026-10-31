@@ -20,6 +20,23 @@ Put the VTID in the PR TITLE, e.g.  VTID-05305 (slug/lane): short description
 
 <!-- The commands you ran and their pass/fail counts; the red→green proof. -->
 
+## Verification
+
+<!--
+The checks of each change type this PR touches: .kiro/pipeline/quality-checks.md.
+Change types: UI / Backend / Database / Integration / Infrastructure-CI / Tooling-docs.
+Say what was observed where: the staging suite and what it asserts about this change,
+or "not verified on staging: <reason>" plus the test that covers it. Never write
+"verified" for something only unit-tested.
+UI: 1400x900 and 390x844 screenshots of the changed element after the interaction,
+or why there are none. Backend: the route's auth gate and content type the probe
+expects. Database: the kept defaults, grants and policies. Infra/CI: the workflow run.
+-->
+
+- Change types:
+- Observed:
+- Not verified on staging (reason, covering test):
+
 ## Validator declarations
 
 <!--

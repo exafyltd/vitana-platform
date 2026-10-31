@@ -1,0 +1,1 @@
+platform#4153 merged=true merge_commit_sha=0d35512b7ab4504fb90542bd452f901240de4ce9 merged_at=2026-10-20T08:54:06Z title=VTID-05208 (new-member-welcome/grouped-welcome-notifications): grouped greeting-DM notifications
