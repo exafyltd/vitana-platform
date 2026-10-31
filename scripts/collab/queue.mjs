@@ -417,7 +417,7 @@ function reviewBacking(repo, commits, key, p, trustedFm) {
   const out = [];
   for (const k of commits) {
     if (!(k.review || '').split(',').map((x) => x.trim()).includes(key) || k.lane) continue;
-    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged(repo, k.sha, p)) continue;
+    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged((rev, f) => showFile(repo, rev, f), k.sha, p)) continue;
     const authorized = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session)
       : isReviewerAgent(fm.reviewer_seat) ? agentOf(k.session) === fm.reviewer_seat
         : fm.reviewer_seat ? seatOf(k.session) === fm.reviewer_seat
