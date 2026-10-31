@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05351",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/queue.mjs",
+    "scripts/collab/queue.test.mjs",
+    "docs/validation/VTID-05351/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05351/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
