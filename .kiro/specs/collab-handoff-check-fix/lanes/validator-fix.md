@@ -1,6 +1,6 @@
 ---
 lane: validator-fix
-state: ready
+state: parked
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -12,8 +12,9 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-31T21:57Z
+updated: 2026-10-31T22:01Z
 vtid: VTID-05365
+parked_from: ready
 ---
 # validator-fix — Collab handoff: R1, stderr report, batched reads
 Plan: `.kiro/specs/collab-handoff-check-fix/plan.md`, `tasks.md` section `validator-fix`. **Held until PLAN-SPAR
@@ -1698,3 +1699,5 @@ reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-31T21:57Z · pm-agent · update
 reassign lane exafy→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-31T22:01Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
