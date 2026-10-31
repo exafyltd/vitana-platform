@@ -15,3 +15,4 @@ TEST: node --input-type=module -e '...'  (recorded in commands.log)
 AC-4 Only docs/validation/** and the lane file change. No code, workflow, governance path or protected gate file.
 The two referenced jest suites pass on main (32/32). Deploys nothing of its own; endpoint is the gateway
 STAGING-VERIFY pass after the next staging deploy.
+TEST: git diff --name-only origin/main...HEAD | grep -vE '^(docs/validation/|\.kiro/specs/sv-05308-coverage/lanes/suite\.md$)' && exit 1 || exit 0
