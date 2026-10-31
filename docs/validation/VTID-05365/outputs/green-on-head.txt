@@ -1,0 +1,16 @@
+✔ VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session (19409.4578ms)
+✔ VTID-05365 R1 negative: a second kiro session on `_plan` still fails (10832.5989ms)
+✔ VTID-05365 R1 negative: a ci-plan-spar commit that edits the paths of a lane past `ready` still fails (10676.6805ms)
+✔ VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr (14862.515ms)
+✔ VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped (5825.4325ms)
+✔ VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference (54899.4013ms)
+✔ VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names) (3402.872ms)
+✔ VTID-05365 batching: commitFileReader equals git show in memory and through the temporary file; 2 git spawns (5787.8484ms)
+ℹ tests 8
+ℹ suites 0
+ℹ pass 8
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 126175.8646

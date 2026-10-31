@@ -25,8 +25,9 @@
  * failed / claim refused, 2 usage.
  */
 import { execFileSync } from 'node:child_process';
-import { appendFileSync, readFileSync } from 'node:fs';
+import { appendFileSync, closeSync, mkdtempSync, openSync, readFileSync, readSync, rmSync } from 'node:fs';
 import { randomBytes } from 'node:crypto';
+import { tmpdir } from 'node:os';
 import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
@@ -416,7 +417,7 @@ function reviewBacking(repo, commits, key, p, trustedFm) {
   const out = [];
   for (const k of commits) {
     if (!(k.review || '').split(',').map((x) => x.trim()).includes(key) || k.lane) continue;
-    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged(repo, k.sha, p)) continue;
+    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged((rev, f) => showFile(repo, rev, f), k.sha, p)) continue;
     const authorized = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session)
       : isReviewerAgent(fm.reviewer_seat) ? agentOf(k.session) === fm.reviewer_seat
         : fm.reviewer_seat ? seatOf(k.session) === fm.reviewer_seat
@@ -660,25 +661,102 @@ export function renderTable(rows) {
 
 // ── PR validation ───────────────────────────────────────────────────────
 
-function commitsInRange(repo, base, head) {
+/**
+ * Non-merge commits in `base..head` (git log order) with their trailers and changed files. VTID-05365: one `git log
+ * --name-only` for the whole range (it used to be one `git diff-tree` per commit); `--no-renames` keeps `files` equal
+ * to `diff-tree --no-commit-id --name-only -r <sha>`. Each record starts with \x1e: the header line, then its files.
+ */
+export function commitsInRange(repo, base, head) {
   // VTID-05276 (plan §4.1): review entries also carry Collab-Verdict, Collab-Reviewer and Collab-Reviewed-Head.
   const keys = ['Collab-Session', 'Collab-Lane', 'Collab-Review', 'Collab-Verdict', 'Collab-Reviewer', 'Collab-Reviewed-Head'];
-  const fmt = `%H${keys.map((k) => `%x1f%(trailers:key=${k},valueonly,separator=%x2c)`).join('')}%x1e`;
-  const out = git(repo, ['log', '--no-merges', `--format=${fmt}`, `${base}..${head}`]);
-  return out.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
-    const [sha, session, lane, review, verdict, reviewer, reviewedHead] = rec.split('\x1f').map((s) => (s || '').trim());
-    const files = git(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha]).split('\n').filter(Boolean);
-    return { sha, session, lane, review, verdict, reviewer, reviewedHead, files };
+  const fmt = `%x1e%H${keys.map((k) => `%x1f%(trailers:key=${k},valueonly,separator=%x2c)`).join('')}`;
+  const out = git(repo, ['log', '--no-merges', '--no-renames', '--name-only', `--format=${fmt}`, `${base}..${head}`], { maxBuffer: BIG_BUFFER });
+  return out.split('\x1e').slice(1).map((rec) => {
+    const [header, ...files] = rec.split('\n');
+    const [sha, session, lane, review, verdict, reviewer, reviewedHead] = header.split('\x1f').map((s) => (s || '').trim());
+    return { sha, session, lane, review, verdict, reviewer, reviewedHead, files: files.filter(Boolean) };
   });
+}
+
+// VTID-05365: up to this many object bytes are read into memory; more (a PR with thousands of lane-file commits) go
+// through a temporary file and are read one object at a time.
+const READ_IN_MEMORY_MAX = 64 * 1024 * 1024;
+
+/**
+ * VTID-05365: file reads at many commits through two git processes, whatever the number of commits.
+ * `needs` = [{ sha, path }]: `<sha>^:<path>` and `<sha>:<path>` are resolved with one `git cat-file --batch-check` and
+ * the distinct blobs are read with one `git cat-file --batch`. → { read(rev, path), close() }: `read` returns the text
+ * `trimEnd()`ed, or null when the object is missing — the same as `showFile`. A query that is not a blob (or cannot be
+ * sent) falls back to `showFile`. Call `close()` when done (it removes the temporary file, if any).
+ */
+export function commitFileReader(repo, needs, { inMemoryMax = READ_IN_MEMORY_MAX } = {}) {
+  const queries = [...new Set(needs.flatMap(({ sha, path: p }) => [`${sha}^:${p}`, `${sha}:${p}`]))];
+  const where = new Map(); // query → oid | null (missing) ; absent → showFile
+  const blobs = new Map(); // oid → { size, at }
+  const send = queries.filter((q) => !/[\r\n]/.test(q));
+  if (send.length) {
+    const lines = git(repo, ['cat-file', '--batch-check'], { input: `${send.join('\n')}\n`, stdio: ['pipe', 'pipe', 'pipe'], maxBuffer: BIG_BUFFER }).split('\n');
+    send.forEach((q, i) => {
+      const m = /^([0-9a-f]{40,64}) (\S+) (\d+)$/.exec(lines[i] || '');
+      if (!m) { where.set(q, null); return; } // "<query> missing" / "ambiguous"
+      if (m[2] !== 'blob') return;
+      where.set(q, m[1]);
+      if (!blobs.has(m[1])) blobs.set(m[1], { size: Number(m[3]), at: 0 });
+    });
+  }
+  let total = 0;
+  for (const [oid, b] of blobs) { // `--batch` reply: "<oid> blob <size>\n<content>\n" per object, in request order
+    total += Buffer.byteLength(`${oid} blob ${b.size}\n`);
+    b.at = total;
+    total += b.size + 1;
+  }
+  let buf = null;
+  let fd = null;
+  let dir = null;
+  if (blobs.size) {
+    const opts = { input: `${[...blobs.keys()].join('\n')}\n`, maxBuffer: BIG_BUFFER };
+    if (total <= inMemoryMax) buf = spawnGit(repo, ['cat-file', '--batch'], { ...opts, stdio: ['pipe', 'pipe', 'pipe'] });
+    else {
+      dir = mkdtempSync(path.join(tmpdir(), 'collab-reads-'));
+      fd = openSync(path.join(dir, 'objects'), 'w+');
+      spawnGit(repo, ['cat-file', '--batch'], { ...opts, stdio: ['pipe', fd, 'pipe'] });
+    }
+  }
+  const bytes = (at, size) => {
+    if (buf) return buf.subarray(at, at + size);
+    const out = Buffer.alloc(size);
+    let n = 0;
+    while (n < size) { const r = readSync(fd, out, n, size - n, at + n); if (r === 0) break; n += r; }
+    return out.subarray(0, n);
+  };
+  const close = () => {
+    if (fd !== null) { closeSync(fd); fd = null; }
+    if (dir) { rmSync(dir, { recursive: true, force: true }); dir = null; }
+  };
+  const read = (rev, p) => {
+    const q = `${rev}:${p}`;
+    if (!where.has(q)) return showFile(repo, rev, p);
+    const oid = where.get(q);
+    if (oid === null) return null;
+    const { size, at } = blobs.get(oid);
+    const header = `${oid} blob ${size}\n`;
+    const hlen = Buffer.byteLength(header);
+    if (bytes(at - hlen, hlen).toString('latin1') !== header) { close(); throw new Error(`${repo}: git cat-file --batch: unexpected reply for ${q}`); }
+    return bytes(at, size).toString('utf8').trimEnd();
+  };
+  return { read, close };
 }
 
 // VTID-05276 (plan §4.5): a `pm-agent` commit may change only these lane keys and append a log entry.
 const PM_AGENT_KEYS = ['state', 'parked_from', 'next_actor', 'seat', 'claimed_by', 'updated'];
 const FRONT_MATTER_RE = /^---\r?\n[\s\S]*?\r?\n---/;
-/** What a pm-agent commit changed in lane file `p` beyond its allowance ([] = only allowed keys + appended log). */
-function pmAgentOverreach(repo, sha, p) {
-  const a = showFile(repo, `${sha}^`, p);
-  const b = showFile(repo, sha, p);
+/**
+ * What a pm-agent commit changed in lane file `p` beyond its allowance ([] = only allowed keys + appended log).
+ * `read(rev, path)` is a commitFileReader's `read` (VTID-05365).
+ */
+function pmAgentOverreach(read, sha, p) {
+  const a = read(`${sha}^`, p);
+  const b = read(sha, p);
   if (a === null || b === null) return [a === null ? 'created the lane file' : 'deleted the lane file'];
   const fa = parseFrontMatter(a) || {};
   const fb = parseFrontMatter(b) || {};
@@ -691,9 +769,9 @@ function pmAgentOverreach(repo, sha, p) {
 const pmAgentMessage = (short, p, bad) => `${short}: pm-agent may only change ${PM_AGENT_KEYS.join(', ')} and append a log entry in ${p} (${bad.join('; ')})`;
 
 /** Front matter (the text between the first two `---` lines) changed by this commit? */
-function frontMatterChanged(repo, sha, p) {
-  const a = showFile(repo, `${sha}^`, p);
-  const b = showFile(repo, sha, p);
+function frontMatterChanged(read, sha, p) {
+  const a = read(`${sha}^`, p);
+  const b = read(sha, p);
   const fm = (t) => (/^---\r?\n([\s\S]*?)\r?\n---/.exec(t || '') || [])[1] ?? null;
   return fm(a) !== fm(b);
 }
@@ -753,12 +831,21 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
   const workLanes = [...laneTrailers].filter((l) => !l.endsWith(`/${PLAN_LANE}`));
   if (workLanes.length > 1) errors.push(`one PR per lane: commits name ${workLanes.length} lanes (${workLanes.join(', ')})`);
   const sessionsByLane = new Map();
+  // VTID-05365: every lane-file read the loop below may make, in one batch (pm-agent commits, and any commit that
+  // changes a lane file other than its own Collab-Lane's).
+  const reader = commitFileReader(repo, commits.flatMap((k) => k.files.map((f) => ({ f, c: classifyPath(f) }))
+    .filter(({ c }) => c && c.kind === 'lane' && (k.session === PM_AGENT || k.lane !== `${c.slug}/${c.lane}`))
+    .map(({ f }) => ({ sha: k.sha, path: f }))));
+  const read = reader.read;
+  try {
   for (const k of commits) {
     const short = k.sha.slice(0, 8);
     if (laneTrailers.size && (!k.session || !k.lane) && !k.review) errors.push(`${short}: a lane PR needs Collab-Session and Collab-Lane trailers on every commit`);
     if (k.session && !SESSION_RE.test(k.session)) errors.push(`${short}: Collab-Session "${k.session}" is not a session id`);
     // VTID-05276 (plan §4.5): the Project Manager's lane-state commits do not count for one-session-per-lane or claimed_by.
-    if (k.lane && k.session !== PM_AGENT) {
+    // VTID-05365 (R1): PLAN-SPAR's own `_plan` commits are CI, not a second session; their writes are checked per file below.
+    const isCiPlanCommit = k.session === CI_PLAN_SPAR && !!k.lane && k.lane.split(',').every((l) => l.trim().endsWith(`/${PLAN_LANE}`));
+    if (k.lane && k.session !== PM_AGENT && !isCiPlanCommit) {
       if (!sessionsByLane.has(k.lane)) sessionsByLane.set(k.lane, new Set());
       sessionsByLane.get(k.lane).add(k.session);
     }
@@ -768,17 +855,17 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       const key = `${c.slug}/${c.lane}`;
       // VTID-05276 (plan §4.5): pm-agent W1 (Collab-Lane: the lane) and W2 (Collab-Lane: `_plan`) lane-state commits.
       if (c.kind === 'lane' && k.session === PM_AGENT && (k.lane === key || k.lane === `${c.slug}/${PLAN_LANE}`)) {
-        const bad = pmAgentOverreach(repo, k.sha, f);
+        const bad = pmAgentOverreach(read, k.sha, f);
         if (bad.length) errors.push(pmAgentMessage(short, f, bad));
         continue;
       }
       if (k.lane === key) continue;
       // The coordinator declares the lanes: a `_plan` commit may create a lane file, never edit one.
-      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && showFile(repo, `${k.sha}^`, f) === null) continue;
+      if (c.kind === 'lane' && k.lane === `${c.slug}/${PLAN_LANE}` && read(`${k.sha}^`, f) === null) continue;
       // VTID-05214: PLAN-SPAR.yml writes the allocated VTID into a lane that is still `ready`.
       if (c.kind === 'lane' && k.session === CI_PLAN_SPAR && k.lane === `${c.slug}/${PLAN_LANE}`
-        && parseFrontMatter(showFile(repo, k.sha, f))?.state === 'ready') continue;
-      if (c.kind === 'lane' && k.review === key && !frontMatterChanged(repo, k.sha, f)) continue; // reviewer appends a log entry
+        && parseFrontMatter(read(k.sha, f))?.state === 'ready') continue;
+      if (c.kind === 'lane' && k.review === key && !frontMatterChanged(read, k.sha, f)) continue; // reviewer appends a log entry
       // VTID-05408 (kiro-lane-admin §1a): a reviewed, trusted lane-admin lane may edit a target lane file it
       // administers, even though that file's own key differs from the commit's Collab-Lane. Gated identically to the
       // scopeCheck carve-out (shared laneAdminCovers, trusted source resolved via fetchPlanLane symmetrically with
@@ -787,6 +874,7 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
       errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
     }
   }
+  } finally { reader.close(); }
   for (const [lane, sessions] of sessionsByLane) {
     if (sessions.size > 1) errors.push(`lane ${lane}: commits from ${sessions.size} sessions (${[...sessions].join(', ')}) — one session per lane`);
     const [slug, id] = lane.split('/');
@@ -866,11 +954,14 @@ export function scopeCheck(repo, { base, head, branch = '', fetchLane = null, fe
     trustedFrom = trustedFm ? 'vitana-platform' : null;
   }
   // The Project Manager's lane-state commits (plan §4.5) are checked on their own and never decide who edited the lane.
-  for (const k of commits) {
-    if (k.session !== PM_AGENT || !k.files.includes(lanePath)) continue;
-    const bad = pmAgentOverreach(repo, k.sha, lanePath);
-    if (bad.length) errors.push(pmAgentMessage(k.sha.slice(0, 8), lanePath, bad));
-  }
+  const pmCommits = commits.filter((k) => k.session === PM_AGENT && k.files.includes(lanePath));
+  const reader = commitFileReader(repo, pmCommits.map((k) => ({ sha: k.sha, path: lanePath }))); // VTID-05365: one batch
+  try {
+    for (const k of pmCommits) {
+      const bad = pmAgentOverreach(reader.read, k.sha, lanePath);
+      if (bad.length) errors.push(pmAgentMessage(k.sha.slice(0, 8), lanePath, bad));
+    }
+  } finally { reader.close(); }
   if (trustedFm) {
     const PERM = ['executor', 'seat', 'reviewer_seat', 'paths'];
     // VTID-05408 (kiro-lane-admin §2): `lane_admin` is NOT a permission field but is pinned to the trusted revision
@@ -1166,6 +1257,17 @@ export function sessionId(agent, now = new Date(), seat = '') {
 
 class Usage extends Error {}
 
+/** VTID-05365: one GitHub annotation line (`::error::<title>: <message>`); %, CR and LF escaped as GitHub requires. */
+export const annotation = (level, title, message) => `::${level}::${title}: ${String(message)
+  .replace(/%/g, '%25').replace(/\r/g, '%0D').replace(/\n/g, '%0A')}`;
+
+/** VTID-05365: with --summary, also write each problem and warning as an annotation, then the status line, to stderr. */
+function reportToLog(title, status, r) {
+  for (const e of r.errors) console.error(annotation('error', title, e));
+  for (const w of r.warnings) console.error(annotation('warning', title, w));
+  console.error(status.split('\n')[0]);
+}
+
 function parseArgs(argv) {
   const out = { _: [], repo: [], allowInitial: [], planRepo: [] };
   for (let i = 0; i < argv.length; i++) {
@@ -1236,7 +1338,10 @@ function main(argv) {
       : `✅ **collab handoff** — ${r.touched.length} handoff/lane file(s) changed, all valid`;
     const warn = r.warnings.length ? `\n\n⚠️ ${r.warnings.join('\n⚠️ ')}` : '';
     const out = `${status}${warn}\n\n<details><summary>Collab queue</summary>\n\n${md}\n\n</details>\n`;
-    if (args.summary) appendFileSync(args.summary, out); else console.log(out);
+    if (args.summary) {
+      appendFileSync(args.summary, out);
+      reportToLog('collab handoff', status, r); // VTID-05365: the job log says why, not only "exit code 1"
+    } else console.log(out);
     return r.errors.length ? 1 : 0;
   }
   if (cmd === 'scope-check') {
@@ -1251,7 +1356,10 @@ function main(argv) {
       : r.errors.length ? `❌ **lane scope** — ${r.errors.length} problem(s)${r.lane ? ` (lane ${r.lane})` : ''}:\n${r.errors.map((e) => `- ${e}`).join('\n')}`
         : `✅ **lane scope** — lane ${r.lane}: every change is inside its paths`;
     const warn = r.warnings.length ? `\n\n⚠️ ${r.warnings.join('\n⚠️ ')}` : '';
-    if (args.summary) appendFileSync(args.summary, `${status}${warn}\n`); else console.log(`${status}${warn}`);
+    if (args.summary) {
+      appendFileSync(args.summary, `${status}${warn}\n`);
+      reportToLog('lane scope', status, r);
+    } else console.log(`${status}${warn}`);
     return r.errors.length ? 1 : 0;
   }
   if (cmd === 'queue') {
