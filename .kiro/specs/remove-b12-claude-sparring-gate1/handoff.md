@@ -5,9 +5,9 @@ author_seat: jtadic
 executor: kiro
 next_actor: kiro
 state: approved
-updated: 2026-10-28T14:25Z
+updated: 2026-10-28T14:58Z
 sparring_record: .kiro/specs/remove-b12-claude-sparring-gate1/sparring/verdict.md
-vtids: [VTID-05402, VTID-05403, VTID-05404]
+vtids: [VTID-05402, VTID-05403, VTID-05404, VTID-05405]
 ---
 # Handoff — remove-b12-claude-sparring-gate1
 Planner and driver: Kiro seat `jtadic` (session kiro-jtadic-202610281355-d593, Kiro Web). Plan: `plan.md`. Tasks:
@@ -31,3 +31,6 @@ retire-claude-code surfaced in plan.md §6 R2/R5 for sparring to adjudicate.
 
 ### 2026-10-28T14:25Z · ci-plan-spar · drafted → approved
 Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.
+
+### 2026-10-28T14:58Z · ci-plan-spar · approved (late lane VTID)
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
