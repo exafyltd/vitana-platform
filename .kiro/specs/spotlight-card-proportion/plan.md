@@ -12,7 +12,7 @@ The rule for every desktop Spotlight screen in scope:
 1. Exactly one Spotlight card. It keeps its identity: gradient media art, accent glow border, raised elevation, a
    small `SPOTLIGHT` label, and the screen's primary content.
 2. It sits top-left at about 40% of the content width and spans 2 grid rows. It is never full width and never more
-   than ~45% of the content area.
+   than ~45% of the content area at ≥1280 px (up to 50% between 1024 and 1279 px, see D3).
 3. To its right, a 3x2 grid of equal `standard` cards.
 4. Below, one full-width row of `compact` cards.
 5. At 1400x900 and 1920x1080 the grid fills the viewport with no large empty band. Quick actions are pills.
@@ -63,7 +63,8 @@ Supersedes `spotlight-compact-hero` (platform #4517, closed 2026-10-31; it conve
   renders **no spotlight card**. `resultsBody` (:303-461) uses `FindPartnerMatchCard`, which is not a VCard, in a
   3-column grid (:371-381).
 - Chrome selectors that already exist: `[data-header-density="compact"]` with 2 `button` children
-  (`StandardHeader.tsx:55,64,80`) and `[data-spotlight-utility]` (ScreenFrame.tsx:74).
+  (`src/components/StandardHeader.tsx:55,64,80`, outside `layout/spotlight/`; imported by `ScreenFrame.tsx:3`;
+  pinned by `src/components/StandardHeader.vtid-05105.test.tsx:21`) and `[data-spotlight-utility]` (ScreenFrame.tsx:74).
 - Flag: `useSpotlightEnabled.ts:49-63` = `!isMobile && (override ?? tenantFlag)`. `?spotlight=1` writes only
   localStorage (:36-47).
 
