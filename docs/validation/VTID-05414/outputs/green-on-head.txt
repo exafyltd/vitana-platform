@@ -1,0 +1,537 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/kaf-staging-claude-available-wiring.test.ts (8.413 s)
+  VTID-05282 staging task definition carries CLAUDE_AVAILABLE
+    ΓêÜ the step env reads the repo variable with a true default, outside run: (104 ms)
+    ΓêÜ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (1 ms)
+    ΓêÜ the strip list removes the old entry next to PM_MODE (2 ms)
+    ΓêÜ the upsert appears exactly once, right after PM_MODE (1 ms)
+    ΓêÜ VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false) (1 ms)
+    ΓêÜ production never gets CLAUDE_AVAILABLE
+
+PASS test/project-manager/timings.test.ts (8.659 s)
+  T21 planTimings
+    ΓêÜ computes every duration exactly (327 ms)
+    ΓêÜ a missing source ΓåÆ null (never 0) and named in sources_unavailable (3 ms)
+  T23 Gate 2 evidence and message
+    ΓêÜ evidence carries services, staging_verify, migrations, decisions_taken, timings, unavailable (5 ms)
+    ΓêÜ a failing source fails open into unavailable[] (1 ms)
+    ΓêÜ the poster writes one assistant message with the question and a pm_digests gate2 row; never deploys (4 ms)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/reassign-idempotent.test.ts (9.687 s)
+  VTID-05414 two ticks over the same observed lane: one write, then none
+    ΓêÜ tick 1 writes, tick 2 (later now) is a no-op: status unchanged, no put, no ref, no PR (108 ms)
+  VTID-05414 GithubRepoFileWriter: the same change twice ΓåÆ one put
+    ΓêÜ W2 (bookkeeping branch) (4 ms)
+    ΓêÜ W2 no-op on a fresh branch creates no ref and no PR (1 ms)
+    ΓêÜ W1 (lane PR branch) (4 ms)
+  VTID-05414 laneChangeIsNoop compares keys and the newest log body only
+    ΓêÜ same keys + same newest log body ΓåÆ true, whatever updated: says (1 ms)
+    ΓêÜ a different log body ΓåÆ false (2 ms)
+    ΓêÜ a different key ΓåÆ false (2 ms)
+
+PASS test/project-manager/fallback.test.ts (9.444 s)
+  T1-T4 claudeAvailability (plan ┬º3)
+    ΓêÜ T1 flag false ΓåÆ unavailable, flag_false (76 ms)
+    ΓêÜ T2 oldest item 5 h old, last Claude action 6 h ago ΓåÆ no_action_4h (2 ms)
+    ΓêÜ T2b flag true does not override the 4 h rule (7 ms)
+    ΓêÜ T3 oldest item 3 h old ΓåÆ available (1 ms)
+    ΓêÜ T4 item 5 h old but Claude acted 1 h ago ΓåÆ available (28 ms)
+    ΓêÜ missing claude observation ΓåÆ available (todayΓÇÖs behaviour) (4 ms)
+  T5-T8 fallback routing to the exceptions seat
+    ΓêÜ T5 end of rotation, Claude unavailable ΓåÆ exafyltd, fallback true (5 ms)
+    ΓêÜ T6 / M6 end of rotation, Claude available ΓåÆ claude, fallback false (1 ms)
+    ΓêÜ T7 lane already on exafyltd, Claude unavailable ΓåÆ no self loop (null) (2 ms)
+    ΓêÜ T8 park with Claude unavailable ΓåÆ actPark writes next_actor exafyltd (151 ms)
+    ΓêÜ M6 park with Claude available ΓåÆ next_actor claude (1 ms)
+    ΓêÜ decide() threads the availability into reassign (3 ms)
+  T13-T15 timers without a live plan driver
+    ΓêÜ T13 ready 3 h, no driver (null heartbeat) ΓåÆ reassign with window 2 h (23 ms)
+    ΓêÜ T14 guard: ready 3 h, heartbeat 1 min ago ΓåÆ no reassign (1 ms)
+    ΓêÜ T14b a heartbeat older than 45 min counts as no driver (1 ms)
+    ΓêÜ T15 claim 5 h, no activity, no driver ΓåÆ park stale_claim, window 4 h (2 ms)
+    ΓêÜ T15b claim 5 h with a live driver ΓåÆ no park (48 h window) (1 ms)
+    ΓêÜ cap 6: no reassign of a ready lane into a plan with 6 lanes executing|in-review (5 ms)
+  T16-T17 merge queue
+    ΓêÜ T16 two eligible lanes in one repo ΓåÆ exactly one merge (oldest state_since) (3 ms)
+    ΓêÜ T16b one merge per repo: lanes in different repos both merge (1 ms)
+    ΓêÜ T17 behind main ΓåÆ update_branch, no merge (1 ms)
+    ΓêÜ verify (W1): in-review lane with an agent accept on the current head ΓåÆ verify (1 ms)
+  T18 merge_plan
+    ΓêÜ spec-only, converged, policy-approved plan( PR ΓåÆ merge_plan (2 ms)
+    ΓêÜ none for a file outside the spec (4 ms)
+    ΓêÜ none for plan hash mismatch (2 ms)
+    ΓêÜ none for head commit not PLAN-SPAR (1 ms)
+    ΓêÜ none for not converged
+    ΓêÜ none for no policy approval (1 ms)
+    ΓêÜ none for handoff not approved (1 ms)
+    ΓêÜ none for no VTIDs
+    ΓêÜ none for a red check
+    ΓêÜ none for not mergeable (1 ms)
+    ΓêÜ none for title of another slug
+    ΓêÜ decide() emits merge_plan when no lane merge took the repo this tick (2 ms)
+    ΓêÜ W2 bookkeeping PR (pm-agent only, spec + timings) ΓåÆ merge_bookkeeping (5 ms)
+  T19 Gate 2
+    ΓêÜ one lane verified 5 h ago, the sibling parked ΓåÆ all_verified (19 ms)
+    ΓêÜ gate2_sent per lane: a lane already sent is not re-sent, a newly verified sibling is (2 ms)
+  T20 tick default
+    ΓêÜ pmTickIntervalMs default 120000; lease TTL = tick ΓêÆ 30 s (2 ms)
+  T22 ledger decision
+    ΓêÜ executing lane with ledger row scheduled ΓåÆ one ledger decision; in_progress ΓåÆ none (51 ms)
+  M7 new decision kinds never reach deploy / dispatch / allocate
+    ΓêÜ acting on every new kind uses only safe-merge, update-branch, lane writes and the ledger writer (3 ms)
+    ΓêÜ no project-manager source file reaches a deploy, dispatch or VTID allocation path (77 ms)
+
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+    [0m [90m 283 |[39m
+     [90m 284 |[39m   [36mprivate[39m log(msg[33m:[39m string)[33m:[39m [36mvoid[39m {
+    [31m[1m>[22m[39m[90m 285 |[39m     ([36mthis[39m[33m.[39mdeps[33m.[39mlog [33m?[39m[33m?[39m ((m[33m:[39m string) [33m=>[39m console[33m.[39mwarn([32m`[PM] observe: ${m}`[39m)))(msg)[33m;[39m
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 286 |[39m   }
+     [90m 287 |[39m
+     [90m 288 |[39m   [36masync[39m observe(mode[33m:[39m [33mPmMode[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mObservedState[39m[33m>[39m {[0m
+
+      at src/services/project-manager/observe-live.ts:285:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/observe-live.test.ts (9.603 s)
+  parsers
+    ΓêÜ parseTrailers reads the ┬º4.1 trailers (90 ms)
+    ΓêÜ parseLaneLog splits executing entries, review entries and decisions (8 ms)
+    ΓêÜ parseLaneLog accepts the " - " separator (3 ms)
+    ΓêÜ reviewOnlySince: heads after which only review / pm-agent lane commits follow (3 ms)
+    ΓêÜ reviewOnlySince stops at a commit that changes another file (33 ms)
+  GithubObserver
+    ΓêÜ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (13 ms)
+    ΓêÜ variable unreadable ΓåÆ env CLAUDE_AVAILABLE fallback, else null (21 ms)
+    ΓêÜ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (8 ms)
+    ΓêÜ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (134 ms)
+    ΓêÜ staging verify + gate2 sent are read from the data reader (2 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    ΓêÜ B1: rejects on a 404 (unset or no access ΓÇö unreadable) (110 ms)
+    ΓêÜ B2: resolves the value on a 200 with a string value (5 ms)
+    ΓêÜ B3: rejects on a 403 (45 ms)
+    ΓêÜ B4: a 404 on the variable ΓåÆ observer uses env CLAUDE_AVAILABLE=false (4 ms)
+    ΓêÜ B5: a 404 + env true ΓåÆ true; a 404 + no env ΓåÆ null (4 ms)
+    ΓêÜ B6: a readable variable wins over the env (3 ms)
+    ΓêÜ B7: the 4 h rule still applies ΓÇö 404 + env true + a claude item > 4 h old with no session_ commit ΓåÆ no_action_4h (4 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    ΓêÜ applyLaneChange edits only the allowed keys and appends one log entry (6 ms)
+    ΓêÜ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (6 ms)
+    ΓêÜ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (5 ms)
+
+PASS test/project-manager/decide.test.ts
+  mergeDecision ΓÇö all preconditions true ΓåÆ merge-eligible
+    ΓêÜ the baseline lane is merge-eligible (10 ms)
+  mergeDecision ΓÇö each precondition individually false ΓåÆ NO merge (mutation)
+    ΓêÜ lane not verified (1 ms)
+    ΓêÜ no PR (1 ms)
+    ΓêÜ no VTID on the lane (1 ms)
+    ΓêÜ no review entry (1 ms)
+    ΓêÜ review from a different seat than reviewer_seat (1 ms)
+    ΓêÜ review on a stale head sha (not current) (1 ms)
+    ΓêÜ review verdict is changes, not approve (1 ms)
+    ΓêÜ a required check (Lane scope) is not green (1 ms)
+    ΓêÜ a required check (Collab handoff) is missing on the head (1 ms)
+    ΓêÜ a required check is green but on a different head sha (2 ms)
+    ΓêÜ Claude Approvals App check exists but is not success (1 ms)
+    ΓêÜ Claude Approvals App check present AND success ΓåÆ still merge-eligible (2 ms)
+    ΓêÜ merge conflict (not mergeable) (3 ms)
+    ΓêÜ a depends_on lane is not done (1 ms)
+    ΓêÜ a depends_on lane IS done ΓåÆ merge-eligible (1 ms)
+    ΓêÜ PR title does not carry the lane VTID (2 ms)
+    ΓêÜ lane declares no paths
+    ΓêÜ self-review residual: review session id appears in the executing log (1 ms)
+  reassignDecision ΓÇö stale ready / stale review
+    ΓêÜ ready <24h ΓåÆ no reassign (3 ms)
+    ΓêÜ ready >24h but seat ran automation in window ΓåÆ no reassign (1 ms)
+    ΓêÜ ready >24h, no automation ΓåÆ reassign to next seat for area (2 ms)
+    ΓêÜ ready >24h, no next seat for area ΓåÆ claude (2 ms)
+    ΓêÜ review waiting >24h with no review entry ΓåÆ reassign review (2 ms)
+    ΓêÜ review waiting >24h but a review already exists ΓåÆ no reassign (1 ms)
+    ΓêÜ review waiting <24h ΓåÆ no reassign (1 ms)
+  parkDecision ΓÇö 3 CI fails / risk flag / stale claim
+    ΓêÜ PR failed CI on 3 consecutive pushes ΓåÆ park (2 ms)
+    ΓêÜ PR failed CI on only 2 pushes ΓåÆ no park (5 ms)
+    ΓêÜ reviewer flagged risk ΓåÆ park (2 ms)
+    ΓêÜ claim >48h with no branch activity ΓåÆ park + release (2 ms)
+    ΓêÜ claim >48h BUT with later branch activity ΓåÆ no park (2 ms)
+    ΓêÜ claim <48h ΓåÆ no park (2 ms)
+    ΓêÜ a done lane is never parked (1 ms)
+  gate2Decisions ΓÇö all-verified vs 4h-elapsed timing
+    ΓêÜ no lane verified yet ΓåÆ no gate2 (5 ms)
+    ΓêÜ every deploying lane verified ΓåÆ gate2 (all_verified) (11 ms)
+    ΓêÜ one verified, one not, <4h since first ΓåÆ no gate2 (2 ms)
+    ΓêÜ one verified, one not, >4h since first ΓåÆ gate2 (four_hours_elapsed) (2 ms)
+    ΓêÜ gate2 already sent ΓåÆ not re-sent (2 ms)
+    ΓêÜ non-deploying lanes are ignored (no gate2) (2 ms)
+  decide ΓÇö orchestration + mode gating + precedence
+    ΓêÜ mode off ΓåÆ no decisions at all (2 ms)
+    ΓêÜ park takes precedence over merge for a troubled verified lane (3 ms)
+    ΓêÜ a clean merge-eligible lane yields exactly one merge decision (1 ms)
+    ΓêÜ merge + gate2 can both appear for different lanes (2 ms)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/governance.test.ts (9.13 s)
+  T9-T12 merge on the reviewer agent accept
+    ΓêÜ T9 governance lane + agent accept on the current head + checks green ΓåÆ merge decision and act merges (313 ms)
+    ΓêÜ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept ΓåÆ merge (1 ms)
+    ΓêÜ T11 agent accept on H, review-only commits after it (review_only_since [H]) ΓåÆ merge (1 ms)
+    ΓêÜ T12 guard: a legacy claude review on a governance lane still merges (2 ms)
+  M1 protected gate files never merge on an agent accept alone
+    ΓêÜ CLAUDE.md (3 ms)
+    ΓêÜ scripts/collab/plan-spar.mjs (2 ms)
+    ΓêÜ scripts/collab/queue.mjs (4 ms)
+    ΓêÜ scripts/collab/protected-gate-files.json (2 ms)
+    ΓêÜ services/gateway/src/services/plan-sparring/** (2 ms)
+    ΓêÜ services/gateway/src/services/project-manager/governance.ts (26 ms)
+    ΓêÜ .github/workflows/PLAN-SPAR.yml (3 ms)
+    ΓêÜ .github/workflows/PR-GATE.yml (3 ms)
+    ΓêÜ .github/workflows/AWS-PROD-*.yml (2 ms)
+    ΓêÜ .kiro/agents/vitana-lane-reviewer.md (2 ms)
+    ΓêÜ supabase/migrations/*vtid_ledger*.sql (2 ms)
+    ΓêÜ supabase/migrations/*plan_sparring*.sql (1 ms)
+    ΓêÜ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred) (1 ms)
+    ΓêÜ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse)
+    ΓêÜ the compiled-in list is never empty (1 ms)
+  M2-M5 reviews that do not count
+    ΓêÜ M2 stale head: accept on an old head with no review-only commits ΓåÆ no merge (1 ms)
+    ΓêÜ M2 review_only_since does not match a different earlier head (6 ms)
+    ΓêÜ M3 reviewer "agent:someone-else" ΓåÆ no merge on a governance lane
+    ΓêÜ M3 reviewer null ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ M3 reviewer "agent:vitana-lane-reviewer-fake" ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ the reviewer model chain is sonnet-5.5 ΓåÆ opus-5.5 ΓåÆ sonnet-4.5 (Claude only) (2 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) ΓåÆ no merge (14 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) ΓåÆ no merge (2 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ M4 agent changes on the current head ΓåÆ no merge (1 ms)
+    ΓêÜ M5 agent review from a session in the executing log ΓåÆ no merge
+    ΓêÜ decide() emits no merge for a protected-file PR with an agent accept (3 ms)
+  T25 parity with scripts/collab/protected-gate-files.json
+    ΓêÜ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails) (6 ms)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: acquired ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: held_by_other ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/act.test.ts
+  act layer ΓÇö mode gating
+    ΓêÜ live: a merge-eligible decision calls safe-merge exactly once (41 ms)
+    ΓêÜ dry_run: never calls safe-merge (2 ms)
+    ΓêÜ off: never calls safe-merge (1 ms)
+  act layer ΓÇö never deploys, dispatches, or allocates
+    ΓêÜ acting on every decision kind touches only safe-merge, lane writes and the Gate-2 post (3 ms)
+  act layer ΓÇö governance-path merge guard
+    ΓêÜ a governance-path PR whose reviewer is NOT claude is refused, never merged (1 ms)
+    ΓêÜ a governance-path PR whose reviewer IS claude is allowed to merge (1 ms)
+    ΓêÜ governance helpers classify paths and reviewers correctly (2 ms)
+  act layer ΓÇö safe-merge result handling
+    ΓêÜ already-merged PR is a no-op success, not an error; lane set done (2 ms)
+    ΓêÜ safe-merge refused (gate not met) ΓåÆ lane NOT set done (1 ms)
+  act layer ΓÇö per-tick lease
+    ΓêÜ lease absent (p1 migration not present) ΓåÆ tick no-ops, no action taken (4 ms)
+    ΓêÜ lease held by another task ΓåÆ tick no-ops (4 ms)
+    ΓêÜ default lease manager (no injection) is the fail-safe NoLeaseManager ΓåÆ no-op (5 ms)
+  act layer ΓÇö Gate-2 batch
+    ΓêÜ posts the run-view question with the full production..verified commit list; never deploys (14 ms)
+  act layer ΓÇö reassign and park write lane-file state
+    ΓêÜ reassign to a seat moves seat + next_actor (1 ms)
+    ΓêÜ reassign to claude sets next_actor claude, no seat change (6 ms)
+    ΓêÜ stale-claim park releases the claim (1 ms)
+  prNumberFromUrl
+    ΓêÜ parses a PR number from a GitHub url (1 ms)
+    ΓêÜ returns null for a url with no pull segment (1 ms)
+
+PASS test/project-manager/reassign-seat.test.ts (10.605 s)
+  VTID-05414 stale-ready target is never the reviewer_seat
+    ΓêÜ rotation [exafy], Claude unavailable, reviewer_seat exafyltd ΓåÆ no decision (64 ms)
+    ΓêÜ rotation [exafy, exafyltd, jtadic] ΓåÆ skips exafyltd, to_actor jtadic (33 ms)
+    ΓêÜ Claude available ΓåÆ to_actor claude (seat unchanged by act) (3 ms)
+    ΓêÜ no reviewer_seat ΓåÆ the exceptions seat as today (2 ms)
+    ΓêÜ reviewer agent as reviewer_seat ΓåÆ the exceptions seat as today (2 ms)
+  VTID-05414 applyLaneChange refuses seat == reviewer_seat
+    ΓêÜ a change that makes seat equal reviewer_seat throws (81 ms)
+    ΓêÜ a lane that already has seat == reviewer_seat still takes a park (2 ms)
+    ΓêÜ a next_actor-only change on such a lane does not throw (1 ms)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/tick-and-config.test.ts
+  config switches
+    ΓêÜ PM_AGENT_ENABLED defaults off, true only on exactly "true" (5 ms)
+    ΓêÜ PM_MODE defaults dry_run; accepts off/live; unknown ΓåÆ dry_run (2 ms)
+    ΓêÜ tick interval defaults to 2 minutes (1 ms)
+  runDecideTick ΓÇö observe ΓåÆ decide ΓåÆ report (no act)
+    ΓêÜ with the stub observer (empty world) emits nothing and records a snapshot (3 ms)
+    ΓêÜ reports each decision through the emitter (dry_run) (2 ms)
+    ΓêÜ mode off ΓåÆ decide yields nothing even with lanes present (1 ms)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: acquired ΓåÆ held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: held_by_other ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ error (pg 57P01)
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: error ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.warn
+    [PM] tick error: boom
+
+    [0m [90m 66 |[39m       }
+     [90m 67 |[39m     } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 68 |[39m       console[33m.[39mwarn([32m'[PM] tick error:'[39m[33m,[39m (err [36mas[39m [33mError[39m)[33m?[39m[33m.[39mmessage [33m||[39m err)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 69 |[39m     } [36mfinally[39m {
+     [90m 70 |[39m       running [33m=[39m [36mfalse[39m[33m;[39m
+     [90m 71 |[39m     }[0m
+
+      at Object.tick (src/services/project-manager/loop.ts:68:15)
+      at Object.<anonymous> (test/project-manager/loop.test.ts:119:5)
+
+PASS test/project-manager/loop.test.ts
+  T26 PgLeaseManager on pm_lease
+    ΓêÜ row free ΓåÆ acquired (TTL passed through), last_lease acquired (34 ms)
+    ΓêÜ held by another task (no row updated) ΓåÆ held_by_other (2 ms)
+    ΓêÜ missing relation (42P01) ΓåÆ table_absent (3 ms)
+    ΓêÜ missing relation (PGRST205) ΓåÆ table_absent (2 ms)
+    ΓêÜ any other error ΓåÆ error (never throws) (2 ms)
+  startPmLoop
+    ΓêÜ live ΓåÆ act tick (takes the lease); status shows the fallback (24 ms)
+    ΓêÜ dry_run ΓåÆ decide-only tick (never takes the lease) (3 ms)
+    ΓêÜ a tick error is caught; overlapping ticks are skipped (8 ms)
+
+  console.log
+    [CICD] PR #4242 merged for VTID-05217: mergedsha
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+PASS test/project-manager/safe-merge-fn.test.ts
+  safeMerge ΓÇö clean merge
+    ΓêÜ merges exactly once and returns result "merged" with status 200 (46 ms)
+  safeMerge ΓÇö pr not open ΓåÆ already_merged no-op
+    ΓêÜ returns result "already_merged", keeps the identical 400 pr_not_open body, and NEVER merges (2 ms)
+  safeMerge ΓÇö refused outcomes (behaviour-preserving)
+    ΓêÜ unauthorized repo ΓåÆ refused 403, no merge (3 ms)
+    ΓêÜ pr not found ΓåÆ refused 404, no merge (3 ms)
+    ΓêÜ invalid base ΓåÆ refused 400, no merge (3 ms)
+    ΓêÜ checks failed ΓåÆ refused 400, no merge (1 ms)
+    ΓêÜ governance blocked ΓåÆ refused 403, no merge (1 ms)
+
+  console.error
+    [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m   [36mif[39m (secrets[33m.[39mlength [33m===[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 173 |[39m     console[33m.[39merror([32m'[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)'[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 174 |[39m   }
+     [90m 175 |[39m
+     [90m 176 |[39m   [36mreturn[39m secrets[33m;[39m[0m
+
+      at getJwtSecrets (src/middleware/auth-supabase-jwt.ts:173:13)
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:325:19)
+      at optionalAuth (src/middleware/auth-supabase-jwt.ts:451:26)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at app.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/project-manager/route.test.ts (5.324 s)
+  GET /status auth
+    ΓêÜ 401 without a bearer token (64 ms)
+    ΓêÜ 401 with a wrong service token (93 ms)
+    ΓêÜ 200 with the service token, returns mode + decisions (15 ms)
+  T24 /status fallback fields and the public /mode
+    ΓêÜ /status with the token carries claude, fallback, build_lanes_in_flight, last_lease (19 ms)
+    ΓêÜ /status defaults: Claude available, no fallback, last_lease null (13 ms)
+    ΓêÜ /status without a token ΓåÆ 401 (9 ms)
+    ΓêÜ /mode without a token ΓåÆ 200 with exactly ok, enabled, mode, executor_mode (16 ms)
+    ΓêÜ /mode reports claude_primary when Claude is available (14 ms)
+
+Test Suites: 13 passed, 13 total
+Tests:       220 passed, 220 total
+Snapshots:   0 total
+Time:        19.814 s
+Ran all test suites matching /test\\project-manager|test\\kaf-staging-claude-available-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

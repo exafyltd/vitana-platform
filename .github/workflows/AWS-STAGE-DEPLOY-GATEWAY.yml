@@ -1222,7 +1222,7 @@ jobs:
                           {name:"GATEWAY_URL", value:"https://preview-aws-gateway.vitanaland.com"},
                           {name:"AUTOMATIONS_DELIVERY_MODE", value:"shadow"},
                           {name:"AUTOPILOT_HEARTBEAT_ENABLED", value:"true"},
-                          {name:"PM_AGENT_ENABLED", value:"true"},
+                          {name:"PM_AGENT_ENABLED", value:"false"},
                           {name:"PM_MODE", value:"live"}, {name:"CLAUDE_AVAILABLE", value:$CLAUDE_AVAILABLE},
                           {name:"DEFAULT_TENANT_ID", value:"2e7528b8-472a-4356-88da-0280d4639cce"},
                           {name:"TTS_PROVIDER", value:"polly"},

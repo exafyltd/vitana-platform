@@ -245,8 +245,14 @@ export function reassignDecision(
     const since = toMs(lane.state_since);
     if (since != null && nowMs - since > windowMs && !lane.seat_ran_automation_in_window) {
       if ((buildLanesInFlight(state)[lane.slug] ?? 0) >= MAX_BUILD_LANES_PER_PLAN) return null;
-      const next = nextActor(lane.seat);
+      // VTID-05414: the new seat is never the lane's reviewer_seat (queue.mjs validateLane
+      // rejects seat == reviewer_seat): skip it in the rotation; if only it is left, no decision.
+      const rotation = state.rotations.find((r) => r.area === lane.area)?.seats ?? [];
+      const idx = rotation.indexOf(lane.seat);
+      const seat = idx < 0 ? undefined : rotation.slice(idx + 1).find((s) => s !== lane.seat && s !== lane.reviewer_seat);
+      const next = seat ? { actor: seat, fallback: false } : claudeOrExceptions(claude);
       if (next.actor === lane.seat) return null;
+      if (next.actor !== 'claude' && lane.reviewer_seat && next.actor === lane.reviewer_seat) return null;
       return {
         kind: 'reassign',
         slug: lane.slug,

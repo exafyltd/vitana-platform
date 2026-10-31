@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05414",
+  "service": "gateway",
+  "note": "Read-only. The PM writer and decider changes are write-path (GitHub commits) and the PM stays paused on staging (PM_AGENT_ENABLED=false, pinned by this lane), so the behaviour is proven by the jest suites below; the HTTP probes prove the build carrying the changed project-manager module boots and serves. Nothing targets production.",
+  "tests": [
+    { "kind": "http", "name": "gateway alive after deploy", "target": "gateway", "method": "GET", "path": "/alive", "expect_status": 200,
+      "reason": "read-only GET: the build with the changed project-manager module boots" },
+    { "kind": "http", "name": "project-manager mode endpoint serves", "target": "gateway", "method": "GET", "path": "/api/v1/project-manager/mode", "expect_status": 200,
+      "reason": "read-only GET of the public PM mode route: the project-manager module (decide/act/writers) loaded on the deployed commit" },
+    { "kind": "existing", "ref": "npx jest test/project-manager test/kaf-staging-claude-available-wiring.test.ts", "cwd": "services/gateway",
+      "reason": "Pins: a repeated PM tick writes nothing (writer returns 'noop', status unchanged, no put/ref/PR on W1 and W2); the stale-ready target is never reviewer_seat; applyLaneChange refuses to introduce seat == reviewer_seat; the staging task definition upserts PM_AGENT_ENABLED=false." }
+  ]
+}
