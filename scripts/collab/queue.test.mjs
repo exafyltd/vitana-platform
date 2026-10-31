@@ -1574,3 +1574,311 @@ test('VTID-05408 T-K: the validateRange exemption resolves a trusted admin lane 
     assert.ok(validateRange(f.work, { base: seeded, head, branch: 'kiro/admin/admin-01', allowInitial: ['admin'] }).errors.some((x) => x.includes('target-01.md but its Collab-Lane')));
   } finally { f.done(); }
 });
+
+// ── VTID-05365 (collab-handoff-check-fix/validator-fix): R1, stderr report, batched reads ──
+
+const QUEUE_CLI = fileURLToPath(new URL('./queue.mjs', import.meta.url));
+const PS = 'ci-plan-spar';
+const S3 = 'kiro-exafy-202610281200-cd34';
+
+/** A plan PR: planner commit (new drafted plan + ready lane) then `extra` commits on top. → { base, head } */
+function planPrFixture(f, extra) {
+  sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/plan');
+  const base = sh(f.work, 'rev-parse', 'HEAD');
+  write(f.work, '.kiro/specs/cards/handoff.md', planMd({ executor: 'kiro', next_actor: 'kiro' }));
+  write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro' }));
+  commit(f.work, 'plan', { 'Collab-Session': S1, 'Collab-Lane': 'cards/_plan' });
+  extra();
+  return { base, head: sh(f.work, 'rev-parse', 'HEAD') };
+}
+const spar = (f) => {
+  write(f.work, '.kiro/specs/cards/handoff.md', planMd({ executor: 'kiro', next_actor: 'kiro', state: 'approved', sparring_record: 'x.md', vtids: ['VTID-09001'] }));
+  write(f.work, '.kiro/specs/cards/lanes/a.md', laneMd('a', { next_actor: 'kiro', vtid: 'VTID-09001' }));
+  commit(f.work, 'spar', { 'Collab-Session': PS, 'Collab-Lane': 'cards/_plan' });
+};
+
+test('VTID-05365 R1: a planner commit and a ci-plan-spar commit on `_plan` are one session', () => {
+  const f = fixture();
+  try {
+    const { base, head } = planPrFixture(f, () => spar(f));
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/cards/plan' }).errors, []);
+  } finally { f.done(); }
+});
+
+test('VTID-05365 R1 negative: a second kiro session on `_plan` still fails', () => {
+  const f = fixture();
+  try {
+    const { base, head } = planPrFixture(f, () => {
+      spar(f);
+      write(f.work, '.kiro/specs/cards/tasks.md', 'x\n');
+      commit(f.work, 'other', { 'Collab-Session': S3, 'Collab-Lane': 'cards/_plan' });
+    });
+    const e = validateRange(f.work, { base, head }).errors;
+    assert.ok(e.some((x) => x.includes('lane cards/_plan: commits from 2 sessions') && x.includes(S1) && x.includes(S3) && !x.includes(PS)), e.join('\n'));
+  } finally { f.done(); }
+});
+
+test('VTID-05365 R1 negative: a ci-plan-spar commit that edits the paths of a lane past `ready` still fails', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, { ...LANE, reviewer_seat: AG, state: 'executing', claimed_by: JT });
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...LANE, reviewer_seat: AG, state: 'executing', claimed_by: JT, paths: ['**'] }));
+    const head = commit(f.work, 'widen', { 'Collab-Session': PS, 'Collab-Lane': 'cards/_plan' });
+    const e = validateRange(f.work, { base, head }).errors;
+    assert.ok(e.some((x) => x.includes('changes .kiro/specs/cards/lanes/card-01.md but its Collab-Lane is "cards/_plan"')), e.join('\n'));
+  } finally { f.done(); }
+});
+
+/** Run the CLI; never throws. → { status, stdout, stderr } */
+function cli(args) {
+  try {
+    const stdout = execFileSync(process.execPath, [QUEUE_CLI, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'pipe'], env: { ...process.env, GITHUB_REPOSITORY: '' } });
+    return { status: 0, stdout, stderr: '' };
+  } catch (e) { return { status: e.status, stdout: String(e.stdout || ''), stderr: String(e.stderr || '') }; }
+}
+
+test('VTID-05365 silent failure: validate --summary prints the problems as ::error:: annotations on stderr', () => {
+  const f = fixture();
+  try {
+    const base = seedSpec(f);
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', laneMd('card-01', { next_actor: 'kiro', state: 'done', vtid: 'VTID-00001' }));
+    const head = commit(f.work, 'jump', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    const summary = path.join(f.dir, 'summary.md');
+    const r = cli(['validate', '--repo', f.work, '--base', base, '--head', head, '--branch', 'kiro/cards/card-01', '--summary', summary]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^::error::collab handoff: \.kiro\/specs\/cards\/lanes\/card-01\.md: illegal transition "ready" → "done"$/m);
+    assert.match(r.stderr, /\*\*collab handoff\*\* — 1 problem\(s\)/);
+    assert.doesNotMatch(r.stderr, /Collab queue/, 'the queue table stays in the summary only');
+    assert.equal(r.stdout, '');
+    const s = readFileSync(summary, 'utf8');
+    assert.match(s, /illegal transition/);
+    assert.match(s, /<summary>Collab queue<\/summary>/);
+    // without --summary: stdout unchanged, nothing on stderr
+    const p = cli(['validate', '--repo', f.work, '--base', base, '--head', head, '--branch', 'kiro/cards/card-01']);
+    assert.equal(p.status, 1);
+    assert.match(p.stdout, /illegal transition/);
+    assert.equal(p.stderr, '');
+  } finally { f.done(); }
+});
+
+test('VTID-05365 silent failure: scope-check --summary prints ::error::lane scope: annotations; newlines escaped', () => {
+  const f = fixture();
+  try {
+    const base = scopeFixture(f, LANE);
+    write(f.work, 'src/elsewhere/x.ts', 'x');
+    const head = commit(f.work, 'out', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+    const summary = path.join(f.dir, 'summary.md');
+    const r = cli(['scope-check', '--repo', f.work, '--base', base, '--head', head, '--branch', 'kiro/cards/card-01', '--summary', summary]);
+    assert.equal(r.status, 1);
+    assert.match(r.stderr, /^::error::lane scope: src\/elsewhere\/x\.ts is outside lane cards\/card-01 \(paths: src\/backoffice\/\*\*\)$/m);
+    assert.match(r.stderr, /\*\*lane scope\*\* — 1 problem\(s\)/);
+    for (const line of r.stderr.split('\n').filter((l) => l.startsWith('::'))) assert.match(line, /^::(error|warning)::lane scope: [^\n]*$/);
+    assert.match(readFileSync(summary, 'utf8'), /is outside lane cards\/card-01/);
+    assert.equal(Q.annotation('error', 'lane scope', 'a\nb\r\nc%'), '::error::lane scope: a%0Ab%0D%0Ac%25');
+  } finally { f.done(); }
+});
+
+// validateRange as it was before VTID-05365 (origin/main cf009eca8f), kept as the reference the batched one must
+// equal (except R1). Private git helpers: these calls are NOT counted by gitSpawns.
+const refCommitsInRange = (repo, base, head) => {
+  const keys = ['Collab-Session', 'Collab-Lane', 'Collab-Review', 'Collab-Verdict', 'Collab-Reviewer', 'Collab-Reviewed-Head'];
+  const fmt = `%H${keys.map((k) => `%x1f%(trailers:key=${k},valueonly,separator=%x2c)`).join('')}%x1e`;
+  const out = refGit(repo, ['log', '--no-merges', `--format=${fmt}`, `${base}..${head}`]);
+  return out.split('\x1e').map((s) => s.trim()).filter(Boolean).map((rec) => {
+    const [sha, session, lane, review, verdict, reviewer, reviewedHead] = rec.split('\x1f').map((s) => (s || '').trim());
+    const files = refGit(repo, ['diff-tree', '--no-commit-id', '--name-only', '-r', sha]).split('\n').filter(Boolean);
+    return { sha, session, lane, review, verdict, reviewer, reviewedHead, files };
+  });
+};
+const REF_PM_KEYS = ['state', 'parked_from', 'next_actor', 'seat', 'claimed_by', 'updated'];
+function refPmAgentOverreach(repo, sha, p) {
+  const a = refShowFile(repo, `${sha}^`, p);
+  const b = refShowFile(repo, sha, p);
+  if (a === null || b === null) return [a === null ? 'created the lane file' : 'deleted the lane file'];
+  const fa = parseFrontMatter(a) || {};
+  const fb = parseFrontMatter(b) || {};
+  const out = [...new Set([...Object.keys(fa), ...Object.keys(fb)])]
+    .filter((k) => !REF_PM_KEYS.includes(k) && JSON.stringify(fa[k]) !== JSON.stringify(fb[k])).map((k) => `changed ${k}`);
+  const body = (t) => t.replace(/^---\r?\n[\s\S]*?\r?\n---/, '').replace(/\r\n/g, '\n');
+  if (!body(b).startsWith(body(a))) out.push('rewrote the log (only appending an entry is allowed)');
+  return out;
+}
+function refFrontMatterChanged(repo, sha, p) {
+  const fm = (t) => (/^---\r?\n([\s\S]*?)\r?\n---/.exec(t || '') || [])[1] ?? null;
+  return fm(refShowFile(repo, `${sha}^`, p)) !== fm(refShowFile(repo, sha, p));
+}
+function validateRangeReference(repo, { base, head, branch = '', allowInitial = [], fetchLane = null, fetchPlanLane = null }) {
+  const errors = [];
+  const warnings = [];
+  const changed = refGit(repo, ['diff', '--name-only', `${base}...${head}`]).split('\n').filter(Boolean);
+  const mergeBase = refGit(repo, ['merge-base', base, head]);
+  const touched = changed.map((p) => ({ p, c: classifyPath(p) })).filter((x) => x.c);
+  const slugs = new Set(touched.map((t) => t.c.slug));
+  for (const slug of slugs) {
+    const headFiles = refSpecFilesAt(repo, head).filter((p) => classifyPath(p).slug === slug);
+    const laneIds = new Set(headFiles.map((p) => classifyPath(p)).filter((c) => c.kind === 'lane').map((c) => c.lane));
+    for (const p of headFiles) {
+      const c = classifyPath(p);
+      const fm = parseFrontMatter(refShowFile(repo, head, p));
+      const e = c.kind === 'plan' ? validatePlan(fm, slug) : validateLane(fm, slug, c.lane, laneIds);
+      for (const x of e) errors.push(`${p}: ${x}`);
+    }
+    if (laneIds.size && !headFiles.some((p) => classifyPath(p).kind === 'plan')) errors.push(`.kiro/specs/${slug}: lanes without a handoff.md`);
+  }
+  const commits = refCommitsInRange(repo, base, head);
+  for (const { p, c } of touched) {
+    const before = parseFrontMatter(refShowFile(repo, mergeBase, p));
+    const after = parseFrontMatter(refShowFile(repo, head, p));
+    const ciSparred = c.kind === 'plan' && commits.some((k) => k.session === PS && k.files.includes(p))
+      && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
+    if (ciSparred) continue;
+    for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
+  }
+  const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
+  const workLanes = [...laneTrailers].filter((l) => !l.endsWith('/_plan'));
+  if (workLanes.length > 1) errors.push(`one PR per lane: commits name ${workLanes.length} lanes (${workLanes.join(', ')})`);
+  const sessionsByLane = new Map();
+  for (const k of commits) {
+    const short = k.sha.slice(0, 8);
+    if (laneTrailers.size && (!k.session || !k.lane) && !k.review) errors.push(`${short}: a lane PR needs Collab-Session and Collab-Lane trailers on every commit`);
+    if (k.session && !isSessionId(k.session)) errors.push(`${short}: Collab-Session "${k.session}" is not a session id`);
+    if (k.lane && k.session !== 'pm-agent') {
+      if (!sessionsByLane.has(k.lane)) sessionsByLane.set(k.lane, new Set());
+      sessionsByLane.get(k.lane).add(k.session);
+    }
+    for (const f of k.files) {
+      const c = classifyPath(f);
+      if (!c) continue;
+      const key = `${c.slug}/${c.lane}`;
+      if (c.kind === 'lane' && k.session === 'pm-agent' && (k.lane === key || k.lane === `${c.slug}/_plan`)) {
+        const bad = refPmAgentOverreach(repo, k.sha, f);
+        if (bad.length) errors.push(`${short}: pm-agent may only change ${REF_PM_KEYS.join(', ')} and append a log entry in ${f} (${bad.join('; ')})`);
+        continue;
+      }
+      if (k.lane === key) continue;
+      if (c.kind === 'lane' && k.lane === `${c.slug}/_plan` && refShowFile(repo, `${k.sha}^`, f) === null) continue;
+      if (c.kind === 'lane' && k.session === PS && k.lane === `${c.slug}/_plan`
+        && parseFrontMatter(refShowFile(repo, k.sha, f))?.state === 'ready') continue;
+      if (c.kind === 'lane' && k.review === key && !refFrontMatterChanged(repo, k.sha, f)) continue;
+      if (c.kind === 'lane' && k.lane && k.lane !== key && Q.laneAdminCovers(repo, base, head, k.lane, f, fetchPlanLane, fetchLane)) continue;
+      errors.push(`${short}: changes ${f} but its Collab-Lane is "${k.lane || 'none'}" (needs "${key}"${c.kind === 'lane' ? `, or Collab-Review: ${key} with the front matter unchanged` : ''})`);
+    }
+  }
+  for (const [lane, sessions] of sessionsByLane) {
+    if (sessions.size > 1) errors.push(`lane ${lane}: commits from ${sessions.size} sessions (${[...sessions].join(', ')}) — one session per lane`);
+    const [slug, id] = lane.split('/');
+    if (id === '_plan') continue;
+    const lanePath = `.kiro/specs/${slug}/lanes/${id}.md`;
+    const fm = parseFrontMatter(refShowFile(repo, head, lanePath) ?? (fetchLane ? fetchLane(lanePath) : null));
+    if (!fm) { errors.push(`Collab-Lane ${lane}: ${lanePath} does not exist${fetchLane ? ' here or in vitana-platform' : ''}`); continue; }
+    const s = [...sessions][0];
+    if (fm.claimed_by && fm.claimed_by !== s) errors.push(`lane ${lane}: claimed_by is ${fm.claimed_by} but the commits come from ${s}`);
+  }
+  const bm = /^(kiro|claude)\/([^/]+)\/([^/]+)$/.exec(branch);
+  if (bm) {
+    const want = `${bm[2]}/${bm[3]}`;
+    for (const l of workLanes) if (l !== want) errors.push(`branch ${branch} is lane ${want} but commits name ${l}`);
+  } else if (branch && workLanes.length) {
+    warnings.push(`branch "${branch}" is not in the form <kiro|claude>/<slug>/<lane-id>; matched by trailers only`);
+  }
+  return { errors, warnings, touched: touched.map((t) => t.p) };
+}
+
+/**
+ * A lane PR with `n` pm-agent lane-state commits, plus: the builder's work commit, an overreaching pm-agent commit, a
+ * pm-agent commit that rewrites the log, a review entry, a `_plan` commit by ci-plan-spar that creates a lane and one
+ * that writes its VTID, and a CRLF / multi-byte lane-file log. → { base, head }
+ */
+function batchRangeFixture(f, n) {
+  const L = { ...LANE, reviewer_seat: AG, state: 'executing', claimed_by: JT };
+  const base = scopeFixture(f, L);
+  const at = (o, log) => `${laneMd('card-01', { next_actor: 'kiro', vtid: 'VTID-00002', ...L, ...o })}${log}`;
+  let log = '### work · ünïcödé — ✓\r\n';
+  write(f.work, '.kiro/specs/cards/lanes/card-01.md', at({}, log));
+  write(f.work, 'src/backoffice/a.ts', 'x');
+  commit(f.work, 'work', { 'Collab-Session': JT, 'Collab-Lane': 'cards/card-01' });
+  for (let i = 0; i < n; i++) {
+    log += `### pm ${i}\n`;
+    write(f.work, '.kiro/specs/cards/lanes/card-01.md', at({ updated: `2026-10-20T18:${String(i % 60).padStart(2, '0')}Z` }, log));
+    commit(f.work, `pm ${i}`, { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/card-01' });
+  }
+  write(f.work, '.kiro/specs/cards/lanes/card-01.md', at({ paths: ['**'] }, log));
+  commit(f.work, 'pm widens', { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/card-01' });
+  write(f.work, '.kiro/specs/cards/lanes/card-01.md', at({}, log.replace('### pm 0\n', '')));
+  commit(f.work, 'pm rewrites', { 'Collab-Session': 'pm-agent', 'Collab-Lane': 'cards/card-01' });
+  const cur = readFileSync(path.join(f.work, '.kiro/specs/cards/lanes/card-01.md'), 'utf8');
+  write(f.work, '.kiro/specs/cards/lanes/card-01.md', `${cur}### review\n`);
+  commit(f.work, 'review', { 'Collab-Session': AGS, 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept', 'Collab-Reviewer': `${AG} (claude-sonnet-5.5)` });
+  write(f.work, '.kiro/specs/cards/lanes/card-02.md', laneMd('card-02', { next_actor: 'kiro' }));
+  commit(f.work, 'new lane', { 'Collab-Session': PS, 'Collab-Lane': 'cards/_plan' });
+  write(f.work, '.kiro/specs/cards/lanes/card-02.md', laneMd('card-02', { next_actor: 'kiro', vtid: 'VTID-00003' }));
+  const head = commit(f.work, 'vtid', { 'Collab-Session': PS, 'Collab-Lane': 'cards/_plan' });
+  return { base, head };
+}
+
+test('VTID-05365 batching: validateRange and scopeCheck start as many git processes for 3 as for 30 commits; output equals the reference', () => {
+  const runs = [3, 30].map((n) => {
+    const f = fixture();
+    try {
+      const { base, head } = batchRangeFixture(f, n);
+      const opts = { base, head, branch: 'kiro/cards/card-01' };
+      const v = spawnsOf(() => validateRange(f.work, opts));
+      const s = spawnsOf(() => scopeCheck(f.work, opts));
+      const ref = validateRangeReference(f.work, opts);
+      assert.deepEqual(v.value.errors, ref.errors, `n=${n}`);
+      assert.deepEqual(v.value.warnings, ref.warnings, `n=${n}`);
+      assert.deepEqual(v.value.touched, ref.touched, `n=${n}`);
+      for (const e of [v.value.errors, s.value.errors]) {
+        assert.ok(e.some((x) => x.includes('pm-agent may only change') && x.includes('changed paths')), e.join('\n'));
+        assert.ok(e.some((x) => x.includes('rewrote the log')), e.join('\n'));
+      }
+      assert.equal(v.value.errors.filter((x) => x.includes('pm-agent may only change')).length, 2, v.value.errors.join('\n'));
+      return { v: v.spawns, s: s.spawns };
+    } finally { f.done(); }
+  });
+  assert.equal(runs[0].v, runs[1].v, `validateRange spawns: 3 commits ${runs[0].v}, 30 commits ${runs[1].v}`);
+  assert.equal(runs[0].s, runs[1].s, `scopeCheck spawns: 3 commits ${runs[0].s}, 30 commits ${runs[1].s}`);
+});
+
+test('VTID-05365 batching: commit files equal diff-tree per commit (add, delete, rename, nested, unusual names)', () => {
+  const f = fixture();
+  try {
+    const base = sh(f.work, 'rev-parse', 'HEAD');
+    write(f.work, 'a/b c/ü.txt', 'x\n');
+    write(f.work, 'old.txt', 'x\n'.repeat(20));
+    commit(f.work, 'one', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    sh(f.work, 'mv', 'old.txt', 'new.txt');
+    rmSync(path.join(f.work, 'a/b c/ü.txt'));
+    commit(f.work, 'two', { 'Collab-Session': S1 });
+    sh(f.work, 'commit', '-q', '--allow-empty', '-m', 'empty');
+    const head = sh(f.work, 'rev-parse', 'HEAD');
+    const got = Q.commitsInRange(f.work, base, head);
+    const ref = refCommitsInRange(f.work, base, head);
+    assert.deepEqual(got, ref);
+    assert.equal(got.length, 3);
+  } finally { f.done(); }
+});
+
+test('VTID-05365 batching: commitFileReader equals git show in memory and through the temporary file; 2 git spawns', () => {
+  const f = fixture();
+  try {
+    write(f.work, 'l/a.md', '---\nx: 1\n---\nünï ✓\r\n\n\n');
+    write(f.work, 'l/e.md', '');
+    const c1 = commit(f.work, 'one');
+    write(f.work, 'l/a.md', '---\nx: 2\n---\nbody\n');
+    rmSync(path.join(f.work, 'l/e.md'));
+    write(f.work, 'l/n.md', 'new\n');
+    const c2 = commit(f.work, 'two');
+    const needs = [c1, c2].flatMap((sha) => ['l/a.md', 'l/e.md', 'l/n.md', 'l/none.md'].map((p) => ({ sha, path: p })));
+    for (const inMemoryMax of [Infinity, 0]) {
+      const { value: r, spawns } = spawnsOf(() => Q.commitFileReader(f.work, needs, { inMemoryMax }));
+      assert.equal(spawns, 2, `inMemoryMax ${inMemoryMax}`);
+      try {
+        for (const { sha, path: p } of needs) for (const rev of [`${sha}^`, sha]) assert.equal(r.read(rev, p), refShowFile(f.work, rev, p), `${rev}:${p} (${inMemoryMax})`);
+      } finally { r.close(); }
+    }
+    const none = spawnsOf(() => Q.commitFileReader(f.work, []));
+    assert.equal(none.spawns, 0);
+  } finally { f.done(); }
+});
