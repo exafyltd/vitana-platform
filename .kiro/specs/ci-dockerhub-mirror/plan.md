@@ -41,8 +41,9 @@ scope (its plan, premise 4).
    `docker run` (`AWS-STAGE-DEPLOY-KIRO-RUNNER.yml:83`) runs the locally built `kiro-runner:ci`, no pull. Dockerfile
    base images and deploy builds are out of scope.
 6. **Protected gate file.** `.github/workflows/PR-GATE.yml` matches a glob in `scripts/collab/protected-gate-files.json`
-   (vitana-platform). `queue.mjs` validate (`:239`) and Lane scope (`:732`) refuse a protected gate file for a
-   non-`claude` lane, so the lane is `executor: claude`; while Claude is unavailable it goes to the exceptions seat
+   (vitana-platform). `queue.mjs` lane validation (the `globTouchesProtected(g)` check: "such a lane needs
+   executor: claude") and Lane scope (`scopeCheck`, the `matchesAny(f, PROTECTED_GATE_PATHS)` branch after
+   `fm.executor === 'claude'`) refuse a protected gate file for a non-`claude` lane, so the lane is `executor: claude`; while Claude is unavailable it goes to the exceptions seat
    `exafyltd` (collaboration §7). Its merge follows §3a/§7b for a protected gate file (the owner's
    instruction naming this plan). The four `SQL-*.yml` files are governance paths but not protected.
 ## Change (lane `v1-service-images`, vitana-v1)
