@@ -272,6 +272,165 @@ export function checkTransition(kind, before, after, { allowInitial = false } = 
   return (edges[a] || []).includes(b) ? [] : [`illegal transition "${a}" → "${b}"`];
 }
 
+// ── VTID-05351: a chain of legal transitions in one closing record ───────
+
+const CHAIN_MAX_EDGES = 6;
+const LOG_HEADER_RE = /^### (\S+) · (\S+) · (.*)$/;
+// A PR reference: the full URL or the `owner/repo#N` short form the closing records use.
+const PR_URL_RE = /https:\/\/github\.com\/[^\s)`]+\/pull\/\d+|\b[\w.-]+\/[\w.-]+#\d+\b/;
+const MERGE_SHA_RE = /\bmerge[:\s]+`?([0-9a-f]{7,40})\b/i;
+const REVIEW_RE = /^review:\s*(accept|changes)\b/m;
+const REVIEW_HEAD_RE = /^head:\s*([0-9a-f]{40})\b/m;
+
+/** The `## Log` section of a spec file (CRLF normalised), '' when there is none. */
+function logSection(text) {
+  const t = String(text || '').replace(/\r\n/g, '\n');
+  const i = t.search(/^## Log[ \t]*$/m);
+  return i < 0 ? '' : t.slice(i);
+}
+
+/** Log entries `{ time, session, change, body }` in file order; text before the first `### ` is ignored. */
+function logEntries(log) {
+  const out = [];
+  for (const line of log.split('\n')) {
+    if (line.startsWith('### ')) {
+      const m = LOG_HEADER_RE.exec(line);
+      out.push({ time: m ? m[1] : '', session: m ? m[2] : '', change: m ? m[3].trim() : line.slice(4), body: '' });
+    } else if (out.length) out[out.length - 1].body += `${line}\n`;
+  }
+  return out;
+}
+
+/** A review entry: a `· review…` header whose body carries `review: accept|changes` and a 40-hex `head:`. */
+function isReviewEntry(e) {
+  return /^review\b/.test(e.change) && REVIEW_RE.test(e.body) && REVIEW_HEAD_RE.test(e.body);
+}
+
+/** The `<a> → <b>` edge an entry header records, or null (reviews, updates, notes and unknown headers carry none). */
+function entryEdge(kind, entry) {
+  const states = kind === 'plan' ? PLAN_STATES : LANE_STATES;
+  const m = /^([a-z-]+) → ([a-z-]+)(?=$|[\s(;,.:])/.exec(entry.change);
+  return m && states.includes(m[1]) && states.includes(m[2]) ? { a: m[1], b: m[2] } : null;
+}
+
+/**
+ * Validates a change of `state` that spans several edges in one PR (plan pipeline-lane-state-efficiency §3.1).
+ * Every edge must be its own newly appended log entry, connect base → head, be legal on its own (done terminal,
+ * parked returns only to the parked_from tracked through the chain), be in time order, and carry its evidence:
+ * lane `executing → in-review` a PR URL or `owner/repo#N`; `in-review → verified` / `in-review → executing` a `review: accept` /
+ * `review: changes` entry (a `· review…` header with `head:`) as the latest review since the last changes round, backed
+ * by its Collab-Review commit when that entry is new in this range (`reviewCommits` = `{ verdict, reviewedHead,
+ * appended }` of this lane's authorized review-only commits in the range, `appended` = the log text the commit added;
+ * see `reviewBacking`); `verified → done` a merge sha (`merge: <sha>` or ``Merge `<sha>` ``) in its own entry or in
+ * the `in-review → verified` entry. A plan chain ending `done` needs every lane at the head `done` (`laneStates`).
+ * Returns the list of errors ([] = valid). Fails closed: an unknown header carries no edge.
+ */
+export function transitionChain(kind, beforeText, afterText, { reviewCommits = [], laneStates = null } = {}) {
+  const before = parseFrontMatter(beforeText);
+  const after = parseFrontMatter(afterText);
+  if (!before || !after) return ['chain needs the file at both the merge-base and the head'];
+  const baseLog = logSection(beforeText);
+  const headLog = logSection(afterText);
+  if (!headLog.startsWith(baseLog)) return ['log rewritten: entries before the head may only be appended to'];
+  const prior = logEntries(baseLog);
+  const added = logEntries(headLog.slice(baseLog.length));
+  const all = [...prior, ...added];
+  const edges = added.map((e, i) => ({ e, i: prior.length + i, ...entryEdge(kind, e) })).filter((x) => x.a);
+  const errors = [];
+  if (edges.length === 0) return [`no logged transition for ${before.state} → ${after.state}`];
+  if (edges.length > CHAIN_MAX_EDGES) errors.push(`a chain may carry at most ${CHAIN_MAX_EDGES} transitions (got ${edges.length})`);
+  // Connected, legal edge by edge, parked_from tracked through the chain.
+  let cur = before.state;
+  let parkedFrom = before.parked_from;
+  for (const x of edges) {
+    if (x.a !== cur) { errors.push(`chain does not connect ${before.state} → ${after.state}: entry "${x.e.change}" starts at "${x.a}", expected "${cur}"`); break; }
+    for (const err of checkTransition(kind, { state: x.a, parked_from: parkedFrom }, { state: x.b })) errors.push(`chain entry "${x.e.change}": ${err}`);
+    if (x.b === 'parked') parkedFrom = x.a;
+    cur = x.b;
+  }
+  if (!errors.length && cur !== after.state) errors.push(`chain does not connect ${before.state} → ${after.state}: the last entry ends at "${cur}"`);
+  if (after.state === 'parked' && after.parked_from !== parkedFrom) errors.push(`parked_from "${after.parked_from ?? ''}" must be "${parkedFrom ?? ''}", the state the chain parked from`);
+  // Time order of the new entries (ISO-8601 strings sort by time), after the last dated base entry.
+  let last = [...prior].reverse().find((e) => e.time)?.time || '';
+  for (const e of added) {
+    if (!e.time) continue;
+    if (e.time < last) { errors.push(`log entries out of order: "${e.time}" after "${last}"`); break; }
+    last = e.time;
+  }
+  // Evidence per edge.
+  // The review window of entry i: since the last `in-review → executing` (a changes round), else the whole log. The
+  // LATEST review entry in it must carry the verdict, so an accept from before a changes round is never reused.
+  const latestReview = (i) => {
+    let s = 0;
+    for (let k = i - 1; k >= 0; k--) { const g = entryEdge(kind, all[k]); if (g && g.a === 'in-review' && g.b === 'executing') { s = k + 1; break; } }
+    for (let k = i - 1; k >= s; k--) if (isReviewEntry(all[k])) return { e: all[k], i: k };
+    return null;
+  };
+  const review = (i, verdict) => { const r = latestReview(i); return r && REVIEW_RE.exec(r.e.body)[1] === verdict ? r : null; };
+  for (const x of edges) {
+    const edge = `${x.a} → ${x.b}`;
+    if (kind === 'lane' && x.a === 'executing' && x.b === 'in-review' && !PR_URL_RE.test(x.e.body)) errors.push(`${edge} has no PR URL (or owner/repo#N) in its entry`);
+    if (kind === 'lane' && x.a === 'in-review' && (x.b === 'verified' || x.b === 'executing')) {
+      const verdict = x.b === 'verified' ? 'accept' : 'changes';
+      const r = review(x.i, verdict);
+      if (!r) errors.push(`${edge} has no ${verdict} review entry (review: ${verdict}, head: <sha>) as the latest review since the last changes round`);
+      else if (r.i >= prior.length) {
+        const head = REVIEW_HEAD_RE.exec(r.e.body)[1];
+        const header = `### ${r.e.time} · ${r.e.session} · ${r.e.change}`;
+        if (!reviewCommits.some((c) => c.verdict === verdict && c.reviewedHead === head && typeof c.appended === 'string' && c.appended.includes(header))) {
+          errors.push(`${edge}: the ${verdict} review entry for head ${head.slice(0, 8)} was added without its Collab-Review commit (Collab-Verdict: ${verdict}, Collab-Reviewed-Head: ${head.slice(0, 8)}…)`);
+        }
+      }
+    }
+    if (kind === 'lane' && x.a === 'verified' && x.b === 'done') {
+      const verifiedEntry = [...all.slice(0, x.i)].reverse().find((e) => entryEdge(kind, e)?.b === 'verified');
+      if (!MERGE_SHA_RE.test(x.e.body) && !(verifiedEntry && MERGE_SHA_RE.test(verifiedEntry.body))) errors.push(`${edge} has no merge sha (merge: <sha> or Merge \`<sha>\`) in its entry or the in-review → verified entry`);
+    }
+  }
+  if (kind === 'plan' && after.state === 'done' && laneStates && laneStates.some((s) => s !== 'done')) errors.push('a plan chain may end "done" only when every lane is done');
+  // Review entries written by a reviewer in this range survive to the head exactly once (review of #4416 on 8034e629):
+  // a builder commit can neither delete a later `changes` entry nor copy an earlier accept back into the log.
+  const reviewHeaders = new Map();
+  for (const c of reviewCommits) {
+    for (const h of logEntries(c.appended || '').filter(isReviewEntry).map((e) => `### ${e.time} · ${e.session} · ${e.change}`)) {
+      reviewHeaders.set(h, (reviewHeaders.get(h) || 0) + 1);
+    }
+  }
+  for (const [h, n] of reviewHeaders) {
+    const seen = added.filter((e) => `### ${e.time} · ${e.session} · ${e.change}` === h).length;
+    if (seen !== n) errors.push(`review entry "${h.slice(4)}" appears ${seen}× at the head but its review commit(s) appended it ${n}× (a builder may not remove or copy review entries)`);
+  }
+  return errors;
+}
+
+/**
+ * VTID-05351 (review of #4416): the review-only commits of the range that may back a chain's review entry for lane
+ * `key` (file `p`). A commit counts only when it carries `Collab-Review: <key>` and **no** `Collab-Lane`, changes `p`
+ * without touching its front matter and only appends to its log, comes from an authorized reviewer (the lane's
+ * trusted `reviewer_seat` rule, as scopeCheck applies it; with none set, a reviewer agent or a Claude Code session),
+ * and its session wrote no `Collab-Lane` commit in the range (a builder never backs its own review). Returns
+ * `[{ verdict, reviewedHead, appended }]`, `appended` = the log text the commit added.
+ */
+function reviewBacking(repo, commits, key, p, trustedFm) {
+  const builders = new Set(commits.filter((k) => k.lane).map((k) => k.session));
+  const fm = trustedFm || {};
+  const out = [];
+  for (const k of commits) {
+    if (!(k.review || '').split(',').map((x) => x.trim()).includes(key) || k.lane) continue;
+    if (!k.files.includes(p) || builders.has(k.session) || frontMatterChanged(repo, k.sha, p)) continue;
+    const authorized = fm.reviewer_seat === 'claude' ? /^session_/.test(k.session)
+      : isReviewerAgent(fm.reviewer_seat) ? agentOf(k.session) === fm.reviewer_seat
+        : fm.reviewer_seat ? seatOf(k.session) === fm.reviewer_seat
+          : isReviewerAgent(agentOf(k.session)) || /^session_/.test(k.session);
+    if (!authorized) continue;
+    const a = logSection(showFile(repo, `${k.sha}^`, p));
+    const b = logSection(showFile(repo, k.sha, p));
+    if (!b.startsWith(a)) continue;
+    out.push({ verdict: k.verdict, reviewedHead: k.reviewedHead, appended: b.slice(a.length) });
+  }
+  return out;
+}
+
 // ── Git helpers ─────────────────────────────────────────────────────────
 
 /** Number of git processes this module has started (the queue's spawn budget is asserted against it in tests). */
@@ -647,7 +806,25 @@ export function validateRange(repo, { base, head, branch = '', allowInitial = []
     const ciSparred = c.kind === 'plan' && commits.some((k) => k.session === CI_PLAN_SPAR && k.files.includes(p))
       && ['drafted', 'sparred', undefined].includes(before?.state) && ['drafted', 'sparred', 'approved', 'parked'].includes(after?.state);
     if (ciSparred) continue;
-    for (const x of checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) })) errors.push(`${p}: ${x}`);
+    const single = checkTransition(c.kind, before, after, { allowInitial: allowInitial.includes(c.slug) });
+    // VTID-05351: a state change one edge cannot make may be a chain of legal edges, each with its own log entry.
+    // Two or more logged edges → the chain decides; otherwise the single-edge result stands unchanged.
+    const beforeText = before && after && before.state !== after.state ? showFile(repo, mergeBase, p) : null;
+    const afterText = beforeText ? showFile(repo, head, p) : null;
+    const loggedEdges = beforeText && afterText && logSection(afterText).startsWith(logSection(beforeText))
+      ? logEntries(logSection(afterText).slice(logSection(beforeText).length)).filter((e) => entryEdge(c.kind, e)).length
+      : beforeText ? 2 : 0; // a rewritten log under a multi-state change is judged (and refused) by the chain
+    if (single.length && loggedEdges >= 2) {
+      const key = `${c.slug}/${c.lane}`;
+      const reviewCommits = reviewBacking(repo, commits, key, p, parseFrontMatter(showFile(repo, mergeBase, p)));
+      const laneStates = c.kind === 'plan'
+        ? specFilesAt(repo, head).filter((f) => classifyPath(f)?.slug === c.slug && classifyPath(f).kind === 'lane')
+          .map((f) => parseFrontMatter(showFile(repo, head, f))?.state)
+        : null;
+      for (const x of transitionChain(c.kind, beforeText, afterText, { reviewCommits, laneStates })) errors.push(`${p}: ${x}`);
+      continue;
+    }
+    for (const x of single) errors.push(`${p}: ${x}`);
   }
 
   const laneTrailers = new Set(commits.map((k) => k.lane).filter(Boolean).flatMap((l) => l.split(',').map((s) => s.trim())));
