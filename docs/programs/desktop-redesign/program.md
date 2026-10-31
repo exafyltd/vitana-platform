@@ -3,9 +3,10 @@ id: desktop-redesign
 title: Spotlight desktop redesign
 status: active
 priority: 3
-repos: [vitana-v1]
+repos: [vitana-v1, vitana-platform]
 specs:
   - vitana-v1:desktop-spotlight
+  - vitana-platform:desktop-spotlight-finish
   - vitana-platform:spotlight-card-proportion
 docs:
   - vitana-v1:docs/plans/desktop-spotlight/plan.md
