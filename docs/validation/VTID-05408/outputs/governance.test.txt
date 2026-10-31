@@ -1,0 +1,68 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in /projects/sandbox/vitana-platform/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    ✅ Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [PM] pm_lease: none → acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/governance.test.ts
+  T9-T12 merge on the reviewer agent accept
+    ✓ T9 governance lane + agent accept on the current head + checks green → merge decision and act merges (20 ms)
+    ✓ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept → merge (1 ms)
+    ✓ T11 agent accept on H, review-only commits after it (review_only_since [H]) → merge (1 ms)
+    ✓ T12 guard: a legacy claude review on a governance lane still merges
+  M1 protected gate files never merge on an agent accept alone
+    ✓ CLAUDE.md (1 ms)
+    ✓ scripts/collab/plan-spar.mjs
+    ✓ scripts/collab/queue.mjs
+    ✓ scripts/collab/protected-gate-files.json (1 ms)
+    ✓ services/gateway/src/services/plan-sparring/** (5 ms)
+    ✓ services/gateway/src/services/project-manager/governance.ts (1 ms)
+    ✓ .github/workflows/PLAN-SPAR.yml
+    ✓ .github/workflows/PR-GATE.yml
+    ✓ .github/workflows/AWS-PROD-*.yml
+    ✓ .kiro/agents/vitana-lane-reviewer.md
+    ✓ supabase/migrations/*vtid_ledger*.sql
+    ✓ supabase/migrations/*plan_sparring*.sql (1 ms)
+    ✓ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred)
+    ✓ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse) (1 ms)
+    ✓ the compiled-in list is never empty
+  M2-M5 reviews that do not count
+    ✓ M2 stale head: accept on an old head with no review-only commits → no merge
+    ✓ M2 review_only_since does not match a different earlier head
+    ✓ M3 reviewer "agent:someone-else" → no merge on a governance lane (1 ms)
+    ✓ M3 reviewer null → no merge on a governance lane
+    ✓ M3 reviewer "agent:vitana-lane-reviewer-fake" → no merge on a governance lane
+    ✓ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" → no merge on a governance lane (1 ms)
+    ✓ the reviewer model chain is sonnet-5.5 → opus-5.5 → sonnet-4.5 (Claude only)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head → merge on a governance lane (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head → merge on a governance lane
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) → no merge (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) → no merge
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) → no merge (1 ms)
+    ✓ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) → no merge
+    ✓ M4 agent changes on the current head → no merge
+    ✓ M5 agent review from a session in the executing log → no merge
+    ✓ decide() emits no merge for a protected-file PR with an agent accept (1 ms)
+  T25 parity with scripts/collab/protected-gate-files.json
+    ✓ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails) (1 ms)
+
+Test Suites: 1 passed, 1 total
+Tests:       43 passed, 43 total
+Snapshots:   0 total
+Time:        0.612 s
+Ran all test suites matching /test\/project-manager\/governance.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

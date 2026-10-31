@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05206",
+  "kind": "docs",
+  "paths": [
+    ".kiro/specs/new-member-welcome/lanes/new-member-card-optin.md",
+    "docs/validation/VTID-05206/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05206/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
