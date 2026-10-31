@@ -1,0 +1,10 @@
+# C4 replay: owner-autonomy/v1-rules closing sequence (#4397 #4399 #4400 #4401) as ONE range
+# base d63df38e6c5fd64a82fba8c30b59a9a76a24a0a8 (parent of #4397's merge); commit 1 (3a97c0d1) = the reviewer agent's four review entries (review-only, session agent-vitana-lane-reviewer-202610271145-b0e5, Collab-Reviewed-Head 2f4f344c); commit 2 (a3155bb71f) = ready → executing → in-review → verified → done in one closing record (real entry texts of 48418671e5d9)
+## origin/main queue.mjs
+❌ **collab handoff** — 1 problem(s):
+- .kiro/specs/owner-autonomy/lanes/v1-rules.md: illegal transition "ready" → "done"
+## head queue.mjs (VTID-05351)
+✅ **collab handoff** — 1 handoff/lane file(s) changed, all valid
+## head queue.mjs, same final file but the builder adds the accept entries itself (no Collab-Review commit; 12bf8db8f5)
+❌ **collab handoff** — 1 problem(s):
+- .kiro/specs/owner-autonomy/lanes/v1-rules.md: in-review → verified: the accept review entry for head 2f4f344c was added without its Collab-Review commit (Collab-Verdict: accept, Collab-Reviewed-Head: 2f4f344c…)

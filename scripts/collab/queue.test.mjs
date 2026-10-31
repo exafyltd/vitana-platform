@@ -1198,6 +1198,187 @@ test('VTID-05276 T17: PR-GATE runs a "Collab handoff" job over every collab test
   assert.doesNotMatch(lane, /node scripts\/collab\/queue\.mjs scope-check/);
 });
 
+// ── VTID-05351 (plan pipeline-lane-state-efficiency): a chain of legal transitions in one closing record ──
+
+const HEAD_A = 'a'.repeat(40);
+const HEAD_B = 'b'.repeat(40);
+const PR_URL = 'https://github.com/exafyltd/vitana-platform/pull/4400';
+const MERGE = 'c0ffee1234567890c0ffee1234567890c0ffee12';
+/** Lane file text: front matter + `## Log` + entries (each `[header, body]`). */
+const laneLog = (fm, entries) => `---\n${Object.entries({ lane: 'card-01', next_actor: 'kiro', updated: '2026-10-27T12:00Z', vtid: 'VTID-00002', ...fm })
+  .map(([k, v]) => `${k}: ${v}`).join('\n')}\n---\n# Lane\n\n## Log\n${entries.map(([h, b]) => `### ${h}\n${b ? `${b}\n` : ''}`).join('\n')}`;
+const E = {
+  created: ['2026-10-27T10:00Z · kiro-x · ready', 'Lane created.'],
+  claim: ['2026-10-27T10:05Z · kiro-x · ready → executing', 'Claimed.'],
+  review: (v, h, t = '2026-10-27T11:00Z') => [`${t} · agent-vitana-lane-reviewer-202610271100-ab12 · review: ${v}`, `review: ${v}\nhead: ${h}\nreviewer: agent:vitana-lane-reviewer (claude-opus-5.5)`],
+  inReview: (t = '2026-10-27T11:10Z') => [`${t} · kiro-x · executing → in-review`, `PR ${PR_URL} opened.`],
+  verified: (t = '2026-10-27T11:20Z', body = 'Accept on the current head; checks green.') => [`${t} · kiro-x · in-review → verified`, body],
+  done: (t = '2026-10-27T11:30Z', body = `Lane closed under §7b. Merge \`${MERGE}\` (#4400).`) => [`${t} · kiro-x · verified → done`, body],
+};
+/** A review-only commit that appended `entry` (what reviewBacking returns). */
+const backed = (entry, verdict, reviewedHead) => ({ verdict, reviewedHead, appended: `\n### ${entry[0]}\n${entry[1]}\n` });
+const chain = (kind, before, after, o = {}) => Q.transitionChain(kind, before, after, { reviewCommits: [], ...o });
+const hasErr = (errs, s) => assert.ok(errs.some((e) => e.includes(s)), `expected an error containing "${s}" in:\n${errs.join('\n')}`);
+
+test('transitionChain: valid lane chains (both merge-sha conventions, changes loop, intermediate parked)', () => {
+  const base = laneLog({ state: 'executing' }, [E.created, E.claim]);
+  // executing → in-review → verified → done, the accept already in the base log (stored by an earlier PR).
+  const baseWithReview = laneLog({ state: 'executing' }, [E.created, E.claim, E.review('accept', HEAD_A)]);
+  const full = laneLog({ state: 'done' }, [E.created, E.claim, E.review('accept', HEAD_A), E.inReview(), E.verified(), E.done()]);
+  assert.deepEqual(chain('lane', baseWithReview, full), []);
+  // merge: <sha> in the in-review → verified entry instead (the other convention).
+  const full2 = laneLog({ state: 'done' }, [E.created, E.claim, E.review('accept', HEAD_A), E.inReview(), E.verified(undefined, `merge: ${MERGE} · authority: §7b PM rule`), E.done(undefined, 'Closed.')]);
+  assert.deepEqual(chain('lane', baseWithReview, full2), []);
+  // The owner/repo#N short form of the PR reference (what the real closing records write).
+  const full4 = laneLog({ state: 'in-review' }, [E.created, E.claim, ['2026-10-27T11:10Z · kiro-x · executing → in-review', 'exafyltd/vitana-v1#1500 was opened.']]);
+  const base4 = laneLog({ state: 'ready' }, [E.created]);
+  assert.deepEqual(chain('lane', base4, full4), []);
+  // The accept entry is new in this range: backed by its Collab-Review commit with the same head.
+  const full3 = laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()]);
+  assert.deepEqual(chain('lane', base, full3, { reviewCommits: [backed(E.review('accept', HEAD_A), 'accept', HEAD_A)] }), []);
+  // ...but not by a commit that carries the trailers without having appended that entry.
+  hasErr(chain('lane', base, full3, { reviewCommits: [{ verdict: 'accept', reviewedHead: HEAD_A, appended: '' }] }), 'Collab-Review commit');
+  // A review entry appended by a review commit must survive exactly once: removed or copied → refused.
+  const accept = E.review('accept', HEAD_A, '2026-10-27T10:55Z');
+  const changes = E.review('changes', HEAD_B, '2026-10-27T11:05Z');
+  const reviewed = [backed(accept, 'accept', HEAD_A), backed(changes, 'changes', HEAD_B)];
+  const dropChanges = laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), accept, E.verified()]);
+  hasErr(chain('lane', base, dropChanges, { reviewCommits: reviewed }), 'appears 0×');
+  const copyAccept = laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), accept, changes, ['2026-10-27T11:06Z · kiro-x · in-review → executing', 'x'], E.inReview('2026-10-27T11:10Z'), accept, E.verified()]);
+  hasErr(chain('lane', base, copyAccept, { reviewCommits: reviewed }), 'appears 2×');
+  // in-review → executing → in-review with a review: changes entry.
+  const inRev = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z')]);
+  const loop = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('changes', HEAD_A), ['2026-10-27T11:05Z · kiro-x · in-review → executing', 'Fixing findings.'], E.inReview('2026-10-27T11:15Z')]);
+  assert.deepEqual(chain('lane', inRev, loop, { reviewCommits: [backed(E.review('changes', HEAD_A), 'changes', HEAD_A)] }), []);
+  // executing → parked → executing → in-review (parked_from tracked through the chain).
+  const parkedLoop = laneLog({ state: 'in-review' }, [E.created, E.claim, ['2026-10-27T10:20Z · kiro-x · executing → parked', 'Blocked.'], ['2026-10-27T10:40Z · kiro-x · parked → executing', 'Unblocked.'], E.inReview()]);
+  assert.deepEqual(chain('lane', base, parkedLoop), []);
+});
+
+test('transitionChain: valid plan chain, one entry per edge; plan → done needs every lane done', () => {
+  const pm = (state, entries) => laneLog({ state, slug: 'cards', lane: undefined }, entries).replace('lane: undefined\n', '');
+  const base = pm('executing', [['2026-10-27T10:00Z · kiro-x · approved → executing', 'Started.']]);
+  const head = pm('done', [['2026-10-27T10:00Z · kiro-x · approved → executing', 'Started.'], ['2026-10-27T11:00Z · kiro-x · executing → in-review', 'All lanes in review.'], ['2026-10-27T11:10Z · kiro-x · in-review → verified', 'All lanes verified.'], ['2026-10-27T11:20Z · kiro-x · verified → done', 'All lanes done.']]);
+  assert.deepEqual(chain('plan', base, head, { laneStates: ['done', 'done'] }), []);
+  hasErr(chain('plan', base, head, { laneStates: ['done', 'verified'] }), 'every lane');
+});
+
+test('transitionChain: invalid chains each fail with their own error', () => {
+  const base = laneLog({ state: 'executing' }, [E.created, E.claim]);
+  const baseRev = laneLog({ state: 'executing' }, [E.created, E.claim, E.review('accept', HEAD_A)]);
+  // skipped state: only one entry for executing → verified
+  hasErr(chain('lane', baseRev, laneLog({ state: 'verified' }, [E.created, E.claim, E.review('accept', HEAD_A), ['2026-10-27T11:20Z · kiro-x · executing → verified', 'x']])), 'illegal transition "executing" → "verified"');
+  // entries out of order
+  hasErr(chain('lane', baseRev, laneLog({ state: 'verified' }, [E.created, E.claim, E.review('accept', HEAD_A), E.inReview('2026-10-27T11:30Z'), E.verified('2026-10-27T11:20Z')])), 'out of order');
+  // an entry ready → done
+  hasErr(chain('lane', laneLog({ state: 'ready' }, [E.created]), laneLog({ state: 'done' }, [E.created, ['2026-10-27T10:05Z · kiro-x · ready → executing', 'x'], ['2026-10-27T10:06Z · kiro-x · executing → done', 'x']])), 'illegal transition "executing" → "done"');
+  // leaving done
+  hasErr(chain('lane', laneLog({ state: 'done' }, [E.created]), laneLog({ state: 'in-review' }, [E.created, ['2026-10-27T10:05Z · kiro-x · done → executing', 'x'], E.inReview()])), '"done" is terminal');
+  // parked returns to the wrong state (parked_from tracked = executing)
+  hasErr(chain('lane', base, laneLog({ state: 'in-review' }, [E.created, E.claim, ['2026-10-27T10:20Z · kiro-x · executing → parked', 'x'], ['2026-10-27T10:40Z · kiro-x · parked → in-review', 'x']])), 'may only return to "executing"');
+  // head parked with a parked_from other than the tracked one
+  hasErr(chain('lane', base, laneLog({ state: 'parked', parked_from: 'ready' }, [E.created, E.claim, E.inReview(), ['2026-10-27T11:20Z · kiro-x · in-review → parked', 'x']])), 'parked_from');
+  // in-review → verified without an accept entry in its window
+  hasErr(chain('lane', base, laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview(), E.verified()])), 'no accept review');
+  // accept added in this range without its Collab-Review commit
+  hasErr(chain('lane', base, laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()])), 'Collab-Review commit');
+  // accept whose head differs from Collab-Reviewed-Head
+  hasErr(chain('lane', base, laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()]), { reviewCommits: [backed(E.review('accept', HEAD_A), 'accept', HEAD_B)] }), 'Collab-Review commit');
+  // a note entry whose body quotes 'review: accept' is not a review entry
+  hasErr(chain('lane', base, laneLog({ state: 'verified' }, [E.created, E.claim, E.inReview(), ['2026-10-27T11:15Z · kiro-x · note', `review: accept\nhead: ${HEAD_A}`], E.verified()])), 'no accept review');
+  // executing → in-review without a PR URL
+  hasErr(chain('lane', baseRev, laneLog({ state: 'verified' }, [E.created, E.claim, E.review('accept', HEAD_A), ['2026-10-27T11:10Z · kiro-x · executing → in-review', 'no link'], E.verified()])), 'PR URL');
+  // in-review → executing without a changes entry
+  const inRev = laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z')]);
+  hasErr(chain('lane', inRev, laneLog({ state: 'in-review' }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), ['2026-10-27T11:05Z · kiro-x · in-review → executing', 'x'], E.inReview('2026-10-27T11:15Z')])), 'no changes review');
+  // verified → done without a merge sha in either entry
+  hasErr(chain('lane', baseRev, laneLog({ state: 'done' }, [E.created, E.claim, E.review('accept', HEAD_A), E.inReview(), E.verified(), E.done(undefined, 'Closed.')])), 'merge sha');
+  // a base log entry edited
+  hasErr(chain('lane', baseRev, laneLog({ state: 'verified' }, [E.created, ['2026-10-27T10:05Z · kiro-x · ready → executing', 'Claimed (edited).'], E.review('accept', HEAD_A), E.inReview(), E.verified()])), 'log rewritten');
+  // more than 6 edges
+  const many = [E.created, E.claim];
+  for (let i = 0; i < 4; i++) many.push([`2026-10-27T11:${10 + 2 * i}Z · kiro-x · executing → parked`, 'x'], [`2026-10-27T11:${11 + 2 * i}Z · kiro-x · parked → executing`, 'x']);
+  hasErr(chain('lane', base, laneLog({ state: 'executing' }, many)), 'at most 6');
+  // last edge does not reach the head state
+  hasErr(chain('lane', baseRev, laneLog({ state: 'done' }, [E.created, E.claim, E.review('accept', HEAD_A), E.inReview(), E.verified()])), 'does not connect');
+  // first edge does not start at the base state
+  hasErr(chain('lane', base, laneLog({ state: 'verified' }, [E.created, E.claim, E.verified('2026-10-27T11:00Z'), ['2026-10-27T11:05Z · kiro-x · verified → in-review', 'x']])), 'does not connect');
+});
+
+test('validate: a closing-record PR may carry executing → in-review → verified → done; authorization still applies', () => {
+  const f = fixture();
+  try {
+    const lanePath = '.kiro/specs/cards/lanes/card-01.md';
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00001'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S1 }, [E.created, E.claim]));
+    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'fetch', '-q', 'origin');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A)]));
+    commit(f.work, 'review entry', { 'Collab-Session': 'agent-vitana-lane-reviewer-202610271100-ab12', 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept', 'Collab-Reviewer': 'agent:vitana-lane-reviewer (claude-opus-5.5)', 'Collab-Reviewed-Head': HEAD_A });
+    const closed = laneLog({ state: 'done', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A), E.inReview('2026-10-27T11:10Z'), E.verified(), E.done()]);
+    write(f.work, lanePath, closed);
+    const head = commit(f.work, 'closing record', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+    // Same chain from a second session: still one session per lane / claimed_by.
+    write(f.work, lanePath, `${closed}\n### 2026-10-27T11:40Z · kiro-y · note\nx\n`);
+    const head2 = commit(f.work, 'other session', { 'Collab-Session': 'kiro-202610271140-cd34', 'Collab-Lane': 'cards/card-01' });
+    hasErr(validateRange(f.work, { base, head: head2, branch: 'kiro/cards/card-01' }).errors, 'one session per lane');
+  } finally { f.done(); }
+});
+
+test('validate: a chain whose accept entry has no Collab-Review commit fails; a single legal edge needs no new evidence', () => {
+  const f = fixture();
+  try {
+    const lanePath = '.kiro/specs/cards/lanes/card-01.md';
+    write(f.work, '.kiro/specs/cards/handoff.md', planMd({ state: 'executing', sparring_record: 'x.md', vtids: ['VTID-00001'], executor: 'kiro', next_actor: 'kiro' }));
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S1 }, [E.created, E.claim]));
+    const base = commit(f.work, 'seed', { 'Collab-Session': S2, 'Collab-Lane': 'cards/_plan' });
+    sh(f.work, 'push', '-q', 'origin', 'main');
+    sh(f.work, 'fetch', '-q', 'origin');
+    sh(f.work, 'checkout', '-q', '-b', 'kiro/cards/card-01');
+    // The builder writes the accept entry itself, then chains through verified: refused.
+    write(f.work, lanePath, laneLog({ state: 'verified', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()]));
+    let head = commit(f.work, 'forged accept', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    hasErr(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, 'Collab-Review commit');
+    // The builder adds the Collab-Review trailers to its own Collab-Lane commit: still refused.
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', base);
+    write(f.work, lanePath, laneLog({ state: 'verified', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()]));
+    const forgedTrailers = { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01', 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept', 'Collab-Reviewer': 'agent:vitana-lane-reviewer (claude-opus-5.5)', 'Collab-Reviewed-Head': HEAD_A };
+    head = commit(f.work, 'forged with trailers', forgedTrailers);
+    hasErr(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, 'Collab-Review commit');
+    // An empty review-trailer commit next to the builder's own accept entry: still refused.
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', base);
+    write(f.work, lanePath, laneLog({ state: 'verified', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z'), E.review('accept', HEAD_A), E.verified()]));
+    commit(f.work, 'builder writes accept', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    sh(f.work, 'commit', '-q', '--allow-empty', '-m', 'empty review', '--trailer', 'Collab-Session: agent-vitana-lane-reviewer-202610271100-ab12', '--trailer', 'Collab-Review: cards/card-01', '--trailer', 'Collab-Verdict: accept', '--trailer', `Collab-Reviewed-Head: ${HEAD_A}`);
+    head = sh(f.work, 'rev-parse', 'HEAD');
+    hasErr(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, 'Collab-Review commit');
+    // A review-only commit from a session that is neither a reviewer agent nor Claude Code: refused.
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', base);
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A)]));
+    commit(f.work, 'review by a kiro seat', { 'Collab-Session': 'kiro-other-202610271100-ab12', 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept', 'Collab-Reviewed-Head': HEAD_A });
+    write(f.work, lanePath, laneLog({ state: 'verified', claimed_by: S1 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A), E.inReview('2026-10-27T11:10Z'), E.verified()]));
+    head = commit(f.work, 'closing', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    hasErr(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, 'Collab-Review commit');
+    // A Claude Code session that built the lane cannot back its own accept with a review-only commit.
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', base);
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S2 }, [E.created, E.claim]));
+    commit(f.work, 'claude builds', { 'Collab-Session': S2, 'Collab-Lane': 'cards/card-01' });
+    write(f.work, lanePath, laneLog({ state: 'executing', claimed_by: S2 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A)]));
+    commit(f.work, 'self review', { 'Collab-Session': S2, 'Collab-Review': 'cards/card-01', 'Collab-Verdict': 'accept', 'Collab-Reviewed-Head': HEAD_A });
+    write(f.work, lanePath, laneLog({ state: 'verified', claimed_by: S2 }, [E.created, E.claim, E.inReview('2026-10-27T10:50Z').map((x, i) => (i ? x : x.replace(' · executing → in-review', ' · note'))), E.review('accept', HEAD_A), E.inReview('2026-10-27T11:10Z'), E.verified()]));
+    head = commit(f.work, 'closing', { 'Collab-Session': S2, 'Collab-Lane': 'cards/card-01' });
+    hasErr(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, 'Collab-Review commit');
+    // A single legal edge (executing → in-review) without a PR URL passes as today.
+    sh(f.work, 'checkout', '-q', '-B', 'kiro/cards/card-01', base);
+    write(f.work, lanePath, laneLog({ state: 'in-review', claimed_by: S1 }, [E.created, E.claim, ['2026-10-27T11:10Z · kiro-x · executing → in-review', 'no link']]));
+    head = commit(f.work, 'single edge', { 'Collab-Session': S1, 'Collab-Lane': 'cards/card-01' });
+    assert.deepEqual(validateRange(f.work, { base, head, branch: 'kiro/cards/card-01' }).errors, []);
+  } finally { f.done(); }
+});
+
 // ── VTID-05408 (kiro-lane-admin): reviewed, auditable Kiro lane administration. T-A..T-K (design §7). ──
 // An admin lane: executor: kiro, reviewer_seat: agent:vitana-lane-reviewer, lane_admin: true, whose paths cover the
 // TARGET lane file(s) it administers. Only such a lane (from a trusted source) may reassign a target lane's seat /
