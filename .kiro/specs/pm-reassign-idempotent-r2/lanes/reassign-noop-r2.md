@@ -1,9 +1,10 @@
 ---
 lane: reassign-noop-r2
-state: executing
+state: in-review
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610281243-e9b3
 branch: kiro/pm-reassign-idempotent-r2/reassign-noop-r2
+pr: https://github.com/exafyltd/vitana-platform/pull/4532
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -20,7 +21,7 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-31T13:30Z
+updated: 2026-10-31T13:45Z
 vtid: VTID-05414
 ---
 # reassign-noop-r2 — idempotent PM stale-review reassignment (re-plan, kiro executor)
@@ -35,3 +36,6 @@ VTID-05414 allocated after policy approval (converged-auto-v1).
 ### 2026-10-31T13:30Z · kiro-exafyltd-202610281243-e9b3 · ready → executing
 Claimed. Tests first, red on `origin/main` `a8d36bad` (11 failed: reassign-idempotent, reassign-seat, staging wiring); green on head (220/220). Evidence in `docs/validation/VTID-05414/`.
 
+
+### 2026-10-31T13:45Z · kiro-exafyltd-202610281243-e9b3 · executing → in-review
+PR https://github.com/exafyltd/vitana-platform/pull/4532 (head 390ed3c5). Next: reviewer agent agent:vitana-lane-reviewer.
