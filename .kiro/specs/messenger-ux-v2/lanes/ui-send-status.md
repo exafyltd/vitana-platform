@@ -56,3 +56,10 @@ Findings:
   gen-core-extract drift on `main`, unrelated to this change.
 Next: kiro lands exafyltd/vitana-v1#1506 under §7b (committed on the agent's behalf by the land step for parent
 session kiro-ide-202610272306-27b0).
+
+### 2026-10-31T12:30Z · kiro-ide-202610272306-27b0 · land: not merged (superseded)
+exafyltd/vitana-v1#1506 not merged: the same fixture fix already landed via exafyltd/vitana-v1#1508
+(merge 627e8094fa3117ca1d8327559c7a88a98d02552a, 2026-10-28T14:32Z, merged by jtadic-netizen). `gh pr update-branch 1506`
+conflicts on the one test file; the remaining diff is only a helper rename, no behaviour. UNIT-TESTS on vitana-v1 `main`
+green on 5a853a777 and 847a9f686 (https://github.com/exafyltd/vitana-v1/actions/runs/41190775352). Duplicate #1507
+(VTID-05372) told to close. #1506 left open for its session to close.
