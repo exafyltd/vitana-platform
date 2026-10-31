@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: sparred
 spar_refs:
   - exafyltd/vitana-v1: main
-updated: 2026-10-31T13:05Z
+updated: 2026-10-31T13:06Z
+sparring_record: .kiro/specs/spotlight-compact-hero/sparring/verdict.md
+reason: lanes_missing
 ---
 
 # Handoff — spotlight-compact-hero
@@ -57,3 +59,6 @@ top-start of a `full`-width 10-col bento at `col-span-4 row-span-2` (~40% width)
 folds into the grid (supersedes the round-1 "keep"); quick-action pill strip; SR-11 dashboard
 exception; new read-only proportion staging spec. Owner flag: a coloured spotlight glow would need
 a new elevation token — not shipped, ring/border treatment with existing tokens instead.
+
+### 2026-10-31T13:06Z · ci-plan-spar · drafted → sparred
+Converged; approved by policy converged-auto-v1. No lane files yet; add them in a `_plan` commit on this PR and the next PLAN-SPAR run allocates their VTIDs.
