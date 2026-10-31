@@ -447,6 +447,20 @@ jobs:
           } >> "$GITHUB_OUTPUT"
           echo "Mode: promote-staging — shipping $IMAGE ($SHA) with NO rebuild."
 
+      - name: Login to Amazon ECR Public (authenticated base-image pulls)
+        # ci-ecr-public-auth: anonymous public.ecr.aws pulls from shared runner IPs hit 429.
+        # Fail-soft by design: on any error warn loudly and fall back to the anonymous pull we had before.
+        if: ${{ (inputs.deploy_mode || 'promote-staging') == 'rebuild-main' }}
+        run: |
+          if PW="$(aws ecr-public get-login-password --region us-east-1 2>/tmp/ecr-public.err)" \
+             && printf '%s' "$PW" | docker login --username AWS --password-stdin public.ecr.aws >/dev/null 2>>/tmp/ecr-public.err; then
+            echo "ecr-public-login: authenticated"
+          else
+            echo "::warning title=ECR Public login failed::anonymous public.ecr.aws pulls (429 risk): $(head -c 300 /tmp/ecr-public.err | tr '\n' ' ')"
+            echo "### ECR Public login failed: anonymous base-image pulls (429 risk)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          unset PW
+
       - name: Build and push image (rebuild-main only)
         id: build
         if: ${{ (inputs.deploy_mode || 'promote-staging') == 'rebuild-main' }}

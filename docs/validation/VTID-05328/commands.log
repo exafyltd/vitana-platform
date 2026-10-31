@@ -1,0 +1,25 @@
+# VTID-05328 (ci-ecr-public-auth/platform-ecr-public-login) — commands, 2026-10-28, Windows worktree, base origin/main 9816df6d93
+# session kiro-exafyltd-202610281029-dea2
+
+## red on base (workflows at origin/main, new test file only) — red-on-base.txt
+cd services/gateway; npx jest test/ci-ecr-public-auth-workflows.test.ts --verbose
+  -> FAIL: 5 failed, 1 passed, 6 total (each build job: hasLogin false)
+
+## green on lane head
+cd services/gateway; npx jest test/ci-ecr-public-auth-workflows.test.ts test/vtid-05017-base-images-ecr-public.test.ts --verbose
+  -> ci-ecr-public-auth-workflows.test.ts: PASS 6/6
+  -> vtid-05017-base-images-ecr-public.test.ts: 4 passed, 1 failed ("finds the four Dockerfiles"): Windows-only,
+     path.join returns backslash paths; same red on base, file untouched by this lane; passes on Linux CI.
+
+## IAM files
+bash -n scripts/aws/iam/ci-ecr-public-pull-iam-check.sh                       -> exit 0
+JSON.parse(scripts/aws/iam/ci-ecr-public-pull-policy.json) (node; python3 not installed locally) -> ok
+  (python3 -m json.tool runs in CI/CloudShell; the file is plain JSON)
+
+## workflow YAML parse (js-yaml)
+AWS-STAGE-DEPLOY-GATEWAY.yml, AWS-PROD-DEPLOY-GATEWAY.yml, AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml,
+AWS-STAGE-DEPLOY-KIRO-RUNNER.yml -> all parse
+actionlint: not installed locally (PR-GATE workflow checks run in CI)
+
+## no live calls
+No workflow dispatched, nothing deployed, no AWS/IAM call made.

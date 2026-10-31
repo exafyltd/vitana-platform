@@ -75,6 +75,28 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
+      # ci-ecr-public-auth: off pull_request only, so no AWS secret reaches a job that builds unmerged PR code.
+      # PR builds keep pulling public.ecr.aws anonymously.
+      - name: Configure AWS credentials
+        if: github.event_name != 'pull_request'
+        uses: aws-actions/configure-aws-credentials@v4
+        with:
+          aws-access-key-id: ${{ secrets.AWS_STAGING_ACCESS_KEY_ID }}
+          aws-secret-access-key: ${{ secrets.AWS_STAGING_SECRET_ACCESS_KEY }}
+          aws-region: ${{ env.TARGET_AWS_REGION }}
+      - name: Login to Amazon ECR Public (authenticated base-image pulls)
+        # ci-ecr-public-auth: anonymous public.ecr.aws pulls from shared runner IPs hit 429.
+        # Fail-soft by design: on any error warn loudly and fall back to the anonymous pull we had before.
+        if: github.event_name != 'pull_request'
+        run: |
+          if PW="$(aws ecr-public get-login-password --region us-east-1 2>/tmp/ecr-public.err)" \
+             && printf '%s' "$PW" | docker login --username AWS --password-stdin public.ecr.aws >/dev/null 2>>/tmp/ecr-public.err; then
+            echo "ecr-public-login: authenticated"
+          else
+            echo "::warning title=ECR Public login failed::anonymous public.ecr.aws pulls (429 risk): $(head -c 300 /tmp/ecr-public.err | tr '\n' ' ')"
+            echo "### ECR Public login failed: anonymous base-image pulls (429 risk)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          unset PW
       - name: Build image (pinned kiro-cli, sha256-checked)
         run: docker build -t kiro-runner:ci services/kiro-runner
       - name: Container smoke — /alive answers and reports the pinned kiro-cli
@@ -110,6 +132,19 @@ jobs:
       - name: Login to Amazon ECR
         id: ecr
         uses: aws-actions/amazon-ecr-login@v2
+
+      - name: Login to Amazon ECR Public (authenticated base-image pulls)
+        # ci-ecr-public-auth: anonymous public.ecr.aws pulls from shared runner IPs hit 429.
+        # Fail-soft by design: on any error warn loudly and fall back to the anonymous pull we had before.
+        run: |
+          if PW="$(aws ecr-public get-login-password --region us-east-1 2>/tmp/ecr-public.err)" \
+             && printf '%s' "$PW" | docker login --username AWS --password-stdin public.ecr.aws >/dev/null 2>>/tmp/ecr-public.err; then
+            echo "ecr-public-login: authenticated"
+          else
+            echo "::warning title=ECR Public login failed::anonymous public.ecr.aws pulls (429 risk): $(head -c 300 /tmp/ecr-public.err | tr '\n' ' ')"
+            echo "### ECR Public login failed: anonymous base-image pulls (429 risk)" >> "$GITHUB_STEP_SUMMARY"
+          fi
+          unset PW
 
       - name: Preflight — staging-only target, ECR repo, ECS service, token secret
         run: |

@@ -1,0 +1,22 @@
+{
+  "Version": "2012-10-17",
+  "Statement": [
+    {
+      "Sid": "EcrPublicPull",
+      "Effect": "Allow",
+      "Action": "ecr-public:GetAuthorizationToken",
+      "Resource": "*"
+    },
+    {
+      "Sid": "EcrPublicPullBearerToken",
+      "Effect": "Allow",
+      "Action": "sts:GetServiceBearerToken",
+      "Resource": "*",
+      "Condition": {
+        "StringEquals": {
+          "sts:AWSServiceName": "ecr-public.amazonaws.com"
+        }
+      }
+    }
+  ]
+}

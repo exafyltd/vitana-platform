@@ -1,6 +1,6 @@
 ---
 lane: platform-ecr-public-login
-state: ready
+state: executing
 next_actor: kiro
 depends_on: []
 executor: claude
@@ -15,7 +15,10 @@ paths:
   - scripts/aws/iam/ci-ecr-public-pull-policy.json
   - scripts/aws/iam/ci-ecr-public-pull-iam-check.sh
   - docs/validation/**
-updated: 2026-10-22T08:07Z
+updated: 2026-10-28T10:55Z
+claimed_by: kiro-exafyltd-202610281029-dea2
+branch: kiro/ci-ecr-public-auth/platform-ecr-public-login
+pr: https://github.com/exafyltd/vitana-platform/pull/4518
 vtid: VTID-05328
 ---
 # platform-ecr-public-login — authenticated public.ecr.aws pulls in platform deploy builds (repo vitana-platform)
@@ -37,3 +40,7 @@ Created and held. Premise: four platform deploy jobs (plus the kiro-runner CI bu
 
 ### 2026-10-22T08:07Z · ci-plan-spar · ready (VTID allocated)
 VTID-05328 allocated after policy approval (converged-auto-v1).
+### 2026-10-28T10:55Z · kiro-exafyltd-202610281029-dea2 · ready → executing
+Claimed (exceptions seat exafyltd, Claude unavailable). P1/P2: fail-soft ECR Public login step in the four workflows (five build jobs; kiro-runner `build` gets credentials + login only off `pull_request`). P3: `services/gateway/test/ci-ecr-public-auth-workflows.test.ts` (red 5/6 on base, green 6/6). P4/P5: policy file + read-only check script. P6: `docs/validation/VTID-05328/`. IAM not applied (iam-status.md). Protected gate files changed: `AWS-PROD-DEPLOY-GATEWAY.yml`, `AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml` (§3a: legacy Claude review or owner instruction before merge).
+### 2026-10-28T12:10Z · kiro-exafyltd-202610281029-dea2 · ready for review (PR #4518)
+PR open, waiting for CI and the reviewer agent. Sibling lane v1-ecr-public-login: exafyltd/vitana-v1#1521.
