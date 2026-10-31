@@ -55,19 +55,23 @@ every tick. Observed (read-only): #4370 (`pm-agent/commerce-step-owner`) `seat: 
    (`state`, `next_actor` after the `LANE_ACTORS` mapping, `seat`, `claimed_by` on `release_claim`) already has that
    value **and** the newest log entry's body already equals `change.log`. It never compares `updated:` or the log
    heading timestamp, and runs before `applyLaneChange` (old R2-F1). `GithubRepoFileWriter.write` reads the file from
-   the branch it would write (PR head for W1, `pm-agent/<slug>` for W2) and returns `'noop'` without `put` (no commit,
-   no push, no branch/PR creation) when it is a no-op, on both W1 and W2.
+   the branch it would write (PR head for W1; for W2 `pm-agent/<slug>` when that ref exists, else `main`) and, when
+   it is a no-op, returns `'noop'` before `client.put`, before `ensureBookkeepingBranch` creates a ref and before
+   `ensureBookkeepingPull` (no commit, no push, no branch, no PR), on both W1 and W2 (R1-F3).
 2. `decide.ts` `reassignDecision` (`stale_ready`): the target seat is never the lane's `reviewer_seat`. Walk the area
    rotation after `lane.seat` and take the first seat that differs from both `lane.seat` and `lane.reviewer_seat`;
    past the end (or `lane.seat` not in the rotation), `claudeOrExceptions(claude)`. If that actor is `claude`, the
    decision is as today (`seat` unchanged, `next_actor: claude`). If it is a seat equal to `lane.seat` or to a
    non-empty `lane.reviewer_seat`, there is **no decision**: the lane stays `ready` and visible on the queue, no
    write. The `stale_review` path is unchanged by this item.
-3. `writers.ts` `applyLaneChange`: throws `invalid lane change: seat equals reviewer_seat` when the resulting front
-   matter has `seat` equal to a non-empty `reviewer_seat` (the rule of `queue.mjs:227`). `act` reports the error as
-   today.
-4. `act.ts`: `LaneFileWriter.write` returns `Promise<'written' | 'noop'>`. Test fakes and other implementations return
-   `'written'`. `actReassign` returns `status: 'unchanged'` when the writer reports `'noop'`; `types.ts` adds
+3. `writers.ts` `applyLaneChange`: throws `invalid lane change: seat equals reviewer_seat` only when **this change
+   introduces** it: `change.seat` is defined, differs from the file's current `seat`, and equals the file's non-empty
+   `reviewer_seat` (the rule of `queue.mjs:227`). A lane that already carries `seat == reviewer_seat` (pre-existing
+   bad state on a bookkeeping branch) still accepts other PM writes (park, done, verify, a `next_actor`-only
+   change), so the guard never blocks them (R1-F1). `act` reports the error as today.
+4. `act.ts`: `LaneFileWriter.write` returns `Promise<'written' | 'noop'>`. Every existing implementation returns
+   `'written'`, including the `FakeLaneWriter` in `test/project-manager/act.test.ts:82-87` and any other test fake
+   implementing `LaneFileWriter` (R1-F2). `actReassign` returns `status: 'unchanged'` when the writer reports `'noop'`; `types.ts` adds
    `'unchanged'` to `ActStatus`. `actMerge`, `actPark` and `actVerify` ignore the return value.
 5. No `decide.ts` `stale_review` guard (dropped in the old plan's round 1, R1-F1: `ObservedLane` has no `next_actor`
    and the observer reads `main`); the writer guard stops the pushes.
@@ -76,11 +80,12 @@ every tick. Observed (read-only): #4370 (`pm-agent/commerce-step-owner`) `seat: 
 - Tests (red on base, green on head), in `services/gateway/test/project-manager/`:
   - `reassign-idempotent.test.ts`: two consecutive ticks (different `now`) over the same observed lane produce one
     write, then zero (`write` returns `'noop'`, `actReassign` status `unchanged`); writer with a fake client: same
-    change twice → one `put`, on W1 and on W2.
+    change twice → one `put`, on W1 and on W2; a W2 no-op calls no `put`, `createRef` or `createPull`.
   - `reassign-seat.test.ts`: a `ready` lane past the window with `seat: exafy`, `reviewer_seat: exafyltd`, rotation
     `[exafy]`, Claude unavailable → no decision (base: `to_actor: exafyltd`); rotation `[exafy, exafyltd, jtadic]` →
     `to_actor: jtadic`; Claude available → `to_actor: claude`; no `reviewer_seat` → `exafyltd` as today.
-    `applyLaneChange` with a change that makes `seat == reviewer_seat` throws.
+    `applyLaneChange` with a change that makes `seat == reviewer_seat` throws; on a lane that already has
+    `seat == reviewer_seat`, a park (or `next_actor`-only) change does not throw.
   - `kaf-staging-claude-available-wiring.test.ts`: the existing assertion stays; a new one pins
     `{name:"PM_AGENT_ENABLED", value:"false"}`.
 ## Test plan
