@@ -1,6 +1,6 @@
 ---
 lane: jobs-community-scan-tenant
-state: ready
+state: parked
 next_actor: kiro
 depends_on: [jobs-tenant-loop]
 executor: kiro
@@ -12,8 +12,9 @@ paths:
   - services/gateway/src/services/memory-embedding-backfill-loop.ts
   - services/gateway/test/
   - docs/validation/
-updated: 2026-10-31T21:04Z
+updated: 2026-10-31T21:30Z
 vtid: VTID-05268
+parked_from: ready
 ---
 # jobs-community-scan-tenant — community scan & memory backfill per active tenant (repo vitana-platform)
 
@@ -3670,3 +3671,5 @@ reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
 ### 2026-10-31T21:04Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-10-31T21:30Z · pm-agent · ready → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
