@@ -38,6 +38,16 @@ export interface MemberContext {
   activeDays?: number | null;
   /** tip_key of feature tips already used inside the ledger lookback, newest first. */
   recentFeatureTips?: string[];
+  /**
+   * VTID-05367 (messenger-vitana-cards-v2): the enrichment cards (E1–E11) this
+   * member should be offered, pre-computed in the tick loop with the real
+   * `now` via `eligibleEnrichmentCards(completions, dismissRows, 'messenger',
+   * now, unavailableEnrichmentCards())` — incomplete AND not cooling down AND
+   * available. Moments read this set (membership check) and never call the
+   * resolver or build a `Date` from `localDate`. Absent = no enrichment moment
+   * fires (the enrichment lane adds the E-moments; VTID-05366).
+   */
+  eligibleEnrichmentCardTypes?: ReadonlySet<string>;
 }
 
 export interface JourneySignal {
