@@ -24,3 +24,21 @@ programme on main (git grep on docs/programs: no match).
 
 ## P1 red on base
 node --test scripts/collab/program-registry.test.mjs   (HEAD = base)  → FAIL, see red-on-base.txt
+
+## P1 green on head (6f335c07c6)
+node --test scripts/collab/program-registry.test.mjs   → tests 4, pass 4, fail 0
+
+## Collab suite (Windows, linked worktree)
+node --test scripts/collab/*.test.mjs   → tests 225, pass 222, fail 3
+The 3 failures are Kiro Web / Windows-worktree tests and fail identically on base cf009eca8f
+(node --test scripts/collab/kiro-web-session.test.mjs scripts/collab/kiro-web-steering.test.mjs → 33 tests, 30 pass, 3 fail):
+  - kiro-web-session: parseCommand finds every push form with repo dir, branch and source
+  - kiro-web-session: from a linked worktree the workspace is the main checkout's parent, and worktrees are never taken as repos
+  - kiro-web-steering: case 6: the real checkout(s) generate a clean set
+CI (Linux) is the arbiter for those.
+
+## P3 — #4373's spec against the registry
+#4373 head 1aba8339d7d5b70375169c032ac23686b85420b6 (merged), touched spec .kiro/specs/native-wave2-home-feed-news
+validatePrograms + validateRegistry (programme part), registry at #4373's merge-base 3d3b4e6f17:
+  1 problem: .kiro/specs/native-wave2-home-feed-news: not listed by any docs/programs/<id>/program.md
+same check, registry at this lane's head: 0 problems
