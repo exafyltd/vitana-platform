@@ -1,0 +1,1478 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/main-base-4319/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] Using RPC fallback path (no role) { userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', statuses: [ 'new' ] }
+
+      at src/routes/autopilot-recommendations.ts:881:13
+
+  console.log
+    [VTID-01180] RPC result { ok: true, count: 2, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:888:13
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 2,
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] Using RPC fallback path (no role) { userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', statuses: [ 'new' ] }
+
+      at src/routes/autopilot-recommendations.ts:881:13
+
+  console.log
+    [VTID-01180] RPC result { ok: true, count: 3, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:888:13
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] Using RPC fallback path (no role) { userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', statuses: [ 'new' ] }
+
+      at src/routes/autopilot-recommendations.ts:881:13
+
+  console.log
+    [VTID-01180] RPC result { ok: false, count: 0, error: '500: {"message":"boom"}' }
+
+      at src/routes/autopilot-recommendations.ts:888:13
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 1,
+      totalCount: 1,
+      error: 'none',
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 1,
+      totalCount: 1,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 2,
+      totalCount: 2,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Retired-action filter: 2 ΓåÆ 1 (1 retired recs hidden)
+
+      at src/routes/autopilot-recommendations.ts:766:19
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Community query returned 0 results, trying fallback without source_type filter
+
+      at src/routes/autopilot-recommendations.ts:687:17
+
+  console.log
+    [VTID-01180] Fallback query URL: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Cuser_id%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=21&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+
+      at queryRecommendationsFallback (src/routes/autopilot-recommendations.ts:595:13)
+
+  console.log
+    [VTID-01180] Fallback result { ok: true, count: 1, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:689:17
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 1,
+      totalCount: 1,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] No NEW recommendations for community user aaaaaaaa (total=1, all activated/completed), auto-generating...
+
+      at src/routes/autopilot-recommendations.ts:706:17
+
+  console.log
+    [VTID-01180] Auto-replenishment result: generated=1, dupes=0
+
+      at src/routes/autopilot-recommendations.ts:717:23
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: false,
+      count: 0,
+      totalCount: 0,
+      error: '500: {"message":"db down"}',
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 100,
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] Using RPC fallback path (no role) { userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa', statuses: [ 'new' ] }
+
+      at src/routes/autopilot-recommendations.ts:881:13
+
+  console.log
+    [VTID-01180] RPC result { ok: true, count: 0, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:888:13
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'none', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'none', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'developer', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] Count result (role-based) {
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      count: 42,
+      ok: true,
+      error: 'none'
+    }
+
+      at src/routes/autopilot-recommendations.ts:945:15
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'community', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=0&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] Count result (role-based) {
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      count: 0,
+      ok: false,
+      error: '500: {"message":"x"}'
+    }
+
+      at src/routes/autopilot-recommendations.ts:945:15
+
+  console.log
+    [VTID-01180] Personal generation requested for aaaaaaaa
+
+      at src/routes/autopilot-recommendations.ts:1007:13
+
+  console.log
+    [VTID-01180] Personal generation requested for aaaaaaaa
+
+      at src/routes/autopilot-recommendations.ts:1007:13
+
+  console.log
+    [VTID-01180] Personal generation requested for aaaaaaaa
+
+      at src/routes/autopilot-recommendations.ts:1007:13
+
+  console.log
+    [VTID-01180] Personal generation requested for aaaaaaaa
+
+      at src/routes/autopilot-recommendations.ts:1007:13
+
+  console.log
+    [VTID-01180] Personal generation requested for aaaaaaaa
+
+      at src/routes/autopilot-recommendations.ts:1007:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Community activation: onboarding_profile ΓåÆ navigate:/profile/edit
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1576:11)
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Calendar event created for recommendation 11111111... ΓåÆ cal-evt-...
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1490:17)
+
+  console.log
+    [VTID-01180] Community activation: engage_meetup ΓåÆ navigate:/events
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1576:11)
+
+  console.log
+    [VTID-01180] Last community rec activated for user aaaaaaaa ΓÇö triggering auto-replenishment
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1590:17)
+
+  console.log
+    [VTID-01180] Auto-replenishment generated 0 new recommendations
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1593:17)
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Community activation: onboarding_profile ΓåÆ navigate:/profile/edit
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1576:11)
+
+  console.log
+    [VTID-01180] Last community rec activated for user aaaaaaaa ΓÇö triggering auto-replenishment
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1590:17)
+
+  console.log
+    [VTID-01180] Auto-replenishment generated 2 new recommendations
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1593:17)
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Spec created for VTID-09999: hash=e3c24085...
+
+      at src/routes/autopilot-recommendations.ts:2021:23
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Bridged 11111111 ΓåÆ execution exec-1
+
+      at record (src/routes/autopilot-recommendations.ts:1739:15)
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+      at src/routes/autopilot-recommendations.ts:2156:13
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+      at src/routes/autopilot-recommendations.ts:2156:13
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+      at src/routes/autopilot-recommendations.ts:2156:13
+
+  console.log
+    [VTID-01180] Rejecting recommendation 11111111...
+
+      at src/routes/autopilot-recommendations.ts:2156:13
+
+  console.log
+    [VTID-01180] Snoozing recommendation 11111111... for 24 hours
+
+      at src/routes/autopilot-recommendations.ts:2219:13
+
+  console.log
+    [VTID-01180] Snoozing recommendation 11111111... for 168 hours
+
+      at src/routes/autopilot-recommendations.ts:2219:13
+
+  console.log
+    [VTID-01180] Snoozing recommendation 11111111... for 24 hours
+
+      at src/routes/autopilot-recommendations.ts:2219:13
+
+  console.log
+    [VTID-01180] Snoozing recommendation 11111111... for 24 hours
+
+      at src/routes/autopilot-recommendations.ts:2219:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%2Cactivated%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01185] Generation requested by aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa - sources: codebase
+
+      at src/routes/autopilot-recommendations.ts:2385:13
+
+  console.log
+    [VTID-01185] Generation requested by aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa - sources: oasis
+
+      at src/routes/autopilot-recommendations.ts:2385:13
+
+  console.log
+    [VTID-01185] Generation requested by aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa - sources: codebase
+
+      at src/routes/autopilot-recommendations.ts:2385:13
+
+  console.log
+    [VTID-01185] Sources status requested
+
+      at src/routes/autopilot-recommendations.ts:2506:13
+
+  console.log
+    [VTID-01185] Sources status requested
+
+      at src/routes/autopilot-recommendations.ts:2506:13
+
+  console.log
+    [VTID-01185] History requested (limit: 1, offset: 0)
+
+      at src/routes/autopilot-recommendations.ts:2569:13
+
+  console.log
+    [VTID-01185] History requested (limit: 20, offset: 0)
+
+      at src/routes/autopilot-recommendations.ts:2569:13
+
+  console.log
+    [VTID-01185] History requested (limit: 20, offset: 0)
+
+      at src/routes/autopilot-recommendations.ts:2569:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.log
+    [VTID-01180] Completing recommendation 11111111... (role: none)
+
+      at src/routes/autopilot-recommendations.ts:2639:13
+
+  console.error
+    [VTID-01180] complete RPC transport error: 500: {"message":"x"}
+
+    [0m [90m 2650 |[39m
+     [90m 2651 |[39m     [36mif[39m ([33m![39mresult[33m.[39mok) {
+    [31m[1m>[22m[39m[90m 2652 |[39m       console[33m.[39merror([32m`${LOG_PREFIX} complete RPC transport error:`[39m[33m,[39m result[33m.[39merror)[33m;[39m
+     [90m      |[39m               [31m[1m^[22m[39m
+     [90m 2653 |[39m       [36mreturn[39m res[33m.[39mstatus([35m500[39m)[33m.[39mjson({ ok[33m:[39m [36mfalse[39m[33m,[39m error[33m:[39m result[33m.[39merror })[33m;[39m
+     [90m 2654 |[39m     }
+     [90m 2655 |[39m[0m
+
+      at src/routes/autopilot-recommendations.ts:2652:15
+
+  console.warn
+    [VTID-01180] role "admin" not permitted for aaaaaaaa ΓÇö community lineup
+
+    [0m [90m 433 |[39m   })[33m;[39m
+     [90m 434 |[39m   [36mif[39m (decision[33m.[39mnarrowed) {
+    [31m[1m>[22m[39m[90m 435 |[39m     console[33m.[39mwarn([32m`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} ΓÇö community lineup`[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 436 |[39m   }
+     [90m 437 |[39m   [36mreturn[39m decision[33m.[39mlineup[33m;[39m
+     [90m 438 |[39m }[0m
+
+      at resolveRequestRole (src/routes/autopilot-recommendations.ts:435:13)
+      at src/routes/autopilot-recommendations.ts:641:18
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Community query returned 0 results, trying fallback without source_type filter
+
+      at src/routes/autopilot-recommendations.ts:687:17
+
+  console.log
+    [VTID-01180] Fallback query URL: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Cuser_id%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=21&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+
+      at queryRecommendationsFallback (src/routes/autopilot-recommendations.ts:595:13)
+
+  console.log
+    [VTID-01180] Fallback result { ok: true, count: 0, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:689:17
+
+  console.log
+    [VTID-01180] No NEW recommendations for community user aaaaaaaa (total=0, all activated/completed), auto-generating...
+
+      at src/routes/autopilot-recommendations.ts:706:17
+
+  console.warn
+    [VTID-01180] role "developer" not permitted for aaaaaaaa ΓÇö community lineup
+
+    [0m [90m 433 |[39m   })[33m;[39m
+     [90m 434 |[39m   [36mif[39m (decision[33m.[39mnarrowed) {
+    [31m[1m>[22m[39m[90m 435 |[39m     console[33m.[39mwarn([32m`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} ΓÇö community lineup`[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 436 |[39m   }
+     [90m 437 |[39m   [36mreturn[39m decision[33m.[39mlineup[33m;[39m
+     [90m 438 |[39m }[0m
+
+      at resolveRequestRole (src/routes/autopilot-recommendations.ts:435:13)
+      at src/routes/autopilot-recommendations.ts:641:18
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Community query returned 0 results, trying fallback without source_type filter
+
+      at src/routes/autopilot-recommendations.ts:687:17
+
+  console.log
+    [VTID-01180] Fallback query URL: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Cuser_id%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=21&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+
+      at queryRecommendationsFallback (src/routes/autopilot-recommendations.ts:595:13)
+
+  console.log
+    [VTID-01180] Fallback result { ok: true, count: 0, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:689:17
+
+  console.log
+    [VTID-01180] No NEW recommendations for community user aaaaaaaa (total=0, all activated/completed), auto-generating...
+
+      at src/routes/autopilot-recommendations.ts:706:17
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Community query returned 0 results, trying fallback without source_type filter
+
+      at src/routes/autopilot-recommendations.ts:687:17
+
+  console.log
+    [VTID-01180] Fallback query URL: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Cuser_id%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=21&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa
+
+      at queryRecommendationsFallback (src/routes/autopilot-recommendations.ts:595:13)
+
+  console.log
+    [VTID-01180] Fallback result { ok: true, count: 0, error: 'none' }
+
+      at src/routes/autopilot-recommendations.ts:689:17
+
+  console.log
+    [VTID-01180] No NEW recommendations for community user aaaaaaaa (total=0, all activated/completed), auto-generating...
+
+      at src/routes/autopilot-recommendations.ts:706:17
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 0,
+      totalCount: 0,
+      error: 'none',
+      role: 'none',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.warn
+    [VTID-01180] role "developer" not permitted for aaaaaaaa ΓÇö community lineup
+
+    [0m [90m 433 |[39m   })[33m;[39m
+     [90m 434 |[39m   [36mif[39m (decision[33m.[39mnarrowed) {
+    [31m[1m>[22m[39m[90m 435 |[39m     console[33m.[39mwarn([32m`${LOG_PREFIX} role "${decision.candidate}" not permitted for ${identity.user_id.slice(0, 8)} ΓÇö community lineup`[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 436 |[39m   }
+     [90m 437 |[39m   [36mreturn[39m decision[33m.[39mlineup[33m;[39m
+     [90m 438 |[39m }[0m
+
+      at resolveRequestRole (src/routes/autopilot-recommendations.ts:435:13)
+      at src/routes/autopilot-recommendations.ts:1785:18
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.error
+    [VTID-01180] Activate error: Error: Unhandled fetch: PATCH http://supabase.test/rest/v1/autopilot_recommendations?id=eq.11111111-1111-4111-8111-111111111111&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&status=in.(new,snoozed)
+        at defaultFetchImpl (C:\Users\dstev\vitana-platform-1\.worktrees\main-base-4319\services\gateway\test\routes\autopilot-recommendations.test.ts:231:27)
+        at C:\Users\dstev\vitana-platform-1\.worktrees\mt-jobs-automation-actor-tenant\services\gateway\node_modules\jest-mock\build\index.js:397:39
+        at C:\Users\dstev\vitana-platform-1\.worktrees\mt-jobs-automation-actor-tenant\services\gateway\node_modules\jest-mock\build\index.js:404:13
+        at mockConstructor (C:\Users\dstev\vitana-platform-1\.worktrees\mt-jobs-automation-actor-tenant\services\gateway\node_modules\jest-mock\build\index.js:148:19)
+        at activateCommunityAutopilotRecommendation (C:\Users\dstev\vitana-platform-1\.worktrees\main-base-4319\services\gateway\src\routes\autopilot-recommendations.ts:1438:27)
+        at processTicksAndRejections (node:internal/process/task_queues:103:5)
+        at C:\Users\dstev\vitana-platform-1\.worktrees\main-base-4319\services\gateway\src\routes\autopilot-recommendations.ts:1801:22
+
+    [0m [90m 2055 |[39m     })[33m;[39m
+     [90m 2056 |[39m   } [36mcatch[39m (error[33m:[39m any) {
+    [31m[1m>[22m[39m[90m 2057 |[39m     console[33m.[39merror([32m`${LOG_PREFIX} Activate error:`[39m[33m,[39m error)[33m;[39m
+     [90m      |[39m             [31m[1m^[22m[39m
+     [90m 2058 |[39m     [36mreturn[39m res[33m.[39mstatus([35m500[39m)[33m.[39mjson({ ok[33m:[39m [36mfalse[39m[33m,[39m error[33m:[39m error[33m.[39mmessage })[33m;[39m
+     [90m 2059 |[39m   }
+     [90m 2060 |[39m })[33m;[39m[0m
+
+      at src/routes/autopilot-recommendations.ts:2057:13
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Community activation: onboarding_explore ΓåÆ navigate:/community
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1576:11)
+
+  console.log
+    [VTID-01180] Activating recommendation 11111111... (role: community)
+
+      at src/routes/autopilot-recommendations.ts:1792:13
+
+  console.log
+    [VTID-01180] Community activation: share_streak ΓåÆ notify:none
+
+      at activateCommunityAutopilotRecommendation (src/routes/autopilot-recommendations.ts:1576:11)
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new,activated',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%2Cactivated%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 7,
+      totalCount: 7,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new', 'activated' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=84&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 2,
+      totalCount: 2,
+      error: 'none',
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Retired-action filter: 2 ΓåÆ 1 (1 retired recs hidden)
+
+      at src/routes/autopilot-recommendations.ts:766:19
+
+  console.log
+    [VTID-01180] Recommendations requested {
+      status: 'new',
+      limit: 20,
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      headers: {
+        'X-Vitana-Active-Role': 'missing',
+        'X-Vitana-User': 'missing',
+        'X-User-ID': 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+        Authorization: 'missing'
+      },
+      reqUser: 'no req.user'
+    }
+
+      at src/routes/autopilot-recommendations.ts:649:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole result {
+      ok: true,
+      count: 5,
+      totalCount: 5,
+      error: 'none',
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      statuses: [ 'new' ]
+    }
+
+      at src/routes/autopilot-recommendations.ts:669:15
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'community', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=0&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] Count result (role-based) {
+      role: 'community',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      count: 3,
+      ok: true,
+      error: 'none'
+    }
+
+      at src/routes/autopilot-recommendations.ts:945:15
+
+  console.log
+    [VTID-01180] Recommendations count requested { role: 'developer', userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa' }
+
+      at src/routes/autopilot-recommendations.ts:937:13
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction%2Cpriority_score%2Cquality&status=in.%28new%29&order=priority_score.desc.nullslast%2Cimpact_score.desc%2Ccreated_at.desc&limit=1000&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=is.null&source_type=neq.community&source_type=neq.operator_onramp
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+  console.log
+    [VTID-01180] Count result (role-based) {
+      role: 'developer',
+      userId: 'aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa',
+      count: 15,
+      ok: true,
+      error: 'none'
+    }
+
+      at src/routes/autopilot-recommendations.ts:945:15
+
+  console.log
+    [VTID-01180] queryRecommendationsByRole PostgREST query: http://supabase.test/rest/v1/autopilot_recommendations?select=id%2Ctitle%2Csummary%2Cdomain%2Crisk_level%2Cimpact_score%2Ceffort_score%2Cstatus%2Cactivated_vtid%2Ccreated_at%2Cactivated_at%2Ctime_estimate_seconds%2Csource_ref%2Csource_type%2Ceconomic_axis%2Cautonomy_level%2Ccontribution_vector%2Caction&status=in.%28new%29&order=impact_score.desc%2Ccreated_at.desc&limit=44&offset=0&or=%28snoozed_until.is.null%2Csnoozed_until.lt.now%28%29%29&or=%28expires_at.is.null%2Cexpires_at.gt.now%28%29%29&user_id=eq.aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa&source_type=eq.community
+
+      at queryRecommendationsByRole (src/routes/autopilot-recommendations.ts:515:13)
+
+PASS test/routes/autopilot-recommendations.test.ts (29.508 s)
+  GET /api/v1/autopilot/recommendations
+    ΓêÜ no role: uses the RPC fallback path and returns annotated recommendations (3482 ms)
+    ΓêÜ no role: computes has_more when RPC returns more than limit+1 rows (42 ms)
+    ΓêÜ no role: RPC transport failure returns 400 (29 ms)
+    ΓêÜ role=developer: queries by role directly (system-wide, non-community source) (30 ms)
+    ΓêÜ role=community, no user id: rejected by the router-level auth gate before reaching the handler (24 ms)
+    ΓêÜ role=community with user id: returns the community rec with wave/horizon enrichment (34 ms)
+    ΓêÜ role=community: retired-action recs (unknown source_ref) are filtered out (30 ms)
+    ΓêÜ role=community: falls back to the no-source_type query when the primary query is empty, then dedups (39 ms)
+    ΓêÜ role=community: auto-generates when queue has zero "new" recs, and re-fetches on success (41 ms)
+    ΓêÜ role-based: RPC-equivalent transport failure returns 400 (31 ms)
+    ΓêÜ clamps limit to [1,100] and offset to >=0 (25 ms)
+  GET /api/v1/autopilot/recommendations/count
+    ΓêÜ no role: returns the RPC count (17 ms)
+    ΓêÜ no role: RPC failure returns 400 (17 ms)
+    ΓêÜ role-based: developer count is the number of listed rows (23 ms)
+    ΓêÜ role-based: transport failure degrades to count=0, not an error (20 ms)
+  POST /api/v1/autopilot/recommendations/generate-personal
+    ΓêÜ 401 when no user id is present (531 ms)
+    ΓêÜ 503 when Supabase is not configured (139 ms)
+    ΓêÜ 400 when the user has no resolvable tenant (30 ms)
+    ΓêÜ happy path: resolves tenant then delegates to generatePersonalRecommendations (27 ms)
+    ΓêÜ falls back to DEFAULT_TENANT_ID when no primary tenant row exists (20 ms)
+    ΓêÜ returns 500 when generation itself fails (30 ms)
+  POST /api/v1/autopilot/recommendations/:id/activate
+    community role
+      ΓêÜ 503 when Supabase is not configured (25 ms)
+      ΓêÜ 404 when the recommendation does not exist (23 ms)
+      ΓêÜ 403 when the rec is not a community-sourced recommendation (24 ms)
+      ΓêÜ 403 when the rec belongs to another user (cross-user isolation) (17 ms)
+      ΓêÜ VTID-04464: 403 when the rec has no owner (user_id null) ΓÇö no ownership bypass (18 ms)
+      ΓêÜ 400 when the rec is not in an activatable state (18 ms)
+      ΓêÜ 200 idempotent when already activated (21 ms)
+      ΓêÜ happy path: patches status, emits OASIS, and returns the navigate action (24 ms)
+      ΓêÜ creates a calendar event for actions that declare calendar_event metadata (50 ms)
+      ΓêÜ auto-replenishes when this was the last "new" recommendation (21 ms)
+    developer/admin (VTID-creating) role
+      ΓêÜ 400 when the RPC transport fails (32 ms)
+      ΓêÜ 400 when the RPC reports a business-logic failure (29 ms)
+      ΓêÜ happy path: creates a VTID, emits OASIS event, and returns vtid_ref (50 ms)
+      ΓêÜ already_activated: skips alignment/spec/bridge side effects (39 ms)
+      ΓêÜ creates an oasis_specs draft from the recommendation snapshot on fresh activation (44 ms)
+      ΓêÜ dispatches to the executor bridge for dev_autopilot-sourced recs (35 ms)
+  POST /api/v1/autopilot/recommendations/:id/reject
+    ΓêÜ happy path: passes reason through to the RPC (32 ms)
+    ΓêÜ 400 on RPC transport failure (31 ms)
+    ΓêÜ 400 when the RPC reports a business-logic failure (23 ms)
+    ΓêÜ community role: fires a fire-and-forget guarded regeneration (17 ms)
+  POST /api/v1/autopilot/recommendations/:id/snooze
+    ΓêÜ happy path: defaults to 24 hours (26 ms)
+    ΓêÜ clamps hours to [1,168] (23 ms)
+    ΓêÜ 400 on RPC transport failure (22 ms)
+    ΓêÜ 400 when the RPC reports a business-logic failure (20 ms)
+  POST /api/v1/autopilot/recommendations/generate
+    role=community
+      ΓêÜ 401 when no user id present (14 ms)
+      ΓêÜ 500 when regeneration fails (15 ms)
+      ΓêÜ 200 with generated=0 and a reason when the guard fires (14 ms)
+      ΓêÜ 200 with a fresh batch on success (17 ms)
+    developer/admin (analyzer-sourced) generation
+      ΓêÜ 400 when no valid sources are given (13 ms)
+      ΓêÜ happy path: runs generation, emits start/completion OASIS events (16 ms)
+      ΓêÜ 500 when generation fails, emits a failure OASIS event (15 ms)
+      ΓêÜ notifies the triggering user and surfaces a high-impact rec when generated>0 (19 ms)
+  GET /api/v1/autopilot/recommendations/sources
+    ΓêÜ happy path: maps analyzer source rows (35 ms)
+    ΓêÜ 400 on RPC failure (21 ms)
+  GET /api/v1/autopilot/recommendations/history
+    ΓêÜ happy path: paginates and strips the lookahead row (22 ms)
+    ΓêÜ passes trigger_type through to the RPC (21 ms)
+    ΓêÜ 400 on RPC failure (22 ms)
+  POST /api/v1/autopilot/recommendations/:id/complete
+    ΓêÜ 401 when no user id is present (13 ms)
+    ΓêÜ happy path: completes and returns the reward (23 ms)
+    ΓêÜ emits a milestone event when the last onboarding rec is completed (19 ms)
+    ΓêÜ 404 when the RPC reports the recommendation was not found (16 ms)
+    ΓêÜ 403 when the RPC reports the rec belongs to another user (cross-user isolation) (16 ms)
+    ΓêÜ 403 when the RPC reports the rec is system-wide (not user-scoped) (15 ms)
+    ΓêÜ 400 when the rec is not in a completable state (17 ms)
+    ΓêÜ 500 on RPC transport failure (114 ms)
+  GET /api/v1/autopilot/recommendations/health
+    ΓêÜ always returns ok:true with the endpoint inventory (18 ms)
+  CA-2 role-scoped lineups
+    ΓêÜ a plain member sending ?role=admin gets their own community lineup, never everyone's (92 ms)
+    ΓêÜ a plain member sending ?role=developer without the role granted is narrowed to community (109 ms)
+    ΓêÜ a member granted developer (check_role_permitted) gets the system lineup (42 ms)
+    ΓêÜ a plain member with no hint does not get the legacy all-system RPC view (71 ms)
+    ΓêÜ a role without a lineup yet (professional) gets an empty list, not someone else's (15 ms)
+    ΓêÜ a plain member cannot take the Dev Autopilot activation path with ?role=developer (391 ms)
+  CA-3 typed actions
+    ΓêÜ a voice activation of a medium-risk action returns a read-back and changes nothing (4 ms)
+    ΓêÜ an app activation runs the typed action and returns its result (21 ms)
+  CA-4 drafts
+    ΓêÜ a voice "yes" to a public post never publishes it and never activates the row (3 ms)
+    ΓêÜ the app preview edit is stored and carried into the composer route (23 ms)
+    ΓêÜ POST /:id/draft saves the member's text for their own drafted suggestion (21 ms)
+    ΓêÜ POST /:id/draft refuses someone else's suggestion and suggestions with nothing to draft (27 ms)
+  CA-5 community-scan endpoint
+    ΓêÜ a member cannot trigger the scan (16 ms)
+    ΓêÜ an exafy admin (or the internal token) runs it and gets the summary (18 ms)
+  VTID-04523 lineup cap (owner decision 3)
+    ΓêÜ GET role=community: serves only the top 3 open rows, keeps activated rows, and reports no next page (19 ms)
+    ΓêÜ GET role=community: rows with a typed action survive the retired-source filter (22 ms)
+    ΓêÜ GET role=developer: not capped (developer findings are a different surface) (21 ms)
+    ΓêÜ GET /count role=community: the badge never exceeds 3 (20 ms)
+    ΓêÜ GET /count role=developer: unchanged (VTID-04668: counted from the listed rows) (20 ms)
+    ΓêÜ voice list: lists the same top 3, including typed-action scan rows (14 ms)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/vtid-05268-community-scan-tenant.test.ts (26.892 s)
+  C1 runCommunityScan({ tenantId })
+    ΓêÜ without a tenant: platform-wide primary members, as today (189 ms)
+    ├ù a member primary in A and secondary in B is scanned only in A's pass (26 ms)
+    ├ù the tenant timezone is the final default of the member clock (12 ms)
+  C1/C1b runCommunityScanForTenants
+    ├ù two tenants: each member once, totals summed, per_tenant added (2 ms)
+    ├ù no tenants: an empty tick with today's top-level fields (3 ms)
+  C1b /community-scan route: one event per tick
+    ΓêÜ flag off: one platform-wide run, payload identical to today (no per_tenant) (24341 ms)
+    ├ù flag on: active non-platform tenants only, ONE event with summed totals + per_tenant (40 ms)
+    ΓêÜ flag on with user_id: the single-member operator check stays one run (27 ms)
+  C2 backfill loop tenant source
+    ├ù master off: the env list, as today (no env list ΓçÆ not started) (3 ms)
+    ├ù master on, no env list: activeTenantIds() on every tick (4 ms)
+    ├ù master on with an env list: the env list stays the pinned override (1 ms)
+    ├ù master on never starts the writing loop in shadow mode (5 ms)
+
+  ΓùÅ C1 runCommunityScan({ tenantId }) ΓÇ║ a member primary in A and secondary in B is scanned only in A's pass
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 0
+    + Received  + 3
+
+      Array [
+        "11111111-1111-4111-8111-111111111111",
+    +   "22222222-2222-4222-8222-222222222222",
+    +   "33333333-3333-4333-8333-333333333333",
+    +   "44444444-4444-4444-8444-444444444444",
+      ]
+
+      107 |   it('a member primary in A and secondary in B is scanned only in A\'s pass', async () => {
+      108 |     const sb = fakeSb(tables());
+    > 109 |     expect(scanned(await runCommunityScan(sb, { now: NOW, tenantId: TENANT_A }))).toEqual([M_A]);
+          |                                                                                   ^
+      110 |     expect(scanned(await runCommunityScan(sb, { now: NOW, tenantId: TENANT_B }))).toEqual([M_B]);
+      111 |   });
+      112 |
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:109:83)
+
+  ΓùÅ C1 runCommunityScan({ tenantId }) ΓÇ║ the tenant timezone is the final default of the member clock
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: 1
+    Received: 4
+
+      115 |     // 01:10 in New York: no member of A is due.
+      116 |     const ny = await runCommunityScan(sb, { now: NOW, tenantId: TENANT_A, tenantTimezone: 'America/New_York' });
+    > 117 |     expect(ny.members_considered).toBe(1);
+          |                                   ^
+      118 |     expect(ny.members_due).toBe(0);
+      119 |     // A remembered member timezone still wins over the tenant default.
+      120 |     const withFact = fakeSb({ ...tables(), memory_facts: [{ user_id: M_A, fact_key: 'timezone', fact_value: 'Europe/Berlin' }] });
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:117:35)
+
+  ΓùÅ C1/C1b runCommunityScanForTenants ΓÇ║ two tenants: each member once, totals summed, per_tenant added
+
+    TypeError: (0 , scan_runner_1.runCommunityScanForTenants) is not a function
+
+      129 | describe('C1/C1b runCommunityScanForTenants', () => {
+      130 |   it('two tenants: each member once, totals summed, per_tenant added', async () => {
+    > 131 |     const s = await runCommunityScanForTenants(fakeSb(tables()), [
+          |                                               ^
+      132 |       { tenantId: TENANT_A, timezone: 'Europe/Berlin' },
+      133 |       { tenantId: TENANT_B, timezone: 'Europe/Berlin' },
+      134 |     ], { now: NOW });
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:131:47)
+
+  ΓùÅ C1/C1b runCommunityScanForTenants ΓÇ║ no tenants: an empty tick with today's top-level fields
+
+    TypeError: (0 , scan_runner_1.runCommunityScanForTenants) is not a function
+
+      144 |
+      145 |   it('no tenants: an empty tick with today\'s top-level fields', async () => {
+    > 146 |     const s = await runCommunityScanForTenants(fakeSb(tables()), [], { now: NOW });
+          |                                               ^
+      147 |     expect(s).toMatchObject({ enabled: false, dry_run: true, members_considered: 0, members_due: 0, members_scanned: 0, rows_inserted: 0, per_tenant: [] });
+      148 |   });
+      149 | });
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:146:47)
+
+  ΓùÅ C1b /community-scan route: one event per tick ΓÇ║ flag on: active non-platform tenants only, ONE event with summed totals + per_tenant
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+        "dry_run": true,
+    -   "members_considered": 2,
+    -   "members_scanned": 2,
+    +   "members_considered": 4,
+    +   "members_scanned": 4,
+        "ok": true,
+      }
+
+      204 |     const res = await post(mount());
+      205 |     expect(res.status).toBe(200);
+    > 206 |     expect(res.body).toMatchObject({ ok: true, dry_run: true, members_considered: 2, members_scanned: 2 });
+          |                      ^
+      207 |     // Platform-tenant and inactive-tenant members are in no pass.
+      208 |     expect(res.body.results.map((r: any) => r.user_id).sort()).toEqual([M_A, M_B].sort());
+      209 |     expect(mockEmitOasisEvent).toHaveBeenCalledTimes(1);
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:206:22)
+
+  ΓùÅ C2 backfill loop tenant source ΓÇ║ master off: the env list, as today (no env list ΓçÆ not started)
+
+    TypeError: (0 , memory_embedding_backfill_loop_1.backfillTenantsForTick) is not a function
+
+      240 |     const cfg = resolveBackfillLoopConfig({ ...ON, MEMORY_EMBEDDING_BACKFILL_TENANT_IDS: TENANT_A });
+      241 |     expect(cfg).toEqual({ enabled: true, tenantIds: [TENANT_A] });
+    > 242 |     expect(await backfillTenantsForTick(cfg, loadActive)).toEqual([TENANT_A]);
+          |                                        ^
+      243 |     expect(loadActive).not.toHaveBeenCalled();
+      244 |     expect(resolveBackfillLoopConfig(ON).enabled).toBe(false);
+      245 |   });
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:242:40)
+
+  ΓùÅ C2 backfill loop tenant source ΓÇ║ master on, no env list: activeTenantIds() on every tick
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 2
+    + Received  + 2
+
+      Object {
+    -   "enabled": true,
+    -   "source": "db",
+    +   "enabled": false,
+    +   "reason": "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS has no tenant id",
+        "tenantIds": Array [],
+      }
+
+      247 |   it('master on, no env list: activeTenantIds() on every tick', async () => {
+      248 |     const cfg = resolveBackfillLoopConfig({ ...ON, MT_RESOLUTION_V2: 'true' });
+    > 249 |     expect(cfg).toEqual({ enabled: true, tenantIds: [], source: 'db' });
+          |                 ^
+      250 |     expect(await backfillTenantsForTick(cfg, loadActive)).toEqual([TENANT_A, TENANT_B]);
+      251 |     expect(loadActive).toHaveBeenCalledTimes(1);
+      252 |   });
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:249:17)
+
+  ΓùÅ C2 backfill loop tenant source ΓÇ║ master on with an env list: the env list stays the pinned override
+
+    TypeError: (0 , memory_embedding_backfill_loop_1.backfillTenantsForTick) is not a function
+
+      255 |     const cfg = resolveBackfillLoopConfig({ ...ON, MT_RESOLUTION_V2: 'true', MEMORY_EMBEDDING_BACKFILL_TENANT_IDS: TENANT_B });
+      256 |     expect(cfg).toEqual({ enabled: true, tenantIds: [TENANT_B] });
+    > 257 |     expect(await backfillTenantsForTick(cfg, loadActive)).toEqual([TENANT_B]);
+          |                                        ^
+      258 |     expect(loadActive).not.toHaveBeenCalled();
+      259 |   });
+      260 |
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:257:40)
+
+  ΓùÅ C2 backfill loop tenant source ΓÇ║ master on never starts the writing loop in shadow mode
+
+    expect(received).toMatch(expected)
+
+    Expected pattern: /shadow/
+    Received string:  "MEMORY_EMBEDDING_BACKFILL_TENANT_IDS has no tenant id"
+
+      262 |     const cfg = resolveBackfillLoopConfig({ ...ON, MT_RESOLUTION_V2: 'true', AUTOMATIONS_DELIVERY_MODE: 'shadow' });
+      263 |     expect(cfg.enabled).toBe(false);
+    > 264 |     expect(cfg.reason).toMatch(/shadow/);
+          |                        ^
+      265 |   });
+      266 | });
+      267 |
+
+      at Object.<anonymous> (test/vtid-05268-community-scan-tenant.test.ts:264:24)
+
+Test Suites: 1 failed, 1 passed, 2 total
+Tests:       9 failed, 90 passed, 99 total
+Snapshots:   0 total
+Time:        63.175 s
+Ran all test suites matching /test\\vtid-05268-community-scan-tenant.test.ts|test\\routes\\autopilot-recommendations.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

@@ -1,0 +1,12 @@
+{
+  "vtid": "VTID-05407",
+  "kind": "docs",
+  "paths": [
+    ".kiro/agents/vitana-lane-reviewer.md",
+    "scripts/collab/queue.test.mjs",
+    "docs/validation/VTID-05407/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05407/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

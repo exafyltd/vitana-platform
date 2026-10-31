@@ -1,0 +1,14 @@
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:77  oasis: code pointer "services/governance-*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:113  memory: code pointer "services/cognee-extractor-client.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:125  community: code pointer "services/connect-people-*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:149  health: code pointer "services/vitana-index*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:161  commerce: code pointer "services/commerce/" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:172  payments: code pointer "services/wallet*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:172  payments: code pointer "services/stripe*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  atlas       services/gateway/src/orb/developer/domain-atlas.ts:196  backoffice: code pointer "services/erp-*.ts" matches nothing (tried services/gateway/src, services/gateway, repo root)
+warn  rules       vitana-platform/.claude/rules/backend.md:1302  path services/gateway/src/services/cognee-extractor-client.ts resolves in neither checkout
+warn  index       vitana-platform/.claude/CLAUDE.md  RepoWise block says "Last indexed 2026-09-19 (commit 076aea1)": 785 commits behind HEAD; its file list and hotspots are a snapshot, not current
+info  index       vitana-platform  local index at 94440253ce, HEAD 3b9bb36a77 (9 commits behind): run `repowise update` / `graphify update .`
+warn  index       vitana-v1/.claude/CLAUDE.md  RepoWise block says "Last indexed 2026-09-19 (commit aa26481)": 438 commits behind HEAD; its file list and hotspots are a snapshot, not current
+check: 0 error(s), 11 warning(s), 1 info
+exit=0

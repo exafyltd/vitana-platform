@@ -1,0 +1,20 @@
+# RepoWise repowise, version 0.59.0 / Graphify CLI, Kiro Web, 94440253ce; index build (setup --wait, foreground): codeintel index rc=0 secs=436
+$ repowise search vtid allocate route handler → 3932 ms, 6099 bytes
+    expected /routes/vtid.ts/ not found
+$ repowise search POST /api/v1/vtid/allocate → 3390 ms, 6320 bytes
+    expected /routes/vtid.ts/ not found
+$ graphify explain assistant-profile.ts → 6098 ms, 2584 bytes
+    hit:   <-- session-profile.ts [imports_from] [EXTRACTED] services/gateway/src/orb/profile/session-profile.ts:L14
+$ graphify query which files import assistant-profile --budget 1500 → 7114 ms, 5025 bytes
+    expected /session-profile|assistant-profile/ not found
+$ repowise search worker-runner claims autonomous tasks only → 3394 ms, 6173 bytes
+    expected /Two execution planes|03516/ not found
+$ repowise search VTID-05300 → 3090 ms, 17 bytes
+    expected /VTID-05300/ not found
+
+# Re-checked with COLUMNS=400 (no table wrapping), paths grepped from the full output:
+# "vtid allocate route handler"  → ledger-write-auth.ts, dev-autopilot-vtid-allocate.ts, operator-*.ts, … (no routes/vtid.ts)
+# "POST /api/v1/vtid/allocate"   → email-intake.ts, plans-spar.ts, … (no routes/vtid.ts)
+# "worker-runner claims autonomous tasks only" → routes/worker-orchestrator.ts (the code that enforces it, a useful hit),
+#   not the rule text that explains why (CLAUDE.md "Two execution planes, one ledger (VTID-03516)").
+# "VTID-05300" → no result (VTIDs are not indexed as terms).
