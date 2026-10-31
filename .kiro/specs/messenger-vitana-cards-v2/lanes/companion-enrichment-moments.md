@@ -11,7 +11,8 @@ repos: [exafyltd/vitana-platform]
 paths:
   - services/gateway/src/services/companion/**
   - services/gateway/test/**
-updated: 2026-10-28T10:29Z
+  - docs/validation/**
+updated: 2026-10-31T13:40Z
 vtid: VTID-05366
 ---
 
@@ -58,3 +59,9 @@ allocation before build.
 
 ### 2026-10-28T10:29Z · ci-plan-spar · ready (VTID allocated)
 VTID-05366 allocated after policy approval (converged-auto-v1).
+
+### 2026-10-31T13:40Z · kiro-exafyltd-202610220802-4a74 · paths
+Added `docs/validation/**` to `paths` before the plan lands on main: the lane PR
+must carry `docs/validation/VTID-05366/{staging-tests.json,acceptance.md}`
+(CLAUDE.md rule 47 "no suite, no merge"; PR-GATE `change-suite` / `validate-pr`).
+Same path every other plan's lanes declare. No other change.
