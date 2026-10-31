@@ -301,12 +301,12 @@ describe('GithubRestReader.variable + env fallback (VTID-05281)', () => {
 
 describe('applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)', () => {
   it('applyLaneChange edits only the allowed keys and appends one log entry', () => {
-    const out = applyLaneChange(LANE, { slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', state: 'parked', next_actor: 'exafyltd', seat: 'exafyltd', release_claim: true, log: 'park (stale_claim)' }, '2026-10-20T20:00:00.000Z');
+    const out = applyLaneChange(LANE, { slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', state: 'parked', next_actor: 'exafyltd', seat: 'jtadic', release_claim: true, log: 'park (stale_claim)' }, '2026-10-20T20:00:00.000Z');
     expect(out).toMatch(/^state: parked$/m);
     expect(out).toMatch(/^parked_from: in-review$/m);
     // next_actor is claude|kiro|owner (queue.mjs validateLane): the exceptions seat is a Kiro actor.
     expect(out).toMatch(/^next_actor: kiro$/m);
-    expect(out).toMatch(/^seat: exafyltd$/m);
+    expect(out).toMatch(/^seat: jtadic$/m);
     expect(out).toMatch(/^updated: 2026-10-20T20:00Z$/m);
     expect(out).toMatch(/### 2026-10-20T20:00Z · pm-agent · in-review → parked\npark \(stale_claim\)\n$/);
     expect(out).toContain('reviewer_seat: exafyltd');
@@ -342,7 +342,7 @@ describe('applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-age
     const f = fakeClient();
     const w = new GithubRepoFileWriter(f.client, { now: () => NOW });
     await w.write({ slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', state: 'done', next_actor: '', log: 'merged' });
-    await w.write({ slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign' });
+    await w.write({ slug: 'kiro-autonomy-fallback', lane: 'pm-fallback', seat: 'jtadic', next_actor: 'exafyltd', log: 'reassign' });
     expect(f.refs['pm-agent/kiro-autonomy-fallback']).toBe('m'.repeat(40));
     expect(f.puts.map((p) => p.branch)).toEqual(['pm-agent/kiro-autonomy-fallback', 'pm-agent/kiro-autonomy-fallback']);
     expect(f.puts[0].message).toMatch(/Collab-Session: pm-agent\nCollab-Lane: kiro-autonomy-fallback\/_plan$/);

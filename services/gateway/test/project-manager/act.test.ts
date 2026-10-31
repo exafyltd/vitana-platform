@@ -81,8 +81,9 @@ function refusedOutcome(reason = 'checks_failed'): SafeMergeOutcome {
 
 class FakeLaneWriter {
   changes: LaneFileChange[] = [];
-  write = async (c: LaneFileChange): Promise<void> => {
+  write = async (c: LaneFileChange): Promise<'written' | 'noop'> => {
     this.changes.push(c);
+    return 'written';
   };
 }
 

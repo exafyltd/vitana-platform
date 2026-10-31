@@ -1,0 +1,18 @@
+{
+  "vtid": "VTID-05414",
+  "kind": "backend",
+  "paths": [
+    "services/gateway/src/services/project-manager/decide.ts",
+    "services/gateway/src/services/project-manager/act.ts",
+    "services/gateway/src/services/project-manager/writers.ts",
+    "services/gateway/src/services/project-manager/types.ts",
+    "services/gateway/test/project-manager/**",
+    "services/gateway/test/kaf-staging-claude-available-wiring.test.ts",
+    ".github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml",
+    ".kiro/specs/pm-reassign-idempotent-r2/lanes/reassign-noop-r2.md",
+    "docs/validation/VTID-05414/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05414/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -109,7 +109,8 @@ export interface LaneFileChange {
  * tests use an in-memory recorder.
  */
 export interface LaneFileWriter {
-  write(change: LaneFileChange): Promise<void>;
+  /** VTID-05414: `'noop'` when the branch already has the change (nothing committed). */
+  write(change: LaneFileChange): Promise<'written' | 'noop'>;
 }
 
 /**
@@ -278,7 +279,7 @@ async function actMerge(decision: MergeDecision, state: ObservedState, deps: Bou
 
 async function actReassign(decision: ReassignDecision, state: ObservedState, deps: Bound): Promise<ActResult> {
   const isLane = decision.target === 'lane';
-  await deps.laneWriter.write({
+  const written = await deps.laneWriter.write({
     slug: decision.slug,
     lane: decision.lane,
     repo: findLane(state, decision.slug, decision.lane)?.repo,
@@ -287,6 +288,7 @@ async function actReassign(decision: ReassignDecision, state: ObservedState, dep
     next_actor: decision.to_actor,
     log: `reassign ${decision.target} ${decision.from_seat}→${decision.to_actor} (${decision.reason}${decision.fallback ? ', Claude unavailable' : ''})`,
   });
+  if (written === 'noop') return { decision, status: 'unchanged', detail: `${decision.target}→${decision.to_actor} already set` };
   return { decision, status: 'reassigned', detail: `${decision.target}→${decision.to_actor}` };
 }
 

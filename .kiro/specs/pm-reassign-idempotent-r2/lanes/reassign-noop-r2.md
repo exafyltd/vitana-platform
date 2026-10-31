@@ -1,7 +1,9 @@
 ---
 lane: reassign-noop-r2
-state: ready
+state: executing
 next_actor: kiro
+claimed_by: kiro-exafyltd-202610281243-e9b3
+branch: kiro/pm-reassign-idempotent-r2/reassign-noop-r2
 depends_on: []
 executor: kiro
 seat: exafyltd
@@ -18,7 +20,7 @@ paths:
   - services/gateway/test/kaf-staging-claude-available-wiring.test.ts
   - .github/workflows/AWS-STAGE-DEPLOY-GATEWAY.yml
   - docs/validation/VTID-*/**
-updated: 2026-10-31T12:26Z
+updated: 2026-10-31T13:30Z
 vtid: VTID-05414
 ---
 # reassign-noop-r2 — idempotent PM stale-review reassignment (re-plan, kiro executor)
@@ -30,3 +32,6 @@ Lane created with the plan.
 
 ### 2026-10-31T12:26Z · ci-plan-spar · ready (VTID allocated)
 VTID-05414 allocated after policy approval (converged-auto-v1).
+### 2026-10-31T13:30Z · kiro-exafyltd-202610281243-e9b3 · ready → executing
+Claimed. Tests first, red on `origin/main` `a8d36bad` (11 failed: reassign-idempotent, reassign-seat, staging wiring); green on head (220/220). Evidence in `docs/validation/VTID-05414/`.
+

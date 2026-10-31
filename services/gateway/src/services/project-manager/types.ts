@@ -428,6 +428,8 @@ export type ActStatus =
   | 'merge_refused'
   | 'governance_blocked'
   | 'reassigned'
+  // VTID-05414: the writer found nothing to change (no commit, no push).
+  | 'unchanged'
   | 'parked'
   | 'gate2_posted'
   | 'skipped_not_live'

@@ -1,0 +1,1599 @@
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+ts-jest[config] (WARN) 
+    The "ts-jest" config option "isolatedModules" is deprecated and will be removed in v30.0.0. Please use "isolatedModules: true" in C:/Users/dstev/vitana-platform-1/.worktrees/pm-r2-lane/services/gateway/tsconfig.json instead, see https://www.typescriptlang.org/tsconfig/#isolatedModules
+  
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+PASS test/project-manager/decide.test.ts (7.562 s)
+  mergeDecision ΓÇö all preconditions true ΓåÆ merge-eligible
+    ΓêÜ the baseline lane is merge-eligible (188 ms)
+  mergeDecision ΓÇö each precondition individually false ΓåÆ NO merge (mutation)
+    ΓêÜ lane not verified (2 ms)
+    ΓêÜ no PR (1 ms)
+    ΓêÜ no VTID on the lane (1 ms)
+    ΓêÜ no review entry (2 ms)
+    ΓêÜ review from a different seat than reviewer_seat (1 ms)
+    ΓêÜ review on a stale head sha (not current)
+    ΓêÜ review verdict is changes, not approve
+    ΓêÜ a required check (Lane scope) is not green (7 ms)
+    ΓêÜ a required check (Collab handoff) is missing on the head (1 ms)
+    ΓêÜ a required check is green but on a different head sha (1 ms)
+    ΓêÜ Claude Approvals App check exists but is not success (1 ms)
+    ΓêÜ Claude Approvals App check present AND success ΓåÆ still merge-eligible (1 ms)
+    ΓêÜ merge conflict (not mergeable)
+    ΓêÜ a depends_on lane is not done (1 ms)
+    ΓêÜ a depends_on lane IS done ΓåÆ merge-eligible (1 ms)
+    ΓêÜ PR title does not carry the lane VTID
+    ΓêÜ lane declares no paths (1 ms)
+    ΓêÜ self-review residual: review session id appears in the executing log (1 ms)
+  reassignDecision ΓÇö stale ready / stale review
+    ΓêÜ ready <24h ΓåÆ no reassign (1 ms)
+    ΓêÜ ready >24h but seat ran automation in window ΓåÆ no reassign (1 ms)
+    ΓêÜ ready >24h, no automation ΓåÆ reassign to next seat for area (2 ms)
+    ΓêÜ ready >24h, no next seat for area ΓåÆ claude (1 ms)
+    ΓêÜ review waiting >24h with no review entry ΓåÆ reassign review (1 ms)
+    ΓêÜ review waiting >24h but a review already exists ΓåÆ no reassign (1 ms)
+    ΓêÜ review waiting <24h ΓåÆ no reassign (1 ms)
+  parkDecision ΓÇö 3 CI fails / risk flag / stale claim
+    ΓêÜ PR failed CI on 3 consecutive pushes ΓåÆ park (1 ms)
+    ΓêÜ PR failed CI on only 2 pushes ΓåÆ no park (1 ms)
+    ΓêÜ reviewer flagged risk ΓåÆ park (2 ms)
+    ΓêÜ claim >48h with no branch activity ΓåÆ park + release (1 ms)
+    ΓêÜ claim >48h BUT with later branch activity ΓåÆ no park (2 ms)
+    ΓêÜ claim <48h ΓåÆ no park (1 ms)
+    ΓêÜ a done lane is never parked (1 ms)
+  gate2Decisions ΓÇö all-verified vs 4h-elapsed timing
+    ΓêÜ no lane verified yet ΓåÆ no gate2 (3 ms)
+    ΓêÜ every deploying lane verified ΓåÆ gate2 (all_verified) (3 ms)
+    ΓêÜ one verified, one not, <4h since first ΓåÆ no gate2 (1 ms)
+    ΓêÜ one verified, one not, >4h since first ΓåÆ gate2 (four_hours_elapsed) (2 ms)
+    ΓêÜ gate2 already sent ΓåÆ not re-sent (1 ms)
+    ΓêÜ non-deploying lanes are ignored (no gate2) (1 ms)
+  decide ΓÇö orchestration + mode gating + precedence
+    ΓêÜ mode off ΓåÆ no decisions at all (2 ms)
+    ΓêÜ park takes precedence over merge for a troubled verified lane (5 ms)
+    ΓêÜ a clean merge-eligible lane yields exactly one merge decision (3 ms)
+    ΓêÜ merge + gate2 can both appear for different lanes (8 ms)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/governance.test.ts (7.567 s)
+  T9-T12 merge on the reviewer agent accept
+    ΓêÜ T9 governance lane + agent accept on the current head + checks green ΓåÆ merge decision and act merges (116 ms)
+    ΓêÜ T10 non-governance lane, reviewer_seat differs from the review seat, agent accept ΓåÆ merge (2 ms)
+    ΓêÜ T11 agent accept on H, review-only commits after it (review_only_since [H]) ΓåÆ merge (22 ms)
+    ΓêÜ T12 guard: a legacy claude review on a governance lane still merges (2 ms)
+  M1 protected gate files never merge on an agent accept alone
+    ΓêÜ CLAUDE.md (14 ms)
+    ΓêÜ scripts/collab/plan-spar.mjs (39 ms)
+    ΓêÜ scripts/collab/queue.mjs (2 ms)
+    ΓêÜ scripts/collab/protected-gate-files.json (14 ms)
+    ΓêÜ services/gateway/src/services/plan-sparring/** (2 ms)
+    ΓêÜ services/gateway/src/services/project-manager/governance.ts (8 ms)
+    ΓêÜ .github/workflows/PLAN-SPAR.yml (4 ms)
+    ΓêÜ .github/workflows/PR-GATE.yml (4 ms)
+    ΓêÜ .github/workflows/AWS-PROD-*.yml (8 ms)
+    ΓêÜ .kiro/agents/vitana-lane-reviewer.md (8 ms)
+    ΓêÜ supabase/migrations/*vtid_ledger*.sql (2 ms)
+    ΓêÜ supabase/migrations/*plan_sparring*.sql (22 ms)
+    ΓêÜ VTID-05408: a legacy claude review no longer unlocks a protected file (the unlock is retired, not transferred) (1 ms)
+    ΓêÜ VTID-05408: a protected file is refused with NO review supplied too (defense-in-depth, always refuse) (1 ms)
+    ΓêÜ the compiled-in list is never empty
+  M2-M5 reviews that do not count
+    ΓêÜ M2 stale head: accept on an old head with no review-only commits ΓåÆ no merge (1 ms)
+    ΓêÜ M2 review_only_since does not match a different earlier head (9 ms)
+    ΓêÜ M3 reviewer "agent:someone-else" ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ M3 reviewer null ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ M3 reviewer "agent:vitana-lane-reviewer-fake" ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ M3 reviewer "agent:vitana-lane-reviewer (gpt-5)" ΓåÆ no merge on a governance lane (1 ms)
+    ΓêÜ the reviewer model chain is sonnet-5.5 ΓåÆ opus-5.5 ΓåÆ sonnet-4.5 (Claude only) (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer" on the current head ΓåÆ merge on a governance lane (2 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-4.5)" on the current head ΓåÆ merge on a governance lane (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-4.8)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-sonnet-5)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-haiku-4.5)" (model outside the chain) ΓåÆ no merge
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (auto)" (model outside the chain) ΓåÆ no merge (3 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (unstated)" (model outside the chain) ΓåÆ no merge (2 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (gemini-2.5-pro)" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5" (model outside the chain) ΓåÆ no merge (1 ms)
+    ΓêÜ fallback: reviewer "agent:vitana-lane-reviewer (claude-opus-5.5) x" (model outside the chain) ΓåÆ no merge (3 ms)
+    ΓêÜ M4 agent changes on the current head ΓåÆ no merge (1 ms)
+    ΓêÜ M5 agent review from a session in the executing log ΓåÆ no merge (1 ms)
+    ΓêÜ decide() emits no merge for a protected-file PR with an agent accept (5 ms)
+  T25 parity with scripts/collab/protected-gate-files.json
+    ΓêÜ PROTECTED_GATE_GLOBS equals the JSON globs (absent file fails) (5 ms)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/timings.test.ts (7.813 s)
+  T21 planTimings
+    ΓêÜ computes every duration exactly (75 ms)
+    ΓêÜ a missing source ΓåÆ null (never 0) and named in sources_unavailable (29 ms)
+  T23 Gate 2 evidence and message
+    ΓêÜ evidence carries services, staging_verify, migrations, decisions_taken, timings, unavailable (31 ms)
+    ΓêÜ a failing source fails open into unavailable[] (3 ms)
+    ΓêÜ the poster writes one assistant message with the question and a pm_digests gate2 row; never deploys (5 ms)
+
+PASS test/project-manager/fallback.test.ts (7.76 s)
+  T1-T4 claudeAvailability (plan ┬º3)
+    ΓêÜ T1 flag false ΓåÆ unavailable, flag_false (118 ms)
+    ΓêÜ T2 oldest item 5 h old, last Claude action 6 h ago ΓåÆ no_action_4h (1 ms)
+    ΓêÜ T2b flag true does not override the 4 h rule (2 ms)
+    ΓêÜ T3 oldest item 3 h old ΓåÆ available (1 ms)
+    ΓêÜ T4 item 5 h old but Claude acted 1 h ago ΓåÆ available (7 ms)
+    ΓêÜ missing claude observation ΓåÆ available (todayΓÇÖs behaviour) (1 ms)
+  T5-T8 fallback routing to the exceptions seat
+    ΓêÜ T5 end of rotation, Claude unavailable ΓåÆ exafyltd, fallback true (2 ms)
+    ΓêÜ T6 / M6 end of rotation, Claude available ΓåÆ claude, fallback false (1 ms)
+    ΓêÜ T7 lane already on exafyltd, Claude unavailable ΓåÆ no self loop (null) (1 ms)
+    ΓêÜ T8 park with Claude unavailable ΓåÆ actPark writes next_actor exafyltd (89 ms)
+    ΓêÜ M6 park with Claude available ΓåÆ next_actor claude (1 ms)
+    ΓêÜ decide() threads the availability into reassign (3 ms)
+  T13-T15 timers without a live plan driver
+    ΓêÜ T13 ready 3 h, no driver (null heartbeat) ΓåÆ reassign with window 2 h (2 ms)
+    ΓêÜ T14 guard: ready 3 h, heartbeat 1 min ago ΓåÆ no reassign (2 ms)
+    ΓêÜ T14b a heartbeat older than 45 min counts as no driver (1 ms)
+    ΓêÜ T15 claim 5 h, no activity, no driver ΓåÆ park stale_claim, window 4 h (2 ms)
+    ΓêÜ T15b claim 5 h with a live driver ΓåÆ no park (48 h window)
+    ΓêÜ cap 6: no reassign of a ready lane into a plan with 6 lanes executing|in-review (1 ms)
+  T16-T17 merge queue
+    ΓêÜ T16 two eligible lanes in one repo ΓåÆ exactly one merge (oldest state_since) (6 ms)
+    ΓêÜ T16b one merge per repo: lanes in different repos both merge
+    ΓêÜ T17 behind main ΓåÆ update_branch, no merge (1 ms)
+    ΓêÜ verify (W1): in-review lane with an agent accept on the current head ΓåÆ verify (1 ms)
+  T18 merge_plan
+    ΓêÜ spec-only, converged, policy-approved plan( PR ΓåÆ merge_plan (2 ms)
+    ΓêÜ none for a file outside the spec (5 ms)
+    ΓêÜ none for plan hash mismatch (1 ms)
+    ΓêÜ none for head commit not PLAN-SPAR (1 ms)
+    ΓêÜ none for not converged (1 ms)
+    ΓêÜ none for no policy approval (1 ms)
+    ΓêÜ none for handoff not approved
+    ΓêÜ none for no VTIDs (1 ms)
+    ΓêÜ none for a red check
+    ΓêÜ none for not mergeable (1 ms)
+    ΓêÜ none for title of another slug
+    ΓêÜ decide() emits merge_plan when no lane merge took the repo this tick (1 ms)
+    ΓêÜ W2 bookkeeping PR (pm-agent only, spec + timings) ΓåÆ merge_bookkeeping (2 ms)
+  T19 Gate 2
+    ΓêÜ one lane verified 5 h ago, the sibling parked ΓåÆ all_verified (1 ms)
+    ΓêÜ gate2_sent per lane: a lane already sent is not re-sent, a newly verified sibling is (5 ms)
+  T20 tick default
+    ΓêÜ pmTickIntervalMs default 120000; lease TTL = tick ΓêÆ 30 s (2 ms)
+  T22 ledger decision
+    ΓêÜ executing lane with ledger row scheduled ΓåÆ one ledger decision; in_progress ΓåÆ none (5 ms)
+  M7 new decision kinds never reach deploy / dispatch / allocate
+    ΓêÜ acting on every new kind uses only safe-merge, update-branch, lane writes and the ledger writer (5 ms)
+    ΓêÜ no project-manager source file reaches a deploy, dispatch or VTID allocation path (63 ms)
+
+  console.log
+    [PM] pm_lease: acquired ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: held_by_other ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/act.test.ts (7.392 s)
+  act layer ΓÇö mode gating
+    ΓêÜ live: a merge-eligible decision calls safe-merge exactly once (170 ms)
+    ΓêÜ dry_run: never calls safe-merge (7 ms)
+    ΓêÜ off: never calls safe-merge (2 ms)
+  act layer ΓÇö never deploys, dispatches, or allocates
+    ΓêÜ acting on every decision kind touches only safe-merge, lane writes and the Gate-2 post (6 ms)
+  act layer ΓÇö governance-path merge guard
+    ΓêÜ a governance-path PR whose reviewer is NOT claude is refused, never merged (3 ms)
+    ΓêÜ a governance-path PR whose reviewer IS claude is allowed to merge (3 ms)
+    ΓêÜ governance helpers classify paths and reviewers correctly (4 ms)
+  act layer ΓÇö safe-merge result handling
+    ΓêÜ already-merged PR is a no-op success, not an error; lane set done (4 ms)
+    ΓêÜ safe-merge refused (gate not met) ΓåÆ lane NOT set done (5 ms)
+  act layer ΓÇö per-tick lease
+    ΓêÜ lease absent (p1 migration not present) ΓåÆ tick no-ops, no action taken (3 ms)
+    ΓêÜ lease held by another task ΓåÆ tick no-ops (2 ms)
+    ΓêÜ default lease manager (no injection) is the fail-safe NoLeaseManager ΓåÆ no-op (3 ms)
+  act layer ΓÇö Gate-2 batch
+    ΓêÜ posts the run-view question with the full production..verified commit list; never deploys (4 ms)
+  act layer ΓÇö reassign and park write lane-file state
+    ΓêÜ reassign to a seat moves seat + next_actor (1 ms)
+    ΓêÜ reassign to claude sets next_actor claude, no seat change (1 ms)
+    ΓêÜ stale-claim park releases the claim (1 ms)
+  prNumberFromUrl
+    ΓêÜ parses a PR number from a GitHub url (1 ms)
+    ΓêÜ returns null for a url with no pull segment
+
+FAIL test/project-manager/reassign-idempotent.test.ts (7.904 s)
+  VTID-05414 two ticks over the same observed lane: one write, then none
+    ├ù tick 1 writes, tick 2 (later now) is a no-op: status unchanged, no put, no ref, no PR (125 ms)
+  VTID-05414 GithubRepoFileWriter: the same change twice ΓåÆ one put
+    ├ù W2 (bookkeeping branch) (7 ms)
+    ├ù W2 no-op on a fresh branch creates no ref and no PR (8 ms)
+    ├ù W1 (lane PR branch) (7 ms)
+  VTID-05414 laneChangeIsNoop compares keys and the newest log body only
+    ├ù same keys + same newest log body ΓåÆ true, whatever updated: says (4 ms)
+    ├ù a different log body ΓåÆ false (1 ms)
+    ├ù a different key ΓåÆ false (1 ms)
+
+  ΓùÅ VTID-05414 two ticks over the same observed lane: one write, then none ΓÇ║ tick 1 writes, tick 2 (later now) is a no-op: status unchanged, no put, no ref, no PR
+
+    expect(received).toEqual(expected) // deep equality
+
+    - Expected  - 1
+    + Received  + 1
+
+      Array [
+    -   "unchanged",
+    +   "reassigned",
+      ]
+
+      108 |     expect(d2).toEqual({ ...d1 });
+      109 |     const r2 = await actOnDecisions([d2!], state, deps());
+    > 110 |     expect(r2.results.map((r) => r.status)).toEqual(['unchanged']);
+          |                                             ^
+      111 |     expect(gh.calls).toEqual({ put: 1, createRef: 1, createPull: 1 });
+      112 |   });
+      113 | });
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:110:45)
+
+  ΓùÅ VTID-05414 GithubRepoFileWriter: the same change twice ΓåÆ one put ΓÇ║ W2 (bookkeeping branch)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "written"
+    Received: undefined
+
+      120 |     let now = NOW;
+      121 |     const w = new GithubRepoFileWriter(gh.client, { now: () => now });
+    > 122 |     expect(await w.write({ ...change })).toBe('written');
+          |                                          ^
+      123 |     now += 4 * MIN;
+      124 |     expect(await w.write({ ...change })).toBe('noop');
+      125 |     expect(gh.calls.put).toBe(1);
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:122:42)
+
+  ΓùÅ VTID-05414 GithubRepoFileWriter: the same change twice ΓåÆ one put ΓÇ║ W2 no-op on a fresh branch creates no ref and no PR
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "noop"
+    Received: undefined
+
+      132 |       .concat(`### 2026-10-28T11:00Z ┬╖ pm-agent ┬╖ update\n${change.log}\n`);
+      133 |     const w = new GithubRepoFileWriter(gh.client, { now: () => NOW });
+    > 134 |     expect(await w.write({ ...change })).toBe('noop');
+          |                                          ^
+      135 |     expect(gh.calls).toEqual({ put: 0, createRef: 0, createPull: 0 });
+      136 |   });
+      137 |
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:134:42)
+
+  ΓùÅ VTID-05414 GithubRepoFileWriter: the same change twice ΓåÆ one put ΓÇ║ W1 (lane PR branch)
+
+    expect(received).toBe(expected) // Object.is equality
+
+    Expected: "written"
+    Received: undefined
+
+      142 |     const w = new GithubRepoFileWriter(gh.client, { now: () => now });
+      143 |     const w1: LaneFileChange = { slug: 'demo', lane: 'l1', state: 'verified', target: 'pr_branch', pr_url: `https://github.com/${P}/pull/4242`, log: 'agent accept on head' };
+    > 144 |     expect(await w.write({ ...w1 })).toBe('written');
+          |                                      ^
+      145 |     now += 4 * MIN;
+      146 |     expect(await w.write({ ...w1 })).toBe('noop');
+      147 |     expect(gh.calls.put).toBe(1);
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:144:38)
+
+  ΓùÅ VTID-05414 laneChangeIsNoop compares keys and the newest log body only ΓÇ║ same keys + same newest log body ΓåÆ true, whatever updated: says
+
+    TypeError: (0 , writers_1.laneChangeIsNoop) is not a function
+
+      152 |   const done = `${LANE.replace('seat: exafy\n', 'seat: exafyltd\n')}### 2026-10-28T11:00Z ┬╖ pm-agent ┬╖ update\nreassign x\n`;
+      153 |   it('same keys + same newest log body ΓåÆ true, whatever updated: says', () => {
+    > 154 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign x' })).toBe(true);
+          |                            ^
+      155 |   });
+      156 |   it('a different log body ΓåÆ false', () => {
+      157 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign y' })).toBe(false);
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:154:28)
+
+  ΓùÅ VTID-05414 laneChangeIsNoop compares keys and the newest log body only ΓÇ║ a different log body ΓåÆ false
+
+    TypeError: (0 , writers_1.laneChangeIsNoop) is not a function
+
+      155 |   });
+      156 |   it('a different log body ΓåÆ false', () => {
+    > 157 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign y' })).toBe(false);
+          |                            ^
+      158 |   });
+      159 |   it('a different key ΓåÆ false', () => {
+      160 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', seat: 'jtadic', next_actor: 'exafyltd', log: 'reassign x' })).toBe(false);
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:157:28)
+
+  ΓùÅ VTID-05414 laneChangeIsNoop compares keys and the newest log body only ΓÇ║ a different key ΓåÆ false
+
+    TypeError: (0 , writers_1.laneChangeIsNoop) is not a function
+
+      158 |   });
+      159 |   it('a different key ΓåÆ false', () => {
+    > 160 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', seat: 'jtadic', next_actor: 'exafyltd', log: 'reassign x' })).toBe(false);
+          |                            ^
+      161 |     expect(laneChangeIsNoop(done, { slug: 'demo', lane: 'l1', state: 'parked', log: 'reassign x' })).toBe(false);
+      162 |   });
+      163 | });
+
+      at Object.<anonymous> (test/project-manager/reassign-idempotent.test.ts:160:28)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.warn
+    [PM] observe: exafyltd/vitana-platform#4240: 502
+
+    [0m [90m 283 |[39m
+     [90m 284 |[39m   [36mprivate[39m log(msg[33m:[39m string)[33m:[39m [36mvoid[39m {
+    [31m[1m>[22m[39m[90m 285 |[39m     ([36mthis[39m[33m.[39mdeps[33m.[39mlog [33m?[39m[33m?[39m ((m[33m:[39m string) [33m=>[39m console[33m.[39mwarn([32m`[PM] observe: ${m}`[39m)))(msg)[33m;[39m
+     [90m     |[39m                                               [31m[1m^[22m[39m
+     [90m 286 |[39m   }
+     [90m 287 |[39m
+     [90m 288 |[39m   [36masync[39m observe(mode[33m:[39m [33mPmMode[39m)[33m:[39m [33mPromise[39m[33m<[39m[33mObservedState[39m[33m>[39m {[0m
+
+      at src/services/project-manager/observe-live.ts:285:47
+      at GithubObserver.log (src/services/project-manager/observe-live.ts:285:75)
+      at GithubObserver.observe (src/services/project-manager/observe-live.ts:410:16)
+      at Object.<anonymous> (test/project-manager/observe-live.test.ts:208:15)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    [PM] pm_lease: none ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: acquired ΓåÆ held_by_other
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+PASS test/project-manager/observe-live.test.ts (8.899 s)
+  parsers
+    ΓêÜ parseTrailers reads the ┬º4.1 trailers (77 ms)
+    ΓêÜ parseLaneLog splits executing entries, review entries and decisions (4 ms)
+    ΓêÜ parseLaneLog accepts the " - " separator (4 ms)
+    ΓêÜ reviewOnlySince: heads after which only review / pm-agent lane commits follow (5 ms)
+    ΓêÜ reviewOnlySince stops at a commit that changes another file (3 ms)
+  GithubObserver
+    ΓêÜ builds lanes, PR, reviews (trailers win), review_only_since, behind_by, ledger, claim, rotations and Claude flag (22 ms)
+    ΓêÜ variable unreadable ΓåÆ env CLAUDE_AVAILABLE fallback, else null (7 ms)
+    ΓêÜ 4 h rule inputs: oldest item with next_actor claude, newest session_ commit (5 ms)
+    ΓêÜ driver heartbeat ref: committer date read; a lane PR that fails to load is dropped, not thrown (89 ms)
+    ΓêÜ staging verify + gate2 sent are read from the data reader (2 ms)
+  GithubRestReader.variable + env fallback (VTID-05281)
+    ΓêÜ B1: rejects on a 404 (unset or no access ΓÇö unreadable) (146 ms)
+    ΓêÜ B2: resolves the value on a 200 with a string value (1 ms)
+    ΓêÜ B3: rejects on a 403 (39 ms)
+    ΓêÜ B4: a 404 on the variable ΓåÆ observer uses env CLAUDE_AVAILABLE=false (4 ms)
+    ΓêÜ B5: a 404 + env true ΓåÆ true; a 404 + no env ΓåÆ null (5 ms)
+    ΓêÜ B6: a readable variable wins over the env (4 ms)
+    ΓêÜ B7: the 4 h rule still applies ΓÇö 404 + env true + a claude item > 4 h old with no session_ commit ΓåÆ no_action_4h (4 ms)
+  applyLaneChange + GithubRepoFileWriter (W1 / W2, Collab-Session pm-agent)
+    ΓêÜ applyLaneChange edits only the allowed keys and appends one log entry (10 ms)
+    ΓêÜ W1 (verify) commits on the lane PR branch with Collab-Lane <slug>/<lane> (4 ms)
+    ΓêÜ W2 (bookkeeping) commits on pm-agent/<slug> with Collab-Lane <slug>/_plan and opens the PR once (4 ms)
+
+PASS test/project-manager/tick-and-config.test.ts
+  config switches
+    ΓêÜ PM_AGENT_ENABLED defaults off, true only on exactly "true" (3 ms)
+    ΓêÜ PM_MODE defaults dry_run; accepts off/live; unknown ΓåÆ dry_run (2 ms)
+    ΓêÜ tick interval defaults to 2 minutes (1 ms)
+  runDecideTick ΓÇö observe ΓåÆ decide ΓåÆ report (no act)
+    ΓêÜ with the stub observer (empty world) emits nothing and records a snapshot (30 ms)
+    ΓêÜ reports each decision through the emitter (dry_run) (6 ms)
+    ΓêÜ mode off ΓåÆ decide yields nothing even with lanes present (1 ms)
+
+  console.log
+    [PM] pm_lease: held_by_other ΓåÆ table_absent
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    [PM] pm_lease: table_absent ΓåÆ error (pg 57P01)
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+  console.log
+    Γ£à Test setup loaded - fetch mocked, env vars set
+
+      at Object.<anonymous> (test/__mocks__/setup-tests.ts:524:9)
+
+FAIL test/project-manager/reassign-seat.test.ts
+  VTID-05414 stale-ready target is never the reviewer_seat
+    ├ù rotation [exafy], Claude unavailable, reviewer_seat exafyltd ΓåÆ no decision (9 ms)
+    ├ù rotation [exafy, exafyltd, jtadic] ΓåÆ skips exafyltd, to_actor jtadic (81 ms)
+    ΓêÜ Claude available ΓåÆ to_actor claude (seat unchanged by act)
+    ΓêÜ no reviewer_seat ΓåÆ the exceptions seat as today (3 ms)
+    ΓêÜ reviewer agent as reviewer_seat ΓåÆ the exceptions seat as today (4 ms)
+  VTID-05414 applyLaneChange refuses seat == reviewer_seat
+    ├ù a change that makes seat equal reviewer_seat throws (2 ms)
+    ΓêÜ a lane that already has seat == reviewer_seat still takes a park (1 ms)
+    ΓêÜ a next_actor-only change on such a lane does not throw (23 ms)
+
+  ΓùÅ VTID-05414 stale-ready target is never the reviewer_seat ΓÇ║ rotation [exafy], Claude unavailable, reviewer_seat exafyltd ΓåÆ no decision
+
+    expect(received).toBeNull()
+
+    Received: {"fallback": true, "from_seat": "exafy", "kind": "reassign", "lane": "l1", "reason": "stale_ready", "slug": "demo", "target": "lane", "to_actor": "exafyltd", "window_ms": 86400000}
+
+      49 |   it('rotation [exafy], Claude unavailable, reviewer_seat exafyltd ΓåÆ no decision', () => {
+      50 |     const l = lane();
+    > 51 |     expect(reassignDecision(l, st(l, ['exafy'], UNAVAILABLE), NOW)).toBeNull();
+         |                                                                     ^
+      52 |   });
+      53 |
+      54 |   it('rotation [exafy, exafyltd, jtadic] ΓåÆ skips exafyltd, to_actor jtadic', () => {
+
+      at Object.<anonymous> (test/project-manager/reassign-seat.test.ts:51:69)
+
+  ΓùÅ VTID-05414 stale-ready target is never the reviewer_seat ΓÇ║ rotation [exafy, exafyltd, jtadic] ΓåÆ skips exafyltd, to_actor jtadic
+
+    expect(received).toMatchObject(expected)
+
+    - Expected  - 1
+    + Received  + 1
+
+      Object {
+        "fallback": false,
+        "kind": "reassign",
+        "reason": "stale_ready",
+    -   "to_actor": "jtadic",
+    +   "to_actor": "exafyltd",
+      }
+
+      55 |     const l = lane();
+      56 |     expect(reassignDecision(l, st(l, ['exafy', 'exafyltd', 'jtadic'], UNAVAILABLE), NOW))
+    > 57 |       .toMatchObject({ kind: 'reassign', reason: 'stale_ready', to_actor: 'jtadic', fallback: false });
+         |        ^
+      58 |   });
+      59 |
+      60 |   it('Claude available ΓåÆ to_actor claude (seat unchanged by act)', () => {
+
+      at Object.<anonymous> (test/project-manager/reassign-seat.test.ts:57:8)
+
+  ΓùÅ VTID-05414 applyLaneChange refuses seat == reviewer_seat ΓÇ║ a change that makes seat equal reviewer_seat throws
+
+    expect(received).toThrow(expected)
+
+    Expected substring: "invalid lane change: seat equals reviewer_seat"
+
+    Received function did not throw
+
+      93 |   it('a change that makes seat equal reviewer_seat throws', () => {
+      94 |     expect(() => applyLaneChange(LANE, { slug: 'demo', lane: 'l1', seat: 'exafyltd', next_actor: 'exafyltd', log: 'reassign lane exafyΓåÆexafyltd (stale_ready)' }, '2026-10-28T12:00:00.000Z'))
+    > 95 |       .toThrow('invalid lane change: seat equals reviewer_seat');
+         |        ^
+      96 |   });
+      97 |
+      98 |   it('a lane that already has seat == reviewer_seat still takes a park', () => {
+
+      at Object.<anonymous> (test/project-manager/reassign-seat.test.ts:95:8)
+
+  console.log
+    [PM] pm_lease: error ΓåÆ acquired
+
+      at recordLease (src/services/project-manager/lease.ts:47:13)
+
+  console.warn
+    [PM] tick error: boom
+
+    [0m [90m 66 |[39m       }
+     [90m 67 |[39m     } [36mcatch[39m (err) {
+    [31m[1m>[22m[39m[90m 68 |[39m       console[33m.[39mwarn([32m'[PM] tick error:'[39m[33m,[39m (err [36mas[39m [33mError[39m)[33m?[39m[33m.[39mmessage [33m||[39m err)[33m;[39m
+     [90m    |[39m               [31m[1m^[22m[39m
+     [90m 69 |[39m     } [36mfinally[39m {
+     [90m 70 |[39m       running [33m=[39m [36mfalse[39m[33m;[39m
+     [90m 71 |[39m     }[0m
+
+      at Object.tick (src/services/project-manager/loop.ts:68:15)
+      at Object.<anonymous> (test/project-manager/loop.test.ts:119:5)
+
+PASS test/project-manager/loop.test.ts
+  T26 PgLeaseManager on pm_lease
+    ΓêÜ row free ΓåÆ acquired (TTL passed through), last_lease acquired (19 ms)
+    ΓêÜ held by another task (no row updated) ΓåÆ held_by_other (7 ms)
+    ΓêÜ missing relation (42P01) ΓåÆ table_absent (89 ms)
+    ΓêÜ missing relation (PGRST205) ΓåÆ table_absent (1 ms)
+    ΓêÜ any other error ΓåÆ error (never throws) (3 ms)
+  startPmLoop
+    ΓêÜ live ΓåÆ act tick (takes the lease); status shows the fallback (171 ms)
+    ΓêÜ dry_run ΓåÆ decide-only tick (never takes the lease) (8 ms)
+    ΓêÜ a tick error is caught; overlapping ticks are skipped (26 ms)
+
+FAIL test/kaf-staging-claude-available-wiring.test.ts
+  VTID-05282 staging task definition carries CLAUDE_AVAILABLE
+    ΓêÜ the step env reads the repo variable with a true default, outside run: (3 ms)
+    ΓêÜ the jq call passes it as an arg placed before --arg TASK_ROLE, which stays last (1 ms)
+    ΓêÜ the strip list removes the old entry next to PM_MODE (1 ms)
+    ΓêÜ the upsert appears exactly once, right after PM_MODE (1 ms)
+    ├ù VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false) (10 ms)
+    ΓêÜ production never gets CLAUDE_AVAILABLE (2 ms)
+
+  ΓùÅ VTID-05282 staging task definition carries CLAUDE_AVAILABLE ΓÇ║ VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false)
+
+    expect(received).toContain(expected) // indexOf
+
+    Expected substring: "{name:\"PM_AGENT_ENABLED\", value:\"false\"},"
+    Received string:    "- name: Register task-definition revision + roll the service (1/2 ΓÇö build the task definition)
+            id: taskdef
+            env:
+              # BOOTSTRAP-NOVA-SONIC-VOICE: Nova canary configuration prefers
+              # environment-scoped repository VARIABLES when set (not secrets ΓÇö
+              # nothing here is secret; credentials are the ECS task role), but
+              # the FALLBACK is now the canary hardcoded below (2026-07-28) ΓÇö
+              # not 'false'/empty. Repo variables were never actually set, so
+              # every push-triggered deploy from an unrelated team's merge (this
+              # workflow has no path filter ΓÇö ANY push to main runs it) reset
+              # Nova to disabled, over and over, requiring a manual
+              # workflow_dispatch re-enable each time. That is no longer
+              # tolerable operationally. If AWS_STAGE_NOVA_SONIC_ENABLED /
+              # AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS repo variables are ever
+              # set, they still win (checked first) ΓÇö this only changes what
+              # happens when they are absent. To roll back to fully disabled,
+              # dispatch manually with nova_sonic_enabled=false, or set the
+              # repo variable explicitly to 'false'.
+              #
+              # BOOTSTRAP-NOVA-SONIC-VOICE (2026-07-29): expanded from the
+              # 4-user canary to the internal \"vitana\" dev tenant
+              # (00000000-0000-0000-0000-000000000001, DEV_IDENTITY.TENANT_ID)
+              # for the runbook's next step (docs/NOVA-SONIC-CANARY-RUNBOOK.md
+              # ┬º6: \"one internal tenant -> observe one working day\"). The 4
+              # individual canary users stay allowlisted too (harmless overlap
+              # -- both checks are independent `.has()` lookups).
+              NOVA_SONIC_ENABLED: ${{ inputs.nova_sonic_enabled || vars.AWS_STAGE_NOVA_SONIC_ENABLED || 'true' }}
+              NOVA_SONIC_CANARY_USER_IDS: ${{ inputs.nova_canary_user_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_USER_IDS || 'a27552a3-0257-4305-8ed0-351a80fd3701,c5a4daf9-190a-4a9e-9638-d6b32f85244a,a2c6ba7e-2ad4-48af-8253-9fe34d0f9232,0adc6ff6-acb0-4dca-99d0-295211a40e3e' }}
+              NOVA_SONIC_CANARY_TENANT_IDS: ${{ inputs.nova_canary_tenant_ids || vars.AWS_STAGE_NOVA_SONIC_CANARY_TENANT_IDS || '00000000-0000-0000-0000-000000000001' }}
+              # VTID-04225: the CI scan token DEV-AUTOPILOT.yml sends as
+              # X-DevAutopilot-Scan-Token. Read off the live task def 2026-09-21:
+              # NEITHER gateway task def carried DEV_AUTOPILOT_SCAN_TOKEN, so
+              # routes/dev-autopilot.ts's requireScanToken rejected every scan
+              # post (\"DEV_AUTOPILOT_SCAN_TOKEN not set ΓÇö rejecting all scan
+              # posts\") even before the dead GCP URL made the question moot. Same
+              # repo secret the workflow uses; plain env var on the task def, the
+              # MARKETPLACE_SYNC_SECRET precedent on the prod workflow.
+              DEV_AUTOPILOT_SCAN_TOKEN_VALUE: ${{ secrets.DEV_AUTOPILOT_SCAN_TOKEN }}
+              # VTID-05282: the repo variable CLAUDE_AVAILABLE into the staging task
+              # definition (empty -> 'true'), so the Project Manager can fall back to
+              # process.env when its token cannot read the variable. Staging only.
+              CLAUDE_AVAILABLE_VALUE: ${{ vars.CLAUDE_AVAILABLE || 'true' }}
+            # NOTE (VTID-03788): the comments below were relocated OUT of the run:
+            # script below. That block's run: value had grown to 25,111 characters
+            # (only ~7,400 of it is actual bash -- the rest was accumulated comments),
+            # and GitHub Actions hard-rejects a workflow file whose run: value exceeds
+            # its internal expression-length limit (\"Invalid workflow file: ...
+            # Exceeded max expression length 21000\") -- confirmed live via the real
+            # Actions API (workflow_dispatch), not assumed: every push/dispatch of
+            # this workflow failed with 0 jobs from the moment this step crossed
+            # that boundary. Comments are bash no-ops wherever they live, so moving
+            # them here (a plain YAML comment, outside the run: block scalar) is a
+            # pure relocation -- nothing lost, nothing below changes what runs.
+            # Original relative order preserved.
+            #
+            # Swap image + re-stamp commit env vars; preserve everything else
+            # (env block, secrets, resources). upsert semantics for the three
+            # stamp vars so first-run task defs without them still work.
+            # BOOTSTRAP-NOVA-SONIC-VOICE: the five Nova vars are upserted on
+            # EVERY deploy so a canary flip (or rollback to disabled/empty) is
+            # exactly one variable change + one dispatch. Never AWS access keys
+            # here ΓÇö Nova auth is the task role via the SDK default chain.
+            #
+            # VTID-04511: FEATURE_ORB_GREETING_TTS_BRIDGE_ENV is pinned \"off\". The
+            # bridge was a Polly filler phrase played before Nova's greeting -- a
+            # second voice. The owner's rule is that it never plays; the gateway
+            # code path is removed too, this pin only keeps the flag honest.
+            #
+            # VTID-04349 -- community automation engine (AP-XXXX) back on STAGING in
+            # shadow mode: AUTOMATIONS_DELIVERY_MODE=shadow records every
+            # notification, write and RPC instead of performing it (staging shares
+            # the production database, so a live run here would reach real
+            # members). AUTOPILOT_HEARTBEAT_ENABLED + DEFAULT_TENANT_ID (Maxina)
+            # start the in-process heartbeat loop. Not declared on the prod
+            # workflow: production goes live only on the owner's decision after
+            # staging shadow runs are verified.
+            # VTID-03646 follow-up -- FEATURE_ORB_SAFE_FAST_GREETING_ENV is
+            # upserted to \"staging-only\" below. Checked live in this repo: it
+            # is set on neither AWS gateway task def (only the dead GCP
+            # STAGE-DEPLOY.yml ever set it), so the whole greeting-facts
+            # prefetch this flag gates -- first name, last-session info,
+            # lastFullBriefingDate, lastDayCloseDate, recentNbaKeys, the
+            # proactive line -- has been dead on AWS staging AND prod both,
+            # not staging-only as VTID-03646's own PR body assumed. Wiring it
+            # here, staging only, on purpose -- this repo's prod lever is a
+            # deliberate separate action (PUBLISH / manual dispatch, see
+            # AWS-PROD-DEPLOY-GATEWAY.yml), never a side effect of a push, and
+            # this workflow only ever runs on push.
+            #
+            # VTID-03513: resolve the FULL secret ARNs before rewriting the task
+            # definition. ECS `valueFrom` requires the complete ARN INCLUDING the
+            # six-character random suffix Secrets Manager appends
+            # (ΓÇªjwt-secret-AbCdEf). A name-only ARN is accepted by the CLI's
+            # --secret-id but NOT by ECS, which reports it as
+            # ResourceNotFoundException ΓÇö indistinguishable at a glance from a
+            # secret that genuinely does not exist. Constructing these by string
+            # concatenation is therefore wrong; they must be looked up.
+            #
+            # `describe-secret` also fails the job loudly if a secret is missing,
+            # which is strictly better than registering a task def that cannot
+            # start and discovering it 10 minutes later via a stabilise timeout.
+            # VTID-03773 ΓÇö SEC_AURORA resolves the SAME Secrets Manager entry
+            # oasis-projector already uses in production (vitana/aurora/prod/
+            # database-url), wired here so the gateway can open a connection
+            # too. Staging only, on purpose: this is Phase 0 of the memory-
+            # system rebuild ΓÇö a connectivity check, nothing reads or writes
+            # through it yet (see routes/admin-aurora-memory-health.ts). No new
+            # credential is created; this only grants the STAGING task the
+            # ability to resolve a secret ARN it did not reference before.
+            # VTID-03513: the `secrets` block is now UPSERTED here, not cloned
+            # blindly from the previous task definition.
+            #
+            # WHY. This deploy mutates the previous task def in place, so whatever
+            # `secrets` it carried got copied forward on every run ΓÇö including a
+            # wrong one. Between 2026-08-02 and 2026-08-06 six entries pointed at
+            # `vitana/gateway/prod/*`, a namespace that does not exist in Secrets
+            # Manager (the real ones are `vitana/supabase/prod/*` and
+            # `vitana/gateway/staging/*`). ECS cannot start a task whose secret it
+            # cannot fetch, so every deploy died with
+            #   ResourceInitializationError: ... ResourceNotFoundException
+            # then `aws ecs wait services-stable` timed out after 10 min and the
+            # job failed. NINE consecutive deploys failed that way and AWS staging
+            # served 503 for four days. Nothing alarmed, because the workflow
+            # failing red *is* the only signal and nobody was reading it.
+            #
+            # The reference was invisible in code review: task-def secret wiring
+            # lived ONLY in live AWS state, never in this repo. Pinning it here
+            # makes it reviewable, and makes a bad hand-edit self-correcting on the
+            # next deploy instead of permanent.
+            #
+            # SUPABASE_JWT_SECRET / SUPABASE_ANON_KEY deliberately point at
+            # `vitana/supabase/prod/*` ΓÇö the same secrets prod uses ΓÇö because AWS
+            # staging talks to the PROD Supabase project (see SUPABASE_URL and
+            # SUPABASE_SERVICE_ROLE, which already do). A JWT secret from a
+            # different project would fail to validate those tokens: the deploy
+            # would go green and every login would break. Verified 2026-08-06 that
+            # `vitana/gateway/staging/supabase-jwt-secret` holds an identical
+            # value (sha256 match), so this is consistent either way.
+            #
+            # NOTE: comments inside the jq program string below (the single
+            # quoted block starting on the next line) must never contain an
+            # apostrophe -- it is bash single-quoted, so a stray \"'\" closes
+            # the string early and breaks the whole command (bit us once,
+            # see PR #2978's failed AWS deploy run).
+            #
+            # That applies to jq COMMENTS too, which is why the note below lives
+            # out here rather than beside the pair it describes: a `#` comment
+            # inside the program is still inside the shell's single-quoted
+            # string, so one apostrophe in a word like \"isn't\" silently ends the
+            # program 20 lines early. Keep the jq body free of prose.
+            #
+            # VTID-03578 ΓÇö TTS_PROVIDER=polly, AWS STAGING ONLY, so the switch is
+            # exercised somewhere real before it reaches prod.
+            #
+            # Deliberately NOT set in STAGE-DEPLOY.yml (GCP Cloud Run staging):
+            # Polly authenticates through the ECS task role and a Cloud Run
+            # instance carries no AWS credentials at all, so every call there
+            # would throw, return null, and fall back to Google. That looks like
+            # \"Polly is broken\" when the truth is \"Polly was never reachable from
+            # that host\" ΓÇö a test that teaches the wrong lesson is worse than no
+            # test.
+            #
+            # Requires polly:SynthesizeSpeech on the gateway task role. Without
+            # it, synthesis still succeeds via the Google fallback and logs
+            # `[TTS] FALLBACK pollyΓåÆgoogle` ΓÇö grep that line to tell a missing
+            # IAM grant apart from a working switch, because the user-visible
+            # behaviour is identical either way.
+            # VTID-03708 ΓÇö VERTEX_LIVE_UNAVAILABLE + TTS_POLLY_STRICT on
+            # STAGING, upserted below.
+            #
+            # Live task-def audit (read-only aws ecs describe-task-definition,
+            # 2026-08-23) found VERTEX_LIVE_UNAVAILABLE unset here while prod
+            # already carries it true. That is not a cosmetic gap: with the
+            # flag unset, the selector still believes Vertex is a live
+            # fallback, so the VTID-03703 fix never actually engages on
+            # staging. Walk the real branch: for a Nova-unsupported language
+            # (ru/pl/ar/zh), `if (languageBlocked and not vertexDead) return
+            # {provider:vertex}` fires and returns BEFORE the cascade is ever
+            # consulted -- vertexDead reads false here, so it returns vertex,
+            # and Vertex is permanently dead (GCP shutdown). Those sessions die
+            # with the exact upstream-1007 close VTID-03703 exists to prevent,
+            # even though ORB_CASCADED_VOICE_ENABLED is already true here --
+            # the cascade flag being on does nothing while this one is unset.
+            #
+            # VTID-03720 -- \"ORB_CASCADED_VOICE_ENABLED is already true here\"
+            # was an observation of LIVE AWS STATE, not something this file
+            # guaranteed. The var was in NEITHER the strip list NOR the re-add
+            # list, so it was merely PRESERVED from whatever the previous task
+            # definition happened to carry -- the exact shape VTID-03513 cost
+            # four days for, and unverifiable from the repo. Reported live:
+            # pl/pt still answered in English on staging for hours. That is the
+            # cascade-off branch exactly -- `tryCascadeRescue()` returns null
+            # unless the value is the string 'true', control falls to
+            # `nova_forced_vertex_unavailable`, Nova is forced to carry a
+            # language it cannot speak, and answers in English in a
+            # language-flavoured voice (pt -> carolina, pl -> tina).
+            #
+            # It is now UPSERTED to \"true\" below, like every other var here, so
+            # staging genuinely exercises Transcribe->Bedrock->Polly. Verified
+            # by running the real decision functions: pl -> Ola/pl-PL,
+            # pt -> Camila/pt-BR, ru/ar/zh all eligible; only sr is refused
+            # (no_polly_voice, Polly has no Serbian voice in any engine).
+            #
+            # TTS_POLLY_STRICT was unset here too (prod has it true). Without
+            # it an unservable TTS request tries to fall back to Google, which
+            # no longer exists, instead of failing fast.
+            #
+            # VTID-03741 ΓÇö FEATURE_ORB_FAST_START_ENV / FEATURE_ORB_BRAIN_CACHE_ENV,
+            # pinned here to match AWS-PROD-DEPLOY-GATEWAY.yml.
+            #
+            # AWS-PROD-DEPLOY-GATEWAY.yml already pins both of these to the exact
+            # string \"staging+prod\" (BOOTSTRAP-ORB-FASTSTART-DRIFT / VTID-03504) --
+            # its own comment there records that FEATURE_ORB_FAST_START_ENV missing
+            # measured a 9.5s cold authenticated start, past the widget 8s fetch
+            # abort, and that FEATURE_ORB_BRAIN_CACHE_ENV missing measured a 2.0s
+            # p50 brain build degrading to 17.4s p50 / 119.7s max under stacked
+            # reconnects on 2026-08-05. Neither var was ever set anywhere in THIS
+            # (staging) workflow -- confirmed by reading it, not assumed -- so
+            # whatever the staging task def actually runs today is inherited from
+            # whatever a manual edit or an earlier build happened to leave, exactly
+            # the class of gap VTID-03513 cost four days for elsewhere in this
+            # file. That prod comment also warns not to add a flag here without
+            # first checking GET /api/v1/admin/feature-flags on the live stack --
+            # this session has no AWS/admin credentials to do that read, so this
+            # is deliberately NOT presented as a confirmed measurement the way the
+            # prod entry is. The judgment call: these two flags are pure
+            # deferral/caching mechanisms (they reorder and de-dupe existing
+            # bootstrap work, they do not add new behaviour), already proven safe
+            # in prod for weeks, and staging existing specifically to catch a
+            # regression before prod makes leaving this undetermined the worse
+            # risk, not the safer one -- especially for a VTID whose whole point
+            # is reducing the exact click-to-first-audio delay this flag exists
+            # to prevent. Pinning to the SAME value prod already runs, so staging
+            # and prod stop being two different unverified guesses.
+            #
+            # VTID-03741 ΓÇö FEATURE_LATENCY_TELEMETRY_ENV, STAGING ONLY.
+            #
+            # LatencyTracker (services/gateway/src/orb/live/latency-tracker.ts)
+            # already exists and already marks the exact click-to-first-audio
+            # breakdown this VTID needs a real baseline for (upstream_connected,
+            # context_awaited, setup_sent, greeting_sent, audio_out_first_chunk),
+            # emitted as voice.latency.measured OASIS events. It was never set on
+            # either AWS gateway task def, so isFeatureLive resolves the code
+            # default (off) and the tracker has been a no-op on staging and prod
+            # both this whole time ΓÇö the exact same shape as the
+            # FEATURE_ORB_SAFE_FAST_GREETING gap two rows above. Turning it on
+            # here, staging only, gives real per-session numbers to measure the
+            # wake-brief-ranker parallelization (same VTID) against, instead of
+            # relying on log-line spot checks.
+            #
+            # VTID-03580 ΓÇö BEDROCK_ROLE_ARN on STAGING, so staging can verify the
+            # thing it exists to verify.
+            #
+            # Measured 2026-08-11: this var was set on `vitana-gateway-awsdr`
+            # (prod) and on NOTHING else. `bedrockAdapter.isAvailable()` is a bare
+            # `Boolean(process.env.BEDROCK_ROLE_ARN)`, so with it unset the router
+            # SKIPS bedrock and serves the stage's fallback ΓÇö quietly, and with no
+            # `llm.call.failed` event, because no call is ever attempted. Staging
+            # was therefore answering every backend stage on DeepSeek while prod
+            # answered on Claude, and the staging-first workflow (┬º16) would have
+            # certified a Claude routing change it never once exercised.
+            #
+            # Both services already run as the SAME task role
+            # (`vitana-ecs-task-role`), so this grants no new access ΓÇö it only
+            # stops staging pretending the adapter is unconfigured. Resolved from
+            # the task definition rather than hardcoded, so it cannot drift from
+            # whatever role the service actually assumes.
+            # VTID-03773 -- AURORA_CA_BUNDLE_PATH points aurora-client.ts at the
+            # RDS CA bundle baked into the image (Dockerfile), so the Aurora
+            # connectivity check (routes/admin-aurora-memory-health.ts) gets a
+            # real TLS handshake instead of failing closed with a
+            # self-signed-certificate error. Caught in review (Codex, PR #3213):
+            # AURORA_DATABASE_URL alone is not sufficient -- resolveSsl()
+            # defaults to verifying against the system trust store when this is
+            # unset, and that store does not include the Amazon RDS CA.
+            #
+            # This explanation lives HERE, not inside the jq program below, on
+            # purpose -- an earlier version put it inside the single-quoted jq
+            # string with an apostrophe in the prose, which closed the bash
+            # string early and broke this step with a bare \"syntax error near
+            # unexpected token\" 20+ lines later. Exactly the trap this file's
+            # own note (further down, near the SEC_JWT resolution loop) already
+            # warns about for jq-embedded comments. Keep every comment about the
+            # jq body out here instead of risking it again.
+            # VTID-03779 ΓÇö Nova session pre-establishment (\"warm start\"): the
+            # widget opens the WS transport and asks the gateway to warm a real
+            # Nova Sonic connection (real system instruction, real tool
+            # catalog) right after login, before the ORB overlay is ever
+            # shown; a real session tap then claims that already-open
+            # connection instead of cold-connecting. STAGING ONLY, same
+            # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above -- deliberately
+            # NOT added to AWS-PROD-DEPLOY-GATEWAY.yml yet: this needs a real
+            # staging measurement against the <3s cold-start / ~1.5s warm-start
+            # targets before prod is a question. Rollback is this value ->
+            # \"off\" (or removal), no code revert -- with the flag off,
+            # handleWsPrewarmMessage returns immediately and every session
+            # takes the unmodified cold-connect path.
+            # VTID-03791 ΓÇö FEATURE_ORB_WS_TRANSPORT_ENV pinned to \"staging-only\"
+            # here too. Live verification of VTID-03779 (real Playwright taps
+            # against this same staging stack) found the prewarm handshake
+            # completing correctly (prewarm sent -> prewarm_ready ack) but the
+            # reuse branch never actually engaging on a default tap: GET
+            # /live/transport (orb-live.ts) told every browser to use SSE
+            # because this flag was unset (isFeatureLive default is \"off\"), and
+            # SSE sessions never call _sessionStartWs at all -- the prewarmed
+            # Nova connection just sat unclaimed until its 90s TTL expired. This
+            # flag is VTID-03471's own (pre-existing, unrelated) transport
+            # kill switch; pinning it here does not change any code, it only
+            # makes WS the transport real staging taps get, so VTID-03779's
+            # prewarm/reuse mechanism is no longer dormant behind a config gap.
+            # Rollback is this value -> \"off\" (or removal); with it off every
+            # session reverts to the pre-VTID-03471 SSE downstream, byte-for-
+            # byte, same as before either of these VTIDs existed.
+            # VTID-03706 ΓÇö ORB full-duplex voice: the mic stays
+            # open while Vitana speaks so the native Nova Sonic
+            # barge-in can fire. STAGING ONLY. Deliberately not
+            # added to AWS-PROD-DEPLOY-GATEWAY.yml: this changes
+            # live audio behaviour for every voice session and
+            # needs real-device echo verification (see
+            # /command-hub/orb-voice-bench.html) before prod is
+            # even a question. Rollback is this value -> \"false\",
+            # no code revert. Exact-\"true\" opt-in, matching the
+            # sibling ORB kill switches ΓÇö anything else is OFF.
+            # BOOTSTRAP-ORB-DAY-CLOSE: enables the once-per-night
+            # \"goodnight\" greeting rung (tryDayCloseRung,
+            # compute-greeting-decision.ts). STAGING ONLY, same
+            # pattern as FEATURE_ORB_SAFE_FAST_GREETING_ENV above
+            # ΓÇö deliberately NOT added to
+            # AWS-PROD-DEPLOY-GATEWAY.yml. Now uses the reduced
+            # opener (buildDayCloseOpenerLine) as the permanent
+            # default, not the full quoted-exemplar block that
+            # previously needed a Nova-validation-block retry to
+            # fall back to it. Rollback is this value -> \"false\"
+            # (or removal), no code revert. Exact-\"true\" opt-in,
+            # matching the sibling ORB kill switches.
+            # VTID-03787 ΓÇö diagnostic-only, STAGING ONLY, never
+            # AWS-PROD-DEPLOY-GATEWAY.yml. Dumps the literal
+            # Nova system-instruction text (includes real user
+            # memory and personalization context) to an
+            # oasis_events diag stage right before every Nova
+            # connect, so a real blocked guided-topic session
+            # can be diffed against a real succeeding ordinary
+            # one. Exact-\"true\" opt-in; remove once the diff
+            # investigation concludes. VTID-03788 ΓÇö no
+            # apostrophes in this comment block, on purpose:
+            # see the note near SEC_JWT above, this is the
+            # SECOND time an apostrophe here broke the
+            # surrounding single-quoted bash string to 0 jobs.
+            # VTID-03820 follow-up ΓÇö OPERATOR_EXECUTION_ONRAMP_ENABLED pinned to
+            # STAGING ONLY, exact-\"true\" opt-in (operator-execution-onramp.ts's
+            # own isOnRampEnabled() checks for the literal string \"true\" ΓÇö
+            # unset/\"false\"/a typo all stay disabled). Explicit platform-owner
+            # request, after observing the feature's own risk in this file's
+            # header comment: enabling this means the Operator Console chat
+            # (autopilot_execute_task tool) can cause a REAL pull request
+            # against THIS repo ΓÇö there is one GitHub repo regardless of which
+            # gateway environment triggers it, staging front end included.
+            # DEEPSEEK_API_KEY is already resolved onto this task definition
+            # (SEC_DEEPSEEK above) ΓÇö this on-ramp forces its one invocation
+            # onto deepseek-flash. Every other gate (target VTID must be
+            # spec_status='approved' and non-terminal; the full reused
+            # approveAutoExecute() safety gate ΓÇö kill_switch, allow/deny scope,
+            # budget, concurrency, tests_missing, PR-flood guard) is unchanged
+            # and still applies; this flag only removes the one gate that is
+            # unconditionally OFF by default. Deliberately NOT added to
+            # AWS-PROD-DEPLOY-GATEWAY.yml ΓÇö promoting it there is a separate,
+            # later decision once a real on-ramp execution has been observed
+            # end-to-end on staging. Rollback is this value -> \"false\" (or
+            # removal), no code revert ΓÇö with it off, triggerOperatorExecution()
+            # returns operator_execution_onramp_disabled immediately, before any
+            # DB row is written.
+            # VTID-03850 -- DEV_AUTOPILOT_USE_JOB=true + DEV_AUTOPILOT_JOB_CLOUD=aws
+            # pinned on STAGING: every claimed Dev Autopilot execution (including
+            # the operator on-ramp above) is dispatched as a one-shot Fargate task
+            # of the vitana-autopilot-executor family via ecs:RunTask
+            # (dispatchExecutorJobAws), instead of a fire-and-forget promise on
+            # this gateway task. Observed 2026-09-13 (VTID-03841): an in-process
+            # run had no GitHub token and died silently on a 20-minute watchdog.
+            # The executor task def carries GITHUB_SAFE_MERGE_TOKEN and, since
+            # VTID-03850, BEDROCK_ROLE_ARN + DEEPSEEK_API_KEY (see
+            # AWS-PROD-DEPLOY-AUTOPILOT-EXECUTOR.yml). Failure posture is the
+            # code path itself: if RunTask is refused (IAM, capacity), the gateway
+            # logs the reason and falls back to the in-process run, i.e. exactly
+            # today. Rollback is this value -> \"false\", no code revert. Platform
+            # owner approved 2026-09-13. Deliberately NOT added to
+            # AWS-PROD-DEPLOY-GATEWAY.yml -- prod keeps its live task def state
+            # until a staging dispatch has been observed end-to-end.
+            #
+            # VTID-03867 -- GITHUB_SAFE_MERGE_TOKEN was never wired into this
+            # task def at all (unlike prod's vitana-gateway-awsdr, which has
+            # carried it since day one). Confirmed live 2026-09-13: the most
+            # recent staging dev-autopilot/operator-onramp execution that
+            # reached the merge stage failed with metadata.error =
+            # \"base branch lookup: GITHUB_SAFE_MERGE_TOKEN not set\" -- every
+            # execution that gets this far on staging has always failed here,
+            # this is not new breakage. Points at the SAME secret
+            # (vitana/github/token) prod already reads successfully via the
+            # identical shared executionRoleArn (vitana-ecs-task-execution-role),
+            # so no new credential material or IAM change is introduced -- this
+            # is purely wiring an existing secret into a second task def.
+            #
+            # VTID-04573 -- vitana/github/token (last set 2026-08-26 09:54 UTC)
+            # returns 401 from GitHub since ~2026-09-25 10:00 UTC, consistent with
+            # a 30-day fine-grained token expiring; every GitHub call from the
+            # staging gateway failed (PR open on approve, operator repo reads).
+            # Staging now reads vitana/github/pat -- the secret the autopilot
+            # executor already uses successfully under the same execution role.
+            # Production was repointed the same day (env-only run 332). Owner
+            # decision 2026-09-25 (VTID-04583): vitana/github/pat is the permanent
+            # GitHub token for both gateways and the executor. vitana/github/token
+            # is retired -- do not point anything back at it.
+            #
+            # VTID-03902 -- OPERATOR_PLANNER_ENABLED=true, STAGING ONLY. Without a
+    # consumer, an Operator-chat-created task (metadata.source='operator-chat')
+    # sat at status=scheduled/spec_status=missing forever -- confirmed live
+    # against VTID-03900, zero oasis_specs rows, no state change since
+    # creation. operator-planner.ts runs one sweep immediately at boot (then
+    # every OPERATOR_PLANNER_INTERVAL_MS, default 5min) and calls the existing,
+    # already-governed POST /api/v1/specs/:vtid/generate pipeline for each
+    # plannable task -- never touches the autonomous-execution plane
+    # (VTID-03516) or writes code. Deliberately NOT added to
+    # AWS-PROD-DEPLOY-GATEWAY.yml -- this is the first real observation of the
+    # sweep before it is a prod question. Rollback is this value -> \"false\"
+    # (or removal), no code revert -- with it off, initializeOperatorPlanner()
+    # logs and returns immediately, byte-for-byte today's behaviour.
+    #
+    # VTID-04037 -- Operator agent staging enablement, owner-approved in
+    # conversation 2026-09-18 (\"finish 1-4 in one\"). STAGING ONLY, never
+    # AWS-PROD-DEPLOY-GATEWAY.yml. Four exact-\"true\" opt-ins, each read by its
+    # own module with the literal-string check, so unset/\"false\"/typo = off:
+    #   OPERATOR_VTID_SELF_ALLOCATE_ENABLED (VTID-04005/04007) -- the on-ramp
+    #     mints the VTID for an open-ended autopilot_run_task request via the
+    #     same allocate_global_vtid RPC /api/v1/vtid/allocate uses. Unblocks
+    #     Test Run #5.
+    #   OPERATOR_PR_APPROVAL_REQUIRED (VTID-04029) -- every on-ramp execution
+    #     is stamped require_approval, so the agent pushes its branch and holds
+    #     as awaiting_approval instead of opening the PR; a human (Command Hub
+    #     Live row or the VTID-04030 chat tools) reviews the diff and decides.
+    #     Maker-checker for every agent PR. Unblocks Test Run #7.
+    #   OPERATOR_THREADS_ENABLED (VTID-04022) -- server-side thread record +
+    #     rolling summary; the tables were applied live 2026-09-17.
+    #   OPERATOR_TURN_MEMORY_ENABLED (VTID-04025) -- durable facts extracted
+    #     from each console turn into dev_agent_memory (fail-open).
+    #   REMINDERS_INPROCESS_DISPATCH_ENABLED (VTID-04320) -- the reminders tick
+    #     and sweeper run in-process; no external scheduler has called
+    #     /reminders-tick since GCP was shut down, so no reminder fired. The
+    #     claim RPC uses SKIP LOCKED, so several tasks (or prod too) are safe.
+    #   REMINDERS_STAGING_DISPATCH_OVERRIDE (VTID-04963) -- staging runs reminders
+    #     only while \"true\"; prod dispatches them. Phase 2 sets \"false\".
+    #   CALENDAR_DEFAULT_REMINDERS_ENABLED (VTID-04338) -- every calendar entry
+    #     gets default reminders (reconciled into `reminders` every minute).
+    #   CALENDAR_MAINTENANCE_ENABLED (VTID-04374) -- hourly rescheduler for
+    #     Autopilot/journey suggestions + 6-hourly priority refresh, in-process.
+    #   CALENDAR_GOOGLE_SYNC_ENABLED (VTID-04914, owner decision 2026-10-06) --
+    #     Google two-way sync; not_configured until the Google OAuth client
+    #     secrets exist (Resolve Connected Apps sign-in config, above).
+    #   MEMORY_ORB_RECALL_ENABLED (VTID-04452) -- the ORB live prompt reads
+    #     memory through the broker; falls back to the legacy read on failure.
+    #     Staging only, to measure '[VTID-04452] orb recall in Nms' first.
+    #   MEMORY_ORB_RECALL_SHADOW (VTID-04784) -- after each ORB memory read, the
+    #     other read path runs in the background and one counts-only
+    #     '[VTID-04784] recall-shadow' line compares them (memory plan phase 2).
+    # Plus read-only SQL (VTID-04023): if vitana/gateway/staging/operator-sql-
+    # readonly-url exists, the task def gets OPERATOR_SQL_READONLY_ENABLED=true +
+    # the URL as a secret; absent (VTID-04624, owner decision 2026-09-26) it gets
+    # ENABLED=true + OPERATOR_SQL_READONLY_BACKEND=supabase: the live DB through
+    # public.operator_readonly_query (service_role only, read-only transaction).
+    # It must never fail a gateway deploy. Rollback for any of these is the value ->
+    # \"false\" (or removal), no code revert.
+    #
+    # VTID-04225 -- three credentials the starved autopilot/self-healing loops
+    # needed on THIS task def and never had (read off the live task def rev 489,
+    # 2026-09-21): DEV_AUTOPILOT_SCAN_TOKEN (plain env from the repo secret, so
+    # DEV-AUTOPILOT.yml's scan can be accepted at all); GATEWAY_SERVICE_TOKEN
+    # (Secrets Manager ref, the SAME vitana/supabase/prod/service-role-key the
+    # prod task def already maps it to -- E2E-ORB-MONITOR/E2E-TEST-RUN post
+    # /api/v1/self-healing/report with the repo secret of that name, and
+    # require-service-or-admin.ts fails closed when the var is unset, which is
+    # what staging did); GATEWAY_INTERNAL_TOKEN (OPTIONAL, the ERP-bridge
+    # pattern -- wired only once vitana/gateway/staging/internal-token exists,
+    # provisioned by scripts/aws/setup-gateway-internal-token.sh; it is what the
+    # VTID-04226 EventBridge test-contract crons send as X-Gateway-Internal).
+    # None of the three is added to AWS-PROD-DEPLOY-GATEWAY.yml here.
+    #
+    # VTID-04517 -- NAV_REGISTRY_URL: voice navigation is answered by the screen
+    # registry the frontend publishes (/nav-registry.json on the staging frontend).
+    # VTID-04880: NAV_V2_ENABLED is no longer set -- the legacy navigator is gone
+    # and no code reads the flag. It stays in the strip list so the next deploy
+    # removes it from the task definition.
+    #
+    # VTID-04727 -- LEDGER_WRITE_AUTH_MODE=enforce, STAGING ONLY: the VTID
+    # ledger's write routes require GATEWAY_SERVICE_TOKEN or an exafy_admin JWT.
+    # Production runs the code default (log) until its logs show no unknown
+    # callers. Rollback: \"log\" (or \"off\" in an emergency).
+    #
+    # VTID-04677 -- SCHEDULED_NOTIFICATIONS_AUTH_MODE is stripped (not pinned:
+    # this step is at GitHub's 20,000-char run limit), so staging runs the code
+    # default \"log\": /api/v1/scheduled-notifications/* logs every call without
+    # X-Gateway-Internal and lets it through. Flipping to \"enforce\" is a
+    # separate, owner-approved change (it pins the value here). The
+    # internal-token lookup below prints the AWS error instead of discarding it:
+    # the secret exists (since 2026-09-26) yet was always reported absent.
+    #
+    # VTID-04333 -- FEEDBACK_AUTO_DISPATCH_ENABLED=true, STAGING ONLY (owner
+    # decision 2026-09-23, docs/CUSTOMER-SUPPORT-REBUILD-BRIEF.md ┬º3.5.1): a
+    # spec_ready bug/ux_issue ticket with a real (non-placeholder) spec is
+    # dispatched to Dev Autopilot without an Approve & Fix click. Kill switch,
+    # per-pass cap and the PR-approval hold still apply. Rollback: \"false\".
+    #
+    # VTID-03883 -- DEV_AUTOPILOT_WATCHER_LIVE=true. Without this, the
+            # CI watcher (dev-autopilot-watcher.ts) defaults to DRY_RUN mode
+            # (its own fallback is `DEV_AUTOPILOT_DRY_RUN || 'true'`) and
+            # FABRICATES ci-passed/merged/deployed/verified/completed
+            # transitions 90s apart per stage, WITHOUT ever calling GitHub.
+            # Confirmed live 2026-09-14: an operator on-ramp execution
+            # (VTID-03863, PR #3307) reported dev_autopilot_executions.status
+            # = 'completed' while PR #3307 sat open, unmerged, and still
+            # failing VALIDATOR-CHECK ΓÇö a false-success report the reconciler
+            # (VTID-03877) would otherwise propagate onto vtid_ledger as a
+            # real terminal_outcome='success'. VTID-03863 itself is left
+            # uncorrected as a documented eval artifact of this exact defect.
+            # Flipping this makes the watcher poll real GitHub check-run/merge/
+            # deploy state instead (existing risk-class + mergeable_state
+            # auto-merge gates in dev-autopilot-watcher.ts are unchanged).
+            # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml -- prod's
+            # live task def state is untouched pending real staging observation
+            # under live mode. Rollback is this value -> \"false\", no code
+            # revert. Platform owner approved 2026-09-14.
+    # VTID-03788 relocation (VTID-04225): the two comment blocks below used to sit
+    # INSIDE the register step's run: script and pushed it past the 20,000-char
+    # guard once the VTID-04225 credential wiring was added. Comments are bash
+    # no-ops wherever they live; the shell they annotate is unchanged.
+    #
+    # VTID-04000: the Vertex Serbian bridge. Project id is
+    # `project-da3eb05a-c86e-47cb-85f` (Vitanaland, GCP project number
+    # 20926255361), location is `global` ΓÇö the platform owner enabled
+    # the Live API as a global-endpoint service, not a regional one;
+    # confirmed against Google's own docs that the Vertex Live
+    # WebSocket endpoint (`wss://{location}-aiplatform.googleapis.com`)
+    # accepts `global` as a literal location the same way it accepts
+    # any region, so no code change was needed for this.
+    #
+    # GCP_SERVICE_ACCOUNT_JSON is wired as a PLAIN value, not an AWS
+    # secret ΓÇö because it isn't one. Org policy
+    # `iam.disableServiceAccountKeyCreation` (enforced org-wide,
+    # confirmed live by the platform owner hitting it repeatedly even
+    # as org Owner) makes a downloadable service-account private key
+    # impossible here, so this uses Workload Identity Federation
+    # instead: a Workload Identity Pool (`vitana-aws-pool`) + AWS
+    # provider (`vitana-aws-provider`) trusting AWS account
+    # `472838866351` directly, with `roles/iam.workloadIdentityUser`
+    # granted on `vitanaland@project-da3eb05a-c86e-47cb-85f
+    # .iam.gserviceaccount.com` to
+    # `principal://iam.googleapis.com/projects/20926255361/locations/
+    # global/workloadIdentityPools/vitana-aws-pool/subject/
+    # arn:aws:iam::472838866351:user/claude-code-aws-agent` ΓÇö all
+    # created live via `gcloud` in Cloud Shell by the platform owner
+    # (org Owner), since the AWS-CLI-verified session here has no GCP
+    # credentials of its own. The JSON below is the `external_account`
+    # credential config `gcloud iam workload-identity-pools
+    # create-cred-config` generated against that exact pool/provider ΓÇö
+    # Google's own docs state this file contains no secret (no
+    # private key, just federation config: pool/provider names, STS
+    # endpoints) and is safe to store in plain text/source control,
+    # unlike a service-account key. `gcp-adc-bootstrap.ts` already
+    # handles this generically ΓÇö it writes whatever valid JSON is
+    # here to a file and points `GOOGLE_APPLICATION_CREDENTIALS` at
+    # it, and `google-auth-library`'s `GoogleAuth()` auto-detects
+    # `type:\"external_account\"` and resolves AWS credentials itself
+    # (env vars first, then the ECS task-role credential endpoint) ΓÇö
+    # no code change was needed there either.
+    #
+    # NOT yet independently confirmed against a live token exchange ΓÇö
+    # writing/using this class of federated-credential config to test
+    # it locally was blocked by this session's own sandbox safety
+    # layer (flagged as a containment-escape-shaped action, a
+    # reasonable guard this session did not attempt to route around).
+    # This config is Google's own authoritative output against the
+    # real, live pool/provider/binding, not hand-constructed, but the
+    # real signal is still the next real `sr` session on staging
+    # actually producing audio ΓÇö confirm via `oasis_events` reporting
+    # `reason:'vertex_serbian_bridge'` before trusting this further.
+    # VTID-03591/B4/VTID-03813 ΓÇö AURORA_RLS_DATABASE_URL on STAGING, so
+    # the already-built and already-tested GET
+    # /api/v1/admin/aurora-rls-health endpoint (services/aurora-client.ts's
+    # withAuroraRlsContext(), wired into a real route by VTID-03591 commit
+    # 5cbf8178) gets exercised for the first time over its real transport
+    # (pg.Pool/Postgres wire protocol) instead of only the RDS Data API a
+    # sandboxed session can reach. getAuroraPool() treats this as optional
+    # (returns null when unset), so leaving it unset anywhere is always
+    # the safe fallback ΓÇö this only ever turns the diagnostic ON, never
+    # off by omission.
+    #
+    # Deliberately a SEPARATE env var from AURORA_DATABASE_URL above, not
+    # the same one: that var (VTID-03773) resolves to the `vitana_admin`
+    # secret (confirmed superuser-class ΓÇö see
+    # vitana/aurora/prod/database-url), which is correct for the
+    # db-i18n seam's needs but WRONG for this diagnostic, whose entire
+    # purpose is proving RLS composes correctly for a non-superuser
+    # login role. Reusing the admin URL here would make the health
+    # route permanently report \"unsafe\" (BYPASSRLS/superuser) ΓÇö a
+    # false alarm about Aurora RLS, not a true one. Points instead at
+    # the ONE Aurora cluster that exists (`vitana-aurora-prod` ΓÇö
+    # confirmed via `aws rds describe-db-clusters`, no separate staging
+    # cluster) via the pre-provisioned `authenticator` role secret
+    # (`vitana/aurora/prod/postgrest-authenticator-uri`) ΓÇö the same
+    # unprivileged, non-BYPASSRLS login role PostgREST itself would use,
+    # verified live in VTID-03769 to have `rolsuper=false`/
+    # `rolbypassrls=false`. This is not a new access grant or a new data
+    # exposure: staging already reads/writes the same production
+    # Supabase project (CLAUDE.md, `vitana-v1`'s \"gateway-staging runs
+    # against prod Supabase too\"), and B1's repository seams still route
+    # every real business call through supabase-js regardless ΓÇö this
+    # var only lights up one read-only, admin-gated diagnostic route.
+    # Deliberately NOT added to AWS-PROD-DEPLOY-GATEWAY.yml ΓÇö promoting
+    # this to prod is a separate, later, human decision.
+    # $SEC_AURORA_RLS is resolved above in the same describe-secret loop
+    # as the other per-deploy secrets, not re-resolved here.
+            run: |
+              set -e
+              IMAGE=\"${{ steps.build.outputs.image }}\"
+              SHA=\"${{ steps.commit.outputs.sha }}\"
+              SHORT=\"${{ steps.commit.outputs.short }}\"
+              TD_ARN=$(aws ecs describe-services --cluster \"${{ env.ECS_CLUSTER }}\" --services \"${{ env.ECS_SERVICE }}\" \\
+                --query 'services[0].taskDefinition' --output text)
+              echo \"Current task definition: $TD_ARN\"
+              for pair in \\
+                \"SEC_JWT:vitana/supabase/prod/jwt-secret\" \\
+                \"SEC_ANON:vitana/supabase/prod/anon-key\" \\
+                \"SEC_GEMINI:vitana/gateway/staging/google-gemini-api-key\" \\
+                \"SEC_OPENAI:vitana/gateway/staging/openai-api-key\" \\
+                \"SEC_DEEPSEEK:vitana/gateway/staging/deepseek-api-key\" \\
+                \"SEC_FISH:vitana/gateway/staging/fish-api-key\" \\
+                \"SEC_AURORA:vitana/aurora/prod/database-url\" \\
+                \"SEC_AURORA_RLS:vitana/aurora/prod/postgrest-authenticator-uri\" \\
+                \"SEC_GITHUB_TOKEN:vitana/github/pat\" \\
+                \"SEC_SERVICE_TOKEN:vitana/supabase/prod/service-role-key\" ; do
+                VAR=\"${pair%%:*}\"; NAME=\"${pair#*:}\"
+                ARN=$(aws secretsmanager describe-secret --secret-id \"$NAME\" --query ARN --output text 2>/dev/null || true)
+                if [ -z \"$ARN\" ] || [ \"$ARN\" = \"None\" ]; then
+                  echo \"::error::Secret '$NAME' not found in Secrets Manager (region ${{ env.TARGET_AWS_REGION }}). Refusing to register a task definition that cannot start.\"
+                  exit 1
+                fi
+                printf -v \"$VAR\" '%s' \"$ARN\"
+                export \"$VAR\"
+                echo \"  resolved $NAME\"
+              done
+              ERP_BRIDGE_URL=\"http://erp-bridge.vitana.internal:8080\"
+              SEC_ERP_BRIDGE=$(aws secretsmanager describe-secret --secret-id vitana/erp-bridge/staging/bridge-token --query ARN --output text 2>/dev/null || true)
+              if [ -z \"$SEC_ERP_BRIDGE\" ] || [ \"$SEC_ERP_BRIDGE\" = \"None\" ]; then
+                SEC_ERP_BRIDGE=\"\"
+                echo \"  erp-bridge token secret absent - ERP_BRIDGE_URL/TOKEN not wired (VTID-03840; expected until provisioned)\"
+              else
+                echo \"  resolved vitana/erp-bridge/staging/bridge-token -> ERP_BRIDGE_URL=$ERP_BRIDGE_URL\"
+              fi
+              SEC_SQL_RO=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-sql-readonly-url --query ARN --output text 2>/dev/null || true)
+              if [ -z \"$SEC_SQL_RO\" ] || [ \"$SEC_SQL_RO\" = \"None\" ]; then
+                SEC_SQL_RO=\"\"
+                echo \"  operator sql read-only secret absent - dev_run_sql_readonly reads the live DB via operator_readonly_query (VTID-04624)\"
+              else
+                echo \"  resolved vitana/gateway/staging/operator-sql-readonly-url -> OPERATOR_SQL_READONLY_ENABLED=true\"
+              fi
+              SEC_INTERNAL_TOKEN=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/internal-token --query ARN --output text 2>/tmp/it.err || true)
+              [ \"$SEC_INTERNAL_TOKEN\" = \"None\" ] && SEC_INTERNAL_TOKEN=\"\"
+              [ -n \"$SEC_INTERNAL_TOKEN\" ] && echo \"  resolved internal-token\" || echo \"  internal-token not resolved: $(head -c 300 /tmp/it.err)\"
+              SEC_MACHINE_AUTH=$(aws secretsmanager describe-secret --secret-id vitana/gateway/staging/operator-machine-auth-token --query ARN --output text 2>/dev/null || true)
+              if [ -z \"$SEC_MACHINE_AUTH\" ] || [ \"$SEC_MACHINE_AUTH\" = \"None\" ]; then
+                SEC_MACHINE_AUTH=\"\"
+                echo \"  operator machine-auth secret absent - OPERATOR_MACHINE_AUTH_ENABLED not wired (VTID-04133; run scripts/aws/setup-operator-machine-auth-secret.sh)\"
+              else
+                echo \"  resolved vitana/gateway/staging/operator-machine-auth-token -> OPERATOR_MACHINE_AUTH_ENABLED=true\"
+              fi
+              [ -n \"$DEV_AUTOPILOT_SCAN_TOKEN_VALUE\" ] || echo \"::warning::DEV_AUTOPILOT_SCAN_TOKEN repo secret empty (VTID-04225)\"
+              GCP_CRED_CONFIG='{\"universe_domain\":\"googleapis.com\",\"type\":\"external_account\",\"audience\":\"//iam.googleapis.com/projects/20926255361/locations/global/workloadIdentityPools/vitana-aws-pool/providers/vitana-aws-provider\",\"subject_token_type\":\"urn:ietf:params:aws:token-type:aws4_request\",\"token_url\":\"https://sts.googleapis.com/v1/token\",\"credential_source\":{\"environment_id\":\"aws1\",\"region_url\":\"http://169.254.169.254/latest/meta-data/placement/availability-zone\",\"url\":\"http://169.254.169.254/latest/meta-data/iam/security-credentials\",\"regional_cred_verification_url\":\"https://sts.{region}.amazonaws.com?Action=GetCallerIdentity&Version=2011-06-15\"},\"service_account_impersonation_url\":\"https://iamcredentials.googleapis.com/v1/projects/-/serviceAccounts/vitanaland@project-da3eb05a-c86e-47cb-85f.iam.gserviceaccount.com:generateAccessToken\"}'
+              TASK_ROLE_ARN=$(aws ecs describe-task-definition --task-definition \"$TD_ARN\" \\
+                --query 'taskDefinition.taskRoleArn' --output text)
+              if [ -z \"$TASK_ROLE_ARN\" ] || [ \"$TASK_ROLE_ARN\" = \"None\" ]; then
+                echo \"::error::Task definition $TD_ARN has no taskRoleArn ΓÇö cannot set BEDROCK_ROLE_ARN.\"
+                exit 1
+              fi
+              echo \"Bedrock activation on staging: BEDROCK_ROLE_ARN=$TASK_ROLE_ARN\"┬╖┬╖
+              NEW_DEF=$(aws ecs describe-task-definition --task-definition \"$TD_ARN\" --query taskDefinition \\
+                | jq --arg IMG \"$IMAGE\" --arg SHA \"$SHA\" --arg SHORT \"$SHORT\" \\
+                     --arg NOVA_ENABLED \"$NOVA_SONIC_ENABLED\" \\
+                     --arg NOVA_USERS \"$NOVA_SONIC_CANARY_USER_IDS\" \\
+                     --arg NOVA_TENANTS \"$NOVA_SONIC_CANARY_TENANT_IDS\" \\
+                     --arg SEC_JWT \"$SEC_JWT\" --arg SEC_ANON \"$SEC_ANON\" \\
+                     --arg SEC_GEMINI \"$SEC_GEMINI\" --arg SEC_OPENAI \"$SEC_OPENAI\" \\
+                     --arg SEC_DEEPSEEK \"$SEC_DEEPSEEK\" --arg SEC_FISH \"$SEC_FISH\" \\
+                     --arg SEC_AURORA \"$SEC_AURORA\" \\
+                     --arg SEC_AURORA_RLS \"$SEC_AURORA_RLS\" \\
+                     --arg SEC_GITHUB_TOKEN \"$SEC_GITHUB_TOKEN\" \\
+                     --arg SEC_ERP_BRIDGE \"$SEC_ERP_BRIDGE\" --arg ERP_BRIDGE_URL \"$ERP_BRIDGE_URL\" \\
+                     --arg SEC_SQL_RO \"$SEC_SQL_RO\" \\
+                     --arg SEC_MACHINE_AUTH \"$SEC_MACHINE_AUTH\" \\
+                     --arg SEC_SERVICE_TOKEN \"$SEC_SERVICE_TOKEN\" --arg SEC_INTERNAL_TOKEN \"$SEC_INTERNAL_TOKEN\" \\
+                     --arg SCAN_TOKEN \"$DEV_AUTOPILOT_SCAN_TOKEN_VALUE\" \\
+                     --arg GCP_CRED_CONFIG \"$GCP_CRED_CONFIG\" \\
+                     --slurpfile CA \"$RUNNER_TEMP/connected-apps.json\" \\
+                     --arg CLAUDE_AVAILABLE \"$CLAUDE_AVAILABLE_VALUE\" \\
+                     --arg TASK_ROLE \"$TASK_ROLE_ARN\" '
+                    .containerDefinitions[0].image = $IMG
+                    | .containerDefinitions[0].environment |=
+                        ( [ .[] | select(.name | IN(\"GIT_COMMIT_SHA\",\"COMMIT_SHA\",\"BUILD_INFO_MARKER\",
+                                                  \"NOVA_SONIC_ENABLED\",\"NOVA_SONIC_REGION\",\"NOVA_SONIC_MODEL_ID\",
+                                                  \"NOVA_SONIC_CANARY_USER_IDS\",\"NOVA_SONIC_CANARY_TENANT_IDS\",
+                                                  \"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV\",
+                                                  \"FEATURE_ORB_SAFE_FAST_GREETING_ENV\",
+                                                  \"FEATURE_LATENCY_TELEMETRY_ENV\",
+                                                  \"FEATURE_ORB_FAST_START_ENV\",\"FEATURE_ORB_BRAIN_CACHE_ENV\",\"FEATURE_ORB_NOVA_PREWARM_ENV\",
+                                                  \"FEATURE_ORB_WS_TRANSPORT_ENV\",\"ORB_SSE_CROSS_TASK_FORWARD_ENABLED\",
+                                                  \"ORB_FULL_DUPLEX_ENABLED\",\"ORB_DEVON_PRECONNECT_ENABLED\",\"ORB_CASCADE_STREAMING_ENABLED\",\"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED\",\"ORB_TOOL_ACK_INTENT_ENABLED\",
+                                                  \"ORB_VERTEX_SHARED_HANDLERS\",\"ORB_TOOL_SELECTION_ENABLED\",\"BRAIN_PERSONAL_WEIGHTS\",\"BRAIN_SCORED_OPENING\",
+                                                  \"ORB_DAY_CLOSE_RUNG_ENABLED\",\"ORB_LOG_NOVA_INSTRUCTION_DEBUG\",
+                                                  \"TTS_PROVIDER\",\"TTS_POLLY_STRICT\",\"VERTEX_LIVE_UNAVAILABLE\",
+                                                  \"ORB_CASCADED_VOICE_ENABLED\",
+                                                  \"OPERATOR_EXECUTION_ONRAMP_ENABLED\",\"OPERATOR_ONRAMP_EXECUTOR\",
+                                                  \"OPERATOR_CODEBASE_READ_ENABLED\",\"OPERATOR_DB_READONLY_ENABLED\",\"OPERATOR_AWS_READONLY_ENABLED\",
+                                                  \"OPERATOR_BOOTSTRAP_PACK_ENABLED\",\"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS\",
+                                                  \"DEV_AUTOPILOT_LLM_REVIEW_ENABLED\",
+                                                  \"DEV_AUTOPILOT_USE_JOB\",\"DEV_AUTOPILOT_JOB_CLOUD\",
+                                                  \"DEV_AUTOPILOT_WATCHER_LIVE\",\"OPERATOR_PLANNER_ENABLED\",
+                                                  \"OPERATOR_VTID_SELF_ALLOCATE_ENABLED\",\"OPERATOR_PR_APPROVAL_REQUIRED\",
+                                                  \"OPERATOR_THREADS_ENABLED\",\"OPERATOR_TURN_MEMORY_ENABLED\",
+                                                  \"REMINDERS_INPROCESS_DISPATCH_ENABLED\",\"REMINDERS_STAGING_DISPATCH_OVERRIDE\",\"CALENDAR_DEFAULT_REMINDERS_ENABLED\",\"CALENDAR_MAINTENANCE_ENABLED\",\"CALENDAR_GOOGLE_SYNC_ENABLED\",\"MEMORY_ORB_RECALL_ENABLED\",\"MEMORY_ORB_RECALL_SHADOW\",
+                                                  \"FEEDBACK_AUTO_DISPATCH_ENABLED\",\"LEDGER_WRITE_AUTH_MODE\",\"SCHEDULED_NOTIFICATIONS_AUTH_MODE\",
+                                                  \"NAV_V2_ENABLED\",\"NAV_REGISTRY_URL\",
+                                                  \"OPERATOR_SQL_READONLY_ENABLED\",\"OPERATOR_SQL_READONLY_BACKEND\",
+                                                  \"OPERATOR_MACHINE_AUTH_ENABLED\",
+                        \"BEDROCK_ROLE_ARN\",\"AWS_BEDROCK_REGION\",
+                        \"AURORA_CA_BUNDLE_PATH\",
+                        \"GOOGLE_CLOUD_PROJECT\",\"VERTEX_AI_LOCATION\",\"VERTEX_SERBIAN_BRIDGE_ENABLED\",\"VERTEX_RUSSIAN_BRIDGE_ENABLED\",\"GOOGLE_AUTH_AWS_SUPPLIER_ENABLED\",
+                        \"GCP_SERVICE_ACCOUNT_JSON\",
+                        \"OPERATOR_CODEINTEL_ENABLED\", \"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED\",\"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED\",\"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED\",\"COMMERCE_AI_SETUP_ENABLED\",\"COMMERCE_MCP_CHATGPT\",\"COMMERCE_MCP_ENABLED\",\"AUTOPILOT_ACTION_REWARD_ENABLED\",
+                        \"DEV_AUTOPILOT_SCAN_TOKEN\",
+                        \"DEV_AUTOPILOT_EXECUTOR\",\"DEV_AUTOPILOT_PR_APPROVAL_REQUIRED\",
+                                                  \"CODEINTEL_PLATFORM_REPO_DIR\",\"CODEINTEL_V1_REPO_DIR\",
+                                                  \"NAV_CONTINUATION_BIND\",\"VITANA_ENV\",\"GATEWAY_URL\",
+                                                  \"AUTOMATIONS_DELIVERY_MODE\",\"AUTOPILOT_HEARTBEAT_ENABLED\",\"DEFAULT_TENANT_ID\",
+                                                  \"PM_AGENT_ENABLED\",\"PM_MODE\",\"CLAUDE_AVAILABLE\") | not) ]
+                          + [ {name:\"GIT_COMMIT_SHA\", value:$SHA},
+                              {name:\"COMMIT_SHA\", value:$SHA},
+                              {name:\"BUILD_INFO_MARKER\", value:$SHORT},
+                              {name:\"NOVA_SONIC_ENABLED\", value:$NOVA_ENABLED},
+                              {name:\"NOVA_SONIC_REGION\", value:\"eu-north-1\"},
+                              {name:\"NOVA_SONIC_MODEL_ID\", value:\"amazon.nova-2-sonic-v1:0\"},
+                              {name:\"NOVA_SONIC_CANARY_USER_IDS\", value:$NOVA_USERS},
+                              {name:\"NOVA_SONIC_CANARY_TENANT_IDS\", value:$NOVA_TENANTS},
+                              {name:\"FEATURE_ORB_GREETING_TTS_BRIDGE_ENV\", value:\"off\"},
+                              {name:\"FEATURE_ORB_SAFE_FAST_GREETING_ENV\", value:\"staging-only\"},
+                              {name:\"FEATURE_LATENCY_TELEMETRY_ENV\", value:\"staging-only\"},
+                              {name:\"FEATURE_ORB_FAST_START_ENV\", value:\"staging+prod\"},
+                              {name:\"FEATURE_ORB_BRAIN_CACHE_ENV\", value:\"staging+prod\"},
+                              {name:\"FEATURE_ORB_NOVA_PREWARM_ENV\", value:\"staging-only\"},
+                              {name:\"FEATURE_ORB_WS_TRANSPORT_ENV\", value:\"staging-only\"}, {name:\"ORB_SSE_CROSS_TASK_FORWARD_ENABLED\", value:\"true\"},
+                              {name:\"ORB_FULL_DUPLEX_ENABLED\", value:\"true\"}, {name:\"ORB_DEVON_PRECONNECT_ENABLED\", value:\"true\"}, {name:\"ORB_CASCADE_STREAMING_ENABLED\", value:\"true\"}, {name:\"ORB_MOBILE_LEAD_FIRST_ONLY_ENABLED\", value:\"true\"}, {name:\"ORB_TOOL_ACK_INTENT_ENABLED\", value:\"true\"},
+                              {name:\"ORB_VERTEX_SHARED_HANDLERS\", value:\"true\"},
+                              {name:\"ORB_TOOL_SELECTION_ENABLED\", value:\"true\"}, {name:\"BRAIN_PERSONAL_WEIGHTS\", value:\"true\"}, {name:\"BRAIN_SCORED_OPENING\", value:\"true\"},
+                              {name:\"ORB_DAY_CLOSE_RUNG_ENABLED\", value:\"true\"},
+                              {name:\"ORB_LOG_NOVA_INSTRUCTION_DEBUG\", value:\"true\"},
+                              {name:\"NAV_CONTINUATION_BIND\", value:\"true\"},
+                              {name:\"NAV_REGISTRY_URL\", value:\"https://preview-aws.vitanaland.com/nav-registry.json\"},
+                              {name:\"VITANA_ENV\", value:\"staging\"},
+                              {name:\"GATEWAY_URL\", value:\"https://preview-aws-gateway.vitanaland.com\"},
+                              {name:\"AUTOMATIONS_DELIVERY_MODE\", value:\"shadow\"},
+                              {name:\"AUTOPILOT_HEARTBEAT_ENABLED\", value:\"true\"},
+                              {name:\"PM_AGENT_ENABLED\", value:\"true\"},
+                              {name:\"PM_MODE\", value:\"live\"}, {name:\"CLAUDE_AVAILABLE\", value:$CLAUDE_AVAILABLE},
+                              {name:\"DEFAULT_TENANT_ID\", value:\"2e7528b8-472a-4356-88da-0280d4639cce\"},
+                              {name:\"TTS_PROVIDER\", value:\"polly\"},
+                              {name:\"TTS_POLLY_STRICT\", value:\"true\"},
+                              {name:\"TTS_FISH_FALLBACK_ENABLED\", value:\"true\"},
+                              {name:\"VERTEX_LIVE_UNAVAILABLE\", value:\"true\"},
+                              {name:\"ORB_CASCADED_VOICE_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_EXECUTION_ONRAMP_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_ONRAMP_EXECUTOR\", value:\"agent\"},
+                              {name:\"OPERATOR_CODEBASE_READ_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_DB_READONLY_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_AWS_READONLY_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_BOOTSTRAP_PACK_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_BOOTSTRAP_BUILD_INFO_URLS\", value:\"staging=https://preview-aws-gateway.vitanaland.com/api/v1/admin/build-info,prod=https://gateway.vitanaland.com/api/v1/admin/build-info\"},
+                              {name:\"DEV_AUTOPILOT_LLM_REVIEW_ENABLED\", value:\"true\"},
+                              {name:\"DEV_AUTOPILOT_USE_JOB\", value:\"true\"},
+                              {name:\"DEV_AUTOPILOT_JOB_CLOUD\", value:\"aws\"},
+                              {name:\"DEV_AUTOPILOT_WATCHER_LIVE\", value:\"true\"},
+                              {name:\"DEV_AUTOPILOT_EXECUTOR\", value:\"agent\"},
+                              {name:\"DEV_AUTOPILOT_PR_APPROVAL_REQUIRED\", value:\"true\"},
+                              {name:\"OPERATOR_PLANNER_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_VTID_SELF_ALLOCATE_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_PR_APPROVAL_REQUIRED\", value:\"true\"},
+                              {name:\"OPERATOR_THREADS_ENABLED\", value:\"true\"},
+                              {name:\"OPERATOR_TURN_MEMORY_ENABLED\", value:\"true\"},
+                              {name:\"REMINDERS_INPROCESS_DISPATCH_ENABLED\", value:\"true\"},
+                              {name:\"REMINDERS_STAGING_DISPATCH_OVERRIDE\", value:\"true\"},
+                              {name:\"CALENDAR_DEFAULT_REMINDERS_ENABLED\", value:\"true\"},
+                              {name:\"CALENDAR_MAINTENANCE_ENABLED\", value:\"true\"},
+                              {name:\"CALENDAR_GOOGLE_SYNC_ENABLED\", value:\"true\"},
+                              {name:\"FEEDBACK_AUTO_DISPATCH_ENABLED\", value:\"true\"},
+                              {name:\"LEDGER_WRITE_AUTH_MODE\", value:\"enforce\"},
+                              {name:\"MEMORY_ORB_RECALL_ENABLED\", value:\"true\"},
+                              {name:\"MEMORY_ORB_RECALL_SHADOW\", value:\"true\"},
+                              {name:\"BEDROCK_ROLE_ARN\", value:$TASK_ROLE},
+                              {name:\"AWS_BEDROCK_REGION\", value:\"eu-central-1\"},
+                              {name:\"AURORA_CA_BUNDLE_PATH\", value:\"/app/certs/rds-combined-ca-bundle.pem\"},
+                              {name:\"GOOGLE_CLOUD_PROJECT\", value:\"project-da3eb05a-c86e-47cb-85f\"},
+                              {name:\"VERTEX_AI_LOCATION\", value:\"global\"},
+                              {name:\"VERTEX_SERBIAN_BRIDGE_ENABLED\", value:\"true\"}, {name:\"VERTEX_RUSSIAN_BRIDGE_ENABLED\", value:\"true\"}, {name:\"GOOGLE_AUTH_AWS_SUPPLIER_ENABLED\", value:\"true\"},
+                              {name:\"GCP_SERVICE_ACCOUNT_JSON\", value:$GCP_CRED_CONFIG},
+                              {name:\"OPERATOR_CODEINTEL_ENABLED\", value:\"true\"}, {name:\"ORCHESTRATOR_SUPPORT_SPECIALIST_ENABLED\", value:\"true\"}, {name:\"ORCHESTRATOR_COMMERCE_SPECIALIST_ENABLED\", value:\"true\"}, {name:\"ORCHESTRATOR_DELEGATION_PERSIST_ENABLED\", value:\"true\"},
+                              {name:\"COMMERCE_AI_SETUP_ENABLED\", value:\"true\"}, {name:\"COMMERCE_MCP_ENABLED\", value:\"true\"}, {name:\"COMMERCE_MCP_CHATGPT\", value:\"true\"}, {name:\"AUTOPILOT_ACTION_REWARD_ENABLED\", value:\"true\"},
+                              {name:\"CODEINTEL_PLATFORM_REPO_DIR\", value:\"/repo-platform\"},
+                              {name:\"CODEINTEL_V1_REPO_DIR\", value:\"/repo-vitana-v1\"},
+                              {name:\"DEV_AUTOPILOT_SCAN_TOKEN\", value:$SCAN_TOKEN} ] )
+                    | .containerDefinitions[0].secrets |=
+                        ( [ .[] | select(.name | IN(\"SUPABASE_JWT_SECRET\",\"SUPABASE_ANON_KEY\",\"GATEWAY_SERVICE_TOKEN\",\"GATEWAY_INTERNAL_TOKEN\",
+                                                  \"GOOGLE_GEMINI_API_KEY\",\"GEMINI_API_KEY\",
+                                                  \"OPENAI_API_KEY\",\"DEEPSEEK_API_KEY\",\"FISH_API_KEY\",
+                                                  \"AURORA_DATABASE_URL\",
+                                                  \"AURORA_RLS_DATABASE_URL\",
+                                                  \"GITHUB_SAFE_MERGE_TOKEN\",\"OPERATOR_SQL_READONLY_DATABASE_URL\",
+                                                  \"OPERATOR_MACHINE_AUTH_TOKEN\",
+                                                  \"GCP_SERVICE_ACCOUNT_JSON\") | not) ]
+                          + [ {name:\"SUPABASE_JWT_SECRET\",   valueFrom:$SEC_JWT},
+                              {name:\"SUPABASE_ANON_KEY\",     valueFrom:$SEC_ANON},
+                              {name:\"GOOGLE_GEMINI_API_KEY\", valueFrom:$SEC_GEMINI},
+                              {name:\"GEMINI_API_KEY\",        valueFrom:$SEC_GEMINI},
+                              {name:\"OPENAI_API_KEY\",        valueFrom:$SEC_OPENAI},
+                              {name:\"DEEPSEEK_API_KEY\",      valueFrom:$SEC_DEEPSEEK},
+                              {name:\"FISH_API_KEY\",          valueFrom:$SEC_FISH},
+                              {name:\"AURORA_DATABASE_URL\",   valueFrom:$SEC_AURORA},
+                              {name:\"AURORA_RLS_DATABASE_URL\", valueFrom:$SEC_AURORA_RLS},
+                              {name:\"GITHUB_SAFE_MERGE_TOKEN\", valueFrom:$SEC_GITHUB_TOKEN},
+                              {name:\"GATEWAY_SERVICE_TOKEN\", valueFrom:$SEC_SERVICE_TOKEN} ] )
+                    | ( if $SEC_INTERNAL_TOKEN != \"\" then
+                          ( .containerDefinitions[0].secrets |=
+                              ( [ .[] | select(.name | IN(\"GATEWAY_INTERNAL_TOKEN\") | not) ]
+                                + [ {name:\"GATEWAY_INTERNAL_TOKEN\", valueFrom:$SEC_INTERNAL_TOKEN} ] ) )
+                        else . end )
+                    | ( if $SEC_ERP_BRIDGE != \"\" then
+                          ( .containerDefinitions[0].environment |=
+                              ( [ .[] | select(.name | IN(\"ERP_BRIDGE_URL\") | not) ]
+                                + [ {name:\"ERP_BRIDGE_URL\", value:$ERP_BRIDGE_URL} ] )
+                          | .containerDefinitions[0].secrets |=
+                              ( [ .[] | select(.name | IN(\"ERP_BRIDGE_TOKEN\") | not) ]
+                                + [ {name:\"ERP_BRIDGE_TOKEN\", valueFrom:$SEC_ERP_BRIDGE} ] ) )
+                        else . end )
+                    | ( if $SEC_SQL_RO != \"\" then
+                          ( .containerDefinitions[0].environment |=
+                              ( [ .[] | select(.name | IN(\"OPERATOR_SQL_READONLY_ENABLED\") | not) ]
+                                + [ {name:\"OPERATOR_SQL_READONLY_ENABLED\", value:\"true\"} ] )
+                          | .containerDefinitions[0].secrets |=
+                              ( [ .[] | select(.name | IN(\"OPERATOR_SQL_READONLY_DATABASE_URL\") | not) ]
+                                + [ {name:\"OPERATOR_SQL_READONLY_DATABASE_URL\", valueFrom:$SEC_SQL_RO} ] ) )
+                        else ( .containerDefinitions[0].environment |=
+                              ( [ .[] | select(.name | IN(\"OPERATOR_SQL_READONLY_ENABLED\",\"OPERATOR_SQL_READONLY_BACKEND\") | not) ]
+                                + [ {name:\"OPERATOR_SQL_READONLY_ENABLED\", value:\"true\"}, {name:\"OPERATOR_SQL_READONLY_BACKEND\", value:\"supabase\"} ] ) ) end )
+                    | ( if $SEC_MACHINE_AUTH != \"\" then
+                          ( .containerDefinitions[0].environment |=
+                              ( [ .[] | select(.name | IN(\"OPERATOR_MACHINE_AUTH_ENABLED\") | not) ]
+                                + [ {name:\"OPERATOR_MACHINE_AUTH_ENABLED\", value:\"true\"} ] )
+                          | .containerDefinitions[0].secrets |=
+                              ( [ .[] | select(.name | IN(\"OPERATOR_MACHINE_AUTH_TOKEN\") | not) ]
+                                + [ {name:\"OPERATOR_MACHINE_AUTH_TOKEN\", valueFrom:$SEC_MACHINE_AUTH} ] ) )
+                        else . end )
+                    | .containerDefinitions[0].environment |= ( [ .[] | select(.name as $n | ($CA[0].env + $CA[0].sec) | map(.name) | index($n) | not) ] + $CA[0].env )
+                    | .containerDefinitions[0].secrets |= ( [ .[] | select(.name as $n | $CA[0].sec | map(.name) | index($n) | not) ] + $CA[0].sec )
+                    | del(.taskDefinitionArn, .revision, .status, .requiresAttributes,
+                          .compatibilities, .registeredAt, .registeredBy, .deregisteredAt)')
+              printf '%s' \"$NEW_DEF\" > \"$RUNNER_TEMP/new-task-def.json\"
+          # VTID-05023 part 9: register + roll split out of the step above (which is
+          # at the VTID-03788 20,000-char limit) so the data_backend switch fits.
+          # keep (every push) passes the task definition through byte for byte."
+
+      50 |
+      51 |   test('VTID-05414: a staging deploy keeps the PM paused (PM_AGENT_ENABLED false)', () => {
+    > 52 |     expect(step).toContain('{name:"PM_AGENT_ENABLED", value:"false"},');
+         |                  ^
+      53 |     expect(stage).not.toContain('{name:"PM_AGENT_ENABLED", value:"true"}');
+      54 |   });
+      55 |
+
+      at Object.<anonymous> (test/kaf-staging-claude-available-wiring.test.ts:52:18)
+
+  console.error
+    [VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)
+
+    [0m [90m 171 |[39m
+     [90m 172 |[39m   [36mif[39m (secrets[33m.[39mlength [33m===[39m [35m0[39m) {
+    [31m[1m>[22m[39m[90m 173 |[39m     console[33m.[39merror([32m'[VTID-ORBC] No JWT secrets configured (need SUPABASE_JWT_SECRET or LOVABLE_JWT_SECRET)'[39m)[33m;[39m
+     [90m     |[39m             [31m[1m^[22m[39m
+     [90m 174 |[39m   }
+     [90m 175 |[39m
+     [90m 176 |[39m   [36mreturn[39m secrets[33m;[39m[0m
+
+      at getJwtSecrets (src/middleware/auth-supabase-jwt.ts:173:13)
+      at verifyAndExtractIdentity (src/middleware/auth-supabase-jwt.ts:325:19)
+      at optionalAuth (src/middleware/auth-supabase-jwt.ts:451:26)
+      at requireServiceOrAdmin (src/middleware/require-service-or-admin.ts:90:15)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at next (node_modules/express/lib/router/route.js:149:13)
+      at Route.dispatch (node_modules/express/lib/router/route.js:119:3)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at node_modules/express/lib/router/index.js:284:15
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at router (node_modules/express/lib/router/index.js:47:12)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at jsonParser (node_modules/body-parser/lib/types/json.js:117:7)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at expressInit (node_modules/express/lib/middleware/init.js:40:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at query (node_modules/express/lib/middleware/query.js:45:5)
+      at Layer.handle [as handle_request] (node_modules/express/lib/router/layer.js:95:5)
+      at trim_prefix (node_modules/express/lib/router/index.js:328:13)
+      at node_modules/express/lib/router/index.js:286:9
+      at router.process_params (node_modules/express/lib/router/index.js:346:12)
+      at next (node_modules/express/lib/router/index.js:280:10)
+      at router.handle (node_modules/express/lib/router/index.js:175:3)
+      at app.handle (node_modules/express/lib/application.js:181:10)
+      at Server.app (node_modules/express/lib/express.js:39:9)
+
+PASS test/project-manager/route.test.ts (6.954 s)
+  GET /status auth
+    ΓêÜ 401 without a bearer token (93 ms)
+    ΓêÜ 401 with a wrong service token (115 ms)
+    ΓêÜ 200 with the service token, returns mode + decisions (14 ms)
+  T24 /status fallback fields and the public /mode
+    ΓêÜ /status with the token carries claude, fallback, build_lanes_in_flight, last_lease (19 ms)
+    ΓêÜ /status defaults: Claude available, no fallback, last_lease null (28 ms)
+    ΓêÜ /status without a token ΓåÆ 401 (12 ms)
+    ΓêÜ /mode without a token ΓåÆ 200 with exactly ok, enabled, mode, executor_mode (10 ms)
+    ΓêÜ /mode reports claude_primary when Claude is available (9 ms)
+
+  console.log
+    [CICD] PR #4242 merged for VTID-05217: mergedsha
+
+      at safeMerge (src/routes/cicd.ts:481:13)
+
+PASS test/project-manager/safe-merge-fn.test.ts (7.345 s)
+  safeMerge ΓÇö clean merge
+    ΓêÜ merges exactly once and returns result "merged" with status 200 (209 ms)
+  safeMerge ΓÇö pr not open ΓåÆ already_merged no-op
+    ΓêÜ returns result "already_merged", keeps the identical 400 pr_not_open body, and NEVER merges (2 ms)
+  safeMerge ΓÇö refused outcomes (behaviour-preserving)
+    ΓêÜ unauthorized repo ΓåÆ refused 403, no merge (1 ms)
+    ΓêÜ pr not found ΓåÆ refused 404, no merge (1 ms)
+    ΓêÜ invalid base ΓåÆ refused 400, no merge
+    ΓêÜ checks failed ΓåÆ refused 400, no merge
+    ΓêÜ governance blocked ΓåÆ refused 403, no merge (1 ms)
+
+Test Suites: 3 failed, 10 passed, 13 total
+Tests:       11 failed, 209 passed, 220 total
+Snapshots:   0 total
+Time:        20.309 s
+Ran all test suites matching /test\\project-manager|test\\kaf-staging-claude-available-wiring.test.ts/i.
+Force exiting Jest: Have you considered using `--detectOpenHandles` to detect async operations that kept running after all tests finished?

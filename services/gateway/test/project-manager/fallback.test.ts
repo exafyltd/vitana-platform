@@ -123,7 +123,7 @@ describe('T5-T8 fallback routing to the exceptions seat', () => {
     process.env.PM_MODE = 'live';
     await actOnDecisions([d!], st([l]), {
       ...baseDeps([]),
-      laneWriter: { write: async (c) => { writes.push(c); } },
+      laneWriter: { write: async (c) => { writes.push(c); return 'written' as const; } },
     });
     expect(writes[0]).toMatchObject({ state: 'parked', next_actor: 'exafyltd' });
   });
@@ -331,7 +331,7 @@ function baseDeps(calls: SafeMergeRequest[]): ActDeps {
       calls.push(i);
       return { result: 'merged', status: 200, body: { ok: true, merged: true, vtid: i.vtid } };
     },
-    laneWriter: { write: async () => undefined },
+    laneWriter: { write: async () => 'written' as const },
     gate2Poster: { post: async () => undefined },
     gate2Evidence: { resolve: async () => ({ verified_commit: 'v', production_commit: 'p', commits: [] }) },
     lease: new Lease(),
@@ -354,7 +354,7 @@ describe('M7 new decision kinds never reach deploy / dispatch / allocate', () =>
     ];
     const res = await actOnDecisions(decisions, st([]), {
       ...baseDeps(calls),
-      laneWriter: { write: async (c) => { writes.push(c); } },
+      laneWriter: { write: async (c) => { writes.push(c); return 'written' as const; } },
       updateBranch: async (repo, n, sha) => { updates.push({ repo, n, sha }); return { ok: true, status: 202 }; },
       ledgerWriter: { patch: async (vtid, set) => { ledger.push({ vtid, set }); return { ok: true }; } },
     });
