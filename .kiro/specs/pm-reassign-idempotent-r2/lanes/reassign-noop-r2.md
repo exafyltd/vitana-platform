@@ -1,6 +1,6 @@
 ---
 lane: reassign-noop-r2
-state: in-review
+state: executing
 next_actor: kiro
 claimed_by: kiro-exafyltd-202610281243-e9b3
 branch: kiro/pm-reassign-idempotent-r2/reassign-noop-r2
@@ -37,5 +37,5 @@ VTID-05414 allocated after policy approval (converged-auto-v1).
 Claimed. Tests first, red on `origin/main` `a8d36bad` (11 failed: reassign-idempotent, reassign-seat, staging wiring); green on head (220/220). Evidence in `docs/validation/VTID-05414/`.
 
 
-### 2026-10-31T13:45Z · kiro-exafyltd-202610281243-e9b3 · executing → in-review
-PR https://github.com/exafyltd/vitana-platform/pull/4532 (head 390ed3c5). Next: reviewer agent agent:vitana-lane-reviewer.
+### 2026-10-31T13:45Z · kiro-exafyltd-202610281243-e9b3 · executing (PR ready for review)
+PR https://github.com/exafyltd/vitana-platform/pull/4532 (head 390ed3c5). Next: reviewer agent agent:vitana-lane-reviewer. Front matter stays `executing`: one lane PR cannot move `ready` → `in-review` (`queue.mjs` `checkTransition`); the in-review move is a closing record.
