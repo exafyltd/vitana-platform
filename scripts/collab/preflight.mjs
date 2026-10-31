@@ -4,7 +4,7 @@
  * (plan pipeline-speed §2.6 / D5, lane `preflight`).
  *
  *   node scripts/collab/preflight.mjs --repo <path> --base <ref> --head <ref> [--branch <ref>] [--title "<PR title>"]
- *                                     [--plan-repo <owner/repo>]... [--no-tests] [--json]
+ *                                     [--plan-repo <owner/repo>]... [--no-tests] [--json] [--required-only]
  *
  * Preflight re-implements nothing: it spawns the repository's own CI commands with the arguments PR-GATE.yml gives
  * them, collects every result and prints all failures grouped per check, labelled `required` (Collab handoff, Lane
@@ -41,7 +41,7 @@ const PLAN_LANE = '_plan';
 class Usage extends Error {}
 
 export function parseArgs(argv) {
-  const out = { planRepo: [], tests: true, json: false };
+  const out = { planRepo: [], tests: true, json: false, requiredOnly: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     const eq = /^--([\w-]+)=(.*)$/.exec(a);
@@ -49,6 +49,7 @@ export function parseArgs(argv) {
     if (k === null) throw new Usage(`unexpected argument "${a}"`);
     if (k === 'no-tests') { out.tests = false; continue; }
     if (k === 'json') { out.json = true; continue; }
+    if (k === 'required-only') { out.requiredOnly = true; continue; }
     const val = v ?? argv[++i];
     if (val === undefined) throw new Usage(`--${k} needs a value`);
     if (k === 'plan-repo') out.planRepo.push(val);
@@ -95,7 +96,15 @@ function trailerLanes(repo, base, head) {
   return [...new Set(log.split(/[\n,]/).map((s) => s.trim()).filter((l) => /^[^/\s]+\/[^/\s]+$/.test(l) && !l.endsWith(`/${PLAN_LANE}`)))];
 }
 
+/** A check blocks a merge in CI only when its label says `required`; report-only labels never do. */
+export const isRequired = (c) => String(c.ci).startsWith('required');
+const withVerdicts = (r) => ({ ...r, requiredOk: !r.checks.some((c) => c.status === 'fail' && isRequired(c)) });
+
 export function preflight(opts) {
+  return withVerdicts(preflightChecks(opts));
+}
+
+function preflightChecks(opts) {
   const repo = path.resolve(opts.repo);
   const checks = [];
   const add = (id, name, ci, status, output = '') => checks.push({ id, name, ci, status, output: String(output).trim() });
@@ -231,7 +240,8 @@ function main(argv) {
   const opts = parseArgs(argv);
   const report = preflight(opts);
   process.stdout.write(`${opts.json ? JSON.stringify(report, null, 2) : render(report)}\n`);
-  return report.ok ? 0 : 1;
+  // --required-only: exit status follows the checks CI requires; report-only failures are still printed above.
+  return (opts.requiredOnly ? report.requiredOk : report.ok) ? 0 : 1;
 }
 
 if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.meta.url)) {

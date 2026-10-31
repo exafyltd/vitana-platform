@@ -1,0 +1,3 @@
+✅ **lane scope** — lane new-member-welcome/new-member-card-optin: every change is inside its paths
+
+⚠️ lane new-member-welcome/new-member-card-optin declares no paths (pre-VTID-05213 lane): Lane scope reports only, and the Project Manager never merges it

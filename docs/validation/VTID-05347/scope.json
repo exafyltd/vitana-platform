@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05347",
+  "kind": "infra",
+  "paths": [
+    "scripts/ci/staging-verify/lib.cjs",
+    "scripts/ci/staging-verify/run.mjs",
+    "scripts/ci/staging-verify/lib.test.cjs",
+    ".kiro/specs/quality-checks/lanes/staging-manifest-bom.md",
+    "docs/validation/VTID-05347/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05347/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

@@ -1,0 +1,7 @@
+# VTID-05341 red on origin/main 2cf4d0435c: test appended, .kiro/steering/vitana-session-title.md absent
+$ node --test scripts/ci/kiro-steering/guard.test.cjs
+not ok 38 - steering: the session title is set once and never renamed (vitana-session-title.md)
+  error: '.kiro/steering/vitana-session-title.md is missing'
+# tests 38
+# pass 37
+# fail 1
