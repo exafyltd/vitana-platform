@@ -1,8 +1,7 @@
 ---
 lane: chain-transitions
-state: in-review
+state: parked
 next_actor: kiro
-claimed_by: kiro-exafyltd-202610271503-9458
 branch: kiro/pipeline-lane-state-efficiency/chain-transitions
 pr: https://github.com/exafyltd/vitana-platform/pull/4416
 depends_on: []
@@ -15,8 +14,9 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-27T16:19Z
+updated: 2026-10-31T13:25Z
 vtid: VTID-05351
+parked_from: in-review
 ---
 # Lane: chain-transitions (repo vitana-platform)
 Tasks in `tasks.md` (`<!-- lane: chain-transitions -->`). `executor: claude`: `scripts/collab/queue.mjs` is a protected
@@ -114,3 +114,5 @@ Findings: non-blocking only — the lane's queue.mjs/queue.test.mjs change is co
 Protected gate file: scripts/collab/queue.mjs. Owner instruction: in Kiro session kiro-ide-202610272306-27b0 on 2026-10-28 the owner was shown this PR by number in the protected-gate set and answered "you decide and get everything done"; on 2026-10-31 "come on, you execute your recommendations. move ahead". That instruction plus this accept on the current head is the §3a / §7b authority (VTID-05408).
 Stored by the landing session on the agent's behalf (lane-land.md step 2).
 Next: land under §7b once every required check is green on the head
+### 2026-10-31T13:25Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
