@@ -39,7 +39,14 @@ describe('VTID-04868 Plan Sparring Gate — session layer', () => {
     expect(md).toContain('**Fallback chain');
     expect(md).toContain('`deepseek-v4-pro`');
     expect(md).toContain('Never Google.');
-    expect(md).toMatch(/Step 0 \(VTID-04868\): spar the plan first\./);
+    // VTID-05280 trimmed CLAUDE.md to project-specific rules and removed the
+    // standalone "Step 0 (VTID-04868): spar the plan first." line. The same
+    // contract — allocation comes only AFTER the plan is sparred and approved —
+    // now lives in §4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868).
+    // Pin that durable wording instead of the deleted line so the trim does not
+    // re-break this test, without weakening the "allocation after sparring" intent.
+    expect(md).toContain('### 4.1 Allocation (STANDING RULE — VTID-03448, VTID-04868)');
+    expect(md).toMatch(/allocated only after its plan is sparred and approved/);
   });
 
   it('the partner agent is read-only and pinned to Opus 4.6', () => {

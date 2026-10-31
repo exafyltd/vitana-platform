@@ -4,8 +4,8 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: verified
-updated: 2026-10-27T12:16Z
+state: done
+updated: 2026-10-28T09:26Z
 sparring_record: .kiro/specs/owner-autonomy/sparring/verdict.md
 vtids: [VTID-05343, VTID-05344]
 ---
@@ -37,3 +37,6 @@ Both lanes are in review or accepted.
 
 ### 2026-10-27T12:16Z · kiro-exafyltd-202610261510-099d · in-review → verified
 Both lanes merged: platform-rules (#4394, d63df38e) and v1-rules (exafyltd/vitana-v1#1500, 57aece53). They deploy nothing, so there is no Gate 2.
+
+### 2026-10-28T09:26Z · kiro-exafyltd-202610261510-099d · verified → done
+Plan done. Both lanes are done: `vitana-owner-autonomy.md` and its guard check are on `main` in both repos (platform d63df38e, v1 57aece53). Nothing deploys, so there is no STAGING-VERIFY or Gate 2. The `_plan` claim and the driver heartbeat ref are removed after this record merges.

@@ -1,0 +1,18 @@
+# VTID-05268 commands (services/gateway, Windows, session kiro-hotmail-202610211107-9463)
+# base: origin/main 5f76b3ab2d97577f43af0a1e33c95e44cceb587e
+npx jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts
+#   head: 1 suite, 12/12 passed
+#   base (red by construction, not run): runCommunityScanForTenants and backfillTenantsForTick do not exist on base, and runCommunityScan ignores tenantId (A's pass would scan all 4 members)
+npx jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts test/vtid-04505-community-autopilot-scan.test.ts test/vtid-04786-memory-embedding-backfill-loop.test.ts test/vtid-04786-memory-embedding-backfill-heartbeat.test.ts test/routes/autopilot-recommendations.test.ts test/vtid-05270-job-tenant-loop.test.ts
+#   head: 6 suites, 158/158 passed
+npx tsc --noEmit
+#   59 errors, all TS2742 (inferred type names a path through the local node_modules junction); none in this lane's files; same set as VTID-05270 locally. CI tsc on Linux is the authority.
+# red-on-base / green-on-head (session kiro-hotmail-202610211107-9463, 2026-10-27)
+# base: detached worktree .worktrees/main-base-4319 at origin/main e9c2f66d75cb3f58e6b91176ccc8a8781d7934bf, with this lane's test file copied in (untracked); worktree removed afterwards
+# head: branch kiro/mt-jobs/jobs-community-scan-tenant at merge commit c741be5dff37a7b1b3e8ee7ac57da550e8ef6eca (origin/main e9c2f66d merged in)
+cd services/gateway; npx --no-install jest --runInBand --forceExit test/vtid-05268-community-scan-tenant.test.ts test/routes/autopilot-recommendations.test.ts
+#   base: 2 suites (1 failed, 1 passed); 99 tests: 9 failed, 90 passed -> outputs/jest-base.txt
+#     vtid-05268-community-scan-tenant: 9 failed, 3 passed (the 3 are flag-off / back-compat cases that hold on base by design)
+#     routes/autopilot-recommendations: 87 passed
+#   head: 2 suites passed; 99 tests passed -> outputs/jest-head.txt
+#     vtid-05268-community-scan-tenant: 12 passed; routes/autopilot-recommendations: 87 passed

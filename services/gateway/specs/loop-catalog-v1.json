@@ -177,6 +177,7 @@
           "draft-pr-babysitter"
         ],
         "workflows": [
+          "CI-HEALTH",
           "DEV-AUTOPILOT",
           "STAGING-VERIFY-NIGHTLY",
           "TEST-SUITE"

@@ -129,7 +129,8 @@ comments cannot address one account — each account **pulls** its own work inst
 - **Governance paths** (`.github/**`, `.claude/**`, `.kiro/steering/**`, `.kiro/automations/**`, `scripts/collab/**`,
   `CLAUDE.md`, `docs/programs/areas.yaml`): a Kiro lane may change one when the reviewer agent accepts on the current
   head and every check is green — **except the protected gate files**, which never merge on a reviewer-agent accept
-  alone and also need a legacy `claude` review on the current head or the owner's instruction. The list lives in
+  alone: they need the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude
+  Code is retired). The list lives in
   `scripts/collab/protected-gate-files.json` (globs, `queue.mjs` glob semantics):
   `CLAUDE.md`, `scripts/collab/plan-spar.mjs`, `scripts/collab/queue.mjs`, `scripts/collab/protected-gate-files.json`,
   `services/gateway/src/services/plan-sparring/**`, `services/gateway/src/services/project-manager/governance.ts`,
@@ -240,6 +241,15 @@ never:
 Reading for diagnosis is fine. A database change is a migration file in the lane's PR. Blocked → fix forward; after 3
 attempts park with the five-part stop message (§7); `next_actor: claude` only when Claude is available.
 
+**Lane administration — the one reviewed exception to "edit another lane's file" (kiro-lane-admin).** An authorized
+`executor: kiro` lane carrying `lane_admin: true` with `reviewer_seat: agent:vitana-lane-reviewer`, whose `paths`
+cover the target lane file, may reassign that TARGET lane's `seat` and narrow its `paths` — a reviewed, auditable
+reassignment that preserves seat ownership (the admin lane builds from its own seat, the target's new seat owns its
+future PRs), scope (the admin lane's `paths` bound what it touches) and independent review (the reviewer agent
+accepts; the builder never does). The admin lane is recognised only from a trusted source (merge-base, a qualifying
+`plan(` PR, or the other repo's main), never self-granted in its own PR head, and it can never widen its own `paths`
+or any of its own permission fields.
+
 ## 7b. PM merge rule
 The Project Manager merges a lane PR — and **the plan driver (Kiro) applies the same rule while the PM is not
 `live`** — when ALL of these hold:
@@ -250,8 +260,8 @@ The Project Manager merges a lane PR — and **the plan driver (Kiro) applies th
   conflict;
 - every `depends_on` lane is `done`;
 - the PR targets `main` and its deploy path is **staging only** (`AWS-STAGE-DEPLOY-*` and preview workflows);
-- no protected gate file (§3a) is changed without a legacy `claude` review on the current head or the owner's
-  instruction.
+- no protected gate file (§3a) is changed without the owner's instruction naming the plan plus a reviewer-agent
+  accept on the current head (Claude Code is retired; a reviewer-agent accept alone never unlocks it).
 
 The merge is recorded in the lane log with `merge: <sha>` and `authority: §7b PM rule` (or the owner instruction it
 relies on). Production is never part of a merge: it stays the owner's PUBLISH at Gate 2. `gh pr merge --admin` only

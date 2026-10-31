@@ -1,0 +1,12 @@
+# VTID-05341 commands (session kiro-exafyltd-202610270811-c79f, base 2cf4d0435c)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs  (steering file absent = base)
+# tests 38 # pass 37 # fail 1 -> FAIL (expected red)
+$ node --test scripts/ci/kiro-steering/guard.test.cjs  (head)
+# tests 38 # pass 38 # fail 0 -> PASS
+$ node scripts/ci/kiro-steering/guard.cjs .
+kiro-steering: OK
+$ cmp vitana-platform/.kiro/steering/vitana-session-title.md vitana-v1/.kiro/steering/vitana-session-title.md
+identical -> PASS
+$ node scripts/collab/kiro-web-steering.mjs --workspace <ws with both lane heads> ; then --check
+run exit 0; check exit 0 (kiro-web-steering: ok)
+generated: vitana-platform--vitana-session-title.md only (v1 copy byte-identical, no links -> written once)

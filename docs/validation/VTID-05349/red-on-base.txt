@@ -1,0 +1,13 @@
+# red on base: origin/main 80b39e236b (plan pin) + only the new test file
+$ node --test scripts/dev/context.test.mjs
+#     throw new ERR_MODULE_NOT_FOUND(
+# Error [ERR_MODULE_NOT_FOUND]: Cannot find module '/projects/sandbox/.wt/base/scripts/dev/context.mjs' imported from /projects/sandbox/.wt/base/scripts/dev/context.test.mjs
+#   code: 'ERR_MODULE_NOT_FOUND',
+# pass 0
+# base sha 80b39e236bda69fa81b8e7259b6a1539ec7ee0fa
+# => fail: scripts/dev/context.mjs does not exist on base (every test in the file fails to load)
+
+# green on head (this lane)
+# tests 16
+# pass 16
+# fail 0
