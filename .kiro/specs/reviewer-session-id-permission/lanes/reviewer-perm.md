@@ -1,10 +1,10 @@
 ---
 lane: reviewer-perm
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: exafy
+seat: exafyltd
 area: platform
 reviewer_seat: agent:vitana-lane-reviewer
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
@@ -12,11 +12,11 @@ paths:
   - .kiro/agents/vitana-lane-reviewer.md
   - scripts/collab/queue.test.mjs
   - docs/validation/**
-claimed_by: kiro-exafy-202610291049-1dc8
 branch: kiro/reviewer-session-id-permission/reviewer-perm
 pr: https://github.com/exafyltd/vitana-platform/pull/4495
-updated: 2026-10-29T11:52Z
+updated: 2026-10-31T11:41Z
 vtid: VTID-05407
+parked_from: executing
 ---
 # Lane: reviewer-perm (repo vitana-platform)
 Tasks T1–T4 in `tasks.md`. Permit exactly the reviewer session-id command
@@ -68,3 +68,5 @@ Collab-Review: reviewer-session-id-permission/reviewer-perm
 Collab-Verdict: accept
 Collab-Reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 Collab-Reviewed-Head: 1e40076e20a4e0044e3a282dbd332e899f668f34
+### 2026-10-31T11:41Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
