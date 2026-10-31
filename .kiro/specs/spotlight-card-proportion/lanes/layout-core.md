@@ -25,8 +25,9 @@ paths:
   - docs/SCREEN_INVENTORY.md
   - docs/design-system/SPOTLIGHT_RULES.md
   - docs/validation/VTID-*/**
-updated: 2026-10-31T14:00Z
+updated: 2026-10-31T23:46Z
 branch: kiro/spotlight-card-proportion/layout-core
+vtid: VTID-05420
 ---
 # layout-core — shared SpotlightGrid, ScreenFrame opt-in, VCard Spotlight identity, grid skeletons, SR-26, spotlight.grid i18n keys (repo vitana-v1)
 Plan: `.kiro/specs/spotlight-card-proportion/plan.md` and `tasks.md` section `layout-core`. Lands first; the four page lanes depend on its interfaces (plan.md "Interfaces").
@@ -38,3 +39,6 @@ lane's own VTID directory only.
 ## Log
 ### 2026-10-31T14:00Z · kiro-exafyltd-202610311330-7ae2 · created → ready
 Created and held.
+
+### 2026-10-31T23:46Z · ci-plan-spar · ready (VTID allocated)
+VTID-05420 allocated after policy approval (converged-auto-v1).

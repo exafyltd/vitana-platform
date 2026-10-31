@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: main
-updated: 2026-10-31T14:00Z
+updated: 2026-10-31T23:46Z
+sparring_record: .kiro/specs/spotlight-card-proportion/sparring/verdict.md
+vtids: [VTID-05416, VTID-05417, VTID-05418, VTID-05419, VTID-05420]
 ---
 # Handoff — spotlight-card-proportion
 Planner and driver: Kiro seat `exafyltd` (session kiro-exafyltd-202610311330-7ae2), working the owner session
@@ -27,3 +29,6 @@ design-contract stop for exactly this layout.
 
 Next: PLAN-SPAR spars the plan. On convergence, this run builds `layout-core`, then the four page lanes, merges under
 §7b, and watches STAGING-VERIFY.
+
+### 2026-10-31T23:46Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 5 lane(s) got a VTID and are handed to Kiro.

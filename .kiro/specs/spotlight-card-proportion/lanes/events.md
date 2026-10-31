@@ -16,8 +16,9 @@ paths:
   - tests/e2e/staging/vtid-05110-social-spotlight.staging.spec.ts
   - tests/e2e/staging/vtid-*-events-spotlight-grid.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-31T14:00Z
+updated: 2026-10-31T23:46Z
 branch: kiro/spotlight-card-proportion/events
+vtid: VTID-05417
 ---
 # events — Community > Events & MeetUps onto SpotlightGrid (next big event + Join, this week 3x2, Upcoming row) (repo vitana-v1)
 Plan: `.kiro/specs/spotlight-card-proportion/plan.md` and `tasks.md` section `events`. Starts when `layout-core` is on `main`; independent of the other page lanes.
@@ -29,3 +30,6 @@ lane's own VTID directory only.
 ## Log
 ### 2026-10-31T14:00Z · kiro-exafyltd-202610311330-7ae2 · created → ready
 Created and held.
+
+### 2026-10-31T23:46Z · ci-plan-spar · ready (VTID allocated)
+VTID-05417 allocated after policy approval (converged-auto-v1).

@@ -18,8 +18,9 @@ paths:
   - src/pages/community/social-spotlight-pages.vtid-05110.test.tsx
   - tests/e2e/staging/vtid-*-find-match-spotlight-grid.staging.spec.ts
   - docs/validation/VTID-*/**
-updated: 2026-10-31T14:00Z
+updated: 2026-10-31T23:46Z
 branch: kiro/spotlight-card-proportion/find-a-match
+vtid: VTID-05418
 ---
 # find-a-match — Community > Find a Match onto SpotlightGrid (top match + Say hello, six matches, More people row) (repo vitana-v1)
 Plan: `.kiro/specs/spotlight-card-proportion/plan.md` and `tasks.md` section `find-a-match`. Starts when `layout-core` is on `main`; independent of the other page lanes.
@@ -31,3 +32,6 @@ lane's own VTID directory only.
 ## Log
 ### 2026-10-31T14:00Z · kiro-exafyltd-202610311330-7ae2 · created → ready
 Created and held.
+
+### 2026-10-31T23:46Z · ci-plan-spar · ready (VTID allocated)
+VTID-05418 allocated after policy approval (converged-auto-v1).
