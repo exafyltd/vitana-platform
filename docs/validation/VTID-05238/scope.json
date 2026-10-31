@@ -1,0 +1,13 @@
+{
+  "vtid": "VTID-05238",
+  "kind": "feature",
+  "paths": [
+    "services/gateway/src/services/partner-onboarding-checklist.ts",
+    "services/gateway/src/services/commerce-mcp.ts",
+    "services/gateway/test/vtid-05238-step-owner.test.ts",
+    "docs/validation/VTID-05238/**"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "sparring_record": "docs/validation/VTID-05238/plan-sparring.md"
+}
