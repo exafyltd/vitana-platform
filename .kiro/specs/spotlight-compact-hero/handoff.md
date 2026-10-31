@@ -7,7 +7,7 @@ next_actor: kiro
 state: drafted
 spar_refs:
   - exafyltd/vitana-v1: main
-updated: 2026-10-28T13:27Z
+updated: 2026-10-31T12:40Z
 ---
 
 # Handoff — spotlight-compact-hero
@@ -37,3 +37,11 @@ unchanged; D3 no new size token proposed (existing 4px scale, type scale and `TI
 ~1/3 height proves impossible without a fixed-height utility, which the design avoids.
 Next: open the `plan(spotlight-compact-hero)` PR and drive CI PLAN-SPAR to convergence; CI
 allocates the lane VTID on convergence (never by hand).
+
+### 2026-10-31T12:40Z · kiro-202610152203-0347 · drafted (round 1 answered)
+PR https://github.com/exafyltd/vitana-platform/pull/4517. Round 1 answered in
+`sparring/responses-1.md`: R1-F1 accepted (D1 revised — My Journey's existing `JourneyRail` is
+KEPT unchanged; no rail added elsewhere; "Up Next" folds into the grid on the rail-less
+dashboards), R1-F2 rejected with evidence (the staging design-lint spec exists on vitana-v1
+origin/main), R1-F3 accepted (composition test tightened, step 6), R1-F4 accepted (line refs
+corrected against vitana-v1 847a9f68). Added D4 (grid uses only existing page data).

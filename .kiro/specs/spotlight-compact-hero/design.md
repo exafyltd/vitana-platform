@@ -69,13 +69,14 @@ width greater than one grid column. This is tokens-only and needs no new CSS.
 
 "Up Next" becomes one `standard` tile in this grid (see §4).
 
-## 4. Rail decision — FOLD
+## 4. Rail decision — KEEP where it exists, add none (revised, sparring R1-F1)
 
-There is no rail on any dashboard page today (§1), so there is nothing to "keep". "Up Next"
-folds into the bento grid as a `standard` VCard. This is also what OPTION B did, and it is the
-composition the contract renders most cleanly: a single-column stage with a compact band then
-a grid, no `:has(> .sp-rail)` widening, no sheet toggle, no second column to reconcile with
-the 760px cap. Recorded in `plan.md`.
+Correction to §1: My Journey (`/autopilot`, `/autopilot/audiobook`) DOES pass a rail —
+`rail={<JourneyRail …/>}` at `src/pages/AutopilotDashboard.tsx:508` (compact VCards only,
+`JourneySpotlight.tsx:116`). That rail is KEPT unchanged: it already satisfies SR-08 and the
+stage-rail layout, and removing it would drop the autopilot-count context and the toggle sheet.
+Health, Vitana Index and Wallet stay rail-less (no rail added); their "Up Next" content becomes
+a `standard` tile in the bento grid. `plan.md` D1 is the source of truth.
 
 ## 5. Shared component + per-page adoption
 

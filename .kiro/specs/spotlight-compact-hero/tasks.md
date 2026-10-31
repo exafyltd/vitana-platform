@@ -29,8 +29,12 @@ Steps:
    skeleton) so CLS < 0.1.
 5. Adopt the compact band + bento grid in the Spotlight branch of `src/pages/Health.tsx`,
    `src/pages/health/VitanaIndexDetail.tsx`, `src/pages/Wallet.tsx`, `src/pages/
-   AutopilotDashboard.tsx`. Each keeps exactly one `spotlight` element; "Up Next" folds into
-   the grid as a `standard` tile. Mobile branches untouched.
+   AutopilotDashboard.tsx`. Each keeps exactly one `spotlight` element. My Journey KEEPS its
+   existing `JourneyRail` unchanged (`AutopilotDashboard.tsx:508`); on the three rail-less
+   dashboards "Up Next" content becomes a `standard` grid tile. Grid tiles use only content the
+   page already loads (no invented KPIs); long-form sections stay full-width below the grid.
+   Mobile branches untouched. `JourneyHero` (`JourneySpotlight.tsx:22`) gets the compact
+   presentation too.
 6. Update the tests that pin the shape: `src/pages/spotlight-tier-b.vtid-05111.test.tsx` (still
    1 spotlight per dashboard), `src/components/spotlight/tier-b/` component tests,
    `src/components/layout/spotlight/skeletons/SpotlightLoading.test.tsx`. Add a focused test
@@ -43,6 +47,8 @@ Paths (Lane scope):
 - `eslint-rules/design/**` (only if an enforceable rule changes; commit a matching design.json)
 - `scripts/ci/pr-gate/baseline/design.json` (only if `eslint-rules/design/**` changes)
 - `src/components/spotlight/tier-b/**`
+- `src/components/spotlight/member/JourneySpotlight.tsx`
+- `src/components/spotlight/member/*.test.tsx`
 - `src/components/layout/spotlight/skeletons/**`
 - `src/components/ui/vcard/VCardSkeleton.tsx`
 - `src/pages/Health.tsx`
