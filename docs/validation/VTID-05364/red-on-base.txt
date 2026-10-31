@@ -1,0 +1,56 @@
+✖ each spec of plan item 5 belongs to its programme (4.1529ms)
+✖ each added slug matches the spec slug pattern and is listed exactly once (0.6892ms)
+✔ each programme lists the repo of every spec it holds (R2-F1) (0.5549ms)
+✔ validatePrograms is clean (1.2832ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 2
+ℹ fail 2
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 684.0053
+
+✖ failing tests:
+
+test at scripts\collab\program-registry.test.mjs:28:1
+✖ each spec of plan item 5 belongs to its programme (4.1529ms)
+  AssertionError [ERR_ASSERTION]: vitana-platform:native-wave2-ai-pages → native-app
+  + actual - expected
+  
+  + undefined
+  - 'native-app'
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-pr/scripts/collab/program-registry.test.mjs:31:38)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.start (node:internal/test_runner/test:1003:17)
+      at startSubtestAfterBootstrap (node:internal/test_runner/harness:358:17) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: undefined,
+    expected: 'native-app',
+    operator: 'strictEqual',
+    diff: 'simple'
+  }
+
+test at scripts\collab\program-registry.test.mjs:35:1
+✖ each added slug matches the spec slug pattern and is listed exactly once (0.6892ms)
+  AssertionError [ERR_ASSERTION]: native-wave2-ai-pages
+  
+  0 !== 1
+  
+      at TestContext.<anonymous> (file:///C:/Users/dstev/vitana-platform-1/.worktrees/chcf-pr/scripts/collab/program-registry.test.mjs:39:12)
+      at Test.runInAsyncScope (node:async_hooks:214:14)
+      at Test.run (node:internal/test_runner/test:1106:25)
+      at Test.processPendingSubtests (node:internal/test_runner/test:788:18)
+      at Test.postRun (node:internal/test_runner/test:1235:19)
+      at Test.run (node:internal/test_runner/test:1163:12)
+      at async startSubtestAfterBootstrap (node:internal/test_runner/harness:358:3) {
+    generatedMessage: false,
+    code: 'ERR_ASSERTION',
+    actual: 0,
+    expected: 1,
+    operator: 'strictEqual',
+    diff: 'simple'
+  }

@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05364",
+  "kind": "infra",
+  "paths": [
+    "docs/programs/native-app/program.md",
+    "docs/programs/desktop-redesign/program.md",
+    "docs/programs/standalone/program.md",
+    "scripts/collab/program-registry.test.mjs",
+    ".kiro/specs/collab-handoff-check-fix/lanes/program-registry.md",
+    "docs/validation/VTID-05364/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05364/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
