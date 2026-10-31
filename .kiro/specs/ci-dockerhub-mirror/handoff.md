@@ -4,8 +4,10 @@ author: kiro
 author_seat: exafyltd
 executor: claude
 next_actor: kiro
-state: drafted
-updated: 2026-10-31T13:05Z
+state: approved
+updated: 2026-10-31T14:29Z
+sparring_record: .kiro/specs/ci-dockerhub-mirror/sparring/verdict.md
+vtids: [VTID-05415]
 ---
 # Handoff — ci-dockerhub-mirror
 vitana-v1 `pr-gate` fails at `Initialize containers`: its Postgres service image comes from
@@ -23,3 +25,6 @@ Written for the owner backlog-cleanup task (workflow `wf_df00c2efa5289a76`) from
 `origin/main` `847a9f686`, vitana-platform `a8d36bad3b`). The task assumed v1 pulls from Docker Hub; it already pulls
 from ECR Public (VTID-05015/05016), which is the registry failing, so the plan switches the other way (plan § Today 1).
 Next: PLAN-SPAR spars this PR.
+
+### 2026-10-31T14:29Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.
