@@ -14,7 +14,7 @@ paths:
   - scripts/collab/queue.mjs
   - scripts/collab/queue.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-31T13:25Z
+updated: 2026-10-31T13:29Z
 vtid: VTID-05351
 parked_from: in-review
 ---
@@ -115,4 +115,6 @@ Protected gate file: scripts/collab/queue.mjs. Owner instruction: in Kiro sessio
 Stored by the landing session on the agent's behalf (lane-land.md step 2).
 Next: land under §7b once every required check is green on the head
 ### 2026-10-31T13:25Z · pm-agent · in-review → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-10-31T13:29Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
