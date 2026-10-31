@@ -1,0 +1,606 @@
+TAP version 13
+# Subtest: quality-checks.md exists
+not ok 1 - quality-checks.md exists
+  ---
+  duration_ms: 1.045417
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:15:1'
+  failureType: 'testCodeFailure'
+  error: '.kiro/pipeline/quality-checks.md is missing'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected: true
+  actual: false
+  operator: '=='
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:16:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.start (node:internal/test_runner/test:944:17)
+    startSubtestAfterBootstrap (node:internal/test_runner/harness:296:17)
+  ...
+# Subtest: quality-checks.md has one section per change type
+not ok 2 - quality-checks.md has one section per change type
+  ---
+  duration_ms: 0.176858
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:19:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/.kiro/pipeline/quality-checks.md'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:11:23)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:20:22)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async startSubtestAfterBootstrap (node:internal/test_runner/harness:296:3)
+  ...
+# Subtest: quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+not ok 3 - quality-checks.md defines the Change types line, the seven Acceptance fields and what "verified" means
+  ---
+  duration_ms: 0.122795
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:26:1'
+  failureType: 'testCodeFailure'
+  error: "ENOENT: no such file or directory, open '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/.kiro/pipeline/quality-checks.md'"
+  code: 'ENOENT'
+  stack: |-
+    readFileSync (node:fs:440:20)
+    read (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:11:23)
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:27:14)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: planning, coding and review steps link quality-checks.md
+not ok 4 - planning, coding and review steps link quality-checks.md
+  ---
+  duration_ms: 0.287261
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:34:1'
+  failureType: 'testCodeFailure'
+  error: '.kiro/pipeline/planning.md does not link quality-checks.md'
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    # Planning: owner task → merged, policy-approved plan with VTIDs
+    
+    Binding: `common-rules.md`. RUN = `<vitana-platform>/.agents/tasks/pipeline-<run id>/`.
+    
+    ## 1. Setup (one step, idempotent)
+    1. Create RUN and its folders (`lanes/`, `reviews/`, `timings/`). Write the owner task verbatim to `RUN/task.md`
+       (never paraphrase it; every later step verifies against it).
+    2. Session ids: `node <vitana-platform>/scripts/collab/queue.mjs session-id --agent kiro --seat <seat>` once per seat
+       the run uses (default seat: the account running the session, from `docs/programs/areas.yaml`); keep them in
+       `RUN/run.json` `seats`. Never reuse a Claude Code `session_…` id.
+    3. `git -C <repo> fetch --prune origin` for both repos; run the queue
+       (`node <vitana-platform>/scripts/collab/queue.mjs --repo <vitana-platform> --repo <vitana-v1>`) and save it to RUN.
+       If an open plan already covers the task (same intent, not `done`), resume that plan instead of writing a new one:
+       record its slug in `run.json` and continue at the first step it has not finished.
+    4. Read `CLAUDE_AVAILABLE` (`gh variable get CLAUDE_AVAILABLE --repo exafyltd/vitana-platform`; only the literal
+       `false` = unavailable) and the 4 h rule of collaboration.md §7; record the mode in `run.json`. The pipeline is the
+       same either way; Claude-only jobs go to the exceptions seat when Claude is unavailable.
+    5. Slug: lowercase-dashes, short, unique under `.kiro/specs/` on `origin/main` and among open `plan(` PRs.
+    
+    ## 2. Investigate (parallel, read-only)
+    One investigator per concern (area, repo, risky subsystem), at most 6, each writing `RUN/investigate/<topic>.md`
+    with `file:line` evidence from `origin/main`: what exists, what must change, exact paths, tests that cover it, how a
+    new test fails on base, hot files, risks. Query RepoWise / Graphify where available (CLAUDE.md "Mandatory Codebase
+    Intelligence Workflow"); if an index is missing or stale, say so and use targeted reads. A small task (1 lane, at
+    most 3 files) gets one investigator.
+    
+    ## 3. Spec (`.kiro/specs/<slug>/`, collaboration.md §2)
+    - `plan.md`: front matter `change_class:` (`standard` unless a smaller class clearly applies), the plan between
+      `<!-- plan:begin -->` and `<!-- plan:end -->`: goal (quote the owner), today with `file:line`, interfaces between
+      lanes, lanes (ids, files, tests that fail on base), parallel / shared files / hot files, tests and commands,
+      measurement, risks, unchanged.
+    - `tasks.md`: one group per lane marked `<!-- lane: <lane-id> -->` with checkboxes and **Acceptance** bullets (what
+      the reviewer agent checks).
+    - `handoff.md`: `state: drafted`, `author: kiro`, `author_seat`, `executor: kiro`, `next_actor: kiro`.
+    - `lanes/<lane-id>.md`: `state: ready`, `next_actor: kiro`, `executor`, `seat`, `reviewer: agent:vitana-lane-reviewer
+      (claude-sonnet-5.5)`, `paths`, `depends_on` (real file/API dependencies only), `repos`; a log entry "created".
+      `reviewer_seat` is legacy: set it only where the current `queue.mjs validate` still requires it (a different seat
+      from `seat`). No two lanes edit the same file; a lane on a governance path follows the rule collaboration.md §3a
+      states on `main` today.
+    - Add the slug to the right `docs/programs/<id>/program.md` (or `standalone`) when `queue.mjs validate` requires it.
+    - Commit, then run preflight before pushing: `node <vitana-platform>/scripts/collab/preflight.mjs --repo <spec WT>
+      --base origin/main --head HEAD --branch kiro/<slug>/plan --title "plan(<slug>): <summary>"` (it runs `queue.mjs
+      validate`, Lane scope, the PR-GATE checks, Kiro steering and the Collab tests in one pass and prints every
+      failure); fix every error and re-run until it passes.
+    
+    ## 4. Plan PR
+    Branch `kiro/<slug>/plan`, commit with `Collab-Session` + `Collab-Lane: <slug>/_plan`, run preflight (§3) on that
+    commit and fix every error, then push (protocol), PR title
+    `plan(<slug>): <summary>`, body: summary, lanes, owner quote, session id. Save `{number,url,head}` in `RUN/run.json`.
+    
+    ## 5. Spar loop (one iteration per step run)
+    PLAN-SPAR (`.github/workflows/PLAN-SPAR.yml`) spars the PR through the gateway; Kiro holds no credential and never
+    calls the sparring partner itself.
+    1. Wait (poll 2-3 min, bounded) for the newest PLAN-SPAR run on the PR head; read `sparring/state.json` and the
+       newest `round-<n>.md` from the PR branch.
+    2. New round without `responses-<n>.md` → answer every finding (accepted → change `plan.md` / `tasks.md` / lane
+       files; rejected → reason with `file:line`; deferred → where tracked) in `sparring/responses-<n>.md`, commit, run
+       preflight (§3) and fix every error, then push. Never edit `round-*.md`, `state.json` or `verdict.md`.
+    3. Converged → policy approval `converged-auto-v1`; CI writes the lane VTIDs into the lane files and `handoff.md`
+       (`state: approved`). Lanes still without a VTID → wait for the next PLAN-SPAR run (it retries allocation); never
+       allocate by hand.
+    4. Escalated (not converged after the re-plan session) → the one allowed owner stop: one message with the findings
+       still disputed and a recommended answer.
+    5. A PLAN-SPAR run that failed for infrastructure (runner lost, partner `model_unavailable` on every tier) → `gh run
+       rerun <id> --failed` once per head; otherwise follow the run's own error.
+    Write `RUN/spar-state.json` `{"done":bool,"verdict","session","vtids","round"}`; `done: true` when converged with
+    VTIDs on every lane, or escalated.
+    
+    ## 6. Merge the plan PR
+    A converged, policy-approved, spec-only `plan(` PR (every file under `.kiro/specs/<slug>/` plus the program entry)
+    merges under the §7b rule as soon as its checks are green: the PM merges it when it acts first; otherwise the step
+    merges it with the method recent merged PRs use (squash). Record the merge in `merges.md`. Then initialise
+    `RUN/lanes/<lane-id>/state.json` for every lane from `origin/main` (`status: pending`, `done: false`, `vtid`, `seat`,
+    `paths`, `depends_on`, `repos`, `branch: kiro/<slug>/<lane-id>`) and `RUN/slots.json` (lanes in dependency order:
+    slots 1-6 get the first six, the rest wait in `queue`; empty slots are `null`).
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:36:12)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the review step reads the lane's change types from tasks.md
+not ok 5 - the review step reads the lane's change types from tasks.md
+  ---
+  duration_ms: 0.723591
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:40:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /`Change types:`/. Input:
+    
+    '# Lane review: the reviewer agent `vitana-lane-reviewer` (model fallback chain)\n' +
+      '\n' +
+      'Binding: `common-rules.md`. The review step runs the workspace agent `.kiro/agents/vitana-lane-reviewer.md`. The\n' +
+      'agent is read-only: it returns two text blocks and writes nothing. A store watch copies them to `RUN/reviews/`; the\n' +
+      '**land step** (a writing agent) stores them and commits the review entry. Approvals come only from this agent, never from another Kiro seat or session, and never\n' +
+      "from the lane's own session.\n" +
+      '\n' +
+      '## Model chain (never wait on an unavailable model)\n' +
+      '`claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`, in that order (`REVIEWER_AGENT_MODELS` in\n' +
+      '`services/gateway/src/services/project-manager/governance.ts`; mirrored in `scripts/ci/kiro-steering/guard.cjs`).\n' +
+      'A Kiro workflow step takes exactly one `modelId`, and a step whose pinned model cannot be served **fails** at its\n' +
+      'first model call (it never returns a `model_unavailable` line; in a sequence that failure would end the slot). So\n' +
+      'every lane slot runs its three review steps as the branches of **one `parallel` with `joinPolicy: "any"`**\n' +
+      '(`reviews-N`), one branch per chain model: `review-N` (`claude-sonnet-5.5`), `review-N-b` (`claude-opus-5.5`),\n' +
+      "`review-N-c` (`claude-sonnet-4.5`). The engine's `any` join completes on the first branch that completes and aborts\n" +
+      "the others; a failed branch is ignored; the parallel fails only when all three fail. The pin, not the agent's\n" +
+      'self-report, guarantees the model; the step prompt names it and the agent reports exactly that id.\n' +
+      'Each branch is `[review step, store watch]`: the command watch `node scripts/collab/store-review.cjs` copies that\n' +
+      "step's output to `RUN/reviews/<LANE>-<head7>.out-<model>.md` (the reviewer stays read-only). The land step reads\n" +
+      'those files, never `{{review-…output}}` directly, because a failed or aborted branch has no captured output and a\n' +
+      'template naming it fails the step (the steering guard rejects such a template).\n' +
+      `**Trade-off (owner 2026-10-21, "don't let us wait for a model that is unavailable"):** the models race instead of\n` +
+      'being tried one after another. No slot ever waits on an unavailable model, but when all three are up, all three\n' +
+      'start a review and the fastest wins, so the reviewing model is not always `claude-sonnet-5.5`. Every chain model is\n' +
+      'an accepted reviewer (`REVIEWER_AGENT_MODELS`), so the gate is the same whichever wins.\n' +
+      "**All three fail:** `reviews-N` fails at once (no wait), which fails that slot's repeat with the engine's failure\n" +
+      'record naming each branch. The slot\'s gate race (`slot-N`, `joinPolicy: "any"` of `slot-N-skip` and the repeat)\n' +
+      "would then wait on the idle skip watch, so `slot-N-skip` reads the run's engine state, appends one line to\n" +
+      "`RUN/blockers.md` and ends the race; the other slots run on, and the lane's state keeps `done: false` for the later\n" +
+      'steps to report. Each model has then been tried exactly once on that head. A relaunch of the recipe resumes from the\n' +
+      'state files and races the three models once more.\n' +
+      '**Only review steps pin a model.** Every other step (setup, planning, sparring, code, land, staging, Gate 2) carries\n' +
+      "no `modelId`: it inherits the launching session's model, and on a transient model error (5xx, throttling) the engine\n" +
+      'pauses it and resumes it, so it does not fail on an unavailable model. Racing those steps across models like the\n' +
+      'reviews would run their side effects (commits, pushes, PRs, merges) more than once, so they are not raced. The\n' +
+      'steering guard fails a `modelId` on any step outside a reviewer race and any pin outside this chain. The plan\n' +
+      'sparring partner has its own chain on `main` (CLAUDE.md rule 53: Opus 4.6 → Sonnet 4.6 → DeepSeek; plan\n' +
+      '`sparring-model-fallback`).\n' +
+      '\n' +
+      '## When the agent reviews\n' +
+      'Only if `RUN/lanes/<LANE>/state.json` has `done: false`, `status: in_review`, and\n' +
+      '`RUN/reviews/<LANE>-<head7>.json` (head7 = first 7 hex of `head_sha`) does not exist yet. Otherwise its final\n' +
+      'message is exactly `no review needed (<status>)` (the store watch then writes nothing).\n' +
+      '\n' +
+      "## What the review step's prompt gives the agent\n" +
+      'Lane key `<slug>/<LANE>`, PR URL(s) and number(s), the head SHA per repo, the repo checkout paths, the spec paths on\n' +
+      '`origin/main`, `RUN/lanes/<LANE>/impl-notes.md`, and any lane-specific check. If the plan carries an owner instruction\n' +
+      'covering its protected gate files, the prompt names it (checklist item 9).\n' +
+      '\n' +
+      '## What the agent checks (its checklist, in its definition)\n' +
+      'Acceptance criteria of the lane in `tasks.md` + lane file; files within `paths`; CI on the current head (failed\n' +
+      'required check = blocking, running = non-blocking note); every new behaviour has a test red on base; no test\n' +
+      'weakening; no production or live writes, no hand VTID, no PUBLISH / `publish-to-prod.sh` / `AWS-PROD-*`; no\n' +
+      'hardcoded spoken strings; i18n / design / RTL if UI is touched; protected gate files\n' +
+      '(`scripts/collab/protected-gate-files.json`) are blocking for agent-only acceptance. It does not re-run suites.\n' +
+      '\n' +
+      '## What it returns\n' +
+      '1. The verdict JSON (plan interface §4.2):\n' +
+      '   `{"verdict":"accept"|"changes","head_sha":"<40-hex>","findings":[{"severity":"blocking"|"non-blocking","file":"<path>","line":<n>|null,"issue":"<text>"}],"model":"<chain model it ran on>","agent":"vitana-lane-reviewer"}`;\n' +
+      '   `accept` only with zero blocking findings.\n' +
+      '2. The lane-log review entry (§4.1) with the trailers\n' +
+      '   `Collab-Session: <reviewer session>`, `Collab-Review: <slug>/<LANE>`, `Collab-Verdict: accept|changes`,\n' +
+      '   `Collab-Reviewer: agent:vitana-lane-reviewer (<model>)` (the same chain model as the JSON),\n' +
+      '   `Collab-Reviewed-Head: <40-hex>`. `Collab-Review` keeps the lane key; the verdict is only in `Collab-Verdict`.\n' +
+      "3. When the step's prompt names no chain model, or names one outside the chain → only\n" +
+      '   `{"error":"model_unavailable","required":["claude-sonnet-5.5","claude-opus-5.5","claude-sonnet-4.5"],"agent":"vitana-lane-reviewer"}`.\n' +
+      '   That is "no review on this model" (the store watch writes nothing for it).\n' +
+      '   A verdict whose `model` is not the model in its `.out-<model>.md` file name (the pin of the step that produced\n' +
+      '   it), whose `model` differs from its `Collab-Reviewer` model, or whose `agent` differs is ignored and logged. A new\n' +
+      '   entry never uses the bare identity.\n' +
+      '\n' +
+      '## How the land step stores it\n' +
+      'From the first `RUN/reviews/<LANE>-<head7>.out-<model>.md` that holds a valid verdict for `head_sha`, taking the\n' +
+      'files in chain order: `RUN/reviews/<LANE>-<head7>.md` (the whole output), `<LANE>-<head7>.json` (block 1\n' +
+      'exactly), `<LANE>-<head7>-entry.md` (block 2 with `<reviewer session>` replaced by a reviewer session id: `queue.mjs\n' +
+      'session-id --agent agent:vitana-lane-reviewer` once that form exists on `main`, else `--agent kiro --seat\n' +
+      "<reviewer_seat>`; never a session in the lane's executing log). Then `lane-land.md` step 2.\n"
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    # Lane review: the reviewer agent `vitana-lane-reviewer` (model fallback chain)
+    
+    Binding: `common-rules.md`. The review step runs the workspace agent `.kiro/agents/vitana-lane-reviewer.md`. The
+    agent is read-only: it returns two text blocks and writes nothing. A store watch copies them to `RUN/reviews/`; the
+    **land step** (a writing agent) stores them and commits the review entry. Approvals come only from this agent, never from another Kiro seat or session, and never
+    from the lane's own session.
+    
+    ## Model chain (never wait on an unavailable model)
+    `claude-sonnet-5.5` → `claude-opus-5.5` → `claude-sonnet-4.5`, in that order (`REVIEWER_AGENT_MODELS` in
+    `services/gateway/src/services/project-manager/governance.ts`; mirrored in `scripts/ci/kiro-steering/guard.cjs`).
+    A Kiro workflow step takes exactly one `modelId`, and a step whose pinned model cannot be served **fails** at its
+    first model call (it never returns a `model_unavailable` line; in a sequence that failure would end the slot). So
+    every lane slot runs its three review steps as the branches of **one `parallel` with `joinPolicy: "any"`**
+    (`reviews-N`), one branch per chain model: `review-N` (`claude-sonnet-5.5`), `review-N-b` (`claude-opus-5.5`),
+    `review-N-c` (`claude-sonnet-4.5`). The engine's `any` join completes on the first branch that completes and aborts
+    the others; a failed branch is ignored; the parallel fails only when all three fail. The pin, not the agent's
+    self-report, guarantees the model; the step prompt names it and the agent reports exactly that id.
+    Each branch is `[review step, store watch]`: the command watch `node scripts/collab/store-review.cjs` copies that
+    step's output to `RUN/reviews/<LANE>-<head7>.out-<model>.md` (the reviewer stays read-only). The land step reads
+    those files, never `{{review-…output}}` directly, because a failed or aborted branch has no captured output and a
+    template naming it fails the step (the steering guard rejects such a template).
+    **Trade-off (owner 2026-10-21, "don't let us wait for a model that is unavailable"):** the models race instead of
+    being tried one after another. No slot ever waits on an unavailable model, but when all three are up, all three
+    start a review and the fastest wins, so the reviewing model is not always `claude-sonnet-5.5`. Every chain model is
+    an accepted reviewer (`REVIEWER_AGENT_MODELS`), so the gate is the same whichever wins.
+    **All three fail:** `reviews-N` fails at once (no wait), which fails that slot's repeat with the engine's failure
+    record naming each branch. The slot's gate race (`slot-N`, `joinPolicy: "any"` of `slot-N-skip` and the repeat)
+    would then wait on the idle skip watch, so `slot-N-skip` reads the run's engine state, appends one line to
+    `RUN/blockers.md` and ends the race; the other slots run on, and the lane's state keeps `done: false` for the later
+    steps to report. Each model has then been tried exactly once on that head. A relaunch of the recipe resumes from the
+    state files and races the three models once more.
+    **Only review steps pin a model.** Every other step (setup, planning, sparring, code, land, staging, Gate 2) carries
+    no `modelId`: it inherits the launching session's model, and on a transient model error (5xx, throttling) the engine
+    pauses it and resumes it, so it does not fail on an unavailable model. Racing those steps across models like the
+    reviews would run their side effects (commits, pushes, PRs, merges) more than once, so they are not raced. The
+    steering guard fails a `modelId` on any step outside a reviewer race and any pin outside this chain. The plan
+    sparring partner has its own chain on `main` (CLAUDE.md rule 53: Opus 4.6 → Sonnet 4.6 → DeepSeek; plan
+    `sparring-model-fallback`).
+    
+    ## When the agent reviews
+    Only if `RUN/lanes/<LANE>/state.json` has `done: false`, `status: in_review`, and
+    `RUN/reviews/<LANE>-<head7>.json` (head7 = first 7 hex of `head_sha`) does not exist yet. Otherwise its final
+    message is exactly `no review needed (<status>)` (the store watch then writes nothing).
+    
+    ## What the review step's prompt gives the agent
+    Lane key `<slug>/<LANE>`, PR URL(s) and number(s), the head SHA per repo, the repo checkout paths, the spec paths on
+    `origin/main`, `RUN/lanes/<LANE>/impl-notes.md`, and any lane-specific check. If the plan carries an owner instruction
+    covering its protected gate files, the prompt names it (checklist item 9).
+    
+    ## What the agent checks (its checklist, in its definition)
+    Acceptance criteria of the lane in `tasks.md` + lane file; files within `paths`; CI on the current head (failed
+    required check = blocking, running = non-blocking note); every new behaviour has a test red on base; no test
+    weakening; no production or live writes, no hand VTID, no PUBLISH / `publish-to-prod.sh` / `AWS-PROD-*`; no
+    hardcoded spoken strings; i18n / design / RTL if UI is touched; protected gate files
+    (`scripts/collab/protected-gate-files.json`) are blocking for agent-only acceptance. It does not re-run suites.
+    
+    ## What it returns
+    1. The verdict JSON (plan interface §4.2):
+       `{"verdict":"accept"|"changes","head_sha":"<40-hex>","findings":[{"severity":"blocking"|"non-blocking","file":"<path>","line":<n>|null,"issue":"<text>"}],"model":"<chain model it ran on>","agent":"vitana-lane-reviewer"}`;
+       `accept` only with zero blocking findings.
+    2. The lane-log review entry (§4.1) with the trailers
+       `Collab-Session: <reviewer session>`, `Collab-Review: <slug>/<LANE>`, `Collab-Verdict: accept|changes`,
+       `Collab-Reviewer: agent:vitana-lane-reviewer (<model>)` (the same chain model as the JSON),
+       `Collab-Reviewed-Head: <40-hex>`. `Collab-Review` keeps the lane key; the verdict is only in `Collab-Verdict`.
+    3. When the step's prompt names no chain model, or names one outside the chain → only
+       `{"error":"model_unavailable","required":["claude-sonnet-5.5","claude-opus-5.5","claude-sonnet-4.5"],"agent":"vitana-lane-reviewer"}`.
+       That is "no review on this model" (the store watch writes nothing for it).
+       A verdict whose `model` is not the model in its `.out-<model>.md` file name (the pin of the step that produced
+       it), whose `model` differs from its `Collab-Reviewer` model, or whose `agent` differs is ignored and logged. A new
+       entry never uses the bare identity.
+    
+    ## How the land step stores it
+    From the first `RUN/reviews/<LANE>-<head7>.out-<model>.md` that holds a valid verdict for `head_sha`, taking the
+    files in chain order: `RUN/reviews/<LANE>-<head7>.md` (the whole output), `<LANE>-<head7>.json` (block 1
+    exactly), `<LANE>-<head7>-entry.md` (block 2 with `<reviewer session>` replaced by a reviewer session id: `queue.mjs
+    session-id --agent agent:vitana-lane-reviewer` once that form exists on `main`, else `--agent kiro --seat
+    <reviewer_seat>`; never a session in the lane's executing log). Then `lane-land.md` step 2.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:41:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the land step merges with squash so the subject keeps the VTID
+not ok 6 - the land step merges with squash so the subject keeps the VTID
+  ---
+  duration_ms: 0.435553
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:45:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /squash/i. Input:
+    
+    '# Lane land (last step of each lane slot loop; the only writer of `done`)\n' +
+      '\n' +
+      'Binding: `common-rules.md`. Paths as in `lane-code.md`. Always write `RUN/lanes/<LANE>/state.json` back; set `done:\n' +
+      'true` exactly when the status becomes `landed`, `parked` or `skipped`.\n' +
+      '\n' +
+      '1. Slot empty or state missing → write `{"status":"skipped","done":true,"notes":["no lane state"]}` when a lane id\n' +
+      '   exists, then go to 4. An empty slot normally never reaches this step: the gate skips it (`slot-N-skip` /\n' +
+      '   `slot-N-go`, `node scripts/collab/run-gate.cjs`, zero agent sessions); this stays the fallback when the gate\n' +
+      '   cannot read RUN.\n' +
+      "2. **Review outputs** (status `in_review`): this iteration's review race (`lane-review.md`: one pinned review step\n" +
+      '   per chain model in a `joinPolicy: "any"` parallel, first finished wins) has ended; read the stored outputs\n' +
+      '   `RUN/reviews/<LANE>-<head7>.out-<model>.md` in chain order (`claude-sonnet-5.5`, `claude-opus-5.5`,\n' +
+      '   `claude-sonnet-4.5`). Never wait for a model and never re-run one; this step does not dispatch reviews.\n' +
+      '   **New verdict** (the first file that is a verdict for `head_sha`): write the three `RUN/reviews/<LANE>-<head7>.*`\n' +
+      "   files (`lane-review.md`). The JSON's `model` must equal the model in the file name (the pin of the step that\n" +
+      '   produced it), and the `Collab-Reviewer` must be `agent:vitana-lane-reviewer (<that model>)`;\n' +
+      '   `agent: vitana-lane-reviewer` (else: blocker, ignore that file and try the next; `unstated` or the bare identity\n' +
+      '   never counts on a new entry).\n' +
+      '   Append the entry to the lane file log on BRANCH in WT (front matter unchanged), commit with\n' +
+      "   the entry's trailer lines and the bot identity, push (protocol); log in `decisions.md` that the land step committed\n" +
+      '   it on the agent\'s behalf. `last_verdict` = `{"verdict","file","reviewed_head"}`; `head_sha` = the entry commit\n' +
+      '   (an entry-only commit after the reviewed head keeps the review on the current head). `changes` →\n' +
+      '   `changes_requested` (`parked` + `done` if `review_rounds` is already 3). `accept` → `accepted`; timing\n' +
+      '   `lane_accepted`.\n' +
+      '   **No valid verdict for `head_sha`** although the race completed (a branch finished without a stored verdict, for\n' +
+      '   example the store watch could not find RUN): one blocker line in `blockers.md` naming the head and the files found, status `parked`, `done: true`, go to 4. The race already gave every chain model its\n' +
+      '   one try on this head, so it is not repeated. A new head starts fresh. (When all three models fail, the race itself\n' +
+      '   fails and this step does not run: `lane-review.md` "All three fail".)\n' +
+      '3. **`accepted` → land:**\n' +
+      '   a. Order: a lane whose plan names a "lands first" lane waits until that lane is `landed` or `parked` (poll 2-3 min,\n' +
+      '      max 90 min; else stay `accepted`, go to 4).\n' +
+      '   b. Merge lock (one merge at a time): create `RUN/merge.lock` exclusively (`New-Item` fails when it exists) with the\n' +
+      '      lane and the time; held → poll 2-3 min; a lock older than 90 min is stale (remove it, log it). Release it at the\n' +
+      '      end of this step whatever happens.\n' +
+      '   c. `gh pr ready` if draft. Already merged by the PM → `merged_by: PM`, go to f.\n' +
+      '   d. Up to date with latest `main`: if behind, `gh pr update-branch <n>` (no force); clean → keep the accept (log:\n' +
+      "      only `main`'s commits added); conflict → `merge_conflicts`+1, status `needs_update`, release the lock, go to 4.\n" +
+      '      Wait (poll 2-3 min, max 60 min) for every required check green on that exact head, then merge at once under\n' +
+      '      the §7b rule (common rule 4) with the method recent merged PRs use; `--admin` only for the governance-artifact\n' +
+      '      false positive (log why); never over a real red. A lane spanning both repos merges both PRs.\n' +
+      '      Infra or flake (runner lost, network, a known flake on `main`) → `gh run rerun <id> --failed` once per check per\n' +
+      '      head; the rerun allowlist is PR checks, PLAN-SPAR, PR-GATE and STAGING-VERIFY only, never `AWS-PROD-*`. Real\n' +
+      '      failure → `RUN/lanes/<LANE>/ci-failure.md` (check, run URL, failures) and status `ci_failed` (`parked` + `done`\n' +
+      '      if `ci_fix_attempts` is already 3). Still running at the bound → stay `accepted`, go to 4.\n' +
+      '   e. A proof lane the plan says the PM must merge: never self-merge first; meet its preconditions (deploy of the\n' +
+      '      lanes it proves, the mode the plan names), release the lock, poll up to 60 min for the PM merge; none → read-only\n' +
+      '      evidence, log the proof incomplete in `blockers.md`, re-take the lock and merge under common rule 4.\n' +
+      '   f. Record the merge SHA (`gh pr view <n> --json mergeCommit,mergedBy,mergedAt`), who merged (PM or §7b rule),\n' +
+      '      `--admin` and why → `merges.md`, lane log and state; a PR comment on PRs this step merged:\n' +
+      '      `Merged under collaboration.md §7b (PM merge rule): merge commit <sha>`; status `landed`, `done: true`; timing\n' +
+      '      `lane_merged` (`mergedAt`). Release the claim (`queue.mjs release <slug>/<LANE> --session <id>`).\n' +
+      '   g. A rule-text lane (steering / collaboration.md) right after landing: for both repos, fetch; if the main\n' +
+      '      checkout is on `main` with a clean `git status --porcelain` → `git merge --ff-only origin/main`, else skip and\n' +
+      '      log, so the next steps load the new rules.\n' +
+      "4. **Slot hand-over.** When this slot's lane is `done` and `RUN/slots.json` `queue` is not empty, move the first queued\n" +
+      '   lane whose `depends_on` are all landed or parked into this slot (`slots.N`), and do not end the loop. When the\n' +
+      "   slot's lane is `done` and the queue is empty, the final message ends with the line `VITANA_SLOT_DONE` (the slot\n" +
+      "   loop's stop token); never write that token in any other case.\n" +
+      '\n' +
+      'Final message: lane, status, action, PR URL(s), merge SHA(s) and who merged, `done`, and the stop token when it applies.\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    # Lane land (last step of each lane slot loop; the only writer of `done`)
+    
+    Binding: `common-rules.md`. Paths as in `lane-code.md`. Always write `RUN/lanes/<LANE>/state.json` back; set `done:
+    true` exactly when the status becomes `landed`, `parked` or `skipped`.
+    
+    1. Slot empty or state missing → write `{"status":"skipped","done":true,"notes":["no lane state"]}` when a lane id
+       exists, then go to 4. An empty slot normally never reaches this step: the gate skips it (`slot-N-skip` /
+       `slot-N-go`, `node scripts/collab/run-gate.cjs`, zero agent sessions); this stays the fallback when the gate
+       cannot read RUN.
+    2. **Review outputs** (status `in_review`): this iteration's review race (`lane-review.md`: one pinned review step
+       per chain model in a `joinPolicy: "any"` parallel, first finished wins) has ended; read the stored outputs
+       `RUN/reviews/<LANE>-<head7>.out-<model>.md` in chain order (`claude-sonnet-5.5`, `claude-opus-5.5`,
+       `claude-sonnet-4.5`). Never wait for a model and never re-run one; this step does not dispatch reviews.
+       **New verdict** (the first file that is a verdict for `head_sha`): write the three `RUN/reviews/<LANE>-<head7>.*`
+       files (`lane-review.md`). The JSON's `model` must equal the model in the file name (the pin of the step that
+       produced it), and the `Collab-Reviewer` must be `agent:vitana-lane-reviewer (<that model>)`;
+       `agent: vitana-lane-reviewer` (else: blocker, ignore that file and try the next; `unstated` or the bare identity
+       never counts on a new entry).
+       Append the entry to the lane file log on BRANCH in WT (front matter unchanged), commit with
+       the entry's trailer lines and the bot identity, push (protocol); log in `decisions.md` that the land step committed
+       it on the agent's behalf. `last_verdict` = `{"verdict","file","reviewed_head"}`; `head_sha` = the entry commit
+       (an entry-only commit after the reviewed head keeps the review on the current head). `changes` →
+       `changes_requested` (`parked` + `done` if `review_rounds` is already 3). `accept` → `accepted`; timing
+       `lane_accepted`.
+       **No valid verdict for `head_sha`** although the race completed (a branch finished without a stored verdict, for
+       example the store watch could not find RUN): one blocker line in `blockers.md` naming the head and the files found, status `parked`, `done: true`, go to 4. The race already gave every chain model its
+       one try on this head, so it is not repeated. A new head starts fresh. (When all three models fail, the race itself
+       fails and this step does not run: `lane-review.md` "All three fail".)
+    3. **`accepted` → land:**
+       a. Order: a lane whose plan names a "lands first" lane waits until that lane is `landed` or `parked` (poll 2-3 min,
+          max 90 min; else stay `accepted`, go to 4).
+       b. Merge lock (one merge at a time): create `RUN/merge.lock` exclusively (`New-Item` fails when it exists) with the
+          lane and the time; held → poll 2-3 min; a lock older than 90 min is stale (remove it, log it). Release it at the
+          end of this step whatever happens.
+       c. `gh pr ready` if draft. Already merged by the PM → `merged_by: PM`, go to f.
+       d. Up to date with latest `main`: if behind, `gh pr update-branch <n>` (no force); clean → keep the accept (log:
+          only `main`'s commits added); conflict → `merge_conflicts`+1, status `needs_update`, release the lock, go to 4.
+          Wait (poll 2-3 min, max 60 min) for every required check green on that exact head, then merge at once under
+          the §7b rule (common rule 4) with the method recent merged PRs use; `--admin` only for the governance-artifact
+          false positive (log why); never over a real red. A lane spanning both repos merges both PRs.
+          Infra or flake (runner lost, network, a known flake on `main`) → `gh run rerun <id> --failed` once per check per
+          head; the rerun allowlist is PR checks, PLAN-SPAR, PR-GATE and STAGING-VERIFY only, never `AWS-PROD-*`. Real
+          failure → `RUN/lanes/<LANE>/ci-failure.md` (check, run URL, failures) and status `ci_failed` (`parked` + `done`
+          if `ci_fix_attempts` is already 3). Still running at the bound → stay `accepted`, go to 4.
+       e. A proof lane the plan says the PM must merge: never self-merge first; meet its preconditions (deploy of the
+          lanes it proves, the mode the plan names), release the lock, poll up to 60 min for the PM merge; none → read-only
+          evidence, log the proof incomplete in `blockers.md`, re-take the lock and merge under common rule 4.
+       f. Record the merge SHA (`gh pr view <n> --json mergeCommit,mergedBy,mergedAt`), who merged (PM or §7b rule),
+          `--admin` and why → `merges.md`, lane log and state; a PR comment on PRs this step merged:
+          `Merged under collaboration.md §7b (PM merge rule): merge commit <sha>`; status `landed`, `done: true`; timing
+          `lane_merged` (`mergedAt`). Release the claim (`queue.mjs release <slug>/<LANE> --session <id>`).
+       g. A rule-text lane (steering / collaboration.md) right after landing: for both repos, fetch; if the main
+          checkout is on `main` with a clean `git status --porcelain` → `git merge --ff-only origin/main`, else skip and
+          log, so the next steps load the new rules.
+    4. **Slot hand-over.** When this slot's lane is `done` and `RUN/slots.json` `queue` is not empty, move the first queued
+       lane whose `depends_on` are all landed or parked into this slot (`slots.N`), and do not end the loop. When the
+       slot's lane is `done` and the queue is empty, the final message ends with the line `VITANA_SLOT_DONE` (the slot
+       loop's stop token); never write that token in any other case.
+    
+    Final message: lane, status, action, PR URL(s), merge SHA(s) and who merged, `done`, and the stop token when it applies.
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:46:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+# Subtest: the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+not ok 7 - the PR template has a Verification section and no extra VALIDATOR-CHECK marker
+  ---
+  duration_ms: 0.395051
+  type: 'test'
+  location: '/projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:49:1'
+  failureType: 'testCodeFailure'
+  error: |-
+    The input did not match the regular expression /^## Verification$/m. Input:
+    
+    '<!--\n' +
+      'VTID-05305 — PR body template.\n' +
+      '\n' +
+      'VALIDATOR-CHECK (the `validate-pr` gate) runs on PRs that touch the gateway\n' +
+      'trees (services/gateway/src|dist|openapi|test, docs/validation) and demands a\n' +
+      'VALIDATION_PROFILE plus the four markers below. This template carries all of\n' +
+      'them so a gateway PR passes on the first push instead of failing one marker per\n' +
+      'round. A PR that touches none of those trees can delete the "Validator\n' +
+      'declarations" block — the gate does not run for it — but leaving it in is\n' +
+      'harmless.\n' +
+      '\n' +
+      'Put the VTID in the PR TITLE, e.g.  VTID-05305 (slug/lane): short description\n' +
+      '-->\n' +
+      '\n' +
+      '## Summary\n' +
+      '\n' +
+      '<!-- What this PR changes and why, in a sentence or two. -->\n' +
+      '\n' +
+      '## Tests\n' +
+      '\n' +
+      '<!-- The commands you ran and their pass/fail counts; the red→green proof. -->\n' +
+      '\n' +
+      '## Validator declarations\n' +
+      '\n' +
+      '<!--\n' +
+      'Required by VALIDATOR-CHECK for gateway PRs. Keep every declaration line below\n' +
+      'and fill in its value. Do NOT write the marker names (the "WORD:" forms) inside\n' +
+      'this comment — VALIDATOR-CHECK extracts the profile and OASIS impact with a\n' +
+      'first-match grep, so a sample marker here would be read instead of your real\n' +
+      'value. The fields, described without the literal markers:\n' +
+      '- the validation profile is one of  command_hub_frontend  or  gateway_backend\n' +
+      '- the scope allowlist is the set of path globs this PR may touch\n' +
+      '- the acceptance value is the path to docs/validation/<VTID>/acceptance.md\n' +
+      '- the merge payload preview is what a merge deploys, or "none" for CI-only\n' +
+      '- the OASIS impact is yes or no (yes also needs an OASIS proof in acceptance.md)\n' +
+      'If this PR changes a lockfile, add a dependency-change line explaining why.\n' +
+      '-->\n' +
+      '\n' +
+      'VALIDATION_PROFILE: gateway_backend\n' +
+      'SCOPE_ALLOWLIST: services/gateway/src/**, docs/validation/**\n' +
+      'ACCEPTANCE: docs/validation/VTID-XXXXX/acceptance.md\n' +
+      'MERGE_PAYLOAD_PREVIEW: none (describe what a merge deploys, or keep "none")\n' +
+      'OASIS_IMPACT: no\n'
+    
+  code: 'ERR_ASSERTION'
+  name: 'AssertionError'
+  expected:
+  actual: |-
+    <!--
+    VTID-05305 — PR body template.
+    
+    VALIDATOR-CHECK (the `validate-pr` gate) runs on PRs that touch the gateway
+    trees (services/gateway/src|dist|openapi|test, docs/validation) and demands a
+    VALIDATION_PROFILE plus the four markers below. This template carries all of
+    them so a gateway PR passes on the first push instead of failing one marker per
+    round. A PR that touches none of those trees can delete the "Validator
+    declarations" block — the gate does not run for it — but leaving it in is
+    harmless.
+    
+    Put the VTID in the PR TITLE, e.g.  VTID-05305 (slug/lane): short description
+    -->
+    
+    ## Summary
+    
+    <!-- What this PR changes and why, in a sentence or two. -->
+    
+    ## Tests
+    
+    <!-- The commands you ran and their pass/fail counts; the red→green proof. -->
+    
+    ## Validator declarations
+    
+    <!--
+    Required by VALIDATOR-CHECK for gateway PRs. Keep every declaration line below
+    and fill in its value. Do NOT write the marker names (the "WORD:" forms) inside
+    this comment — VALIDATOR-CHECK extracts the profile and OASIS impact with a
+    first-match grep, so a sample marker here would be read instead of your real
+    value. The fields, described without the literal markers:
+    - the validation profile is one of  command_hub_frontend  or  gateway_backend
+    - the scope allowlist is the set of path globs this PR may touch
+    - the acceptance value is the path to docs/validation/<VTID>/acceptance.md
+    - the merge payload preview is what a merge deploys, or "none" for CI-only
+    - the OASIS impact is yes or no (yes also needs an OASIS proof in acceptance.md)
+    If this PR changes a lockfile, add a dependency-change line explaining why.
+    -->
+    
+    VALIDATION_PROFILE: gateway_backend
+    SCOPE_ALLOWLIST: services/gateway/src/**, docs/validation/**
+    ACCEPTANCE: docs/validation/VTID-XXXXX/acceptance.md
+    MERGE_PAYLOAD_PREVIEW: none (describe what a merge deploys, or keep "none")
+    OASIS_IMPACT: no
+    
+  operator: 'match'
+  stack: |-
+    TestContext.<anonymous> (file:///projects/sandbox/vitana-platform/.agents/tasks/pipeline-kiro-jtadic-202610271220-68a5/tmp.RjsRFRLMAF/base/scripts/collab/quality-checks.test.mjs:51:10)
+    Test.runInAsyncScope (node:async_hooks:214:14)
+    Test.run (node:internal/test_runner/test:1047:25)
+    Test.processPendingSubtests (node:internal/test_runner/test:744:18)
+    Test.postRun (node:internal/test_runner/test:1173:19)
+    Test.run (node:internal/test_runner/test:1101:12)
+    async Test.processPendingSubtests (node:internal/test_runner/test:744:7)
+  ...
+1..7
+# tests 7
+# suites 0
+# pass 0
+# fail 7
+# cancelled 0
+# skipped 0
+# todo 0
+# duration_ms 85.930204

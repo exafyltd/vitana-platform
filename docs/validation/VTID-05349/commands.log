@@ -1,0 +1,12 @@
+# VTID-05349 — context-map/context-cli — commands run (Kiro Web, Linux, bash). Session kiro-jtadic-202610271221-c93f.
+# Read-only against every live system; writes are the lane branch push and the PR only.
+$ node vitana-platform/scripts/collab/kiro-web-session.mjs setup --wait   # => codeintel index rc=0 secs=436 (detached setup earlier stopped after "setup start")
+$ git worktree add -b kiro/context-map/context-cli /projects/sandbox/.wt/cm-lane origin/main   # reset onto 51a8e57113 after the plan merged
+$ node --test scripts/dev/context.test.mjs   # on origin/main 80b39e236b + the test file only => ERR_MODULE_NOT_FOUND (red-on-base.txt)
+$ node --test scripts/dev/context.test.mjs   # => tests 16, pass 16, fail 0 (outputs/tests.txt)
+$ git clone --depth 1 file://…/vitana-platform shallow && node --test scripts/dev/context.test.mjs   # no vitana-v1 => 16/16 (outputs/tests-shallow.txt)
+$ # mutation checks: removing the tracked-file suffix resolver fails "check: a short form …"; disabling mostSpecific fails "route: …"
+$ VITANA_V1_DIR=…/vitana-v1 node scripts/dev/context.mjs check   # => 0 error(s), 11 warning(s), 1 info; exit=0 (outputs/check.txt)
+$ bash docs/validation/VTID-05349/outputs/bench-context-map.sh   # second run recorded (outputs/benchmark.md); summary outputs/measurement.md
+$ repowise search … / graphify explain … / graphify query …   # same questions on the built index (outputs/codeintel.txt)
+$ node scripts/collab/preflight.mjs --repo . --base origin/main --head HEAD --branch kiro/context-map/context-cli --title "VTID-05349 (context-map/context-cli): …"

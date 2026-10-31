@@ -1,0 +1,14 @@
+{
+  "vtid": "VTID-05349",
+  "kind": "infra",
+  "paths": [
+    "scripts/dev/context.mjs",
+    "scripts/dev/context.test.mjs",
+    "docs/CONTEXT-MAP.md",
+    ".kiro/specs/context-map/lanes/context-cli.md",
+    "docs/validation/VTID-05349/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05349/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

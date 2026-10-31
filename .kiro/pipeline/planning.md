@@ -30,13 +30,16 @@ most 3 files) gets one investigator.
   lanes, lanes (ids, files, tests that fail on base), parallel / shared files / hot files, tests and commands,
   measurement, risks, unchanged.
 - `tasks.md`: one group per lane marked `<!-- lane: <lane-id> -->` with checkboxes and **Acceptance** bullets (what
-  the reviewer agent checks).
+  the reviewer agent checks), written with the Acceptance template of `quality-checks.md`: the first bullet is
+  `Change types: <list>` (UI, Backend, Database, Integration, Infrastructure/CI, Tooling/docs), then the template
+  fields and the items of those change-type sections.
 - `handoff.md`: `state: drafted`, `author: kiro`, `author_seat`, `executor: kiro`, `next_actor: kiro`.
 - `lanes/<lane-id>.md`: `state: ready`, `next_actor: kiro`, `executor`, `seat`, `reviewer: agent:vitana-lane-reviewer
   (claude-sonnet-5.5)`, `paths`, `depends_on` (real file/API dependencies only), `repos`; a log entry "created".
-  `reviewer_seat` is legacy: set it only where the current `queue.mjs validate` still requires it (a different seat
-  from `seat`). No two lanes edit the same file; a lane on a governance path follows the rule collaboration.md §3a
-  states on `main` today.
+  `reviewer_seat: agent:vitana-lane-reviewer` is required on every `executor: kiro` lane whose `paths` include a
+  governance path (`.github/**`, `.kiro/steering/**`, `scripts/collab/**` …, `queue.mjs` `GOVERNANCE_PATHS`); set it
+  on every kiro lane, it costs nothing elsewhere. No two lanes edit the same file; a lane on a governance path
+  follows the rule collaboration.md §3a states on `main` today.
 - Add the slug to the right `docs/programs/<id>/program.md` (or `standalone`) when `queue.mjs validate` requires it.
 - Commit, then run preflight before pushing: `node <vitana-platform>/scripts/collab/preflight.mjs --repo <spec WT>
   --base origin/main --head HEAD --branch kiro/<slug>/plan --title "plan(<slug>): <summary>"` (it runs `queue.mjs

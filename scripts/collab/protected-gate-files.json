@@ -1,6 +1,6 @@
 {
   "schema": "vitana.protected-gate-files/v1",
-  "description": "VTID-05276 (plan kiro-autonomy-fallback §4.3): protected gate files. A change to one never merges on a reviewer-agent accept alone; it needs a legacy claude review on the current head or the owner's instruction. Globs use scripts/collab/queue.mjs globToRegex semantics. Owned by scripts/collab/queue.mjs (compiled-in copy for single-file runs); the Project Manager mirrors it in governance.ts.",
+  "description": "VTID-05276 (plan kiro-autonomy-fallback §4.3), VTID-05408 (kiro-lane-admin §4): protected gate files. A change to one never merges on a reviewer-agent accept alone; it needs the owner's instruction naming the plan plus a reviewer-agent accept on the current head (Claude Code is retired). Globs use scripts/collab/queue.mjs globToRegex semantics. Owned by scripts/collab/queue.mjs (compiled-in copy for single-file runs); the Project Manager mirrors it in governance.ts.",
   "globs": [
     "CLAUDE.md",
     "scripts/collab/plan-spar.mjs",
