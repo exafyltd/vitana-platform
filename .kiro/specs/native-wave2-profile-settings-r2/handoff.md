@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 author_seat: exafyltd
-updated: 2026-11-01T01:17Z
+updated: 2026-11-01T02:14Z
 spar_refs:
   - exafyltd/vitana-v1: main
 ---
@@ -24,3 +24,5 @@ Re-plan of `native-wave2-profile-settings` (PR #4278, converged) under a new slu
 Holder of the `native-wave2-profile-settings-r2/_plan` claim. Re-plan of `native-wave2-profile-settings` (PR #4278, converged and policy-approved), whose branch cannot pass Collab handoff without a history rewrite (commits without a Collab-Session trailer). Copied the converged plan, tasks, requirements, design and lane files from the old PR head; lane VTIDs removed (CI allocates on convergence), lane logs restarted, sparring rounds left on the old PR. One commit, one session. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars the `plan(native-wave2-profile-settings-r2)` PR; this session answers each round in `sparring/responses-<n>.md`.
 ### 2026-11-01T01:17Z · kiro-exafyltd-202611010001-7819 · drafted (sparring round 1 answered)
 R1-F1 accepted: `/delete-account` stays public natively, as `apps/mobile/app/(public)/delete-account.tsx` in a new lane `delete-account` (the `settings` lane file cannot be edited by a `_plan` commit). Now 4 lanes: 5 + 17 + 1 + 14 = 37 rows. Answers: `sparring/responses-1.md`.
+### 2026-11-01T02:14Z · kiro-exafyltd-202611010001-7819 · drafted (sparring round 2 answered)
+R2-F1 accepted: `/u/:identifier` and `/profile/:id` stay public natively, in a new lane `public-profile` in `(public)` (shell chosen by session). Now 5 lanes: 2 + 3 + 17 + 1 + 14 = 37 rows. Answers: `sparring/responses-2.md`.

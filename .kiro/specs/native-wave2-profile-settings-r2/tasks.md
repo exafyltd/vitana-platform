@@ -1,5 +1,6 @@
 # Tasks — Native Wave 2: Profile / Settings / Support / Connectors screen ports
-Four lanes, disjoint `paths` (`delete-account` added by r2 sparring R1-F1, plan decision 1a). Design: `design.md` and `requirements.md` in this folder are authoritative — follow
+Five lanes, disjoint `paths` (`delete-account` added by r2 sparring R1-F1, plan decision 1a; `public-profile` by
+R2-F1, decision 1b). Design: `design.md` and `requirements.md` in this folder are authoritative — follow
 them exactly; anything outside them is a plan change (log it, set `next_actor: claude`). VTIDs are assigned by CI
 after PLAN-SPAR converges; do not start a lane before its `vtid:` is set in `lanes/<id>.md`. All commands run from
 `apps/mobile/` unless noted; `assertNotProduction()` and the no-production-profile rule make every command offline.
@@ -9,9 +10,9 @@ and asserts the built request — it never fires a real write on any host.** No 
 silent scope widening, and a class-B hook is NEVER moved into core.
 <!-- lane: profile -->
 ## Lane `profile` · executor Kiro · seat exafyltd → reviewer_seat hotmail
-Ports (5 ledger rows → 4 route files): `PROFILE.ME /me/profile`, `PROFILE.PUBLIC /u/:identifier`,
-`PROFILE.WITH_MATCH /u/:identifier?match_intent=:intent_id`, `PROFILE.PRIVACY /profile/me/privacy`, and the legacy
-exclusion `/profile/:id`. depends_on: none. Web sources `src/pages/EditProfilePage.tsx` (739 lines, route
+Ports (2 ledger rows → 2 route files): `PROFILE.ME /me/profile`, `PROFILE.PRIVACY /profile/me/privacy`. The public
+`/u/:identifier` rows and `/profile/:id` moved to lane `public-profile` (plan decision 1b); this section governs where
+the lane file still names them. depends_on: none. Web sources `src/pages/EditProfilePage.tsx` (739 lines, route
 `src/App.tsx:1483-1487`), `src/pages/PublicProfilePage.tsx` (413 lines, route `src/App.tsx:1493`),
 `src/pages/PrivacySettings.tsx` (301 lines, route `src/App.tsx:1501-1505`), `LegacyProfileRedirect`
 (`src/App.tsx:1482`).
@@ -24,14 +25,10 @@ exclusion `/profile/:id`. depends_on: none. Web sources `src/pages/EditProfilePa
   path mocked in tests (no real write). Mobile-web branch only.
   Files: `apps/mobile/app/(app)/me/profile.tsx`, `apps/mobile/src/screens/profile/**`.
   Verify: `npm test` (the profile unit tests below) + `npm run typecheck` green.
-- [ ] 2. Public profile + privacy + legacy redirect: `apps/mobile/app/(app)/u/[identifier].tsx` +
-  `src/screens/profile/PublicProfileScreen.tsx` (read-only public profile, incl. the `?match_intent=` highlight),
-  `apps/mobile/app/(app)/profile/me/privacy.tsx` + `src/screens/profile/PrivacyScreen.tsx` (twin of
-  `PrivacySettings.tsx` — visibility toggles are writes, mocked in tests), and
-  `apps/mobile/app/(app)/profile/[id].tsx` (twin of `LegacyProfileRedirect`: resolve the id and navigate to the
-  canonical profile, so the exclusion row goes `native`).
-  Files: `apps/mobile/app/(app)/u/[identifier].tsx`, `apps/mobile/app/(app)/profile/me/privacy.tsx`,
-  `apps/mobile/app/(app)/profile/[id].tsx`, `apps/mobile/src/screens/profile/**`.
+- [ ] 2. Privacy: `apps/mobile/app/(app)/profile/me/privacy.tsx` + `src/screens/profile/PrivacyScreen.tsx` (twin of
+  `PrivacySettings.tsx` — visibility toggles are writes, mocked in tests). (Public profile and the legacy redirect
+  are lane `public-profile`.)
+  Files: `apps/mobile/app/(app)/profile/me/privacy.tsx`, `apps/mobile/src/screens/profile/**`.
   Verify: `npm test` + `npm run typecheck` green.
 - [ ] 3. i18n + RTL: user-visible strings from the web shards (`screens.*` keys these screens already use); any
   genuinely new key added to `src/i18n/de/profileNative.json` first, then the other ten (ar de en es fr pl pt ru sr
@@ -39,28 +36,64 @@ exclusion `/profile/:id`. depends_on: none. Web sources `src/pages/EditProfilePa
   Files: `src/i18n/*/profileNative.json` (DE first), `apps/mobile/src/screens/profile/**`.
   Verify: `npm run typecheck`; `npm test` — the no-raw-text and no-physical-direction tests pass.
 - [ ] 4. Unit tests (fake gateway / fixtures, no network): my-profile loaded / empty / error; a section drawer
-  opens and its save **builds the right request against a mocked gateway and fires nothing**; public profile loaded /
-  not-found, `?match_intent=` highlight; privacy toggles build the right request (mocked); legacy `/profile/:id`
-  resolves and navigates. React 19 — `ReactElement`, no global `JSX`.
+  opens and its save **builds the right request against a mocked gateway and fires nothing**; privacy toggles build
+  the right request (mocked). React 19 — `ReactElement`, no global `JSX`.
   Files: `apps/mobile/tests/profile/**`, `apps/mobile/src/screens/profile/__tests__/**`.
   Verify: `npm test` green; `APP_PROFILE=development npm run bundle` and
   `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
 - [ ] 5. Flip the lane's parity rows to `native` and verify: `node scripts/native/parity-ledger.mjs --sync` (status
-  edited by hand to `native` for the 5 rows), then `--check`.
+  edited by hand to `native` for the 2 rows), then `--check`.
   Files: `apps/mobile/parity/ledger.json` (profile rows only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
   Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
 - [ ] 6. **(depends-on-owner / G1 — `next_actor: owner`)** Device-runtime parity on the **isolated G1 environment
   only** (write-heavy cluster — never a live backend as the test account): Maestro journey(s)
   `apps/mobile/maestro/profile/*.yaml`, iOS simulator + Android emulator screenshots at the device sizes, screenshot
-  parity vs the 390×844 **read-only** staging `/me/profile`, `/u/:identifier`, `/profile/me/privacy`. Blocked until
+  parity vs the 390×844 **read-only** staging `/me/profile`, `/profile/me/privacy`. Blocked until
   G1 (and macOS minutes / G3 for iOS on a device).
   Files: `apps/mobile/maestro/profile/**`, `docs/validation/<VTID>/staging-tests.json`.
   Verify: on G1 only; recorded in the lane log, not run in CI.
 - [ ] 7. PR: branch `kiro/native-wave2-profile-settings-r2/profile`, title
-  `VTID-xxxxx (native-wave2-profile-settings-r2/profile): native profile / public-profile / privacy port`, body names
+  `VTID-xxxxx (native-wave2-profile-settings-r2/profile): native profile / privacy port`, body names
   the Kiro session id, Summary / Decisions taken / Tests / Handoff. Commit trailers `Collab-Session: <kiro id>`,
   `Collab-Lane: native-wave2-profile-settings-r2/profile`. Lane → `in-review`, `next_actor: kiro` (reviewer seat
   `hotmail`). Never merge, deploy or write to a live system (protocol §7a).
+<!-- lane: public-profile -->
+## Lane `public-profile` · executor Kiro · seat exafyltd → reviewer_seat hotmail
+Ports (3 ledger rows → 2 route files): `PROFILE.PUBLIC /u/:identifier`,
+`PROFILE.WITH_MATCH /u/:identifier?match_intent=:intent_id`, and the legacy exclusion `/profile/:id`. depends_on:
+none. Web sources `src/pages/PublicProfilePage.tsx` (413 lines, route `src/App.tsx:1493`, no `AuthGuard`, renders in
+`AppLayout`), `LegacyProfileRedirect` (`src/App.tsx:1482`, no `AuthGuard`). Plan decision 1b.
+- [ ] 1. Public profile `apps/mobile/app/(public)/u/[identifier].tsx` +
+  `apps/mobile/src/screens/public-profile/PublicProfileScreen.tsx`: read-only twin of `PublicProfilePage.tsx`, incl.
+  the `?match_intent=` highlight, in the `(public)` group (never `(app)/`). It wraps itself in `MobileAppShell` when a
+  session exists and in `PublicShell` when not (the split `(app)/_layout.tsx` makes through `AuthGate`).
+  Files: `apps/mobile/app/(public)/u/[identifier].tsx`, `apps/mobile/src/screens/public-profile/**`.
+  Verify: `npm test` + `npm run typecheck` green.
+- [ ] 2. Legacy redirect `apps/mobile/app/(public)/profile/[id].tsx`: twin of `LegacyProfileRedirect` — resolve the
+  id and navigate to the canonical `/u/…` profile, signed in or out, so the exclusion row goes `native`.
+  Files: `apps/mobile/app/(public)/profile/[id].tsx`, `apps/mobile/src/screens/public-profile/**`.
+  Verify: `npm test` + `npm run typecheck` green.
+- [ ] 3. i18n + RTL (as profile task 3); reuse the web's `screens.*` keys; any new key DE-first in
+  `src/i18n/de/publicProfileNative.json`, then the other ten.
+  Files: `src/i18n/*/publicProfileNative.json` (DE first), `apps/mobile/src/screens/public-profile/**`.
+  Verify: `npm run typecheck`; `npm test` no-raw-text / no-physical-direction tests pass.
+- [ ] 4. Unit tests (fake gateway / fixtures, no network): public profile loaded / not-found, `?match_intent=`
+  highlight; **renders signed out (PublicShell) and signed in (MobileAppShell)**; legacy `/profile/:id` resolves and
+  navigates signed out and signed in. React 19 `ReactElement`.
+  Files: `apps/mobile/tests/public-profile/**`, `apps/mobile/src/screens/public-profile/__tests__/**`.
+  Verify: `npm test`; `APP_PROFILE=development npm run bundle`;
+  `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
+- [ ] 5. Flip the lane's 3 parity rows to `native`; `--sync` then `--check`.
+  Files: `apps/mobile/parity/ledger.json` (these rows only), `docs/validation/<VTID>/{scope,staging-tests}.json`.
+  Verify (repo root): `node scripts/native/parity-ledger.mjs --check` green.
+- [ ] 6. **(depends-on-owner / G1 — `next_actor: owner`)** Maestro `apps/mobile/maestro/public-profile/*.yaml` +
+  sim/emulator screenshots + parity vs the 390×844 read-only staging `/u/:identifier`, signed out and signed in.
+  Blocked until G1.
+  Files: `apps/mobile/maestro/public-profile/**`, `docs/validation/<VTID>/staging-tests.json`.
+- [ ] 7. PR: branch `kiro/native-wave2-profile-settings-r2/public-profile`, title
+  `VTID-xxxxx (native-wave2-profile-settings-r2/public-profile): native public profile + legacy redirect port`;
+  trailers `Collab-Session`, `Collab-Lane: native-wave2-profile-settings-r2/public-profile`; lane → `in-review`,
+  `next_actor: kiro`. No merge/deploy/live write.
 <!-- lane: settings -->
 ## Lane `settings` · executor Kiro · seat exafyltd → reviewer_seat hotmail
 Ports (17 ledger rows → 4 route files; `/delete-account` moved to lane `delete-account`, plan decision 1a — this

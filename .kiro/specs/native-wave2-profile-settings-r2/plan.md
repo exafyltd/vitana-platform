@@ -49,15 +49,16 @@ parity-row status flips.
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
   `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging hosts.
 ## Decisions (made by Kiro as planner under the owner's "finish the native apps" instruction; sparring may revise)
-1. **Four disjoint lanes by cluster and auth boundary** (prompt: 2–3 disjoint lanes; the fourth, `delete-account`, is the public-route split of decision 1a). The sources show three separable clusters:
-   **`profile`** (member/public profile + privacy: `/me/profile`, `/u/:identifier`, `/profile/me/privacy`,
-   `/profile/:id`), **`settings`** (the one `MobileSettings` `?mode=` hub + its standalone sub-screens
+1. **Five disjoint lanes by cluster and auth boundary** (prompt: 2–3 disjoint lanes; `delete-account` and
+   `public-profile` are the public-route splits of decisions 1a and 1b). The sources show three separable clusters:
+   **`profile`** (own profile + privacy: `/me/profile`, `/profile/me/privacy`), **`public-profile`** (the public
+   `/u/:identifier` page and the legacy `/profile/:id` redirect, decision 1b), **`settings`** (the one `MobileSettings` `?mode=` hub + its standalone sub-screens
    `/settings/preferences`, `/settings/limitations`, `/settings/tenant-role`), **`delete-account`** (the public
    `/delete-account` page, decision 1a), and
    **`support-connectors`** (the member support `?tab=` surface `/support` + the connectors `?tab=` directory
    `/connectors` + `/settings/connected-apps`). The three touch disjoint route files and `src/screens/` subtrees,
-   build/review independently, each leaves the app buildable. **Partition (verified against the ledger): profile 5
-   rows, settings 17 rows, delete-account 1 row, support-connectors 14 rows = 37** (0 overlap, 0 orphan; each row
+   build/review independently, each leaves the app buildable. **Partition (verified against the ledger): profile 2
+   rows, public-profile 3 rows, settings 17 rows, delete-account 1 row, support-connectors 14 rows = 37** (0 overlap, 0 orphan; each row
    named in its lane file or, for the split, in `tasks.md`).
    Support + connectors are one lane because both are small member-facing service surfaces and pairing them balances
    the lane sizes.
@@ -75,6 +76,25 @@ parity-row status flips.
    the port is a new lane `delete-account` (`lanes/delete-account.md`). The `settings` lane no longer ports
    `/delete-account`: where its lane file still names it, `(app)/delete-account.tsx` or 18 rows, this plan block and
    its `tasks.md` section (17 rows → 4 files) govern, and the unused path entry creates nothing.
+1b. **`/u/:identifier` and `/profile/:id` are public on the web too — lane `public-profile`, in the `(public)`
+   group (r2 sparring R2-F1).** `src/App.tsx:1493` (`/u/:identifier` → `PublicProfilePage`) and `:1482`
+   (`/profile/:id` → `LegacyProfileRedirect`) have no `AuthGuard`; neither is in `GUEST_PATHS`
+   (`apps/mobile/src/navigation/guest-paths.ts:7-15`, `allowGuest` routes only), so under `(app)/` the native
+   `AuthGate` (`AuthGate.tsx:44-46`) would send a signed-out visitor to `/maxina`. The twins go in `(public)`:
+   `apps/mobile/app/(public)/u/[identifier].tsx` and `apps/mobile/app/(public)/profile/[id].tsx` (the latter resolves
+   the id and navigates to the canonical `/u/…` profile, as the web redirect does). `PublicProfilePage` renders inside
+   `AppLayout` for every visitor, so the native screen mirrors `(app)/_layout.tsx`'s split itself: wrapped in
+   `MobileAppShell` when a session exists and in `PublicShell` when not (the same two shells `AuthGate` chooses
+   between). Adding the paths to `GUEST_PATHS` is not an option (`check-shell-pins.mjs` admits only `allowGuest`
+   routes) and deferring would ship a known parity break. The `profile` lane file declares the `(app)/u/…` and
+   `(app)/profile/[id].tsx` paths and a `_plan` commit may not edit it, so the port is a new lane `public-profile`
+   (`lanes/public-profile.md`, screens under `apps/mobile/src/screens/public-profile/**`). The `profile` lane keeps
+   `/me/profile` and `/profile/me/privacy` (2 rows → 2 files); where its lane file still names the public rows, the
+   `(app)/u/[identifier].tsx` / `(app)/profile/[id].tsx` paths or 5 rows, this plan block and its `tasks.md` section
+   govern, and the unused path entries create nothing. Every other route in this plan was checked against
+   `src/App.tsx`: the remaining profile, settings and support-connectors routes are inside `<AuthGuard>`, except
+   `/settings/connected-apps` (`:1451`), a redirect to the guarded `/connectors`, where the `(app)` gate gives the same
+   sign-in outcome.
 2. **No `@vitana/core` extraction in this plan — and NEVER a class-B module into core.** Unlike the sibling
    home-feed plan (which extracted pure `feed-compose`/`news-feed-ranker`), this cluster's screens are driven by
    **data-fetching hooks that runtime-import the web Supabase client** — `useProfileGallery`, `useProfileMilestones`,
@@ -93,7 +113,7 @@ parity-row status flips.
    `ConnectedApps` (`/connectors`, `/settings/connected-apps`). The partner-connections screens
    (`PartnerConnections.tsx` / `PartnerConnectionDetail.tsx`) are `requiredRole="admin"` (`src/App.tsx:1819,1822`)
    and carry no ledger row; the Commerce connector docs/authorize pages likewise. All are explicitly excluded
-   (requirements R0.5). **No lane depends on another — all four run in parallel.**
+   (requirements R0.5). **No lane depends on another — all five run in parallel.**
 4. **No new routes / registry / manifest.** Ports of screens already in `App.tsx` + `screens.json`; a native Expo
    Router file is not an `App.tsx` route, so the "new page needs screens.json/exclusions.json + screen-manifest +
    parity rows" rule does not fire — only parity-row **status** flips (`not_started`→`in_progress`→`native`). The
@@ -117,14 +137,15 @@ parity-row status flips.
 ## Lanes (all `ready`, executor kiro; seat → reviewer_seat; `vtid:` filled by CI on convergence)
 | Lane | Seat → reviewer | Scope (web destinations) | depends_on |
 |---|---|---|---|
-| `profile` | exafyltd → hotmail | `/me/profile` (EditProfilePage), `/u/:identifier` (+`?match_intent=`), `/profile/me/privacy`, `/profile/:id` (legacy redirect) — **5 rows → 4 files** | — |
+| `profile` | exafyltd → hotmail | `/me/profile` (EditProfilePage), `/profile/me/privacy` — **2 rows → 2 files** | — |
+| `public-profile` | exafyltd → hotmail | `/u/:identifier` (+`?match_intent=`), `/profile/:id` (legacy redirect), both public in `(public)` (decision 1b) — **3 rows → 2 files** | — |
 | `settings` | exafyltd → hotmail | `/settings` (the `?mode=` hub, 14 rows = `SETTINGS.OVERVIEW` + 13 `?mode=`), `/settings/preferences?section=`, `/settings/limitations`, `/settings/tenant-role` — **17 rows → 4 files** | — |
 | `delete-account` | exafyltd → hotmail | `/delete-account` (public, `app/(public)/delete-account.tsx`, decision 1a) — **1 row → 1 file** | — |
 | `support-connectors` | exafyltd → hotmail | `/support` (+`?tab=`, 4 rows), `/connectors` (+`?tab=` + `SETTINGS.SOCIAL`, 9 rows), `/settings/connected-apps` — **14 rows → 3 files** | — |
-Exact `paths` globs are in each `lanes/<id>.md`; the 37 parity rows partition **5 (profile) + 17 (settings) + 1
-(delete-account) + 14 (support-connectors)** with 0 overlap and 0 orphan. The one shared directory `apps/mobile/app/(app)/settings/` is
+Exact `paths` globs are in each `lanes/<id>.md`; the 37 parity rows partition **2 (profile) + 3 (public-profile) + 17
+(settings) + 1 (delete-account) + 14 (support-connectors)** with 0 overlap and 0 orphan. The one shared directory `apps/mobile/app/(app)/settings/` is
 split by explicit file names between `settings` and `support-connectors` (design §1a) — no file in two lanes. All
-four lanes run in parallel (no dependencies).
+five lanes run in parallel (no dependencies).
 ## Test plan
 - **Per lane, offline (fixture / fake gateway, no network):** from `apps/mobile/` — `npm run typecheck`, `npm test`
   (jest-expo + RNTL: loaded/empty/error per screen; **every write — profile save, settings toggle, support submit,
