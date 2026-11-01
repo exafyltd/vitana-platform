@@ -34,7 +34,7 @@ Allowed paths:
       `network` product visible to both; flag off → Maxina sees all) (R1-F2).
 
 Acceptance: pgTAP green; migrations lint clean; queue rows + rollback present; drift-baseline updated; adds its own
-`docs/validation/<vtid>/`. Executor never applies the migration — Claude does via RUN-MIGRATION after merge.
+`docs/validation/<vtid>/`. Kiro applies the migration via RUN-MIGRATION, only on the owner's approval of the files and the target database (§7d), after merge.
 
 <!-- lane: discover-shared-predicate -->
 ## discover-shared-predicate — one shared Discover predicate + inventory + lineage guard (repo vitana-platform)

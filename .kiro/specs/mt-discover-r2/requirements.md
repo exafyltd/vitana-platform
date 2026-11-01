@@ -57,6 +57,6 @@ Links (read, do not copy):
 ## Non-functional
 - Dark by default (`MT_RESOLUTION_V2` + `tenant_settings.feature_flags.mt.discover_tenant_gate` / `mt.network_enabled`).
 - Production read-only for every session and test (rules 31–32, 48); the executor never writes to a live system
-  (collaboration §7a); DB applies are Claude via RUN-MIGRATION.
+  (collaboration §7a); DB applies are Kiro via RUN-MIGRATION, only on the owner's approval (§7d).
 - i18n DE-first du-form, RTL (logical properties); Spotlight design contract; WCAG 2.2 AA.
 - Test/service/platform-only accounts never surfaced (rules 43–45).
