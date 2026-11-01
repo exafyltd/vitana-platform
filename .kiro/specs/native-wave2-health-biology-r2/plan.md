@@ -5,6 +5,7 @@ backend, no gateway change, no migration). Spec: `handoff.md`, `tasks.md`, `lane
 vitana-v1 `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021) §5 Wave 2, and
 `docs/programs/health-hub/HEALTH-HUB-PLAN.md` (VTID-05020) for the health-data consent boundary.
 <!-- plan:begin -->
+Sparring note (2026-11-01T18:00Z): session 1 (`f03df8e0`) escalated on round 1 with `evidence_floor_not_met` (0 premise checks, 0 findings), a partner-side failure; this line opens the re-plan session. No plan content changed.
 
 Re-plan note (2026-11-01T17:20Z): this is the plan of `native-wave2-health-biology` (PR #4272) under a new slug, because the old branch has commits without Collab trailers (and lane files with an empty `vtid:` key, which made CI PLAN-SPAR allocate 0 VTIDs). Content unchanged except the slug and the lane `paths`, which now also list the shared native-infra files every screen port produces (`apps/mobile/src/ports/**`, `apps/mobile/src/navigation/resolve.ts`, `packages/core/{manifest,closure.generated,extract}.json`, `packages/core/src/**`, `scripts/native/mobile-ci-paths.generated.json`, `apps/mobile/parity/ledger.json`). Those files are shared between the lanes of this plan and land serialized (collaboration.md §8a).
 
