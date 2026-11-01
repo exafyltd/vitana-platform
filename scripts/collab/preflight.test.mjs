@@ -260,3 +260,39 @@ test('the runbook text check catches a push point without preflight', () => {
   assert.equal(pushPointsWithoutPreflight('- commit, push (protocol)\n- run preflight, fix every error, then push\n').length, 1);
   assert.ok(existsSync(path.join(ROOT, '.kiro/pipeline/lane-code.md')));
 });
+
+test('--required-only: a report-only-only failure exits 0 and is still printed; requiredOk tells the two apart', () => {
+  const f = fixture({ scope: true });
+  try {
+    const plain = preflightJson(f.work);
+    assert.equal(plain.status, 1, 'default exit status is unchanged: any failure exits 1');
+    assert.equal(plain.report.ok, false);
+    assert.equal(plain.report.requiredOk, true);
+    const r = preflight(f.work, ['--required-only']);
+    assert.equal(r.status, 0, r.out);
+    assert.match(r.out, /FAIL {2}PR-GATE scope \[report-only in CI/);
+    assert.match(r.out, /invalid scope\.json/);
+  } finally { f.done(); }
+});
+
+test('--required-only: a required failure still exits 1, with requiredOk false', () => {
+  const f = fixture({ trailer: true });
+  try {
+    const r = preflight(f.work, ['--required-only']);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /FAIL {2}Collab handoff \[required\]/);
+    assert.equal(preflightJson(f.work, ['--required-only']).report.requiredOk, false);
+  } finally { f.done(); }
+});
+
+test('--required-only: a required and a report-only failure together still exit 1, requiredOk false, report-only still printed', () => {
+  const f = fixture({ trailer: true, scope: true });
+  try {
+    assert.equal(preflight(f.work).status, 1, 'default exit status is 1');
+    const r = preflight(f.work, ['--required-only']);
+    assert.equal(r.status, 1, r.out);
+    assert.match(r.out, /FAIL {2}Collab handoff \[required\]/);
+    assert.match(r.out, /FAIL {2}PR-GATE scope \[report-only in CI/);
+    assert.equal(preflightJson(f.work, ['--required-only']).report.requiredOk, false);
+  } finally { f.done(); }
+});

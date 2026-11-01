@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05362",
+  "kind": "infra",
+  "paths": [
+    "scripts/collab/land-guard.mjs",
+    "scripts/collab/land-guard.test.mjs",
+    ".kiro/pipeline/common-rules.md",
+    ".kiro/pipeline/lane-land.md",
+    ".kiro/specs/step-order-gate/lanes/land-guard.md",
+    "docs/validation/VTID-05362/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05362/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": []
+}

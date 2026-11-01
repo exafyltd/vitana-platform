@@ -1,0 +1,22 @@
+# red-green.log — VTID-05407 new unit test case: RED on absent behaviour, GREEN on origin/main + head
+
+The code behaviour the new test pins (queue.mjs:912 'a reviewer agent id names no seat') already shipped with
+VTID-05276 and is present on origin/main; this lane changes only the agent definition and the test file, not
+queue.mjs. So to show a genuine RED we run the new assertions against a COPY of queue.mjs with that guard
+removed (the 'behaviour absent' state the test protects against). The test then FAILS; with the guard present
+(origin/main and head) it PASSES. This is the behaviour the reviewer agent now depends on when it mints its
+own id (no --seat).
+
+== RED: new assertions vs queue.mjs with the seat-guard removed ==
+$ node --test red.test.mjs   (seat guard removed)
+not ok 1 - VTID-05407 (behaviour absent): reviewer id names no seat
+  error: 'Missing expected exception.'
+  name: 'AssertionError'
+# pass 0
+# fail 1
+
+== GREEN: the committed test vs the real queue.mjs (origin/main behaviour, unchanged) ==
+$ node --test --test-name-pattern=VTID-05407 scripts/collab/queue.test.mjs
+ok 1 - VTID-05407: reviewer session-id round-trips to its agent and a reviewer id names no seat
+# pass 1
+# fail 0

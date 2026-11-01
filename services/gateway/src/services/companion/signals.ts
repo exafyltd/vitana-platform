@@ -159,11 +159,18 @@ export const fetchEnrichmentCompletions: FetchEnrichmentCompletions = async (sb,
     }
   } else unavailable.push('enrichment_dismissals');
 
+  // R2-F2: a failed source means we do NOT know what the member has done (or
+  // dismissed). Offering a card on unknown state could tell a member to add a
+  // photo they already have, so on ANY failure no member gets enrichment state
+  // this tick: empty maps → eligibleEnrichmentCards (=== false) offers nothing,
+  // the tick continues with the other moments, and the sources are reported.
+  if (unavailable.length > 0) {
+    return { completions: new Map(), dismissals: new Map(), unavailable };
+  }
+
   const completions = new Map<string, Map<EnrichmentCardType, boolean>>();
   for (const id of ids) {
     const f = facts.get(id);
-    // If the profile source failed for everyone, still return all-false so the
-    // tick continues; computeCompletions over the seeded facts yields all-false.
     completions.set(id, f ? computeCompletions(f) : allIncomplete());
   }
 

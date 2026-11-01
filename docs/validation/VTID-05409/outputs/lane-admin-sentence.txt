@@ -1,0 +1,10 @@
+# .claude/rules/collaboration.md §7a — authorized lane-administration sentence:
+
+**Lane administration — the one reviewed exception to "edit another lane's file" (kiro-lane-admin).** An authorized
+`executor: kiro` lane carrying `lane_admin: true` with `reviewer_seat: agent:vitana-lane-reviewer`, whose `paths`
+cover the target lane file, may reassign that TARGET lane's `seat` and narrow its `paths` — a reviewed, auditable
+reassignment that preserves seat ownership (the admin lane builds from its own seat, the target's new seat owns its
+future PRs), scope (the admin lane's `paths` bound what it touches) and independent review (the reviewer agent
+accepts; the builder never does). The admin lane is recognised only from a trusted source (merge-base, a qualifying
+`plan(` PR, or the other repo's main), never self-granted in its own PR head, and it can never widen its own `paths`
+or any of its own permission fields.

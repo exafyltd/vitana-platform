@@ -1,0 +1,14 @@
+# VTID-05410 reassign — commands.log
+$ git diff --name-only <merge-base> kiro/new-member-welcome/say-hello-composer   (platform and vitana-v1; source of paths)
+$ node scripts/collab/queue.mjs scope-check --base origin/main --head HEAD --repo . --branch kiro/say-hello-lane-reassign/reassign   -> outputs/scope-check.txt
+$ node scripts/collab/queue.mjs validate --base origin/main --head HEAD --repo .   -> outputs/validate.txt
+$ node --test scripts/collab/queue.test.mjs   -> outputs/queue.test.txt (64 pass, 0 fail)
+$ git diff origin/main -- .kiro/specs/new-member-welcome   -> outputs/perm-lines.diff
+# --- reviewer findings round 1 (2026-10-30) ---
+$ (platform, vitana-v1) git diff --name-only $(git merge-base origin/main kiro/new-member-welcome/say-hello-composer) kiro/new-member-welcome/say-hello-composer   -> outputs/paths-name-only.txt (platform cb86a4494a, mb d729406d4c; vitana-v1 dac4839b7, mb 5a853a7775)
+$ node cmp.mjs paths-name-only.txt   (imports matchesAny/parseFrontMatter from scripts/collab/queue.mjs; source embedded in outputs/paths-vs-diff.txt header)   -> outputs/paths-vs-diff.txt (0 unmatched files, 0 unused globs)
+$ bash negative-proofs.sh   (local scratch worktree off origin/main 4de4e62c28, never pushed, removed; full commands in outputs/negative-proofs.sh)   -> outputs/negative-proofs.txt, outputs/negative-proofs-summary.txt
+$ git worktree remove --force <scratch> && git branch -D scratch/neg-*   (cleanup)
+$ node scripts/collab/preflight.mjs ... --head HEAD (640807e6ff)   -> outputs/preflight-final.txt (all PASS, exit 0); re-run on the follow-up head, all PASS
+$ (atlas update) node scripts/collab/queue.mjs scope-check|validate --base origin/main --head HEAD --branch kiro/say-hello-lane-reassign/reassign -> outputs/atlas-scope-check.txt, outputs/atlas-validate.txt; why: outputs/atlas-paths-update.txt
+$ (i18n paths update) scope-check/validate --branch kiro/say-hello-lane-reassign/reassign -> outputs/i18n-scope-check.txt, outputs/i18n-validate.txt; why: outputs/i18n-paths-update.txt
