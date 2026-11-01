@@ -1,0 +1,15 @@
+{
+  "vtid": "VTID-05437",
+  "kind": "docs",
+  "paths": [
+    ".kiro/specs/staging-coverage-6028392a/**",
+    "docs/programs/standalone/program.md",
+    "docs/validation/VTID-05437/**"
+  ],
+  "sparring_record": ".kiro/specs/staging-coverage-6028392a/sparring/verdict.md",
+  "collab_allow_initial": [
+    "staging-coverage-6028392a"
+  ],
+  "weakens_tests": [],
+  "red_green_exempt": []
+}
