@@ -1,0 +1,5 @@
+# VTID-05416 timings (2026-11-01T21:53:25Z)
+node staging-timings.cjs -> docs/validation/VTID-05416/timings.json (generated from GitHub timestamps + RUN timings)
+AC-1 test (schema, 5 VTIDs, 5 lanes, staging null) -> exit 0 (pass when 0)
+AC-2 test (intervals equal timestamp differences) -> exit 0 (pass when 0)
+
