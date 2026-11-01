@@ -8,6 +8,7 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:ia-architecture-map
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
   - vitana-platform:.kiro/specs/multi-tenant/plan-sparring.md
@@ -23,3 +24,7 @@ Programme registry entry (VTID-05215). Links only; the plan is the source of tru
 - Plan: `vitana-platform:docs/MULTI-TENANT-PLAN.md`
 - Spec: `vitana-platform:.kiro/specs/multi-tenant/` (handoff, requirements, design, tasks, lanes)
 - Spec: `vitana-platform:.kiro/specs/mt-jobs/` (WS6: crons, heartbeat and automation events loop over every active tenant)
+
+## WS-IA: Integrated Architecture (companion workstream; the exit criteria above are unchanged)
+- Spec: `vitana-platform:.kiro/specs/ia-architecture-map/` (the architecture map, and the order of the later IA plans
+  relative to the multi-tenant plans, its `plan.md` §4)
