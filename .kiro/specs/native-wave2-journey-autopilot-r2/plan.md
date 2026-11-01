@@ -4,6 +4,7 @@ via the manifest/closure process, `apps/mobile/parity/ledger.json`, DE-first i18
 backend, no gateway change, no migration). Spec: `requirements.md`, `design.md`, `tasks.md`, `lanes/*.md` in this
 folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5 Wave 2.
 <!-- plan:begin -->
+Sparring note (2026-11-01T23:17Z): session 1 (`956224d9`) escalated on round 1 with `evidence_floor_not_met` (0 premise checks), a partner-side failure (its read_file calls hit the shared GitHub rate limit); this line opens the re-plan session. No plan content changed.
 
 Re-plan note (2026-11-01T17:10Z): this is the plan of `native-wave2-journey-autopilot` (PR #4270) under a new slug, because the old branch has commits without Collab trailers (and lane files with an empty `vtid:` key, which made CI PLAN-SPAR allocate 0 VTIDs). Content unchanged except the slug and the lane `paths`, which now also list the shared native-infra files every screen port produces (`apps/mobile/src/ports/**`, `apps/mobile/src/navigation/resolve.ts`, `packages/core/{manifest,closure.generated,extract}.json`, `packages/core/src/**`, `scripts/native/mobile-ci-paths.generated.json`, `apps/mobile/parity/ledger.json`). Those files are shared between the lanes of this plan and land serialized (collaboration.md §8a).
 
