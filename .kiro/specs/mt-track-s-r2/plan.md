@@ -103,7 +103,10 @@ No file is shared between the lanes. No hot file (no migration, no `App.tsx`, no
 - No pgTAP, contract or golden suite: no DB change, no shared instruction surface.
 
 ## 7. Staging verification
-Both lanes deploy nothing to the gateway or community-app (an edge-function folder removal is not deployed by any
+Merging lane 1 does trigger vitana-v1 `supabase-functions-deploy.yml` (its `paths` include `supabase/functions/**`,
+`:18`), but its `cutover_gate` job freezes every push deploy after the staging-first cutover (`:38-54`, epoch
+2026-06-08), so the job reports frozen and deploys nothing; only a manual `workflow_dispatch` ships, and this plan
+dispatches none (s2 R1-F1). Both lanes deploy nothing to the gateway or community-app (an edge-function folder removal is not deployed by any
 staging workflow; `.github/**` deploys nothing). Each lane's `docs/validation/<VTID>/staging-tests.json` holds a
 read-only `existing` ref (the node gate / the YAML check, run in CI) so STAGING-VERIFY never reports the commits as
 missing a suite (rule 47). No staging invoke of an edge function (a POST), no production probe (rules 31/31b/48).
