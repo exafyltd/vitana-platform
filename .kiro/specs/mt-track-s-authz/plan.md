@@ -43,8 +43,9 @@ Approvals:
 - Both approve handlers call `/api/v1/github/autonomous-pr-merge` with `gatewayServiceAuthHeader()` and
   `automerge: true` (`:589-596`, `:728-735`). `/:approval_id/approve` takes the VTID from the id by regex
   (`:659`) and the branch from OASIS PR info (`:705-723`); `/feed/approve` takes `branch` from the body and checks only
-  that `pr_number` is open with CI passing (`:531-574`); it never compares `branch` with that PR's own branch
-  (`listOpenPrsWithStatus` returns it as `branch`, `src/services/github-service.ts:989-1030`).
+  that `pr_number` is open with CI passing (`:531-574`); it never compares `branch` with that PR's own branch.
+  `listOpenPrsWithStatus` (`src/services/github-service.ts:989`) sets that field as `branch: pr.head.ref`
+  (`:1029`), and `/feed/approve` reads the item as `prItem` (`approvals.ts:551`).
 - `requireServiceOrAdmin` (`src/middleware/require-service-or-admin.ts:71`) accepts the gateway service token or an
   exafy_admin JWT. VTID-05047 put it on the `cicd` router's routes (`test/vtid-05047-cicd-routes-auth.test.ts:36-37`,
   `:123-124`); this separate router was not covered.
@@ -74,14 +75,17 @@ ORB work surfaces:
 - The LiveKit token mint resolves the same profile (`routes/orb-livekit.ts:690-697`). Its tool route re-resolves the
   clamped role per call (`orb-tool.ts:74-80`), the pattern this plan reuses.
 - `fetchPermittedRoles(sb, userId, tenantId)` (`lib/permitted-roles.ts:36`) returns the roles a user holds
-  (`user_permitted_roles` ∪ active memberships ∪ community) or `roles: null` when unreadable.
+  (`user_permitted_roles` ∪ active memberships ∪ community) or `roles: null` when unreadable. It does not throw: a
+  missing client, a missing user or tenant, a query error and an exception all return `{ roles: null, error }`
+  (`:41`, `:42`, `:48-49`, `:53-55`).
 - Who may open each surface today (the screens' own gates): the Command Hub admits exafy_admin or `developer`,
   `admin`, `infra`, `staff` (`routes/command-hub.ts:21`, `:27-52`); vitana-v1 `ProtectedRoute` admits a rank at or
   above the screen's role (`src/hooks/useRole.tsx:14-23`, `:109-115`).
 
 Text path:
 - `ConversationTurnRequestSchema.role` defaults to `'user'` (`src/types/conversation.ts:71`). `/turn` takes it from
-  the body (`routes/conversation.ts:216`) and uses it for the prompt (`:497`), the tool definitions (`:502` →
+  the body (`routes/conversation.ts:216`, `const { channel, tenant_id, user_id, role, … } = input;`) and uses it for
+  the prompt (`:497`), the tool definitions (`:502` `getGeminiToolDefinitions(role)` →
   `tool-registry.ts:1364` `getToolsForRole`) and `userRole` (`:520`); `/stream` passes `input.role` (`:918`). Only the
   `developer_assistant` channel re-checks it server-side (`:225-269`). 18 registry tools allow only
   `['developer','admin']`.
@@ -95,8 +99,9 @@ even before lane `work-surface-permission` lands, because the forwarded token of
 ### Lane `approvals-auth`
 1. `routes/approvals.ts`: `requireServiceOrAdmin` on the three POST routes (`:529`, `:651`, `:780`). The GET routes
    (`/count`, `/pending`, `/feed`) are unchanged (read-only; `operator-console.js` reads `/pending` without a header).
-2. `routes/approvals.ts` `/feed/approve`: answer 400 `branch_mismatch` when the body `branch` is not the feed item's
-   `branch`, so the merge always targets the PR that passed the CI check.
+2. `routes/approvals.ts` `/feed/approve`: answer 400 `branch_mismatch` when the body `branch` differs from
+   `prItem.branch` (set from `pr.head.ref`, `github-service.ts:1029`), so the merge always targets the PR that passed
+   the CI check. The test builds the feed item with that exact field.
 3. `services/orb-tools/developer-tools.ts`: `approvalsApi` takes the tool identity and sends
    `Authorization: Bearer <id.user_jwt>` when present; `dev_approve_pr` / `dev_reject_pr` with no `user_jwt` answer
    that a signed-in admin session is needed (the `NO_ADMIN_SESSION` pattern, `admin-users-rbac-tools.ts:37-41`)
@@ -115,18 +120,24 @@ even before lane `work-surface-permission` lands, because the forwarded token of
    `backoffice` → `backoffice|admin|developer|infra` (the `ProtectedRoute` rank rule). `commerce` is unchanged
    (navigation pack only, no member or admin context). Otherwise, and when `permittedRoles` is `null`, the result is
    the member profile (`surface: 'vitanaland'`, `resolution: 'narrowed'`, declared values kept for telemetry).
-   `resolveAssistantProfile` itself is unchanged.
+   `resolveAssistantProfile` itself is unchanged. Resolution after the check: kept by the exafy_admin claim → the
+   resolver's value (`declared` or `route`); kept by a permitted role → a new `ProfileResolution` member
+   `'permitted'` (`assistant-profile.ts:55`); refused → `'narrowed'`. An authenticated session therefore never ends
+   `unverified`; `summarizeProfiles` (`orb/developer/system-snapshot.ts:89-97`) counts any resolution string.
 2. `orb/live/session/live-session-controller.ts` (≤ 20 lines, after `:1181-1187`): for an authenticated session whose
    profile is a work surface, read `fetchPermittedRoles` (skipped for exafy_admin) and apply step 1 before anything
-   reads the profile; the existing `orb.session.profile.resolved` event reports the final resolution.
+   reads the profile. The call is guarded with `.catch(() => ({ roles: null }))` although the function does not throw;
+   `roles: null` is a refusal. The existing `orb.session.profile.resolved` event reports the final resolution, with
+   `status: 'warning'` when a work surface was refused (today `:1192` warns on `unverified`).
 3. `routes/orb-livekit.ts:690-697`: the same verification for the LiveKit mint.
 4. `routes/conversation.ts` (`/turn` `:216`, `/stream` `:918`): the body role `'user'` or `'community'` passes as today;
    any other value is used only when the exafy_admin claim is present or `resolveEffectiveRole` (`orb-live.ts:814-845`)
    returns that role for the caller, else `'user'`. The `developer_assistant` check stays.
 5. Test `test/mt-track-s-authz-work-surface.test.ts` (fails on base): the step-1 matrix (each surface × exafy,
    permitted, not permitted, unreadable); a controller-level case where a caller without a permitted role declares
-   `command-hub` or `admin` and is served the member surface with no admin briefing; a text-path case where body
-   role `developer` without permission gets the `'user'` tool set.
+   `command-hub` or `admin` and is served the member surface with no admin briefing; a permitted non-exafy caller
+   gets `resolution: 'permitted'`; a permitted-roles read failure (`roles: null`, and a rejected promise) is served
+   the member surface; a text-path case where body role `developer` without permission gets the `'user'` tool set.
 
 ## 5. Parallel work, shared and hot files
 - No two lanes edit the same file. Hot files: `routes/orb-live.ts` (lane `approvals-auth`, ≤ 3 lines) and
@@ -158,7 +169,8 @@ Staging (read-only, `docs/validation/<VTID>/staging-tests.json`):
   (`resolution: narrowed`).
 - `staff` keeps the developer surface on the Command Hub, because the Command Hub itself admits staff
   (`command-hub.ts:21`). Narrowing that is a product decision outside this plan.
-- The approvals GET routes stay unauthenticated (read-only). Recorded as a follow-up, not changed here.
+- The approvals GET routes stay unauthenticated (read-only PR and ledger metadata). Tracked as follow-up F1 in
+  `handoff.md`, to be planned as its own Track S slice together with the `operator-console.js` header change it needs.
 - Developer voice approve and reject now need the caller's own token; sessions without one get the admin-session
   answer instead of a merge.
 

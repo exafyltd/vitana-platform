@@ -11,7 +11,9 @@ are under `services/gateway/` unless they start with `docs/`.
 - [ ] A2 Write `test/mt-track-s-authz-approvals-auth.test.ts` first and record it red on `origin/main`: 401 without a
       bearer and 403 with a non-exafy JWT on `POST /feed/approve`, `POST /:approval_id/approve`,
       `POST /:approval_id/reject`; the service token and an exafy_admin JWT reach the handler (outbound `fetch` mocked,
-      nothing merged); `/feed/approve` answers 400 `branch_mismatch` when `branch` is not the feed item's `branch`.
+      nothing merged); `/feed/approve` answers 400 `branch_mismatch` when the body `branch` differs from the feed item's
+      `branch` field (the field `listOpenPrsWithStatus` sets from `pr.head.ref`, `github-service.ts:1029`; the test
+      builds the item with that exact field).
 - [ ] A3 `routes/approvals.ts`: `requireServiceOrAdmin` on the three POST routes; the `branch_mismatch` check in
       `/feed/approve`. GET routes unchanged.
 - [ ] A4 `services/orb-tools/developer-tools.ts`: `approvalsApi` sends `Authorization: Bearer <id.user_jwt>` when
@@ -49,11 +51,14 @@ are under `services/gateway/` unless they start with `docs/`.
       LiveKit mint at `orb-livekit.ts:690-697`, the text role at `conversation.ts:216`, `:918`).
 - [ ] W2 Write `test/mt-track-s-authz-work-surface.test.ts` first and record it red on `origin/main`: the
       `verifyWorkSurfaceProfile` matrix (`command-hub`, `admin`, `backoffice`, `commerce` × exafy_admin, permitted,
-      not permitted, `permittedRoles: null`); a controller case where a caller without a permitted role declares
-      `command-hub` or `admin` and gets the member surface with no admin briefing; a LiveKit mint case; a text-path
-      case where body role `developer` without permission yields the `'user'` tool set.
+      not permitted, `permittedRoles: null`), including the resolution each case ends with (`declared`/`route` for
+      exafy_admin, `permitted`, `narrowed`); a controller case where a caller without a permitted role declares
+      `command-hub` or `admin` and gets the member surface with no admin briefing, and the profile event warns; a
+      controller case where the permitted-roles read returns `roles: null` and one where it rejects, both served the
+      member surface; a LiveKit mint case; a text-path case where body role `developer` without permission yields the
+      `'user'` tool set.
 - [ ] W3 `orb/profile/assistant-profile.ts`: add `verifyWorkSurfaceProfile` per plan §4 (pure; `resolveAssistantProfile`
-      unchanged).
+      unchanged) and the `ProfileResolution` member `'permitted'`.
 - [ ] W4 `orb/live/session/live-session-controller.ts`: read `fetchPermittedRoles` for an authenticated work-surface
       session (not for exafy_admin) and apply W3 before any consumer reads the profile; at most 20 lines.
 - [ ] W5 `routes/orb-livekit.ts`: the same check on the mint's profile.
@@ -70,8 +75,9 @@ are under `services/gateway/` unless they start with `docs/`.
 - Outcome: Vitana serves the developer, admin or BackOffice assistant only to a caller who is allowed to open those
   screens; anyone else talks to the member Vitana, without admin briefing and without privileged tools. The text chat
   uses a privileged role only when the caller holds it.
-- States: exafy_admin → declared surface kept; permitted role → kept; not permitted → member surface (`narrowed`);
-  permitted roles unreadable → member surface (fail closed); anonymous → unchanged (`anonymous`).
+- States: exafy_admin → declared surface kept (`declared`/`route`); permitted role → kept (`permitted`); not
+  permitted → member surface (`narrowed`, event `warning`); permitted roles unreadable or the read rejects → member
+  surface (fail closed); anonymous → unchanged (`anonymous`).
 - Surfaces: callers — Vertex/Nova voice session start (WS and SSE), LiveKit token mint, `/conversation/turn` and
   `/conversation/stream`; the member surface and the Command Hub for exafy_admin are unchanged.
 - Locales: n/a: no user-visible catalog text; spoken wording stays model-composed (NEVER 41).
