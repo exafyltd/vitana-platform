@@ -11,7 +11,7 @@ paths:
   - services/gateway/test/mt-maxina-golden.test.ts
   - services/gateway/test/golden/**
   - scripts/mt/golden/**
-updated: 2026-11-01T21:40Z
+updated: 2026-11-01T21:46Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05448
 ---
@@ -43,4 +43,6 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05448 allocated after policy approval (converged-auto-v1).
 ### 2026-11-01T21:40Z · pm-agent · update
+reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:46Z · pm-agent · update
 reassign lane jtadic→exafyltd (stale_ready, Claude unavailable)
