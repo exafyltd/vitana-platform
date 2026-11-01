@@ -1,0 +1,26 @@
+# npx jest --runInBand <file>, one suite per run, serially, Windows local worktree
+# tree bf113915ce (lane diff applied on origin/main e79092087b; the single lane commit carries this tree plus these evidence files)
+# summary lines only (full console output omitted: mock-noise warnings)
+PASS test/vtid-05366-companion-enrichment-moments.test.ts (10.638 s)
+Tests:       15 passed, 15 total
+PASS test/vtid-05367-companion-enrichment-signals.test.ts (6.534 s)
+Tests:       14 passed, 14 total
+PASS test/vtid-05099-companion-messages.test.ts (30.656 s)
+Tests:       33 passed, 33 total
+PASS test/vtid-05099-proactive-match-daily-limit.test.ts
+Tests:       5 passed, 5 total
+PASS test/vtid-05100-companion-delivery.test.ts (16.408 s)
+Tests:       24 passed, 24 total
+PASS test/vtid-05101-companion-generators.test.ts (9.112 s)
+Tests:       27 passed, 27 total
+PASS test/vtid-05171-companion-wiring.test.ts (26.909 s)
+Tests:       28 passed, 28 total
+PASS test/companion-qa.test.ts (35.85 s)
+Tests:       38 passed, 38 total
+# total: 8 suites, 184/184 passed
+
+# base-red (moments.ts = origin/main, the new/changed tests from this lane), same machine, 2026-11-01:
+FAIL test/vtid-05366-companion-enrichment-moments.test.ts
+Tests:       12 failed, 3 passed, 15 total
+FAIL test/vtid-05101-companion-generators.test.ts
+Tests:       1 failed, 26 passed, 27 total
