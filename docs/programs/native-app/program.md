@@ -26,6 +26,7 @@ specs:
   - vitana-platform:native-wave2-public-auth-onboarding-r3
   - vitana-platform:native-wave2-role-modes
   - vitana-platform:native-wave2-sharing-business
+  - vitana-platform:native-wave2-sharing-business-r2
   - vitana-platform:native-wave2-wallet
   - vitana-platform:native-wave2-wallet-r2
 docs:
