@@ -1,0 +1,12 @@
+✔ each spec of plan item 5 belongs to its programme (2.6781ms)
+✔ each added slug matches the spec slug pattern and is listed exactly once (1.6653ms)
+✔ each programme lists the repo of every spec it holds (R2-F1) (1.0923ms)
+✔ validatePrograms is clean (3.2303ms)
+ℹ tests 4
+ℹ suites 0
+ℹ pass 4
+ℹ fail 0
+ℹ cancelled 0
+ℹ skipped 0
+ℹ todo 0
+ℹ duration_ms 502.1524

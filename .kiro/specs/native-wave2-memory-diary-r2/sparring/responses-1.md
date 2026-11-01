@@ -1,0 +1,4 @@
+# Responses — round 1 (native-wave2-memory-diary-r2)
+```json
+[{"finding_id": "R1-F1", "disposition": "accepted", "rationale": "Plan decision 3 now requires the diary PR to register expo-image-picker (photosPermission, cameraPermission -> NSPhotoLibraryUsageDescription, NSCameraUsageDescription) and the chosen audio package (microphonePermission -> NSMicrophoneUsageDescription) as Expo config plugins in apps/mobile/app.config.ts, the app's only Expo config (no app.json) and already in the diary lane's paths. Texts are DE-first from src/i18n/*/diaryNative.json. A unit test resolves the Expo config with APP_PROFILE=development and asserts both plugins and the three iOS keys, so the offline checks catch a missing entry; APP_PROFILE=development npm run bundle is in the verify list. Per-locale InfoPlist localisation is checked on the G1 device build. tasks.md diary task 2 is updated to match.", "deferred_to": ""}]
+```

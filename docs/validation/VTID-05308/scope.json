@@ -1,0 +1,11 @@
+{
+  "vtid": "VTID-05308",
+  "kind": "infra",
+  "paths": [
+    "docs/validation/VTID-05308/**"
+  ],
+  "sparring_record": "docs/validation/VTID-05406/plan-sparring.md",
+  "weakens_tests": [],
+  "red_green_exempt": [],
+  "note": "VTID-05308 (#4423) merged earlier without a staging suite; VTID-05406 (plan sv-05308-coverage) adds docs/validation/VTID-05308/staging-tests.json and owns this change. The sparring record lives under VTID-05406 (the plan that authorised this work)."
+}

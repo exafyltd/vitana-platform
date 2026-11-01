@@ -1,0 +1,11 @@
+# VTID-05406 (sv-05308-coverage/suite)
+$ loadManifest red-on-base (file hidden) then green (file present)
+red-on-base (file absent): loadManifest = null (RED)
+green (file present): loadManifest = VTID-05308 gateway tests 2
+
+$ npx jest test/loop-catalog.test.ts test/vtid-04868-plan-sparring-session-layer.test.ts (services/gateway)
+Test Suites: 2 passed, 2 total
+Tests:       32 passed, 32 total
+
+$ python3 -m json.tool docs/validation/VTID-05308/staging-tests.json  => valid
+2026-10-31T12:40Z kiro-ide-202610311231-05bd: node acceptance-mapping check (VALIDATOR-CHECK exit-41 logic) -> Acceptance mapping OK; AC-2 node check -> ok; AC-4 git diff --name-only origin/main...HEAD outside allowlist -> 0 files
