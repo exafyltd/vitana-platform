@@ -83,3 +83,5 @@ PR: https://github.com/exafyltd/vitana-v1/pull/1528
 Findings: non-blocking only (reviewer session sess_a0ca68df-925d-4f1e-90d4-30dda30fed47, workflow wf_a9cfc9f9da8222b0). The head after update-branch adds only main's commits on top of the earlier accept at 5137a1ae.
 Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2) in vitana-platform, where this lane's spec lives; the review ran as a separate read-only agent session.
 Next: none for the reviewer; merge under collaboration.md §7b once checks are green.
+### 2026-11-01T03:08Z · kiro-ide-202610272306-27b0 · merged
+PR https://github.com/exafyltd/vitana-v1/pull/1528 squash-merged by land-guard under collaboration.md §7b (PM merge rule, applied by the plan driver while the PM is not live), no `--admin`: merge commit ea962fc8c680b00c1687065531382c6b2dbf57f6 (mergedAt 2026-11-01T03:08:17Z), reviewed head 802f2d6a. One rerun of PR-GATE (Lane scope, preview-e2e): both failed on a GitHub API rate limit (HTTP 403), infra.
