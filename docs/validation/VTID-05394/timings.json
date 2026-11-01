@@ -1,0 +1,55 @@
+{
+  "schema": "vitana.plan-timings/v1",
+  "plan_slug": "fix-deeplink-scroll-test",
+  "vtid": "VTID-05394",
+  "vtids": ["VTID-05394"],
+  "generated_at": "2026-11-01T02:20:00Z",
+  "generated_by": "kiro (staging step of workflow wf_41f1175f2cb86d49, session kiro-dstev-202610280954-a005)",
+  "plan_pr_opened_at": "2026-10-28T11:08:45Z",
+  "converged_at": "2026-10-28T13:08:21Z",
+  "policy_approved_at": "2026-10-28T13:08:21Z",
+  "vtids_allocated_at": "2026-10-28T13:11:03Z",
+  "plan_merged_at": "2026-10-28T13:37:19Z",
+  "gate2_sent_at": null,
+  "convergence_ms": 7176000,
+  "vtid_ms": 162000,
+  "plan_merge_ms": 1576000,
+  "lanes": [
+    {
+      "lane": "fixture-dates",
+      "vtid": "VTID-05394",
+      "repo": "exafyltd/vitana-v1",
+      "pr": "https://github.com/exafyltd/vitana-v1/pull/1533",
+      "claimed_at": "2026-10-31T22:05:00Z",
+      "pr_opened_at": "2026-10-31T23:36:38Z",
+      "accepted_at": "2026-11-01T00:05:42Z",
+      "merged_at": "2026-11-01T00:57:22Z",
+      "merge_sha": "3a690a9de7cb1d5aeee69b876233fadd0039ce3b",
+      "staging_verified_at": null,
+      "build_ms": 5498000,
+      "review_ms": 1744000,
+      "merge_ms": 3100000,
+      "review_rounds": 0,
+      "ci_fix_attempts": 0
+    }
+  ],
+  "staging_verify_ms": null,
+  "approved_to_verified_ms": null,
+  "merge_conflict_count": 0,
+  "staging_verify_failure_count": null,
+  "definitions": {
+    "convergence_ms": "plan_pr_opened_at -> converged_at",
+    "vtid_ms": "converged_at -> vtids_allocated_at",
+    "plan_merge_ms": "vtids_allocated_at -> plan_merged_at",
+    "build_ms": "claimed_at -> pr_opened_at",
+    "review_ms": "pr_opened_at -> accepted_at (accept on the merged head 4657522e4d)",
+    "merge_ms": "accepted_at -> merged_at"
+  },
+  "sources_unavailable": [
+    "claimed_at: from the lane-code step's local timing log (lane_started), not a GitHub timestamp.",
+    "converged_at / vtids_allocated_at: from the spar step's timing log (PLAN-SPAR bot commit 5bb2a8f629).",
+    "staging_verified_at / staging_verify_ms / approved_to_verified_ms / staging_verify_failure_count: the plan deploys nothing. Lane merge 3a690a9de7 changed only docs/validation/VTID-05394/**, which no AWS-STAGE-DEPLOY-* workflow watches; DEPLOY.yml's push run 41259012002 ran cutover_gate only (aws_prod skipped). No STAGING-VERIFY run exists, so these stay null.",
+    "gate2_sent_at: no Gate 2 for a plan that deploys nothing."
+  ],
+  "note": "Single lane, single CI-allocated VTID. Verification-only lane: the outbox fixture fix had already landed on vitana-v1 main via #1508 (627e8094f). Vitest (jsdom) green on main at the merge commit (UNIT-TESTS run 41259011882). The first accept (claude-opus-5.5 on 51bc114) was superseded by a second accept (claude-sonnet-5.5 on 4657522e4d) after gh pr update-branch; no change was requested, so review_rounds stays 0."
+}
