@@ -8,6 +8,7 @@ folder. Program: `docs/programs/native-app/NATIVE-APP-PLAN.md` (VTID-05021), §5
 Re-plan of native-wave2-public-auth-onboarding (PR #4275, converged) under a new slug; the old branch has commits without Collab trailers.
 The content below is the converged plan of `native-wave2-public-auth-onboarding` unchanged except the slug. The old plan's VTIDs (VTID-05369, VTID-05370, VTID-05371) were written only on the old PR branch, never on `main`; they are to be retired (terminalized `cancelled` by the PM or the exceptions seat once these lanes have their own VTIDs); this plan does not touch the ledger.
 Sparring history: https://github.com/exafyltd/vitana-platform/pull/4275 (rounds under `.kiro/specs/native-wave2-public-auth-onboarding/sparring/` on the old branch; not copied here). PLAN-SPAR spars this slug as a fresh session.
+Sparring session 1 of this slug (`023c2655-8525-4b01-a249-bab1d8050566`) escalated with zero findings on the partner's evidence floor (`evidence_floor_not_met`: the partner cited no `read_file` result), not on a plan disagreement; this revision starts the re-plan session. The plan content is unchanged.
 ## Cross-repo sparring
 This plan's implementation lives in `exafyltd/vitana-v1` (native app `apps/mobile/**`, `packages/core/**`, the parity
 ledger, i18n shards), while the plan PR itself is in `exafyltd/vitana-platform`. Every load-bearing premise the
