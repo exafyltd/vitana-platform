@@ -8,7 +8,7 @@ area: frontend
 depends_on: []
 branch: kiro/new-member-welcome/new-member-card-optin
 pr: https://github.com/exafyltd/vitana-v1/pull/1441
-updated: 2026-11-01T23:42Z
+updated: 2026-11-01T23:48Z
 parked_from: verified
 ---
 # New-member card opt-in + feed source
@@ -295,4 +295,6 @@ park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-01T23:24Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
 ### 2026-11-01T23:42Z · pm-agent · update
+park (stale_claim); claim released; Claude unavailable → exafyltd
+### 2026-11-01T23:48Z · pm-agent · update
 park (stale_claim); claim released; Claude unavailable → exafyltd
