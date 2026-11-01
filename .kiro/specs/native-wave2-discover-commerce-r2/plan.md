@@ -41,7 +41,7 @@ behaviour exactly and adds no onboarding step, field, dialog, status or friction
   `components/discover/MobileDiscoverView.tsx`, `components/orders/MobileOrdersView.tsx`.
 - Wave 1 is on main: N3 shell + resolver route (`apps/mobile/app/(app)/[...path].tsx`, VTID-05186), N2 UI kit
   (`@vitana/ui`, VTID-05176), N1 `@vitana/core`/`@vitana/tokens` (VTID-05183). Prop map, ports and conventions in
-  `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` refuses prod/staging hosts.
+  `apps/mobile/README.md`. The native app has no production profile; `assertNotProduction()` (`apps/mobile/src/config/env.ts:68`, with `assertNotProductionKey` at `:98`) refuses prod/staging hosts.
 
 ## Decisions (made by Kiro as planner under the owner's "finish the native apps" instruction; sparring may revise)
 1. **Three disjoint lanes by route/screen subtree** — `discover` (the discover overview + tabs, the discover
@@ -69,8 +69,9 @@ behaviour exactly and adds no onboarding step, field, dialog, status or friction
    shared across discover, supplements, wellness, deals, category and product-detail). Therefore
    **`product-cart-checkout` depends_on `[discover]`**; `discover` and `marketplace-orders` have no deps and run in
    parallel. `marketplace-orders` owns the `MobileOrdersView` twin.
-4. **iOS IAP gate flagged per screen, behaviour unchanged.** `isIAPRestricted()` today = `Platform.OS === 'ios'`
-   (`apps/mobile/src/shell/logic/drawer.ts:37-38`; the shell already hides `wallet` on iOS). Program decision 5 keeps
+4. **iOS IAP gate flagged per screen, behaviour unchanged.** Today the gate is the `iapRestricted: boolean` field of `DrawerInput`
+   (`apps/mobile/src/shell/logic/drawer.ts:38`, documented at `:37` as `Platform.OS === 'ios'`, program decision 5) and the
+   drawer filters `wallet` with it (`:68`); each ported purchase screen reads the same flag through the shell port. Program decision 5 keeps
    today's behaviour and defers extending the gate to every digital purchase surface until an iOS store submission —
    **that decision is NOT made in this parity port.** Every purchase surface carries an explicit per-screen flag
    (`requirements.md` R5, the inventory in `design.md`) so the executor records it; the highest-priority flags all
@@ -132,7 +133,7 @@ parallel; `product-cart-checkout` waits for `discover` (the `AddToCartButton` tw
 - **i18n:** 11 locales (ar de en es fr pl pt ru sr tr zh), any new key DE-first (du-form) then mirrored; RTL (`ar`)
   rendered per screen.
 - **iOS IAP gate:** every purchase surface flagged per screen (R5 / the inventory) carries an explicit note recording
-  today's behaviour — `isIAPRestricted()` = `Platform.OS === 'ios'` — with the gate decision deferred; the port does
+  today's behaviour — `iapRestricted` (`drawer.ts:38`) = `Platform.OS === 'ios'` — with the gate decision deferred; the port does
   not change it.
 - **Deferred to G1 (owner gate, `next_actor: owner`):** Maestro `apps/mobile/maestro/discover-commerce/*.yaml`, iOS
   simulator + Android emulator screenshots at the device sizes, screenshot parity vs the 390×844 **read-only** staging
@@ -150,6 +151,8 @@ parallel; `product-cart-checkout` waits for `discover` (the `AddToCartButton` tw
 - Whether the shared i18n shard stays single (`discoverCommerceNative.json`) or splits per lane
   (`discoverNative.json` / `cartOrdersNative.json` / `marketplaceOrdersNative.json`); default mirrors the model's
   single-shard-per-spec pattern.
+Legacy `/cart`: web `src/App.tsx:1087` redirects `/cart` to `/universal-cart`; `product-cart-checkout` adds the same
+redirect in `apps/mobile/src/navigation/resolve.ts` so a `/cart` deep link opens the native universal cart.
 <!-- plan:end -->
 
 <!-- cross-repo plan; vitana-v1 read via spar_refs. fresh session after PLAN-SPAR repair; 2026-10-28T09:49:52.3357947+01:00 -->
