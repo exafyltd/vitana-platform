@@ -13,6 +13,7 @@ specs:
   - vitana-platform:native-wave2-home-feed-news-r2
   - vitana-platform:native-wave2-inbox-chat-calls
   - vitana-platform:native-wave2-journey-autopilot
+  - vitana-platform:native-wave2-journey-autopilot-r2
   - vitana-platform:native-wave2-memory-diary
   - vitana-platform:native-wave2-memory-diary-r2
   - vitana-platform:native-wave2-profile-settings
