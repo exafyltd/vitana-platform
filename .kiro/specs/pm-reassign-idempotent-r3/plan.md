@@ -50,7 +50,7 @@ every tick. Observed (read-only): #4370 (`pm-agent/commerce-step-owner`) `seat: 
    `next.actor === lane.seat` (`:249`). `nextActor` (`:233-241`) never looks at `lane.reviewer_seat`: at the end of
    the area rotation it returns `claudeOrExceptions(claude)`, i.e. the exceptions seat `exafyltd` while Claude is
    unavailable. `actReassign` then sets `seat: <to_actor>` (`act.ts:286`). When the lane's legacy `reviewer_seat` is
-   that seat, the lane file has `seat == reviewer_seat`, which `scripts/collab/queue.mjs:227` (`validateLane`)
+   that seat, the lane file has `seat == reviewer_seat`, which `scripts/collab/queue.mjs:234` (`validateLane`)
    rejects. The bookkeeping PR stays red, so it never merges.
 6. The observer reads lanes from `main` only (`observe-live.ts`), so while a bookkeeping PR is open the decider sees
    the old lane and re-issues the same decision every tick. Change 1 makes that repeat write nothing; change 2 makes
@@ -76,7 +76,7 @@ every tick. Observed (read-only): #4370 (`pm-agent/commerce-step-owner`) `seat: 
    write. The `stale_review` path is unchanged by this item.
 3. `writers.ts` `applyLaneChange`: throws `invalid lane change: seat equals reviewer_seat` only when **this change
    introduces** it: `change.seat` is defined, differs from the file's current `seat`, and equals the file's non-empty
-   `reviewer_seat` (the rule of `queue.mjs:227`). A lane that already carries `seat == reviewer_seat` (pre-existing
+   `reviewer_seat` (the rule of `queue.mjs:234`). A lane that already carries `seat == reviewer_seat` (pre-existing
    bad state on a bookkeeping branch) still accepts other PM writes (park, done, verify, a `next_actor`-only
    change), so the guard never blocks them (R1-F1). `act` reports the error as today.
 4. `act.ts`: `LaneFileWriter.write` returns `Promise<'written' | 'noop'>`. Every existing implementation returns
