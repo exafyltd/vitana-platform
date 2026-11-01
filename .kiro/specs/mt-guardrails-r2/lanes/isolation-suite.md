@@ -10,7 +10,7 @@ depends_on: [local-test-stack, generated-inventories]
 paths:
   - scripts/ci/sql-tests/mt-isolation.test.sql
   - scripts/ci/sql-tests/run-mt-isolation-test.sh
-updated: 2026-11-01T21:40Z
+updated: 2026-11-01T21:46Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05446
 ---
@@ -54,4 +54,6 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05446 allocated after policy approval (converged-auto-v1).
 ### 2026-11-01T21:40Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:46Z · pm-agent · update
 reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
