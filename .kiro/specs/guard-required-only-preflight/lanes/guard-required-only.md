@@ -1,10 +1,10 @@
 ---
 lane: guard-required-only
-state: executing
+state: parked
 next_actor: kiro
 depends_on: []
 executor: kiro
-seat: jtadic
+seat: exafyltd
 area: platform
 reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 reviewer_seat: agent:vitana-lane-reviewer
@@ -15,10 +15,10 @@ paths:
   - scripts/collab/kiro-web-session.mjs
   - scripts/collab/kiro-web-session.test.mjs
   - docs/validation/VTID-*/**
-updated: 2026-10-30T13:21Z
-claimed_by: kiro-jtadic-202610291040-a0e6
+updated: 2026-11-01T13:37Z
 branch: kiro/guard-required-only-preflight/guard-required-only
 vtid: VTID-05413
+parked_from: executing
 ---
 # guard-required-only — the push guard blocks only on required preflight failures
 Plan: `.kiro/specs/guard-required-only-preflight/plan.md`, `tasks.md` section `guard-required-only`. Held until PLAN-SPAR
@@ -44,3 +44,5 @@ reviewer: agent:vitana-lane-reviewer (claude-sonnet-5.5)
 PR: https://github.com/exafyltd/vitana-platform/pull/4509
 Findings: non-blocking: CI check state on this head could not be read by the reviewer (GraphQL not supported, gh api not allowed); the land step must confirm every required check green on the current head. non-blocking: report-only detection in checkPush (/^FAIL /m under --required-only exit 0) is sound; no change needed.
 Next: the land step merges under §7b
+### 2026-11-01T13:37Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
