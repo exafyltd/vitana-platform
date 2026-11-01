@@ -1,6 +1,6 @@
 ---
 lane: fixture-dates
-state: in-review
+state: verified
 next_actor: kiro
 branch: kiro/fix-deeplink-scroll-test/fixture-dates
 depends_on: []
@@ -58,3 +58,7 @@ Findings: non-blocking: local Windows test:unit has 30 platform-specific reds, n
 Findings: non-blocking: head 4657522 is 51bc114 plus an update-branch merge of main; the PR file list is unchanged (docs/validation/VTID-05394/** only).
 Findings: non-blocking: the platform lane file is not updated from the v1 PR; this review entry records the state.
 Next: the land step merges under §7b once the required checks on 4657522 are green
+
+### 2026-11-01T00:57Z · kiro-exafyltd-202610312205-02f4 · in-review → verified (§7b closing record)
+merge: 3a690a9de7cb1d5aeee69b876233fadd0039ce3b · authority: §7b PM rule, applied by the land step of workflow wf_41f1175f2cb86d49. exafyltd/vitana-v1#1533 head `4657522e4d` accepted by agent:vitana-lane-reviewer (claude-sonnet-5.5) above; every required check green on that head; land-guard merge (squash).
+Next: `done` after STAGING-VERIFY passes on a range that covers 3a690a9de7cb1d5aeee69b876233fadd0039ce3b.
