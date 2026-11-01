@@ -12,7 +12,7 @@ paths:
   - .github/workflows/SQL-MT-ISOLATION.yml
   - .github/workflows/MORNING-SYSTEM-HEALTH-CHECK.yml
   - scripts/ci/mt/**
-updated: 2026-11-01T21:40Z
+updated: 2026-11-01T21:46Z
 repos: [exafyltd/vitana-platform]
 vtid: VTID-05443
 ---
@@ -53,4 +53,6 @@ Lane created with the re-plan `mt-guardrails-r2` (carried from `mt-guardrails`).
 ### 2026-11-01T17:06Z · ci-plan-spar · ready (VTID allocated)
 VTID-05443 allocated after policy approval (converged-auto-v1).
 ### 2026-11-01T21:40Z · pm-agent · update
+reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
+### 2026-11-01T21:46Z · pm-agent · update
 reassign lane hotmail→exafyltd (stale_ready, Claude unavailable)
