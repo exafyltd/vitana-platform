@@ -152,3 +152,5 @@ PR: https://github.com/exafyltd/vitana-v1/pull/1531
 Findings: non-blocking only (reviewer session sess_71ec8640-bfba-4339-ac37-3fb6f1b56f55, workflow wf_17a9866573b78784): the PR's own diff is unchanged (the :visible mount assertion, same fix as #1528/#1529). The head after update-branch adds only main's commits on top of the earlier accept at 2aa97aab.
 Stored by the land step (parent session kiro-ide-202610272306-27b0) on the agent's behalf (`lane-land.md` step 2) in vitana-platform, where this lane's spec lives; the review ran as a separate read-only agent session.
 Next: none for the reviewer; merge under collaboration.md §7b once checks are green.
+### 2026-11-01T05:01Z · kiro-ide-202610272306-27b0 · merged
+PR https://github.com/exafyltd/vitana-v1/pull/1531 squash-merged by land-guard under collaboration.md §7b (PM merge rule, applied by the plan driver while the PM is not live), no `--admin`: merge commit 3251eed3bd8290780fa1b330662a65a8022a16b1 (mergedAt 2026-11-01T05:01:24Z), reviewed head 776b9b7b.
