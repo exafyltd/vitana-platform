@@ -4,10 +4,12 @@ author: kiro
 author_seat: exafyltd
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 spar_refs:
   - exafyltd/vitana-v1: main
-updated: 2026-11-01T21:50Z
+updated: 2026-11-01T23:08Z
+sparring_record: .kiro/specs/sidebar-chrome-colour-tokens/sparring/verdict.md
+vtids: [VTID-05454]
 ---
 # Handoff — sidebar-chrome-colour-tokens
 Planner and driver: Kiro session `kiro-exafyltd-202611012123-9806` (Kiro IDE workflow step of the backlog cleanup run
@@ -21,3 +23,6 @@ sidebar/app-bar chrome: *"decide yourself and get it done"*. It covers `AppLayou
   `file:line` evidence comes from it.
 - Read-only investigation; no VTID allocated; no live system touched.
 Next: PLAN-SPAR spars the plan. On convergence the driver builds the lane and opens the lane PR for review.
+
+### 2026-11-01T23:08Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 1 lane(s) got a VTID and are handed to Kiro.

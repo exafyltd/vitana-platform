@@ -14,7 +14,8 @@ paths:
   - src/components/mobile/TopAppBar.tsx
   - src/components/chrome-colour-tokens.test.tsx
   - docs/validation/VTID-*/**
-updated: 2026-11-01T21:50Z
+updated: 2026-11-01T23:08Z
+vtid: VTID-05454
 ---
 # chrome-colour-tokens — two palette-to-token swaps in the sidebar header and the mobile top app bar (repo vitana-v1)
 Plan: `.kiro/specs/sidebar-chrome-colour-tokens/plan.md` and `tasks.md` section `chrome-colour-tokens`.
@@ -24,3 +25,6 @@ hand, no production workflow, no live writes. `docs/validation/VTID-*/**` means 
 ## Log
 ### 2026-11-01T21:50Z · kiro-exafyltd-202611012123-9806 · created → ready
 Created and held.
+
+### 2026-11-01T23:08Z · ci-plan-spar · ready (VTID allocated)
+VTID-05454 allocated after policy approval (converged-auto-v1).
