@@ -8,6 +8,7 @@ specs:
   - vitana-platform:multi-tenant
   - vitana-platform:mt-jobs
   - vitana-platform:mt-launch
+  - vitana-platform:mt-track-s-authz
 docs:
   - vitana-platform:docs/MULTI-TENANT-PLAN.md
   - vitana-platform:.kiro/specs/multi-tenant/plan-sparring.md
@@ -23,3 +24,5 @@ Programme registry entry (VTID-05215). Links only; the plan is the source of tru
 - Plan: `vitana-platform:docs/MULTI-TENANT-PLAN.md`
 - Spec: `vitana-platform:.kiro/specs/multi-tenant/` (handoff, requirements, design, tasks, lanes)
 - Spec: `vitana-platform:.kiro/specs/mt-jobs/` (WS6: crons, heartbeat and automation events loop over every active tenant)
+- Spec: `vitana-platform:.kiro/specs/mt-track-s-authz/` (Track S: server-side authorization for the approvals
+  actions, the ORB work surfaces and the text-path role; from the Integrated Architecture assessment)
