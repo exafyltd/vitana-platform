@@ -5,7 +5,7 @@ executor: kiro
 next_actor: kiro
 state: drafted
 author_seat: exafyltd
-updated: 2026-11-01T00:05Z
+updated: 2026-11-01T01:14Z
 spar_refs:
   - exafyltd/vitana-v1: main
 ---
@@ -23,3 +23,5 @@ Re-plan of `native-wave2-memory-diary` (PR #4322, converged) under a new slug; t
 ## Log
 ### 2026-11-01T00:05Z · kiro-exafyltd-202611010001-e9e0 · created → drafted
 Holder of the `native-wave2-memory-diary-r2/_plan` claim. Re-plan of `native-wave2-memory-diary` (PR #4322, converged and policy-approved), whose branch cannot pass Collab handoff without a history rewrite (commits without a Collab-Session trailer). Copied the converged plan, tasks, requirements, design and lane files from the old PR head; lane VTIDs removed (CI allocates on convergence), lane logs restarted, sparring rounds left on the old PR. One commit, one session. No VTID allocated, no product code changed, no live system touched. Next: PLAN-SPAR spars the `plan(native-wave2-memory-diary-r2)` PR; this session answers each round in `sparring/responses-<n>.md`.
+### 2026-11-01T01:14Z · kiro-exafyltd-202611010001-e9e0 · drafted (sparring round 1 answered)
+R1-F1 accepted: the `diary` PR registers `expo-image-picker` and the audio package as Expo config plugins in `apps/mobile/app.config.ts` with the camera / photo-library / microphone usage descriptions, checked by a unit test on the resolved config. Plan decision 3 and diary task 2 updated; no lane file changed. Answers: `sparring/responses-1.md`.

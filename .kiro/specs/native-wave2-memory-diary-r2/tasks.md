@@ -99,8 +99,15 @@ photo/audio capture use new native deps.
   there is no `app.json`). Both paths are in this lane's `paths` allow-list (and only this lane's) so the PR-GATE
   Lane scope check passes. These replace web's browser Supabase-Storage upload + MediaRecorder / Web Speech
   (class-B, device-only).
-  Files: `apps/mobile/package.json`, `apps/mobile/app.config.ts`.
-  Verify: `npm run typecheck`; `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
+  Register both as Expo **config plugins** in `app.config.ts` (plan decision 3, r2 sparring R1-F1):
+  `['expo-image-picker', { photosPermission, cameraPermission }]` and the audio package with
+  `{ microphonePermission }`, texts DE-first from `src/i18n/*/diaryNative.json`. Add a unit test that resolves the
+  Expo config with `APP_PROFILE=development` and asserts both plugins and the iOS keys
+  `NSCameraUsageDescription`, `NSPhotoLibraryUsageDescription`, `NSMicrophoneUsageDescription`.
+  Files: `apps/mobile/package.json`, `apps/mobile/app.config.ts`, `src/i18n/*/diaryNative.json`,
+  `apps/mobile/tests/diary/**`.
+  Verify: `npm run typecheck`; `npm test` (config-plugin test); `APP_PROFILE=development npm run bundle`;
+  `APP_PROFILE=development EXPO_OFFLINE=1 npm run deps:check` green.
 - [ ] 3. Daily Diary screen (one route, `tab` param): `apps/mobile/app/(app)/daily-diary/index.tsx` +
   `apps/mobile/src/screens/diary/DailyDiaryScreen.tsx`, reading `tab` (`health` default | `bugs`) to pick the
   `MobileModePill` mode. Health mode: `UnifiedCaptureCard` + `TextDiaryEditor` (save via `memory-api.saveDiaryEntry`

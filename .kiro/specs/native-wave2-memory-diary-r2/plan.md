@@ -85,6 +85,17 @@ i18n key (+ mirrors), at most a `@vitana/core` re-export line, and parity-row st
    (upload still to Supabase Storage) and audio with a native expo audio recorder (`expo-audio`/`expo-av`) +
    native/back-end STT. `expo-image-picker` and the expo audio recorder are **new native deps** not yet in
    `apps/mobile/package.json`; the `diary` lane adds them in its PR. None of this is core-extractable.
+   **The same `diary` PR registers both as Expo config plugins in `apps/mobile/app.config.ts`** (the app has no
+   `app.json`; `app.config.ts` is in the `diary` lane's `paths`, r2 sparring R1-F1): `expo-image-picker` with
+   its `photosPermission` and `cameraPermission` strings (iOS `NSPhotoLibraryUsageDescription`,
+   `NSCameraUsageDescription`) and the chosen audio package (`expo-audio` or `expo-av`) with its
+   `microphonePermission` string (`NSMicrophoneUsageDescription`; Android `RECORD_AUDIO` / camera / media
+   permissions come from the same plugins). Without them a development EAS build lacks the usage descriptions and iOS
+   terminates the app on first camera/microphone access. The permission texts are DE-first and come from the lane's
+   `src/i18n/*/diaryNative.json` shard (read by `app.config.ts`); per-locale `InfoPlist` localisation is checked
+   on the G1 device build (decision 5). A unit test evaluates the resolved Expo config
+   (`APP_PROFILE=development`) and asserts the three iOS usage-description keys and both plugins are present, so the
+   offline lane checks catch a missing entry before any device build.
 4. **No new routes / registry / manifest.** All 5 distinct web routes (`/memory`, `/memory/timeline`,
    `/memory/recall`, `/memory/permissions`, `/daily-diary`) already exist in `src/App.tsx`; the destinations are
    already registry screens (`source: registry` on every row). A native Expo Router file is not an `App.tsx` route,
