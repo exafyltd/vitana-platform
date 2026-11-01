@@ -3,11 +3,13 @@ slug: native-wave2-home-feed-news-r2
 author: kiro
 executor: kiro
 next_actor: kiro
-state: drafted
+state: approved
 author_seat: exafyltd
-updated: 2026-11-01T02:15Z
+updated: 2026-11-01T03:05Z
 spar_refs:
   - exafyltd/vitana-v1: main
+sparring_record: .kiro/specs/native-wave2-home-feed-news-r2/sparring/verdict.md
+vtids: [VTID-05433, VTID-05434, VTID-05435]
 ---
 # Handoff — Native Wave 2: Home / Feed / News screen ports
 First Wave 2 screen-port batch of the native Maxina app program (`docs/programs/native-app/NATIVE-APP-PLAN.md`,
@@ -26,3 +28,6 @@ Holder of the `native-wave2-home-feed-news-r2/_plan` claim. Re-plan of `native-w
 Session 1 (`914797eb-10b4-47b6-8d7a-1ea958db8a34`) escalated with zero findings (`evidence_floor_not_met`, a partner-side failure). Added one line to the plan block so PLAN-SPAR opens the re-plan session; no plan content changed.
 ### 2026-11-01T02:15Z · kiro-exafyltd-202611010001-8e5e · drafted (re-plan session round 1 answered)
 s2 R1-F1 accepted (ranker re-measured: 379 lines, type-only imports, pure tail) and s2 R1-F2 accepted (the native feed re-implementation scope listed in decision 2; tasks.md task 2a; task 1 aligned with decision 2). Answers: `sparring/s2-responses-1.md`.
+
+### 2026-11-01T03:05Z · ci-plan-spar · drafted → approved
+Converged; approved by policy converged-auto-v1. 3 lane(s) got a VTID and are handed to Kiro.

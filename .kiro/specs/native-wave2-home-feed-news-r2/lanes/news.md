@@ -22,7 +22,8 @@ paths:
   - apps/mobile/parity/ledger.json
   - src/i18n/*/newsNative.json
   - docs/validation/**
-updated: 2026-11-01T00:05Z
+updated: 2026-11-01T03:05Z
+vtid: VTID-05435
 ---
 # News / post reader port — `NEWS.DETAIL /news/:id`, `/post/:source/:id`; owns the NewsArticleCard native twin
 Plan: `.kiro/specs/native-wave2-home-feed-news-r2/` — `plan.md` (plan block) and the `tasks.md` section marked
@@ -59,3 +60,6 @@ Supabase/AWS, no test against production; staging specs are read-only; the nativ
 ## Log
 ### 2026-11-01T00:05Z · kiro-exafyltd-202611010001-8e5e · ready
 Lane created with the plan (re-plan of `native-wave2-home-feed-news/news`, PR #4273).
+
+### 2026-11-01T03:05Z · ci-plan-spar · ready (VTID allocated)
+VTID-05435 allocated after policy approval (converged-auto-v1).
