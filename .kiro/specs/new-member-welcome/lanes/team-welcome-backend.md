@@ -1,13 +1,14 @@
 ---
 lane: team-welcome-backend
-state: executing
-next_actor: claude
+state: parked
+next_actor: kiro
 vtid: VTID-05205
 depends_on: []
-claimed_by: kiro-202610150924-9ecd
 branch: kiro/new-member-welcome/team-welcome-backend
 pr: https://github.com/exafyltd/vitana-platform/pull/4133
-updated: 2026-10-15T14:35Z
+updated: 2026-11-01T15:55Z
+parked_from: executing
+seat: exafyltd
 ---
 # Three team welcome DMs (gateway + migration)
 
@@ -56,3 +57,5 @@ Other decisions are listed in `docs/validation/VTID-05205/acceptance.md` → "De
 After merge (not mine): apply the migration (`RUN-MIGRATION.yml`), deploy, STAGING-VERIFY, then the go-live steps in the
 acceptance file (sender display names confirmed → set `WELCOME_SENDER_NAMES_CONFIRMED`, pilot allowlist, flags, EventBridge job).
 next_actor: claude (review + merge).
+### 2026-11-01T15:55Z · pm-agent · executing → parked
+park (stale_claim); claim released; Claude unavailable → exafyltd
